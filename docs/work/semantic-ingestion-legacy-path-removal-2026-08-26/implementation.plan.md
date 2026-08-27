@@ -612,6 +612,28 @@ Broad gate (once, at the final revision):
   conflict-attention service-level failures follow the same lifecycle via
   the Hermes resolution path.
 
+- 2026-08-27 (slice 6a progress + blocker): (1) FIXED family — the 14
+  artifact-index-mutation tests: JSONL reopen returns list-typed content
+  where in-memory records keep tuples; added `_json_round_tripped` and
+  normalized the four reopen comparisons (family green, 14/14). (2) The
+  retry-idempotence drift is understood: the union return
+  (`Receipt | AttemptResult`) is the declared contract; retry assertions
+  comparing `== receipt` must compare `downstream_receipt_digest` instead
+  (7+ sites pending). (3) The canonical commit helper
+  `_commit_accepted_clarification` was migrated to the real lifecycle
+  (contest -> introduction -> submission generation -> claim -> CAS ->
+  commit) with call sites updated; it advances through proposal/terminal
+  binding (terminal must bind the claim proposal's source at record
+  version >= 2) and is now blocked at
+  `writer_admission._validate_conflict_authority_atomic_closure`
+  ("semantic conflict authority closure is invalid") — the commit's write
+  batch must satisfy the pointer-history/coordinate discipline; next step
+  is to capture the batch records the PASSING completion test writes
+  (its `capture_completion_write`) and diff them against the helper's to
+  align the hand-appended submission transition (pointer
+  last_record_coordinate bookkeeping). All affected tests were failing
+  before this change; net state strictly better.
+
 ## Next Action
 
 Repair the clarification-CAS family (134 tests): make

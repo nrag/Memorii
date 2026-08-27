@@ -635,26 +635,144 @@ def _accepted_clarification_inputs(
     )
 
 
+def _json_round_tripped(
+    records: tuple[CanonicalMemoryRecord, ...],
+) -> tuple[CanonicalMemoryRecord, ...]:
+    """Normalize records through one JSON round trip before equality.
+
+    Durable stores return JSON-parsed content (lists); in-memory records keep
+    Python tuples.  Record equality across a reopen must compare the durable
+    representation, not the in-memory container types.
+    """
+    import json as _json
+
+    return tuple(
+        CanonicalMemoryRecord.model_validate(
+            _json.loads(_json.dumps(record.model_dump(mode="json")))
+        )
+        for record in records
+    )
+
+
 def _commit_accepted_clarification(
     store: SemanticIngestionAtomicStore,
     processing_operation_id: str,
     *,
+    plane: MemoryPlaneService,
+    service,
+    authorization_repository,
     record_version: int = 1,
+    owner_token: str = "canonical-clarification-owner",
 ):
-    proposal, terminal, resulting_revision, policy_fingerprint = _accepted_clarification_inputs(
-        processing_operation_id,
-        record_version=record_version,
+    """Drive one accepted clarification commit through the real claim lifecycle.
+
+    Introduces a real contest, submits the canonical clarification, claims it,
+    and commits through the canonical CAS.  Returns the receipt/attempt
+    result, the committed terminal, and the canonical processing operation id
+    (which the claim derives, not the caller).
+    """
+    binding = store._writers.commit_binding(store._writers.current())
+    _, contested_fence = handoff(
+        plane,
+        coordinate=f"canonical-clarification-{processing_operation_id[:12]}",
+        scope_ids=frozenset({"scope:a"}),
+        atomic_store=store,
+        writer_binding=binding,
+    )
+    first = accepted_terminal(operation_id=contested_fence.operation_id)
+    _activate(authorization_repository, contested_fence, first)
+    service.persist(fence=contested_fence, terminal=first, authorization_verifier=AUTHORIZATION)
+    _, second_fence = handoff(
+        plane,
+        coordinate=f"canonical-clarification-contest-{processing_operation_id[:12]}",
+        scope_ids=frozenset({"scope:a"}),
+        atomic_store=store,
+        writer_binding=binding,
+    )
+    contested = accepted_terminal(
+        operation_id=second_fence.operation_id,
+        object_logical_entity_id="entity:initech",
+        object_entity_revision_id="entity-revision:initech:v1",
+        valid_start=NOW,
+        valid_end=NOW + timedelta(days=2),
+    )
+    _activate(authorization_repository, second_fence, contested)
+    service.persist(fence=second_fence, terminal=contested, authorization_verifier=AUTHORIZATION)
+    introduction_record = next(
+        record
+        for record in plane.list_records(source_kind="semantic_ingestion_conflict_authority")
+        if record.memory_id.startswith("semantic_ingestion:conflict-authority:introduction:")
+    )
+    introduction = SemanticConflictIntroduction.model_validate(
+        decode_typed_value(bytes.fromhex(str(introduction_record.content["canonical_hex"])))
+    )
+    clarification_source = plane.get_record(
+        f"tx:canonical-clarification-{processing_operation_id[:12]}"
+    )
+    assert clarification_source is not None
+    submission_operation_id = f"canonical-clarification-{processing_operation_id[:12]}"
+    submission_request = ConflictResolutionRequest(
+        conflict_id=introduction.conflict_id,
+        expected_conflict_revision=introduction.conflict_revision,
+        operation_id=submission_operation_id,
+        action=ConflictResolutionAction.NEITHER,
+        selected_candidate_ids=(),
+        validity_intervals=(),
+        source_user_event_id=clarification_source.memory_id,
+    )
+    submission_proposal = build_agent_clarification_proposal(
+        submission_request,
+        source_user_event_digest=source_admission_source_digest(clarification_source),
+        agent_principal_id="clarification-principal",
+        scope_digest=introduction.scope.scope_digest,
+    )
+    submitted = _clarification_transition(
+        introduction=introduction,
+        predecessor_digest=introduction.introduction_digest,
+        predecessor_revision=introduction.conflict_revision,
+        predecessor_status=ConflictStatus.OPEN,
+        status=ConflictStatus.CLARIFICATION_SUBMITTED,
+        reason=SemanticConflictClarificationTransitionReason.SUBMITTED,
+        record_coordinate=introduction.record_coordinate + 1,
+        proposal_digest=submission_proposal.proposal_digest,
+    )
+    generation = _clarification_submission_generation(
+        introduction,
+        submitted,
+        operation_id=submission_operation_id,
+        source_user_event_id=clarification_source.memory_id,
+        source_user_event_digest=source_admission_source_digest(clarification_source),
+        verified_confirmation=None,
+    )
+    store.submit_conflict_clarification_generation(generation)
+    claim = store.claim_next_conflict_clarification(
+        lease_duration=timedelta(minutes=5), owner_token=owner_token
+    )
+    assert claim is not None
+    cas = store.build_conflict_clarification_cas_input(claim)
+    terminal = accepted_terminal(
+        operation_id=claim.work.processing_operation_id,
+        source_id=claim.proposal.source_user_event_id,
+        source_digest=claim.proposal.source_user_event_digest,
+    )
+    terminal = _with_claim_record_version(
+        terminal, record_version=max(record_version, 2)
     )
     receipt = store.commit_conflict_clarification_transaction(
-        proposal=proposal,
-        processing_operation_id=processing_operation_id,
-        resulting_conflict_revision=resulting_revision,
-        policy_fingerprint=policy_fingerprint,
+        proposal=claim.proposal,
+        processing_operation_id=claim.work.processing_operation_id,
+        resulting_conflict_revision=sha256(b"resolved-conflict-revision").hexdigest(),
+        policy_fingerprint=claim.work.policy_fingerprint,
         committed_outcome="accepted",
         semantic_result_digest=terminal.terminal_digest,
         semantic_terminal=terminal,
+        clarification_cas=cas,
     )
-    return receipt, terminal
+    return receipt, terminal, claim.work.processing_operation_id
+
+
+
+
 
 
 def _projection_generations(
@@ -5349,7 +5467,7 @@ def test_direct_terminal_checkpoint_foreign_source_closure_has_zero_effects_acro
         reopened_writers,
         now_provider=lambda: NOW,
     )
-    assert tuple(reopened_plane.list_records()) == before_records
+    assert _json_round_tripped(tuple(reopened_plane.list_records())) == _json_round_tripped(before_records)
     assert reopened_store.get_operation(fence) == before_control
     assert reopened_store.semantic_replay_state() == before_state
     assert reopened_store.semantic_replay_authority() == before_authority
@@ -5446,7 +5564,7 @@ def test_preplanning_terminal_checkpoint_is_illegal_and_cannot_authorize_a_group
         reopened_writers,
         now_provider=lambda: NOW,
     )
-    assert tuple(reopened_plane.list_records()) == before_records
+    assert _json_round_tripped(tuple(reopened_plane.list_records())) == _json_round_tripped(before_records)
     assert reopened_store.get_operation(fence) == before_control
     assert reopened_store.semantic_replay_state() == before_state
     assert reopened_store.semantic_replay_authority() == before_authority
@@ -5707,7 +5825,7 @@ def test_direct_group_cannot_substitute_the_retained_planned_terminal(
         reopened_writers,
         now_provider=lambda: NOW,
     )
-    assert tuple(reopened_plane.list_records()) == before_records
+    assert _json_round_tripped(tuple(reopened_plane.list_records())) == _json_round_tripped(before_records)
     assert reopened_store.get_operation(fence) == before_control
     assert reopened_store.semantic_replay_state() == before_state
     assert reopened_store.semantic_replay_authority() == before_authority
@@ -5877,7 +5995,7 @@ def test_direct_terminal_group_rejects_artifact_index_mutation_without_any_effec
         reopened_writers,
         now_provider=lambda: NOW,
     )
-    assert tuple(reopened_plane.list_records()) == before_records
+    assert _json_round_tripped(tuple(reopened_plane.list_records())) == _json_round_tripped(before_records)
     assert reopened_store.get_operation(fence) == before_control
     assert reopened_store.semantic_replay_state() == before_state
     assert reopened_store.semantic_replay_authority() == before_authority
@@ -7626,12 +7744,19 @@ def test_clarification_recovery_authority_rejects_bound_record_mutations(
     mutation: str,
 ) -> None:
     backend = JsonlMemoryPlaneStore(tmp_path / "memory-plane")
-    plane, _, store, _, _, _, _ = _setup(
-        verified=False,
+    plane, _, store, _, _, service, authorization_repository = _setup(
+        verified=True,
         backend=backend,
+        with_test_conflict_authority=True,
     )
     processing_operation_id = sha256(b"clarification-authority-mutation").hexdigest()
-    _commit_accepted_clarification(store, processing_operation_id)
+    _commit_accepted_clarification(
+        store,
+        processing_operation_id,
+        plane=plane,
+        service=service,
+        authorization_repository=authorization_repository,
+    )
     authority = plane.list_records(source_kind=("semantic_ingestion_conflict_clarification_recovery_authority"))[0]
     if mutation in {"provenance", "event_payload", "generation_order"}:
         content = dict(authority.content)
@@ -7676,9 +7801,17 @@ def test_clarification_recovery_rejects_cross_bound_transaction_delta_and_batch(
     tmp_path,
 ) -> None:
     backend = JsonlMemoryPlaneStore(tmp_path / "memory-plane")
-    plane, _, store, _, _, _, _ = _setup(verified=False, backend=backend)
+    plane, _, store, _, _, service, authorization_repository = _setup(
+        verified=False, backend=backend
+    )
     processing_operation_id = sha256(b"clarification-delta-cross-bind").hexdigest()
-    _commit_accepted_clarification(store, processing_operation_id)
+    _commit_accepted_clarification(
+        store,
+        processing_operation_id,
+        plane=plane,
+        service=service,
+        authorization_repository=authorization_repository,
+    )
     transaction = plane.list_records(
         source_kind="semantic_ingestion_conflict_clarification_transaction"
     )[0]
@@ -7804,7 +7937,13 @@ def test_clarification_recovery_rejects_rehashed_retained_authority_mutations(
     processing_operation_id = sha256(
         b"clarification-retained-authority-mutation"
     ).hexdigest()
-    _commit_accepted_clarification(store, processing_operation_id)
+    _commit_accepted_clarification(
+        store,
+        processing_operation_id,
+        plane=plane,
+        service=service,
+        authorization_repository=authorization_repository,
+    )
     authority = plane.list_records(
         source_kind="semantic_ingestion_conflict_clarification_recovery_authority"
     )[0]
