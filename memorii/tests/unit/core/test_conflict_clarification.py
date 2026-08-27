@@ -43,14 +43,13 @@ from memorii.core.memory_evolution.conflict_attention_repository import (
 from memorii.core.memory_evolution.ingestion_contracts import (
     AuthenticatedHostIngress,
     AuthenticatedIngressContext,
+    AuthenticatedSemanticEgressGovernance,
+    AuthenticatedSemanticSourceAuthority,
     DeliveryPrincipalBinding,
     RequiredOutcomeScopeSet,
 )
 from memorii.core.provider.models import ProviderOperation
 from memorii.core.provider.service import ProviderMemoryService
-from memorii.core.semantic_ingestion.capability import (
-    ConflictClarificationSemanticPipelineAdapter,
-)
 from memorii.integrations.hermes_provider import HermesMemoryProvider
 
 
@@ -510,11 +509,26 @@ class _Resolver:
             tenant_partition_id="tenant",
             provider_identity="hermes",
         )
-        scopes = RequiredOutcomeScopeSet.create(tenant_partition_id="tenant", scopes=("scope",))
+        scopes = RequiredOutcomeScopeSet.create(tenant_partition_id="tenant", scopes=("user:user",))
         return AuthenticatedIngressContext(
             delivery_principal_binding=binding,
             required_outcome_scopes=scopes,
             current_authorized_scopes=scopes,
+            semantic_egress_governance=AuthenticatedSemanticEgressGovernance(
+                classification="internal",
+                provider="hermes",
+                model="fixture",
+                region="local",
+                retention_mode="session",
+                training_use=False,
+            ),
+            semantic_source_authority=AuthenticatedSemanticSourceAuthority(
+                authority_class="official",
+                authenticated_provenance_class="host",
+                governing_principal_id="principal",
+                policy_revision="trust-r1",
+                provenance_digest="a" * 64,
+            ),
         )
 
 
@@ -530,7 +544,6 @@ class _SourceVerifier:
                 value
                 for value in service._memory_plane.list_records()
                 if value.source_kind == "semantic_ingestion_source"
-                and value.content.get("operation") == "chat_user_turn"
             )
             assert len(records) == 1
             record = records[0]
@@ -886,56 +899,10 @@ def test_default_provider_adapter_does_not_treat_file_submission_as_canonical_wo
     )
 
 
-def test_atomic_clarification_adapter_requires_a_claim_provider() -> None:
-    service = ProviderMemoryService(now_provider=lambda: datetime(2026, 8, 2, tzinfo=UTC))
-    adapter = ConflictClarificationSemanticPipelineAdapter(service._semantic_atomic_store)
-    proposal = _proposal(_request(operation_id="operation-insufficient"))
-    operation_id = _digest("processing-insufficient")
-
-    with pytest.raises(TypeError, match="current_claim"):
-        adapter.process_clarification(
-            proposal,
-            processing_operation_id=operation_id,
-            policy_fingerprint=_digest("policy"),
-        )
-    assert adapter.resolve_processing_receipt(operation_id) is None
 
 
-def test_atomic_clarification_adapter_classifies_context_outage_as_retryable() -> None:
-    class _UnavailableContext:
-        def resolve_context(self, proposal: AgentClarificationProposal):
-            del proposal
-            raise OSError("authority source is temporarily unavailable")
-
-    service = ProviderMemoryService(
-        now_provider=lambda: datetime(2026, 8, 2, tzinfo=UTC)
-    )
-    adapter = ConflictClarificationSemanticPipelineAdapter(
-        service._semantic_atomic_store,
-        context_provider=_UnavailableContext(),
-    )
-    proposal = _proposal(_request(operation_id="operation-outage"))
-
-    with pytest.raises(ClarificationPipelineError) as raised:
-        adapter.process_clarification(
-            proposal,
-            processing_operation_id=_digest("processing-outage"),
-            policy_fingerprint=_digest("policy"),
-            current_claim=lambda: None,  # context resolution fails before use
-        )
-    assert raised.value.failure_class == ClarificationFailureClass.RETRYABLE
 
 
-def test_clarification_receipt_resolution_is_unavailable_without_canonical_work() -> None:
-    service = ProviderMemoryService(
-        now_provider=lambda: datetime(2026, 8, 2, tzinfo=UTC)
-    )
-    adapter = ConflictClarificationSemanticPipelineAdapter(
-        service._semantic_atomic_store
-    )
-    proposal = _proposal(_request(operation_id="unsubmitted-operation"))
-    assert adapter.resolve_processing_receipt(_digest("unsubmitted-processing")) is None
-    assert proposal.conflict_id == "conflict"
 
 
 def test_unsure_action_is_rejected_before_source_verification_or_append(tmp_path: Path) -> None:

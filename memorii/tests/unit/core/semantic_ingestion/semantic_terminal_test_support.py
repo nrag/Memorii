@@ -25,9 +25,6 @@ from memorii.core.memory_evolution.bootstrap_profile import (
     serialize_bootstrap_profile_artifacts,
     verify_bootstrap_profile,
 )
-from tests.fixtures.semantic_ingestion.host_bootstrap_authority import (
-    build_test_host_verified_bootstrap_release_evidence,
-)
 from memorii.core.memory_evolution.conflict_attention import (
     ActiveSemanticConflictResolverAuthority,
     ConflictResolutionOption,
@@ -66,6 +63,7 @@ from memorii.core.semantic_ingestion.capability import (
     AuthorizedSemanticIngestionRuntime,
     SemanticIngestionRuntimeAuthorization,
 )
+from memorii.core.semantic_ingestion.carriers import compile_accepted_carriers
 from memorii.core.semantic_ingestion.contracts import (
     AuthenticatedEventTimeReference,
     AuthenticatedSourceIntervalEvidence,
@@ -74,6 +72,9 @@ from memorii.core.semantic_ingestion.contracts import (
     PredicateTrustRule,
     SemanticArbitrationPolicyBundle,
     SemanticAuthorizationReadSet,
+    SemanticExecutionLineage,
+    SemanticTerminalBindingSet,
+    SemanticTerminalOutcome,
     SourceAuthority,
     SourceAuthorityEvidence,
     TemporalPolicySnapshot,
@@ -82,15 +83,20 @@ from memorii.core.semantic_ingestion.contracts import (
     TimeInterval,
     TrustDecayStep,
     TrustPolicySnapshot,
+    contract_digest,
 )
 from memorii.core.semantic_ingestion.local_analyzer import ProductionLocalSemanticAnalyzer
-from memorii.core.semantic_ingestion.pipeline import SemanticIngestionPipeline
+from memorii.core.semantic_ingestion.operation_assessment import seal_semantic_operation
 from memorii.core.semantic_ingestion.source_preparation import (
     InMemoryPreparedSourceRepository,
     TextPreparationService,
 )
+from memorii.core.semantic_ingestion.temporal_evidence_resolution import TemporalEvidenceResolver
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
 from pydantic import BaseModel
+from tests.fixtures.semantic_ingestion.host_bootstrap_authority import (
+    build_test_host_verified_bootstrap_release_evidence,
+)
 
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
 SOURCE = "Atlas works for Memorii."
@@ -259,10 +265,7 @@ def _validated_test_runtime(
     runtime = AuthorizedSemanticIngestionRuntime(
         authorization_bytes=b"terminal-test-deployment-authorization",
         authorization_verifier=_DeploymentVerifier(),
-        pipeline=SemanticIngestionPipeline(transport=None),
         policy_provider=object(),
-        egress_policy_provider=None,
-        candidate_assessor=ProductionLocalSemanticAnalyzer(),
         writer_admission=admissions,
         atomic_store=atomic_store,
     )
@@ -673,27 +676,207 @@ def accepted_terminal(
             return IndependentSourceAnalysis.create(**body)
 
     analyzer = TypedAnalyzer()
-    return SemanticIngestionPipeline(
-        transport=None,
-        identity_lineage_compiler=identity_lineage_compiler,
-        identity_operation_planner=identity_operation_planner,
-    ).run(
-        operation_id=operation_id,
-        source_id=source_id,
-        source_digest=source_digest,
-        source_text=source_text,
-        prepared_source_repository=_prepared_source_repository(
-            source_id=source_id, source_digest=source_digest, source_text=source_text
-        ),
+    # Direct terminal construction mirroring the retired pipeline's
+    # local-proposal path: propose, analyze, resolve temporal evidence by
+    # policy rank, seal, compile carriers, and close one terminal outcome.
+    read_set = Authorization().current_read_set(
         policy_bundle=policy,
-        local_proposals=analyzer.propose(
+        egress_policy_revision=None,
+        egress_decision_digest=None,
+        use_point="pre_request",
+    )
+    prepared_source = _prepared_source_repository(
+        source_id=source_id, source_digest=source_digest, source_text=source_text
+    ).load(source_id=source_id, source_digest=source_digest)
+    assert prepared_source is not None
+    candidates = tuple(
+        sorted(
+            analyzer.propose(
+                source_id=source_id, source_digest=source_digest, source_text=source_text
+            ),
+            key=lambda value: value.candidate_id,
+        )
+    )
+    analyses = []
+    for candidate in candidates:
+        analysis = analyzer.analyze(
+            proposal=candidate,
             source_id=source_id,
             source_digest=source_digest,
             source_text=source_text,
+            prepared_source=prepared_source,
+            source_authority_evidence=authority,
+            source_interval_evidence=interval_evidence,
+        )
+        assert analysis is not None
+        analyses.append(analysis)
+    source_analyses = tuple(analyses)
+    resolver = TemporalEvidenceResolver()
+    role_closures_by_candidate = []
+    closure_list = []
+    for candidate, analysis in zip(candidates, source_analyses, strict=True):
+        resolved_roles = []
+        for source_temporal in analysis.temporal_evidence:
+            resolved_roles.append(
+                (
+                    source_temporal.temporal_role,
+                    resolver.resolve(
+                        predicate_id=candidate.predicate_id,
+                        candidates=source_temporal.candidates,
+                        reference_evidence=source_temporal.reference_evidence,
+                        source_present_attachment=bool(source_temporal.attachment_spans),
+                        trust_policy=policy.trust_policy,
+                        temporal_policy=policy.temporal_policy,
+                        arbitration_as_of=policy.arbitration_as_of,
+                    ),
+                )
+            )
+        role_closures = tuple(resolved_roles)
+        role_closures_by_candidate.append(role_closures)
+        closure_list.extend(closure for _, closure in role_closures)
+    closures = tuple(closure_list)
+    sealed_values = []
+    for candidate, analysis, role_closures in zip(
+        candidates, source_analyses, role_closures_by_candidate, strict=True
+    ):
+        sealed = seal_semantic_operation(
+            source_id=source_id,
+            source_digest=source_digest,
+            candidate=candidate,
+            source_analysis=analysis,
+            role_closures=role_closures,
+        )
+        if sealed is not None:
+            sealed_values.append(sealed)
+    sealed_operations = tuple(
+        sorted(sealed_values, key=lambda value: value.candidate_id)
+    )
+    execution_lineage = SemanticExecutionLineage.create(
+        operation_id=operation_id,
+        proposal_attempt_digests=(
+            contract_digest(
+                b"memorii.semantic-ingestion.local-proposal-attempt.v1", candidates
+            ),
         ),
-        independent_assessor=analyzer,
-        source_authority_evidence=authority,
-        source_interval_evidence=interval_evidence,
-        authorization_read_set_provider=Authorization(),
-        operation_fence=operation_fence,
+        source_analysis_digests=tuple(
+            value.analysis_digest for value in source_analyses
+        ),
+        sealed_operation_digests=tuple(
+            value.sealed_operation_digest for value in sealed_operations
+        ),
+        prompt_authority_digest=None,
+        egress_decision_digests=(),
+        arbitration_policy_bundle_digest=policy.bundle_digest,
+        authorization_read_set_digest=read_set.read_set_digest,
+    )
+    promotable = bool(candidates) and len(sealed_operations) == len(candidates)
+    identity_transitions = {}
+    identity_failure = None
+    if promotable:
+        analysis_by_candidate = {
+            value.candidate_id: value for value in source_analyses
+        }
+        candidate_by_id = {candidate.candidate_id: candidate for candidate in candidates}
+        for operation in sealed_operations:
+            if operation.kind != "identity":
+                continue
+            if identity_lineage_compiler is None:
+                identity_failure = "identity_lineage_compiler_required"
+                break
+            try:
+                if identity_operation_planner is not None:
+                    if operation_fence is None:
+                        raise ValueError("identity operation fence is unavailable")
+                    identity_operation_planner.prepare_accepted_identity_operation(
+                        operation=operation,
+                        candidate=candidate_by_id[operation.candidate_id],
+                        source_analysis=analysis_by_candidate[operation.candidate_id],
+                        operation_fence=operation_fence,
+                        authorization_read_set=read_set,
+                    )
+                transition = identity_lineage_compiler.compile_transition(
+                    operation=operation,
+                    candidate=candidate_by_id[operation.candidate_id],
+                    source_analysis=analysis_by_candidate[operation.candidate_id],
+                )
+            except ValueError:
+                identity_failure = "identity_lineage_compilation_failed"
+                break
+            if transition.operation_id != operation.operation_id:
+                identity_failure = "identity_lineage_operation_binding_mismatch"
+                break
+            identity_transitions[operation.operation_id] = transition
+        promotable = identity_failure is None
+    binding_sets = tuple(
+        SemanticTerminalBindingSet.create(
+            operation_id=operation.operation_id,
+            bindings=operation.temporal_bindings,
+        )
+        for operation in sorted(sealed_operations, key=lambda value: value.operation_id)
+    )
+    if not promotable:
+        return SemanticTerminalOutcome.create(
+            operation_id=operation_id,
+            status="unresolved",
+            reason_codes=(
+                identity_failure or "independent_consensus_or_temporal_resolution_failed",
+            ),
+            candidates=candidates,
+            temporal_closures=closures,
+            attempt_count=0,
+            source_analyses=source_analyses,
+            arbitration_policy_bundle=policy,
+            authorization_read_set=read_set,
+            execution_lineage=execution_lineage,
+            sealed_operations=sealed_operations,
+            terminal_binding_sets=binding_sets,
+        )
+    candidate_by_id = {candidate.candidate_id: candidate for candidate in candidates}
+    carriers = tuple(
+        carrier
+        for operation in sealed_operations
+        for carrier in compile_accepted_carriers(
+            operation=operation,
+            candidate=candidate_by_id[operation.candidate_id],
+            predicate_trust_rule=(
+                policy.trust_policy.rule_for(
+                    candidate_by_id[operation.candidate_id].predicate_id
+                )
+                if operation.claim_identity is not None
+                else None
+            ),
+            identity_transition=identity_transitions.get(operation.operation_id),
+            committed_at=None,
+        )
+    )
+    carriers = tuple(
+        sorted(
+            carriers,
+            key=lambda value: (value.operation_id, value.record_kind, value.record_digest),
+        )
+    )
+    carrier_artifact_digest = contract_digest(
+        b"memorii.semantic-ingestion.terminal-carrier-artifact.v1",
+        {
+            "operation_id": operation_id,
+            "sealed_operations": sealed_operations,
+            "accepted_carriers": carriers,
+            "terminal_binding_sets": binding_sets,
+        },
+    )
+    return SemanticTerminalOutcome.create(
+        operation_id=operation_id,
+        status="accepted",
+        reason_codes=(),
+        candidates=candidates,
+        source_analyses=source_analyses,
+        arbitration_policy_bundle=policy,
+        authorization_read_set=read_set,
+        execution_lineage=execution_lineage,
+        temporal_closures=closures,
+        carrier_artifact_digest=carrier_artifact_digest,
+        sealed_operations=sealed_operations,
+        accepted_carriers=carriers,
+        terminal_binding_sets=binding_sets,
+        attempt_count=0,
     )

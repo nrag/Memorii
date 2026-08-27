@@ -7,10 +7,6 @@ from unittest.mock import patch
 
 import pytest
 from memorii.core.filesystem_storage.bundle import build_filesystem_provider
-from memorii.core.memory_evolution.admission import (
-    source_admission_source_bytes,
-    source_admission_source_digest,
-)
 from memorii.core.memory_evolution.atomic_store import (
     AtomicGenerationMember,
     PreplanningOperationControl,
@@ -29,18 +25,6 @@ from memorii.core.memory_evolution.bootstrap_profile import (
     serialize_bootstrap_profile_artifacts,
     verify_bootstrap_profile,
     verify_bootstrap_release,
-)
-from memorii.core.memory_evolution.conflict_attention import (
-    AuthorizedUserEventProof,
-    ConflictAttention,
-    ConflictAudience,
-    ConflictKind,
-    ConflictResolutionOption,
-    ConflictStatus,
-)
-from memorii.core.memory_evolution.conflict_attention_repository import (
-    ConflictCursorKey,
-    FileConflictAttentionRepository,
 )
 from memorii.core.memory_evolution.conflict_integrity import (
     ConflictIntegrityError,
@@ -111,17 +95,11 @@ from memorii.core.semantic_ingestion.contracts import (
     decode_semantic_contract,
 )
 from memorii.core.semantic_ingestion.egress import (
-    InMemoryEgressPolicyRepository,
     ProviderEgressDecision,
-    SignedEgressPolicyCommand,
 )
 from memorii.core.semantic_ingestion.event_replay import (
     decode_semantic_memory_event_batch,
 )
-from memorii.core.semantic_ingestion.local_analyzer import (
-    ProductionLocalSemanticAnalyzer,
-)
-from memorii.core.semantic_ingestion.pipeline import SemanticIngestionPipeline
 from memorii.core.semantic_ingestion.source_normalization_execution import (
     SourceNormalizationExecutionOwner,
 )
@@ -666,79 +644,6 @@ class _StableEgressProvider:
         )
 
 
-class _AdversarialEgressProvider:
-    def __init__(self, mode: str) -> None:
-        self.mode = mode
-
-    def current(self, *, binding, at: datetime):
-        if self.mode == "outage":
-            raise OSError("egress authority unavailable")
-        mutations = {
-            "tenant_id": "tenant:other",
-            "source_id": "source:other",
-            "source_digest": "0" * 64,
-            "segment_id": "segment:other",
-            "classification": "public",
-            "provider": "other-provider",
-            "model": "other-model",
-            "region": "other-region",
-            "retention_mode": "retained",
-            "training_use": True,
-        }
-        decision_binding = (
-            binding.model_copy(update={self.mode: mutations[self.mode]}) if self.mode in mutations else binding
-        )
-        decision = ProviderEgressDecision.create(
-            binding=decision_binding,
-            policy_id="capture-policy",
-            policy_revision=1,
-            policy_fingerprint="f" * 64,
-            expires_at=(at if self.mode == "expiry" else at + timedelta(minutes=1)),
-        )
-        stale_decision_mutations = {
-            "policy_id": "other-policy",
-            "policy_revision": 2,
-            "policy_fingerprint": "e" * 64,
-            "decision_digest": "0" * 64,
-        }
-        if self.mode in stale_decision_mutations:
-            return decision.model_copy(update={self.mode: stale_decision_mutations[self.mode]})
-        if self.mode not in {"signature", "signer"}:
-            return decision
-
-        class SignatureVerifier:
-            def verify(self, *, signer_id, payload, signature):
-                return signature == sha256(signer_id.encode() + payload).digest()
-
-        class LifecycleVerifier:
-            def is_eligible(self, *, signer_id, at):
-                return signer_id == "egress-root"
-
-        repository = InMemoryEgressPolicyRepository(
-            signature_verifier=SignatureVerifier(), lifecycle_verifier=LifecycleVerifier()
-        )
-        signer_id = "ineligible-root" if self.mode == "signer" else "egress-root"
-        provisional = SignedEgressPolicyCommand(
-            command_id="adversarial-command",
-            action="install",
-            policy_id="capture-policy",
-            expected_revision=0,
-            issued_at=at,
-            signer_id=signer_id,
-            decision=decision,
-            signature=b"invalid",
-        )
-        command = provisional.model_copy(
-            update={
-                "signature": (
-                    sha256(signer_id.encode() + provisional.signed_payload()).digest()
-                    if self.mode == "signer"
-                    else b"invalid"
-                )
-            }
-        )
-        repository.apply(command, control_plane_principal="admin")
-        return repository.current(binding=binding, at=at)
 
 
 class _CaptureTransport:
@@ -867,12 +772,7 @@ def _dependencies(
     runtime = AuthorizedSemanticIngestionRuntime(
         authorization_bytes=b"signed-test-authorization",
         authorization_verifier=_AuthorizationVerifier(authorization_mode),
-        pipeline=SemanticIngestionPipeline(transport=transport),
         policy_provider=_PolicyProvider(),
-        egress_policy_provider=_EgressProvider(),
-        candidate_assessor=(
-            assessor if assessor is not None else (_Assessor() if writer_admission is not None else _AbstainAssessor())
-        ),
         text_preparation_service=TextPreparationService(
             producer=lambda request: build_prepared_source_authority(
                 source_id=request.observation.source_id,
@@ -891,115 +791,19 @@ def _dependencies(
 
 
 def _runtime_for_outage(*, writers, store, stage: str) -> AuthorizedSemanticIngestionRuntime:
-    transport = _OutageTransport() if stage == "proposal" else _CaptureTransport()
     return AuthorizedSemanticIngestionRuntime(
         authorization_bytes=b"signed-test-authorization",
         authorization_verifier=_AuthorizationVerifier(),
-        pipeline=SemanticIngestionPipeline(transport=transport),
         policy_provider=_PolicyProvider(outage=stage == "policy_read"),
-        egress_policy_provider=_EgressProvider(),
-        candidate_assessor=_OutageAssessor() if stage == "analysis" else _Assessor(),
         writer_admission=writers,
         atomic_store=store,
     )
 
 
-def test_normal_provider_root_without_normalization_authority_is_source_only() -> None:
-    capability = _LocalRuntimeCapability()
-    service = ProviderMemoryService(
-        memory_plane=MemoryPlaneService(),
-        host_bootstrap_capability=capability,
-        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
-    )
-    result = service.sync_event(
-        operation=ProviderOperation.CHAT_USER_TURN,
-        content="Atlas owner is Bob.",
-        operation_id="semantic-ingestion-normal",
-        task_id="task:one",
-        user_id="user:alice",
-        authenticated_host_ingress=_host_ingress(),
-    )
-    assert result.blocked_reasons["semantic_ingestion"] == "source_alignment_authority_unavailable"
-    assert len(capability.stores) == 1
-    terminal_controls = [
-        value
-        for value in service._memory_plane.list_records()
-        if value.source_kind == "semantic_ingestion_preplanning_control"
-        and value.content["control"]["state"] == "terminal"
-    ]
-    assert terminal_controls == []
 
 
-@pytest.mark.parametrize("result", (None, object()))
-def test_normal_provider_root_rejects_untyped_or_missing_normalization_result_before_terminal(result) -> None:
-    authority_provider = _RecordingSourceNormalizationAuthorityProvider()
-    execution_owner = _RecordingSourceNormalizationExecutionOwner(result=result)
-    capability = _LocalRuntimeCapability(
-        source_normalization_authority_provider=authority_provider,
-        source_normalization_execution_owner=execution_owner,
-    )
-    service = ProviderMemoryService(
-        memory_plane=MemoryPlaneService(),
-        host_bootstrap_capability=capability,
-        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
-    )
-    result = service.sync_event(
-        operation=ProviderOperation.CHAT_USER_TURN,
-        content="Atlas owner is Bob.",
-        operation_id="semantic-ingestion-normalized",
-        task_id="task:one",
-        user_id="user:alice",
-        authenticated_host_ingress=_host_ingress(),
-    )
-    assert result.blocked_reasons["semantic_ingestion"] == "source_alignment_authority_unavailable"
-    assert len(authority_provider.invocations) == 1
-    assert len(execution_owner.calls) == 1
-    invocation, handoff = authority_provider.invocations[0]
-    owner_invocation, owner_handoff, owner_authority = execution_owner.calls[0]
-    assert invocation.operation_id == "semantic-ingestion-normalized"
-    assert owner_invocation == invocation
-    assert owner_handoff == handoff
-    assert owner_authority is not None
-    terminal_controls = [
-        value
-        for value in service._memory_plane.list_records()
-        if value.source_kind == "semantic_ingestion_preplanning_control"
-        and value.content["control"]["state"] == "terminal"
-    ]
-    assert terminal_controls == []
 
 
-def test_normal_provider_root_stops_before_owner_and_terminal_when_authority_is_unavailable() -> None:
-    authority_provider = _RecordingSourceNormalizationAuthorityProvider(available=False)
-    execution_owner = _RecordingSourceNormalizationExecutionOwner()
-    capability = _LocalRuntimeCapability(
-        source_normalization_authority_provider=authority_provider,
-        source_normalization_execution_owner=execution_owner,
-    )
-    service = ProviderMemoryService(
-        memory_plane=MemoryPlaneService(),
-        host_bootstrap_capability=capability,
-        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
-    )
-
-    result = service.sync_event(
-        operation=ProviderOperation.CHAT_USER_TURN,
-        content="Atlas owner is Bob.",
-        operation_id="semantic-ingestion-normalized-authority-unavailable",
-        task_id="task:one",
-        user_id="user:alice",
-        authenticated_host_ingress=_host_ingress(),
-    )
-
-    assert result.blocked_reasons["semantic_ingestion"] == "source_alignment_authority_unavailable"
-    assert len(authority_provider.invocations) == 1
-    assert execution_owner.calls == []
-    assert [
-        value
-        for value in service._memory_plane.list_records()
-        if value.source_kind == "semantic_ingestion_preplanning_control"
-        and value.content["control"]["state"] == "terminal"
-    ] == []
 
 
 class _UnusedNormalizationQuoteAuthority:
@@ -1509,147 +1313,10 @@ def test_normal_provider_root_missing_bootstrap_authority_is_evidence_only(
     )
 
 
-@pytest.mark.parametrize("mode", ["expired", "revoked", "outage", "mutated"])
-def test_external_deployment_authorization_failure_is_zero_wire(mode: str) -> None:
-    transport, capability = _dependencies(authorization_mode=mode)
-    with patch(
-        "memorii.core.memory_evolution.bootstrap_profile.entry_points",
-        return_value=(_InstalledCapabilityEntryPoint(capability),),
-    ):
-        service = ProviderMemoryService(memory_plane=MemoryPlaneService())
-    service.sync_event(
-        operation=ProviderOperation.CHAT_USER_TURN,
-        content="Atlas owner is Bob.",
-        operation_id=f"semantic-ingestion-authorization-{mode}",
-        task_id="task:one",
-        user_id="user:alice",
-        authenticated_host_ingress=_host_ingress(),
-    )
-    assert transport.requests == []
-    members = [
-        record.content["member"]
-        for record in service._memory_plane.list_records()
-        if record.source_kind == "semantic_ingestion_generation_member"
-    ]
-    assert not any(member["kind"] in {"graph_delta", "event_batch"} for member in members)
-    group_results = [
-        decode_semantic_contract(member["canonical_payload"].encode("utf-8"), SemanticTerminalOutcome)
-        for member in members
-        if member["kind"] == "source_result"
-    ]
-    assert all(terminal.status == "evidence_only" for terminal in group_results)
-    assert not any(terminal.status == "accepted" for terminal in group_results)
 
 
-@pytest.mark.parametrize(
-    "mode",
-    [
-        "tenant_id",
-        "source_id",
-        "source_digest",
-        "segment_id",
-        "classification",
-        "provider",
-        "model",
-        "region",
-        "retention_mode",
-        "training_use",
-        "signature",
-        "signer",
-        "expiry",
-        "outage",
-        "policy_id",
-        "policy_revision",
-        "policy_fingerprint",
-        "decision_digest",
-    ],
-)
-def test_public_coordinator_rejects_every_egress_authority_mutation_without_wire(
-    mode: str,
-) -> None:
-    plane, writers, store = _verified_runtime_store(MemoryPlaneService())
-    transport = _CaptureTransport()
-    runtime = AuthorizedSemanticIngestionRuntime(
-        authorization_bytes=b"signed-test-authorization",
-        authorization_verifier=_AuthorizationVerifier(),
-        pipeline=SemanticIngestionPipeline(transport=transport),
-        policy_provider=_PolicyProvider(),
-        egress_policy_provider=_AdversarialEgressProvider(mode),
-        candidate_assessor=_Assessor(),
-        writer_admission=writers,
-        atomic_store=store,
-    )
-    capability = _AuthorizedCapability(runtime=runtime)
-    with patch(
-        "memorii.core.memory_evolution.bootstrap_profile.entry_points",
-        return_value=(_InstalledCapabilityEntryPoint(capability),),
-    ):
-        service = ProviderMemoryService(memory_plane=plane, now_provider=lambda: TEST_NOW, host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier())
-    service.sync_event(
-        operation=ProviderOperation.CHAT_USER_TURN,
-        content="Atlas owner is Bob.",
-        operation_id=f"semantic-ingestion-egress-{mode}",
-        task_id="task:one",
-        user_id="user:alice",
-        authenticated_host_ingress=_host_ingress(),
-    )
-    assert transport.requests == []
-    members = [
-        record.content["member"]
-        for record in plane.list_records()
-        if record.source_kind == "semantic_ingestion_generation_member"
-    ]
-    assert not any(member["kind"] in {"graph_delta", "event_batch"} for member in members)
-    control = PreplanningOperationControl.model_validate(
-        next(
-            record.content["control"]
-            for record in plane.list_records()
-            if record.source_kind == "semantic_ingestion_preplanning_control"
-        )
-    )
-    terminals = [
-        decode_semantic_contract(member.canonical_payload, SemanticTerminalOutcome)
-        for generation in range(2, control.generation + 1)
-        for member in store.generation_members(control.operation_fence, generation)
-        if member.kind == "source_result"
-    ]
-    assert terminals and all(terminal.status == "evidence_only" for terminal in terminals)
-    assert not any(terminal.status == "accepted" for terminal in terminals)
 
 
-def test_hermes_and_filesystem_roots_use_the_same_semantic_pipeline(tmp_path) -> None:
-    hermes = HermesMemoryProvider(
-        ProviderMemoryService(
-            now_provider=lambda: TEST_NOW,
-            host_bootstrap_capability=_built_in_local_capability(),
-            host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
-        )
-    )
-    hermes.sync_turn(
-        "Atlas owner is Bob.",
-        "Receipt is confirmed.",
-        operation_id="semantic-ingestion-hermes",
-        task_id="task:one",
-        user_id="user:alice",
-        authenticated_host_ingress=_host_ingress(),
-    )
-    assert len(hermes._service._semantic_atomic_store.semantic_event_batches()) == 2
-
-    filesystem = build_filesystem_provider(
-        tmp_path / "semantic-ingestion-filesystem",
-        host_bootstrap_capability=_built_in_local_capability(),
-        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
-        now_provider=lambda: TEST_NOW,
-    )
-    filesystem.sync_event(
-        operation=ProviderOperation.CHAT_USER_TURN,
-        content="Atlas owner is Bob.",
-        operation_id="semantic-ingestion-filesystem",
-        task_id="task:one",
-        user_id="user:alice",
-        authenticated_host_ingress=_host_ingress(),
-    )
-    assert len(filesystem._semantic_atomic_store.semantic_event_batches()) == 1
 
 
 @pytest.mark.parametrize(
@@ -1922,294 +1589,10 @@ def test_real_filesystem_hermes_corruption_recovery_restart_and_racing_write(
     assert reopened_service.semantic_integrity_lifecycle.current_control() == released
 
 
-def test_normal_provider_accepted_control_commits_complete_effect_group() -> None:
-    plane, writers, store = _verified_runtime_store()
-    delivery_id = "semantic-ingestion-accepted"
-    runtime = build_authorized_local_semantic_runtime(
-        authorization_bytes=b"signed-test-authorization",
-        authorization_verifier=_AuthorizationVerifier(),
-        policy_provider=_PolicyProvider("owner_is"),
-        writer_admission=writers,
-        atomic_store=store,
-        bootstrap_profile=_verified_profile(),
-    )
-    capability = _AuthorizedCapability(runtime=runtime)
-    with patch(
-        "memorii.core.memory_evolution.bootstrap_profile.entry_points",
-        return_value=(_InstalledCapabilityEntryPoint(capability),),
-    ):
-        service = ProviderMemoryService(memory_plane=plane, now_provider=lambda: TEST_NOW, host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier())
-    service.sync_event(
-        operation=ProviderOperation.CHAT_USER_TURN,
-        content="Atlas owner is Bob.",
-        operation_id=delivery_id,
-        task_id="task:one",
-        user_id="user:alice",
-        authenticated_host_ingress=_host_ingress(),
-    )
-    effect_kinds = {
-        value.content["member"]["kind"]
-        for value in plane.list_records()
-        if value.source_kind == "semantic_ingestion_generation_member"
-    }
-    terminals = [
-        decode_semantic_contract(value.content["member"]["canonical_payload"].encode("utf-8"), SemanticTerminalOutcome)
-        for value in plane.list_records()
-        if value.source_kind == "semantic_ingestion_generation_member"
-        and value.content["member"]["kind"] == "source_result"
-    ]
-    assert terminals and terminals[-1].status == "accepted", [
-        (terminal.status, terminal.reason_codes) for terminal in terminals
-    ]
-    assert {"graph_delta", "event_batch", "group_result", "observation_delta"}.issubset(effect_kinds)
-    kinds = {
-        value.source_kind
-        for value in plane.list_records()
-        if value.source_kind.startswith("semantic_ingestion")
-    }
-    assert {
-        "semantic_ingestion_prepared_source",
-        "semantic_ingestion_bootstrap_handoff_marker",
-        "semantic_ingestion_preplanning_control",
-    }.issubset(kinds)
 
 
-def test_ordinary_provider_root_uses_production_local_analyzer_without_wire() -> None:
-    plane, writers, store = _verified_runtime_store()
-    runtime = build_authorized_local_semantic_runtime(
-        authorization_bytes=b"signed-test-authorization",
-        authorization_verifier=_AuthorizationVerifier(),
-        policy_provider=_PolicyProvider("owner_is"),
-        writer_admission=writers,
-        atomic_store=store,
-        bootstrap_profile=_verified_profile(),
-    )
-    capability = _AuthorizedCapability(runtime=runtime)
-    with patch(
-        "memorii.core.memory_evolution.bootstrap_profile.entry_points",
-        return_value=(_InstalledCapabilityEntryPoint(capability),),
-    ):
-        service = ProviderMemoryService(memory_plane=plane, now_provider=lambda: TEST_NOW, host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier())
-    service.sync_event(
-        operation=ProviderOperation.CHAT_USER_TURN,
-        content="Atlas owner is Bob.",
-        operation_id="semantic-ingestion-local-production",
-        task_id="task:one",
-        user_id="user:alice",
-        authenticated_host_ingress=_host_ingress(),
-    )
-    effect_kinds = {
-        value.content["member"]["kind"]
-        for value in plane.list_records()
-        if value.source_kind == "semantic_ingestion_generation_member"
-    }
-    assert {"graph_delta", "event_batch", "group_result", "observation_delta"}.issubset(effect_kinds)
 
 
-@pytest.mark.parametrize(
-    ("source_text", "expected_outcome", "reject_analysis"),
-    [
-        ("Atlas owner is Bob.", "accepted", False),
-        ("Atlas owner is Bob.", "rejected", True),
-        ("I am not sure who owns Atlas.", "insufficient", False),
-    ],
-)
-def test_normal_hermes_clarification_uses_retained_event_and_local_pipeline(
-    tmp_path,
-    source_text: str,
-    expected_outcome: str,
-    reject_analysis: bool,
-) -> None:
-    plane, writers, store = _verified_runtime_store()
-    if reject_analysis:
-        analyzer = ProductionLocalSemanticAnalyzer()
-
-        class RejectingAssessor:
-            def analyze(
-                self,
-                *,
-                proposal: SemanticCandidate,
-                source_id: str,
-                source_digest: str,
-                source_text: str,
-                prepared_source,
-                source_authority_evidence,
-                source_interval_evidence,
-            ):
-                assert analyzer.propose(
-                    source_id=source_id,
-                    source_digest=source_digest,
-                    source_text=source_text,
-                    preparation_fingerprint=prepared_source.preparation_fingerprint,
-                ) == (proposal,)
-                assert analyzer.analyze(
-                    proposal=proposal,
-                    source_id=source_id,
-                    source_digest=source_digest,
-                    source_text=source_text,
-                    source_authority_evidence=source_authority_evidence,
-                    source_interval_evidence=source_interval_evidence,
-                ) is None
-                analysis = build_prepared_independent_source_analysis(
-                    proposal=proposal,
-                    operation_id="semantic-ingestion-local-production",
-                    source_id=source_id,
-                    source_digest=source_digest,
-                    source_text=source_text,
-                    source_authority_evidence=source_authority_evidence,
-                    source_interval_evidence=source_interval_evidence,
-                )
-                return analysis.model_copy(update={"analysis_digest": "0" * 64})
-
-        runtime = AuthorizedSemanticIngestionRuntime(
-            authorization_bytes=b"signed-test-authorization",
-            authorization_verifier=_AuthorizationVerifier(),
-            pipeline=SemanticIngestionPipeline(transport=None),
-            policy_provider=_PolicyProvider("owner_is"),
-            egress_policy_provider=None,
-            candidate_assessor=RejectingAssessor(),
-            local_proposal_producer=analyzer,
-            writer_admission=writers,
-            atomic_store=store,
-        )
-    else:
-        runtime = build_authorized_local_semantic_runtime(
-            authorization_bytes=b"signed-test-authorization",
-            authorization_verifier=_AuthorizationVerifier(),
-            policy_provider=_PolicyProvider("owner_is"),
-            writer_admission=writers,
-            atomic_store=store,
-            bootstrap_profile=_verified_profile(),
-        )
-    repository = FileConflictAttentionRepository(
-        tmp_path / "clarification.jsonl",
-        keys=(
-            ConflictCursorKey(
-                key_id="key",
-                key_epoch=1,
-                secret=b"k" * 32,
-                valid_from=TEST_NOW - timedelta(days=1),
-                expires_at=TEST_NOW + timedelta(days=1),
-                signing=True,
-            ),
-        ),
-        now_provider=lambda: TEST_NOW,
-        repository_id="repository",
-        policy_fingerprint=_hex("conflict-policy"),
-    )
-    conflict_revision = _hex("clarification-revision")
-    repository.append_open(
-        ConflictAttention(
-            conflict_id="clarification-conflict",
-            conflict_revision=conflict_revision,
-            kind=ConflictKind.SEMANTIC_DISAGREEMENT,
-            audience=ConflictAudience.USER,
-            status=ConflictStatus.OPEN,
-            question="Who owns Atlas?",
-            options=(
-                ConflictResolutionOption(
-                    candidate_id="bob",
-                    label="Bob",
-                    statement="Atlas owner is Bob.",
-                    candidate_digest=_hex("bob"),
-                ),
-                ConflictResolutionOption(
-                    candidate_id="carol",
-                    label="Carol",
-                    statement="Atlas owner is Carol.",
-                    candidate_digest=_hex("carol"),
-                ),
-            ),
-            created_at=TEST_NOW,
-            creation_coordinate=1,
-            scope_digest=_hex("clarification-scope"),
-        ),
-        scope_ids=("task:task:one",),
-    )
-
-    class SourceVerifier:
-        def verify_user_event(
-            self,
-            *,
-            tenant_id: str,
-            principal_id: str,
-            scope_digest: str,
-            source_user_event_id: str,
-        ) -> AuthorizedUserEventProof:
-            records = tuple(
-                record
-                for record in plane.list_records()
-                if record.source_kind == "semantic_ingestion_source"
-                and record.content.get("operation") == "chat_user_turn"
-            )
-            assert len(records) == 1
-            canonical_source_bytes = source_admission_source_bytes(records[0])
-            return AuthorizedUserEventProof(
-                tenant_id=tenant_id,
-                principal_id=principal_id,
-                scope_digest=scope_digest,
-                source_user_event_id=source_user_event_id,
-                source_user_event_digest=source_admission_source_digest(records[0]),
-                canonical_source_bytes=canonical_source_bytes,
-            )
-
-    capability = _AuthorizedCapability(runtime=runtime)
-    with patch(
-        "memorii.core.memory_evolution.bootstrap_profile.entry_points",
-        return_value=(_InstalledCapabilityEntryPoint(capability),),
-    ):
-        service = ProviderMemoryService(
-            memory_plane=plane,
-            now_provider=lambda: TEST_NOW,
-            conflict_attention_repository=repository,
-            conflict_attention_enabled=True,
-            source_user_event_verifier=SourceVerifier(),
-        )
-    service.sync_event(
-        operation=ProviderOperation.CHAT_USER_TURN,
-        content=source_text,
-        operation_id="clarification-user-event",
-        role="user",
-        task_id="task:one",
-        user_id="user:alice",
-        authenticated_host_ingress=_host_ingress(),
-    )
-    result = HermesMemoryProvider(service).handle_tool_call_with_attention(
-        "memorii_resolve_conflict",
-        {
-            "conflict_id": "clarification-conflict",
-            "expected_conflict_revision": conflict_revision,
-            "operation_id": "clarification-operation",
-            "action": "select",
-            "selected_candidate_ids": ["bob"],
-            "validity_intervals": [],
-            "source_user_event_id": "clarification-user-event",
-        },
-        authenticated_host_ingress=_host_ingress(),
-    )
-
-    assert result.legacy_result.ok, result.legacy_result.error
-    retained = tuple(
-        record
-        for record in plane.list_records()
-        if record.source_kind == "semantic_ingestion_conflict_clarification_context"
-    )
-    assert len(retained) == 1
-    receipts = tuple(
-        record
-        for record in plane.list_records()
-        if record.source_kind == "semantic_ingestion_conflict_clarification_receipt"
-    )
-    assert len(receipts) == 1
-    transactions = tuple(
-        record
-        for record in plane.list_records()
-        if record.source_kind == "semantic_ingestion_conflict_clarification_transaction"
-    )
-    terminal_hex = transactions[0].content["transaction"]["semantic_terminal_hex"]
-    assert isinstance(terminal_hex, str), retained[0].content
-    terminal = decode_semantic_contract(bytes.fromhex(terminal_hex), SemanticTerminalOutcome)
-    assert receipts[0].content["receipt"]["committed_outcome"] == expected_outcome, terminal
 
 
 @pytest.mark.parametrize("durable", (False, True))

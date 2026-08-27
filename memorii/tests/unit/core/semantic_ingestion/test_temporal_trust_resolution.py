@@ -2,8 +2,8 @@ from datetime import UTC, datetime
 from hashlib import sha256
 
 import pytest
-from memorii.core.semantic_ingestion.contracts import AuthenticatedEventTimeReference
-from memorii.core.semantic_ingestion.pipeline import (
+from memorii.core.semantic_ingestion.contracts import (
+    AuthenticatedEventTimeReference,
     AuthenticatedSourceIntervalEvidence,
     OperationTemporalAttachmentBinding,
     OperationTemporalDecisionBinding,
@@ -13,10 +13,12 @@ from memorii.core.semantic_ingestion.pipeline import (
     SourceAuthorityEvidence,
     SourceSpan,
     TemporalEvidenceCandidate,
-    TemporalEvidenceResolver,
     TemporalPolicySnapshot,
     TimeInterval,
     TrustPolicySnapshot,
+)
+from memorii.core.semantic_ingestion.temporal_evidence_resolution import (
+    TemporalEvidenceResolver,
 )
 
 

@@ -12,9 +12,6 @@ from memorii.core.memory_evolution.bootstrap_profile import (
     VerifiedBootstrapProfile,
     build_bootstrap_profile_artifacts,
 )
-from tests.fixtures.semantic_ingestion.host_bootstrap_authority import (
-    build_test_host_verified_bootstrap_release_evidence,
-)
 from memorii.core.memory_evolution.models import SourceObservation, SourceType
 from memorii.core.semantic_ingestion.contracts import (
     SourceAuthority,
@@ -22,12 +19,17 @@ from memorii.core.semantic_ingestion.contracts import (
     TextPreparationPolicy,
     TextPreparationRequest,
 )
-from memorii.core.semantic_ingestion.local_analyzer import ProductionLocalSemanticAnalyzer
-from memorii.core.semantic_ingestion.pipeline import SemanticIngestionPipeline
+from memorii.core.semantic_ingestion.local_analyzer import (
+    ProductionLocalSemanticAnalyzer,
+    _is_protected_scenario_owner_pair,
+)
 from memorii.core.semantic_ingestion.source_preparation import (
     BootstrapTextPreparationProducer,
     InMemoryPreparedSourceRepository,
     TextPreparationService,
+)
+from tests.fixtures.semantic_ingestion.host_bootstrap_authority import (
+    build_test_host_verified_bootstrap_release_evidence,
 )
 from tests.unit.core.semantic_ingestion.clean_room_request_test_support import (
     build_prepared_source_authority,
@@ -202,7 +204,7 @@ def test_protected_owner_pair_uses_source_order_not_candidate_id_order() -> None
                 authenticated_provenance_class="host",
                 policy_revision="trust-r1",
             ),
-            provenance_digest=sha256(f"{source_id}:{source_digest}:authority".encode("utf-8")).hexdigest(),
+            provenance_digest=sha256(f"{source_id}:{source_digest}:authority".encode()).hexdigest(),
         )
 
     def analyses_for(text: str) -> tuple:
@@ -239,7 +241,7 @@ def test_protected_owner_pair_uses_source_order_not_candidate_id_order() -> None
     forward_candidates, forward_analyses = analyses_for(
         "Atlas owner is Alice. Atlas owner is Bob."
     )
-    assert SemanticIngestionPipeline._is_protected_scenario_owner_pair(
+    assert _is_protected_scenario_owner_pair(
         tuple(reversed(forward_candidates)),
         tuple(reversed(forward_analyses)),
     )
@@ -253,7 +255,7 @@ def test_protected_owner_pair_uses_source_order_not_candidate_id_order() -> None
             update={"assertion_span": forward_analyses[1].assertion_span}
         ),
     )
-    assert not SemanticIngestionPipeline._is_protected_scenario_owner_pair(
+    assert not _is_protected_scenario_owner_pair(
         swapped_candidates,
         swapped_analyses,
     )

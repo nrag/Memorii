@@ -19,7 +19,10 @@ from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.memory_plane.store import JsonlMemoryPlaneStore
 from memorii.core.provider.models import ProviderOperation
 from memorii.core.provider.service import ProviderMemoryService
-from memorii.core.semantic_ingestion.pipeline import SemanticIngestionPipeline
+from memorii.core.semantic_ingestion.local_analyzer import (
+    _analysis_spans_are_valid,
+    _is_protected_scenario_owner_pair,
+)
 from tests.fixtures.semantic_ingestion.scenario_fixture_authority import (
     build_scenario_test_host_capability,
     build_scenario_test_provider_service,
@@ -308,7 +311,7 @@ def test_multi_segment_route_selection_rejects_swapped_duplicate_and_wrong_sourc
         segment_id="child:second", route=second_route, parent="parent:second", candidate_id="bob"
     )
     authority = SimpleNamespace(source_digest=source_digest)
-    assert SemanticIngestionPipeline._analysis_spans_are_valid(
+    assert _analysis_spans_are_valid(
         analysis=second,
         source_id=source_id,
         source_text="ignored-by-bound-span-validation",
@@ -322,7 +325,7 @@ def test_multi_segment_route_selection_rejects_swapped_duplicate_and_wrong_sourc
     swapped = analysis_for(
         segment_id="child:second", route=first_route, parent="parent:second", candidate_id="bob"
     )
-    assert not SemanticIngestionPipeline._analysis_spans_are_valid(
+    assert not _analysis_spans_are_valid(
         analysis=swapped,
         source_id=source_id,
         source_text="ignored-by-bound-span-validation",
@@ -335,14 +338,14 @@ def test_multi_segment_route_selection_rejects_swapped_duplicate_and_wrong_sourc
         SimpleNamespace(assertion_quote="Atlas owner is Alice.", predicate_id="owner", candidate_id="alice"),
         SimpleNamespace(assertion_quote="Atlas owner is Bob.", predicate_id="owner", candidate_id="bob"),
     )
-    assert SemanticIngestionPipeline._is_protected_scenario_owner_pair(candidates, (first, second))
+    assert _is_protected_scenario_owner_pair(candidates, (first, second))
     duplicate_route = analysis_for(
         segment_id="child:first", route=first_route, parent="parent:first", candidate_id="bob"
     )
-    assert not SemanticIngestionPipeline._is_protected_scenario_owner_pair(
+    assert not _is_protected_scenario_owner_pair(
         candidates, (first, duplicate_route)
     )
-    assert not SemanticIngestionPipeline._is_protected_scenario_owner_pair(
+    assert not _is_protected_scenario_owner_pair(
         candidates,
         (first, analysis_for(
             segment_id="child:second", route=second_route, parent="parent:second",
@@ -353,7 +356,7 @@ def test_multi_segment_route_selection_rejects_swapped_duplicate_and_wrong_sourc
         SimpleNamespace(assertion_quote="Atlas owner is Alice.", predicate_id="owner", candidate_id="alice"),
         SimpleNamespace(assertion_quote="Atlas owner is Alice.", predicate_id="owner", candidate_id="bob"),
     )
-    assert not SemanticIngestionPipeline._is_protected_scenario_owner_pair(equal_value, (first, second))
+    assert not _is_protected_scenario_owner_pair(equal_value, (first, second))
 
 
 def test_scenario_runner_emits_opaque_ids_for_the_actual_public_events() -> None:

@@ -61,7 +61,6 @@ from memorii.core.semantic_ingestion.contracts import (
     ScopeOperationPolicyAuthority,
     SegmentLanguageResourceBinding,
     SegmentLanguageRouteSet,
-    SemanticProposalRequest,
     SourceSpanReference,
     TemporalAttachmentConsensusPolicy,
     TemporalPolicySnapshot,
@@ -606,7 +605,7 @@ def build_source_normalization_authority_bundle(
     *,
     source: PreparedSource,
     publication: SourceNormalizationPublicationFixture,
-    proposal_request: SemanticProposalRequest | None,
+    proposal_request: None = None,
     consensus_policy_authority: ConsensusPolicyAuthority,
     language_construction_policies: LanguageConstructionPolicyAuthorityBundle,
     temporal_policy: TemporalPolicySnapshot,
@@ -621,24 +620,16 @@ def build_source_normalization_authority_bundle(
     """Build a complete digest-validated bundle from explicit audited leaves."""
     if publication.operation_id != publication.progress.operation_id:
         raise ValueError("fixture publication operation must join progress")
-    if proposal_request is None:
-        if bootstrap_v3_runtime_authority is None:
-            raise ValueError("fixture authority requires a proposal request or V3 runtime authority")
+    if proposal_request is not None:
+        raise ValueError("the legacy proposal request path is retired")
+    if bootstrap_v3_runtime_authority is None:
+        raise ValueError("fixture authority requires a V3 runtime authority")
         v3_request = bootstrap_v3_runtime_authority.proposal_requests[0]
         proposer_fingerprint = v3_request.proposer_manifest.runtime_fingerprint
         proposer_manifest_digest = v3_request.proposer_manifest.manifest_digest
         prompt_registration_digest = v3_request.registered_prompt.prompt_registration_digest
         semantic_request_fingerprint = v3_request.request_digest
         action_catalog_fingerprint = v3_request.action_proposal_catalog.catalog_schema_fingerprint
-    else:
-        request = SemanticProposalRequest.create(
-            **proposal_request.model_dump(mode="python", exclude={"semantic_request_fingerprint"})
-        )
-        proposer_fingerprint = request.proposer_manifest.runtime_fingerprint
-        proposer_manifest_digest = request.proposer_manifest.manifest_digest
-        prompt_registration_digest = request.registered_prompt.prompt_registration_digest
-        semantic_request_fingerprint = request.semantic_request_fingerprint
-        action_catalog_fingerprint = request.action_proposal_catalog.catalog_schema_fingerprint
     authority_body = {
         "source_id": source.source_id, "source_digest": source.source_digest,
         "preparation_fingerprint": source.preparation_fingerprint,
@@ -828,7 +819,7 @@ class DynamicSourceNormalizationAuthorityProvider:
     def __init__(
         self,
         *,
-        proposal_factory: Callable[[PreparedSource, SemanticProposalRequest], ProviderSemanticProposal],
+        proposal_factory: Callable[[PreparedSource, BootstrapSemanticProposalRequestV3], ProviderSemanticProposal],
         retry_policy_fingerprint: str,
         language_policy_builder: Callable[..., LanguageConstructionPolicyAuthorityBundle] = build_normal_fact_language_policies,
         publication_factory: Callable[[PreparedSource, str, BootstrapWriterHandoffResult], SourceNormalizationPublicationFixture] | None = None,
@@ -962,7 +953,7 @@ class DynamicSourceNormalizationAuthorityProvider:
 
 
 def _dynamic_fixture_authorities(
-    request: SemanticProposalRequest,
+    request: BootstrapSemanticProposalRequestV3,
 ) -> tuple[
     ConsensusPolicyAuthority,
     TemporalPolicySnapshot,

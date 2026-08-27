@@ -64,6 +64,8 @@ def _digest(label: str) -> str:
 class CleanRoomRequestMaterial:
     """One complete clean-room source/proposal authority set for fixtures."""
 
+    source_id: str
+    source_digest: str
     owned_text: SourceSpanReference
     segment_governance: SegmentGovernanceBinding
     segment_id: str
@@ -115,6 +117,8 @@ def build_clean_room_proposal_catalogs(
     prompt = RegisteredSemanticPromptBinding(prompt_ref="semantic-proposal-v1", prompt_registration_digest=_digest("registration"), prompt_content_digest=_digest("content"), output_schema_fingerprint=_digest("schema"), owner_fingerprint=_digest("owner"), visibility_policy_digest=_digest("visibility"), redaction_policy_digest=_digest("redaction"))
     manifest = SemanticProposerManifest.create(proposer_id="local-vector", proposer_kind="local", runtime_fingerprint=_digest("runtime"), model_artifact_fingerprint=_digest("model"), tokenizer_or_template_fingerprint=_digest("tokenizer"), structured_output_capability_fingerprint=capability)
     return CleanRoomRequestMaterial(
+        source_id=source_id,
+        source_digest=source_digest,
         owned_text=span,
         segment_governance=governance,
         segment_id=child,

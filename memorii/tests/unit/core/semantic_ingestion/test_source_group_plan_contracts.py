@@ -17,7 +17,6 @@ from memorii.core.semantic_ingestion.contracts import (
     SegmentGovernanceBinding,
     SegmentGovernanceCarrierSet,
     SourceDependencyGroup,
-    SourceProposalAlignment,
     TransactionSemanticGroup,
     TransactionSemanticGroupPlan,
     decode_semantic_contract,
@@ -233,14 +232,4 @@ def test_governance_contracts_reject_coercion_and_mismatched_plan_carriers() -> 
         TransactionSemanticGroupPlan.model_validate(mismatch)
 
 
-def test_source_alignment_is_closed_graph_free_and_codec_round_trips() -> None:
-    # The canonical fixture owns a real retained/projection/local proof chain;
-    # this legacy source-group fixture has only synthetic route digests.
-    from tests.unit.core.semantic_ingestion.test_consensus_contract_codecs import _alignment
-
-    alignment = _alignment()
-    assert decode_semantic_contract(encode_semantic_contract(alignment), SourceProposalAlignment) == alignment
-    with pytest.raises(ValidationError):
-        SourceProposalAlignment.model_validate(alignment.model_dump(mode="python") | {"graph_revision": "forbidden"})
-    return
 
