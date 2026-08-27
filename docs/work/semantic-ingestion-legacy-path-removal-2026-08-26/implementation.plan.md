@@ -348,46 +348,73 @@ Broad gate (once, at the final revision):
   decision recorded: implementation proceeds under this linked WorkPlan; the
   design plan is not converted. Next action: consume the test census, then
   execute slice 1.
-
-## Decision Log
-
-- 2026-08-26: Open a linked implementation WorkPlan (this file) rather than
-  converting the design plan — AGENTS.md forbids silent type conversion.
-- 2026-08-26 (preflight): `ProductionLocalSemanticAnalyzer` is retained because
-  the verified bootstrap profile pins its symbol; only its ordinary-pipeline
-  consumers die. Evidence: `bootstrap_profile.py:479,505,904,951`.
-- 2026-08-26 (retained-state mapping, slice 2 design): the marker-keyed
-  reconcile drives the **found** path only. Evidence: the found path's every
-  ingress consumption is redundant with retained records — graph host and store
-  read only `delivery_principal_binding.binding_digest` (already on
-  `OperationFenceBinding`, `ingestion_contracts.py:506`) and the canonical-lease
-  tenant (retained in the prepared source's
-  `governance_carrier_artifact.required_outcome_scopes.tenant_partition_id`);
-  the claimed path's `GraphFreeSourceNormalizationInvocation.source_authority_evidence`
-  is NOT reconstructable from retained records (authority body survives only as
-  digests per the governance derivation), so completing an unpublished
-  normalization remains the redelivery door's job (SIA-R23), which the design
-  gate ("marker + found index + loadable prepared source + current writer")
-  already reflects. No `AuthenticatedIngressContext` is ever fabricated for
-  recovery (user decision); instead the graph request/reload contracts are
-  narrowed to fence-derived binding digest + retained tenant/scope values
-  ("recovery repair convergence"). The bounded maintenance tick beyond the
-  existing explicit `reconcile_memory_evolution` entry point remains the parent
-  operation's repair-round scope, not this removal's.
-
-## Review Log
-
-None yet (review rounds at coherent milestone boundaries per the
-implement-design skill).
-
-## Blockers And Limits
-
-Iteration budget: six slice rounds plus one remediation round per slice; if a
-slice cannot land green without weakening a gate or inventing semantics, stop
-as blocked with the exact conflict.
+- 2026-08-26 (slice 1, commit `0ebc160`): the ordinary nested ingest path
+  (~200 lines, provably unreachable — every handoff marker is V3) and
+  `_build_execution_plan` deleted. Evidence: provider service 41 passed
+  (baseline 41); coordinator V3 selection 3 passed + the same pre-existing
+  `test_direct_provider_root_reaches_bootstrap_graph_terminal` failure
+  (identical signature, HEAD-verified); ruff clean on the changed file;
+  identity gate pass.
+- 2026-08-26 (slice 2, commit `5dc8cd5`): `_run_semantic_ingestion` is
+  V3-only (both `pipeline.run` branches deleted; foreign result types
+  rejected); the graph plane (host, builtin, repository, coordinator,
+  terminal preparation, assembler, store methods) carries the fence-derived
+  binding digest and retained tenant instead of `AuthenticatedIngressContext`;
+  `reload_bootstrap_recovery_replay_v3` takes `tenant_partition_id`;
+  reconcile is marker-keyed (marker + recovery index + loadable prepared
+  source + current writer; no reconstructed ingress; unpublished
+  normalizations stay with the redelivery door); the persistence plan ports
+  are deleted. Two silent-TypeError regressions (host reload params, assembler
+  kwargs) were caught by the reopen proof and fixed; the fresh-owner proof's
+  capture assertion was re-anchored to the retained tenant. Evidence:
+  replay + reopen + coordinator proofs + provider service = 54/54 passed
+  (16m57s); ruff zero new findings; identity gate pass.
+- 2026-08-26 (slice 3, commit `f11e4df`): execution owner V3-only (legacy
+  stage, producer seams, reservation machinery deleted; absent V3 runtime
+  authority fails closed); host builder loses legacy fields; stage module
+  keeps only the V3 stage + shared invocation + V3 validator; repository
+  V3-only; `sealed_proposal_producer.py` and
+  `sealed_source_normalization_evidence_producer.py` deleted. Test
+  dispositions executed (4 suites deleted; repository suite 4 V3 tests kept;
+  fixture builder V3-only; composition builders migrated; construction test
+  uses one fresh builder per root — the dynamic authority provider binds its
+  publication lease once). Evidence: 50/50 focused passed; collection 4220;
+  identity gate pass; ruff zero new.
+- 2026-08-26 (slice 4, commit `f83a1f4`): legacy contract tower deleted with
+  per-type census (see commit message and the census section above); V3-shared
+  `TemporalResolution`/`PredicateEventInventory` retained; alignment family
+  and pipeline-tower types deferred to slice 5 with their last consumer;
+  replay-surface types retained. Evidence: 75 passed + 1 pre-existing
+  environmental failure
+  (`test_linguistic_adapters.py::test_shipped_manifests_verify_real_local_english_assets`,
+  HEAD-verified failing — model-asset check) + 1 skipped; collection 4166;
+  identity gate pass; ruff zero new.
+- 2026-08-26: slice 5 prepared but not started (context boundary; recorded
+  for exact resumption). Its plan:
+  delete `SemanticIngestionPipeline` + `resolve_context` + the clarification
+  adapter (service stops default-constructing it; clarifications remain
+  pending, fail-closed); remove `pipeline`/`egress_policy_provider`/
+  `semantic_pipeline` plumbing from `AuthorizedSemanticIngestionRuntime`,
+  `build_authorized_local_semantic_runtime`, `ProviderIngestionCoordinator`,
+  and `service.py`; move `_analysis_spans_are_valid`/
+  `_is_protected_scenario_owner_pair` to a surviving owner; migrate
+  `semantic_terminal_test_support.py` (hub for 8 suites) and
+  `test_scenario_public_ingress_runner.py`; delete
+  `test_semantic_pipeline.py`, `tests/integration/test_semantic_ingestion_pipeline.py`,
+  and `test_source_proposal_run_contracts.py` with the deferred contract
+  types (`SourceProposalAlignment`, `GraphFreeInterpretationBundle`,
+  `SemanticProposalRun` — moving its shared member-closure validator onto
+  `SemanticProposal` — `UnresolvedPredicateEvent`, `SemanticTerminalBindingSet`,
+  `SemanticProposalRequest`); re-anchor the 18-mode egress mutation test and
+  the four pipeline-egress tests in `test_prompt_and_egress_authority.py` to
+  the authorization read-set boundary (`authorization.py` `_matches` +
+  `verify_current_egress`); update the two identity-hygiene allowlist entries
+  when their pinned test files die. Focused: egress + authorization suites +
+  provider service + coordinator selection.
 
 ## Next Action
 
-Consume the delegated test census, then execute slice 1 (remove the ordinary
-nested path from `ProviderIngestionCoordinator.ingest`; focused: composition +
-coordinator suites; ruff + identity gate; commit).
+Execute slice 5 per the prepared plan in the Progress Log (pipeline/egress
+removal from composition; re-anchor the 18 egress mutation tests to the
+authorization read-set boundary; allowlist update with the dying test files),
+then slice 6 (V3-era family repairs + full broad gate + WorkPlan closures).
