@@ -19,6 +19,10 @@ from typing import Any, Literal, Protocol
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 _INTEGER = re.compile(r"(?:0|-?[1-9][0-9]*)\Z")
+# A string without any JSON-escaped character encodes to exactly
+# '''"' + utf-8 + '"''' under the fixed scalar policy; the fast path
+# performs one encode that also carries the strict-UTF-8 validation.
+_JSON_ESCAPE_SCAN = re.compile(r'[\x00-\x1f"\\]')
 _HEX = re.compile(r"[0-9a-f]{64}\Z")
 _PROFILE_ID = "semantic_ingestion_typed_value"
 _ARTIFACT_DOMAIN = b"semantic-ingestion-canonical-artifact"
@@ -696,6 +700,17 @@ def _scalar(value: str) -> None:
         raise CanonicalTypedValueError("canonical_unicode_scalar_invalid") from exc
 
 
+def _json_string(value: str) -> bytes:
+    """Encode one string under the fixed scalar policy in a single pass."""
+    if _JSON_ESCAPE_SCAN.search(value) is None:
+        try:
+            return b'"' + value.encode("utf-8") + b'"'
+        except UnicodeEncodeError as exc:
+            raise CanonicalTypedValueError("canonical_unicode_scalar_invalid") from exc
+    _scalar(value)
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+
+
 def _json(value: Any, *, check: Callable[[], None] | None = None) -> bytes:
     """Encode JSON with a fixed UTF-8 scalar and key-order policy."""
     if check is not None:
@@ -709,18 +724,29 @@ def _json(value: Any, *, check: Callable[[], None] | None = None) -> bytes:
     if isinstance(value, int) and not isinstance(value, bool):
         return str(value).encode("ascii")
     if isinstance(value, str):
-        _scalar(value)
-        return json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        return _json_string(value)
     if isinstance(value, list):
         return b"[" + b",".join(_json(item, check=check) for item in value) + b"]"
     if isinstance(value, dict):
         if any(not isinstance(key, str) for key in value):
             raise CanonicalTypedValueError("canonical_map_key_invalid")
-        for key in value:
-            _scalar(key)
-        keys = sorted(value, key=lambda key: _json(key, check=check))
-        return b"{" + b",".join(_json(key, check=check) + b":" + _json(value[key], check=check) for key in keys) + b"}"
+        # Encode each key once: the sort order is the encoded-byte order and
+        # the emitted bytes are the sorted encodings themselves.
+        entries = sorted(
+            (_json_string(key), value[key])
+            for key in _validated_keys(value)
+        )
+        return b"{" + b",".join(key + b":" + _json(item, check=check) for key, item in entries) + b"}"
     raise CanonicalTypedValueError("canonical_json_value_invalid")
+
+
+def _validated_keys(value: dict[str, Any]) -> list[str]:
+    for key in value:
+        try:
+            key.encode("utf-8", "strict")
+        except UnicodeEncodeError as exc:
+            raise CanonicalTypedValueError("canonical_unicode_scalar_invalid") from exc
+    return list(value)
 
 
 def _pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -860,11 +886,14 @@ def encode_typed_value_with_spans(value: Any) -> tuple[bytes, tuple[CanonicalTyp
             write(b"]")
         elif isinstance(item, dict):
             write(b"{")
-            keys = sorted(item, key=lambda candidate: _json(candidate))
-            for index, key in enumerate(keys):
+            entries = sorted(
+                (_json_string(candidate), candidate)
+                for candidate in _validated_keys(item)
+            )
+            for index, (encoded_key, key) in enumerate(entries):
                 if index:
                     write(b",")
-                write(_json(key))
+                write(encoded_key)
                 write(b":")
                 walk(item[key], path + (key,))
             write(b"}")
