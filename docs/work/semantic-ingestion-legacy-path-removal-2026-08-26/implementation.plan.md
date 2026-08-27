@@ -634,12 +634,125 @@ Broad gate (once, at the final revision):
   last_record_coordinate bookkeeping). All affected tests were failing
   before this change; net state strictly better.
 
+- 2026-08-27 (slice 6a terminal-persistence families GREEN): with the
+  geometry above verified, the full helper-caller families passed:
+  cross-bound 1/1, bound-record mutations 7/7, retained-authority
+  mutations 3/3 (after the v2-domain rehash fix), lost-ack catch-up
+  retry 1/1. The completion/insufficient retry assertions migrated to
+  `_assert_retry_returns_committed_receipt` (union-return aware); the
+  lifecycle reopen/closure callers pass plumbing kwargs +
+  `with_test_conflict_authority=True`. Evidence: focused runs saved at
+  /tmp/slice6a_f1.log, /tmp/slice6a_retained.log, /tmp/slice6a_polB.log.
+
+- 2026-08-27 (slice 6a policy-migration, PARTIAL — exact continuation
+  state): `_commit_clarification_terminal` and the lost-ack/
+  substitution/race sites were migrated onto the claim lifecycle
+  (split helpers `_claim_canonical_clarification` +
+  `_commit_claimed_accepted_clarification`; post-cutover authorities
+  rebind the successor epoch). VERIFIED GREEN: the lost-catch-up-ack
+  test. BLOCKED (three tests, exact signature `assert 3 == 1` on
+  `_load_trust_progress`/records): the policy-migration tests'
+  single-event semantics assume ONE graph-advancing write per semantic
+  event, but one canonical clarification lifecycle writes THREE (two
+  contested claims + the committed answer) — so catch-up partitions are
+  3, not 1. Claim-before-plan (the alternative order) breaks cutover
+  coverage instead: the plan then includes the contest's trust slot
+  (`_require_committed_results` expected-set grows; first failure
+  `policy_migration_incomplete`, extra slot-plan digest). The repair is
+  per-test semantic redesign: either build results for every slot plan
+  and every catch-up partition, or re-anchor the one-partition asserts
+  to the lifecycle shape. The race and substitution tests are migrated
+  but UNVERIFIED (last verified state: polB/polC logs in /tmp).
+
+- 2026-08-27 (slice 6b PARTIAL — writer binding fixed; V3 composition
+  gap discovered): the service-level writer binding is FIXED in
+  `capability.py` (`build_semantic_ingestion_runtime` now creates the
+  scenario domain's initial evidence-only epoch on a fresh store; both
+  scenario writer-mode assertions pass) and the scenario tests' missing
+  `host_bootstrap_material_verifier` argument is fixed. DEEPER GAP
+  (pre-existing, previously hidden behind the writer error): the
+  scenario harness was never migrated to the V3 graph composition —
+  `sync_event` returns
+  `source_alignment_authority_unavailable` (the normalization host
+  bundle never reaches the runtime) and the golden runner finds no
+  persisted terminal. WIP in
+  `scenario_fixture_authority.py`: `_scenario_normalization_host_bundle_builder`
+  (composition-suite mirror with an analyzer-driven proposal factory
+  bridged through a side map, since the proposal transport sees only
+  digest-bearing spans) + `_scenario_graph_host_bundle_builder`
+  (deterministic V3 authority) + a corpus quote authority. The service
+  kwarg routing exists (service.py:282-290 replaces it onto the
+  capability) but the bundle still reads unavailable — next step is to
+  find why (suspect the runtime build swallowing an exception in the
+  service __init__ try at service.py:447-454, or the capability bundle
+  build failing). This composition completion is bounded work with all
+  seams identified.
+
+- 2026-08-27 (slice 6b refined): the runtime DOES compose with both
+  bundles (`_composed_semantic_runtime.source_normalization_host_bundle`
+  and `.bootstrap_graph_host_bundle` verified populated; the earlier
+  `_host_bootstrap_capability` probe read a stale stored attribute).
+  The remaining failure is upstream: the traced
+  `_run_semantic_ingestion` call fires from the REDIVERY call site
+  (ingestion.py:674) with `bootstrap_handoff=None`, i.e. the first-pass
+  `_bootstrap_prepare_and_handoff` door (ingestion.py:452) returned
+  None and the flow fell to the recovery path, whose found-index probe
+  does not reconstruct the handoff for this fixture's marker. Continue
+  from `_bootstrap_prepare_and_handoff`'s None conditions with the
+  scenario fixture (handoff marker + v3 recovery index records DO
+  exist in the plane).
+
+- 2026-08-27 (slice 6a completion families GREEN): the completion and
+  insufficient-completion families (2+6 parametrized runs) and the
+  JSONL accepted-completion lost-ack retry all pass with the
+  union-aware retry assertions; the filesystem-reopen lifecycle pair
+  needed only the helper's 3-tuple unpack fix (rerun in flight at this
+  entry; closure-mutation representatives included).
+
+
+  empirical batch diff (probe capturing `conditionally_write_records` on
+  both the passing completion test and the helper) isolated a chain of
+  three fixture-geometry requirements, all now implemented in the helper:
+  (a) the accepted terminal must use a DISTINCT object entity
+  (`entity:clarified`) and bind the CONTEST handoff's admitted source —
+  binding the first handoff's source supersedes the first claim, resolving
+  the clarified conflict by projection and colliding two active pointers
+  for one conflict in the commit batch (validator condition: one active
+  pointer per conflict); (b) the submission must go through the canonical
+  door `submit_canonical_conflict_clarification` (derives the submitted
+  transition's immutable coordinate and pointer successor from live
+  ledger state) with the introduction selected as one whose active
+  pointer still sits at the introduction — hand-built coordinates fail
+  when sibling contests exist; (c) the helper's contest must sit on an
+  ISOLATED subject slot (`entity:clarification`) with NOW..NOW+2d windows
+  on both contested claims and the default window on the accepted answer,
+  so exactly one head-adjacent introduction forms whose partition the
+  accepted answer's projection re-contests (verified with AND without
+  pre-existing terminals in the plane). Helper split into
+  `_claim_canonical_clarification` (contest + canonical submission +
+  claim + CAS) + `_commit_accepted_clarification` (terminal + commit).
+  Also fixed: the retained-authority family's rehash machinery recomputed
+  the aggregate digest with the v1 domain while the lifecycle commit now
+  produces a v2 aggregate (schema-aware domain selection); the completion
+  and insufficient completion retry assertions now use
+  `_assert_retry_returns_committed_receipt` (union-return aware); the
+  `verified=False` cross-bind caller migrated to `verified=True` +
+  `with_test_conflict_authority=True` (evidence-only writers cannot
+  publish accepted terminals since the no-auto-create writer change);
+  all five terminal-persistence callers pass the plumbing kwargs.
+  Evidence: probe runs (both geometries commit through the real store);
+  cross-bind + provenance-parametrized mutation tests PASSED; the
+  retained-authority family's three tests re-running after the v2-domain
+  fix; policy-migration suite migrated (`_commit_clarification_terminal`
+  rebuilt on the claim lifecycle with terminal kwargs; lost-catch-up-ack
+  test restructured to claim once and replay the same claimed image on
+  reopen) and under verification.
+
 ## Next Action
 
-Repair the clarification-CAS family (134 tests): make
-`_commit_accepted_clarification` and its siblings create the canonical
-conflict attention record and retained context the CAS requires, beginning
-from `atomic_store.py:6391`. in the Progress Log (pipeline/egress
-removal from composition; re-anchor the 18 egress mutation tests to the
-authorization read-set boundary; allowlist update with the dying test files),
-then slice 6 (V3-era family repairs + full broad gate + WorkPlan closures).
+Continue slice 6a policy-migration from the recorded state below: the
+terminal-persistence clarification families are GREEN and committed; the
+policy-migration suite needs its per-test migration-coverage assertions
+redesigned for the lifecycle's three-write shape (exact findings in the
+2026-08-27 slice-6a policy entry), then 6b's composition wiring completed
+(normalization builder onto the capability seam), then 6c/6d.

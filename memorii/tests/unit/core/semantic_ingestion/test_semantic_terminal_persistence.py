@@ -654,22 +654,57 @@ def _json_round_tripped(
     )
 
 
-def _commit_accepted_clarification(
+def _assert_retry_returns_committed_receipt(
+    result: ConflictClarificationProcessingReceipt | ConflictClarificationAttemptResult,
+    receipt: ConflictClarificationProcessingReceipt,
+) -> None:
+    """A lost-ack retry returns the receipt or its terminal attempt result.
+
+    The declared commit return is the union: the idempotent replay returns the
+    persisted receipt itself, while a retry over a superseded claimed image
+    returns the terminal attempt result, which binds the same committed
+    receipt through its downstream receipt digest.
+    """
+    if isinstance(result, ConflictClarificationProcessingReceipt):
+        assert result == receipt
+    else:
+        assert result.downstream_receipt_digest == receipt.receipt_digest
+
+
+def _conflict_pointer_sits_at_introduction(
+    plane: MemoryPlaneService, introduction: SemanticConflictIntroduction
+) -> bool:
+    """The conflict is still open at its introduction record."""
+
+    pointer_record = plane.get_record(
+        f"semantic_ingestion:conflict-authority:pointer:{introduction.conflict_id}"
+    )
+    if pointer_record is None:
+        return False
+    pointer = ActiveSemanticConflict.model_validate(
+        decode_typed_value(bytes.fromhex(str(pointer_record.content["canonical_hex"])))
+    )
+    return (
+        pointer.current_record_digest == introduction.introduction_digest
+        and pointer.current_conflict_revision == introduction.conflict_revision
+    )
+
+
+def _claim_canonical_clarification(
     store: SemanticIngestionAtomicStore,
     processing_operation_id: str,
     *,
     plane: MemoryPlaneService,
     service,
     authorization_repository,
-    record_version: int = 1,
     owner_token: str = "canonical-clarification-owner",
 ):
-    """Drive one accepted clarification commit through the real claim lifecycle.
+    """Introduce one real contest and return its claimed work and CAS input.
 
-    Introduces a real contest, submits the canonical clarification, claims it,
-    and commits through the canonical CAS.  Returns the receipt/attempt
-    result, the committed terminal, and the canonical processing operation id
-    (which the claim derives, not the caller).
+    Persists two contested terminals, submits the canonical clarification for
+    the introduction they create, claims it, and builds the canonical CAS
+    input.  The claim derives its own processing operation id; the caller's
+    identifier only seeds the durable handoff coordinates.
     """
     binding = store._writers.commit_binding(store._writers.current())
     _, contested_fence = handoff(
@@ -679,7 +714,20 @@ def _commit_accepted_clarification(
         atomic_store=store,
         writer_binding=binding,
     )
-    first = accepted_terminal(operation_id=contested_fence.operation_id)
+    # Isolate the contest on its own subject slot and keep both claims on the
+    # default valid window: the contest then materializes exactly ONE
+    # head-adjacent introduction whose partition is that whole window, and the
+    # accepted answer's projection lands on the same partition.  Sharing the
+    # default subject slot with unrelated retained claims lets their
+    # corroboration tilt the arbitration, resolving the clarified conflict by
+    # projection and colliding with the lifecycle closure's own pointer.
+    first = accepted_terminal(
+        operation_id=contested_fence.operation_id,
+        subject_logical_entity_id="entity:clarification",
+        subject_entity_revision_id="entity-revision:clarification:v1",
+        valid_start=NOW,
+        valid_end=NOW + timedelta(days=2),
+    )
     _activate(authorization_repository, contested_fence, first)
     service.persist(fence=contested_fence, terminal=first, authorization_verifier=AUTHORIZATION)
     _, second_fence = handoff(
@@ -691,6 +739,8 @@ def _commit_accepted_clarification(
     )
     contested = accepted_terminal(
         operation_id=second_fence.operation_id,
+        subject_logical_entity_id="entity:clarification",
+        subject_entity_revision_id="entity-revision:clarification:v1",
         object_logical_entity_id="entity:initech",
         object_entity_revision_id="entity-revision:initech:v1",
         valid_start=NOW,
@@ -698,16 +748,33 @@ def _commit_accepted_clarification(
     )
     _activate(authorization_repository, second_fence, contested)
     service.persist(fence=second_fence, terminal=contested, authorization_verifier=AUTHORIZATION)
-    introduction_record = next(
-        record
-        for record in plane.list_records(source_kind="semantic_ingestion_conflict_authority")
-        if record.memory_id.startswith("semantic_ingestion:conflict-authority:introduction:")
+    # A contest materializes one introduction per contested partition and may
+    # resolve earlier ones by projection in the same persist.  Select the
+    # conflict whose active pointer still sits at its introduction; deriving
+    # coordinates from any other (already closed) introduction is stale.
+    introduction = next(
+        candidate
+        for candidate in (
+            SemanticConflictIntroduction.model_validate(
+                decode_typed_value(bytes.fromhex(str(record.content["canonical_hex"])))
+            )
+            for record in plane.list_records(
+                source_kind="semantic_ingestion_conflict_authority"
+            )
+            if record.memory_id.startswith(
+                "semantic_ingestion:conflict-authority:introduction:"
+            )
+        )
+        if _conflict_pointer_sits_at_introduction(plane, candidate)
     )
-    introduction = SemanticConflictIntroduction.model_validate(
-        decode_typed_value(bytes.fromhex(str(introduction_record.content["canonical_hex"])))
-    )
+    # The clarification must bind the CONTESTED handoff's admitted source: the
+    # accepted answer supersedes that side's contested claim (same source) and
+    # materializes a fresh introduction, leaving one active pointer per
+    # conflict.  Binding the first handoff's source instead supersedes the
+    # first claim, which resolves the clarified conflict by projection and
+    # collides with the lifecycle closure's own pointer in one batch.
     clarification_source = plane.get_record(
-        f"tx:canonical-clarification-{processing_operation_id[:12]}"
+        f"tx:canonical-clarification-contest-{processing_operation_id[:12]}"
     )
     assert clarification_source is not None
     submission_operation_id = f"canonical-clarification-{processing_operation_id[:12]}"
@@ -726,34 +793,45 @@ def _commit_accepted_clarification(
         agent_principal_id="clarification-principal",
         scope_digest=introduction.scope.scope_digest,
     )
-    submitted = _clarification_transition(
-        introduction=introduction,
-        predecessor_digest=introduction.introduction_digest,
-        predecessor_revision=introduction.conflict_revision,
-        predecessor_status=ConflictStatus.OPEN,
-        status=ConflictStatus.CLARIFICATION_SUBMITTED,
-        reason=SemanticConflictClarificationTransitionReason.SUBMITTED,
-        record_coordinate=introduction.record_coordinate + 1,
-        proposal_digest=submission_proposal.proposal_digest,
-    )
-    generation = _clarification_submission_generation(
-        introduction,
-        submitted,
-        operation_id=submission_operation_id,
-        source_user_event_id=clarification_source.memory_id,
-        source_user_event_digest=source_admission_source_digest(clarification_source),
+    # Submit through the canonical door: it derives the submitted transition's
+    # immutable coordinate and pointer successor from the live ledger state,
+    # which sibling contests in the same plane may already have advanced.
+    submitted_result = store.submit_canonical_conflict_clarification(
+        request=submission_request,
+        request_digest=submission_proposal.request_digest,
+        proposal=submission_proposal,
         verified_confirmation=None,
     )
-    store.submit_conflict_clarification_generation(generation)
+    assert submitted_result.outcome is ClarificationSubmissionOutcome.SUBMITTED
+    assert submitted_result.operation_receipt is not None
     claim = store.claim_next_conflict_clarification(
         lease_duration=timedelta(minutes=5), owner_token=owner_token
     )
     assert claim is not None
-    cas = store.build_conflict_clarification_cas_input(claim)
+    return claim, store.build_conflict_clarification_cas_input(claim)
+
+
+def _commit_claimed_accepted_clarification(
+    store: SemanticIngestionAtomicStore,
+    claim,
+    cas,
+    *,
+    record_version: int = 1,
+    terminal_kwargs: dict | None = None,
+):
+    """Commit the accepted answer for an already-claimed canonical work."""
     terminal = accepted_terminal(
         operation_id=claim.work.processing_operation_id,
         source_id=claim.proposal.source_user_event_id,
         source_digest=claim.proposal.source_user_event_digest,
+        subject_logical_entity_id="entity:clarification",
+        subject_entity_revision_id="entity-revision:clarification:v1",
+        # A distinct object entity keeps the accepted terminal's projection
+        # from resolving the same contested claim the clarification closes:
+        # the closure CAS admits one active pointer per conflict in a batch.
+        object_logical_entity_id="entity:clarified",
+        object_entity_revision_id="entity-revision:clarified:v1",
+        **(terminal_kwargs or {}),
     )
     terminal = _with_claim_record_version(
         terminal, record_version=max(record_version, 2)
@@ -769,6 +847,41 @@ def _commit_accepted_clarification(
         clarification_cas=cas,
     )
     return receipt, terminal, claim.work.processing_operation_id
+
+
+def _commit_accepted_clarification(
+    store: SemanticIngestionAtomicStore,
+    processing_operation_id: str,
+    *,
+    plane: MemoryPlaneService,
+    service,
+    authorization_repository,
+    record_version: int = 1,
+    owner_token: str = "canonical-clarification-owner",
+    terminal_kwargs: dict | None = None,
+):
+    """Drive one accepted clarification commit through the real claim lifecycle.
+
+    Introduces a real contest, submits the canonical clarification, claims it,
+    and commits through the canonical CAS.  Returns the receipt/attempt
+    result, the committed terminal, and the canonical processing operation id
+    (which the claim derives, not the caller).
+    """
+    claim, cas = _claim_canonical_clarification(
+        store,
+        processing_operation_id,
+        plane=plane,
+        service=service,
+        authorization_repository=authorization_repository,
+        owner_token=owner_token,
+    )
+    return _commit_claimed_accepted_clarification(
+        store,
+        claim,
+        cas,
+        record_version=record_version,
+        terminal_kwargs=terminal_kwargs,
+    )
 
 
 
@@ -2390,15 +2503,18 @@ def test_claimed_clarification_insufficient_completion_is_one_canonical_closure(
     after = tuple(plane.list_records())
     assert len(writes) == 1
     assert tuple(plane.list_records(source_kind="semantic_ingestion_event_batch")) == prior_event_batches
-    assert store.commit_conflict_clarification_transaction(
-        proposal=claim.proposal,
-        processing_operation_id=claim.work.processing_operation_id,
-        resulting_conflict_revision=successor_revision,
-        policy_fingerprint=claim.work.policy_fingerprint,
-        committed_outcome="insufficient",
-        semantic_result_digest=sha256(b"insufficient-result").hexdigest(),
-        clarification_cas=cas,
-    ) == receipt
+    _assert_retry_returns_committed_receipt(
+        store.commit_conflict_clarification_transaction(
+            proposal=claim.proposal,
+            processing_operation_id=claim.work.processing_operation_id,
+            resulting_conflict_revision=successor_revision,
+            policy_fingerprint=claim.work.policy_fingerprint,
+            committed_outcome="insufficient",
+            semantic_result_digest=sha256(b"insufficient-result").hexdigest(),
+            clarification_cas=cas,
+        ),
+        receipt,
+    )
     assert tuple(plane.list_records()) == after
     assert store._projection_history.current_clarification_work() == {}
 
@@ -2505,16 +2621,19 @@ def test_claimed_clarification_terminal_completion_is_one_real_store_closure(
     assert current.resulting_attention.status is (
         ConflictStatus.RESOLVED if outcome == "accepted" else ConflictStatus.OPEN
     )
-    assert store.commit_conflict_clarification_transaction(
-        proposal=claim.proposal,
-        processing_operation_id=claim.work.processing_operation_id,
-        resulting_conflict_revision=successor_revision,
-        policy_fingerprint=claim.work.policy_fingerprint,
-        committed_outcome=outcome,
-        semantic_result_digest=semantic_result_digest,
-        semantic_terminal=terminal,
-        clarification_cas=cas,
-    ) == receipt
+    _assert_retry_returns_committed_receipt(
+        store.commit_conflict_clarification_transaction(
+            proposal=claim.proposal,
+            processing_operation_id=claim.work.processing_operation_id,
+            resulting_conflict_revision=successor_revision,
+            policy_fingerprint=claim.work.policy_fingerprint,
+            committed_outcome=outcome,
+            semantic_result_digest=semantic_result_digest,
+            semantic_terminal=terminal,
+            clarification_cas=cas,
+        ),
+        receipt,
+    )
     assert tuple(plane.list_records()) == records_after
     _assert_live_conflict_replay_binding(store)
     if backend_kind == "jsonl":
@@ -7202,6 +7321,7 @@ def test_ordinary_and_clarification_batches_recover_exactly_after_filesystem_reo
     ) = _setup(
         verified=True,
         backend=backend,
+        with_test_conflict_authority=True,
         semantic_integrity_lifecycle=lifecycle,
     )
     holder.append(store)
@@ -7213,12 +7333,17 @@ def test_ordinary_and_clarification_batches_recover_exactly_after_filesystem_reo
         authorization_verifier=AUTHORIZATION,
     )
     processing_operation_id = sha256(b"filesystem-clarification-processing").hexdigest()
-    receipt, _ = _commit_accepted_clarification(
+    receipt, _, _ = _commit_accepted_clarification(
         store,
         processing_operation_id,
+        plane=plane,
+        service=service,
+        authorization_repository=authorization_repository,
     )
     authority_batches = _retained_authority_batches(plane, store)
-    assert len(authority_batches) == 2
+    # One retained authority batch per graph-advancing write: the ordinary
+    # terminal, the two contested claims, and the clarification commit.
+    assert len(authority_batches) == 4
 
     active = plane.list_records(source_kind="semantic_ingestion_event_batch")[0]
     corrupted = active.model_copy(update={"content": active.content | {"canonical_hex": "00"}})
@@ -7258,8 +7383,8 @@ def test_ordinary_and_clarification_batches_recover_exactly_after_filesystem_reo
         )
     assert repair.authority_source_digests == request.authority_source_digests
     assert released.frozen_partition_ids == ()
-    assert len(store.semantic_event_batches()) == 2
-    assert store.resolve_conflict_clarification_receipt(processing_operation_id) == receipt
+    assert len(store.semantic_event_batches()) == 4
+    assert store.resolve_conflict_clarification_receipt(receipt.processing_operation_id) == receipt
 
     reopened_plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(storage))
     reopened_writers = SemanticWriterAdmissionStore(
@@ -7295,7 +7420,7 @@ def test_ordinary_and_clarification_batches_recover_exactly_after_filesystem_reo
         semantic_integrity_linearization=reopened_lifecycle.linearization,
     )
     reopened_holder.append(reopened_store)
-    assert len(reopened_store.semantic_event_batches()) == 2
+    assert len(reopened_store.semantic_event_batches()) == 4
     assert (
         reopened_store.semantic_replay_authority().graph_state.graph_revision
         == store.semantic_replay_authority().graph_state.graph_revision
@@ -7307,7 +7432,7 @@ def test_ordinary_and_clarification_batches_recover_exactly_after_filesystem_reo
     ) == tuple(
         binding.active_pointer_digest for binding in store.semantic_replay_authority().projection_history_bindings
     )
-    assert reopened_store.resolve_conflict_clarification_receipt(processing_operation_id) == receipt
+    assert reopened_store.resolve_conflict_clarification_receipt(receipt.processing_operation_id) == receipt
 
 
 def test_projection_and_claimed_clarification_races_have_one_pointer_winner(
@@ -7802,7 +7927,9 @@ def test_clarification_recovery_rejects_cross_bound_transaction_delta_and_batch(
 ) -> None:
     backend = JsonlMemoryPlaneStore(tmp_path / "memory-plane")
     plane, _, store, _, _, service, authorization_repository = _setup(
-        verified=False, backend=backend
+        verified=True,
+        backend=backend,
+        with_test_conflict_authority=True,
     )
     processing_operation_id = sha256(b"clarification-delta-cross-bind").hexdigest()
     _commit_accepted_clarification(
@@ -7913,6 +8040,7 @@ def test_clarification_recovery_rejects_rehashed_retained_authority_mutations(
     plane, _, store, binding, fence, service, authorization_repository = _setup(
         verified=True,
         backend=backend,
+        with_test_conflict_authority=True,
     )
     terminal = accepted_terminal(operation_id=fence.operation_id)
     _activate(authorization_repository, fence, terminal)
@@ -8009,7 +8137,12 @@ def test_clarification_recovery_rejects_rehashed_retained_authority_mutations(
     substituted_aggregate = type(aggregate)(
         **aggregate_body,
         aggregate_digest=event_replay._digest(
-            event_replay._REPLAY_AUTHORITY_AGGREGATE_DOMAIN,
+            (
+                event_replay._REPLAY_AUTHORITY_AGGREGATE_DOMAIN
+                if aggregate.aggregate_schema_version
+                == "memorii.semantic-replay-authority-aggregate.v1"
+                else event_replay._REPLAY_AUTHORITY_AGGREGATE_V2_DOMAIN
+            ),
             aggregate_body,
         ),
     )
@@ -8107,6 +8240,7 @@ def test_filesystem_reopen_rejects_nonbijective_clarification_recovery_closure(
     ) = _setup(
         verified=True,
         backend=backend,
+        with_test_conflict_authority=True,
         semantic_integrity_lifecycle=lifecycle,
     )
     holder.append(store)
@@ -8121,14 +8255,19 @@ def test_filesystem_reopen_rejects_nonbijective_clarification_recovery_closure(
     _commit_accepted_clarification(
         store,
         processing_operation_id,
+        plane=plane,
+        service=service,
+        authorization_repository=authorization_repository,
     )
     authority_batches = _retained_authority_batches(plane, store)
-    assert len(authority_batches) == 2
+    # One retained authority batch per graph-advancing write: the ordinary
+    # terminal, the two contested claims, and the clarification commit.
+    assert len(authority_batches) == 4
     active_records = sorted(
         plane.list_records(source_kind="semantic_ingestion_event_batch"),
         key=lambda record: record.memory_id,
     )
-    ordinary_event, clarification_event = active_records
+    ordinary_event, *_, clarification_event = active_records
     valid_clarification_content = clarification_event.content
     corrupted_ordinary = ordinary_event.model_copy(update={"content": ordinary_event.content | {"canonical_hex": "00"}})
     _rewrite_jsonl_snapshot(
