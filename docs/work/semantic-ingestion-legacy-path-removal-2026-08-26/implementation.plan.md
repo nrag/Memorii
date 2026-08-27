@@ -509,6 +509,31 @@ Broad gate (once, at the final revision):
   `_host_ingress()`), not a governance change. The three adapter-lane tests
   in that file were already deleted with the adapter (slice 5).
 
+- 2026-08-26 (slice 5 execution, continued): production complete per the
+  recorded plan; the test migration landed: the terminal-support hub engine is
+  a direct seal/carriers/lineage builder (the eight consumer suites now build
+  terminals without the pipeline); the scenario-runner and text-preparation
+  predicates import from local_analyzer; temporal-trust imports from contracts
+  plus the resolver module; the codec suites dropped their deleted-type tests
+  and the clean-room hub exposes CleanRoomRequestMaterial with source
+  coordinates; the egress authority suite is re-anchored (binding-field
+  substitution ×10 via verify_current_egress, server-time expiry denial,
+  rotation invalidating the prior read-set digest, lifecycle CAS retained);
+  the composition suite lost its nine ordinary-family tests (18 egress modes
+  re-anchored above) and all dead runtime kwargs; the fixture builder's
+  legacy request branch fails closed; the allowlist is pruned to 4 entries
+  and the identity gate passes; full tree collects 4051 tests with zero
+  errors. Batch evidence: egress/authorization/clarification/temporal/
+  codecs/group-plan/provider-service ran (provider service 41 passed; the
+  pre-existing clarification family partially repaired — resolver metadata,
+  projectable scope, and admitted-source bind shape fixed; 12 tests remain
+  failing inside the canonical conflict bridge, pre-existing at base, next
+  layer isolated). The slow hub-consumer batch (scenario runner,
+  text-prep, terminal persistence, event replay, identity lineage, graph
+  planning, policy migration, transaction group plans, generation
+  transactions) was still executing at this entry; record its numbers in
+  the closure row before the slice-5 commit.
+
 ## Next Action
 
 Execute slice 5 per the prepared plan in the Progress Log (pipeline/egress
