@@ -702,6 +702,39 @@ Broad gate (once, at the final revision):
   scenario fixture (handoff marker + v3 recovery index records DO
   exist in the plane).
 
+- 2026-08-27 (slice 6a event-replay classification): the full
+  `test_event_replay.py` run (43 failed / 21 passed, output at
+  /tmp/slice6a_event_replay.log) DISPROVES the earlier assumption that
+  this file shares the clarification-CAS root cause: all 43 failures
+  carry ONE signature —
+  `SemanticGraphDelta` construction rejected with "semantic ingestion
+  graph delta is incomplete or has an invalid digest" at the file's
+  shared builder `test_event_replay.py:616` (42 of 43) plus two
+  sibling sites (~2017 and two single-site variants). The repair is a
+  fixture-construction fix in that shared builder (the delta's digest/
+  completeness contract changed), not the claim lifecycle. This is a
+  separate bounded sub-family inside slice 6a.
+
+- 2026-08-27 (slice 6a FAMILY COMMIT `f5d9792`): the terminal-persistence
+  clarification family is green and committed (helper geometry, canonical
+  submission, retry assertions, v2-domain rehash, lifecycle counts — the
+  filesystem-reopen pair's remaining fixes were the 3-tuple unpack, the
+  claim-derived receipt resolution, and the four-batch reopen count).
+  Working tree keeps three WIP files for the continuation:
+  `test_policy_migration.py` (1/7 green; three tests need their
+  migration-coverage assertions redesigned for the lifecycle's
+  three-write shape; race/substitution migrated but unverified),
+  `capability.py` + `scenario_fixture_authority.py` +
+  `test_scenario_public_ingress_runner.py` (6b: writer binding fixed,
+  composition continuation recorded above). Event-replay suite
+  verification running with output at /tmp/slice6a_event_replay.log.
+  Next actions, in order: (1) classify that run against the
+  clarification-CAS family; (2) redesign the three policy tests'
+  catch-up coverage (build results for every slot plan and partition,
+  or re-anchor the one-partition asserts); (3) complete 6b from
+  `_bootstrap_prepare_and_handoff`'s None conditions; (4) conflict-
+  attention files; (5) 6c; (6) 6d gates and closures.
+
 - 2026-08-27 (slice 6a completion families GREEN): the completion and
   insufficient-completion families (2+6 parametrized runs) and the
   JSONL accepted-completion lost-ack retry all pass with the
