@@ -272,18 +272,6 @@ from memorii.core.semantic_ingestion.proposal_adapter import (
     ProposalNormalizationError,
     normalize_provider_proposal,
 )
-from memorii.core.semantic_ingestion.sealed_proposal_producer import (
-    ProposalRetryPolicy,
-    ProposalTransportResponse,
-    SealedSemanticProposalRunProducer,
-    SemanticProposalRequestMaterializer,
-    SemanticProposalTransport,
-)
-from memorii.core.semantic_ingestion.sealed_source_normalization_evidence_producer import (
-    GraphFreeInterpretationEvidence,
-    SealedSourceNormalizationEvidenceProducer,
-    TypedSourceInterpretationEvidenceProducer,
-)
 from memorii.core.semantic_ingestion.source_normalization_authority import (
     CapabilityRegistryEntry,
     CapabilityRegistrySnapshot,
@@ -293,18 +281,13 @@ from memorii.core.semantic_ingestion.source_normalization_authority import (
 )
 from memorii.core.semantic_ingestion.source_normalization_execution import (
     BootstrapRecoveryClaimRepository,
-    ConsumedSourceNormalizationResourceReservation,
     InjectedSourceNormalizationTrustedTime,
-    InMemorySourceNormalizationResourceReservationProvider,
-    SealedSourceNormalizationEvidenceProducerProtocol,
     SourceNormalizationAuthorityBundle,
     SourceNormalizationAuthorityProvider,
     SourceNormalizationDerivationAuthority,
     SourceNormalizationExecutionOwner,
     SourceNormalizationNonCommit,
     SourceNormalizationPublicationAuthority,
-    SourceNormalizationResourceReservation,
-    SourceNormalizationResourceReservationProvider,
     SourceNormalizationTrustedTime,
     StaticSourceNormalizationAuthorityProvider,
 )
@@ -317,11 +300,7 @@ from memorii.core.semantic_ingestion.source_normalization_repository import (
     SourceNormalizationStage,
 )
 from memorii.core.semantic_ingestion.source_normalization_stage import (
-    GraphFreeSourceNormalizationInputs,
-    GraphFreeSourceNormalizationInputsProvider,
     GraphFreeSourceNormalizationInvocation,
-    GraphFreeSourceNormalizationRuntime,
-    GraphFreeSourceNormalizationStage,
 )
 from memorii.core.semantic_ingestion.source_preparation import (
     AtomicStorePreparedSourceRepository,
@@ -567,18 +546,9 @@ __all__ = [
     "BootstrapGraphHostBundleBuilder",
     "AtomicStoreBootstrapGraphGroupCommitRepositoryV3",
     "BootstrapNativeSemanticReducerV3",
-    "GraphFreeSourceNormalizationInputs",
-    "GraphFreeSourceNormalizationInputsProvider",
     "GraphFreeSourceNormalizationInvocation",
-    "GraphFreeSourceNormalizationRuntime",
-    "GraphFreeSourceNormalizationStage",
-    "ConsumedSourceNormalizationResourceReservation",
-    "InMemorySourceNormalizationResourceReservationProvider",
     "InjectedSourceNormalizationTrustedTime",
-    "SealedSemanticProposalRunProducer",
-    "SealedSourceNormalizationEvidenceProducer",
     "TypedSourceInterpretationEvidenceProducer",
-    "SealedSourceNormalizationEvidenceProducerProtocol",
     "GraphFreeInterpretationEvidence",
     "SourceNormalizationAuthorityBundle",
     "SourceNormalizationAuthorityProvider",
@@ -588,19 +558,13 @@ __all__ = [
     "SourceNormalizationNonCommit",
     "SourceNormalizationPublicationAuthority",
     "BootstrapRecoveryClaimRepository",
-    "SourceNormalizationResourceReservation",
-    "SourceNormalizationResourceReservationProvider",
     "SourceNormalizationTrustedTime",
     "CapabilityRegistryEntry",
     "CapabilityRegistrySnapshot",
     "ConsensusPolicyAuthority",
     "GraphDependentExecutionPolicy",
     "ProposalRunProductionAuthority",
-    "ProposalRetryPolicy",
     "ProposalTransportResponse",
-    "SealedSemanticProposalRunProducer",
-    "SemanticProposalRequestMaterializer",
-    "SemanticProposalTransport",
     "PreparedSourceRepository",
     "TextPreparationService",
     "SourceAuthority",

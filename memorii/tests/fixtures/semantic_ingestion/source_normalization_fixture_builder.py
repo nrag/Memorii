@@ -70,16 +70,6 @@ from memorii.core.semantic_ingestion.contracts import (
     contract_digest,
 )
 from memorii.core.semantic_ingestion.proposal_adapter import ProjectionQuoteVerificationAuthority
-from memorii.core.semantic_ingestion.sealed_proposal_producer import (
-    ProposalRetryPolicy,
-    ProposalTransportResponse,
-    SealedSemanticProposalRunProducer,
-    SemanticProposalRequestMaterializer,
-    SemanticProposalTransport,
-)
-from memorii.core.semantic_ingestion.sealed_source_normalization_evidence_producer import (
-    SealedSourceNormalizationEvidenceProducer,
-)
 from memorii.core.semantic_ingestion.source_normalization_authority import (
     BootstrapV3RuntimeAuthority,
     CapabilityRegistryEntry,
@@ -294,50 +284,6 @@ def _build_preplanning_execution_manifest(
 
 def _fixture_digest(*parts: str) -> str:
     return sha256("\0".join(parts).encode("utf-8")).hexdigest()
-
-
-class DeterministicSemanticProposalTransport(SemanticProposalTransport):
-    """One typed provider value per request; it never emits an unsealed wire."""
-
-    def __init__(self, proposal: ProviderSemanticProposal) -> None:
-        self._proposal = ProviderSemanticProposal.model_validate(proposal.model_dump(mode="python"))
-        self.calls: list[tuple[str, int]] = []
-
-    def propose(self, *, request: SemanticProposalRequest, attempt_number: int) -> ProposalTransportResponse:
-        self.calls.append((request.semantic_request_fingerprint, attempt_number))
-        proposal = ProviderSemanticProposal.model_validate(self._proposal.model_dump(mode="python"))
-        return ProposalTransportResponse(
-            proposal=proposal,
-            raw_output_bytes=encode_typed_value(proposal.model_dump(mode="python")),
-        )
-
-
-class DeterministicSemanticProposalRequestMaterializer(SemanticProposalRequestMaterializer):
-    """Returns the prevalidated route-bound request, rejecting substitutions."""
-
-    def __init__(self, request: SemanticProposalRequest) -> None:
-        self._request = SemanticProposalRequest.create(
-            **request.model_dump(mode="python", exclude={"semantic_request_fingerprint"})
-        )
-
-    def build_request(
-        self,
-        *,
-        invocation: GraphFreeSourceNormalizationInvocation,
-        handoff: BootstrapWriterHandoffResult,
-        authority: ProposalRunProductionAuthority,
-        route: object,
-    ) -> SemanticProposalRequest:
-        del handoff
-        request = self._request
-        if (
-            request.language_route != route
-            or (request.source_id, request.source_digest, request.preparation_fingerprint)
-            != (invocation.source.source_id, invocation.source.source_digest, invocation.source.preparation_fingerprint)
-            or request.semantic_request_fingerprint != authority.semantic_request_fingerprint
-        ):
-            raise ValueError("fixture request does not join invocation authority")
-        return request
 
 
 class SourceBackedQuoteAuthority(ProjectionQuoteVerificationAuthority):
@@ -855,20 +801,6 @@ def build_normal_fact_language_policies(*, proposal_run: object) -> LanguageCons
 
 
 @dataclass(frozen=True)
-class SourceNormalizationEvidenceVector:
-    """One closed normal or correction evidence vector produced by real owners.
-
-    The vector deliberately retains the producer output rather than assembling
-    a stage-shaped ``SimpleNamespace``.  Callers can therefore exercise the
-    same proposal sealing and evidence closure used by a trusted host.
-    """
-
-    source: PreparedSource
-    proposal_run: object
-    inputs: object
-
-
-@dataclass(frozen=True)
 class DynamicSourceNormalizationProposalMaterials:
     """The exact proposal inputs issued beside one dynamic test authority.
 
@@ -999,64 +931,9 @@ class DynamicSourceNormalizationAuthorityProvider:
             self._bootstrap_v3_issued[request.request_digest] = v3
             return bundle
 
-        from tests.unit.core.semantic_ingestion.clean_room_request_test_support import (
-            build_clean_room_semantic_proposal_request,
-        )
-
-        base_request = build_clean_room_semantic_proposal_request(
-            source_id=source.source_id,
-            source_digest=source.source_digest,
-            source_text=source.semantic_text,
-            require_text_digest=False,
-        )
-        request = SemanticProposalRequest.create(
-            **(
-                base_request.model_dump(mode="python", exclude={"semantic_request_fingerprint"})
-                | {
-                    "preparation_fingerprint": source.preparation_fingerprint,
-                    "language_route": route,
-                }
-            )
-        )
-        proposal = ProviderSemanticProposal.model_validate(
-            self._proposal_factory(source, request).model_dump(mode="python")
-        )
-        publication = self._publication_factory(source, invocation.operation_id, handoff)
-        consensus, temporal, trust, registry, execution_policy = _dynamic_fixture_authorities(request)
-        preliminary = build_source_normalization_authority_bundle(
-            source=source,
-            publication=publication,
-            proposal_request=request,
-            consensus_policy_authority=consensus,
-            language_construction_policies=LanguageConstructionPolicyAuthorityBundle.create(policies=()),
-            temporal_policy=temporal,
-            trust_policy=trust,
-            capability_registry=registry,
-            graph_dependent_execution_policy=execution_policy,
-            retry_policy_fingerprint=self._retry_policy_fingerprint,
-        )
-        sealed = seal_source_normalization_proposal_run(
-            invocation=invocation,
-            handoff=handoff,
-            authority=preliminary,
-            proposal_request=request,
-            provider_proposal=proposal,
-            retry_policy_fingerprint=self._retry_policy_fingerprint,
-        )
-        bundle = build_source_normalization_authority_bundle(
-            source=source,
-            publication=publication,
-            proposal_request=request,
-            consensus_policy_authority=consensus,
-            language_construction_policies=self._language_policy_builder(proposal_run=sealed),
-            temporal_policy=temporal,
-            trust_policy=trust,
-            capability_registry=registry,
-            graph_dependent_execution_policy=execution_policy,
-            retry_policy_fingerprint=self._retry_policy_fingerprint,
-        )
-        self._issued[key] = (bundle, DynamicSourceNormalizationProposalMaterials(request, proposal))
-        return bundle
+        # Only declared bootstrap routes reach the V3 execution owner; a
+        # non-bootstrap route cannot be normalized and fails closed.
+        return None
 
     def materials_for(
         self, *, invocation: GraphFreeSourceNormalizationInvocation
@@ -1159,93 +1036,7 @@ def _dynamic_fixture_authorities(
     return consensus, temporal, trust, registry, execution
 
 
-def seal_source_normalization_proposal_run(
-    *,
-    invocation: GraphFreeSourceNormalizationInvocation,
-    handoff: BootstrapWriterHandoffResult,
-    authority: SourceNormalizationAuthorityBundle,
-    proposal_request: SemanticProposalRequest,
-    provider_proposal: ProviderSemanticProposal,
-    retry_policy_fingerprint: str,
-) -> object:
-    """Seal the proposal phase before deriving operation-keyed policy leaves.
-
-    Operation identifiers are intentionally derived from the sealed proposal,
-    so a normal vector cannot truthfully precompute its language-policy packet.
-    """
-    proposal_producer = SealedSemanticProposalRunProducer(
-        transport=DeterministicSemanticProposalTransport(provider_proposal),
-        request_materializer=DeterministicSemanticProposalRequestMaterializer(proposal_request),
-        retry_policy=ProposalRetryPolicy(
-            maximum_attempts=1, retry_policy_fingerprint=retry_policy_fingerprint
-        ),
-        resolve_quote=SourceBackedQuoteAuthority(invocation.source).resolve,
-        projection_quote_verifier=SourceBackedQuoteAuthority(invocation.source),
-    )
-    proposal_run = proposal_producer.produce(
-        invocation=invocation,
-        handoff=handoff,
-        authority=authority.derivation.proposal_run_authority,
-    )
-    if not hasattr(proposal_run, "run_fingerprint"):
-        raise ValueError("fixture proposal producer did not seal a semantic proposal run")
-    return proposal_run
-
-
-def build_sealed_source_normalization_inputs(
-    *,
-    invocation: GraphFreeSourceNormalizationInvocation,
-    handoff: BootstrapWriterHandoffResult,
-    authority: SourceNormalizationAuthorityBundle,
-    resources: object,
-    proposal_request: SemanticProposalRequest,
-    provider_proposal: ProviderSemanticProposal,
-    retry_policy_fingerprint: str,
-    stanza: object,
-    spacy: object,
-    predicate_detector: object,
-    duckling: object,
-    interpretation_producer: object,
-) -> SourceNormalizationEvidenceVector:
-    """Seal a complete fixture through the canonical proposal/evidence owners.
-
-    This small seam is intentionally strict: callers supply the actual typed
-    lane adapters and consumed reservation they want to prove.  It refuses a
-    noncommit at either phase, so a fixture cannot accidentally pass an absent
-    authority as a normal vector.
-    """
-    proposal_run = seal_source_normalization_proposal_run(
-        invocation=invocation,
-        handoff=handoff,
-        authority=authority,
-        proposal_request=proposal_request,
-        provider_proposal=provider_proposal,
-        retry_policy_fingerprint=retry_policy_fingerprint,
-    )
-    evidence_producer = SealedSourceNormalizationEvidenceProducer(
-        stanza=stanza,
-        spacy=spacy,
-        predicate_detector=predicate_detector,
-        duckling=duckling,
-        interpretation_producer=interpretation_producer,
-        locale_by_language={"en": "en_US"},
-        timezone="UTC",
-    )
-    inputs = evidence_producer.produce(
-        invocation=invocation,
-        proposal_run=proposal_run,
-        authority=authority,
-        resources=resources,
-    )
-    if not hasattr(inputs, "interpretation_bundle"):
-        raise ValueError("fixture evidence producer did not seal graph-free inputs")
-    return SourceNormalizationEvidenceVector(
-        source=invocation.source, proposal_run=proposal_run, inputs=inputs
-    )
-
-
 __all__ = [
-    "DeterministicSemanticProposalRequestMaterializer", "DeterministicSemanticProposalTransport",
     "SourceBackedQuoteAuthority", "SourceNormalizationPublicationFixture",
     "DynamicSourceNormalizationAuthorityProvider", "DynamicSourceNormalizationProposalMaterials",
     "build_manifest_bound_prepared_source", "build_source_normalization_authority_bundle",
@@ -1253,6 +1044,4 @@ __all__ = [
     "BootstrapV3FixtureAuthority",
     "build_normal_fact_language_policies",
     "build_source_normalization_publication_fixture",
-    "SourceNormalizationEvidenceVector", "build_sealed_source_normalization_inputs",
-    "seal_source_normalization_proposal_run",
 ]

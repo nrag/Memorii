@@ -66,7 +66,6 @@ from memorii.core.semantic_ingestion.prompt_authority import SemanticPromptAutho
 from memorii.core.semantic_ingestion.source_alignment import build_source_proposal_alignment
 from memorii.core.semantic_ingestion.source_normalization_stage import (
     validate_reloaded_bootstrap_v3_source_normalization_result,
-    validate_reloaded_source_normalization_result,
 )
 from memorii.core.semantic_ingestion.source_preparation import PreparedSourceRepository
 
@@ -368,13 +367,6 @@ class SemanticIngestionPipeline:
                 result=source_normalization_result, source=prepared_source
             )
             if type(source_normalization_result) is BootstrapSourceNormalizationResultV3
-            else validate_reloaded_source_normalization_result(
-                result=source_normalization_result,
-                source=prepared_source,
-                operation_fence_binding=operation_fence,
-                publication_coordinate=source_normalization_publication_coordinate,
-            )
-            if operation_fence is not None
             else None
         )
         if operation_fence is not None and validated_normalization is None:

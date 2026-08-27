@@ -23,21 +23,12 @@ from memorii.core.semantic_ingestion.contracts import (
     BootstrapRecoveryClaimV3,
     BootstrapRecoveryProbeResultV3,
     BootstrapRecoveryProbeV3,
+    BootstrapSemanticReductionAuthorityMemberV3,
     BootstrapSourceNormalizationAtomicWriteRequestV3,
     BootstrapSourceNormalizationEvidenceManifestV3,
     BootstrapSourceNormalizationRequestV3,
     BootstrapSourceNormalizationResultV3,
     BootstrapSourceProposalAlignmentV3,
-    BootstrapSemanticReductionAuthorityMemberV3,
-    SourceNormalizationAtomicWriteRequest,
-    SourceNormalizationRecoveryAbsent,
-    SourceNormalizationRecoveryFound,
-    SourceNormalizationRecoveryRequest,
-    SourceNormalizationRecoveryResult,
-    SourceNormalizationRecoveryUnavailable,
-    SourceNormalizationRecoveryValidationContext,
-    SourceNormalizationResult,
-    contract_digest,
     decode_semantic_contract,
     encode_semantic_contract,
 )
@@ -48,7 +39,7 @@ _BOOTSTRAP_V3_RECOVERY_MAX_TYPED_DEPTH = 128
 
 class _AtomicSourceNormalizationStore(Protocol):
     def checkpoint_source_progress(
-        self, request: SourceNormalizationAtomicWriteRequest | BootstrapSourceNormalizationAtomicWriteRequestV3
+        self, request: BootstrapSourceNormalizationAtomicWriteRequestV3
     ) -> tuple[AtomicGenerationMember, ...]: ...
 
     def get_operation(self, operation_fence: OperationFenceBinding): ...
@@ -70,8 +61,8 @@ class SourceNormalizationStage(Protocol):
     """The typed handoff required before provider graph or terminal work."""
 
     def normalize(
-        self, request: SourceNormalizationAtomicWriteRequest | BootstrapSourceNormalizationAtomicWriteRequestV3,
-    ) -> SourceNormalizationResult | BootstrapSourceNormalizationResultV3: ...
+        self, request: BootstrapSourceNormalizationAtomicWriteRequestV3,
+    ) -> BootstrapSourceNormalizationResultV3: ...
 
 
 class AtomicStoreSourceNormalizationRepository:
@@ -81,16 +72,11 @@ class AtomicStoreSourceNormalizationRepository:
         self._atomic_store = atomic_store
 
     def publish_and_reload(
-        self, request: SourceNormalizationAtomicWriteRequest | BootstrapSourceNormalizationAtomicWriteRequestV3,
-    ) -> SourceNormalizationResult | BootstrapSourceNormalizationResultV3:
+        self, request: BootstrapSourceNormalizationAtomicWriteRequestV3,
+    ) -> BootstrapSourceNormalizationResultV3:
         """Commit and re-read one exact generation; never rebuild from memory."""
         try:
-            request_type = (
-                BootstrapSourceNormalizationAtomicWriteRequestV3
-                if isinstance(request, BootstrapSourceNormalizationAtomicWriteRequestV3)
-                else SourceNormalizationAtomicWriteRequest
-            )
-            validated = request_type.model_validate(
+            validated = BootstrapSourceNormalizationAtomicWriteRequestV3.model_validate(
                 request.model_dump(mode="python")
             )
         except (AttributeError, TypeError, ValueError) as exc:
@@ -105,35 +91,12 @@ class AtomicStoreSourceNormalizationRepository:
             raise ValueError("source normalization publication is unavailable") from exc
         if published != validated.members or reloaded != validated.members:
             raise ValueError("source normalization generation is partial or substituted")
-        if isinstance(validated, BootstrapSourceNormalizationAtomicWriteRequestV3):
-            self._validate_bootstrap_v3_member_closure(validated, reloaded)
-            # V3 result bytes are carried by the V3 request/result closure,
-            # not by the retired V2 result member.  Revalidating the sealed
-            # response after reload prevents a V2 decoder from observing it.
-            return BootstrapSourceNormalizationResultV3.model_validate(
-                validated.source_normalization_result.model_dump(mode="python")
-            )
-        result_members = tuple(
-            member for member in reloaded if member.kind == "source_normalization_result"
+        self._validate_bootstrap_v3_member_closure(validated, reloaded)
+        # V3 result bytes are carried by the V3 request/result closure; the
+        # legacy result member path is retired with the legacy stage.
+        return BootstrapSourceNormalizationResultV3.model_validate(
+            validated.source_normalization_result.model_dump(mode="python")
         )
-        if len(result_members) != 1:
-            raise ValueError("source normalization generation has no unique result")
-        member = result_members[0]
-        if member.payload_digest != sha256(member.canonical_payload).hexdigest():
-            raise ValueError("source normalization result payload digest is invalid")
-        try:
-            result = decode_semantic_contract(
-                member.canonical_payload, SourceNormalizationResult
-            )
-        except (TypeError, ValueError) as exc:
-            raise ValueError("source normalization result payload is invalid") from exc
-        if (
-            encode_semantic_contract(result) != member.canonical_payload
-            or result != validated.source_normalization_result
-            or result.result_digest != validated.source_normalization_result_digest
-        ):
-            raise ValueError("source normalization result is substituted")
-        return SourceNormalizationResult.model_validate(result.model_dump(mode="python"))
 
     @staticmethod
     def _validate_bootstrap_v3_member_closure(
@@ -334,155 +297,10 @@ class AtomicStoreSourceNormalizationRepository:
         return BootstrapSourceNormalizationResultV3.model_validate(result.model_dump(mode="python"))
 
     def normalize(
-        self, request: SourceNormalizationAtomicWriteRequest | BootstrapSourceNormalizationAtomicWriteRequestV3,
-    ) -> SourceNormalizationResult | BootstrapSourceNormalizationResultV3:
+        self, request: BootstrapSourceNormalizationAtomicWriteRequestV3,
+    ) -> BootstrapSourceNormalizationResultV3:
         """Expose the repository as the concrete non-deriving stage owner."""
         return self.publish_and_reload(request)
-
-    def recover(
-        self,
-        *,
-        request: SourceNormalizationRecoveryRequest,
-        context: SourceNormalizationRecoveryValidationContext,
-    ) -> SourceNormalizationRecoveryResult:
-        """Reload a committed normalization result without reconstruction.
-
-        The execution owner supplies only scalar, already-validated recovery
-        bindings.  This boundary validates every join before asking the store
-        for an index entry, so a malformed retry has no persistence read.
-        """
-        try:
-            request = SourceNormalizationRecoveryRequest.model_validate(
-                request.model_dump(mode="python")
-            )
-            context = SourceNormalizationRecoveryValidationContext.model_validate(
-                context.model_dump(mode="python")
-            )
-        except (AttributeError, TypeError, ValueError):
-            raise ValueError("source normalization recovery request is invalid") from None
-        if not self._recovery_context_matches(request, context):
-            return self._unavailable(request, "context_mismatch")
-        try:
-            entry = self._atomic_store.recover_source_normalization(
-                request_identity=request.request_identity
-            )
-            observed_operation, observed_artifact, snapshot_digest = (
-                self._atomic_store.source_normalization_recovery_snapshot(
-                    request_identity=request.request_identity
-                )
-            )
-        except (AttributeError, TypeError, ValueError):
-            return self._unavailable(request, "storage_unavailable")
-        if entry is None:
-            if (
-                observed_operation != request.expected_operation_generation
-                or observed_artifact != request.expected_artifact_generation
-            ):
-                return self._unavailable(request, "stale_generation")
-            absence_body = {
-                "request_identity": request.request_identity,
-                "observed_operation_generation": observed_operation,
-                "observed_artifact_generation": observed_artifact,
-                "store_snapshot_digest": snapshot_digest,
-            }
-            body = {
-                "kind": "absent", "request_identity": request.request_identity,
-                "request_digest": request.request_digest,
-                "expected_operation_generation": request.expected_operation_generation,
-                "expected_artifact_generation": request.expected_artifact_generation,
-                "observed_operation_generation": observed_operation,
-                "observed_artifact_generation": observed_artifact,
-                "store_snapshot_digest": snapshot_digest,
-                "index_absence_digest": contract_digest(
-                    b"memorii.semantic-ingestion.source-normalization-recovery-index-absence.v1", absence_body
-                ),
-            }
-            return SourceNormalizationRecoveryAbsent(
-                **body,
-                response_digest=contract_digest(
-                    b"memorii.semantic-ingestion.source-normalization-recovery-absent.v1", body
-                ),
-            )
-        generation, atomic_request_digest, members = entry
-        if generation < 1:
-            return self._unavailable(request, "generation_corrupt")
-        try:
-            result = self._result_from_members(members)
-        except ValueError:
-            return self._unavailable(request, "generation_incomplete")
-        index_body = {"request_identity": request.request_identity, "publication_generation": generation}
-        body = {
-            "kind": "found", "request_identity": request.request_identity,
-            "request_digest": request.request_digest, "publication_generation": generation,
-            "recovery_index_digest": contract_digest(
-                b"memorii.semantic-ingestion.source-normalization-recovery-index.v1", index_body
-            ),
-            "atomic_request_digest": atomic_request_digest,
-            "result_digest": result.result_digest, "result": result,
-        }
-        return SourceNormalizationRecoveryFound(
-            **body,
-            response_digest=contract_digest(
-                b"memorii.semantic-ingestion.source-normalization-recovery-found.v1", body
-            ),
-        )
-
-    @staticmethod
-    def _recovery_context_matches(
-        request: SourceNormalizationRecoveryRequest,
-        context: SourceNormalizationRecoveryValidationContext,
-    ) -> bool:
-        return (
-            request.source_id == context.invocation.source_id == context.handoff.source_id
-            and request.source_digest == context.invocation.source_digest == context.handoff.source_digest
-            and request.preparation_fingerprint == context.invocation.preparation_fingerprint
-            # Bootstrap markers retain the fenced pending-operation identifier;
-            # source-normalization requests retain the public operation ID.
-            # The execution owner validates that fence join before this
-            # repository receives the scalar recovery bindings.
-            and request.operation_id == context.invocation.operation_id
-            and request.operation_fence_digest == context.invocation.operation_fence_digest == context.handoff.operation_fence_digest
-            and request.derivation_authority_digest == context.authority.derivation_authority_digest
-            and request.publication_coordinate_digest == context.authority.publication_coordinate_digest
-            and request.expected_operation_generation == context.authority.expected_operation_generation
-            and request.expected_artifact_generation == context.authority.expected_artifact_generation
-        )
-
-    @staticmethod
-    def _unavailable(
-        request: SourceNormalizationRecoveryRequest, reason: str
-    ) -> SourceNormalizationRecoveryUnavailable:
-        reason_body = {
-            "kind": "publication_unavailable", "request_identity": request.request_identity,
-            "request_digest": request.request_digest, "reason": reason,
-        }
-        reason_digest = contract_digest(
-            b"memorii.semantic-ingestion.source-normalization-recovery-unavailable.v1", reason_body
-        )
-        body = {**reason_body, "reason_digest": reason_digest}
-        return SourceNormalizationRecoveryUnavailable(
-            **body,
-            response_digest=contract_digest(
-                b"memorii.semantic-ingestion.source-normalization-recovery-unavailable-response.v1", body
-            ),
-        )
-
-    @staticmethod
-    def _result_from_members(members: tuple[AtomicGenerationMember, ...]) -> SourceNormalizationResult:
-        result_members = tuple(member for member in members if member.kind == "source_normalization_result")
-        if len(result_members) != 1:
-            raise ValueError("source normalization generation has no unique result")
-        member = result_members[0]
-        if member.payload_digest != sha256(member.canonical_payload).hexdigest():
-            raise ValueError("source normalization result payload digest is invalid")
-        try:
-            result = decode_semantic_contract(member.canonical_payload, SourceNormalizationResult)
-        except (TypeError, ValueError) as exc:
-            raise ValueError("source normalization result payload is invalid") from exc
-        if encode_semantic_contract(result) != member.canonical_payload:
-            raise ValueError("source normalization result is substituted")
-        return SourceNormalizationResult.model_validate(result.model_dump(mode="python"))
-
 
 class AtomicStoreBootstrapRecoveryClaimRepository:
     """Production recovery probe owner backed by the generation store's CAS."""

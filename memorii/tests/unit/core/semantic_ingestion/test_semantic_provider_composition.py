@@ -122,13 +122,8 @@ from memorii.core.semantic_ingestion.local_analyzer import (
     ProductionLocalSemanticAnalyzer,
 )
 from memorii.core.semantic_ingestion.pipeline import SemanticIngestionPipeline
-from memorii.core.semantic_ingestion.sealed_proposal_producer import ProposalRetryPolicy
-from memorii.core.semantic_ingestion.sealed_source_normalization_evidence_producer import (
-    TypedSourceInterpretationEvidenceProducer,
-)
 from memorii.core.semantic_ingestion.source_normalization_execution import (
     SourceNormalizationExecutionOwner,
-    StaticSourceNormalizationAuthorityProvider,
 )
 from memorii.core.semantic_ingestion.source_normalization_host import (
     SourceNormalizationHostBundle,
@@ -1007,29 +1002,6 @@ def test_normal_provider_root_stops_before_owner_and_terminal_when_authority_is_
     ] == []
 
 
-class _UnusedNormalizationLane:
-    """Configured only to prove public-root construction reaches the host builder."""
-
-    def analyze(self, request):
-        raise AssertionError("construction proof must not invoke parser lanes")
-
-    def detect(self, request):
-        raise AssertionError("construction proof must not invoke predicate lanes")
-
-    def resolve(self, request, *, locale, timezone):
-        raise AssertionError("construction proof must not invoke temporal lanes")
-
-
-class _UnusedNormalizationTransport:
-    def propose(self, *, request, attempt_number):
-        raise AssertionError("construction proof must not invoke proposal transport")
-
-
-class _UnusedNormalizationMaterializer:
-    def build_request(self, **kwargs):
-        raise AssertionError("construction proof must not materialize a proposal")
-
-
 class _UnusedNormalizationQuoteAuthority:
     def resolve(self, quote, context, owned):
         raise AssertionError("construction proof must not resolve quotes")
@@ -1060,35 +1032,8 @@ class _SingleTextQuoteAuthority:
             raise ValueError("fixture quote is not exact")
 
 
-def _normalization_host_builder() -> SourceNormalizationHostBundleBuilder:
-    lane = _UnusedNormalizationLane()
-    quotes = _UnusedNormalizationQuoteAuthority()
-    return SourceNormalizationHostBundleBuilder(
-        authority_provider=StaticSourceNormalizationAuthorityProvider(bundles=()),
-        proposal_transport=_UnusedNormalizationTransport(),
-        proposal_request_materializer=_UnusedNormalizationMaterializer(),
-        proposal_retry_policy=ProposalRetryPolicy(
-            maximum_attempts=1, retry_policy_fingerprint="a" * 64
-        ),
-        resolve_quote=quotes.resolve,
-        projection_quote_verifier=quotes,
-        stanza=lane,
-        spacy=lane,
-        predicate_detector=lane,
-        duckling=lane,
-        interpretation_producer=TypedSourceInterpretationEvidenceProducer(),
-        locale_by_language={"en": "en_US"},
-        timezone="UTC",
-        server_time=lambda: TEST_NOW,
-        monotonic_tick=lambda: 1,
-        reservation_capacity=1,
-        reservation_ttl_ticks=1,
-    )
-
-
 def _v3_normalization_host_builder(*, proposal: ProviderSemanticProposal | None = None) -> tuple[SourceNormalizationHostBundleBuilder, dict[str, int]]:
     """Build a complete V3-only host bundle for the ordinary provider root."""
-    lane = _UnusedNormalizationLane()
     proposal_value = proposal or ProviderSemanticProposal(abstained=True)
     quotes = _UnusedNormalizationQuoteAuthority() if proposal is None else _SingleTextQuoteAuthority()
     calls = {"proposal": 0, "stanza": 0, "spacy": 0, "predicate": 0, "temporal": 0}
@@ -1160,15 +1105,8 @@ def _v3_normalization_host_builder(*, proposal: ProviderSemanticProposal | None 
 
     return SourceNormalizationHostBundleBuilder(
         authority_provider=authority_provider,
-        proposal_transport=_UnusedNormalizationTransport(),
-        proposal_request_materializer=_UnusedNormalizationMaterializer(),
-        proposal_retry_policy=ProposalRetryPolicy(maximum_attempts=1, retry_policy_fingerprint="a" * 64),
         resolve_quote=quotes.resolve, projection_quote_verifier=quotes,
-        stanza=lane, spacy=lane, predicate_detector=lane, duckling=lane,
-        interpretation_producer=TypedSourceInterpretationEvidenceProducer(),
-        locale_by_language={"en": "en_US"}, timezone="UTC",
         server_time=lambda: TEST_NOW, monotonic_tick=lambda: 1,
-        reservation_capacity=1, reservation_ttl_ticks=10,
         bootstrap_v3_proposal_transport=proposal,
         bootstrap_v3_stanza=lambda request: linguistic(request, "stanza"),
         bootstrap_v3_spacy=lambda request: linguistic(request, "spacy"),
@@ -1266,33 +1204,34 @@ def test_builtin_local_capability_wires_provider_hermes_and_filesystem_without_e
 
 def test_configured_public_roots_construct_the_real_normalization_execution_owner(tmp_path) -> None:
     """Every public root reaches the one concrete host-bundle construction call."""
-    builder = _normalization_host_builder()
+    # One fresh builder per root: the dynamic authority provider binds its
+    # publication-lease lookup to one store per bundle.
     verifier = DeterministicTestHostBootstrapMaterialVerifier()
     direct = ProviderMemoryService(
         memory_plane=MemoryPlaneService(),
         now_provider=lambda: TEST_NOW,
         host_bootstrap_capability=_built_in_local_capability(),
         host_bootstrap_material_verifier=verifier,
-        source_normalization_host_bundle_builder=builder,
+        source_normalization_host_bundle_builder=_v3_normalization_host_builder()[0],
     )
     factory = build_provider_memory_service_from_env(
         memory_plane=MemoryPlaneService(),
         now_provider=lambda: TEST_NOW,
         host_bootstrap_capability=_built_in_local_capability(),
         host_bootstrap_material_verifier=verifier,
-        source_normalization_host_bundle_builder=builder,
+        source_normalization_host_bundle_builder=_v3_normalization_host_builder()[0],
     )
     filesystem = build_filesystem_provider(
         tmp_path / "configured-normalization-root",
         now_provider=lambda: TEST_NOW,
         host_bootstrap_capability=_built_in_local_capability(),
         host_bootstrap_material_verifier=verifier,
-        source_normalization_host_bundle_builder=builder,
+        source_normalization_host_bundle_builder=_v3_normalization_host_builder()[0],
     )
     hermes = HermesMemoryProvider(
         host_bootstrap_capability=_built_in_local_capability(),
         host_bootstrap_material_verifier=verifier,
-        source_normalization_host_bundle_builder=builder,
+        source_normalization_host_bundle_builder=_v3_normalization_host_builder()[0],
     )
 
     for service in (direct, factory, filesystem, hermes._service):

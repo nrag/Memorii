@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 from hashlib import sha256
-from typing import Protocol
 
 from pydantic import BaseModel
 
@@ -18,10 +16,8 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     SemanticWriterCommitBinding,
     encode_typed_value,
 )
-from memorii.core.memory_evolution.semantic_analysis.decision_contracts import SourceNormalizationPublicationCoordinate
 from memorii.core.semantic_ingestion.contracts import (
     BootstrapAnalysisLaneResultV3,
-    BootstrapAnalysisProvenanceV1,
     BootstrapDeclaredSegmentLanguageRoute,
     BootstrapGraphFreeIdentityPlanningInputV3,
     BootstrapGraphFreeInterpretationBundleV3,
@@ -40,28 +36,11 @@ from memorii.core.semantic_ingestion.contracts import (
     BootstrapSourceNormalizationResultV3,
     BootstrapSourceProposalAlignmentV3,
     BootstrapV3PayloadLimitAuthority,
-    ConsensusPolicySelectionBundle,
-    GraphFreeInterpretationBundle,
-    LanguageConstructionPolicyAuthorityBundle,
-    LinguisticAnalysisBundle,
-    ParserConsensusAssessment,
-    PredicateEventInventory,
     PreparedSource,
-    PrePlanningSourceIngestionProgress,
-    SemanticProposalRun,
-    SourceNormalizationAtomicWriteRequest,
-    SourceNormalizationEvidenceEntry,
-    SourceNormalizationEvidenceManifest,
-    SourceNormalizationRequest,
-    SourceNormalizationResult,
-    TemporalPolicySnapshot,
-    TemporalResolution,
-    TrustPolicySnapshot,
     canonical_contract_value,
     contract_digest,
     encode_semantic_contract,
 )
-from memorii.core.semantic_ingestion.source_alignment import build_source_proposal_alignment
 from memorii.core.semantic_ingestion.source_normalization_authority import (
     CapabilityRegistrySnapshot,
     GraphDependentExecutionPolicy,
@@ -189,44 +168,6 @@ def _operation_member_digest(member: object) -> str:
 
 
 @dataclass(frozen=True)
-class GraphFreeSourceNormalizationInputs:
-    """All authority required to form a sealed source-normalization write.
-
-    This deliberately accepts no provider, graph, terminal, or configuration
-    owner.  Those objects cannot be recovered or looked up while assembling
-    the graph-free closure.
-    """
-
-    source: PreparedSource
-    proposal_run: SemanticProposalRun
-    analyses: LinguisticAnalysisBundle
-    interpretation_bundle: GraphFreeInterpretationBundle
-    predicate_events: PredicateEventInventory
-    temporal_resolution: TemporalResolution
-    consensus_policy_selections: ConsensusPolicySelectionBundle
-    language_construction_policies: LanguageConstructionPolicyAuthorityBundle
-    publication_coordinate: SourceNormalizationPublicationCoordinate
-    temporal_policy: TemporalPolicySnapshot
-    trust_policy: TrustPolicySnapshot
-    arbitration_as_of: datetime
-    capability_registry: CapabilityRegistrySnapshot
-    parser_consensus: tuple[ParserConsensusAssessment, ...]
-    evidence_entries: tuple[SourceNormalizationEvidenceEntry, ...]
-    capability_selections: tuple[CapabilityRegistrySnapshot, ...]
-    graph_dependent_execution_policy: GraphDependentExecutionPolicy
-    graph_dependent_execution_policy_digest: str
-    progress: PrePlanningSourceIngestionProgress
-    operation_fence_binding: OperationFenceBinding
-    operation_lease_binding: OperationLeaseBinding
-    writer_commit_binding: SemanticWriterCommitBinding
-    expected_operation_generation: int
-    expected_artifact_generation: int
-    bootstrap_analysis_provenance: tuple[BootstrapAnalysisProvenanceV1, ...] = ()
-    bootstrap_recovery_key: BootstrapRecoveryKeyV3 | None = None
-    bootstrap_recovery_claim: BootstrapRecoveryClaimV3 | None = None
-
-
-@dataclass(frozen=True)
 class BootstrapV3SourceNormalizationInputs:
     """The standalone V3 publication closure, with no generic V2 members."""
 
@@ -265,42 +206,6 @@ class GraphFreeSourceNormalizationInvocation:
     operation_fence_binding: OperationFenceBinding
 
 
-def validate_reloaded_source_normalization_result(
-    *,
-    result: object,
-    source: PreparedSource,
-    operation_fence_binding: OperationFenceBinding,
-    publication_coordinate: object,
-) -> SourceNormalizationResult | None:
-    """Accept only the exact typed closure reloaded for this source publication."""
-    if (
-        type(result) is not SourceNormalizationResult
-        or type(publication_coordinate) is not SourceNormalizationPublicationCoordinate
-    ):
-        return None
-    try:
-        validated = SourceNormalizationResult.model_validate(
-            result.model_dump(mode="python")
-        )
-    except (AttributeError, TypeError, ValueError):
-        return None
-    coordinate = validated.evidence_manifest.publication_coordinate
-    alignment = validated.source_alignment
-    if (
-        type(coordinate) is not SourceNormalizationPublicationCoordinate
-        or validated != result
-        or coordinate != publication_coordinate
-        or coordinate.operation_fence_binding != operation_fence_binding
-        or coordinate.preparation_fingerprint != source.preparation_fingerprint
-        or alignment.source_id != source.source_id
-        or alignment.segment_language_routes != source.segment_language_routes
-        or validated.evidence_manifest.source_id != source.source_id
-        or validated.evidence_manifest.source_digest != source.source_digest
-    ):
-        return None
-    return validated
-
-
 def validate_reloaded_bootstrap_v3_source_normalization_result(
     *, result: object, source: PreparedSource
 ) -> BootstrapSourceNormalizationResultV3 | None:
@@ -336,266 +241,6 @@ def validate_reloaded_bootstrap_v3_source_normalization_result(
     ):
         return None
     return validated
-
-
-class GraphFreeSourceNormalizationInputsProvider(Protocol):
-    """Host-owned producer for one complete graph-free authority closure."""
-
-    def build_inputs(
-        self,
-        invocation: GraphFreeSourceNormalizationInvocation,
-    ) -> GraphFreeSourceNormalizationInputs | None: ...
-
-
-class GraphFreeSourceNormalizationStage:
-    """Build the only source-normalization atomic request and publish it once."""
-
-    def __init__(self, *, publisher: SourceNormalizationStage) -> None:
-        self._publisher = publisher
-
-    def normalize(self, inputs: GraphFreeSourceNormalizationInputs) -> SourceNormalizationResult:
-        request = self.build_request(inputs)
-        return self._publisher.normalize(request)
-
-
-    @staticmethod
-    def build_request(inputs: GraphFreeSourceNormalizationInputs) -> SourceNormalizationAtomicWriteRequest:
-        GraphFreeSourceNormalizationStage._validate_inputs(inputs)
-        alignment = build_source_proposal_alignment(
-            bundle=inputs.interpretation_bundle,
-            parser_consensus=inputs.parser_consensus,
-            segment_language_routes=inputs.source.segment_language_routes,
-            predicate_event_ids=tuple(item.event_id for item in inputs.predicate_events.candidates),
-            predicate_event_inventory_fingerprint=inputs.predicate_events.inventory_fingerprint,
-            coverage_policy_fingerprint=inputs.consensus_policy_selections.bundle_digest,
-            temporal_candidates=inputs.temporal_resolution.candidates,
-        )
-        if alignment is None:
-            raise ValueError("source normalization alignment authority is unavailable")
-        request = GraphFreeSourceNormalizationStage._normalization_request(inputs)
-        manifest = GraphFreeSourceNormalizationStage._manifest(inputs, request)
-        result = SourceNormalizationResult.create(
-            schema_version=2,
-            source_alignment=alignment,
-            evidence_manifest=manifest,
-            interpretation_bundle_digest=inputs.interpretation_bundle.bundle_digest,
-            identity_partition_evidence_digest=inputs.interpretation_bundle.identity_partition_evidence.evidence_digest,
-            capability_selections=inputs.capability_selections,
-            trust_policy_snapshot_digest=GraphFreeSourceNormalizationStage._digest_field(inputs.trust_policy, "snapshot_digest"),
-            arbitration_as_of=inputs.arbitration_as_of,
-        )
-        artifacts = (
-            ("progress", inputs.progress),
-            ("source_normalization_request", request),
-            *(
-                (("bootstrap_analysis_provenance", inputs.bootstrap_analysis_provenance),)
-                if inputs.bootstrap_recovery_key is not None
-                else ()
-            ),
-            ("graph_free_interpretation_bundle", inputs.interpretation_bundle),
-            ("source_local_identity_partition_evidence", inputs.interpretation_bundle.identity_partition_evidence),
-            *(("parser_consensus", row) for row in alignment.parser_consensus),
-            *(("semantic_scope_consensus", row) for row in alignment.scope_consensus),
-            *(("temporal_attachment_consensus", row) for row in alignment.temporal_attachment_consensus),
-            ("source_local_identity_resolution", alignment.source_local_identity),
-            ("source_proposal_alignment", alignment),
-            ("source_dependency_groups", alignment.source_dependency_groups),
-            ("source_normalization_result", result),
-            ("source_normalization_evidence_manifest", manifest),
-            ("graph_dependent_execution_policy", inputs.graph_dependent_execution_policy),
-            ("consensus_policy_selection_bundle", inputs.consensus_policy_selections),
-            ("language_construction_policy_bundle", inputs.language_construction_policies),
-        )
-        members = tuple(
-            GraphFreeSourceNormalizationStage._member(index, kind, value)
-            for index, (kind, value) in enumerate(artifacts)
-        )
-        # The request digest covers the complete request itself, so form the
-        # canonical preimage before attaching its derived digest.
-        request_type = (
-            BootstrapSourceNormalizationAtomicWriteRequestV3
-            if inputs.bootstrap_recovery_key is not None
-            else SourceNormalizationAtomicWriteRequest
-        )
-        base = {
-            "schema_version": 3 if request_type is BootstrapSourceNormalizationAtomicWriteRequestV3 else 2,
-            "kind": "source_normalization_checkpoint",
-            "progress_state": "preplanning",
-            "publication_generation": inputs.expected_artifact_generation + 1,
-            "operation_fence_binding": inputs.operation_fence_binding,
-            "operation_lease_binding": inputs.operation_lease_binding,
-            "writer_commit_binding": inputs.writer_commit_binding,
-            "expected_operation_generation": inputs.expected_operation_generation,
-            "expected_artifact_generation": inputs.expected_artifact_generation,
-            "members": members,
-            "required_artifact_digests": tuple(member.payload_digest for member in members),
-            "source_normalization_request": request,
-            "source_normalization_request_digest": request.request_digest,
-            "source_normalization_result": result,
-            "source_normalization_result_digest": result.result_digest,
-            "evidence_manifest": manifest,
-            "evidence_manifest_digest": manifest.manifest_digest,
-            "graph_dependent_execution_policy": inputs.graph_dependent_execution_policy,
-            "graph_dependent_execution_policy_digest": inputs.graph_dependent_execution_policy_digest,
-            "consensus_policy_selection_bundle": inputs.consensus_policy_selections,
-            "consensus_policy_selection_bundle_digest": inputs.consensus_policy_selections.bundle_digest,
-            "language_construction_policy_bundle": inputs.language_construction_policies,
-            "language_construction_policy_bundle_digest": inputs.language_construction_policies.bundle_digest,
-            **(
-                {
-                    "bootstrap_analysis_provenance": inputs.bootstrap_analysis_provenance,
-                    "bootstrap_recovery_key": inputs.bootstrap_recovery_key,
-                    "bootstrap_recovery_claim": inputs.bootstrap_recovery_claim,
-                }
-                if request_type is BootstrapSourceNormalizationAtomicWriteRequestV3
-                else {}
-            ),
-        }
-        # ``request_digest`` is derived from the wire preimage, so do not use
-        # Pydantic's unchecked construction escape hatch to manufacture it.
-        return request_type.model_validate(
-            base | {
-                "request_digest": sha256(
-                    encode_typed_value(base)
-                ).hexdigest()
-            }
-        )
-
-    @staticmethod
-    def _validate_inputs(inputs: GraphFreeSourceNormalizationInputs) -> None:
-        source = inputs.source
-        bundle = inputs.interpretation_bundle
-        if (
-            inputs.proposal_run.status != "complete"
-            or inputs.analyses.status != "complete"
-            or inputs.predicate_events.status != "complete"
-            or inputs.temporal_resolution.status != "complete"
-            or (bundle.source_id, bundle.source_digest, bundle.preparation_fingerprint)
-            != (source.source_id, source.source_digest, source.preparation_fingerprint)
-            or (inputs.proposal_run.source_id, inputs.proposal_run.source_digest, inputs.proposal_run.preparation_fingerprint)
-            != (source.source_id, source.source_digest, source.preparation_fingerprint)
-            or inputs.proposal_run.run_fingerprint != bundle.proposal_run_fingerprint
-            or inputs.analyses.bundle_fingerprint != bundle.analysis_bundle_fingerprint
-            or inputs.temporal_resolution.resolver_fingerprint != bundle.temporal_resolution_fingerprint
-            or inputs.operation_fence_binding != getattr(inputs.publication_coordinate, "operation_fence_binding", None)
-            or inputs.expected_artifact_generation != getattr(inputs.publication_coordinate, "expected_current_artifact_generation", None)
-            or inputs.operation_lease_binding.operation_fence_binding != inputs.operation_fence_binding
-            or inputs.progress.operation_lease_binding != inputs.operation_lease_binding
-            or inputs.graph_dependent_execution_policy_digest != GraphFreeSourceNormalizationStage._digest_field(inputs.graph_dependent_execution_policy, "policy_digest")
-        ):
-            raise ValueError("source normalization inputs do not form one sealed authority chain")
-        if not inputs.parser_consensus or len({row.assessment_digest for row in inputs.parser_consensus}) != len(inputs.parser_consensus):
-            raise ValueError("source normalization parser consensus is incomplete")
-        v3_values = (
-            inputs.bootstrap_analysis_provenance,
-            inputs.bootstrap_recovery_key,
-            inputs.bootstrap_recovery_claim,
-        )
-        if any(value is not None and value != () for value in v3_values) and not (
-            inputs.bootstrap_analysis_provenance
-            and inputs.bootstrap_recovery_key is not None
-            and inputs.bootstrap_recovery_claim is not None
-        ):
-            raise ValueError("bootstrap V3 source-normalization authority is incomplete")
-        GraphFreeSourceNormalizationStage._validate_selection_closure(inputs)
-
-    @staticmethod
-    def _validate_selection_closure(inputs: GraphFreeSourceNormalizationInputs) -> None:
-        """Require one selection for every parser, scope, and temporal role."""
-        required_roles = {
-            "fact": ("assertion",),
-            "action_state": ("assertion",),
-            "correction": ("replacement", "transition"),
-            "retraction": ("transition",),
-            "identity": ("transition",),
-        }
-        expected = set()
-        for subject_set in inputs.interpretation_bundle.subject_sets:
-            for subject in subject_set.subjects:
-                coordinate = (
-                    subject.operation_id,
-                    subject.proposal_id,
-                    subject.segment_id,
-                    subject.segment_language_route_digest,
-                )
-                expected.update((("parser", *coordinate, None), ("scope", *coordinate, None)))
-                expected.update(
-                    ("temporal_attachment", *coordinate, role)
-                    for role in required_roles[subject.kind]
-                )
-        selection_keys = tuple(
-            (
-                selection.kind,
-                selection.operation_id,
-                selection.proposal_id,
-                selection.segment_id,
-                selection.segment_language_route_digest,
-                selection.temporal_role,
-            )
-            for selection in inputs.consensus_policy_selections.selections
-        )
-        if selection_keys != tuple(
-            sorted(
-                selection_keys,
-                key=lambda key: (*key[:-1], key[-1] or ""),
-            )
-        ) or set(selection_keys) != expected:
-            raise ValueError("source normalization consensus policy selections are not role-complete")
-
-    @staticmethod
-    def _normalization_request(inputs: GraphFreeSourceNormalizationInputs) -> SourceNormalizationRequest:
-        values = dict(
-            schema_version=2, source=inputs.source, proposal_run=inputs.proposal_run,
-            analyses=inputs.analyses, interpretation_bundle=inputs.interpretation_bundle,
-            predicate_events=inputs.predicate_events, temporal_resolution=inputs.temporal_resolution,
-            consensus_policy_selections=inputs.consensus_policy_selections,
-            language_construction_policies=inputs.language_construction_policies,
-            publication_coordinate=inputs.publication_coordinate, temporal_policy=inputs.temporal_policy,
-            trust_policy=inputs.trust_policy, arbitration_as_of=inputs.arbitration_as_of,
-            capability_registry=inputs.capability_registry,
-        )
-        return SourceNormalizationRequest.create(**values)
-
-    @staticmethod
-    def _manifest(inputs: GraphFreeSourceNormalizationInputs, request: SourceNormalizationRequest) -> SourceNormalizationEvidenceManifest:
-        entries = tuple(sorted(inputs.evidence_entries, key=lambda entry: entry.entry_digest))
-        expected = {
-            *( ("parser", row.operation_id, None, row.assessment_digest) for row in inputs.parser_consensus),
-        }
-        actual = {(entry.kind, entry.operation_id, entry.temporal_role, entry.artifact_digest) for entry in entries}
-        if not expected <= actual:
-            raise ValueError("source normalization evidence entries omit parser consensus")
-        values = dict(
-            schema_version=2, source_id=inputs.source.source_id, source_digest=inputs.source.source_digest,
-            source_normalization_request_digest=request.request_digest,
-            consensus_policy_selection_bundle_digest=inputs.consensus_policy_selections.bundle_digest,
-            language_construction_policy_bundle_digest=inputs.language_construction_policies.bundle_digest,
-            interpretation_bundle_digest=inputs.interpretation_bundle.bundle_digest,
-            identity_partition_evidence_digest=inputs.interpretation_bundle.identity_partition_evidence.evidence_digest,
-            publication_coordinate=inputs.publication_coordinate, retained_entries=entries,
-            completeness="complete", bijection_verified=True,
-        )
-        return SourceNormalizationEvidenceManifest.create(**values)
-
-    @staticmethod
-    def _member(index: int, kind: str, value: object) -> AtomicGenerationMember:
-        if isinstance(value, tuple):
-            payload = encode_typed_value(tuple(item.model_dump(mode="python") for item in value))
-        elif isinstance(value, BaseModel):
-            try:
-                payload = encode_semantic_contract(value)
-            except ValueError:
-                payload = encode_typed_value(value.model_dump(mode="python"))
-        else:
-            raise ValueError("source normalization member is not typed")
-        return AtomicGenerationMember(member_id=f"{index:02d}-{kind}", kind=kind, canonical_payload=payload, payload_digest=sha256(payload).hexdigest())
-
-    @staticmethod
-    def _digest_field(value: BaseModel, field: str) -> str:
-        digest = getattr(value, field, None)
-        if not isinstance(digest, str) or len(digest) != 64:
-            raise ValueError(f"source normalization authority lacks {field}")
-        return digest
 
 
 class BootstrapV3SourceNormalizationStage:
@@ -755,46 +400,9 @@ class BootstrapV3SourceNormalizationStage:
         )
 
 
-class GraphFreeSourceNormalizationRuntime:
-    """Bind the pure stage to a host-owned, typed input producer.
-
-    Returning ``None`` is a typed non-commit: the coordinator must stop before
-    terminal persistence rather than fabricate a partial authority chain.
-    """
-
-    def __init__(
-        self,
-        *,
-        stage: GraphFreeSourceNormalizationStage,
-        inputs_provider: GraphFreeSourceNormalizationInputsProvider,
-    ) -> None:
-        self._stage = stage
-        self._inputs_provider = inputs_provider
-
-    def normalize(
-        self,
-        invocation: GraphFreeSourceNormalizationInvocation,
-    ) -> SourceNormalizationResult | None:
-        inputs = self._inputs_provider.build_inputs(invocation)
-        if inputs is None:
-            return None
-        if (
-            inputs.source != invocation.source
-            or inputs.operation_fence_binding != invocation.operation_fence_binding
-        ):
-            return None
-        try:
-            return self._stage.normalize(inputs)
-        except ValueError:
-            return None
-
-
 __all__ = [
-    "GraphFreeSourceNormalizationInputs",
-    "GraphFreeSourceNormalizationInputsProvider",
+    "BootstrapV3SourceNormalizationInputs",
+    "BootstrapV3SourceNormalizationStage",
     "GraphFreeSourceNormalizationInvocation",
-    "GraphFreeSourceNormalizationRuntime",
-    "GraphFreeSourceNormalizationStage",
-    "validate_reloaded_source_normalization_result",
     "validate_reloaded_bootstrap_v3_source_normalization_result",
 ]

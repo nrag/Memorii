@@ -34,24 +34,10 @@ from memorii.core.semantic_ingestion.proposal_adapter import (
     ProjectionQuoteVerificationAuthority,
     SpanResolver,
 )
-from memorii.core.semantic_ingestion.sealed_proposal_producer import (
-    ProposalRetryPolicy,
-    SealedSemanticProposalRunProducer,
-    SemanticProposalRequestMaterializer,
-    SemanticProposalTransport,
-)
-from memorii.core.semantic_ingestion.sealed_source_normalization_evidence_producer import (
-    InterpretationEvidenceProducer,
-    ParserLane,
-    PredicateEventDetector,
-    SealedSourceNormalizationEvidenceProducer,
-    TemporalLane,
-)
 from memorii.core.semantic_ingestion.source_normalization_execution import (
     BootstrapV3EvidenceProducerProtocol,
     BootstrapV3ProposalProducer,
     InjectedSourceNormalizationTrustedTime,
-    InMemorySourceNormalizationResourceReservationProvider,
     SourceNormalizationAuthorityProvider,
     SourceNormalizationExecutionOwner,
     SourceNormalizationExecutionOwnerProtocol,
@@ -77,22 +63,10 @@ class SourceNormalizationHostBundleBuilder:
     """Host-owned ingredients for one concrete normalization execution bundle."""
 
     authority_provider: SourceNormalizationAuthorityProvider
-    proposal_transport: SemanticProposalTransport
-    proposal_request_materializer: SemanticProposalRequestMaterializer
-    proposal_retry_policy: ProposalRetryPolicy
     resolve_quote: SpanResolver
     projection_quote_verifier: ProjectionQuoteVerificationAuthority
-    stanza: ParserLane
-    spacy: ParserLane
-    predicate_detector: PredicateEventDetector
-    duckling: TemporalLane
-    interpretation_producer: InterpretationEvidenceProducer
-    locale_by_language: dict[str, str]
-    timezone: str
     server_time: Callable[[], datetime]
     monotonic_tick: Callable[[], int]
-    reservation_capacity: int
-    reservation_ttl_ticks: int
     bootstrap_v3_proposal_producer: BootstrapV3ProposalProducer | None = None
     bootstrap_v3_evidence_producer: BootstrapV3EvidenceProducerProtocol | None = None
     bootstrap_v3_interpreter: BootstrapV3GraphFreeInterpreter | None = None
@@ -107,8 +81,6 @@ class SourceNormalizationHostBundleBuilder:
 
     def build(self, *, atomic_store: SemanticIngestionAtomicStore) -> SourceNormalizationHostBundle:
         """Build the only concrete path from host authority to atomic reload."""
-        if self.reservation_capacity < 1 or self.reservation_ttl_ticks < 1:
-            raise ValueError("source-normalization reservation limits must be positive")
         # Authority issuers that derive publication coordinates must read the
         # exact live lease from the atomic owner; a fixture-shaped lease cannot
         # authorize a real generation CAS.
@@ -117,22 +89,6 @@ class SourceNormalizationHostBundleBuilder:
         )
         if bind_publication_lease is not None:
             bind_publication_lease(atomic_store.current_source_normalization_lease)
-        proposal_producer = SealedSemanticProposalRunProducer(
-            transport=self.proposal_transport,
-            request_materializer=self.proposal_request_materializer,
-            retry_policy=self.proposal_retry_policy,
-            resolve_quote=self.resolve_quote,
-            projection_quote_verifier=self.projection_quote_verifier,
-        )
-        evidence_producer = SealedSourceNormalizationEvidenceProducer(
-            stanza=self.stanza,
-            spacy=self.spacy,
-            predicate_detector=self.predicate_detector,
-            duckling=self.duckling,
-            interpretation_producer=self.interpretation_producer,
-            locale_by_language=self.locale_by_language,
-            timezone=self.timezone,
-        )
         repository = AtomicStoreSourceNormalizationRepository(atomic_store=atomic_store)
         recovery_repository = AtomicStoreBootstrapRecoveryClaimRepository(atomic_store=atomic_store)
         trusted_time = InjectedSourceNormalizationTrustedTime(
@@ -144,13 +100,7 @@ class SourceNormalizationHostBundleBuilder:
             recovery_repository=recovery_repository,
             trusted_time=trusted_time,
             execution_owner=SourceNormalizationExecutionOwner(
-                proposal_producer=proposal_producer,
-                evidence_producer=evidence_producer,
                 trusted_time=trusted_time,
-                reservation_provider=InMemorySourceNormalizationResourceReservationProvider(
-                    capacity=self.reservation_capacity,
-                    ttl_ticks=self.reservation_ttl_ticks,
-                ),
                 recovery_repository=recovery_repository,
                 publisher=repository,
                 bootstrap_v3_proposal_producer=v3_proposal,
@@ -158,6 +108,7 @@ class SourceNormalizationHostBundleBuilder:
                 bootstrap_v3_interpreter=v3_interpreter,
             ),
         )
+
 
     def _bootstrap_v3_components(
         self,
