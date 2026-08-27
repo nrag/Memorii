@@ -126,7 +126,23 @@ claims; any reopening of the legacy-path removal's slices.
   (`build_source_normalization_authority_bundle`); restored, all three
   redelivery proofs pass under default-on (20:38).
 
+- 2026-08-27 (M2 verified): the parity module is green — 2 passed in 6:26
+  (redelivery-recovery and direct-delivery diametric nodes; opposed modes,
+  identical outcomes, idempotence, and durable projections).
+- 2026-08-27 (M4 procedure, located not run): the frozen diagnostic harness
+  lives in
+  `../semantic-ingestion-canonical-evidence-production-performance-2026-08-16/evidence/` —
+  run `pbd_exp_004_duplicate_step2.py` (the H8 experiment) against the current
+  revision for the fixed-vs-baseline comparison, then
+  `pbd_exp_003_persistence_composition.py` (the H7 kernel) with the
+  substitution ON and H8 removed to scope what actually remains. Record both
+  JSON outputs here and close or open the H7 unit from those numbers.
+
 ## Next Action
+
+Run the M4 re-profile per the recorded procedure (exp_004 then exp_003),
+record the numbers, and scope H7 from them. (M1-M3 are landed; the prior
+next action is preserved below for history.)
 
 Land M1: consume the verification run, then wire the parity gate (M2) with
 its explicit-OFF fixture pattern.
