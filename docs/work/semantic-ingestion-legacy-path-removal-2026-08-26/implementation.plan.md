@@ -389,6 +389,29 @@ Broad gate (once, at the final revision):
   (`test_linguistic_adapters.py::test_shipped_manifests_verify_real_local_english_assets`,
   HEAD-verified failing — model-asset check) + 1 skipped; collection 4166;
   identity gate pass; ruff zero new.
+- 2026-08-26 (slice-5 verified facts, coordinator-confirmed in source — do not
+  re-derive): (1) `TemporalEvidenceResolver` has LIVE production consumers
+  (`policy_migration.py:56,1990` and `projection_history.py:6059,6083`) — it
+  must move to a new behavioral module (e.g.
+  `temporal_evidence_resolution.py`) before `pipeline.py` is deleted;
+  `LearnedStageRenewalScheduler`, `require_complete_graph_free_analysis`, and
+  `build_graph_free_source_alignment` have no consumers outside pipeline and
+  its dying tests. (2) `SemanticAnalysisOutage` is raised by nothing after the
+  pipeline dies and is an `OSError` subclass — delete it and simplify
+  ingestion.py's two `except (OSError, SemanticAnalysisOutage)` clauses to
+  `except OSError`. (3) `SemanticProposalRun._validate_member_closure`
+  (contracts.py ~6448-6580) and its `segment_language_route_digest` property
+  (~6582) are defined on `SemanticProposalRun` and monkey-patched onto
+  `SemanticProposal` at ~6602-6603 (`SemanticProposal` is LIVE via
+  `proposal_adapter` and the V3 proposal producer) — move both definitions
+  onto `SemanticProposal` when deleting `SemanticProposalRun`.
+  (4) `source_alignment.py`'s only production importer is pipeline.py; its
+  `resolve_source_local_identity` has one test-only consumer
+  (`test_source_alignment_derivation.py`), so the module, the alignment
+  family (`SourceProposalAlignment` etc.), and that test die together.
+  (5) `test_temporal_trust_resolution.py` imports contract types via
+  pipeline's re-export list — redirect to contracts (plus the new resolver
+  module) when pipeline.py is deleted.
 - 2026-08-26: slice 5 prepared but not started (context boundary; recorded
   for exact resumption). Its plan:
   delete `SemanticIngestionPipeline` + `resolve_context` + the clarification
