@@ -2572,7 +2572,7 @@ def test_semantic_conflict_derivation_and_replay_matrix_is_byte_exact(tmp_path: 
     binding = _semantic_conflict_replay_binding(
         cases[-1][1], storage=tmp_path / "durable-baseline"
     )
-    for _, record_ids in cases:
+    for _, _record_ids in cases:
         bundle = create_replay_checkpoint(
             state=state,
             watermark_batch=batch,
