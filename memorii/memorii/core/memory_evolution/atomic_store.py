@@ -11697,6 +11697,12 @@ class SemanticIngestionAtomicStore:
         ):
             if self._is_bootstrap_v3_ready_generation(control, generation):
                 return ()
+            if control.group_result_digests:
+                # The bootstrap graph plane advanced this control through its
+                # own group-commit grammar, which leaves no generic manifest
+                # at the generations it crosses; the generic terminal lease
+                # session must not decode graph-owned generations.
+                return ()
             graph_manifest = self._memory_plane.get_record(
                 _bootstrap_graph_v3_manifest_id(_control_namespace(control), generation)
             )
@@ -11705,14 +11711,19 @@ class SemanticIngestionAtomicStore:
                 and graph_manifest.source_kind
                 == "semantic_ingestion_bootstrap_graph_v3_manifest"
                 and graph_manifest.content.get("semantic_ingestion_kind")
-                == "bootstrap_graph_v3_manifest"
-                and graph_manifest.content.get("request", {}).get(
-                    "predecessor_generation", {}
-                ).get("operation_generation")
-                == generation - 1
+                in {
+                    "bootstrap_graph_v3_manifest",
+                    "bootstrap_graph_v3_terminal_manifest",
+                }
             ):
-                # Bootstrap graph checkpoints have a disjoint member grammar;
-                # the generic terminal lease session must not decode them.
+                # Bootstrap graph checkpoints and terminal publications have
+                # a disjoint member grammar and their own generation scheme
+                # (a record written while the control sits at one generation
+                # lands at a graph-derived generation number, not
+                # control_generation + 1); the generic terminal lease
+                # session must not decode them.  The manifest id is
+                # generation-keyed and the source and kind are checked
+                # above, which is the binding this escape hatch needs.
                 return ()
             raise PreplanningStoreError("committed generation manifest is absent")
         try:

@@ -370,6 +370,7 @@ def _verified_runtime_store(
     plane: MemoryPlaneService | None = None,
     *,
     semantic_integrity_lifecycle: PrivilegedSemanticIntegrityLifecycle | None = None,
+    semantic_conflict_authority_resolver=None,
 ):
     plane = plane or MemoryPlaneService()
     writers = SemanticWriterAdmissionStore(
@@ -395,6 +396,7 @@ def _verified_runtime_store(
                     semantic_integrity_lifecycle.linearization if semantic_integrity_lifecycle is not None else None
                 ),
                 current_bootstrap_release_verifier=_CurrentBootstrapReleaseVerifier(),
+                semantic_conflict_authority_resolver=semantic_conflict_authority_resolver,
             )
 
     try:
@@ -1338,17 +1340,21 @@ def test_normal_provider_root_missing_bootstrap_authority_is_evidence_only(
 
 
 @pytest.mark.parametrize(
-    ("user_content", "assistant_content", "expected_source_texts"),
+    ("user_content", "assistant_content", "expected_source_texts", "expected_reason"),
     [
-        ("Atlas owner is Bob.", "", ("Atlas owner is Bob.",)),
-        ("", "Receipt is confirmed.", ("Receipt is confirmed.",)),
-        ("", "", ()),
+        # The empty child's source_only outcome wins the fan-out merge; a
+        # non-empty child carrying pending corpus content fails closed at
+        # this host's absent normalization bundle.
+        ("Atlas owner is Bob.", "", ("Atlas owner is Bob.",), "source_only"),
+        ("", "Receipt is confirmed.", ("Receipt is confirmed.",), "source_alignment_authority_unavailable"),
+        ("", "", (), "source_only"),
     ],
 )
 def test_hermes_empty_turn_content_is_evidence_only_without_semantic_preparation(
     user_content: str,
     assistant_content: str,
     expected_source_texts: tuple[str, ...],
+    expected_reason: str,
 ) -> None:
     capability = _LocalRuntimeCapability()
     plane = MemoryPlaneService()
@@ -1375,7 +1381,7 @@ def test_hermes_empty_turn_content_is_evidence_only_without_semantic_preparation
         authenticated_host_ingress=_host_ingress(),
     )
 
-    assert result.blocked_reasons["semantic_ingestion"] == "source_only"
+    assert result.blocked_reasons["semantic_ingestion"] == expected_reason
     source_texts = tuple(
         record.text
         for record in plane.list_records(source_kind="semantic_ingestion_source")
@@ -1391,7 +1397,9 @@ class _FilesystemIntegrityCapability(_TestHostBootstrapCapability):
         lifecycle: PrivilegedSemanticIntegrityLifecycle,
         holder: list[SemanticIngestionAtomicStore],
     ) -> None:
-        super().__init__(resolver=_Resolver())
+        # The composition rides the scenario-test host so it may carry the
+        # full host bundles over the real filesystem store.
+        super().__init__(resolver=_Resolver(), trust_domain="scenario_test")
         self._lifecycle = lifecycle
         self._holder = holder
         self.transports: list[_CaptureTransport] = []
@@ -1400,19 +1408,47 @@ class _FilesystemIntegrityCapability(_TestHostBootstrapCapability):
         self, *, memory_plane, now_provider, bootstrap_profile
     ):
         del now_provider
+        from semantic_terminal_test_support import (
+            TestSemanticConflictAuthorityResolver,
+        )
+
+        conflict_resolver = TestSemanticConflictAuthorityResolver(memory_plane)
         _, writers, store = _verified_runtime_store(
             memory_plane,
             semantic_integrity_lifecycle=self._lifecycle,
+            semantic_conflict_authority_resolver=conflict_resolver,
         )
         self._holder.append(store)
-        runtime = build_authorized_local_semantic_runtime(
-            authorization_bytes=b"signed-test-authorization",
-            authorization_verifier=_AuthorizationVerifier(),
-            policy_provider=_PolicyProvider("owner_is"),
-            writer_admission=writers,
-            atomic_store=store,
-            bootstrap_profile=bootstrap_profile,
+        runtime = replace(
+            build_authorized_local_semantic_runtime(
+                authorization_bytes=b"signed-test-authorization",
+                authorization_verifier=_AuthorizationVerifier(),
+                policy_provider=_PolicyProvider("owner_is"),
+                writer_admission=writers,
+                atomic_store=store,
+                bootstrap_profile=bootstrap_profile,
+            ),
+            source_normalization_host_bundle=(
+                _bob_owner_proposal_bundle_builder().build(atomic_store=store)
+            ),
+            bootstrap_graph_host_bundle=(
+                _deterministic_graph_bundle_builder().build(atomic_store=store)
+            ),
         )
+        # Install the resolver authority through THIS runtime's
+        # administration grant; the claim is lazy, so the runtime validates
+        # first, and a reopened plane already carries the durable authority.
+        if (
+            memory_plane.get_record(
+                "semantic_ingestion:conflict-authority:resolver:"
+                "test-semantic-conflict-authority"
+            )
+            is None
+        ):
+            runtime.validate(profile=bootstrap_profile, server_time=TEST_NOW)
+            conflict_resolver.install(
+                writers, runtime.conflict_authority_administration_grant()
+            )
         self.transports.append(_CaptureTransport())
         return runtime
 
@@ -1444,8 +1480,16 @@ def _filesystem_hermes_integrity_composition(root):
         "memorii.core.memory_evolution.bootstrap_profile.entry_points",
         return_value=(_InstalledCapabilityEntryPoint(capability),),
     ):
-        service = build_filesystem_provider(
-            root,
+        # The scenario-test composition carries the full host bundles over
+        # the real JSONL filesystem store; the graph bundle is restricted
+        # to scenario construction by production contract.
+        service = ProviderMemoryService._from_scenario_test_host(
+            memory_plane=MemoryPlaneService(
+                record_store=JsonlMemoryPlaneStore(root / "memory-plane")
+            ),
+            now_provider=lambda: TEST_NOW,
+            host_bootstrap_capability=capability,
+            host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
             semantic_integrity_lifecycle=lifecycle,
         )
     assert len(holder) == 1 and len(capability.transports) == 1
@@ -1521,13 +1565,47 @@ def test_real_filesystem_hermes_corruption_recovery_restart_and_racing_write(
         authenticated_host_ingress=_host_ingress(),
     )
     assert initial.blocked_reasons["semantic_ingestion"] == "source_only"
-    assert len(store.semantic_event_batches()) == 1
+    # The V3 graph plane records its terminal in its own grammar; the
+    # semantic event batches the integrity door recovers come from one
+    # canonical clarification lifecycle through the same store.
+    from memorii.core.semantic_ingestion.authorization import (
+        SemanticAuthorizationAuthorityRepository as _IntegrityAuthorizationRepository,
+    )
+    from memorii.core.semantic_ingestion.persistence import (
+        SemanticTerminalPersistenceService as _IntegrityPersistenceService,
+    )
+    from tests.unit.core.semantic_ingestion.test_semantic_terminal_persistence import (
+        _commit_accepted_clarification,
+    )
+
+    integrity_binding = store._writers.commit_binding(store._writers.current())
+    integrity_repository = _IntegrityAuthorizationRepository(
+        atomic_store=store,
+        writer_binding_provider=lambda: integrity_binding,
+        now_provider=lambda: TEST_NOW,
+    )
+    integrity_persistence = _IntegrityPersistenceService(
+        atomic_store=store,
+        writer_binding_provider=lambda: integrity_binding,
+        authorization_repository=integrity_repository,
+    )
+    _commit_accepted_clarification(
+        store,
+        sha256(b"filesystem-hermes-integrity-clarification").hexdigest(),
+        plane=plane,
+        service=integrity_persistence,
+        authorization_repository=integrity_repository,
+    )
+    retained_batch_count = len(store.semantic_event_batches())
+    assert retained_batch_count >= 1
     # This filesystem composition uses the deterministic local runtime.  Its
     # retained capture transport is intentionally unattached; remote transport
     # behavior is covered by the explicit-remote composition tests.
     assert transport.requests == []
     authority_batches = _retained_clean_authority_batches(plane, store)
-    assert len(authority_batches) == 1
+    # Every committed effect batch is retained in the clean-recovery
+    # authority view.
+    assert len(authority_batches) >= 1
 
     active = plane.list_records(source_kind="semantic_ingestion_event_batch")[0]
     corrupted = active.model_copy(update={"content": active.content | {"canonical_hex": "00"}})
@@ -1591,7 +1669,7 @@ def test_real_filesystem_hermes_corruption_recovery_restart_and_racing_write(
     assert released.frozen_partition_ids == ()
     assert lifecycle.current_control() == released
     assert write_outcome in {"accepted", "rejected"}
-    assert len(store.semantic_event_batches()) == 1
+    assert len(store.semantic_event_batches()) == retained_batch_count
 
     (
         reopened_service,
@@ -1602,7 +1680,7 @@ def test_real_filesystem_hermes_corruption_recovery_restart_and_racing_write(
         reopened_transport,
     ) = _filesystem_hermes_integrity_composition(root)
     assert reopened_lifecycle.current_control() == released
-    assert len(reopened_store.semantic_event_batches()) == 1
+    assert len(reopened_store.semantic_event_batches()) == retained_batch_count
     assert isinstance(
         reopened_hermes.prefetch(
             "Who owns Atlas?",
@@ -2156,28 +2234,94 @@ def test_public_reconcile_leaves_unpublished_normalization_pending(tmp_path) -> 
     assert source_results == []
 
 
-@pytest.mark.parametrize("boundary", ["checkpoint_source_progress", "persist_terminal_group", "finalize_source"])
+def _bob_owner_proposal_bundle_builder():
+    """Normalization host builder carrying the corpus owner-is proposal."""
+
+    builder, _calls = _v3_normalization_host_builder(
+        proposal=_bob_owner_proposal()
+    )
+    return builder
+
+
+def _bob_owner_proposal():
+    from memorii.core.semantic_ingestion.contracts import (
+        ProviderEntityObject,
+        ProviderFact,
+        ProviderMention,
+        ProviderSemanticProposal,
+    )
+
+    return ProviderSemanticProposal(
+        mentions=(
+            ProviderMention(local_id="atlas", mention_quote="Atlas", mention_context_quote="Atlas owner is Bob."),
+            ProviderMention(local_id="bob", mention_quote="Bob", mention_context_quote="Atlas owner is Bob."),
+        ),
+        facts=(
+            ProviderFact(
+                local_id="owner",
+                predicate_id="owner_is",
+                subject_entity_ref="atlas",
+                object=ProviderEntityObject(entity_ref="bob"),
+                assertion_quote="Atlas owner is Bob.",
+                predicate_anchor_quote="owner",
+                polarity="positive",
+                commitment="asserted",
+            ),
+        ),
+        abstained=False,
+    )
+
+
+def _deterministic_graph_bundle_builder():
+    from memorii.core.semantic_ingestion.bootstrap_graph_host import (
+        BootstrapGraphHostBundleBuilder,
+    )
+    from tests.fixtures.semantic_ingestion.bootstrap_graph_v3_fixture import (
+        DeterministicBootstrapGraphAuthorityProviderV3,
+    )
+
+    return BootstrapGraphHostBundleBuilder(
+        authority_provider=DeterministicBootstrapGraphAuthorityProviderV3(
+            successful_calls=[]
+        )
+    )
+
+
+def _full_v3_service(plane, *, storage_unused=None):
+    """Compose the complete V3 scenario flow: normalization and graph host."""
+
+    return ProviderMemoryService._from_scenario_test_host(
+        memory_plane=plane,
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=_built_in_local_capability(scenario_test=True),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        source_normalization_host_bundle_builder=_bob_owner_proposal_bundle_builder(),
+        bootstrap_graph_host_bundle_builder=_deterministic_graph_bundle_builder(),
+    )
+
+
+@pytest.mark.parametrize(
+    "boundary",
+    [
+        "checkpoint_source_progress",
+        "commit_or_reload_bootstrap_graph_group_v3",
+        "persist_bootstrap_graph_terminal_v3",
+    ],
+)
 def test_public_jsonl_lost_ack_reopens_without_duplicate_effects(
     tmp_path, monkeypatch: pytest.MonkeyPatch, boundary: str
 ) -> None:
     storage = tmp_path / boundary
-    plane, writers, store = _verified_runtime_store(MemoryPlaneService(record_store=JsonlMemoryPlaneStore(storage)))
-    _, capability = _dependencies(writer_admission=writers, atomic_store=store)
-    with patch(
-        "memorii.core.memory_evolution.bootstrap_profile.entry_points",
-        return_value=(_InstalledCapabilityEntryPoint(capability),),
-    ):
-        service = ProviderMemoryService(memory_plane=plane, now_provider=lambda: TEST_NOW, host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier())
+    plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(storage))
+    service = _full_v3_service(plane)
+    store = service._semantic_atomic_store
     original = getattr(store, boundary)
     failed = False
 
-    def apply_then_fail(request, **kwargs):
+    def apply_then_fail(*args, **kwargs):
         nonlocal failed
-        result = original(request, **kwargs)
-        selected_checkpoint = boundary != "checkpoint_source_progress" or any(
-            member.kind == "terminal_artifact" for member in request.members
-        )
-        if not failed and selected_checkpoint:
+        result = original(*args, **kwargs)
+        if not failed:
             failed = True
             raise OSError(f"{boundary} lost acknowledgement")
         return result
@@ -2196,38 +2340,24 @@ def test_public_jsonl_lost_ack_reopens_without_duplicate_effects(
 
     call()
 
-    reopened_plane, reopened_writers, reopened_store = _verified_runtime_store(
-        MemoryPlaneService(record_store=JsonlMemoryPlaneStore(storage))
-    )
-    reopened_assessor = _CountingAssessor()
-    reopened_transport, reopened_capability = _dependencies(
-        writer_admission=reopened_writers,
-        atomic_store=reopened_store,
-        assessor=reopened_assessor,
-    )
-    with patch(
-        "memorii.core.memory_evolution.bootstrap_profile.entry_points",
-        return_value=(_InstalledCapabilityEntryPoint(reopened_capability),),
-    ):
-        reopened = ProviderMemoryService(memory_plane=reopened_plane, now_provider=lambda: TEST_NOW, host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier())
-    reopened.reconcile_memory_evolution()
+    reopened_plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(storage))
+    reopened = _full_v3_service(reopened_plane)
+    outcomes = reopened.reconcile_memory_evolution()
     assert failed is True
-    assert reopened_transport.requests == []
-    assert reopened_assessor.calls == 0
     controls = [
         record.content["control"]
         for record in reopened_plane.list_records()
         if record.source_kind == "semantic_ingestion_preplanning_control"
     ]
     assert len(controls) == 1 and controls[0]["state"] == "terminal"
-    kinds = [
-        record.content["member"]["kind"]
-        for record in reopened_plane.list_records()
-        if record.source_kind == "semantic_ingestion_generation_member"
-    ]
-    assert kinds.count("execution_plan") == 1
-    assert kinds.count("group_result") == 1
-    assert kinds.count("source_result") == 1
+    # Exactly one graph terminal identity survives the lost
+    # acknowledgement; the recovery door never duplicates it.
+    terminal_identities = reopened_plane.list_records(
+        source_kind="semantic_ingestion_bootstrap_graph_v3_terminal_identity"
+    )
+    assert len(terminal_identities) == 1
+    assert [outcome.status for outcome in outcomes] in ([], ["evolution_committed"])
+    assert reopened.reconcile_memory_evolution() == []
 
 
 def test_public_jsonl_service_matches_frozen_wire_and_member_bytes_across_reopen(

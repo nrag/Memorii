@@ -692,6 +692,12 @@ class ProviderIngestionCoordinator:
                 # retained state; do not persist this as a terminal.
                 outcomes.append(self._retryable_outcome(control))
                 continue
+            if "bootstrap_graph_terminal_persisted" in terminal.reason_codes:
+                # The graph plane already committed this terminal through its
+                # own disjoint grammar; the generic lease session must not
+                # re-persist or decode graph generation members.
+                outcomes.append(self._committed_outcome(control, terminal))
+                continue
             try:
                 self._semantic_terminal_persistence.persist(
                     fence=control.operation_fence,

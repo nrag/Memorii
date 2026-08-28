@@ -265,8 +265,12 @@ def test_coordinator_persists_retry_or_terminal_once(monkeypatch, outcome_kind: 
 
     def flaky_group_commit(*, request):
         commit_calls.append((request.transaction_group_id, request.request_ctv_digest))
-        if outcome_kind == "related_conflict" and len(commit_calls) == 1:
-            raise PreplanningStoreError("bootstrap graph group commit CAS conflicted")
+        if len(commit_calls) == 1 and outcome_kind in {"related_conflict", "retry"}:
+            raise PreplanningStoreError(
+                "bootstrap graph group commit CAS conflicted"
+                if outcome_kind == "related_conflict"
+                else "bootstrap graph group commit storage unavailable"
+            )
         return original_commit_or_reload(request=request)
 
     monkeypatch.setattr(
@@ -323,10 +327,13 @@ def test_coordinator_persists_retry_or_terminal_once(monkeypatch, outcome_kind: 
         assert commit_calls == []
         return
     if outcome_kind == "retry":
+        # A storage-unavailable group commit is a durable retry: exactly one
+        # attempt is recorded and the repeated coordinate replays the same
+        # progress without another commit.
         assert result.kind == "durable_retry"
         repeat = coordinator.coordinate(request=request, transition=transition)
         assert repeat == result
-        assert commit_calls == []
+        assert len(commit_calls) == 1
         return
     if outcome_kind == "related_conflict":
         assert len(commit_calls) == 2
