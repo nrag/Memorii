@@ -1081,11 +1081,47 @@ Broad gate (once, at the final revision):
   expects at that id (the loader's kind check reads
   `terminal_locator`).
 
+- 2026-08-28 (slice 6b COMPLETE + 6a policy progress, commits `4ad89d4`,
+  `ae136b7`): ALL ELEVEN scenario tests GREEN — the last (exact
+  redelivery) compares records through one JSON round trip (in-memory
+  tuples vs reopened lists; the same class as the clarification
+  family's `_json_round_tripped`). Policy migration now 24/28: the
+  trust catch-up test green (stale-write comparison excludes the full
+  admission/scaffolding families a rejected commit legitimately
+  persists), and a PRODUCTION INVARIANT repaired in
+  `_typed_claim_projection_records`: the atemporal/reference-only
+  promotion branch previously copied the TRUST-level selection (empty
+  for a contested slot) while keeping the resolver's PASS outcome —
+  fabricating a winnerless passing projection the validator rejects;
+  it now honors the resolver's own selection, keeps a real contest
+  CONTESTED (promotion must not erase a contest), and maps a
+  selection-less pass to UNKNOWN. CAUTION NOTE: two earlier attempts
+  at this edit silently NO-OPPED (python .replace anchors drifted);
+  the third used a Read-verified Edit and landed — verify edits by
+  re-reading the file, not by the canned success print.
+  REMAINING FOUR (temporal, reference, race ×2) all reduce to ONE
+  precise production question: a post-cutover clarification commit
+  whose accepted terminal ALSO resolves the SAME conflict by
+  projection writes TWO pointer updates for that conflict in one batch
+  (clarification lifecycle transition coord=3 + projection_resolved
+  transition coord=4, both pointing `...pointer:f5e4...`), which the
+  closure validator correctly rejects (ap-unique: type-count 2 vs one
+  memory id). In the terminal-persistence geometry the clarified claim
+  CONTESTED anew (fresh introduction); post-atemporal-cutover the
+  resolver RESOLVES the retained contest instead. Next: decide the
+  boundary — either the clarification commit's projection must not
+  resolve the conflict it is about to close by lifecycle (suppress the
+  projection transition in the clarification commit path), or the
+  lifecycle closure must be the single pointer writer and the
+  projection transition must target the conflict's NEXT revision
+  rather than its own. Probe from
+  `preflight_terminal_conflict_authority` → the projection transition
+  construction in `projection_records_from_replay_state` under an
+  atemporal active policy.
+
 ## Next Action
 
-Finish 6b's last test: trace why the found-path graph terminal reload
-misses on completed operations (recovery key vs terminal-recovery
-record identity/kind), then the corruption activation clause
-(atomic_store.py ~3704-3762), the 6a policy five,
-conflict-clarification (12), and the 6d gates (broad gate, identity,
-durations regen, three WorkPlan closures; land the WIP files).
+Resolve the dual-pointer question for the four remaining policy
+tests; then conflict-clarification (12, one signature), the corruption
+activation clause, and the 6d gates (broad gate, identity, durations
+regen, three WorkPlan closures; land the WIP files).
