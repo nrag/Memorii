@@ -430,16 +430,34 @@ def test_scenario_public_sync_event_reopens_retries_exactly_and_rejects_substitu
         "timestamp": now(),
         "authenticated_host_ingress": _runner_module()._host_ingress(ordinal=0),
     }
+    def durable_records(service) -> tuple:
+        """Normalize records through one JSON round trip before equality.
+
+        A live service keeps Python tuples in memory; a reopened JSONL store
+        returns parsed lists.  Exact-redelivery equality must compare the
+        durable representation, not in-memory container types.
+        """
+        import json as _json
+
+        from memorii.core.memory_plane.models import CanonicalMemoryRecord
+
+        return tuple(
+            CanonicalMemoryRecord.model_validate(
+                _json.loads(_json.dumps(record.model_dump(mode="json")))
+            )
+            for record in service._memory_plane.list_records()
+        )
+
     first.sync_event(**kwargs)
-    first_records = tuple(first._memory_plane.list_records())
+    first_records = durable_records(first)
 
     reopened = build_scenario_test_provider_service(
         memory_plane=MemoryPlaneService(record_store=JsonlMemoryPlaneStore(storage)),
         now_provider=now,
     )
     reopened.sync_event(**kwargs)
-    assert tuple(reopened._memory_plane.list_records()) == first_records
+    assert durable_records(reopened) == first_records
 
     with pytest.raises(PreplanningStoreError, match="atomic admission evidence is partial or mismatched"):
         reopened.sync_event(**{**kwargs, "content": "Atlas owner is Bob."})
-    assert tuple(reopened._memory_plane.list_records()) == first_records
+    assert durable_records(reopened) == first_records

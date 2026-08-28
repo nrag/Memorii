@@ -6100,11 +6100,44 @@ def _typed_claim_projection_records(
             for index, claim in enumerate(typed_claims)
             for candidate in claim.temporal_evidence.decision_closure.candidates
         }
+        resolver_selected = tuple(
+            sorted(
+                {
+                    candidate_indexes[candidate_id]
+                    for candidate_id in resolved.selected_candidate_ids
+                }
+            )
+        )
+        temporal_contested = tuple(
+            sorted(
+                {
+                    candidate_indexes[candidate_id]
+                    for candidate_id in resolved.contested_candidate_ids
+                }
+            )
+        )
         if resolved.resolution_rule in {
             "atemporal",
             "authenticated_reference_open_start",
         }:
-            temporal_selected = selected if resolved.outcome == "pass" else ()
+            if temporal_contested:
+                # Promoting a partition to atemporal or reference-only
+                # resolution must not erase a real contest: the claim keeps
+                # its contested temporal projection instead of fabricating a
+                # passing projection with no winner.
+                temporal_selected = ()
+                temporal_outcome = "contested"
+            elif resolved.outcome == "pass" and resolver_selected:
+                temporal_selected = resolver_selected
+                temporal_outcome = resolved.outcome
+            elif resolved.outcome == "pass":
+                # A passing resolution that selected no candidate has no
+                # winner to expose; the projection is unknown, not passing.
+                temporal_selected = ()
+                temporal_outcome = "unknown"
+            else:
+                temporal_selected = ()
+                temporal_outcome = resolved.outcome
         else:
             temporal_selected = tuple(
                 sorted(
@@ -6114,15 +6147,7 @@ def _typed_claim_projection_records(
                     }
                 )
             )
-        temporal_contested = tuple(
-            sorted(
-                {
-                    candidate_indexes[candidate_id]
-                    for candidate_id in resolved.contested_candidate_ids
-                }
-            )
-        )
-        temporal_outcome = resolved.outcome
+            temporal_outcome = resolved.outcome
         # Partitioning owns finite valid-time topology. Re-arbitration may
         # promote an atemporal/reference-only partition, but it must not widen
         # or erase an already-derived finite atom using whole-claim evidence.

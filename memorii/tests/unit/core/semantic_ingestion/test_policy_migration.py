@@ -28,6 +28,9 @@ from memorii.core.memory_plane.store import (
     MemoryPlaneRevisionConflictError,
     _PersistedBatch,
 )
+from memorii.core.semantic_ingestion.authorization import (
+    SemanticAuthorizationAuthorityRepository,
+)
 from memorii.core.semantic_ingestion.contracts import (
     PredicateTemporalRule,
     PredicateTrustRule,
@@ -41,6 +44,10 @@ from memorii.core.semantic_ingestion.event_replay import (
     SemanticReplayCheckpointBundle,
     replay_semantic_event_batches,
 )
+from memorii.core.semantic_ingestion.persistence import SemanticTerminalPersistenceService
+from semantic_terminal_test_support import (
+    TestSemanticConflictAuthorityResolver as _TestSemanticConflictAuthorityResolver,
+)
 from semantic_terminal_test_support import accepted_terminal
 from tests.unit.core.semantic_ingestion.test_projection_scheduler import (
     T0,
@@ -50,27 +57,102 @@ from tests.unit.core.semantic_ingestion.test_projection_scheduler import (
 )
 from tests.unit.core.semantic_ingestion.test_semantic_terminal_persistence import (
     AUTHORIZATION,
-    _accepted_clarification_inputs,
     _activate,
-    _commit_accepted_clarification,
+    _claim_canonical_clarification,
+    _commit_claimed_accepted_clarification,
     _setup,
-    _with_claim_record_version,
 )
 
 
-def _commit_clarification_terminal(store, terminal):
-    proposal, _, resulting_revision, policy_fingerprint = (
-        _accepted_clarification_inputs(terminal.operation_id)
+def _semantic_effect_record_ids(plane):
+    """Ids of records carrying committed semantic effects (not raw admissions).
+
+    A rejected stale-policy clarification still admits its contest sources;
+    the fail-closed contract is that no terminal, conflict, or migration
+    effect is committed.
+    """
+    return tuple(
+        record.memory_id
+        for record in plane.list_records()
+        if record.source_kind
+        not in {
+            "semantic_ingestion_source",
+            "semantic_ingestion_prepared_source",
+            "semantic_ingestion_admission_index",
+            "semantic_ingestion_profile_selection",
+            "semantic_ingestion_profile_verification",
+            "semantic_ingestion_profile_outcome",
+            "semantic_ingestion_preplanning_control",
+            "semantic_ingestion_preplanning_artifact",
+            "semantic_ingestion_bootstrap_handoff_marker",
+            "semantic_ingestion_bootstrap_v3_recovery_index",
+            "semantic_ingestion_authorization_authority",
+        }
     )
-    return store.commit_conflict_clarification_transaction(
-        proposal=proposal,
-        processing_operation_id=terminal.operation_id,
-        resulting_conflict_revision=resulting_revision,
-        policy_fingerprint=policy_fingerprint,
-        committed_outcome="accepted",
-        semantic_result_digest=terminal.terminal_digest,
-        semantic_terminal=terminal,
+
+
+def _persist_one_normal_event(
+    store,
+    *,
+    plane,
+    service,
+    authorization_repository,
+    coordinate: str,
+    **terminal_kwargs,
+):
+    """Persist exactly one ordinary graph-advancing semantic write.
+
+    The migration catch-up tests exercise one normal late event; an ordinary
+    accepted terminal is that event, with no clarification lifecycle noise.
+    """
+    from semantic_terminal_test_support import handoff
+
+    _, fence = handoff(
+        plane,
+        coordinate=coordinate,
+        scope_ids=frozenset({"scope:a"}),
+        atomic_store=store,
+        writer_binding=store._writers.commit_binding(store._writers.current()),
     )
+    terminal = accepted_terminal(operation_id=fence.operation_id, **terminal_kwargs)
+    _activate(authorization_repository, fence, terminal)
+    service.persist(
+        fence=fence, terminal=terminal, authorization_verifier=AUTHORIZATION
+    )
+
+
+def _commit_clarification_terminal(
+    store,
+    *,
+    plane,
+    service,
+    authorization_repository,
+    coordinate: str,
+    **terminal_kwargs,
+):
+    """Commit one accepted clarification terminal through the real lifecycle.
+
+    Builds the claimed work on an isolated contest, then commits a terminal
+    carrying the caller's policy characteristics bound to that claim.
+    """
+    # The contest claims must carry the same policy characteristics as the
+    # committed answer: after a policy cutover the active policy governs
+    # every persist in the lifecycle, not only the final terminal.
+    claim, cas = _claim_canonical_clarification(
+        store,
+        coordinate,
+        plane=plane,
+        service=service,
+        authorization_repository=authorization_repository,
+        terminal_kwargs=terminal_kwargs,
+    )
+    receipt, _, _ = _commit_claimed_accepted_clarification(
+        store,
+        claim,
+        cas,
+        terminal_kwargs=terminal_kwargs,
+    )
+    return receipt
 
 
 def _directory_bytes(path: Path) -> dict[str, bytes]:
@@ -1251,6 +1333,7 @@ def test_normal_event_atomically_appends_catch_up_then_restart_cutover(
         verified=True,
         backend=JsonlMemoryPlaneStore(storage),
         now_provider=lambda: T0,
+        with_test_conflict_authority=True,
     )
     initial = accepted_terminal(operation_id=fence.operation_id)
     _activate(authorization_repository, fence, initial)
@@ -1280,9 +1363,12 @@ def test_normal_event_atomically_appends_catch_up_then_restart_cutover(
         complete_read_set_digest=_digest("catch-up-read-set"),
     )
 
-    _commit_accepted_clarification(
+    _persist_one_normal_event(
         store,
-        _digest("migration-late-arrival"),
+        plane=plane,
+        service=service,
+        authorization_repository=authorization_repository,
+        coordinate="migration-late-arrival",
     )
     catch_up_records = plane.list_records(
         source_kind="semantic_projection_trust_migration_catch_up"
@@ -1306,6 +1392,9 @@ def test_normal_event_atomically_appends_catch_up_then_restart_cutover(
         reopened_plane,
         reopened_writers,
         now_provider=lambda: T0,
+        semantic_conflict_authority_resolver=_TestSemanticConflictAuthorityResolver(
+            reopened_plane
+        ),
     )
     reopened_binding = reopened_writers.commit_binding(reopened_writers.current())
     catch_up, _ = reopened.policy_migration._load_trust_progress(plan)
@@ -1333,7 +1422,20 @@ def test_normal_event_atomically_appends_catch_up_then_restart_cutover(
         complete_read_set_digest=_digest("catch-up-read-set"),
     )
 
-    assert successor.expected_writer_epoch == reopened_binding.expected_writer_epoch + 1
+    # The cutover activated a new writer epoch; the post-cutover clarification
+    # authorities must bind the successor.
+    reopened_binding = reopened_writers.commit_binding(reopened_writers.current())
+    reopened_repository = SemanticAuthorizationAuthorityRepository(
+        atomic_store=reopened,
+        writer_binding_provider=lambda: reopened_binding,
+        now_provider=lambda: T0,
+    )
+    reopened_service = SemanticTerminalPersistenceService(
+        atomic_store=reopened,
+        writer_binding_provider=lambda: reopened_binding,
+        authorization_repository=reopened_repository,
+    )
+    assert successor.expected_writer_epoch == reopened_binding.expected_writer_epoch
     assert (
         reopened.projection_history.current_trust(
             policy_fingerprint=pending.fingerprint
@@ -1346,32 +1448,34 @@ def test_normal_event_atomically_appends_catch_up_then_restart_cutover(
         )
     ) == 1
 
-    first_new_policy = _with_claim_record_version(
-        accepted_terminal(
-            operation_id=_digest("first-post-cutover-new-policy"),
-            authority_rank_by_class={"official": 20},
-        ),
-        record_version=2,
+    _commit_clarification_terminal(
+        reopened,
+        plane=reopened_plane,
+        service=reopened_service,
+        authorization_repository=reopened_repository,
+        coordinate=_digest("first-post-cutover-new-policy"),
+        authority_rank_by_class={"official": 20},
     )
-    _commit_clarification_terminal(reopened, first_new_policy)
+    # The cutover completed the plan; post-cutover writes run directly under
+    # the new policy and append no migration catch-up work.
     assert len(
         reopened_plane.list_records(
             source_kind="semantic_projection_trust_migration_catch_up"
         )
     ) == 1
 
-    stale_old_policy = _with_claim_record_version(
-        accepted_terminal(
-            operation_id=_digest("post-cutover-stale-old-policy")
-        ),
-        record_version=3,
-    )
-    before_stale = tuple(reopened_plane.list_records())
+    before_stale = _semantic_effect_record_ids(reopened_plane)
     with pytest.raises(
         (PreplanningStoreError, SemanticWriterAdmissionError),
     ):
-        _commit_clarification_terminal(reopened, stale_old_policy)
-    assert tuple(reopened_plane.list_records()) == before_stale
+        _commit_clarification_terminal(
+            reopened,
+            plane=reopened_plane,
+            service=reopened_service,
+            authorization_repository=reopened_repository,
+            coordinate=_digest("post-cutover-stale-old-policy"),
+        )
+    assert _semantic_effect_record_ids(reopened_plane) == before_stale
 
 
 def test_temporal_migration_replays_retained_evidence_and_rebases_late_writes(
@@ -1390,6 +1494,7 @@ def test_temporal_migration_replays_retained_evidence_and_rebases_late_writes(
         verified=True,
         backend=JsonlMemoryPlaneStore(storage),
         now_provider=lambda: T0,
+        with_test_conflict_authority=True,
     )
     initial = accepted_terminal(operation_id=fence.operation_id)
     _activate(authorization_repository, fence, initial)
@@ -1413,9 +1518,12 @@ def test_temporal_migration_replays_retained_evidence_and_rebases_late_writes(
         active_trust,
         writer_binding=binding,
     )
-    _commit_accepted_clarification(
+    _persist_one_normal_event(
         store,
-        _digest("temporal-migration-late-arrival"),
+        plane=plane,
+        service=service,
+        authorization_repository=authorization_repository,
+        coordinate="temporal-migration-late-arrival",
     )
     reopened_plane = MemoryPlaneService(
         record_store=JsonlMemoryPlaneStore(storage)
@@ -1433,6 +1541,9 @@ def test_temporal_migration_replays_retained_evidence_and_rebases_late_writes(
         reopened_plane,
         reopened_writers,
         now_provider=lambda: T0,
+        semantic_conflict_authority_resolver=_TestSemanticConflictAuthorityResolver(
+            reopened_plane
+        ),
     )
     reopened_binding = reopened_writers.commit_binding(reopened_writers.current())
     catch_up, _ = reopened.policy_migration._load_temporal_progress(plan)
@@ -1470,30 +1581,47 @@ def test_temporal_migration_replays_retained_evidence_and_rebases_late_writes(
         expected_partition_revision=catch_up[0].partition_revision,
         complete_read_set_digest=_digest("temporal-cutover-read-set"),
     )
-    assert successor.expected_writer_epoch == reopened_binding.expected_writer_epoch + 1
-
-    first_new_policy = _with_claim_record_version(
-        accepted_terminal(
-            operation_id=_digest("first-post-temporal-cutover"),
-            atemporal=True,
-        ),
-        record_version=2,
+    # The cutover activated a new writer epoch; the post-cutover clarification
+    # authorities must bind the successor.
+    reopened_binding = reopened_writers.commit_binding(reopened_writers.current())
+    reopened_repository = SemanticAuthorizationAuthorityRepository(
+        atomic_store=reopened,
+        writer_binding_provider=lambda: reopened_binding,
+        now_provider=lambda: T0,
     )
-    _commit_clarification_terminal(reopened, first_new_policy)
+    reopened_service = SemanticTerminalPersistenceService(
+        atomic_store=reopened,
+        writer_binding_provider=lambda: reopened_binding,
+        authorization_repository=reopened_repository,
+    )
+    assert successor.expected_writer_epoch == reopened_binding.expected_writer_epoch
+
+    _commit_clarification_terminal(
+        reopened,
+        plane=reopened_plane,
+        service=reopened_service,
+        authorization_repository=reopened_repository,
+        coordinate=_digest("first-post-temporal-cutover"),
+        atemporal=True,
+    )
+    # The cutover completed the plan; post-cutover writes run directly under
+    # the new policy and append no migration catch-up work.
     assert len(
         reopened_plane.list_records(
             source_kind="semantic_projection_temporal_migration_catch_up"
         )
     ) == 1
 
-    stale_old_policy = _with_claim_record_version(
-        accepted_terminal(operation_id=_digest("stale-required-temporal-policy")),
-        record_version=3,
-    )
-    before_stale = tuple(reopened_plane.list_records())
+    before_stale = _semantic_effect_record_ids(reopened_plane)
     with pytest.raises((PreplanningStoreError, SemanticWriterAdmissionError)):
-        _commit_clarification_terminal(reopened, stale_old_policy)
-    assert tuple(reopened_plane.list_records()) == before_stale
+        _commit_clarification_terminal(
+            reopened,
+            plane=reopened_plane,
+            service=reopened_service,
+            authorization_repository=reopened_repository,
+            coordinate=_digest("stale-required-temporal-policy"),
+        )
+    assert _semantic_effect_record_ids(reopened_plane) == before_stale
 
 
 def test_post_cutover_write_resolves_retained_reference_only_evidence(
@@ -1513,6 +1641,7 @@ def test_post_cutover_write_resolves_retained_reference_only_evidence(
         verified=True,
         backend=JsonlMemoryPlaneStore(storage),
         now_provider=lambda: T0,
+        with_test_conflict_authority=True,
     )
     initial = accepted_terminal(
         operation_id=fence.operation_id,
@@ -1569,6 +1698,19 @@ def test_post_cutover_write_resolves_retained_reference_only_evidence(
         expected_partition_revision=0,
         complete_read_set_digest=_digest("reference-cutover-read-set"),
     )
+    # The cutover activated a new writer epoch; the persistence authorities
+    # used by the post-cutover clarification must bind the successor.
+    binding = store._writers.commit_binding(store._writers.current())
+    authorization_repository = SemanticAuthorizationAuthorityRepository(
+        atomic_store=store,
+        writer_binding_provider=lambda: binding,
+        now_provider=lambda: T0,
+    )
+    service = SemanticTerminalPersistenceService(
+        atomic_store=store,
+        writer_binding_provider=lambda: binding,
+        authorization_repository=authorization_repository,
+    )
     rebased = store.projection_history.current_temporal(
         policy_fingerprint=pending_temporal.fingerprint
     )
@@ -1577,14 +1719,23 @@ def test_post_cutover_write_resolves_retained_reference_only_evidence(
     )
     assert rebased.projections[0].outcome == "pass"
 
-    next_terminal = accepted_terminal(
+    next_terminal_assertion_probe = accepted_terminal(
         operation_id=_digest("reference-enabled-post-cutover-write"),
         temporal_requirement="required",
         allow_reference_as_effective_start=True,
         reference_instant=reference_instant,
     )
-    next_assertion_id = next_terminal.accepted_carriers[0].claim_assertion_id
-    _commit_clarification_terminal(store, next_terminal)
+    next_assertion_id = next_terminal_assertion_probe.accepted_carriers[0].claim_assertion_id
+    _commit_clarification_terminal(
+        store,
+        plane=plane,
+        service=service,
+        authorization_repository=authorization_repository,
+        coordinate=_digest("reference-enabled-post-cutover-write"),
+        temporal_requirement="required",
+        allow_reference_as_effective_start=True,
+        reference_instant=reference_instant,
+    )
     current = store.projection_history.current_temporal(
         policy_fingerprint=pending_temporal.fingerprint
     )
@@ -1601,15 +1752,18 @@ def test_post_cutover_write_resolves_retained_reference_only_evidence(
         for projection in current.projections
         for evidence in projection.evidence
     }
-    stale_terminal = accepted_terminal(
-        operation_id=_digest("reference-only-stale-old-policy"),
-        temporal_requirement="optional",
-        reference_instant=reference_instant,
-    )
-    records_before_stale = tuple(plane.list_records())
+    records_before_stale = _semantic_effect_record_ids(plane)
     with pytest.raises((PreplanningStoreError, SemanticWriterAdmissionError)):
-        _commit_clarification_terminal(store, stale_terminal)
-    assert tuple(plane.list_records()) == records_before_stale
+        _commit_clarification_terminal(
+            store,
+            plane=plane,
+            service=service,
+            authorization_repository=authorization_repository,
+            coordinate=_digest("reference-only-stale-old-policy"),
+            temporal_requirement="optional",
+            reference_instant=reference_instant,
+        )
+    assert _semantic_effect_record_ids(plane) == records_before_stale
     reopened_plane = MemoryPlaneService(
         record_store=JsonlMemoryPlaneStore(storage)
     )
@@ -1652,6 +1806,7 @@ def test_normal_writer_and_cutover_race_has_one_linearized_winner(
         verified=True,
         backend=JsonlMemoryPlaneStore(storage),
         now_provider=lambda: T0,
+        with_test_conflict_authority=True,
     )
     initial = accepted_terminal(operation_id=fence.operation_id)
     _activate(authorization_repository, fence, initial)
@@ -1727,10 +1882,14 @@ def test_normal_writer_and_cutover_race_has_one_linearized_winner(
 
     def event_attempt():
         try:
-            return _commit_accepted_clarification(
+            _persist_one_normal_event(
                 store,
-                _digest(f"race-event-{winner}"),
+                plane=plane,
+                service=service,
+                authorization_repository=authorization_repository,
+                coordinate=f"race-event-{winner}",
             )
+            return None
         except Exception as exc:  # the losing CAS is the asserted result
             return exc
 
@@ -1835,7 +1994,7 @@ def test_reopened_catch_up_authority_substitution_matrix_fails_without_effect(
 ) -> None:
     storage = tmp_path / "policy-substitution-source"
     (
-        _,
+        plane,
         _,
         store,
         binding,
@@ -1846,6 +2005,7 @@ def test_reopened_catch_up_authority_substitution_matrix_fails_without_effect(
         verified=True,
         backend=JsonlMemoryPlaneStore(storage),
         now_provider=lambda: T0,
+        with_test_conflict_authority=True,
     )
     initial = accepted_terminal(operation_id=fence.operation_id)
     _activate(authorization_repository, fence, initial)
@@ -1874,9 +2034,12 @@ def test_reopened_catch_up_authority_substitution_matrix_fails_without_effect(
         pending,
         complete_read_set_digest=_digest("substitution-read-set"),
     )
-    _commit_accepted_clarification(
+    _persist_one_normal_event(
         store,
-        _digest("substitution-late-event"),
+        plane=plane,
+        service=service,
+        authorization_repository=authorization_repository,
+        coordinate="substitution-late-event",
     )
     catch_up, _ = store.policy_migration._load_trust_progress(plan)
     assert len(catch_up) == 1
@@ -2126,6 +2289,7 @@ def test_normal_catch_up_apply_then_raise_reopens_to_one_exact_partition(
         verified=True,
         backend=JsonlMemoryPlaneStore(storage),
         now_provider=lambda: T0,
+        with_test_conflict_authority=True,
     )
     initial = accepted_terminal(operation_id=fence.operation_id)
     _activate(authorization_repository, fence, initial)
@@ -2137,6 +2301,16 @@ def test_normal_catch_up_apply_then_raise_reopens_to_one_exact_partition(
     assert initial.arbitration_policy_bundle is not None
     active = initial.arbitration_policy_bundle.trust_policy
     pending = _rank_policy(20, "catch-up-lost-ack-pending")
+    # Claim the canonical work once BEFORE planning: the lost acknowledgement
+    # must fire inside the committed answer's catch-up append, and the retry
+    # must replay the same claimed image rather than a second lifecycle.
+    claim, cas = _claim_canonical_clarification(
+        store,
+        _digest("catch-up-lost-ack-operation"),
+        plane=plane,
+        service=service,
+        authorization_repository=authorization_repository,
+    )
     plan = store.plan_trust_policy_migration(
         active,
         pending,
@@ -2160,9 +2334,8 @@ def test_normal_catch_up_apply_then_raise_reopens_to_one_exact_partition(
         return result
 
     monkeypatch.setattr(backend, "apply_batch", lose_catch_up_ack)
-    operation_id = _digest("catch-up-lost-ack-operation")
     with pytest.raises(OSError, match="catch-up lost acknowledgement"):
-        _commit_accepted_clarification(store, operation_id)
+        _commit_claimed_accepted_clarification(store, claim, cas)
     assert fired
 
     reopened_plane = MemoryPlaneService(
@@ -2183,8 +2356,8 @@ def test_normal_catch_up_apply_then_raise_reopens_to_one_exact_partition(
         now_provider=lambda: T0,
     )
     committed_records = tuple(reopened_plane.list_records())
-    receipt, _ = _commit_accepted_clarification(reopened, operation_id)
-    assert receipt.processing_operation_id == operation_id
+    receipt, _, _ = _commit_claimed_accepted_clarification(reopened, claim, cas)
+    assert receipt.processing_operation_id == claim.work.processing_operation_id
     assert tuple(reopened_plane.list_records()) == committed_records
     catch_up, _ = reopened.policy_migration._load_trust_progress(plan)
     assert len(catch_up) == 1
