@@ -899,12 +899,35 @@ Broad gate (once, at the final revision):
   test to the retained always-retryable contract per the reconcile
   docstring), frozen-wire, corruption-recovery.
 
+- 2026-08-27 (slice 6c SECOND WAVE — 10 of 16 composition fixed):
+  (5) exhaustion test REWRITTEN to the retained contract and renamed
+  `test_public_reconcile_leaves_unpublished_normalization_pending`
+  (reconcile is always-retryable for unpublished normalizations by
+  design — the docstring's exact-redelivery-only rule; no terminal,
+  no source_result members, control stays preplanning; verified
+  green); (6) redelivery-rotation green — the reopened service must
+  carry the profile-aware preparation factory (a minimal producer
+  cannot re-publish the retained prepared source: publish rejects
+  grammar proofs that do not bind the retained routes), and the V3
+  redelivery of an unpublished normalization re-enters the retained
+  marker and fails closed at the absent normalization authority
+  (`source_alignment_authority_unavailable`, zero calls, no
+  duplicated effects). LOST-ACK ×3 NEXT STEP: the boundary methods
+  (`checkpoint_source_progress`, `persist_terminal_group`,
+  `finalize_source`) all exist, but the bundle-less outage flow never
+  reaches the terminal boundaries — rewrite the test's services on
+  the BOTH-bundle scenario composition (as
+  `test_coordinator_persists_retry_or_terminal_once` builds:
+  `_from_scenario_test_host` + `_v3_normalization_host_builder` +
+  `BootstrapGraphHostBundleBuilder`), then per-boundary reconcile
+  outcomes (checkpoint loss → pending; terminal/finalize loss →
+  recovered+committed terminal with `source_result` member).
+
 ## Next Action
 
-Continue 6c: rewrite the exhaustion test to the retained
-always-retryable reconcile contract; re-anchor redelivery's expected
-reason; migrate lost-ack ×3's member-kind asserts; then
-direct-root/frozen-wire/corruption/hermes-case-3 and the coordinator
-[retry] case. Then the recorded 6a policy five, conflict-clarification
-(12), 6b's open seam, and the 6d gates (broad gate, identity, durations
-regen, three WorkPlan closures).
+Continue 6c: rewrite lost-ack ×3 on the both-bundle composition;
+then direct-root (StopIteration), frozen-wire, corruption-recovery,
+hermes assistant-only case, and the coordinator [retry] case; then
+the recorded 6a policy five, conflict-clarification (12), 6b's open
+seam (atomic_store.py:11717), and the 6d gates (broad gate, identity,
+durations regen, three WorkPlan closures).

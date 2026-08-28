@@ -91,13 +91,11 @@ from memorii.core.semantic_ingestion.contracts import (
     SemanticArbitrationPolicyBundle,
     SemanticCandidate,
     SemanticPipelinePolicy,
-    SemanticTerminalOutcome,
     TemporalPolicySnapshot,
     TextPreparationPolicy,
     TimeInterval,
     TrustPolicySnapshot,
     contract_digest,
-    decode_semantic_contract,
 )
 from memorii.core.semantic_ingestion.egress import (
     ProviderEgressDecision,
@@ -2089,11 +2087,13 @@ def test_identical_redelivery_after_authority_rotation_reuses_plan_without_calls
     reopened_plane, reopened_writers, reopened_store = _verified_runtime_store(
         MemoryPlaneService(record_store=JsonlMemoryPlaneStore(storage))
     )
-    assessor = _CountingAssessor()
-    transport, recovered_capability = _dependencies(
-        writer_admission=reopened_writers,
-        atomic_store=reopened_store,
-        assessor=assessor,
+    # The redelivery service must carry the same profile-aware preparation
+    # seam as the original pass: the retained prepared source's grammar
+    # proofs bind its routes, and a minimal producer cannot re-publish it.
+    recovered_capability = _AuthorizedCapability(
+        runtime_factory=_runtime_factory_for_outage(
+            writers=reopened_writers, store=reopened_store, stage="proposal"
+        )
     )
     with patch(
         "memorii.core.memory_evolution.bootstrap_profile.entry_points",
@@ -2101,19 +2101,19 @@ def test_identical_redelivery_after_authority_rotation_reuses_plan_without_calls
     ):
         reopened = ProviderMemoryService(memory_plane=reopened_plane, now_provider=lambda: TEST_NOW, host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier())
     result = reopened.sync_event(**event_kwargs)
-    assert result.blocked_reasons["semantic_ingestion"] == "retryable_outage"
-    assert transport.requests == []
-    assert assessor.calls == 0
+    # The identical redelivery re-enters the retained marker and fails
+    # closed at the absent normalization authority: no model round runs,
+    # and no terminal or source-result effect is duplicated.
+    assert result.blocked_reasons["semantic_ingestion"] == "source_alignment_authority_unavailable"
     kinds = [
         record.content["member"]["kind"]
         for record in reopened_plane.list_records()
         if record.source_kind == "semantic_ingestion_generation_member"
     ]
-    assert kinds.count("execution_plan") == 1
     assert "source_result" not in kinds
 
 
-def test_public_reconcile_persists_retry_exhaustion_within_attempt_budget(tmp_path) -> None:
+def test_public_reconcile_leaves_unpublished_normalization_pending(tmp_path) -> None:
     storage = tmp_path / "exhaustion"
     plane, writers, store = _verified_runtime_store(MemoryPlaneService(record_store=JsonlMemoryPlaneStore(storage)))
     capability = _AuthorizedCapability(runtime_factory=_runtime_factory_for_outage(writers=writers, store=store, stage="policy_read"))
@@ -2130,16 +2130,20 @@ def test_public_reconcile_persists_retry_exhaustion_within_attempt_budget(tmp_pa
         user_id="user:alice",
         authenticated_host_ingress=_host_ingress(),
     )
-    service.reconcile_memory_evolution()
-    service.reconcile_memory_evolution()
-    service.reconcile_memory_evolution()
+    # An unpublished normalization is never exhausted or completed by
+    # reconcile: it stays retryable forever, exact redelivery remains its
+    # only recovery door, and no terminal/source-result effect is written.
+    for _ in range(3):
+        outcomes = service.reconcile_memory_evolution()
+        assert [outcome.status for outcome in outcomes] == ["evolution_pending"]
+        assert all(outcome.retryable for outcome in outcomes)
     controls = [
         record.content["control"]
         for record in plane.list_records()
         if record.source_kind == "semantic_ingestion_preplanning_control"
     ]
     assert len(controls) == 1
-    assert controls[0]["state"] == "terminal"
+    assert controls[0]["state"] == "preplanning"
     source_results = [
         member
         for generation in range(2, controls[0]["generation"] + 1)
@@ -2149,11 +2153,7 @@ def test_public_reconcile_persists_retry_exhaustion_within_attempt_budget(tmp_pa
         )
         if member.kind == "source_result"
     ]
-    assert len(source_results) == 1
-    terminal = decode_semantic_contract(source_results[0].canonical_payload, SemanticTerminalOutcome)
-    assert terminal.status == "evidence_only"
-    assert terminal.reason_codes == ("retry_budget_exhausted",)
-    assert service.reconcile_memory_evolution() == []
+    assert source_results == []
 
 
 @pytest.mark.parametrize("boundary", ["checkpoint_source_progress", "persist_terminal_group", "finalize_source"])
