@@ -33,7 +33,7 @@ from memorii.core.semantic_ingestion.contracts import (
     encode_semantic_contract,
 )
 
-_BOOTSTRAP_V3_RECOVERY_MAX_TYPED_NODES = 20_000
+_BOOTSTRAP_V3_RECOVERY_MAX_TYPED_NODES = 200_000
 _BOOTSTRAP_V3_RECOVERY_MAX_TYPED_DEPTH = 128
 
 

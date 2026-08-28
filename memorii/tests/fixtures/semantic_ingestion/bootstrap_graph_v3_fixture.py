@@ -974,6 +974,7 @@ class DeterministicBootstrapGraphAuthorityProviderV3:
     """Strict test authority provider for the real shared provider root."""
 
     successful_calls: list[str]
+    accepted_materialization: bool = False
     unavailable_calls: list[str] | None = None
     conflict_calls: list[str] | None = None
     partial_conflict_calls: list[str] | None = None
@@ -1131,12 +1132,16 @@ class DeterministicBootstrapGraphAuthorityProviderV3:
             )
             if self.after_epoch_created is not None:
                 epoch = self.after_epoch_created(atomic_store, coordinator_request, epoch)
+            materialized = self.accepted_materialization
+            if callable(materialized):
+                materialized = materialized(request.prepared_source)
             compilation = build_minimal_bootstrap_graph_plan_compilation_v3(
                 request=coordinator_request,
                 snapshot=snapshot,
                 policy=policy,
                 capability_registry=capabilities,
                 operation_inputs=operation_inputs,
+                accepted_materialization=materialized,
             )
             host_authority = build_bootstrap_graph_terminal_host_authority_v3(
                 source=request.prepared_source,
@@ -1243,6 +1248,7 @@ class DeterministicBootstrapGraphAuthorityProviderV3:
                 compiler=DeterministicBootstrapGraphPlanCompilerV3(
                     snapshot=snapshot, policy=policy, capability_registry=capabilities,
                     operation_inputs=operation_inputs,
+                    accepted_materialization=materialized,
                 ),
                 authorizer=DeterministicBootstrapGraphPlanningAuthorizerV3(
                     compilation=compilation

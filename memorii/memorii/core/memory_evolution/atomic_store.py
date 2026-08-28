@@ -2336,7 +2336,12 @@ class SemanticIngestionAtomicStore:
                     "claim_nonce": token_hex(24), "issued_server_time": server_time,
                     "expires_server_time": server_time + timedelta(seconds=10),
                     "issued_monotonic_tick": monotonic_tick, "expires_monotonic_tick": monotonic_tick + 10,
-                    "renewal_count": 0, "max_claim_renewals": 10, "max_claim_total_duration_ticks": 10}
+                    # The evidence producer renews once per lane per segment
+                    # (4 per request) plus the proposal, interpreter, and
+                    # publication rounds; a multi-segment source therefore
+                    # needs 4N+4 renewals, which a budget of 10 cannot cover
+                    # beyond one segment.
+                    "renewal_count": 0, "max_claim_renewals": 64, "max_claim_total_duration_ticks": 10}
             claim = BootstrapRecoveryClaimV3(**body, claim_digest=contract_digest(
                 b"memorii.semantic-ingestion.bootstrap-recovery-claim.v3", body))
             next_record = record.model_copy(update={"content": {**content, "state": "claimed", **claim.model_dump(mode="json")}})

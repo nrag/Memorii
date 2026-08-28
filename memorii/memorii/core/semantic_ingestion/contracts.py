@@ -8130,8 +8130,8 @@ class BootstrapProposalRunPayloadV3(_BootstrapV3Contract):
             raise ValueError("bootstrap proposal attempt ordinals must be contiguous")
         request_digests = tuple(item.request_digest for item in self.transport_requests)
         if (
-            request_digests != tuple(sorted(set(request_digests)))
-            or tuple(sorted({item.transport_request_digest for item in self.proposal_attempts})) != request_digests
+            len(set(request_digests)) != len(request_digests)
+            or tuple(sorted({item.transport_request_digest for item in self.proposal_attempts})) != tuple(sorted(request_digests))
         ):
             raise ValueError("bootstrap proposal request closure is invalid")
         attempt_digests = {item.attempt_digest for item in self.proposal_attempts}
@@ -9155,8 +9155,8 @@ class BootstrapSemanticReductionAuthorityMemberV3(_BootstrapV3Contract):
                 (item.dependency_group.group_id, item.operation_id)
                 for item in self.operation_inputs
             ))
-            or tuple(item.operation_id for item in self.operation_inputs)
-            != tuple(sorted(set(item.operation_id for item in self.operation_inputs)))
+            or len({item.operation_id for item in self.operation_inputs})
+            != len(self.operation_inputs)
             or {
                 item.operation_id for item in self.operation_inputs
             }

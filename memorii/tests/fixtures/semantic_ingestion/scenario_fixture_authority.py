@@ -302,6 +302,7 @@ def _scenario_corpus_cases() -> tuple[BootstrapGrammarCorpusCase, ...]:
         ("scenario_abstain_missing", None, "missing", "missing", "missing", b"missing", "abstain_form", "missing_language_declaration"),
         ("scenario_abstain_non_english", "fr", "authenticated_host_declaration", "trusted", "agrees", b"bonjour", "abstain_form", "non_english_language"),
         ("scenario_abstain_untrusted", None, "untrusted", "untrusted", "missing", b"untrusted", "abstain_form", "untrusted_language"),
+        ("scenario_ambiguous_owner", b"Atlas owner is Alice. Atlas owner is Bob.", "supported_form", None),
         ("scenario_insufficient", b"No source-grounded assertion is available.", "abstain_form", "extractor_abstained"),
         ("scenario_owner_alice", b"Atlas owner is Alice.", "supported_form", None),
         ("scenario_owner_bob", b"Atlas owner is Bob.", "supported_form", None),
@@ -363,6 +364,347 @@ def build_scenario_test_host_capability() -> BuiltInLocalHostSemanticIngestionCa
     )
 
 
+_SCENARIO_SOURCE_TEXTS = (
+    "Atlas owner is Alice.",
+    "Atlas owner is Bob.",
+    "Orion status is running.",
+    "Atlas owner is Alice. Atlas owner is Bob.",
+)
+
+
+class _ScenarioQuoteAuthority:
+    """Resolve quotes against the fixed scenario corpus texts."""
+
+    def resolve(self, quote, context, owned):
+        del owned
+        for text in _SCENARIO_SOURCE_TEXTS:
+            start = text.find(quote, context.projection_span.start, context.projection_span.end)
+            if start >= 0 and text.find(quote, start + 1, context.projection_span.end) < 0:
+                projection = context.projection_span
+                local = context.segment_local_span
+                return type(context).create(
+                    source_id=context.source_id,
+                    projection_digest=context.projection_digest,
+                    projection_segment_id=context.projection_segment_id,
+                    retained_text_artifact=context.retained_text_artifact,
+                    projection_span=type(projection).create(
+                        artifact=projection.artifact,
+                        start=start,
+                        end=start + len(quote),
+                        substring_digest=sha256(quote.encode("utf-8")).hexdigest(),
+                    ),
+                    segment_local_span=type(local).create(
+                        artifact=local.artifact,
+                        start=start,
+                        end=start + len(quote),
+                        substring_digest=sha256(quote.encode("utf-8")).hexdigest(),
+                    ),
+                    text_mapping_proof=context.text_mapping_proof,
+                    source_reference=quote,
+                )
+        raise ValueError("scenario quote does not resolve exactly once")
+
+    def verify_quote(self, *, projection_digest, quote, span):
+        if projection_digest != span.projection_digest or not any(
+            text[span.projection_span.start : span.projection_span.end] == quote
+            for text in _SCENARIO_SOURCE_TEXTS
+        ):
+            raise ValueError("scenario quote is not an exact source slice")
+
+
+def _scenario_provider_proposal(source_id: str, source_digest: str, source_text: str):
+    """Derive one provider proposal from the pinned local analyzer's parse."""
+    from memorii.core.semantic_ingestion.contracts import (
+        ProviderEntityObject,
+        ProviderFact,
+        ProviderMention,
+        ProviderSemanticProposal,
+    )
+    from memorii.core.semantic_ingestion.local_analyzer import ProductionLocalSemanticAnalyzer
+
+    candidates = ProductionLocalSemanticAnalyzer().propose(
+        source_id=source_id,
+        source_digest=source_digest,
+        source_text=source_text,
+    )
+    if not candidates:
+        return ProviderSemanticProposal(abstained=True)
+    mentions = []
+    facts = []
+    seen_mentions: dict[str, str] = {}
+    for index, candidate in enumerate(candidates):
+        roles = {ref.role_id: ref.quote for ref in candidate.alignment_refs}
+        subject_quote = roles["subject"]
+        object_quote = roles["object"]
+        for quote in (subject_quote, object_quote):
+            if quote not in seen_mentions:
+                local_id = f"mention-{len(seen_mentions)}"
+                seen_mentions[quote] = local_id
+                mentions.append(
+                    ProviderMention(
+                        local_id=local_id,
+                        mention_quote=quote,
+                        mention_context_quote=candidate.assertion_quote,
+                    )
+                )
+        facts.append(
+            ProviderFact(
+                local_id=f"fact-{index}",
+                predicate_id=candidate.predicate_id,
+                # Both entity roles resolve through declared mentions; the
+                # normalizer substitutes each reference with the mention's
+                # digest, so a bare text reference is rejected.
+                subject_entity_ref=seen_mentions[subject_quote],
+                object=ProviderEntityObject(entity_ref=seen_mentions[object_quote]),
+                assertion_quote=candidate.assertion_quote,
+                predicate_anchor_quote=subject_quote,
+                polarity="positive",
+                commitment="asserted",
+            )
+        )
+    return ProviderSemanticProposal(
+        mentions=tuple(mentions),
+        facts=tuple(facts),
+        abstained=False,
+    )
+
+
+def _scenario_normalization_host_bundle_builder(*, now_provider):
+    """Build the scenario host's V3 normalization bundle.
+
+    Mirrors the composition suite's ordinary-root builder, with the proposal
+    seam derived from the pinned local analyzer instead of a fixed value.
+    """
+    from memorii.core.semantic_ingestion.source_normalization_host import (
+        SourceNormalizationHostBundleBuilder,
+    )
+    from tests.fixtures.semantic_ingestion.source_normalization_fixture_builder import (
+        DynamicSourceNormalizationAuthorityProvider,
+    )
+    # The authority round sees the prepared source's text; the later proposal
+    # transport sees only digest-bearing spans.  Bridge the two seams so the
+    # transport derives the same analyzer-driven proposal.
+    segment_texts: dict[tuple[str, str], str] = {}
+
+    def record_and_propose(source, _request):
+        segment_texts[(source.source_id, source.source_digest)] = source.semantic_text
+        return _scenario_provider_proposal(
+            source.source_id, source.source_digest, source.semantic_text
+        )
+
+    authority_provider = DynamicSourceNormalizationAuthorityProvider(
+        proposal_factory=record_and_propose,
+        retry_policy_fingerprint="a" * 64,
+    )
+
+    def proposal(request):
+        full_text = segment_texts[
+            (request.segment.source_id, request.segment.source_digest)
+        ]
+        # One proposal request per segment: the sealed proposal's quotes must
+        # resolve inside this segment's projection span, so the analyzer
+        # parses the segment slice, not the whole source.
+        span = request.segment.context_text.projection_span
+        text = full_text[span.start : span.end] if span is not None else full_text
+        value = _scenario_provider_proposal(
+            request.segment.source_id, request.segment.source_digest, text
+        )
+        return value, encode_typed_value(value.model_dump(mode="python"))
+
+    def linguistic(request, lane: str):
+        del lane
+        from memorii.core.semantic_ingestion.contracts import (
+            DependencyArc,
+            LinguisticAnalysis,
+            LinguisticToken,
+        )
+
+        token = LinguisticToken.create(
+            source_span=request.segment.context_text,
+            surface_text="fixture",
+            lemma="fixture",
+            upos="NOUN",
+            xpos=None,
+            morphological_features=(),
+            sentence_index=0,
+            word_index=0,
+            syntactic_word_index=0,
+            multi_word_token_span=None,
+        )
+        dependency = DependencyArc.create(
+            dependent_token_id=token.token_id,
+            governor_token_id=None,
+            relation="root",
+            enhanced=False,
+        )
+        return LinguisticAnalysis.create(
+            source_id=request.segment.source_id,
+            source_digest=request.segment.source_digest,
+            preparation_fingerprint=request.segment.preparation_fingerprint,
+            segment_id=request.segment.segment_id,
+            segment_language_route_digest=request.segment.bootstrap_projection.bootstrap_route.route_digest,
+            analyzer_manifest_digest=request.analyzer_manifest.manifest_digest,
+            analyzer_fingerprint=request.analyzer_manifest.analyzer_fingerprint,
+            language="en",
+            tokens=(token,), mentions=(), clauses=(), dependencies=(dependency,), status="complete", diagnostics=(),
+        )
+
+    def predicate(request):
+        from memorii.core.semantic_ingestion.contracts import (
+            BootstrapPredicateLanePayloadV3,
+        )
+
+        segment, provenance = request.segment, request.bootstrap_analysis_provenance
+        return BootstrapPredicateLanePayloadV3.create(
+            source_id=segment.source_id, source_digest=segment.source_digest,
+            preparation_fingerprint=segment.preparation_fingerprint, segment_id=segment.segment_id,
+            bootstrap_analysis_provenance=provenance,
+            detector_manifest_digest=request.predicate_event_manifest.manifest_digest,
+            detector_fingerprint=request.predicate_event_manifest.manifest_digest,
+            candidates=(), status="complete", reason_codes=(),
+        )
+
+    def temporal(request):
+        from memorii.core.semantic_ingestion.contracts import (
+            BootstrapTemporalLanePayloadV3,
+        )
+
+        segment, provenance = request.segment, request.bootstrap_analysis_provenance
+        return BootstrapTemporalLanePayloadV3.create(
+            source_id=segment.source_id, source_digest=segment.source_digest,
+            preparation_fingerprint=segment.preparation_fingerprint, segment_id=segment.segment_id,
+            bootstrap_analysis_provenance=provenance,
+            resolver_manifest_digest=request.resolver_manifest.manifest_digest,
+            resolver_fingerprint=request.resolver_manifest.manifest_digest,
+            candidates=(), ambiguities=(), status="complete", reason_codes=(),
+        )
+
+    quotes = _ScenarioQuoteAuthority()
+    return SourceNormalizationHostBundleBuilder(
+        authority_provider=authority_provider,
+        resolve_quote=quotes.resolve, projection_quote_verifier=quotes,
+        # Leases are issued and validated on the service's own clock; a
+        # foreign fixed time expires them the moment the store checks.
+        server_time=now_provider, monotonic_tick=lambda: 1,
+        bootstrap_v3_proposal_transport=proposal,
+        bootstrap_v3_stanza=lambda request: linguistic(request, "stanza"),
+        bootstrap_v3_spacy=lambda request: linguistic(request, "spacy"),
+        bootstrap_v3_predicate_event_detection=predicate,
+        bootstrap_v3_temporal_resolution=temporal,
+        bootstrap_v3_linguistic_request=lambda request, lane_name: authority_provider
+        .bootstrap_v3_authority_for(request).linguistic_request(request, lane_name),
+        bootstrap_v3_predicate_request=lambda request: authority_provider
+        .bootstrap_v3_authority_for(request).predicate_request(request),
+        bootstrap_v3_temporal_request=lambda request: authority_provider
+        .bootstrap_v3_authority_for(request).temporal_request(request),
+    )
+
+
+def scenario_protected_ambiguity_shape(
+    *, source_id: str, source_digest: str, source_text: str
+) -> tuple[int, tuple[str, ...]]:
+    """Return (candidate count, reason codes) for an unresolved source.
+
+    The closed two-segment V1 owner ambiguity is the declared unresolved
+    form: exactly two owner candidates, surfaced for user clarification.
+    """
+    from memorii.core.semantic_ingestion.local_analyzer import (
+        ProductionLocalSemanticAnalyzer,
+    )
+
+    candidates = ProductionLocalSemanticAnalyzer().propose(
+        source_id=source_id, source_digest=source_digest, source_text=source_text
+    )
+    count = len(candidates)
+    if count == 2:
+        return count, ("protected_multi_segment_owner_ambiguity",)
+    return count, ()
+
+
+def _scenario_materialization_guard(prepared_source) -> bool:
+    """Materialize ordinary facts; refuse the protected owner pair.
+
+    The closed two-segment V1 owner ambiguity is the one corpus form whose
+    committed effects the public boundary must withhold: the graph plane
+    leaves it unresolved for the user to clarify.
+    """
+    from memorii.core.semantic_ingestion.local_analyzer import (
+        ProductionLocalSemanticAnalyzer,
+        _is_protected_scenario_owner_pair,
+    )
+
+    analyzer = ProductionLocalSemanticAnalyzer()
+    candidates = analyzer.propose(
+        source_id=prepared_source.source_id,
+        source_digest=prepared_source.source_digest,
+        source_text=prepared_source.semantic_text,
+    )
+    if len(candidates) != 2:
+        return True
+    return not _is_protected_scenario_owner_pair(
+        candidates,
+        tuple(
+            analyzer.analyze(
+                proposal=candidate,
+                source_id=prepared_source.source_id,
+                source_digest=prepared_source.source_digest,
+                source_text=prepared_source.semantic_text,
+                prepared_source=prepared_source,
+                source_authority_evidence=evidence,
+                source_interval_evidence=None,
+            )
+            for candidate, evidence in zip(
+                candidates,
+                _scenario_owner_evidences(prepared_source, candidates),
+                strict=True,
+            )
+        ),
+    )
+
+
+def _scenario_owner_evidences(prepared_source, candidates):
+    from hashlib import sha256
+
+    from memorii.core.semantic_ingestion.contracts import (
+        SourceAuthority,
+        SourceAuthorityEvidence,
+    )
+
+    return tuple(
+        SourceAuthorityEvidence.create(
+            source_id=prepared_source.source_id,
+            source_digest=prepared_source.source_digest,
+            authority=SourceAuthority(
+                authority_class="official",
+                authenticated_provenance_class="host",
+                policy_revision="trust-r1",
+            ),
+            provenance_digest=sha256(
+                f"source-authority:{prepared_source.source_id}:{candidate.candidate_id}".encode()
+            ).hexdigest(),
+        )
+        for candidate in candidates
+    )
+
+
+def _scenario_graph_host_bundle_builder():
+    """Build the scenario host's V3 graph bundle with a deterministic authority."""
+    from memorii.core.semantic_ingestion.bootstrap_graph_host import (
+        BootstrapGraphHostBundleBuilder,
+    )
+    from tests.fixtures.semantic_ingestion.bootstrap_graph_v3_fixture import (
+        DeterministicBootstrapGraphAuthorityProviderV3,
+    )
+
+    return BootstrapGraphHostBundleBuilder(
+        authority_provider=DeterministicBootstrapGraphAuthorityProviderV3(
+            successful_calls=[],
+            accepted_materialization=_scenario_materialization_guard,
+            acquire_errors=[],
+        )
+    )
+
+
 def build_scenario_test_provider_service(*, memory_plane, now_provider):
     """Fixture-private route to the only non-production provider composition."""
     from memorii.core.provider.service import ProviderMemoryService
@@ -371,6 +713,10 @@ def build_scenario_test_provider_service(*, memory_plane, now_provider):
         memory_plane=memory_plane,
         host_bootstrap_capability=build_scenario_test_host_capability(),
         host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        source_normalization_host_bundle_builder=_scenario_normalization_host_bundle_builder(
+            now_provider=now_provider
+        ),
+        bootstrap_graph_host_bundle_builder=_scenario_graph_host_bundle_builder(),
         now_provider=now_provider,
     )
 

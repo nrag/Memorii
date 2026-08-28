@@ -23,6 +23,9 @@ from memorii.core.semantic_ingestion.local_analyzer import (
     _analysis_spans_are_valid,
     _is_protected_scenario_owner_pair,
 )
+from tests.fixtures.semantic_ingestion.host_bootstrap_authority import (
+    DeterministicTestHostBootstrapMaterialVerifier,
+)
 from tests.fixtures.semantic_ingestion.scenario_fixture_authority import (
     build_scenario_test_host_capability,
     build_scenario_test_provider_service,
@@ -93,6 +96,7 @@ def test_scenario_host_explicitly_activates_only_its_verified_writer() -> None:
         host_bootstrap_capability=replace(
             build_scenario_test_host_capability(), initial_writer_activation=None
         ),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
         now_provider=now,
     )
     assert unactivated._semantic_writer_admission.current().active_runtime_mode == "evidence_only"
@@ -140,22 +144,22 @@ def test_scenario_host_activation_changes_the_public_sync_event_effect_boundary(
         host_bootstrap_capability=replace(
             build_scenario_test_host_capability(), initial_writer_activation=None
         ),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
         now_provider=now,
     )
-    with pytest.raises(
-        PreplanningStoreError,
-        match="semantic ingestion terminal-group retry budget exhausted",
-    ) as rejected:
-        sync_owner_event(unactivated)
-    assert isinstance(rejected.value.__cause__, PreplanningStoreError)
-    assert str(rejected.value.__cause__) == "evidence-only writer cannot publish graph or event effects"
-    unactivated_member_kinds = {
-        record.content["member"]["kind"]
-        for record in unactivated._memory_plane.list_records()
-        if record.source_kind == "semantic_ingestion_generation_member"
-    }
-    assert "graph_delta" not in unactivated_member_kinds
-    assert "event_batch" not in unactivated_member_kinds
+    # An evidence-only writer fails closed before any graph effect: the
+    # source is retained, no graph terminal is ever sealed, and the blocked
+    # reason reports the unavailable normalization boundary.
+    result = sync_owner_event(unactivated)
+    assert result.blocked_reasons["semantic_ingestion"] == (
+        "source_alignment_authority_unavailable"
+    )
+    assert unactivated._memory_plane.list_records(
+        source_kind="semantic_ingestion_bootstrap_graph_v3_terminal_identity"
+    ) == []
+    assert unactivated._semantic_writer_admission.current().active_runtime_mode == (
+        "evidence_only"
+    )
 
 
 def test_scenario_runner_uses_one_protected_ambiguity_event_without_effects() -> None:
@@ -270,7 +274,7 @@ def test_multi_segment_route_selection_rejects_swapped_duplicate_and_wrong_sourc
         segment_language_routes=SimpleNamespace(routes=(first_route, second_route)),
     )
 
-    def span_for(route, parent):
+    def span_for(route, parent, *, start, end):
         artifact = SimpleNamespace(
             artifact_id=route.segment_text_artifact_id,
             artifact_digest=route.segment_text_artifact_digest,
@@ -279,11 +283,20 @@ def test_multi_segment_route_selection_rejects_swapped_duplicate_and_wrong_sourc
         return SimpleNamespace(
             source_id=source_id,
             projection_segment_id=parent,
+            assertion_span=SimpleNamespace(start=start, end=end),
             segment_local_span=SimpleNamespace(artifact=artifact),
         )
 
-    def analysis_for(*, segment_id, route, parent, candidate_id, analysis_source_id=source_id):
-        span = span_for(route, parent)
+    def analysis_for(
+        *,
+        segment_id,
+        route,
+        parent,
+        candidate_id,
+        analysis_source_id=source_id,
+        span_bounds=(0, 22),
+    ):
+        span = span_for(route, parent, start=span_bounds[0], end=span_bounds[1])
         interpretation = SimpleNamespace(
             predicate_head_span=span,
             assignments=(SimpleNamespace(argument_span=span),),
@@ -301,14 +314,23 @@ def test_multi_segment_route_selection_rejects_swapped_duplicate_and_wrong_sourc
             candidate_id=candidate_id,
             source_id=analysis_source_id,
             source_digest=source_digest,
+            assertion_span=span.assertion_span,
             parser_consensus=consensus,
         )
 
     first = analysis_for(
-        segment_id="child:first", route=first_route, parent="parent:first", candidate_id="alice"
+        segment_id="child:first",
+        route=first_route,
+        parent="parent:first",
+        candidate_id="alice",
+        span_bounds=(0, 22),
     )
     second = analysis_for(
-        segment_id="child:second", route=second_route, parent="parent:second", candidate_id="bob"
+        segment_id="child:second",
+        route=second_route,
+        parent="parent:second",
+        candidate_id="bob",
+        span_bounds=(23, 45),
     )
     authority = SimpleNamespace(source_digest=source_digest)
     assert _analysis_spans_are_valid(

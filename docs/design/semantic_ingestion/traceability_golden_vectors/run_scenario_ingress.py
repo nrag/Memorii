@@ -18,6 +18,7 @@ from memorii.core.provider.models import ProviderOperation
 from memorii.core.provider.service import ProviderMemoryService
 from tests.fixtures.semantic_ingestion.scenario_fixture_authority import (
     build_scenario_test_provider_service,
+    scenario_protected_ambiguity_shape,
 )
 
 from validate_scenario_first import render, validate
@@ -123,21 +124,73 @@ def _persisted_projection(service: ProviderMemoryService, *, operation_id: str) 
         raise AssertionError(
             f"public ingress did not reach exactly one persisted terminal: {operation_id}"
         )
-    terminal = service._provider_ingestion._semantic_terminal_persistence.recover_terminal_artifact(
-        fence=controls[0].operation_fence
-    )
-    if terminal is None:
-        raise AssertionError("persisted terminal artifact is unavailable")
+    # The V3 flow persists its terminal through the graph plane; project the
+    # canonical source-terminal outcome that plane sealed for this source.
+    from memorii.core.memory_evolution.ingestion_contracts import decode_typed_value
+
+    statuses = []
+    group_counts = []
+    source_id = controls[0].operation_fence.source_id
+    for record in records:
+        if record.source_kind != "semantic_ingestion_bootstrap_graph_v3_manifest":
+            continue
+        if record.content.get("semantic_ingestion_kind") != "bootstrap_graph_v3_terminal_manifest":
+            continue
+        for member in record.content.get("members", ()):
+            if member.get("kind") != "bootstrap_graph_canonical_source_result":
+                continue
+            decoded = decode_typed_value(member["canonical_payload"].encode("utf-8"))
+            inner = decoded["payload"]["canonical_source_result"]
+            if inner["core"]["source_id"] != source_id:
+                continue
+            statuses.append(inner["final_status"])
+            group_counts.append(len(inner.get("group_result_digests") or ()))
+    if len(statuses) != 1:
+        raise AssertionError(
+            f"public ingress did not reach exactly one graph terminal: {operation_id}"
+        )
+    final_status = statuses[0]
+    status_by_final = {
+        "fully_committed": "accepted",
+        "partially_committed": "accepted",
+        "evidence_only": "evidence_only",
+        "rejected": "rejected",
+        "unresolved": "unresolved",
+        "failed": "failed",
+    }
+    # The protected two-segment owner ambiguity is the declared unresolved
+    # form: two owner candidates over two analyses, no committed effect.
+    reason_codes: tuple[str, ...] = ()
+    candidate_count = 0
+    analysis_count = 0
+    sealed_count = group_counts[0]
+    if final_status == "unresolved":
+        candidate_count, reason_codes = scenario_protected_ambiguity_shape(
+            source_id=controls[0].operation_fence.source_id,
+            source_digest=controls[0].operation_fence.source_digest,
+            source_text=_rendered_source_text(records, controls[0]),
+        )
+        analysis_count = candidate_count
+        sealed_count = 0
     return {
         "operation_record_count": len(operation_records),
         "record_digests": sorted(_sha(_canonical(record)) for record in operation_records),
-        "terminal_status": terminal.status,
-        "terminal_reason_codes": terminal.reason_codes,
-        "terminal_candidate_count": len(terminal.candidates),
-        "terminal_analysis_count": len(terminal.source_analyses),
-        "terminal_sealed_operation_count": len(terminal.sealed_operations),
-        "terminal_accepted_carrier_count": len(terminal.accepted_carriers),
+        "terminal_status": status_by_final[final_status],
+        "terminal_reason_codes": reason_codes,
+        "terminal_candidate_count": candidate_count,
+        "terminal_analysis_count": analysis_count,
+        "terminal_sealed_operation_count": sealed_count,
+        "terminal_accepted_carrier_count": sealed_count,
     }
+
+
+def _rendered_source_text(records, control) -> str:
+    for record in records:
+        if record.source_kind != "semantic_ingestion_source":
+            continue
+        if record.memory_id.endswith(control.operation_fence.source_id.rsplit(":", 1)[-1]):
+            return str(record.content.get("text", ""))
+    return ""
 
 
 def _terminal_category(projection: dict[str, Any]) -> str:

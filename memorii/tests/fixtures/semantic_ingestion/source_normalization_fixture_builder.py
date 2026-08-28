@@ -445,11 +445,18 @@ def build_bootstrap_v3_fixture_authority(*, source: PreparedSource) -> Bootstrap
         build_clean_room_proposal_catalogs,
     )
 
-    if len(source.segments) != 1 or len(source.segment_language_routes.routes) != 1:
-        raise ValueError("bootstrap V3 fixture supports exactly one declared segment")
-    route = source.segment_language_routes.routes[0]
-    if not isinstance(route, BootstrapDeclaredSegmentLanguageRoute):
-        raise ValueError("bootstrap V3 fixture requires a declared bootstrap route")
+    routes_by_segment = {
+        route.segment_id: route for route in source.segment_language_routes.routes
+    }
+    if len(routes_by_segment) != len(source.segment_language_routes.routes) or set(
+        routes_by_segment
+    ) != {segment.segment_id for segment in source.segments}:
+        raise ValueError("bootstrap V3 fixture requires one declared route per segment")
+    if not all(
+        isinstance(route, BootstrapDeclaredSegmentLanguageRoute)
+        for route in routes_by_segment.values()
+    ):
+        raise ValueError("bootstrap V3 fixture requires declared bootstrap routes")
     base = build_clean_room_proposal_catalogs(
         source_id=source.source_id,
         source_digest=source.source_digest,
@@ -487,62 +494,73 @@ def build_bootstrap_v3_fixture_authority(*, source: PreparedSource) -> Bootstrap
         predicate_event_manifest_digest=predicate.manifest_digest,
         temporal_resolver_manifest_digest=temporal.manifest_digest,
     )
-    binding_body = {
-        "source_id": source.source_id, "source_digest": source.source_digest,
-        "preparation_fingerprint": source.preparation_fingerprint,
-        "segment_id": route.segment_id, "parent_projection_segment_id": route.parent_projection_segment_id,
-        "bootstrap_route_digest": route.route_digest,
-        "segment_text_artifact_id": route.segment_text_artifact_id,
-        "segment_text_artifact_digest": route.segment_text_artifact_digest,
-        "segment_text_content_digest": route.segment_text_content_digest,
-        "selected_language": "en", "resource_binding": resource,
-        "proposal_capability_fingerprint": resource.proposal_capability_fingerprint,
-        "stanza_analyzer_manifest_digest": stanza.manifest_digest,
-        "spacy_analyzer_manifest_digest": spacy.manifest_digest,
-        "predicate_event_manifest_digest": predicate.manifest_digest,
-        "temporal_resolver_manifest_digest": temporal.manifest_digest,
-    }
-    binding = BootstrapAnalysisRouteBinding(
-        **binding_body,
-        binding_digest=contract_digest(
-            b"memorii.semantic-ingestion.bootstrap-analysis-route-binding.v1", binding_body
-        ),
-    )
-    provenance = BootstrapAnalysisProvenanceV1.from_binding(binding)
-    projection = BootstrapAnalysisRouteProjection.create(
-        bootstrap_route=route, binding=binding, bootstrap_analysis_provenance=provenance
-    )
-    segment = source.segments[0]
-    context = SourceSpanReference.create(
-        source_id=source.source_id,
-        projection_digest=segment.context_projection_span.artifact.artifact_digest,
-        projection_segment_id=segment.parent_projection_segment_id,
-        retained_text_artifact=source.semantic_text_projection.retained_text_artifact,
-        projection_span=segment.context_projection_span,
-        segment_local_span=segment.context_segment_span,
-        text_mapping_proof=segment.text_mapping_proof,
-        source_reference=None,
-    )
-    input_value = BootstrapSegmentAnalysisInputV3.create(
-        schema_version=3, source_id=source.source_id, source_digest=source.source_digest,
-        preparation_fingerprint=source.preparation_fingerprint, segment_id=segment.segment_id,
-        parent_projection_segment_id=segment.parent_projection_segment_id,
-        segment_governance=segment.segment_governance,
-        message_admission_identity=segment.message_admission_identity,
-        governance_carrier_artifact=source.governance_carrier_artifact,
-        context_text=context, segment_text=source.semantic_text,
-        bootstrap_projection=projection, bootstrap_analysis_provenance=provenance,
-    )
-    request = BootstrapSemanticProposalRequestV3.create(
-        schema_version=3, segment=input_value,
-        semantic_context_fingerprint=segment.segment_governance.message_semantic_context_digest,
-        provider_egress_decision_digest=None,
-        proposal_capability_fingerprint=base.proposal_capability_fingerprint,
-        predicate_catalog=base.predicate_catalog,
-        action_proposal_catalog=base.action_proposal_catalog,
-        registered_prompt=base.registered_prompt, proposer_manifest=base.proposer_manifest,
-        bootstrap_analysis_provenance=provenance,
-    )
+    segments_by_id = {segment.segment_id: segment for segment in source.segments}
+    bindings = []
+    requests = []
+    # Bindings follow the prepared route order (the authority validator
+    # bijects them with the routes as stored); the runtime authority's
+    # proposal requests must be segment-id ordered, so they are sorted
+    # separately below.
+    for route in source.segment_language_routes.routes:
+        segment = segments_by_id[route.segment_id]
+        binding_body = {
+            "source_id": source.source_id, "source_digest": source.source_digest,
+            "preparation_fingerprint": source.preparation_fingerprint,
+            "segment_id": route.segment_id, "parent_projection_segment_id": route.parent_projection_segment_id,
+            "bootstrap_route_digest": route.route_digest,
+            "segment_text_artifact_id": route.segment_text_artifact_id,
+            "segment_text_artifact_digest": route.segment_text_artifact_digest,
+            "segment_text_content_digest": route.segment_text_content_digest,
+            "selected_language": "en", "resource_binding": resource,
+            "proposal_capability_fingerprint": resource.proposal_capability_fingerprint,
+            "stanza_analyzer_manifest_digest": stanza.manifest_digest,
+            "spacy_analyzer_manifest_digest": spacy.manifest_digest,
+            "predicate_event_manifest_digest": predicate.manifest_digest,
+            "temporal_resolver_manifest_digest": temporal.manifest_digest,
+        }
+        binding = BootstrapAnalysisRouteBinding(
+            **binding_body,
+            binding_digest=contract_digest(
+                b"memorii.semantic-ingestion.bootstrap-analysis-route-binding.v1", binding_body
+            ),
+        )
+        provenance = BootstrapAnalysisProvenanceV1.from_binding(binding)
+        projection = BootstrapAnalysisRouteProjection.create(
+            bootstrap_route=route, binding=binding, bootstrap_analysis_provenance=provenance
+        )
+        context = SourceSpanReference.create(
+            source_id=source.source_id,
+            projection_digest=segment.context_projection_span.artifact.artifact_digest,
+            projection_segment_id=segment.parent_projection_segment_id,
+            retained_text_artifact=source.semantic_text_projection.retained_text_artifact,
+            projection_span=segment.context_projection_span,
+            segment_local_span=segment.context_segment_span,
+            text_mapping_proof=segment.text_mapping_proof,
+            source_reference=None,
+        )
+        input_value = BootstrapSegmentAnalysisInputV3.create(
+            schema_version=3, source_id=source.source_id, source_digest=source.source_digest,
+            preparation_fingerprint=source.preparation_fingerprint, segment_id=segment.segment_id,
+            parent_projection_segment_id=segment.parent_projection_segment_id,
+            segment_governance=segment.segment_governance,
+            message_admission_identity=segment.message_admission_identity,
+            governance_carrier_artifact=source.governance_carrier_artifact,
+            context_text=context, segment_text=source.semantic_text,
+            bootstrap_projection=projection, bootstrap_analysis_provenance=provenance,
+        )
+        request = BootstrapSemanticProposalRequestV3.create(
+            schema_version=3, segment=input_value,
+            semantic_context_fingerprint=segment.segment_governance.message_semantic_context_digest,
+            provider_egress_decision_digest=None,
+            proposal_capability_fingerprint=base.proposal_capability_fingerprint,
+            predicate_catalog=base.predicate_catalog,
+            action_proposal_catalog=base.action_proposal_catalog,
+            registered_prompt=base.registered_prompt, proposer_manifest=base.proposer_manifest,
+            bootstrap_analysis_provenance=provenance,
+        )
+        bindings.append(binding)
+        requests.append(request)
+    requests.sort(key=lambda item: item.segment.segment_id)
     policy = BootstrapV3PayloadLimitPolicy.create(**{
         field: (1_000_000 if field.endswith("bytes") else 8)
         for field in BootstrapV3PayloadLimitPolicy.model_fields
@@ -552,7 +570,7 @@ def build_bootstrap_v3_fixture_authority(*, source: PreparedSource) -> Bootstrap
         policy=policy, source_id=source.source_id, source_digest=source.source_digest,
         preparation_fingerprint=source.preparation_fingerprint,
     )
-    runtime_body = {"proposal_requests": (request,), "payload_limit_authority": limits}
+    runtime_body = {"proposal_requests": tuple(requests), "payload_limit_authority": limits}
     runtime = BootstrapV3RuntimeAuthority(
         **runtime_body,
         authority_digest=contract_digest(
@@ -563,7 +581,7 @@ def build_bootstrap_v3_fixture_authority(*, source: PreparedSource) -> Bootstrap
         "source_id": source.source_id,
         "source_digest": source.source_digest,
         "preparation_fingerprint": source.preparation_fingerprint,
-        "bindings": (binding,),
+        "bindings": tuple(bindings),
     }
     binding_set = BootstrapAnalysisRouteBindingSet(
         **binding_set_body,
@@ -876,10 +894,10 @@ class DynamicSourceNormalizationAuthorityProvider:
             return cached[0]
 
         source = invocation.source
-        route = source.segment_language_routes.routes[0]
-        if len(source.segment_language_routes.routes) != 1:
-            raise ValueError("dynamic fixture authority requires one prepared route")
-        if isinstance(route, BootstrapDeclaredSegmentLanguageRoute):
+        if all(
+            isinstance(route, BootstrapDeclaredSegmentLanguageRoute)
+            for route in source.segment_language_routes.routes
+        ):
             v3 = build_bootstrap_v3_fixture_authority(source=source)
             request = v3.runtime_authority.proposal_requests[0]
             proposal = ProviderSemanticProposal.model_validate(
@@ -919,7 +937,8 @@ class DynamicSourceNormalizationAuthorityProvider:
                 retry_policy_fingerprint=self._retry_policy_fingerprint,
             )
             self._issued[key] = (bundle, DynamicSourceNormalizationProposalMaterials(request, proposal))
-            self._bootstrap_v3_issued[request.request_digest] = v3
+            for issued_request in v3.runtime_authority.proposal_requests:
+                self._bootstrap_v3_issued[issued_request.request_digest] = v3
             return bundle
 
         # Only declared bootstrap routes reach the V3 execution owner; a

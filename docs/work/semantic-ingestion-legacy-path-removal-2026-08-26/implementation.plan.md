@@ -1036,12 +1036,56 @@ Broad gate (once, at the final revision):
   SimpleNamespace `assertion_span` AttributeError and one record-set
   equality (reopen/substitution test).
 
+- 2026-08-28 (slice 6b BREAKTHROUGH — 10 of 11 scenario tests GREEN;
+  FOUR more single-segment production assumptions found and fixed):
+  the multi-segment path is now REAL end to end. Production fixes,
+  each probe-isolated: (a) the proposal-run payload validator demanded
+  transport-request digests ASCENDING while requests must be
+  segment-ordered — jointly unsatisfiable for N>1; digests are now
+  checked for uniqueness (contracts.py:8133). (b) The reduction
+  authority member demanded operation_ids ascending while inputs are
+  (group, operation)-ordered — same conflation, now uniqueness
+  (contracts.py:9158). (c) The recovery claim renewal budget of 10
+  cannot cover the evidence producer's 4-per-segment renewals; minted
+  claims now carry 64 (atomic_store.py:2339, justification in place).
+  (d) The V3 recovery decode node budget of 20k rejects two-segment
+  reduction authorities; raised to 200k (still bounded). Fixture work:
+  `build_bootstrap_v3_fixture_authority` builds one binding+request
+  per segment (bindings in ROUTE order — the authority validator
+  bijects with stored route order; requests segment-id sorted for the
+  runtime authority — the earlier digest-ordered iteration made the
+  bijection a coin flip, the source of the intermittent
+  publication_unavailable), the dynamic provider allows N routes and
+  registers every request digest, the scenario transport parses the
+  SEGMENT SLICE (span-bounded), the ambiguity corpus case is added,
+  the graph provider accepts a materialization GUARD (the scenario
+  guard refuses the protected owner pair via the production
+  predicate — facts commit, the pair stays unresolved), and the
+  runner's `_persisted_projection` projects the graph canonical
+  source-terminal outcome (final_status→status map, source-filtered
+  across the shared service; the protected-pair shape via the
+  fixture's `scenario_protected_ambiguity_shape`, keeping the runner
+  analyzer-import-free per its opacity contract). The unactivated-
+  writer effect-boundary branch asserts the fail-closed V3 outcome
+  (source retained, no graph terminal, evidence_only mode). The
+  multi-segment route-selection test carries assertion spans on its
+  fake analyses (the production predicate reads them). ONE test
+  remains: `test_scenario_public_sync_event_reopens_retries_exactly_and_rejects_substitution`
+  — the exact redelivery changes three records (group-commit fanout,
+  graph terminal manifest, generation-3 manifest) because the found
+  path's `reload_terminal` misses: after completion the plane HAS a
+  `terminal-recovery:{digest}` record but
+  `reload_bootstrap_graph_terminal_by_recovery_v3` still re-executes;
+  next: dump the recovery-key digest the replay rebuilds vs the
+  terminal-recovery record's key, and the source_kind the reload
+  expects at that id (the loader's kind check reads
+  `terminal_locator`).
+
 ## Next Action
 
-Continue 6b: extend the normalization fixture to multi-segment sources
-(per-segment manifests and route bindings in
-`build_bootstrap_v3_fixture_authority`), then move the runner's
-`_persisted_projection` onto the graph canonical source result with
-the final_status→comparator mapping; then the corruption activation
-clause (atomic_store.py ~3704-3762), the 6a policy five,
-conflict-clarification (12), and the 6d gates.
+Finish 6b's last test: trace why the found-path graph terminal reload
+misses on completed operations (recovery key vs terminal-recovery
+record identity/kind), then the corruption activation clause
+(atomic_store.py ~3704-3762), the 6a policy five,
+conflict-clarification (12), and the 6d gates (broad gate, identity,
+durations regen, three WorkPlan closures; land the WIP files).
