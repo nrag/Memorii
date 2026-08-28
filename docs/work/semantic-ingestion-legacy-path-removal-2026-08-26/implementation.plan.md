@@ -923,11 +923,39 @@ Broad gate (once, at the final revision):
   outcomes (checkpoint loss → pending; terminal/finalize loss →
   recovered+committed terminal with `source_result` member).
 
+- 2026-08-27 (slice 6c/6b junction — lost-ack staged; 6b seam LOCATED
+  in production): `_full_v3_service` (composition file) composes the
+  complete both-bundle V3 scenario flow; probe evidence: the accepted
+  flow now runs END TO END through handoff, normalization publish,
+  graph group commit, and graph terminal persistence (the earlier
+  6b "generation manifest" blocker is gone after the fence-digest
+  fixture repairs). The V3 boundaries that fire are
+  `checkpoint_source_progress`,
+  `commit_or_reload_bootstrap_graph_group_v3`,
+  `persist_bootstrap_graph_terminal_v3` (the pipeline-era
+  `persist_terminal_group`/`finalize_source` never fire). The lost-ack
+  test is REWRITTEN onto this composition (new boundary names,
+  fail-once semantics, exact-one-source_result + idempotent-reconcile
+  asserts) but is RED on one production seam, now precisely located:
+  the reopened reconcile's `_verify_completed_terminal` calls
+  `generation_members(fence, control.generation)` →
+  `_read_generation_members` (atomic_store.py:11691-11718) rejects
+  with "committed generation manifest is absent" — the generic
+  manifest is absent AND the graph-manifest escape hatch requires
+  `manifest.content["request"]["predecessor_generation"]
+  ["operation_generation"] == generation - 1`; dump the failing
+  generation number vs the graph manifest's predecessor to decide
+  whether the terminal path advances the control generation past the
+  graph manifest's (production fix) or the reconcile should read the
+  terminal's own generation (also production). Keep the lost-ack
+  rewrite uncommitted until this seam resolves.
+
 ## Next Action
 
-Continue 6c: rewrite lost-ack ×3 on the both-bundle composition;
-then direct-root (StopIteration), frozen-wire, corruption-recovery,
-hermes assistant-only case, and the coordinator [retry] case; then
-the recorded 6a policy five, conflict-clarification (12), 6b's open
-seam (atomic_store.py:11717), and the 6d gates (broad gate, identity,
-durations regen, three WorkPlan closures).
+Resolve the generation-manifest seam: dump the control generation vs
+the graph manifest predecessor in the lost-ack reopen (probe through
+`_verify_completed_terminal`), fix the production reader or the
+terminal generation advance, then land the staged lost-ack rewrite;
+then direct-root, frozen-wire, corruption-recovery, hermes
+assistant-only, coordinator [retry]; then the 6a policy five,
+conflict-clarification (12), and the 6d gates.
