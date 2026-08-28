@@ -950,12 +950,48 @@ Broad gate (once, at the final revision):
   terminal's own generation (also production). Keep the lost-ack
   rewrite uncommitted until this seam resolves.
 
+- 2026-08-27 (slice 6c THIRD WAVE, commit `4e2497e` — 15 of 16
+  composition + 4 of 4 coordinator green): the generation-manifest seam
+  resolved as THREE production fixes, each verified by probe: (a) the
+  graph-manifest escape hatch accepted only plan checkpoints with a
+  contiguous predecessor generation — the graph scheme writes
+  checkpoints at graph-derived numbers and terminal manifests under a
+  SECOND kind (`bootstrap_graph_v3_terminal_manifest`); both kinds are
+  now accepted with no contiguity requirement (the id is
+  generation-keyed and source+kind checked); (b) graph group commits
+  advance the control generation without ANY manifest — the reader
+  returns empty for generations of a control carrying
+  `group_result_digests`; (c) the reconcile re-persisted
+  `bootstrap_graph_terminal_persisted` terminals generically — it now
+  reports them committed without touching the disjoint grammar. On
+  these: lost-ack ×3 GREEN (both-bundle composition; V3 boundaries;
+  one terminal identity; idempotent reconcile), coordinator_v3 8/8
+  (the [retry] case injects a storage-unavailable group commit — the
+  unavailable-executor fixture path was never wired), hermes ×3 GREEN
+  (per-child expected reason parametrized). The filesystem integrity
+  composition is rebuilt on the scenario host (real JSONL store, full
+  bundles, scenario trust domain, resolver installed through the
+  runtime's own lazily-claimed administration grant with a
+  reopen guard) — its corruption test remains RED at the
+  clean-recovery door: with one clarification lifecycle seeding three
+  effect batches, the generation-member retained-authority view counts
+  TWO while the event-batch authority view counts THREE, and
+  `prepare_semantic_clean_recovery` rejects the request
+  (`clean_recovery_authority_invalid`) — next: determine which view
+  the recovery request must carry (all effect batches as the repair
+  source, or the retained-member subset) by dumping both views at
+  corruption time. Remaining composition: direct-root
+  (`foreign_live_claim` probe signature), frozen-wire (IndexError at
+  ~2308), corruption (above).
+
 ## Next Action
 
-Resolve the generation-manifest seam: dump the control generation vs
-the graph manifest predecessor in the lost-ack reopen (probe through
-`_verify_completed_terminal`), fix the production reader or the
-terminal generation advance, then land the staged lost-ack rewrite;
-then direct-root, frozen-wire, corruption-recovery, hermes
-assistant-only, coordinator [retry]; then the 6a policy five,
-conflict-clarification (12), and the 6d gates.
+Continue 6c: dump the retained-authority vs event-batch views at
+corruption time to fix the clean-recovery request shape (corruption
+test); then direct-root's `foreign_live_claim` probe (the recovery
+probe rejects a live claim that does not join the invocation — likely
+the fixture's service needs the graph bundle or the claim's fence
+keying) and frozen-wire's missing record at ~2308; then the 6a policy
+five, conflict-clarification (12), 6b's remaining scenario seams, and
+the 6d gates (broad gate, identity, durations regen, three WorkPlan
+closures).
