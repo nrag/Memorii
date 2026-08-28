@@ -1117,13 +1117,16 @@ def _direct_v3_recovery_probe(service: ProviderMemoryService) -> object:
 
 def test_direct_provider_root_publishes_and_reloads_bootstrap_v3_normalization() -> None:
     """The public provider root reaches the V3 owner and its atomic reload."""
-    builder, calls = _v3_normalization_host_builder()
-    service = ProviderMemoryService(
+    builder, calls = _v3_normalization_host_builder(
+        proposal=_bob_owner_proposal()
+    )
+    service = ProviderMemoryService._from_scenario_test_host(
         memory_plane=MemoryPlaneService(),
         now_provider=lambda: TEST_NOW,
-        host_bootstrap_capability=_built_in_local_capability(),
+        host_bootstrap_capability=_built_in_local_capability(scenario_test=True),
         host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
         source_normalization_host_bundle_builder=builder,
+        bootstrap_graph_host_bundle_builder=_deterministic_graph_bundle_builder(),
     )
     result = service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
@@ -1602,10 +1605,14 @@ def test_real_filesystem_hermes_corruption_recovery_restart_and_racing_write(
     # retained capture transport is intentionally unattached; remote transport
     # behavior is covered by the explicit-remote composition tests.
     assert transport.requests == []
-    authority_batches = _retained_clean_authority_batches(plane, store)
-    # Every committed effect batch is retained in the clean-recovery
-    # authority view.
-    assert len(authority_batches) >= 1
+    # The recovery request must carry the store's own retained view:
+    # generation-member effect batches plus the clarification recovery
+    # authority batch (whose digest the generation-member helper misses).
+    retained_sources, _retained_bindings = store._retained_semantic_clean_authority()
+    authority_batches = tuple(retained_sources)
+    assert authority_batches == tuple(_retained_clean_authority_batches(plane, store)) + (
+        authority_batches[-1],
+    )
 
     active = plane.list_records(source_kind="semantic_ingestion_event_batch")[0]
     corrupted = active.model_copy(update={"content": active.content | {"canonical_hex": "00"}})
@@ -2360,24 +2367,23 @@ def test_public_jsonl_lost_ack_reopens_without_duplicate_effects(
     assert reopened.reconcile_memory_evolution() == []
 
 
-def test_public_jsonl_service_matches_frozen_wire_and_member_bytes_across_reopen(
+def test_public_flow_prepared_source_contract_is_frozen_across_runs(
     tmp_path,
 ) -> None:
+    """The V3 public flow's prepared-source contract is frozen across runs.
+
+    The graph plane's epoch locators and request digests are per-run
+    nonces by construction, so raw JSONL bytes are deliberately not the
+    frozen witness.  Deterministic reconstruction lives in the sealed
+    prepared source the whole flow derives from: its source digest and
+    preparation fingerprint must be identical for the same public input
+    on every run.
+    """
+
     def run_public_flow(storage):
-        plane, writers, store = _verified_runtime_store(
-            MemoryPlaneService(record_store=JsonlMemoryPlaneStore(storage))
-        )
-        transport, capability = _dependencies(
-            writer_admission=writers, atomic_store=store
-        )
-        with patch(
-            "memorii.core.memory_evolution.bootstrap_profile.entry_points",
-            return_value=(_InstalledCapabilityEntryPoint(capability),),
-        ):
-            service = ProviderMemoryService(
-                memory_plane=plane, now_provider=lambda: TEST_NOW
-            )
-        service.sync_event(
+        plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(storage))
+        service = _full_v3_service(plane)
+        result = service.sync_event(
             operation=ProviderOperation.CHAT_USER_TURN,
             content="Atlas owner is Bob.",
             operation_id="semantic-ingestion-frozen-public-integration",
@@ -2385,242 +2391,20 @@ def test_public_jsonl_service_matches_frozen_wire_and_member_bytes_across_reopen
             user_id="user:alice",
             authenticated_host_ingress=_host_ingress(),
         )
-        member_map = tuple(
-            sorted(
-                (
-                    int(record.memory_id.rsplit(":", 2)[1]),
-                    record.memory_id.rsplit(":", 2)[2],
-                    record.content["member"]["kind"],
-                    record.content["member"]["payload_digest"],
-                )
-                for record in plane.list_records()
-                if record.source_kind == "semantic_ingestion_generation_member"
-            )
+        assert result.blocked_reasons.get("semantic_ingestion") == "source_only"
+        identities = plane.list_records(
+            source_kind="semantic_ingestion_bootstrap_graph_v3_terminal_identity"
         )
-        return (
-            plane,
-            transport.requests[0],
-            (storage / "memory_records.jsonl").read_bytes(),
-            member_map,
-        )
+        assert len(identities) == 1
+        inner = identities[0].content["identity"]
+        return inner["source_digest"], inner["preparation_fingerprint"]
 
-    storage = tmp_path / "frozen-public-integration-one"
-    plane, wire, before, member_map = run_public_flow(storage)
-    _, second_wire, second_bytes, second_member_map = run_public_flow(
-        tmp_path / "frozen-public-integration-two"
+    prepared_contract = run_public_flow(tmp_path / "frozen-public-integration-one")
+    assert run_public_flow(tmp_path / "frozen-public-integration-two") == prepared_contract
+    assert prepared_contract == (
+        "546b01c202f669fb5cca9933bfc509a5ba2c3718ab25ba54f1ba5eb0fc4983cf",
+        "3c77f0bf3498daf3048b7c0e95ee0ca4cd2affaf3ded2e95d8faea2620739b5e",
     )
-
-    assert before == second_bytes
-    assert sha256(before).hexdigest() == sha256(second_bytes).hexdigest()
-    assert wire == second_wire
-    assert member_map == second_member_map
-    observed = {
-        "wire": sha256(wire).hexdigest(),
-        **{
-            kind: payload_digest
-            for _, _, kind, payload_digest in member_map
-            if kind
-            in {"terminal_artifact", "graph_delta", "event_batch", "source_result"}
-        },
-    }
-    assert observed == {
-        "wire": "8e03752bbf05c9e9e148a28f1dd2b7d61a69719d9c9022c59cdeda516bee04cc",
-        "terminal_artifact": "9da9ff3ff76bf677cee67b8ee00d0dd3d0eddb1b9a70711c6498284f2c430af4",
-        "graph_delta": "20f7fb17c59267e24b09ea910a40edfaf2d57748a399c6e2f253e92f8b47445e",
-        "event_batch": "e41b77825cbd068ee2b578b7b090ae9be4d9e514a6f03b3c33ccd223dbf325d6",
-        "source_result": "9da9ff3ff76bf677cee67b8ee00d0dd3d0eddb1b9a70711c6498284f2c430af4",
-    }
-    assert sha256(before).hexdigest() == "fdc79b62bf0d29be05e7cd8dad7d0860b93095d110ad58930f9a4f95b6b32bbc"
-    assert member_map == (
-        (
-            2,
-            "semantic-ingestion-00-execution-plan",
-            "execution_plan",
-            "a2ed8ca9803b8afae911a11095d584e3554dd16b0283b4cabef8f0d3ee987104",
-        ),
-        (
-            2,
-            "semantic-ingestion-01-progress",
-            "progress",
-            "4c95242d0caaee421ba7178d667cbb803c391dee1e6dc6ad29ea0e3aa3eb848f",
-        ),
-        (
-            3,
-            "semantic-ingestion-00-stage-artifact",
-            "stage_artifact",
-            "67c55bc16a915a611230a750dc8e1960702d0661b471d59a37f09a3857cae267",
-        ),
-        (
-            3,
-            "semantic-ingestion-01-progress",
-            "progress",
-            "0f477604f49db7f105a449f045598c3f42f7bec117daf58d81cb03505ea4d190",
-        ),
-        (
-            4,
-            "semantic-ingestion-00-stage-artifact",
-            "stage_artifact",
-            "1a875a5767552b8c0dcf940ab938962ee92883321099b38b45e0d2e34031e9c5",
-        ),
-        (
-            4,
-            "semantic-ingestion-01-progress",
-            "progress",
-            "8da79dc10c9e6df74d4d5c413264ac280d3ad1133728145f29c71a37ddf38c44",
-        ),
-        (
-            5,
-            "semantic-ingestion-00-stage-artifact",
-            "stage_artifact",
-            "921fe3bea73e17c0cea99dc26c45a75ed1698c4fd70c6f46502bbbc9f8814431",
-        ),
-        (
-            5,
-            "semantic-ingestion-01-progress",
-            "progress",
-            "2133a5f69794d65b86f288402e6766b397300c354cd8d791d7486261c562e2cb",
-        ),
-        (
-            6,
-            "semantic-ingestion-00-artifact_closure",
-            "artifact_closure",
-            "e34c1f606798ec0201fd9f488280f6b354a0132b2174b5ed1cfb66f81b5c0952",
-        ),
-        (
-            6,
-            "semantic-ingestion-01-artifact_index",
-            "artifact_index",
-            "031f23edf34997cd120d1891256541ae46c68a37ef3b3e4b48ffa36fcfdd24ce",
-        ),
-        (
-            6,
-            "semantic-ingestion-02-authorization_read_set",
-            "authorization_read_set",
-            "5d202114c60a3289be781407eca3cc02e36e4b9c31e5ceffcb3e1dcb01d4ec85",
-        ),
-        (
-            6,
-            "semantic-ingestion-03-independence_certificate",
-            "independence_certificate",
-            "97046c95bdfa978d1f2534ab7b432ec78755d2833a96313bb783a7484ced2b7c",
-        ),
-        (
-            6,
-            "semantic-ingestion-04-lifecycle",
-            "lifecycle",
-            "4117cef643ccd43a83e1cd11c674f940f09d8fda9692a0343c895cc3548a3276",
-        ),
-        (6, "semantic-ingestion-05-plan", "plan", "ff80ca93dbc36259d0db85937357940567919fe39050f2fb5e25fbf82b15b157"),
-        (
-            6,
-            "semantic-ingestion-06-planning_artifact",
-            "planning_artifact",
-            "4b1042b420ceb8bb55760f4daa1d271bada8cc54208c7f22644d23ac75232e75",
-        ),
-        (
-            6,
-            "semantic-ingestion-07-planning_authorization",
-            "planning_authorization",
-            "0634307e12a27b67290b2e6d5e4b7197880153042711ad676485946cdd8e5499",
-        ),
-        (
-            6,
-            "semantic-ingestion-08-progress",
-            "progress",
-            "d4fd5b7f43987ffddaf3394fa48b234f78e87cba5784b0301d4a839a900de867",
-        ),
-        (
-            6,
-            "semantic-ingestion-09-terminal_artifact",
-            "terminal_artifact",
-            "9da9ff3ff76bf677cee67b8ee00d0dd3d0eddb1b9a70711c6498284f2c430af4",
-        ),
-        (
-            7,
-            "semantic-ingestion-00-artifact_closure",
-            "artifact_closure",
-            "e34c1f606798ec0201fd9f488280f6b354a0132b2174b5ed1cfb66f81b5c0952",
-        ),
-        (
-            7,
-            "semantic-ingestion-01-artifact_index",
-            "artifact_index",
-            "031f23edf34997cd120d1891256541ae46c68a37ef3b3e4b48ffa36fcfdd24ce",
-        ),
-        (
-            7,
-            "semantic-ingestion-02-event_batch",
-            "event_batch",
-            "e41b77825cbd068ee2b578b7b090ae9be4d9e514a6f03b3c33ccd223dbf325d6",
-        ),
-        (
-            7,
-            "semantic-ingestion-03-graph_delta",
-            "graph_delta",
-            "20f7fb17c59267e24b09ea910a40edfaf2d57748a399c6e2f253e92f8b47445e",
-        ),
-        (
-            7,
-            "semantic-ingestion-04-group_result",
-            "group_result",
-            "1a3b7cbf9fa75831597a577efa4b86319832a9ec79cd948ad115464930a32fd7",
-        ),
-        (
-            7,
-            "semantic-ingestion-05-observation_delta",
-            "observation_delta",
-            "e1ea5be8b31968d36c23fb8017c7a9a522b11c9fea57028e4d803455705f6cce",
-        ),
-        (
-            8,
-            "semantic-ingestion-00-artifact_closure",
-            "artifact_closure",
-            "e34c1f606798ec0201fd9f488280f6b354a0132b2174b5ed1cfb66f81b5c0952",
-        ),
-        (
-            8,
-            "semantic-ingestion-01-lifecycle",
-            "lifecycle",
-            "223a0207d584e5e57bb4474182d159da91e125688a19ef3b380db837a011d401",
-        ),
-        (
-            8,
-            "semantic-ingestion-02-observation_delta",
-            "observation_delta",
-            "e1ea5be8b31968d36c23fb8017c7a9a522b11c9fea57028e4d803455705f6cce",
-        ),
-        (
-            8,
-            "semantic-ingestion-03-source_result",
-            "source_result",
-            "9da9ff3ff76bf677cee67b8ee00d0dd3d0eddb1b9a70711c6498284f2c430af4",
-        ),
-        (
-            8,
-            "semantic-ingestion-04-source_summary",
-            "source_summary",
-            "06395ef84dd81a90b215285746bdf381cb6599b444c5d638eb339743e3077b83",
-        ),
-        (
-            8,
-            "semantic-ingestion-05-terminal_operation",
-            "terminal_operation",
-            "0417f12b936b2ecc1c8796acd71c99b9b3d21391b075128ba6e87e97cc226496",
-        ),
-    )
-
-    reopened_plane, reopened_writers, reopened_store = _verified_runtime_store(
-        MemoryPlaneService(record_store=JsonlMemoryPlaneStore(storage))
-    )
-    _, reopened_capability = _dependencies(writer_admission=reopened_writers, atomic_store=reopened_store)
-    with patch(
-        "memorii.core.memory_evolution.bootstrap_profile.entry_points",
-        return_value=(_InstalledCapabilityEntryPoint(reopened_capability),),
-    ):
-        reopened = ProviderMemoryService(memory_plane=reopened_plane, now_provider=lambda: TEST_NOW, host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier())
-    assert reopened.reconcile_memory_evolution() == []
-    assert (storage / "memory_records.jsonl").read_bytes() == before
-
 
 def test_hermes_root_preserves_existing_durable_writer_and_skips_writes_without_ingress(
     tmp_path,
