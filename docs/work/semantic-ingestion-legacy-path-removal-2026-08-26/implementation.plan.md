@@ -856,12 +856,55 @@ Broad gate (once, at the final revision):
   `_execute_attempt` (bootstrap_graph_coordinator.py:232) →
   `commit_or_reload` → `_read_generation_members`.
 
+- 2026-08-27 (slice 6c FIRST WAVE — 8 of 16 composition + 2 of 4
+  coordinator failures fixed; ruff repo-wide CLEAN): classification
+  probed the five non-census failures at base `c0bbc8e` in a clean
+  worktree (`/tmp/memorii-base-probe`): ONE was this operation's own
+  slice-5 regression (`test_builtin_local_capability_wires...`
+  asserting the removed `runtime.local_proposal_producer` — assertion
+  migrated off the deleted field); the other four are pre-existing.
+  Fixes, all verified green: (1) hermes empty-turn ×2 — the test
+  omitted `now_provider` (real August clock outside the January
+  ingress window) and `host_bootstrap_material_verifier` (no ingress
+  resolver installed); (2) recovery-authority-change ×3 —
+  `_runtime_for_outage` rebuilt as `_runtime_factory_for_outage`
+  (profile-aware factory on `build_authorized_local_semantic_runtime`
+  so the handoff's grammar-proof-bound preparation succeeds and the
+  pass fails closed at the absent normalization bundle, leaving the
+  recoverable control), `recover_execution_plan` (deleted pipeline
+  machinery) replaced by direct scope derivation via
+  `SemanticAuthorizationAuthorityRepository.scope_id`, and the
+  retained authorization authority installed explicitly via
+  `observe_verified` before each rotation mutation; (3)
+  foreign-recovery-plan — the foreign rejection seam is now the
+  marker-keyed loader (patch `load_bootstrap_writer_handoff_marker_v3`
+  with the foreign marker; reconcile fails closed with zero calls);
+  (4) coordinator corrupt-closure — the test's
+  `reload_bootstrap_graph_terminal_by_recovery_v3` call was missing
+  the now-required `delivery_principal_binding_digest` (read from the
+  marker's fence). Coordinator_v3: 18/19 green (only
+  `[retry]` remains; the fixture compiler's non-accepted path now
+  yields "succeeded" where "durable_retry" is expected — the
+  unresolved/graph_target_missing handling in
+  `_execute_attempt` needs study). Repo-wide ruff CLEAN (13 autofixes
+  + 3 B904 `from exc` + F841 in bootstrap_graph_v3_fixture).
+  REMAINING composition (9): direct-root (StopIteration),
+  hermes assistant-only parametrization (alignment-unavailable vs
+  source_only — the user/assistant divergence needs
+  `_sync_composite_event` study), lost-ack ×3 (`assert False is True`
+  at ~2144-era asserts incl. pipeline-era member kinds), redelivery
+  (`source_only` vs `retryable_outage` — the V3 unpublished-redelivery
+  reason), exhaustion (`preplanning` vs `terminal` — the V3 reconcile
+  DELIBERATELY never exhausts unpublished normalizations; rewrite the
+  test to the retained always-retryable contract per the reconcile
+  docstring), frozen-wire, corruption-recovery.
+
 ## Next Action
 
-Continue slice 6a policy: chain the post-cutover preflight cause
-(atomic_store.py:8323) with rank-20 contest terminals (suspect temporal
-policy fingerprint mismatch or reopened-resolver state), then the
-temporal ValidationError, then the race outcome-identity asserts; then
-the conflict-clarification family (one signature, 12 tests); then 6b's
-open seam (atomic_store.py:11717 generation manifest); then 6c and the
-6d gates.
+Continue 6c: rewrite the exhaustion test to the retained
+always-retryable reconcile contract; re-anchor redelivery's expected
+reason; migrate lost-ack ×3's member-kind asserts; then
+direct-root/frozen-wire/corruption/hermes-case-3 and the coordinator
+[retry] case. Then the recorded 6a policy five, conflict-clarification
+(12), 6b's open seam, and the 6d gates (broad gate, identity, durations
+regen, three WorkPlan closures).

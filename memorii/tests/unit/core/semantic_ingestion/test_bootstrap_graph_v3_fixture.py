@@ -1,15 +1,11 @@
 from types import SimpleNamespace
 
 import pytest
-from memorii.core.semantic_ingestion.bootstrap_graph_artifact_assembler import (
-    BootstrapGraphArtifactAssemblerV3,
-)
 from memorii.core.semantic_ingestion.contracts import (
     GraphDependentExecutionPolicyReferenceV3,
 )
 from tests.fixtures.semantic_ingestion.bootstrap_graph_v3_fixture import (
     DeterministicBootstrapGraphPlanCompilerV3,
-    DeterministicBootstrapGraphPlanningAuthorizerV3,
     build_empty_capability_registry,
     build_empty_graph_snapshot_bundle,
     build_graph_policy_reference,

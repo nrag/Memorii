@@ -49,6 +49,7 @@ from memorii.core.semantic_ingestion.contracts import (
     BootstrapGraphGroupCasOutcomeV3,
     BootstrapGraphGroupEffectReceiptV3,
     BootstrapGraphGroupExecutionResultV3,
+    BootstrapGraphNormalizationAuthorityMemberV3,
     BootstrapGraphObservationDeltaEffectV3,
     BootstrapGraphOperationReductionV3,
     BootstrapGraphPlanAuthorizationSetV3,
@@ -67,28 +68,25 @@ from memorii.core.semantic_ingestion.contracts import (
     BootstrapNativePlanningRecordV3,
     BootstrapNativeRecordMaterializationIntentV3,
     BootstrapNoReservationUseV3,
+    BootstrapNormalizationRequestCoreV3,
     BootstrapRecoveryReplayRecordV3,
+    BootstrapSemanticReductionAuthorityMemberV3,
+    BootstrapSemanticReductionAuthorityReloadV3,
     BootstrapSourceProposalAlignmentV3,
     BootstrapTransactionGroupOperationPlanV3,
     BootstrapTransactionGroupPlanMemberV3,
     BootstrapTransactionGroupPlanV3,
-    BootstrapGraphNormalizationAuthorityMemberV3,
-    BootstrapNormalizationRequestCoreV3,
     GraphDependentExecutionPolicyReferenceV3,
     GraphSemanticSnapshotBundleV3,
-    BootstrapSemanticReductionAuthorityMemberV3,
-    BootstrapSemanticReductionAuthorityReloadV3,
     PreparedSource,
-    decode_semantic_contract,
-    canonical_contract_value,
     contract_digest,
-    encode_typed_value,
     decode_bootstrap_graph_atomic_member_payload_v3,
+    decode_semantic_contract,
 )
-from memorii.core.semantic_ingestion.source_normalization_stage import _native_reduction_inputs
 from memorii.core.semantic_ingestion.source_normalization_authority import (
     CapabilityRegistrySnapshot,
 )
+from memorii.core.semantic_ingestion.source_normalization_stage import _native_reduction_inputs
 
 
 def digest(value: str) -> str:
@@ -899,8 +897,8 @@ def _reconstruct_bootstrap_semantic_reduction_reload_v3(
                 item for item in members
                 if item.kind == "bootstrap_normalization_request_core"
             )
-        except StopIteration:
-            raise ValueError("missing bootstrap normalization request core")
+        except StopIteration as exc:
+            raise ValueError("missing bootstrap normalization request core") from exc
         core = decode_semantic_contract(
             core_member.canonical_payload, BootstrapNormalizationRequestCoreV3,
         )
@@ -961,9 +959,13 @@ def _reconstruct_bootstrap_semantic_reduction_reload_v3(
             authority_member=authority,
         )
     except (ValueError, TypeError, KeyError) as exc:
-        raise RuntimeError(f"semantic reduction authority reconstruction failed: {exc}")
+        raise RuntimeError(
+            f"semantic reduction authority reconstruction failed: {exc}"
+        ) from exc
     except Exception as exc:
-        raise RuntimeError(f"semantic reduction authority reconstruction failed: {exc}")
+        raise RuntimeError(
+            f"semantic reduction authority reconstruction failed: {exc}"
+        ) from exc
         return None
 
 
@@ -995,27 +997,27 @@ class DeterministicBootstrapGraphAuthorityProviderV3:
             AtomicStoreBootstrapGraphControlEpochRepositoryV3,
             AtomicStoreBootstrapGraphGroupCommitRepositoryV3,
             AtomicStoreBootstrapGraphPlanRepositoryV3,
-    AtomicStoreBootstrapGraphTerminalPersistencePortV3,
+            AtomicStoreBootstrapGraphTerminalPersistencePortV3,
         )
         from memorii.core.semantic_ingestion.bootstrap_graph_terminal_preparation import (
             DeterministicBootstrapGraphTerminalPreparationV3,
         )
         from memorii.core.semantic_ingestion.contracts import (
-            BootstrapGraphControlEpochUnavailableV3,
-            BootstrapGraphControlEpochFoundV3,
             BootstrapGraphControlEpochAdvancedV3,
+            BootstrapGraphControlEpochFoundV3,
+            BootstrapGraphControlEpochUnavailableV3,
         )
 
         try:
             snapshot_record = atomic_store.graph_state_snapshot()
             fixture = PersistedBootstrapGraphReplayFixture(
                 replay=request.normalization_replay,
-                delivery_principal_binding_digest=request.delivery_principal_binding_digest,
+                delivery_principal_binding_digest=request.operation_fence_binding.delivery_principal_binding_digest,
                 required_outcome_scopes=request.required_outcome_scopes,
                 operation_fence_binding=request.operation_fence_binding,
                 operation_lease_binding=request.operation_lease_binding,
                 writer_commit_binding=request.writer_commit_binding,
-                control_epoch=request.delivery_principal_binding_digest,
+                control_epoch=request.operation_fence_binding.delivery_principal_binding_digest,
             )
             replay = request.normalization_replay
             normalization_authority = atomic_store.reload_bootstrap_graph_normalization_authority_v3(
@@ -1066,7 +1068,7 @@ class DeterministicBootstrapGraphAuthorityProviderV3:
                 base_read_set_digest=snapshot.base_read_set.read_set_digest,
                 required_scope_set_digest=request.required_outcome_scopes.required_scope_set_digest,
                 delivery_principal_binding_digest=(
-                    request.delivery_principal_binding_digest
+                    request.operation_fence_binding.delivery_principal_binding_digest
                 ),
                 execution_policy=policy,
                 capability_registry_snapshot=capabilities,
@@ -1153,7 +1155,6 @@ class DeterministicBootstrapGraphAuthorityProviderV3:
 
                 group_commits = UnavailableGroupCommitRepository()
             else:
-                base_repository = group_commits
                 max_conflict_failures = (
                     2 if self.conflict_calls is not None
                     else 4 if self.partial_conflict_calls is not None
@@ -1172,7 +1173,9 @@ class DeterministicBootstrapGraphAuthorityProviderV3:
                         self.before_compare_and_swap(request.transaction_group_id)
 
                     def commit_or_reload(inner_self, *, request):
-                        self._run_before_compare_and_swap(request=request)
+                        type(inner_self)._run_before_compare_and_swap(
+                            request=request
+                        )
                         if self.cas_attempts is not None:
                             self.cas_attempts.append(request.transaction_group_id)
                         reload = inner_self._repository.commit_or_reload(request=request)

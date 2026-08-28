@@ -38,11 +38,11 @@ from memorii.core.memory_evolution.bootstrap_profile import (
     CurrentBootstrapReleaseAssertion,
     CurrentBootstrapReleaseVerifier,
     GovernedSourceAdmissionFact,
+    HostBootstrapMaterialPresentation,
+    HostBootstrapMaterialVerifier,
     HostVerifiedBootstrapMaterial,
     HostVerifiedBootstrapReleaseEvidence,
     VerifiedBootstrapProfile,
-    HostBootstrapMaterialPresentation,
-    HostBootstrapMaterialVerifier,
 )
 from memorii.core.memory_evolution.conflict_attention import (
     ActiveSemanticConflict,

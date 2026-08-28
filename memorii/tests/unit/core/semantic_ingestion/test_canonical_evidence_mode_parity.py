@@ -12,9 +12,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from memorii.core.memory_plane.store import JsonlMemoryPlaneStore
 from memorii.core.memory_plane.service import MemoryPlaneService
-
+from memorii.core.memory_plane.store import JsonlMemoryPlaneStore
 from tests.unit.core.semantic_ingestion.test_bootstrap_graph_coordinator_v3 import (
     _delivery,
     _interrupt_after_handoff,

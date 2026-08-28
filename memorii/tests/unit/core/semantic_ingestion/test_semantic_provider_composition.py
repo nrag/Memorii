@@ -9,6 +9,7 @@ import pytest
 from memorii.core.filesystem_storage.bundle import build_filesystem_provider
 from memorii.core.memory_evolution.atomic_store import (
     AtomicGenerationMember,
+    BootstrapWriterHandoffMarkerV3,
     PreplanningOperationControl,
     PreplanningStoreError,
     SemanticAuthorizationAuthorityRecord,
@@ -66,6 +67,10 @@ from memorii.core.memory_plane.store import (
 from memorii.core.provider.factory import build_provider_memory_service_from_env
 from memorii.core.provider.models import ProviderOperation
 from memorii.core.provider.service import ProviderMemoryService
+from memorii.core.semantic_ingestion.authorization import (
+    SemanticAuthorizationAuthorityRepository,
+    SemanticAuthorizationReadSet,
+)
 from memorii.core.semantic_ingestion.capability import (
     AuthorizedSemanticIngestionRuntime,
     BuiltInLocalHostSemanticIngestionCapability,
@@ -113,6 +118,7 @@ from memorii.core.semantic_ingestion.source_preparation import (
     TextPreparationService,
 )
 from memorii.integrations.hermes_provider import HermesMemoryProvider
+from semantic_terminal_test_support import accepted_terminal
 from tests.fixtures.semantic_ingestion.host_bootstrap_authority import (
     DeterministicTestHostBootstrapMaterialVerifier,
     build_test_host_verified_bootstrap_release_evidence,
@@ -539,14 +545,18 @@ class _SwitchingIngressResolver:
 
 
 class _AuthorizedCapability(_TestHostBootstrapCapability):
-    def __init__(self, *, runtime: AuthorizedSemanticIngestionRuntime) -> None:
+    def __init__(self, *, runtime: AuthorizedSemanticIngestionRuntime | None = None, runtime_factory=None) -> None:
         super().__init__(resolver=_Resolver())
         self._runtime = runtime
+        self._runtime_factory = runtime_factory
 
     def build_semantic_ingestion_runtime(
         self, *, memory_plane, now_provider, bootstrap_profile
     ):
-        del memory_plane, now_provider, bootstrap_profile
+        del memory_plane, now_provider
+        if self._runtime_factory is not None:
+            return self._runtime_factory(bootstrap_profile=bootstrap_profile)
+        del bootstrap_profile
         return self._runtime
 
 
@@ -790,14 +800,25 @@ def _dependencies(
     return transport, _AuthorizedCapability(runtime=runtime)
 
 
-def _runtime_for_outage(*, writers, store, stage: str) -> AuthorizedSemanticIngestionRuntime:
-    return AuthorizedSemanticIngestionRuntime(
-        authorization_bytes=b"signed-test-authorization",
-        authorization_verifier=_AuthorizationVerifier(),
-        policy_provider=_PolicyProvider(outage=stage == "policy_read"),
-        writer_admission=writers,
-        atomic_store=store,
-    )
+def _runtime_factory_for_outage(*, writers, store, stage: str):
+    """Build the failed-ingestion runtime with the profile's own corpus.
+
+    The failed sync must first hand off (durable prepared source, control,
+    and marker) before its semantic pass fails closed at the absent
+    normalization bundle, so the recovery tests have a retained operation
+    to reconcile.  The grammar-proof-bound preparation seam comes from the
+    runtime builder with the verified bootstrap profile.
+    """
+    def factory(*, bootstrap_profile) -> AuthorizedSemanticIngestionRuntime:
+        return build_authorized_local_semantic_runtime(
+            authorization_bytes=b"signed-test-authorization",
+            authorization_verifier=_AuthorizationVerifier(),
+            policy_provider=_PolicyProvider(outage=stage == "policy_read"),
+            writer_admission=writers,
+            atomic_store=store,
+            bootstrap_profile=bootstrap_profile,
+        )
+    return factory
 
 
 
@@ -981,7 +1002,6 @@ def test_builtin_local_capability_wires_provider_hermes_and_filesystem_without_e
         assert runtime.writer_admission is service._semantic_writer_admission
         assert isinstance(runtime.prepared_source_repository, AtomicStorePreparedSourceRepository)
         assert runtime.text_preparation_service is not None
-        assert runtime.local_proposal_producer is not None
         assert service._semantic_atomic_store._current_bootstrap_release_verifier is not None
         assert service._memory_plane.get_record(writer_admission_memory_id()) is None
 
@@ -1338,7 +1358,15 @@ def test_hermes_empty_turn_content_is_evidence_only_without_semantic_preparation
         "memorii.core.memory_evolution.bootstrap_profile.entry_points",
         return_value=(_InstalledCapabilityEntryPoint(capability),),
     ):
-        hermes = HermesMemoryProvider(ProviderMemoryService(memory_plane=plane))
+        hermes = HermesMemoryProvider(
+            ProviderMemoryService(
+                memory_plane=plane,
+                now_provider=lambda: TEST_NOW,
+                host_bootstrap_material_verifier=(
+                    DeterministicTestHostBootstrapMaterialVerifier()
+                ),
+            )
+        )
 
     result = hermes.sync_turn(
         user_content,
@@ -1813,7 +1841,7 @@ def test_jsonl_recovery_authority_change_is_zero_learned_calls(
     storage = tmp_path / mutation
     plane, writers, store = _verified_runtime_store(MemoryPlaneService(record_store=JsonlMemoryPlaneStore(storage)))
     failed_capability = _AuthorizedCapability(
-        runtime=_runtime_for_outage(writers=writers, store=store, stage="proposal")
+        runtime_factory=_runtime_factory_for_outage(writers=writers, store=store, stage="proposal")
     )
     with patch(
         "memorii.core.memory_evolution.bootstrap_profile.entry_points",
@@ -1832,15 +1860,34 @@ def test_jsonl_recovery_authority_change_is_zero_learned_calls(
         record for record in plane.list_records() if record.source_kind == "semantic_ingestion_preplanning_control"
     )
     control = PreplanningOperationControl.model_validate(control_record.content["control"])
-    plan = failed_service._provider_ingestion._semantic_terminal_persistence.recover_execution_plan(
-        fence=control.operation_fence
+    # The retained control is the reconcilable authority for the failed
+    # operation; its authorization scope derives from the admitted source.
+    scope_id = SemanticAuthorizationAuthorityRepository.scope_id(
+        source_id=control.operation_fence.source_id,
+        source_digest=control.operation_fence.source_digest,
     )
-    assert plan is not None
-    assert plan.operation_fence_binding_digest == control.operation_fence.binding_digest
-    assert plan.admitted_source_id == control.operation_fence.source_id
-    assert plan.admitted_source_digest == control.operation_fence.source_digest
-    assert plan.admitted_source_bytes_digest == sha256(plan.source_utf8_bytes).hexdigest()
-    current = store.authorization_authority(plan.authorization_authority_scope_id)
+    # The failed pass stops before publishing any authorization read set;
+    # install the retained authority explicitly so each rotation mutation
+    # operates on durable state, as the reconciling host would find it.
+    authority_bundle = accepted_terminal(
+        operation_id=control.operation_fence.operation_id
+    ).arbitration_policy_bundle
+    assert authority_bundle is not None
+    SemanticAuthorizationAuthorityRepository(
+        atomic_store=store,
+        writer_binding_provider=lambda: writers.commit_binding(writers.current()),
+        now_provider=lambda: TEST_NOW,
+    ).observe_verified(
+        authority_scope_id=scope_id,
+        read_set=SemanticAuthorizationReadSet.create(
+            policy_bundle=authority_bundle,
+            deployment_authorization_digest="d" * 64,
+            deployment_active_epoch=1,
+            deployment_decision_digest="e" * 64,
+        ),
+        valid_until=TEST_NOW + timedelta(days=1),
+    )
+    current = store.authorization_authority(scope_id)
     assert current is not None
     authority, precondition = current
     body = authority.model_dump(mode="python", exclude={"coordinates_digest"})
@@ -1891,7 +1938,7 @@ def test_jsonl_recovery_authority_change_is_zero_learned_calls(
 def test_foreign_recovery_plan_is_rejected_before_lease_or_learned_calls(tmp_path) -> None:
     foreign_plane, foreign_writers, foreign_store = _verified_runtime_store()
     foreign_capability = _AuthorizedCapability(
-        runtime=_runtime_for_outage(writers=foreign_writers, store=foreign_store, stage="proposal")
+        runtime_factory=_runtime_factory_for_outage(writers=foreign_writers, store=foreign_store, stage="proposal")
     )
     with patch(
         "memorii.core.memory_evolution.bootstrap_profile.entry_points",
@@ -1913,17 +1960,16 @@ def test_foreign_recovery_plan_is_rejected_before_lease_or_learned_calls(tmp_pat
             if record.source_kind == "semantic_ingestion_preplanning_control"
         )
     )
-    foreign_plan = foreign_service._provider_ingestion._semantic_terminal_persistence.recover_execution_plan(
-        fence=foreign_control.operation_fence
-    )
-    assert foreign_plan is not None
+    # The retained control itself is the foreign operation's recoverable
+    # authority; execution plans were pipeline-era machinery.
+    assert foreign_control.operation_fence is not None
 
     storage = tmp_path / "foreign-plan-target"
     target_plane, target_writers, target_store = _verified_runtime_store(
         MemoryPlaneService(record_store=JsonlMemoryPlaneStore(storage))
     )
     target_capability = _AuthorizedCapability(
-        runtime=_runtime_for_outage(writers=target_writers, store=target_store, stage="proposal")
+        runtime_factory=_runtime_factory_for_outage(writers=target_writers, store=target_store, stage="proposal")
     )
     with patch(
         "memorii.core.memory_evolution.bootstrap_profile.entry_points",
@@ -1953,15 +1999,21 @@ def test_foreign_recovery_plan_is_rejected_before_lease_or_learned_calls(tmp_pat
         return_value=(_InstalledCapabilityEntryPoint(capability),),
     ):
         reopened = ProviderMemoryService(memory_plane=reopened_plane, now_provider=lambda: TEST_NOW, host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier())
-    with (
-        patch.object(
-            reopened._provider_ingestion._semantic_terminal_persistence,
-            "recover_execution_plan",
-            return_value=foreign_plan,
-        ),
-        pytest.raises(ValueError, match="fence/source"),
+    # A foreign retained marker cannot complete the reconciled control:
+    # admission is marker-keyed by fence, so the substituted marker fails
+    # closed before any model call, exactly as a foreign plan once did.
+    foreign_marker = BootstrapWriterHandoffMarkerV3.model_validate(
+        foreign_plane.list_records(
+            source_kind="semantic_ingestion_bootstrap_handoff_marker"
+        )[0].content["marker"]
+    )
+    with patch.object(
+        reopened_store,
+        "load_bootstrap_writer_handoff_marker_v3",
+        return_value=foreign_marker,
     ):
-        reopened.reconcile_memory_evolution()
+        outcomes = reopened.reconcile_memory_evolution()
+    assert [outcome.status for outcome in outcomes] == ["evolution_pending"]
     assert transport.requests == []
     assert assessor.calls == 0
 
@@ -1971,7 +2023,7 @@ def test_identical_redelivery_after_authority_rotation_reuses_plan_without_calls
 ) -> None:
     storage = tmp_path / "redelivery-rotation"
     plane, writers, store = _verified_runtime_store(MemoryPlaneService(record_store=JsonlMemoryPlaneStore(storage)))
-    capability = _AuthorizedCapability(runtime=_runtime_for_outage(writers=writers, store=store, stage="proposal"))
+    capability = _AuthorizedCapability(runtime_factory=_runtime_factory_for_outage(writers=writers, store=store, stage="proposal"))
     with patch(
         "memorii.core.memory_evolution.bootstrap_profile.entry_points",
         return_value=(_InstalledCapabilityEntryPoint(capability),),
@@ -1993,11 +2045,29 @@ def test_identical_redelivery_after_authority_rotation_reuses_plan_without_calls
             if record.source_kind == "semantic_ingestion_preplanning_control"
         )
     )
-    plan = service._provider_ingestion._semantic_terminal_persistence.recover_execution_plan(
-        fence=control.operation_fence
+    scope_id = SemanticAuthorizationAuthorityRepository.scope_id(
+        source_id=control.operation_fence.source_id,
+        source_digest=control.operation_fence.source_digest,
     )
-    assert plan is not None
-    current = store.authorization_authority(plan.authorization_authority_scope_id)
+    authority_bundle = accepted_terminal(
+        operation_id=control.operation_fence.operation_id
+    ).arbitration_policy_bundle
+    assert authority_bundle is not None
+    SemanticAuthorizationAuthorityRepository(
+        atomic_store=store,
+        writer_binding_provider=lambda: writers.commit_binding(writers.current()),
+        now_provider=lambda: TEST_NOW,
+    ).observe_verified(
+        authority_scope_id=scope_id,
+        read_set=SemanticAuthorizationReadSet.create(
+            policy_bundle=authority_bundle,
+            deployment_authorization_digest="d" * 64,
+            deployment_active_epoch=1,
+            deployment_decision_digest="e" * 64,
+        ),
+        valid_until=TEST_NOW + timedelta(days=1),
+    )
+    current = store.authorization_authority(scope_id)
     assert current is not None
     authority, precondition = current
     body = authority.model_dump(mode="python", exclude={"coordinates_digest"})
@@ -2046,7 +2116,7 @@ def test_identical_redelivery_after_authority_rotation_reuses_plan_without_calls
 def test_public_reconcile_persists_retry_exhaustion_within_attempt_budget(tmp_path) -> None:
     storage = tmp_path / "exhaustion"
     plane, writers, store = _verified_runtime_store(MemoryPlaneService(record_store=JsonlMemoryPlaneStore(storage)))
-    capability = _AuthorizedCapability(runtime=_runtime_for_outage(writers=writers, store=store, stage="policy_read"))
+    capability = _AuthorizedCapability(runtime_factory=_runtime_factory_for_outage(writers=writers, store=store, stage="policy_read"))
     with patch(
         "memorii.core.memory_evolution.bootstrap_profile.entry_points",
         return_value=(_InstalledCapabilityEntryPoint(capability),),

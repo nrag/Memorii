@@ -668,6 +668,9 @@ def _reload_terminal_by_recovery(service: ProviderMemoryService, plane: MemoryPl
     assert ingress is not None and source is not None
     return atomic.reload_bootstrap_graph_terminal_by_recovery_v3(
         normalization_replay=replay,
+        delivery_principal_binding_digest=(
+            marker.operation_fence_binding.delivery_principal_binding_digest
+        ),
         required_outcome_scopes=source.governance_carrier_artifact.required_outcome_scopes,
         operation_fence_binding=marker.operation_fence_binding,
     )
