@@ -984,14 +984,64 @@ Broad gate (once, at the final revision):
   (`foreign_live_claim` probe signature), frozen-wire (IndexError at
   ~2308), corruption (above).
 
+- 2026-08-28 (slice 6c FOURTH WAVE — 14 of 16 composition green):
+  direct-root GREEN (full V3 scenario composition: both bundles over
+  the scenario capability; publish + atomic reload + retry reloads
+  found without a second authority round); frozen-witness GREEN and
+  RENAMED `test_public_flow_prepared_source_contract_is_frozen_across_runs`
+  — the graph plane's epoch locators and request digests are per-run
+  NONCES by construction (verified: raw JSONL bytes differ across runs
+  even with token_bytes pinned; terminal-identity request/locator
+  digests differ), so the frozen witness is now the sealed
+  prepared-source contract (source_digest + preparation_fingerprint,
+  verified identical across runs and pinned). CORRUPTION test
+  progress, still RED: the recovery request now carries the store's
+  own 3-source retained view (`_retained_semantic_clean_authority()`:
+  generation-member batches PLUS the clarification recovery-authority
+  batch) and detect→freeze→repair→release works in isolation; the
+  remaining failure is the reopened service construction:
+  `reconcile_pending_recovery` → `activate_semantic_clean_recovery`
+  rejects with `clean_recovery_generation_substituted` — the reopened
+  activation over a released clean generation seeded with
+  clarification batches is UNTESTED PRODUCTION TERRITORY (the green
+  terminal-persistence corruption sibling never constructs a service
+  over a released recovery). Next: pinpoint the failing clause in the
+  activation conjunction (atomic_store.py ~3704-3762; suspects:
+  `retained_authority_records != current_authority_records` or the
+  aggregate-bindings comparison against the retained view).
+
+- 2026-08-28 (slice 6b classification after the graph-reader fixes —
+  4 of 11 scenario tests pass): the writer binding, verifier, and
+  composition fixes landed earlier unblocked 4 tests. The remaining 7
+  share TWO root causes: (1) `persisted terminal artifact is
+  unavailable` ×4 — the runner's `_persisted_projection` recovers the
+  terminal via the GENERIC `recover_terminal_artifact`, which returns
+  None for graph-plane terminals; the control IS terminal and a graph
+  terminal identity + terminal manifest exist; the projection must
+  decode the `bootstrap_graph_canonical_source_result` member from the
+  terminal manifest (`CanonicalSourceTerminalOutcomeRecord.final_status`:
+  fully_committed/evidence_only/rejected/unresolved/failed → map to
+  the comparator's accepted/abstained/unresolved vocabulary; the
+  ambiguity reason needs the group-result payload) — the runner is the
+  design-doc artifact
+  `docs/design/semantic_ingestion/traceability_golden_vectors/run_scenario_ingress.py`;
+  (2) `dynamic fixture authority requires one prepared route` — the
+  two-segment ambiguity event ("Atlas owner is Alice. Atlas owner is
+  Bob.") hits `DynamicSourceNormalizationAuthorityProvider.build`'s
+  single-route restriction and
+  `build_bootstrap_v3_fixture_authority`'s single-segment restriction
+  (source_normalization_fixture_builder.py:881/:448); multi-segment
+  support (per-segment catalogs/manifests/route bindings) is required
+  for the ambiguity corpus case. Remaining signatures: one
+  SimpleNamespace `assertion_span` AttributeError and one record-set
+  equality (reopen/substitution test).
+
 ## Next Action
 
-Continue 6c: dump the retained-authority vs event-batch views at
-corruption time to fix the clean-recovery request shape (corruption
-test); then direct-root's `foreign_live_claim` probe (the recovery
-probe rejects a live claim that does not join the invocation — likely
-the fixture's service needs the graph bundle or the claim's fence
-keying) and frozen-wire's missing record at ~2308; then the 6a policy
-five, conflict-clarification (12), 6b's remaining scenario seams, and
-the 6d gates (broad gate, identity, durations regen, three WorkPlan
-closures).
+Continue 6b: extend the normalization fixture to multi-segment sources
+(per-segment manifests and route bindings in
+`build_bootstrap_v3_fixture_authority`), then move the runner's
+`_persisted_projection` onto the graph canonical source result with
+the final_status→comparator mapping; then the corruption activation
+clause (atomic_store.py ~3704-3762), the 6a policy five,
+conflict-clarification (12), and the 6d gates.
