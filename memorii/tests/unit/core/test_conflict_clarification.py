@@ -197,10 +197,14 @@ class _Pipeline:
         failures: int = 0,
         crash_after_commit: bool = False,
         receipt_path: Path | None = None,
+        canonical_commit=None,
     ) -> None:
         self.failures = failures
         self.crash_after_commit = crash_after_commit
         self.receipt_path = receipt_path
+        # Optional bridge to the real canonical commit transaction; when
+        # present, the pipeline's receipt IS the store's retained receipt.
+        self.canonical_commit = canonical_commit
         self.calls = 0
         self.receipts: dict[str, ConflictClarificationProcessingReceipt] = {}
         self.claim = None
@@ -225,6 +229,17 @@ class _Pipeline:
         self.calls += 1
         if self.calls <= self.failures:
             raise ClarificationPipelineError(ClarificationFailureClass.RETRYABLE)
+        if self.canonical_commit is not None:
+            receipt = self.canonical_commit(
+                proposal,
+                processing_operation_id=processing_operation_id,
+                policy_fingerprint=policy_fingerprint,
+                current_claim=current_claim(),
+            )
+            self.receipts[processing_operation_id] = receipt
+            if self.crash_after_commit:
+                raise RuntimeError("crash after semantic commit")
+            return receipt
         receipt = ConflictClarificationProcessingReceipt.create(
             processing_operation_id=processing_operation_id,
             conflict_id=proposal.conflict_id,
@@ -836,6 +851,14 @@ def _sync_and_bind_user_source(
 
 
 def test_failed_receipt_writes_nothing_corrected_retry_commits_and_exact_retry_skips_verifiers(tmp_path: Path) -> None:
+    import importlib as _importlib
+    import sys as _sys
+
+    _support_dir = str(Path(__file__).parent / "semantic_ingestion")
+    if _support_dir not in _sys.path:
+        _sys.path.insert(0, _support_dir)
+    _commit_claimed = _importlib.import_module("test_semantic_terminal_persistence")._commit_claimed_accepted_clarification
+
     clock = _Clock()
     repository = _repository(tmp_path / "conflicts.jsonl", clock)
     repository.append_open(_attention(), scope_ids=("scope",))

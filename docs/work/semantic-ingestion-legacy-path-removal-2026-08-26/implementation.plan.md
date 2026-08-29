@@ -1157,10 +1157,49 @@ Broad gate (once, at the final revision):
   (expects `operator_action_required` — needs a STORAGE_INTEGRITY
   canonical conflict, a different seeding shape) remain to migrate.
 
+- 2026-08-28 (retry-straggler diagnosis COMPLETE — same production
+  family as the policy four): `_Pipeline` now accepts an optional
+  `canonical_commit` bridge so a fixture pipeline's receipt IS the
+  store's retained receipt (capability committed; unused in tests
+  yet). Bridging the retry test through it advanced the failure from
+  `conflict_attention_corrupt` (the fabricated receipt never matched
+  the store's) to the REAL commit boundary:
+  `build_semantic_memory_event_batch` rejects the accepted terminal
+  with "a new semantic record must begin at version one" — because
+  `_commit_claimed_accepted_clarification` builds the terminal at
+  record version 2 (the claim-proposal binding invariant: the
+  accepted answer supersedes the claim proposal's source assertion at
+  version 1), but in the SERVICE-level geometry the claim proposal's
+  source is a plain admitted USER EVENT that never asserted version 1
+  on the terminal's slot — there is no predecessor record. The
+  terminal-persistence geometry works because its claim proposal's
+  source IS the contested handoff source whose assertion occupies
+  version 1. THE CONSOLIDATED PRODUCTION QUESTION (policy four +
+  retry straggler): the canonical clarification commit's geometry
+  assumes the claim proposal's source has a version-1 assertion on
+  the terminal's slot; service-level resolutions (user chooses a
+  candidate for an EXISTING seeded conflict, proposal bound to the
+  user's admitted event) violate that assumption. Decide: (a) the
+  accepted terminal for a claim whose proposal binds a non-asserting
+  user event commits at record version 1 (contract decision on the
+  version invariant's scope), or (b) the service-level submission
+  must carry forward the CONTEST source (the seeded conflict's
+  introduction source) as the claim proposal's assertion predecessor
+  (submission-side contract change). Probe from
+  `event_replay.py:828` (the version-one check) with the retry
+  test's delta. The retry test is reverted to its plain pipeline
+  (prior red, `conflict_attention_corrupt`) — no regression; 17/20
+  holds. The integrity straggler needs a canonical STORAGE_INTEGRITY
+  conflict (plane-level `append_sanitized_storage_integrity_incident`
+  machinery, conflict id from `_INTEGRITY_CONFLICT_ID_DOMAIN`); the
+  adapter straggler needs its `unavailable` classified.
+
+
 ## Next Action
 
-Continue the three clarification stragglers from the submission gate
-(dump the `conflict_attention_corrupt` cause for the retry test; seed
-a STORAGE_INTEGRITY conflict for the operator-action test; classify
-the adapter test's unavailable), then the dual-pointer question
-(policy four), the corruption activation clause, and the 6d gates.
+Decide the consolidated version-predecessor question (option a: user-
+event-bound claims commit at record version 1; option b: submission
+carries the contest source as assertion predecessor) by probing
+event_replay.py:828 with the retry test's delta; then the integrity
+seeding, the adapter classification, the corruption activation
+clause, and the 6d gates.
