@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
+from hashlib import sha256
 from pathlib import Path
 from typing import Protocol, cast
 
@@ -29,7 +30,6 @@ from memorii.core.memory_evolution.admission import (
     SemanticIngestionOutcomeLookupRequest,
     SemanticIngestionOutcomeLookupResponse,
     source_admission_source_bytes,
-    source_admission_source_digest,
 )
 from memorii.core.memory_evolution.atomic_store import (
     PreplanningStoreError,
@@ -1255,7 +1255,6 @@ class ProviderMemoryService:
         if source_record is None:
             raise ConflictClarificationError("invalid_source_user_event")
         canonical_source_bytes = source_admission_source_bytes(source_record)
-        canonical_source_digest = source_admission_source_digest(source_record)
         try:
             source = verifier.verify_user_event(
                 tenant_id=access.tenant_id,
@@ -1273,7 +1272,8 @@ class ProviderMemoryService:
             or source.principal_id != access.principal_id
             or source.scope_digest != target.scope_digest
             or source.source_user_event_id != request.source_user_event_id
-            or source.source_user_event_digest != canonical_source_digest
+            or source.source_user_event_digest
+            != sha256(canonical_source_bytes).hexdigest()
             or source.canonical_source_bytes != canonical_source_bytes
         ):
             raise ConflictClarificationError("invalid_source_user_event")

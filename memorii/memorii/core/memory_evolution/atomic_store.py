@@ -5127,11 +5127,17 @@ class SemanticIngestionAtomicStore:
             or (
                 source_record.content.get("role") != "user"
                 and source_record.content.get("operation") != "chat_user_turn"
+                # A governed admission retains the raw transcript under its
+                # step-one material; the user-turn shape was validated at
+                # admission time by the delivery contract.
+                and not isinstance(
+                    source_record.content.get("source_admission"), dict
+                )
             )
             or validated_source.source_user_event_id != validated_proposal.source_user_event_id
             or validated_source.source_user_event_digest != validated_proposal.source_user_event_digest
             or validated_source.canonical_source_bytes != canonical_source_bytes
-            or validated_source.source_user_event_digest != source_admission_source_digest(source_record)
+            or validated_source.source_user_event_digest != sha256(canonical_source_bytes).hexdigest()
             or validated_source.tenant_id != validated_ingress.delivery_principal_binding.tenant_partition_id
             or validated_source.principal_id != validated_ingress.delivery_principal_binding.principal_subject_id
         ):

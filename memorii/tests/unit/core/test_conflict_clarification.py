@@ -129,18 +129,22 @@ def _access() -> ConflictAccessContext:
 def _request(
     *,
     conflict_id: str = "conflict",
+    conflict_revision: str | None = None,
+    source_user_event_id: str = "user-event",
     operation_id: str = "operation",
     candidate_id: str = "globex",
     receipt: str | None = None,
 ) -> ConflictResolutionRequest:
     return ConflictResolutionRequest(
         conflict_id=conflict_id,
-        expected_conflict_revision=_digest("revision"),
+        expected_conflict_revision=(
+            conflict_revision if conflict_revision is not None else _digest("revision")
+        ),
         operation_id=operation_id,
         action=ConflictResolutionAction.SELECT,
         selected_candidate_ids=(candidate_id,),
         validity_intervals=(),
-        source_user_event_id="user-event",
+        source_user_event_id=source_user_event_id,
         user_confirmation_receipt=None if receipt is None else UserConfirmationReceipt(token=receipt),
     )
 
@@ -536,6 +540,7 @@ class _SourceVerifier:
     def __init__(self) -> None:
         self.calls = 0
         self.canonical_source_bytes: bytes | None = None
+        self.canonical_source_digest: str | None = None
 
     def bind(self, service: ProviderMemoryService) -> None:
         record = service._memory_plane.get_record("tx:user-event")
@@ -607,6 +612,212 @@ class _ReceiptVerifier:
         )
 
 
+class _SeededConflict:
+    """A canonical OPEN conflict created through the real contest lifecycle."""
+
+    def __init__(self, conflict_id, conflict_revision, source_event_id, candidate_ids):
+        self.conflict_id = conflict_id
+        self.conflict_revision = conflict_revision
+        self.source_event_id = source_event_id
+        self.candidate_ids = candidate_ids
+
+
+def _seed_canonical_conflict(service: ProviderMemoryService, now: datetime) -> _SeededConflict:
+    """Create one real OPEN canonical conflict on the service's own plane.
+
+    The canonical resolution door reads conflict state from the plane's
+    conflict-authority records, so the clarification fixtures must seed a
+    genuine contest there (two contested terminals through the standard
+    handoff/persist machinery) with the ingress resolver's scope
+    vocabulary, and bind the submission source to the seeded handoff's
+    admitted user event.
+    """
+    import sys as _sys
+
+    from memorii.core.memory_evolution.delivery_coordinate_migration import (
+        activate_migration,
+        build_migration_plan,
+        certify_migration,
+    )
+    from memorii.core.memory_evolution.ingestion_contracts import encode_typed_value
+    from memorii.core.memory_evolution.writer_admission import (
+        SemanticWriterAdmissionError,
+    )
+    from memorii.core.semantic_ingestion.authorization import (
+        SemanticAuthorizationAuthorityRepository,
+    )
+    from memorii.core.semantic_ingestion.capability import (
+        build_authorized_local_semantic_runtime,
+    )
+    from memorii.core.semantic_ingestion.persistence import (
+        SemanticTerminalPersistenceService,
+    )
+
+    _support_dir = str(Path(__file__).parent / "semantic_ingestion")
+    if _support_dir not in _sys.path:
+        _sys.path.insert(0, _support_dir)
+    from semantic_terminal_test_support import (  # noqa: E402
+        TestSemanticConflictAuthorityResolver,
+        accepted_terminal,
+        handoff,
+    )
+    from tests.unit.core.semantic_ingestion.test_semantic_provider_composition import (
+        _AuthorizationVerifier,
+        _PolicyProvider,
+    )
+    from tests.unit.core.semantic_ingestion.test_semantic_terminal_persistence import (
+        AUTHORIZATION as PERSIST_AUTHORIZATION,
+    )
+    from tests.unit.core.semantic_ingestion.test_semantic_terminal_persistence import (
+        _activate,
+    )
+
+    plane = service._memory_plane
+    writers = service._semantic_writer_admission
+    store = service._semantic_atomic_store
+    try:
+        current = writers.current()
+    except SemanticWriterAdmissionError:
+        current = writers.create_initial_evidence_only(
+            admission_id="clarification-tests",
+            writer_implementation_fingerprint="writer",
+            graph_schema_fingerprint="schema",
+        )
+    binding = writers.commit_binding(current)
+    plan = build_migration_plan(
+        migration_plan_id="clarification-tests:verified",
+        source_writer_epoch=current.writer_epoch,
+        legacy_snapshot_token=hashlib.sha256(encode_typed_value(())).hexdigest(),
+        entries=(),
+    )
+    checkpoint_values = {
+        "migration_plan_id": plan.migration_plan_id,
+        "plan_digest": plan.plan_digest,
+        "completed_entry_digests": (),
+        "target_generation": current.writer_epoch,
+    }
+    from memorii.core.memory_evolution.delivery_coordinate_migration import (
+        DeliveryCoordinateMigrationCheckpoint,
+    )
+    checkpoint = DeliveryCoordinateMigrationCheckpoint(
+        **checkpoint_values,
+        checkpoint_digest=hashlib.sha256(
+            encode_typed_value(checkpoint_values)
+        ).hexdigest(),
+    )
+    certificate = certify_migration(
+        plan, checkpoint, independent_verifier_fingerprint="clarification-tests"
+    )
+    writers.transition(
+        expected=binding,
+        admission_id="clarification-tests:verified",
+        runtime_mode="verified_semantic",
+        writer_implementation_fingerprint="writer:verified",
+        graph_schema_fingerprint="schema",
+        migration_activation=activate_migration(plan, certificate),
+        migration_plan=plan,
+        migration_checkpoint=checkpoint,
+        migration_certificate=certificate,
+        target_records=(),
+    )
+    binding = writers.commit_binding(writers.current())
+    # The service's construction already installed the governed write policy
+    # over this plane, so the admission handoff must go through the atomic
+    # store like every later write.
+    admission, _admission_fence = handoff(
+        plane,
+        coordinate="clarification-canonical-admission",
+        scope_ids=frozenset({"user:user"}),
+        atomic_store=store,
+        writer_binding=binding,
+    )
+    store._publish_preplanning(admission=admission, writer_binding=binding)
+
+    resolver = TestSemanticConflictAuthorityResolver(plane)
+    # The bare service's store was built before any runtime existed, so its
+    # projection history has no conflict resolver; the host composition the
+    # fixtures emulate installs one before any contest can publish.
+    store._projection_history._semantic_conflict_authority_resolver = resolver
+    runtime = build_authorized_local_semantic_runtime(
+        authorization_bytes=b"clarification-tests-authorization",
+        authorization_verifier=_AuthorizationVerifier(),
+        policy_provider=_PolicyProvider("works_for"),
+        writer_admission=writers,
+        atomic_store=store,
+        bootstrap_profile=None,
+    )
+    resolver.install(
+        writers, writers._claim_conflict_authority_administration(owner=runtime)
+    )
+    repository = SemanticAuthorizationAuthorityRepository(
+        atomic_store=store,
+        writer_binding_provider=lambda: binding,
+        now_provider=lambda: now,
+    )
+    persistence = SemanticTerminalPersistenceService(
+        atomic_store=store,
+        writer_binding_provider=lambda: binding,
+        authorization_repository=repository,
+    )
+    from datetime import timedelta as _timedelta
+
+    _, first_fence = handoff(
+        plane,
+        coordinate="clarification-canonical-first",
+        scope_ids=frozenset({"user:user"}),
+        atomic_store=store,
+        writer_binding=binding,
+    )
+    first = accepted_terminal(
+        operation_id=first_fence.operation_id,
+        valid_start=now,
+        valid_end=now + _timedelta(days=2),
+    )
+    _activate(repository, first_fence, first)
+    persistence.persist(
+        fence=first_fence,
+        terminal=first,
+        authorization_verifier=PERSIST_AUTHORIZATION,
+    )
+    _, contested_fence = handoff(
+        plane,
+        coordinate="clarification-canonical-contest",
+        scope_ids=frozenset({"user:user"}),
+        atomic_store=store,
+        writer_binding=binding,
+    )
+    contested = accepted_terminal(
+        operation_id=contested_fence.operation_id,
+        object_logical_entity_id="entity:initech",
+        object_entity_revision_id="entity-revision:initech:v1",
+        valid_start=now,
+        valid_end=now + _timedelta(days=2),
+    )
+    _activate(repository, contested_fence, contested)
+    persistence.persist(
+        fence=contested_fence,
+        terminal=contested,
+        authorization_verifier=PERSIST_AUTHORIZATION,
+    )
+    conflicts = store._projection_history._current_semantic_conflicts()
+    assert len(conflicts) == 1
+    conflict_id, entry = next(iter(conflicts.items()))
+    source = plane.get_record("tx:clarification-canonical-contest")
+    assert source is not None
+    candidate_ids = tuple(
+        sorted(
+            candidate.candidate_id
+            for candidate in entry[0].display.options
+        )
+    )
+    return _SeededConflict(
+        conflict_id=conflict_id,
+        conflict_revision=entry[2].current_conflict_revision,
+        source_event_id=source.memory_id,
+        candidate_ids=candidate_ids,
+    )
+
+
 def _sync_and_bind_user_source(
     service: ProviderMemoryService,
     verifier: _SourceVerifier,
@@ -646,12 +857,13 @@ def test_failed_receipt_writes_nothing_corrected_retry_commits_and_exact_retry_s
         received_at=clock.now,
     )
     _sync_and_bind_user_source(service, source, host)
+    seeded = _seed_canonical_conflict(service, clock.now)
     arguments = {
-        "conflict_id": "conflict",
-        "expected_conflict_revision": _digest("revision"),
+        "conflict_id": seeded.conflict_id,
+        "expected_conflict_revision": seeded.conflict_revision,
         "operation_id": "operation",
         "action": "select",
-        "selected_candidate_ids": ["globex"],
+        "selected_candidate_ids": [seeded.candidate_ids[0]],
         "validity_intervals": [],
         "source_user_event_id": "user-event",
         "user_confirmation_receipt": "receipt",
@@ -758,6 +970,7 @@ def test_resolution_rejects_detached_source_proof_with_zero_durable_effects(
         received_at=clock.now,
     )
     _sync_and_bind_user_source(service, bound, host)
+    seeded = _seed_canonical_conflict(service, clock.now)
     before_ledger = repository._path.read_bytes()
     before_contexts = tuple(
         record
@@ -766,7 +979,11 @@ def test_resolution_rejects_detached_source_proof_with_zero_durable_effects(
             "semantic_ingestion_conflict_clarification_"
         )
     )
-    request = _request()
+    request = _request(
+        conflict_id=seeded.conflict_id,
+        conflict_revision=seeded.conflict_revision,
+        candidate_id=seeded.candidate_ids[0],
+    )
     result = HermesMemoryProvider(service).handle_tool_call_with_attention(
         "memorii_resolve_conflict",
         request.model_dump(mode="json", exclude={"user_confirmation_receipt"}),
@@ -836,8 +1053,14 @@ def test_resolution_rejects_invalid_confirmation_with_zero_durable_effects(
         received_at=clock.now,
     )
     _sync_and_bind_user_source(service, source, host)
+    seeded = _seed_canonical_conflict(service, clock.now)
     before_ledger = repository._path.read_bytes()
-    request = _request(receipt="receipt")
+    request = _request(
+        conflict_id=seeded.conflict_id,
+        conflict_revision=seeded.conflict_revision,
+        candidate_id=seeded.candidate_ids[0],
+        receipt="receipt",
+    )
     arguments = request.model_dump(
         mode="json", exclude={"user_confirmation_receipt"}
     )
