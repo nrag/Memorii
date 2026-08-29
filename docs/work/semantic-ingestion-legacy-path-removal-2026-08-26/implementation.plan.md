@@ -1119,9 +1119,48 @@ Broad gate (once, at the final revision):
   construction in `projection_records_from_replay_state` under an
   atemporal active policy.
 
+- 2026-08-28 (slice 6a conflict-clarification WAVE, commit `676e42a` —
+  17 of 20 green, from 8): the file's fixtures now seed one real OPEN
+  canonical conflict on each service's own plane via
+  `_seed_canonical_conflict` (writer epoch transition with the
+  empty-inventory snapshot token, conflict resolver installed through
+  a directly claimed administration grant, admission published through
+  the ATOMIC handoff — the service's construction already installs the
+  governed write policy, so a plain pre-activation handoff cannot
+  work — then two contested terminals in the ingress resolver's scope
+  vocabulary `user:user`). TWO PRODUCTION DIGEST REPAIRS, both
+  regressed against the terminal-persistence 8/8 batch: the resolve
+  door (service.py ~1276) and the retain gate
+  (atomic_store.py ~5140) compared the authorized proof's
+  `source_user_event_digest` against `source_admission_source_digest`,
+  which for admitted (step-one) records returns the step-one identity
+  digest — a value the PROOF TYPE forbids (its validator requires
+  sha256 of the immutable source bytes), so no admitted user event
+  could ever validate; both now compare the sha256 of the immutable
+  bytes the proof presents. The retain gate additionally accepts a
+  governed admission's retained step-one material as the user-turn
+  shape evidence (validated at admission). CAUTION re-confirmed: a
+  python .replace() with a drifted anchor silently no-opped the
+  atomic_store digest edit once — anchors must be re-read before
+  replacement. NINE tests green: detached-proof ×6, invalid-
+  confirmation ×3 (via the seeded conflict's candidates and revision;
+  the confirmation source binds the admitted "user-event", not the
+  seeded contest source). REMAINING THREE, all past the retain gate
+  inside the canonical submission:
+  `test_failed_receipt_writes_nothing_corrected_retry_commits_and_exact_retry_skips_verifiers`
+  now fails `conflict_attention_corrupt` at submission (the seeded
+  conflict geometry vs `submit_canonical_conflict_clarification` —
+  possibly the same dual-pointer production question as the policy
+  four); `test_default_provider_adapter_does_not_treat_file_submission_as_canonical_work`
+  (bare `conflict_resolution_unavailable` at line ~1111) and
+  `test_integrity_resolution_rejects_before_source_or_ledger_mutation`
+  (expects `operator_action_required` — needs a STORAGE_INTEGRITY
+  canonical conflict, a different seeding shape) remain to migrate.
+
 ## Next Action
 
-Resolve the dual-pointer question for the four remaining policy
-tests; then conflict-clarification (12, one signature), the corruption
-activation clause, and the 6d gates (broad gate, identity, durations
-regen, three WorkPlan closures; land the WIP files).
+Continue the three clarification stragglers from the submission gate
+(dump the `conflict_attention_corrupt` cause for the retry test; seed
+a STORAGE_INTEGRITY conflict for the operator-action test; classify
+the adapter test's unavailable), then the dual-pointer question
+(policy four), the corruption activation clause, and the 6d gates.
