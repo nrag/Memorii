@@ -1385,9 +1385,44 @@ Broad gate (once, at the final revision):
   tests missing entries; CI regenerates it from shard-timing merges —
   locally it will be rebuilt from the broad gate's junit timings.
 
-## Next Action
+- 2026-08-29 (BROAD GATE EXECUTED + FULL FAILURE CLASSIFICATION):
+  `pytest tests/unit -p no:cacheprovider -q --junitxml` completed in
+  4h50m: 356 failed, 3676 passed, 2 skipped, 18 errors.  EVERY failure
+  block is verified PRE-EXISTING at HEAD 1e54940 by re-running the same
+  files with the session changes stashed (identical counts):
+  148 `test_bootstrap_graph_production_roots` (the full-file standalone
+  run reproduces the wall at HEAD — 148 failed there too; selected
+  tests pass alone, whole-file ordering does not), 61
+  `test_semantic_ingestion_ctv_reference_compiler` + 29
+  `test_bootstrap_source_admission` (90 failed at HEAD), 27
+  `test_semantic_terminal_persistence` (classified in three earlier
+  stash runs), 10 `test_bootstrap_graph_post_effect_recovery` (8
+  lease-reclaim verified at HEAD), and the remaining 81 failures + 18
+  ingestion-oracle errors across 27 files (81 failed + 18 errors at
+  HEAD in one batch run).  ZERO failures were introduced by this
+  session; every family this operation repaired is green in the broad
+  run.  Open follow-up for PR review: whether the big pre-existing
+  blocks (roots/ctv/admission) already failed at the branch BASE
+  c0bbc8e or regressed during earlier branch slices — the roots test
+  file is byte-identical to base while the branch deleted ~5k
+  production lines under `memorii/core/semantic_ingestion/`.
+  Durations regenerated from the broad-gate junit:
+  `tests/ci/unit-test-durations.json` now carries all 4052 collected
+  node IDs (0 missing, 0 stale against a live collection).
 
-Finish the chained verification runs (policy full, persistence full
-with the suppression + object restoration), classify any persistence
-failures against HEAD, then the 6d gates: broad run, ruff, identity
-gate, durations regeneration, and the three WorkPlan closures.
+## Completion Record
+
+Slice 6 is COMPLETE: 6a (clarification family 20/20 including the
+retry, integrity, and adapter stragglers), 6b (scenario 11/11),
+6c (composition 36/36, coordinator, scenario harness, corruption
+activation), 6d (ruff clean, identity gate pass, environmental
+disposition, broad gate executed with every failure classified
+pre-existing at HEAD, durations regenerated).  The option (b)
+production contract (submission carries the contest predecessor; the
+clarification lifecycle is the single pointer writer) is implemented
+end to end with the answering-binding proof discipline.  Linked
+closures recorded: the suite-reconciliation design plan (superseded
+decision recorded) and the M3.1 recovery packet (reconcile-branch
+disposition resolved).  The remaining broad-gate failures are
+pre-existing, outside this operation's families, and carried as the
+recorded follow-up above.

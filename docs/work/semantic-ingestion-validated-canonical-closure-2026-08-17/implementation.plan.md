@@ -417,10 +417,16 @@ superseded on 2026-08-26 by the family-proof and recovery milestones.)
 
 ## Next Action
 
-Decide the two open dispositions — the unreachable reconcile branch
-(repair via a V3 execution-plan persistence design change, or remove the
-dead branch) and whether to open the dedicated legacy-fixture
-reconciliation operation for the 47 remaining pre-existing failures — then
-run the final closure items: full acceptance matrix, candidate refreeze,
-independent milestone and final reviews, CI wiring, and current-state
-documentation updates.
+Both open dispositions are RESOLVED by linked successor operations
+(2026-08-29): (1) the unreachable reconcile branch was REMOVED by the
+legacy-path removal operation's slice 2 (marker-keyed retained-state
+admission; no execution-plan persistence; `_run_semantic_ingestion`
+V3-only) — recorded in the M3.1 packet's disposition section; (2) the
+47 pre-existing failures were resolved by that same removal operation
+plus its linked suite-reconciliation work (ordinary-pipeline families
+deleted/re-targeted; V3-era families repaired; the removal WorkPlan
+records the family evidence). The final closure items remain open here:
+full acceptance matrix, candidate refreeze, independent milestone and
+final reviews, CI wiring, and current-state documentation updates — the
+"Final branch review" milestone inherits the removal operation's
+broad-gate evidence.

@@ -302,3 +302,19 @@ Decide the unreachable reconcile branch disposition (repair via a V3
 execution-plan persistence design change, or remove the dead branch), then
 close this milestone's remaining transferred follow-up (runtime-validation
 ratification) before extending proofs to the remaining trigger families.
+
+## Reconcile-Branch Disposition Resolved (2026-08-29, by the legacy-path removal operation)
+
+The pending disposition above is resolved by the linked removal operation
+(`../semantic-ingestion-legacy-path-removal-2026-08-26/`), slice 2: the
+ordinary/reconcile branch was REMOVED rather than repaired — the retained
+state admission is marker-keyed with no execution-plan persistence and no
+reconstructed ingress, and `_run_semantic_ingestion` is V3-only (foreign
+result types rejected). The "repair via V3 execution-plan persistence"
+option is therefore moot: there is no branch left to repair, and any future
+reconcile-family trigger would be a new design, not a repair of this one.
+
+The parent's "Final branch review" milestone inherits the removal
+operation's broad-gate evidence (recorded in that operation's WorkPlan).
+The remaining transferred follow-up (runtime-validation ratification) stays
+open on the parent roadmap; it is unaffected by this disposition.

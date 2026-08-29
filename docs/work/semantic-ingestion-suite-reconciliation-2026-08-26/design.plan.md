@@ -199,3 +199,26 @@ V3-era families (lost-ack, recovery-authority-change, redelivery-rotation,
 reload-bootstrap, frozen-wire, reconcile-exhaustion, and the coordinator
 module's four) proceed with the proven V3 fixture patterns regardless of
 that decision.
+
+## Closure Record (2026-08-29)
+
+The open A/B/C product decision above was superseded by the linked
+legacy-path removal operation: the ordinary pipeline and its legacy
+publication tower were DELETED outright (slice 5), so neither option A
+(build the tower) nor an interim xfail remains meaningful. The live
+security contract is the boundary option B described — the authorization
+read-set binding of `egress_policy_revision`/`egress_decision_digest`
+(`authorization.py`) with signed egress decisions — and the mutation
+suite was re-anchored onto it during slice 5 (binding-field substitution
+x18 via `verify_current_egress`, server-time expiry denial, rotation
+invalidating the prior read-set digest, lifecycle CAS retained).
+
+The V3-era families this plan enumerated (lost-ack, recovery-authority-
+change, redelivery-rotation, reload-bootstrap, frozen-wire, reconcile-
+exhaustion, coordinator module x4) were repaired by the removal
+operation's slices 5-6 with the proven V3 fixture patterns; the
+corruption-restart composition and the multi-segment scenario harness
+landed with them. Evidence: the removal operation's WorkPlan family
+records (composition 36/36, coordinator, scenario 11/11, policy
+migration 28/28, clarification 20/20) and its broad gate. This plan is
+complete and closed; no open decisions remain here.
