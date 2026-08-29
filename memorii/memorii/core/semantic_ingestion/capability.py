@@ -290,6 +290,7 @@ class BuiltInLocalHostSemanticIngestionCapability:
         from memorii.core.memory_evolution.writer_admission import (
             SemanticWriterAdmissionStore,
             bounded_preplanning_ownership_manifest,
+            writer_admission_memory_id,
         )
         from memorii.core.memory_plane.service import MemoryPlaneService
 
@@ -300,6 +301,19 @@ class BuiltInLocalHostSemanticIngestionCapability:
             bounded_preplanning_ownership_manifest(),
             now_provider=now_provider,
         )
+        if (
+            verified_material.trust_domain == "scenario_test"
+            and verified_material.release_evidence.trust_domain == "scenario_test"
+            and memory_plane.get_record(writer_admission_memory_id()) is None
+        ):
+            # The no-auto-create writer contract leaves a fresh store unbound;
+            # the scenario test domain owns creating the evidence-only epoch
+            # that its runtime builds either upgrade or retain.
+            writers.create_initial_evidence_only(
+                admission_id="scenario-semantic-writer",
+                writer_implementation_fingerprint="scenario-local-semantic-runtime",
+                graph_schema_fingerprint="memorii-semantic-graph-v1",
+            )
         if self.initial_writer_activation is not None:
             if (
                 verified_material.trust_domain != "scenario_test"

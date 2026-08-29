@@ -32,6 +32,7 @@ from memorii.core.memory_evolution.admission import (
     source_admission_source_bytes,
 )
 from memorii.core.memory_evolution.atomic_store import (
+    PreplanningOperationMismatchError,
     PreplanningStoreError,
     SemanticIngestionAtomicStore,
 )
@@ -1203,6 +1204,27 @@ class ProviderMemoryService:
             raise ConflictClarificationError("conflict_attention_unavailable")
         if access is None:
             raise ConflictClarificationError("conflict_attention_authorization_required")
+        # An integrity-kind attention may exist precisely because canonical
+        # conflict state is corrupt or absent, so the attention repository is
+        # consulted before any canonical lookup: operator action is the only
+        # resolution path for detected storage corruption.  The file target is
+        # kept: a conflict absent from canonical state resolves through the
+        # attention ledger's display projection instead.
+        file_target = None
+        if self._conflict_attention_repository is not None:
+            try:
+                file_target = (
+                    self._conflict_attention_repository.get_resolution_target(
+                        access, request.conflict_id
+                    )
+                )
+            except ConflictClarificationError:
+                file_target = None
+            if (
+                file_target is not None
+                and file_target.kind == ConflictKind.STORAGE_INTEGRITY
+            ):
+                raise ConflictClarificationError("operator_action_required")
         request_digest = conflict_resolution_request_digest(request)
         try:
             retained = self._semantic_atomic_store.canonical_clarification_operation_receipt(
@@ -1217,25 +1239,33 @@ class ProviderMemoryService:
                     outcome=ClarificationSubmissionOutcome.IDEMPOTENT,
                     operation_receipt=retained,
                 )
-            self._semantic_atomic_store.authorize_canonical_conflict_scopes(
-                conflict_id=request.conflict_id,
-                authorized_scope_ids=access.authorized_scope_ids,
-            )
             target = self._semantic_atomic_store.canonical_conflict_attention(request.conflict_id)
+            if target is not None:
+                self._semantic_atomic_store.authorize_canonical_conflict_scopes(
+                    conflict_id=request.conflict_id,
+                    authorized_scope_ids=access.authorized_scope_ids,
+                )
+        except PreplanningOperationMismatchError:
+            raise ConflictClarificationError("conflict_operation_mismatch") from None
         except PreplanningStoreError:
             raise ConflictClarificationError("conflict_resolution_unavailable") from None
         if target is None:
-            raise ConflictClarificationError("conflict_resolution_unavailable")
-        if target.kind == ConflictKind.STORAGE_INTEGRITY:
-            raise ConflictClarificationError("operator_action_required")
-        if target.status != ConflictStatus.OPEN or target.conflict_revision != request.expected_conflict_revision:
-            return ConflictClarificationSubmissionResult(
-                outcome=ClarificationSubmissionOutcome.STALE_REVISION,
-                attention=target,
-            )
-        candidates = {option.candidate_id for option in target.options}
-        if not set(request.selected_candidate_ids) <= candidates:
-            raise ConflictClarificationError("invalid_conflict_resolution")
+            # Without canonical conflict state the attention ledger is the
+            # only resolution authority; its submission is a display
+            # projection that must never become canonical work.
+            if file_target is None:
+                raise ConflictClarificationError("conflict_resolution_unavailable")
+        else:
+            if target.kind == ConflictKind.STORAGE_INTEGRITY:
+                raise ConflictClarificationError("operator_action_required")
+            if target.status != ConflictStatus.OPEN or target.conflict_revision != request.expected_conflict_revision:
+                return ConflictClarificationSubmissionResult(
+                    outcome=ClarificationSubmissionOutcome.STALE_REVISION,
+                    attention=target,
+                )
+            candidates = {option.candidate_id for option in target.options}
+            if not set(request.selected_candidate_ids) <= candidates:
+                raise ConflictClarificationError("invalid_conflict_resolution")
         verifier = self._source_user_event_verifier
         if verifier is None:
             raise ConflictClarificationError("source_user_event_verification_unavailable")
@@ -1254,12 +1284,15 @@ class ProviderMemoryService:
             )
         if source_record is None:
             raise ConflictClarificationError("invalid_source_user_event")
+        resolution_scope_digest = (
+            target.scope_digest if target is not None else file_target.scope_digest
+        )
         canonical_source_bytes = source_admission_source_bytes(source_record)
         try:
             source = verifier.verify_user_event(
                 tenant_id=access.tenant_id,
                 principal_id=access.principal_id,
-                scope_digest=target.scope_digest,
+                scope_digest=resolution_scope_digest,
                 source_user_event_id=request.source_user_event_id,
             )
             source = AuthorizedUserEventProof.model_validate(
@@ -1270,19 +1303,50 @@ class ProviderMemoryService:
         if not isinstance(source, AuthorizedUserEventProof) or (
             source.tenant_id != access.tenant_id
             or source.principal_id != access.principal_id
-            or source.scope_digest != target.scope_digest
+            or source.scope_digest != resolution_scope_digest
             or source.source_user_event_id != request.source_user_event_id
             or source.source_user_event_digest
             != sha256(canonical_source_bytes).hexdigest()
             or source.canonical_source_bytes != canonical_source_bytes
         ):
             raise ConflictClarificationError("invalid_source_user_event")
-        proposal = build_agent_clarification_proposal(
-            request,
-            source_user_event_digest=source.source_user_event_digest,
-            agent_principal_id=access.principal_id,
-            scope_digest=target.scope_digest,
-        )
+        predecessor_record = None
+        if target is not None:
+            # The user event is the ANSWER's evidence; the canonical commit's
+            # supersession discipline keys on the contested assertion's
+            # source.  Bind the proposal to that predecessor so the accepted
+            # answer commits at record version 2 over the predecessor's
+            # version-1 assertion instead of fabricating a new record from a
+            # non-asserting transcript event.
+            try:
+                (
+                    predecessor_source_id,
+                    predecessor_source_digest,
+                ) = self._semantic_atomic_store.canonical_conflict_predecessor(
+                    request.conflict_id
+                )
+            except PreplanningStoreError:
+                raise ConflictClarificationError("conflict_resolution_unavailable") from None
+            # The binding is already a full record id: candidate sources come
+            # from admitted evidence, never the bare request vocabulary.
+            predecessor_record = self._memory_plane.get_record(predecessor_source_id)
+            if predecessor_record is None:
+                raise ConflictClarificationError("conflict_resolution_unavailable")
+            proposal = build_agent_clarification_proposal(
+                request,
+                source_user_event_digest=predecessor_source_digest,
+                agent_principal_id=access.principal_id,
+                scope_digest=target.scope_digest,
+                predecessor_source_user_event_id=predecessor_source_id,
+                answering_user_event_digest=source.source_user_event_digest,
+            )
+        else:
+            proposal = build_agent_clarification_proposal(
+                request,
+                source_user_event_digest=source.source_user_event_digest,
+                agent_principal_id=access.principal_id,
+                scope_digest=file_target.scope_digest,
+            )
         verified = None
         if request.user_confirmation_receipt is not None:
             receipt_verifier = self._user_confirmation_receipt_verifier
@@ -1290,7 +1354,7 @@ class ProviderMemoryService:
                 raise ConflictClarificationError("user_confirmation_verification_unavailable")
             expected = UserConfirmationVerificationContext(
                 principal_id=access.principal_id,
-                scope_digest=target.scope_digest,
+                scope_digest=resolution_scope_digest,
                 conflict_id=request.conflict_id,
                 conflict_revision=request.expected_conflict_revision,
                 action=request.action,
@@ -1325,6 +1389,16 @@ class ProviderMemoryService:
                     raise ValueError("confirmation receipt binding mismatch")
             except (AttributeError, TypeError, ValueError):
                 raise ConflictClarificationError("invalid_user_confirmation_receipt") from None
+        if target is None:
+            # File-only conflicts terminate at the display projection: no
+            # retained context, no canonical generation, no claim work.
+            return self._conflict_attention_repository.submit_clarification(
+                access,
+                request,
+                request_digest,
+                proposal,
+                verified,
+            )
         if self._conflict_clarification_processor is None:
             raise ConflictClarificationError("conflict_resolution_processing_unavailable")
         try:
@@ -1332,7 +1406,9 @@ class ProviderMemoryService:
                 self._semantic_atomic_store.retain_conflict_clarification_context(
                     proposal=proposal,
                     authorized_source=source,
-                    source_record=source_record,
+                    source_record=predecessor_record
+                    if predecessor_record is not None
+                    else source_record,
                     authenticated_ingress=authenticated_ingress,
                 )
             )
@@ -1349,6 +1425,8 @@ class ProviderMemoryService:
                 proposal=proposal,
                 verified_confirmation=verified,
             )
+        except PreplanningOperationMismatchError:
+            raise ConflictClarificationError("conflict_operation_mismatch") from None
         except PreplanningStoreError:
             raise ConflictClarificationError("conflict_resolution_unavailable") from None
         if submitted.outcome == ClarificationSubmissionOutcome.SUBMITTED:

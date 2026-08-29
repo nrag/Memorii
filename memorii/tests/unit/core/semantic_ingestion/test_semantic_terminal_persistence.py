@@ -698,6 +698,7 @@ def _claim_canonical_clarification(
     service,
     authorization_repository,
     owner_token: str = "canonical-clarification-owner",
+    terminal_kwargs: dict | None = None,
 ):
     """Introduce one real contest and return its claimed work and CAS input.
 
@@ -727,6 +728,7 @@ def _claim_canonical_clarification(
         subject_entity_revision_id="entity-revision:clarification:v1",
         valid_start=NOW,
         valid_end=NOW + timedelta(days=2),
+        **(terminal_kwargs or {}),
     )
     _activate(authorization_repository, contested_fence, first)
     service.persist(fence=contested_fence, terminal=first, authorization_verifier=AUTHORIZATION)
@@ -745,6 +747,7 @@ def _claim_canonical_clarification(
         object_entity_revision_id="entity-revision:initech:v1",
         valid_start=NOW,
         valid_end=NOW + timedelta(days=2),
+        **(terminal_kwargs or {}),
     )
     _activate(authorization_repository, second_fence, contested)
     service.persist(fence=second_fence, terminal=contested, authorization_verifier=AUTHORIZATION)
@@ -826,11 +829,6 @@ def _commit_claimed_accepted_clarification(
         source_digest=claim.proposal.source_user_event_digest,
         subject_logical_entity_id="entity:clarification",
         subject_entity_revision_id="entity-revision:clarification:v1",
-        # A distinct object entity keeps the accepted terminal's projection
-        # from resolving the same contested claim the clarification closes:
-        # the closure CAS admits one active pointer per conflict in a batch.
-        object_logical_entity_id="entity:clarified",
-        object_entity_revision_id="entity-revision:clarified:v1",
         **(terminal_kwargs or {}),
     )
     terminal = _with_claim_record_version(
@@ -1135,8 +1133,8 @@ def _verified_confirmation_for(
         conflict_revision=proposal.conflict_revision,
         action=proposal.action,
         request_digest=proposal.request_digest,
-        source_user_event_id=proposal.source_user_event_id,
-        source_user_event_digest=proposal.source_user_event_digest,
+        source_user_event_id=proposal.answering_user_event_id,
+        source_user_event_digest=proposal.answering_user_event_digest,
         issued_at=NOW,
         expires_at=NOW + timedelta(minutes=5),
         nonce=nonce,

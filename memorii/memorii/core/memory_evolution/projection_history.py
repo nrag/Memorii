@@ -2905,6 +2905,7 @@ class ProjectionHistoryRepository:
             value.conflict_id: value for value in authority.pointer_preconditions
         }
         successor_ids: set[str] = set()
+        lifecycle_closed_ids: set[str] = set()
         for conflict_id in getattr(request, "terminal_clarification_conflict_ids", ()):
             current_value = current_conflicts.get(conflict_id)
             expected = expected_by_id.get(conflict_id)
@@ -2925,6 +2926,7 @@ class ProjectionHistoryRepository:
             # not manufacture a competing projection transition for its live
             # submitted pointer.
             successor_ids.add(conflict_id)
+            lifecycle_closed_ids.add(conflict_id)
         prepared_by_basis = {
             basis: value
             for basis, value in (
@@ -3128,6 +3130,12 @@ class ProjectionHistoryRepository:
                 )
             ).hexdigest()
             pointer_id = f"semantic_ingestion:conflict-authority:pointer:{conflict_id}"
+            if conflict_id in lifecycle_closed_ids:
+                # The terminal clarification edge owns this conflict's
+                # pointer successor in the same batch; a projection
+                # resolution re-materializing the identical contest must not
+                # manufacture a second active pointer for it.
+                continue
             existing_pointer = self._memory_plane.get_record(pointer_id)
             successor_ids.add(conflict_id)
             expected = expected_by_id.get(conflict_id)

@@ -577,6 +577,12 @@ class AgentClarificationProposal(BaseModel):
     validity_intervals: tuple[CandidateValidityInterval, ...]
     source_user_event_id: str
     source_user_event_digest: str
+    # The answering user event the signed request names and the host proof
+    # authenticates.  When the canonical commit supersedes a contest
+    # predecessor, the source fields bind that predecessor while these
+    # fields keep the proof binding checkable at the generation level.
+    answering_user_event_id: str
+    answering_user_event_digest: str
     agent_principal_id: str
     scope_digest: str
     request_digest: str
@@ -584,10 +590,12 @@ class AgentClarificationProposal(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    _validate_identifiers = field_validator("conflict_id", "operation_id", "source_user_event_id", "agent_principal_id")(_identifier)
+    _validate_identifiers = field_validator(
+        "conflict_id", "operation_id", "source_user_event_id", "answering_user_event_id", "agent_principal_id"
+    )(_identifier)
     _validate_selected = field_validator("selected_candidate_ids")(lambda values: tuple(_identifier(value) for value in values))
     _validate_digests = field_validator(
-        "conflict_revision", "source_user_event_digest", "scope_digest", "request_digest", "proposal_digest"
+        "conflict_revision", "source_user_event_digest", "answering_user_event_digest", "scope_digest", "request_digest", "proposal_digest"
     )(lambda value: value if _DIGEST.fullmatch(value) else (_ for _ in ()).throw(ValueError("digest field must be a digest")))
 
     @model_validator(mode="after")
@@ -792,7 +800,21 @@ def build_agent_clarification_proposal(
     source_user_event_digest: str,
     agent_principal_id: str,
     scope_digest: str,
+    predecessor_source_user_event_id: str | None = None,
+    answering_user_event_digest: str | None = None,
 ) -> AgentClarificationProposal:
+    """Build one proposal, optionally binding the superseded contest source.
+
+    The request names the answering user event (validated by the host
+    proof); when the canonical commit supersedes a contested assertion,
+    ``predecessor_source_user_event_id`` binds that assertion's source so
+    the accepted answer commits at record version 2 over its version-1
+    predecessor.  The request digest still derives from the original
+    request, keeping the submission CAS bound to what the user signed.
+    ``answering_user_event_digest`` authenticates the answering event when
+    it differs from the superseded source; it defaults to the source
+    digest (the single-event shape).
+    """
     payload = {
         "conflict_id": request.conflict_id,
         "conflict_revision": request.expected_conflict_revision,
@@ -800,8 +822,18 @@ def build_agent_clarification_proposal(
         "action": request.action,
         "selected_candidate_ids": request.selected_candidate_ids,
         "validity_intervals": request.validity_intervals,
-        "source_user_event_id": request.source_user_event_id,
+        "source_user_event_id": (
+            predecessor_source_user_event_id
+            if predecessor_source_user_event_id is not None
+            else request.source_user_event_id
+        ),
         "source_user_event_digest": source_user_event_digest,
+        "answering_user_event_id": request.source_user_event_id,
+        "answering_user_event_digest": (
+            answering_user_event_digest
+            if answering_user_event_digest is not None
+            else source_user_event_digest
+        ),
         "agent_principal_id": agent_principal_id,
         "scope_digest": scope_digest,
         "request_digest": conflict_resolution_request_digest(request),
@@ -1251,9 +1283,16 @@ class SemanticConflictClarificationSubmissionGeneration(BaseModel):
             or proof.conflict_id != proposal.conflict_id
             or proof.conflict_revision != proposal.conflict_revision
             or proof.action != proposal.action
+            # Decision (b): the proposal's source binds the contest
+            # predecessor the canonical commit supersedes, while the proof
+            # authenticates the answering user event the signed request
+            # names — carried explicitly by the proposal's answering
+            # fields.  The proof's request digest additionally binds it to
+            # the exact signed request.
             or proof.request_digest != proposal.request_digest
-            or proof.source_user_event_id != proposal.source_user_event_id
-            or proof.source_user_event_digest != proposal.source_user_event_digest
+            or proof.source_user_event_id != proposal.answering_user_event_id
+            or proof.source_user_event_digest
+            != proposal.answering_user_event_digest
         ):
             raise ValueError("clarification confirmation proof binding is invalid")
         body = self.model_dump(mode="python", exclude={"generation_digest"})

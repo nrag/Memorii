@@ -143,6 +143,12 @@ class PreplanningStoreError(ValueError):
     pass
 
 
+class PreplanningOperationMismatchError(PreplanningStoreError):
+    """The operation id is retained for a different exact request."""
+
+    pass
+
+
 class _BootstrapAuthorityUnavailableAtCommit(PreplanningStoreError):
     """The host rejected the final, transaction-linearized release check."""
 
@@ -3723,7 +3729,15 @@ class SemanticIngestionAtomicStore:
                 != validated.retained_corrupt_generation_digest
             )
             or authority_record_digests != current_authority_digests
-            or retained_authority_records != current_authority_records
+            # The retained plan decodes canonical content into tuples while
+            # the reopened plane returns JSON-parsed lists, so record-object
+            # equality is container-type noise: authority identity is the
+            # durable (memory id, record digest) pair, already the basis of
+            # the digest comparison above.
+            or tuple(
+                (record.memory_id, record_digest(record))
+                for record in retained_authority_records
+            ) != current_authority_digests
             or replayed != state
             or aggregate.graph_state != replayed
             or (
@@ -5110,8 +5124,13 @@ class SemanticIngestionAtomicStore:
             validated_ingress.delivery_principal_binding,
             validated_proposal.source_user_event_id,
         )
+        # The proposal names the record the canonical commit supersedes: a
+        # bare user-event id from the request vocabulary, that admitted
+        # record's full id (the contest predecessor), or its delivery-key
+        # digest form.
         expected_record_ids = {
             f"tx:{validated_proposal.source_user_event_id}",
+            validated_proposal.source_user_event_id,
             f"semantic_ingestion:source:{identity.delivery_key_digest}",
         }
         current_source_record = self._memory_plane.get_record(source_record.memory_id)
@@ -5125,7 +5144,8 @@ class SemanticIngestionAtomicStore:
             or source_record.source_kind not in {"provider", "semantic_ingestion_source"}
             or not source_record.is_raw_event
             or (
-                source_record.content.get("role") != "user"
+                source_record.source_kind == "provider"
+                and source_record.content.get("role") != "user"
                 and source_record.content.get("operation") != "chat_user_turn"
                 # A governed admission retains the raw transcript under its
                 # step-one material; the user-turn shape was validated at
@@ -5134,10 +5154,13 @@ class SemanticIngestionAtomicStore:
                     source_record.content.get("source_admission"), dict
                 )
             )
-            or validated_source.source_user_event_id != validated_proposal.source_user_event_id
-            or validated_source.source_user_event_digest != validated_proposal.source_user_event_digest
-            or validated_source.canonical_source_bytes != canonical_source_bytes
-            or validated_source.source_user_event_digest != sha256(canonical_source_bytes).hexdigest()
+            # Decision (b): the proof authenticates the answering user event
+            # while the proposal binds the contest predecessor, so they are
+            # legitimately different records; the door validated the proof
+            # against its own user-event record before retention.  Here the
+            # retained record must bind the proposal exactly.
+            or validated_proposal.source_user_event_digest
+            != sha256(canonical_source_bytes).hexdigest()
             or validated_source.tenant_id != validated_ingress.delivery_principal_binding.tenant_partition_id
             or validated_source.principal_id != validated_ingress.delivery_principal_binding.principal_subject_id
         ):
@@ -5371,6 +5394,51 @@ class SemanticIngestionAtomicStore:
         except (KeyError, TypeError, ValueError) as exc:
             raise PreplanningStoreError("canonical conflict authorization is invalid") from exc
 
+    def canonical_conflict_predecessor(
+        self, conflict_id: str
+    ) -> tuple[str, str]:
+        """Return the contest source record the accepted answer supersedes.
+
+        The clarified conflict's introduction binds its contested assertions by
+        claim identity and digest; the canonical commit's supersession
+        discipline (record version 2 over the predecessor's version-1
+        assertion) keys on the admitted source record behind the contested
+        claim, so the resolution door binds the proposal to that record rather
+        than to the answering user event.
+        """
+
+        from memorii.core.semantic_ingestion.contracts import ClaimAssertion
+
+        try:
+            current = self._projection_history._current_semantic_conflicts().get(conflict_id)
+            if current is None:
+                raise ValueError
+            candidates = current[0].candidates
+            if not candidates:
+                raise ValueError
+            candidate = candidates[-1]
+            for materialized in (
+                self.semantic_replay_authority().graph_state.materialized_records
+            ):
+                claim = materialized.record
+                if (
+                    materialized.record_id != candidate.candidate_id
+                    or materialized.record_digest != candidate.assertion_record_digest
+                    or not isinstance(claim, ClaimAssertion)
+                    or claim.source_authority_evidence is None
+                ):
+                    continue
+                source_id = claim.source_authority_evidence.source_id
+                record = self._memory_plane.get_record(source_id)
+                if record is None:
+                    raise ValueError
+                return source_id, source_admission_source_digest(record)
+            raise ValueError
+        except PreplanningStoreError:
+            raise
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
+            raise PreplanningStoreError("canonical conflict predecessor is unavailable") from exc
+
     def canonical_clarification_operation_receipt(
         self, *, operation_id: str, request_digest: str
     ) -> ConflictClarificationOperationReceipt | None:
@@ -5398,7 +5466,9 @@ class SemanticIngestionAtomicStore:
             if record_type != "clarification_submission_operation":
                 raise ValueError
             if operation.request_digest != request_digest:
-                raise PreplanningStoreError("canonical clarification operation mismatch")
+                raise PreplanningOperationMismatchError(
+                    "canonical clarification operation mismatch"
+                )
             generation_record = self._memory_plane.get_record(
                 "semantic_ingestion:conflict-authority:clarification-submission:"
                 f"{operation.generation_digest}"

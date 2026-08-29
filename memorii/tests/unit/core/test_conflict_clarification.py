@@ -859,6 +859,27 @@ def test_failed_receipt_writes_nothing_corrected_retry_commits_and_exact_retry_s
         _sys.path.insert(0, _support_dir)
     _commit_claimed = _importlib.import_module("test_semantic_terminal_persistence")._commit_claimed_accepted_clarification
 
+    def _canonical_commit(
+        proposal, *, processing_operation_id, policy_fingerprint, current_claim
+    ):
+        # Decision (b): the claimed proposal already carries the contest
+        # predecessor as its source, so the accepted terminal supersedes the
+        # proposal's source assertion at record version 2.  The superset valid
+        # window (30d over the contest's 2d) makes the projection split into a
+        # re-contest plus a residual pass instead of resolving the clarified
+        # conflict alongside the lifecycle closure's own pointer.
+        return _commit_claimed(
+            service._semantic_atomic_store,
+            current_claim,
+            service._semantic_atomic_store.build_conflict_clarification_cas_input(
+                current_claim
+            ),
+            terminal_kwargs={
+                "valid_start": clock.now,
+                "valid_end": clock.now + timedelta(days=30),
+            },
+        )[0]
+
     clock = _Clock()
     repository = _repository(tmp_path / "conflicts.jsonl", clock)
     repository.append_open(_attention(), scope_ids=("scope",))
@@ -870,7 +891,9 @@ def test_failed_receipt_writes_nothing_corrected_retry_commits_and_exact_retry_s
         authenticated_ingress_resolver=_Resolver(),
         source_user_event_verifier=source,
         user_confirmation_receipt_verifier=receipts,
-        conflict_clarification_pipeline=_Pipeline(),
+        conflict_clarification_pipeline=_Pipeline(
+            canonical_commit=_canonical_commit
+        ),
         now_provider=lambda: clock.now,
     )
     host = AuthenticatedHostIngress(
@@ -929,10 +952,11 @@ def test_failed_receipt_writes_nothing_corrected_retry_commits_and_exact_retry_s
     )
     assert stale.legacy_result.ok is True
     assert stale.legacy_result.result["outcome"] == "stale_revision"
-    # File-ledger submission is only a display projection until the later
-    # canonical submission composition is wired; it must not become a second
-    # lifecycle authority merely because the provider scheduler runs.
-    assert stale.legacy_result.result["attention"]["status"] == "clarification_submitted"
+    # The canonical lifecycle is the single authority: once the clarification
+    # has committed, a stale retry observes the conflict RESOLVED (the
+    # projection's re-contest opens as its own conflict), not the file
+    # ledger's intermediate clarification_submitted display state.
+    assert stale.legacy_result.result["attention"]["status"] == "resolved"
     assert (source.calls, receipts.calls) == counts
     assert repository._path.read_bytes() == committed
 
@@ -1109,7 +1133,10 @@ def test_default_provider_adapter_does_not_treat_file_submission_as_canonical_wo
 ) -> None:
     clock = _Clock()
     repository = _repository(tmp_path / "default-adapter.jsonl", clock)
-    repository.append_open(_attention(), scope_ids=("scope",))
+    # The ingress resolver authorizes the user:user vocabulary; the file-only
+    # conflict must live in that vocabulary for the door's attention-ledger
+    # fallback to authorize it.
+    repository.append_open(_attention(), scope_ids=("user:user",))
     source = _SourceVerifier()
     service = ProviderMemoryService(
         conflict_attention_repository=repository,
@@ -1191,7 +1218,10 @@ def test_unsure_action_is_rejected_before_source_verification_or_append(tmp_path
 def test_integrity_resolution_rejects_before_source_or_ledger_mutation(tmp_path: Path) -> None:
     clock = _Clock()
     repository = _repository(tmp_path / "conflicts.jsonl", clock)
-    repository.append_open(_attention(integrity=True), scope_ids=("scope",))
+    # The ingress resolver authorizes the user:user vocabulary, so the
+    # integrity incident must be recorded in that vocabulary for the door's
+    # attention pre-check to authorize and classify it.
+    repository.append_open(_attention(integrity=True), scope_ids=("user:user",))
     source = _SourceVerifier()
     service = ProviderMemoryService(
         conflict_attention_repository=repository,

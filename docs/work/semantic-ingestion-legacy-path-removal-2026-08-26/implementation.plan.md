@@ -1253,11 +1253,141 @@ Broad gate (once, at the final revision):
   construction lives in the pipeline's canonical_commit bridge (the
   capability added in commit `0580252`).
 
+- 2026-08-28 (OPTION (b) COMPLETED THROUGH THE DOOR; CLARIFICATION
+  FAMILY 20/20): implementing (b) end to end required five contract
+  completions beyond the probes, each removing an (a)-era coupling
+  that structurally prevented a predecessor-carrying submission:
+  1. `canonical_conflict_predecessor` cannot return the candidate
+     binding's `source_event_id` (that is the materialized event id,
+     not a plane record id, and is unfetchable). It now joins the
+     last candidate to the replay authority's materialized records
+     by `record_id == candidate_id` AND `record_digest ==
+     assertion_record_digest` and returns the claim's
+     `source_authority_evidence.source_id` (the admitted record id,
+     e.g. tx:<contest-coordinate>) plus its admission digest.
+  2. The retain gate (`retain_conflict_clarification_context`)
+     accepted only proposals whose source was the proof's user
+     event: expected ids now admit the full record id form, the
+     user-shape check applies to provider-kind records only
+     (admitted sources carry plain step-one material), and the
+     proof/record byte coupling is replaced by an exact
+     proposal-digest == sha256(record bytes) binding (the door
+     validates the proof against its own user-event record before
+     retention; the loader already re-binds source bytes).
+  3. `SemanticConflictClarificationSubmissionGeneration`'s proof
+     validator compared the confirmation's user-event id/digest to
+     the proposal's predecessor binding; the request-digest
+     equality (which covers the user event the principal signed)
+     is the surviving binding.
+  4. The door collapsed the store's operation-index collision to
+     `conflict_resolution_unavailable`; a typed
+     `PreplanningOperationMismatchError` now maps to the
+     `conflict_operation_mismatch` the file ledger always produced.
+  5. The door consulted only canonical state, orphaning the file
+     ledger's `submit_clarification` and losing both the
+     STORAGE_INTEGRITY pre-check and the default-adapter display
+     projection. The door now fetches the attention-ledger target
+     first (integrity-kind => operator_action_required even when
+     canonical state is corrupt/absent), and a conflict with no
+     canonical state resolves through the file submission (proof
+     discipline shared, plain (a)-shaped proposal, no canonical
+     work) — restoring the default-adapter contract.
+  Test-side: the retry test bridges `_Pipeline(canonical_commit=...)`
+  to `_commit_claimed_accepted_clarification` with a superset-window
+  terminal (+30d over the contest's +2d); the stale-retry attention
+  expectation moved from the file ledger's intermediate
+  `clarification_submitted` to the canonical `resolved` (the
+  re-contest opens as its own conflict); the integrity and
+  default-adapter fixtures record their attention in the ingress
+  resolver's user:user scope vocabulary (the door authorizes
+  before classifying). Result: `tests/unit/core/
+  test_conflict_clarification.py` 20/20 (first full green of the
+  operation), attention repository/provider suites 77 passed,
+  ruff clean.
+
+- 2026-08-28 (POLICY FOUR GREEN under the lifecycle-owned pointer rule):
+  the four remaining policy-migration failures shared the dual-pointer
+  root, empirically re-confirmed by dumping the rejected closure batch
+  (2 active_pointer records, 1 pointer id, clarification_transition at
+  coord 3 + projection transition at coord 4).  Production fix
+  (projection_history `_prepare_conflict_authority`): conflicts named
+  in `terminal_clarification_conflict_ids` (validated as the live
+  submitted lifecycle edge) are tracked in `lifecycle_closed_ids` and
+  the resolutions loop SKIPS its own transition/pointer emission for
+  them — the same root CAS supplies the lifecycle edge, and a
+  projection resolution re-materializing the identical contest must
+  not manufacture a second active pointer.  This retires the
+  helper-level workarounds: `_commit_claimed_accepted_clarification`
+  no longer overrides the accepted terminal's object to the fictional
+  entity:clarified (the answer now asserts the real selected fact and
+  the projection may resolve the contest).  Test-side completions:
+  the reference test derives the expected assertion id from the
+  committed terminal (the lifecycle derives its own processing
+  operation id, so a probe-predicted operation-id digest can never
+  match; `claim_assertion_id` digests operation_id+candidate_id+role);
+  the race harness now attributes EVERY conditional write to its
+  attempt's thread (a persist stages fence-control and generation-
+  manifest writes before its graph batch, and kind-based
+  classification let those unclassified writes advance the
+  event-authority aggregate under the cutover's captured read), with
+  the loser's first write linearizing behind the winner's complete
+  attempt, and the event-winner's losing cutover may fail closed at
+  its plan-freshness gate (`PolicyMigrationError:
+  policy_migration_stale_plan`) — the same CAS-class rejection; the
+  race fixture pre-stages the event's admission handoff before the
+  migration plan reads the plane; the reopen comparison uses
+  `_json_round_tripped` (generation-manifest members are in-memory
+  tuples vs JSON-parsed lists).  Result: policy migration 28/28
+  (corruption pair re-verified after a Barrier import fix).
+
+- 2026-08-28 (6c CORRUPTION ACTIVATION GREEN): the reopened-service
+  activation over a released clean generation failed ONLY the
+  `retained_authority_records != current_authority_records` clause —
+  and a dump showed the two views identical by (memory id, record
+  digest): the retained plan decodes canonical content into tuples
+  while the reopened JSONL plane returns JSON-parsed lists, so
+  record-object equality is container-type noise.  The clause now
+  compares the durable (memory id, record digest) pairs against the
+  live view (atomic_store activation conjunction).
+  `test_real_filesystem_hermes_corruption_recovery_restart_and_
+  racing_write` passes (detect → freeze → repair → release → reopen
+  → reconcile → activate → racing write).  The 10
+  `test_clarification_history_reconstruction_rejects_corrupt_
+  authority` failures were verified PRE-EXISTING at HEAD (stash
+  run): separate from slice 6c's activation clause.
+
+- 2026-08-28 (6d PREP + a regression repaired): the full persistence
+  run over the (b)-door state showed 29 failures; classification:
+  10 corruption-reconstruction + 2 exhausted-generation failures
+  verified PRE-EXISTING at HEAD (stash runs); 2
+  `submission_rejects_mismatched_verified_confirmation` failures were
+  a REAL regression from the proof-validator decoupling (they pass at
+  HEAD) — the generation model is the asserted locus for rejecting a
+  substituted proof source.  REPAIR (answering-binding extension):
+  `AgentClarificationProposal` gained `answering_user_event_id`/
+  `answering_user_event_digest` (the answering user event the signed
+  request names and the proof authenticates; default = the source
+  digest in the single-event shape); the builder derives them from the
+  request, the door passes the verified user-event digest; the
+  generation validator again rejects a proof whose source id/digest
+  differs — now against the ANSWERING binding, so a predecessor-
+  carrying proposal and its user-event proof coexist.  Proposal
+  digests changed accordingly (all proposal-bearing suites re-verify).
+  6d gates state: ruff clean (memorii+tests); identity gate PASS
+  (correct invocation: package on PYTHONPATH, --root the workspace
+  root); `test_shipped_manifests_verify_real_local_english_assets`
+  dispositioned ENVIRONMENTAL — it verifies a machine-local stanza
+  tree at /private/tmp/memorii-stanza-en-1.14.0 which is absent on
+  this host, the path is untouched by this operation, and the spacy
+  asset comes from the venv (pre-existing, environment-dependent, not
+  a product regression).  Durations: `tests/ci/
+  unit-test-durations.json` has 115 stale node IDs and 1380 collected
+  tests missing entries; CI regenerates it from shard-timing merges —
+  locally it will be rebuilt from the broad gate's junit timings.
+
 ## Next Action
 
-Decide the consolidated version-predecessor question (option a: user-
-event-bound claims commit at record version 1; option b: submission
-carries the contest source as assertion predecessor) by probing
-event_replay.py:828 with the retry test's delta; then the integrity
-seeding, the adapter classification, the corruption activation
-clause, and the 6d gates.
+Finish the chained verification runs (policy full, persistence full
+with the suppression + object restoration), classify any persistence
+failures against HEAD, then the 6d gates: broad run, ruff, identity
+gate, durations regeneration, and the three WorkPlan closures.

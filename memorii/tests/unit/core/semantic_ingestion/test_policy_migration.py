@@ -60,6 +60,7 @@ from tests.unit.core.semantic_ingestion.test_semantic_terminal_persistence impor
     _activate,
     _claim_canonical_clarification,
     _commit_claimed_accepted_clarification,
+    _json_round_tripped,
     _setup,
 )
 
@@ -146,13 +147,13 @@ def _commit_clarification_terminal(
         authorization_repository=authorization_repository,
         terminal_kwargs=terminal_kwargs,
     )
-    receipt, _, _ = _commit_claimed_accepted_clarification(
+    receipt, terminal, _processing_operation_id = _commit_claimed_accepted_clarification(
         store,
         claim,
         cas,
         terminal_kwargs=terminal_kwargs,
     )
-    return receipt
+    return receipt, terminal
 
 
 def _directory_bytes(path: Path) -> dict[str, bytes]:
@@ -1719,14 +1720,10 @@ def test_post_cutover_write_resolves_retained_reference_only_evidence(
     )
     assert rebased.projections[0].outcome == "pass"
 
-    next_terminal_assertion_probe = accepted_terminal(
-        operation_id=_digest("reference-enabled-post-cutover-write"),
-        temporal_requirement="required",
-        allow_reference_as_effective_start=True,
-        reference_instant=reference_instant,
-    )
-    next_assertion_id = next_terminal_assertion_probe.accepted_carriers[0].claim_assertion_id
-    _commit_clarification_terminal(
+    # The claim lifecycle derives its own processing operation id, so the
+    # post-cutover write's assertion identity is read from the committed
+    # terminal itself rather than predicted from a probe operation id.
+    _receipt, committed_terminal = _commit_clarification_terminal(
         store,
         plane=plane,
         service=service,
@@ -1747,7 +1744,7 @@ def test_post_cutover_write_resolves_retained_reference_only_evidence(
     assert current.projections[0].valid_interval == TimeInterval(
         start=reference_instant
     )
-    assert next_assertion_id in {
+    assert committed_terminal.accepted_carriers[0].claim_assertion_id in {
         evidence.candidate_id
         for projection in current.projections
         for evidence in projection.evidence
@@ -1817,6 +1814,22 @@ def test_normal_writer_and_cutover_race_has_one_linearized_winner(
     )
     assert initial.arbitration_policy_bundle is not None
     active = initial.arbitration_policy_bundle.trust_policy
+    # Pre-stage the racing event's admission BEFORE the migration plan reads
+    # the plane: the admission handoff advances the event-authority aggregate,
+    # and a freely-running unclassified admission write would move it under
+    # the cutover's captured read set mid-race.  With the admission staged,
+    # the race exercises exactly the two linearized graph writes.
+    from semantic_terminal_test_support import handoff as _handoff
+
+    _, race_fence = _handoff(
+        plane,
+        coordinate=f"race-event-{winner}",
+        scope_ids=frozenset({"scope:a"}),
+        atomic_store=store,
+        writer_binding=store._writers.commit_binding(store._writers.current()),
+    )
+    race_terminal = accepted_terminal(operation_id=race_fence.operation_id)
+    _activate(authorization_repository, race_fence, race_terminal)
     pending_terminal = accepted_terminal(
         operation_id=_digest(f"race-pending-{winner}"),
         authority_rank_by_class={"official": 20},
@@ -1835,8 +1848,8 @@ def test_normal_writer_and_cutover_race_has_one_linearized_winner(
         pending,
         complete_read_set_digest=_digest(f"race-read-set-{winner}"),
     )
-    rendezvous = Barrier(2)
     winner_done = Event()
+    event_thread_idents: set[int] = set()
     original = plane.conditionally_write_records
 
     def ordered_write(
@@ -1846,31 +1859,21 @@ def test_normal_writer_and_cutover_race_has_one_linearized_winner(
         authorization=None,
         transaction_precondition=None,
     ):
-        kinds = {record.source_kind for record in records}
+        # A persist and a cutover each stage several conditional writes
+        # (fence control, generation manifests, plan/result publication)
+        # before their graph-advancing batch, so the contender cannot be
+        # classified by record kind: every write is attributed to its
+        # attempt's thread, and the loser's first write linearizes behind
+        # the winner's complete attempt.
+        import threading as _threading
+
         contender = (
-            "cutover"
-            if "semantic_projection_trust_migration_cutover" in kinds
-            else "event"
-            if (
-                "semantic_projection_trust_migration_catch_up" in kinds
-                or "semantic_ingestion_event_batch" in kinds
-            )
-            else None
+            "event"
+            if _threading.get_ident() in event_thread_idents
+            else "cutover"
         )
-        if contender is not None:
-            rendezvous.wait(timeout=30)
-            if contender != winner:
-                assert winner_done.wait(timeout=10)
-            try:
-                return original(
-                    records,
-                    preconditions=preconditions,
-                    authorization=authorization,
-                    transaction_precondition=transaction_precondition,
-                )
-            finally:
-                if contender == winner:
-                    winner_done.set()
+        if contender != winner and not winner_done.wait(timeout=60):
+            raise AssertionError("race winner did not complete its attempt")
         return original(
             records,
             preconditions=preconditions,
@@ -1881,17 +1884,21 @@ def test_normal_writer_and_cutover_race_has_one_linearized_winner(
     monkeypatch.setattr(plane, "conditionally_write_records", ordered_write)
 
     def event_attempt():
+        import threading as _threading
+
+        event_thread_idents.add(_threading.get_ident())
         try:
-            _persist_one_normal_event(
-                store,
-                plane=plane,
-                service=service,
-                authorization_repository=authorization_repository,
-                coordinate=f"race-event-{winner}",
+            service.persist(
+                fence=race_fence,
+                terminal=race_terminal,
+                authorization_verifier=AUTHORIZATION,
             )
             return None
         except Exception as exc:  # the losing CAS is the asserted result
             return exc
+        finally:
+            if winner == "event":
+                winner_done.set()
 
     def cutover_attempt():
         try:
@@ -1906,6 +1913,9 @@ def test_normal_writer_and_cutover_race_has_one_linearized_winner(
             )
         except Exception as exc:  # the losing CAS is the asserted result
             return exc
+        finally:
+            if winner == "cutover":
+                winner_done.set()
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         event_future = executor.submit(event_attempt)
@@ -1921,7 +1931,14 @@ def test_normal_writer_and_cutover_race_has_one_linearized_winner(
         )
         assert isinstance(
             cutover_outcome,
-            (MemoryPlaneRevisionConflictError, PreplanningStoreError),
+            (
+                MemoryPlaneRevisionConflictError,
+                PreplanningStoreError,
+                # The losing cutover can fail closed at its plan freshness
+                # gate before any conditional write: a stale plan after the
+                # event's linearized writes is the same CAS-class rejection.
+                PolicyMigrationError,
+            ),
         )
         catch_up, _ = store.policy_migration._load_trust_progress(plan)
         assert len(catch_up) == 1
@@ -1979,7 +1996,9 @@ def test_normal_writer_and_cutover_race_has_one_linearized_winner(
         reopened_writers,
         now_provider=lambda: T0,
     )
-    assert tuple(reopened_plane.list_records()) == committed_records
+    assert _json_round_tripped(
+        tuple(reopened_plane.list_records())
+    ) == _json_round_tripped(committed_records)
     assert reopened_writers.current().writer_epoch == successor.expected_writer_epoch
     assert {
         item.trust_policy_fingerprint

@@ -182,6 +182,8 @@ def test_resolution_and_confirmation_contracts_enforce_action_cardinality_and_ut
         operation_id="operation-1",
         source_user_event_id="user-event-1",
         source_user_event_digest=_digest(),
+        answering_user_event_id="user-event-1",
+        answering_user_event_digest=_digest(),
         agent_principal_id="agent-1",
         scope_digest=_digest(),
         request_digest=_digest(),
@@ -299,7 +301,8 @@ def _public_records() -> tuple[BaseModel, ...]:
     proposal = AgentClarificationProposal(
         conflict_id="conflict-1", conflict_revision=_digest(), operation_id="operation-1", action=ConflictResolutionAction.SELECT,
         selected_candidate_ids=("candidate-1",), validity_intervals=(), source_user_event_id="event-1",
-        source_user_event_digest=_digest(), agent_principal_id="agent-1", scope_digest=_digest(), request_digest=_digest(), proposal_digest=_digest(),
+        source_user_event_digest=_digest(), answering_user_event_id="event-1", answering_user_event_digest=_digest(),
+        agent_principal_id="agent-1", scope_digest=_digest(), request_digest=_digest(), proposal_digest=_digest(),
     )
     verified = VerifiedUserConfirmation(
         issuer_id="issuer", key_id="key", trust_snapshot_digest=_digest(), revocation_snapshot_digest=_digest(), principal_id="principal",
