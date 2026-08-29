@@ -1222,6 +1222,37 @@ Broad gate (once, at the final revision):
   `_record_identity` for the accepted delta carrier vs the contested
   v1 record), not a demonstrated contract gap.
 
+
+- 2026-08-28 (DECISION (b) ADOPTED + E2E RECIPE PROVEN, probes B6-B9):
+  the user approved option (b): the submission carries the contest
+  predecessor. The complete sealing recipe, probe-verified end to end
+  (commit OK, receipt resolves, clarified conflict RESOLVED, new
+  re-contest introduction OPEN, retry adds zero records, work queue
+  drained):
+  1. The proposal carries the predecessor's id AND digest (the contest
+     source record, e.g. tx:<contest-coordinate>) — id alone with the
+     user event still bound yields a mismatched assertion identity
+     (no prior v1; the B5/B6 discriminator).
+  2. The accepted terminal binds the predecessor source at record
+     version 2 with a SUPERSET valid window (wider than the contest
+     window — e.g. +30d vs +2d): an equal-window terminal makes the
+     projection RESOLVE the same conflict (dual-pointer collision);
+     the superset splits it into re-contest + residual pass (the B7/B8
+     discriminator — this is the same partition rule discovered in the
+     terminal-persistence geometry).
+  3. Store side needs NO change: `submit_canonical_conflict_
+     clarification` already accepts the predecessor-carrying proposal
+     (proven B-probes), and the claim/CAS/commit chains seal.
+  Implementation locus: the resolve door (`_resolve_conflict`) derives
+  the predecessor from the conflict's retained introduction after
+  proof/confirmation validation (the user-event proof validation is
+  unchanged and green), passes the predecessor record (not the user
+  event record) to `retain_conflict_clarification_context` (whose
+  expected ids derive from the proposal's source id), and the retry
+  assertion uses the union-aware digest comparison. The terminal
+  construction lives in the pipeline's canonical_commit bridge (the
+  capability added in commit `0580252`).
+
 ## Next Action
 
 Decide the consolidated version-predecessor question (option a: user-
