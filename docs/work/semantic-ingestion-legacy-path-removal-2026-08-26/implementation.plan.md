@@ -1195,6 +1195,33 @@ Broad gate (once, at the final revision):
   adapter straggler needs its `unavailable` classified.
 
 
+
+- 2026-08-28 (BOTH OPTIONS PROBED E2E, decision evidence complete):
+  OPTION (a) — user-event terminal at record version 1: the record
+  layer ACCEPTS it (the version-one gate passes), but the commit batch
+  fails the dual-pointer check — the graph plane resolves the SAME
+  conflict by plain projection transition (coord 4) alongside the
+  lifecycle closure's transition (coord 3): 2 active_pointer records,
+  1 pointer id, exactly the policy-four signature. So (a) requires TWO
+  production changes: the scoped version relaxation AND a pointer-
+  discipline rule (suppress the projection transition for a conflict
+  the lifecycle closes in the same batch, or make the lifecycle the
+  single pointer writer).
+  OPTION (b) — predecessor-carrying proposal: LOAD-BEARING NEW
+  FINDING: the STORE's `submit_canonical_conflict_clarification`
+  ALREADY accepts a proposal whose source digest is the CONTEST
+  source while the request names the user event (submit outcome:
+  submitted) — the request/proposal source cross-binding exists only
+  in the resolve door. The claim and CAS chains work. The commit's
+  graph effect still rejected the accepted terminal at the version-one
+  gate in the seeded geometry (the delta record found no prior v1),
+  while the IDENTICAL geometry entered through
+  `_claim_canonical_clarification` seals in five green suites — the
+  residual is a fixture-identity subtlety (which assertion identity
+  the delta's supersession record keys on: probe
+  `_record_identity` for the accepted delta carrier vs the contested
+  v1 record), not a demonstrated contract gap.
+
 ## Next Action
 
 Decide the consolidated version-predecessor question (option a: user-
