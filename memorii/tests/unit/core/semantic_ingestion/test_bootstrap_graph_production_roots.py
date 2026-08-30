@@ -359,8 +359,13 @@ def test_partial_normal_composition_fails_closed_before_graph_effects() -> None:
         )
     )
     service = _provider_service(
+        # The M4 built-in capability always wires its own graph host, so a
+        # graph-authority-less composition is built explicitly: the removed
+        # builder installs a scenario host bundle with no authority provider,
+        # and the run must fail closed at the graph boundary before effects.
+        bootstrap_graph_host_bundle_builder=_RemovedBootstrapGraphHostBundleBuilder(),
         now_provider=lambda: TEST_NOW,
-        host_bootstrap_capability=_built_in_local_capability(),
+        host_bootstrap_capability=_built_in_local_capability(scenario_test=True),
         host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
         source_normalization_host_bundle_builder=normalization,
     )

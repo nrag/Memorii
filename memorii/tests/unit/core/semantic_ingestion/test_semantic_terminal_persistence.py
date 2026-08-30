@@ -999,6 +999,30 @@ def _clarification_transition(
     )
 
 
+def _coerced_transition_body(body: dict) -> dict:
+    """Coerce a dumped transition body's nested shapes back to models.
+
+    ``model_dump`` flattens nested models to dicts; reconstructing from that
+    body with ``model_construct`` leaves dict-valued model fields whose
+    serialization warns under ``-W error``. Coerce the enum and model fields
+    back before digesting or constructing.
+    """
+    coerced = dict(body)
+    coerced["predecessor_status"] = ConflictStatus(coerced["predecessor_status"])
+    coerced["reason"] = SemanticConflictClarificationTransitionReason(coerced["reason"])
+    attention = coerced["resulting_attention"]
+    if isinstance(attention, dict):
+        attention = ConflictAttention.model_validate(attention)
+    coerced["resulting_attention"] = attention.model_copy(
+        update={
+            "status": ConflictStatus(attention.status),
+            "kind": ConflictKind(attention.kind),
+            "audience": ConflictAudience(attention.audience),
+        }
+    )
+    return coerced
+
+
 def _clarification_transition_digest(body: dict[str, object]) -> str:
     """Match the model-validator's canonical primitive representation exactly."""
 
@@ -1303,16 +1327,40 @@ def _persist_reconstructible_clarification_history(
                 repository,
             )
         return storage, introduction, submitted, None, pointer_two, None
-    completed = _clarification_transition(
-        introduction=introduction,
-        predecessor_digest=submitted.transition_digest,
-        predecessor_revision=submitted.resulting_attention.conflict_revision,
-        predecessor_status=ConflictStatus.CLARIFICATION_SUBMITTED,
-        status=ConflictStatus.RESOLVED,
-        reason=SemanticConflictClarificationTransitionReason.ACCEPTED,
-        record_coordinate=3,
+    # The accepted edge is a composite completion write, never a loose
+    # pointer transition: claim the durable submitted work and commit the
+    # real transaction (receipt, work successor, result member, event batch).
+    claim = store.claim_next_conflict_clarification(
+        lease_duration=timedelta(minutes=5),
+        owner_token="clarification-reconstruction-owner",
     )
-    pointer_three = store.append_conflict_clarification_transition(completed)
+    assert claim is not None
+    _receipt, _terminal, _processing = _commit_claimed_accepted_clarification(
+        store,
+        claim,
+        store.build_conflict_clarification_cas_input(claim),
+    )
+    completed = next(
+        transition
+        for transition in (
+            decode_persisted_conflict_generation(
+                decode_typed_value(bytes.fromhex(str(record.content["canonical_hex"]))),
+                SemanticConflictClarificationTransition,
+            )
+            for record in plane.list_records(source_kind="semantic_ingestion_conflict_authority")
+            if record.memory_id.startswith(
+                "semantic_ingestion:conflict-authority:clarification-transition:"
+            )
+        )
+        if transition.reason is SemanticConflictClarificationTransitionReason.ACCEPTED
+    )
+    pointer_record = plane.get_record(
+        f"semantic_ingestion:conflict-authority:pointer:{introduction.conflict_id}"
+    )
+    assert pointer_record is not None
+    pointer_three = ActiveSemanticConflict.model_validate(
+        decode_typed_value(bytes.fromhex(str(pointer_record.content["canonical_hex"])))
+    )
     return storage, introduction, submitted, completed, pointer_two, pointer_three
 
 
@@ -9682,8 +9730,12 @@ def test_clarification_history_reconstruction_rejects_corrupt_authority(
     if mutation == "missing_predecessor":
         # Keep the immutable prefix closed after removing the submitted edge,
         # so reconstruction reaches the missing-predecessor check itself.
-        body = completed.model_dump(mode="python", exclude={"transition_digest"})
+        body = _coerced_transition_body(
+            completed.model_dump(mode="python", exclude={"transition_digest"})
+        )
         body.update({"record_coordinate": 2, "transition_coordinate": 2})
+        # Corrupt records are planted without lifecycle validation; the
+        # coerced body keeps serialization warning-free under -W error.
         orphaned = SemanticConflictClarificationTransition.model_construct(
             **body,
             transition_digest=_clarification_transition_digest(body),
@@ -9792,7 +9844,9 @@ def test_clarification_history_reconstruction_rejects_corrupt_authority(
         )
         deleted_ids = (completed_id,)
     else:
-        body = completed.model_dump(mode="python", exclude={"transition_digest"})
+        body = _coerced_transition_body(
+            completed.model_dump(mode="python", exclude={"transition_digest"})
+        )
         if mutation == "noncontiguous_coordinate":
             body.update({"record_coordinate": 4, "transition_coordinate": 4})
         elif mutation == "reordered_transition_coordinate":

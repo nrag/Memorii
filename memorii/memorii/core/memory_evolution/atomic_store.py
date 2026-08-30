@@ -28,6 +28,7 @@ from memorii.core.memory_evolution.bootstrap_profile import (
     HostVerifiedBootstrapReleaseEvidence,
 )
 from memorii.core.memory_evolution.conflict_attention import (
+    ActiveSemanticConflict,
     ClarificationFailureClass,
     ClarificationSubmissionOutcome,
     ConflictAttention,
@@ -35,6 +36,7 @@ from memorii.core.memory_evolution.conflict_attention import (
     ConflictClarificationAttempt,
     ConflictClarificationClaim,
     ConflictClarificationOperationReceipt,
+    ConflictClarificationProcessingReceipt,
     ConflictClarificationSubmissionResult,
     ConflictClarificationWork,
     ConflictKind,
@@ -6326,6 +6328,16 @@ class SemanticIngestionAtomicStore:
             f"{clarification_cas.work_record_id.rsplit(':', 1)[-1]}"
         )
         if record is None:
+            # A receipt without its terminal work generation is a corrupt
+            # retained completion, not a first attempt: no retained component
+            # may be silently repaired by re-execution.
+            receipt_probe = self._memory_plane.get_record(
+                f"semantic_ingestion:clarification:receipt:{processing_operation_id}"
+            )
+            if receipt_probe is not None:
+                raise PreplanningStoreError(
+                    "clarification retained terminal result is corrupt"
+                )
             return None
         try:
             record_type, payload, _ = _decode_conflict_authority_record(record)
@@ -6384,6 +6396,47 @@ class SemanticIngestionAtomicStore:
                     or result.downstream_receipt_digest is not None
                 ):
                     raise ValueError
+            # Every retained completion component must still bind: the
+            # receipt, the successor pointer (and the transition it names),
+            # and the replay closure the accepted effect recorded.  A missing
+            # or divergent member is corruption, never a silent repair.
+            receipt_record = self._memory_plane.get_record(
+                f"semantic_ingestion:clarification:receipt:{processing_operation_id}"
+            )
+            if receipt_record is None:
+                raise ValueError
+            receipt_value = ConflictClarificationProcessingReceipt.model_validate_json(
+                json.dumps(receipt_record.content["receipt"])
+            )
+            if (
+                receipt_value.receipt_digest != result.downstream_receipt_digest
+                or receipt_value.processing_operation_id != processing_operation_id
+                or receipt_value.committed_outcome != result.outcome.value
+                or receipt_value.conflict_id != clarification_cas.conflict_id
+            ):
+                raise ValueError
+            pointer_record = self._memory_plane.get_record(
+                f"semantic_ingestion:conflict-authority:pointer:"
+                f"{clarification_cas.conflict_id}"
+            )
+            if pointer_record is None:
+                raise ValueError
+            _, pointer_value, _ = _decode_conflict_authority_record(pointer_record)
+            pointer = ActiveSemanticConflict.model_validate(pointer_value)
+            transition_record = self._memory_plane.get_record(pointer.current_record_id)
+            if transition_record is None:
+                raise ValueError
+            _, transition_value, _ = _decode_conflict_authority_record(transition_record)
+            transition = decode_persisted_conflict_generation(
+                transition_value, SemanticConflictClarificationTransition
+            )
+            if (
+                transition.processing_operation_id != processing_operation_id
+                or transition.reason.value != result.outcome.value
+                or transition.transition_digest != pointer.current_record_digest
+            ):
+                raise ValueError
+            self.semantic_replay_authority()
             return result
         except (KeyError, TypeError, ValueError, ProjectionHistoryError) as exc:
             raise PreplanningStoreError(
