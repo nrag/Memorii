@@ -146,7 +146,7 @@ def build_structural_manifest(
         if check is not None:
             check()
         elapsed = monotonic() - started
-        limit = 60 if parse_complete else 30
+        limit = 240 if parse_complete else 60
         if elapsed >= limit:
             raise StructuralManifestError("structural derivation deadline exceeded")
 

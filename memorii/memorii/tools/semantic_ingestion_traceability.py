@@ -112,6 +112,18 @@ def _schema_units(body: list[str]) -> list[tuple[str, str, int]]:
     except SyntaxError as exc:
         raise TraceabilityStructureError("unclassifiable Python schema fence") from exc
 
+    # ast.get_source_segment re-splits the whole source on every call, which
+    # is quadratic for the multi-thousand-line contract fences; slice the
+    # already-split fence body once, replicating its column trimming exactly
+    # (byte slices at col_offset/end_col_offset on the first/last line).
+    def segment(node: ast.AST) -> str:
+        start, end = node.lineno - 1, node.end_lineno - 1
+        if end == start:
+            return body[start].encode()[node.col_offset : node.end_col_offset].decode()
+        first = body[start].encode()[node.col_offset :].decode()
+        last = body[end].encode()[: node.end_col_offset].decode()
+        return "\n".join([first, *body[start + 1 : end], last])
+
     def union_leaves(value: ast.expr) -> tuple[ast.expr, ...]:
         if isinstance(value, ast.BinOp) and isinstance(value.op, ast.BitOr):
             return union_leaves(value.left) + union_leaves(value.right)
@@ -123,12 +135,11 @@ def _schema_units(body: list[str]) -> list[tuple[str, str, int]]:
         if not isinstance(node, (ast.ClassDef, ast.Assign, ast.AnnAssign)):
             continue
         if isinstance(node, ast.ClassDef):
-            out.append(("schema_declaration", ast.get_source_segment(source, node) or node.name, node.lineno - 1))
+            out.append(("schema_declaration", segment(node) or node.name, node.lineno - 1))
             seen.add(node.lineno - 1)
             for member in node.body:
                 if isinstance(member, ast.AnnAssign) and isinstance(member.target, ast.Name):
-                    rendered = ast.get_source_segment(source, member) or member.target.id
-                    out.append(("schema_field", rendered, member.lineno - 1))
+                    out.append(("schema_field", segment(member) or member.target.id, member.lineno - 1))
                     seen.add(member.lineno - 1)
                     annotation = ast.unparse(member.annotation)
                     if "|" in annotation or "Union[" in annotation:
@@ -143,7 +154,7 @@ def _schema_units(body: list[str]) -> list[tuple[str, str, int]]:
                 name = node.target.id
             else:
                 name = ""
-            out.append(("schema_declaration", ast.get_source_segment(source, node) or name, node.lineno - 1))
+            out.append(("schema_declaration", segment(node) or name, node.lineno - 1))
             seen.add(node.lineno - 1)
             value = getattr(node, "value", None)
             if value is not None and ("|" in (ast.unparse(value)) or "Union[" in ast.unparse(value)):

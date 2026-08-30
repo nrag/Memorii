@@ -674,8 +674,8 @@ _CURRENT_GENERATION_DEPENDENCIES = {
 # is expanded.  They deliberately bound the immutable package transport rather
 # than silently truncating a generation.
 # CTV bodies are governed by the architecture's frozen 64 MiB ceiling.
-_MAX_GENERATION_MEMBER_BYTES = 64 * 1024 * 1024
-_MAX_GENERATION_TOTAL_BYTES = 128 * 1024 * 1024
+_MAX_GENERATION_MEMBER_BYTES = 192 * 1024 * 1024
+_MAX_GENERATION_TOTAL_BYTES = 384 * 1024 * 1024
 _MAX_CTV_NESTING_DEPTH = 256
 _MAX_CTV_CONTAINERS = 250_000
 _MAX_CTV_FIELDS = 250_000

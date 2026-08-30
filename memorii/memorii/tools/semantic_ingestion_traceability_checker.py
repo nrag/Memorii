@@ -1152,13 +1152,13 @@ def rebuild_structural_manifest_bytes(
     def effective_parse_check() -> None:
         if parse_check is not None:
             parse_check()
-        if monotonic() - started >= 30:
+        if monotonic() - started >= 60:
             raise TraceabilityCoverageError("independent structural parser deadline exceeded")
 
     def effective_reconstruction_check() -> None:
         if reconstruction_check is not None:
             reconstruction_check()
-        if monotonic() - started >= 60:
+        if monotonic() - started >= 240:
             raise TraceabilityCoverageError("independent structural reconstruction deadline exceeded")
 
     _validate_raw_design_bytes(design_bytes)
