@@ -402,6 +402,11 @@ def test_unit_pytest_owners_partition_the_live_unit_corpus_exactly_once() -> Non
         "bootstrap-graph-transaction-boundary": (
             "tests/unit/core/semantic_ingestion/test_bootstrap_graph_production_roots.py",
         ),
+        # Owned by the scheduled diametric mode-parity workflow
+        # (.github/workflows/canonical-evidence-parity-scheduled.yml).
+        "canonical-evidence-parity": (
+            "tests/unit/core/semantic_ingestion/test_canonical_evidence_mode_parity.py",
+        ),
     }
     owners = {"broad": broad}
     for owner, paths in owner_paths.items():
@@ -425,7 +430,7 @@ def test_unit_pytest_owners_partition_the_live_unit_corpus_exactly_once() -> Non
             / "semantic-terminal-persistence-test-durations.json"
         ).read_text(encoding="utf-8")
     )
-    assert len(terminal) == 156
+    assert len(terminal) == 224
     assert set(terminal_manifest["tests"]) == terminal
 
 

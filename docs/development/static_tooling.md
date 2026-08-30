@@ -10,7 +10,7 @@ python3.12 -I docs/design/semantic_ingestion/traceability_golden_vectors/check_c
   --validator docs/design/semantic_ingestion/traceability_golden_vectors/validate_ctv_binding_authority_v2.py \
   --expected-design-sha256 786c9f22c33db76bb16518cfa6da57ae95084b126e36d6462d6cd122d75fa17e \
   --expected-registry-sha256 8c5ad6e6260c793472ddbc2df8637230fbb5d5b28405b0b558ac4491c945d37e \
-  --expected-authority-sha256 fe5778f0518f198ebe44e239460a8fac2a747cac58c7c94c0b3dfb148fae1ab2 \
+  --expected-authority-sha256 839ca6bb4660dfe813786aff0d4169ffbefa9a0048c6580b43e841da0e4cad45 \
   --expected-validator-sha256 317133f2e92ad8032968314b3f16ff1b08b031c93c0ebcd3bbd789a876de5d6d \
   --expected-checker-sha256 e2c35870a99e587f34cbffc701f42587520ee015009cd51647367da56716c732
 ```
@@ -18,7 +18,7 @@ python3.12 -I docs/design/semantic_ingestion/traceability_golden_vectors/check_c
 The gate requires architecture SHA-256
 `786c9f22c33db76bb16518cfa6da57ae95084b126e36d6462d6cd122d75fa17e`,
 authority SHA-256
-`fe5778f0518f198ebe44e239460a8fac2a747cac58c7c94c0b3dfb148fae1ab2`,
+`839ca6bb4660dfe813786aff0d4169ffbefa9a0048c6580b43e841da0e4cad45`,
 validator SHA-256
 `317133f2e92ad8032968314b3f16ff1b08b031c93c0ebcd3bbd789a876de5d6d`,
 hermetic gate SHA-256

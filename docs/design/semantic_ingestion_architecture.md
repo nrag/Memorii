@@ -4273,30 +4273,6 @@ revision-bound identity resolver operates after source grounding and before
 claim-slot construction.
 
 ```python
-class SourceLocalEntityClusterDecision(BaseModel):
-    cluster_id: str
-    mention_refs: tuple[GroundedMentionRef, ...]
-    decision: Literal["same_source_entity", "singleton_distinct", "unresolved"]
-    proof_kind: Literal[
-        "explicit_alias",
-        "explicit_apposition",
-        "authenticated_external_id",
-        "certified_unambiguous_repetition",
-        "insufficient_evidence",
-        "conflicting_evidence",
-    ]
-    source_evidence: tuple[SourceSpanReference, ...]
-    language_policy_fingerprint: str
-    reason_codes: tuple[str, ...]
-
-class SourceLocalIdentityResolution(BaseModel):
-    source_id: str
-    grounded_mention_refs: tuple[GroundedMentionRef, ...]
-    clusters: tuple[SourceLocalEntityClusterDecision, ...]
-    unresolved_mention_refs: tuple[GroundedMentionRef, ...]
-    language_policy_fingerprint: str
-    resolution_digest: str
-
 class PlannedEntityIdentity(BaseModel):
     allocation_key: str
     entity_revision_id: str
@@ -4876,14 +4852,6 @@ class CurrentBootstrapReleaseVerifier(Protocol):
         assertion_phase: Literal["prepared_publication", "pre_handoff_retry", "writer_handoff"],
     ) -> CurrentBootstrapReleaseAssertion: ...
 
-class HostVerifiedBootstrapMaterial:
-    release_metadata: BootstrapProfileReleaseMetadata
-    trust_anchor: BootstrapProfileTrustAnchor
-    artifact_payloads: BootstrapProfileArtifactPayloads
-    release_evidence: HostVerifiedBootstrapReleaseEvidence
-    authenticated_ingress_resolver: AuthenticatedIngressContextResolver
-    profile_enabled: bool
-
 class VerifiedBootstrapProfile(BaseModel):
     coordinate: BootstrapProfileCoordinate
     enabled: bool
@@ -4892,6 +4860,19 @@ class VerifiedBootstrapProfile(BaseModel):
     selection_digest: str
     verification_digest: str
 
+```
+
+The host-verified material is runtime composition input, not a persisted
+wire contract; its shape is:
+
+```text
+class HostVerifiedBootstrapMaterial:
+    release_metadata: BootstrapProfileReleaseMetadata
+    trust_anchor: BootstrapProfileTrustAnchor
+    artifact_payloads: BootstrapProfileArtifactPayloads
+    release_evidence: HostVerifiedBootstrapReleaseEvidence
+    authenticated_ingress_resolver: AuthenticatedIngressContextResolver
+    profile_enabled: bool
 ```
 
 All bootstrap models are frozen and reject unknown fields. Component distribution
@@ -14607,27 +14588,6 @@ class TemporalAttachmentConsensusPolicy(BaseModel):
     required_independent_analyzers: Literal[2]
     policy_fingerprint: str
 
-class ConsensusPolicySelection(BaseModel):
-    kind: Literal["parser", "scope", "temporal_attachment"]
-    operation_id: str
-    proposal_id: str
-    segment_id: str
-    segment_language_route_digest: str
-    request_dependency_kind: Literal["analyses", "temporal_resolution"]
-    request_dependency_fingerprint: str
-    selected_policy_fingerprint: str
-    selected_policy: Annotated[
-        ParserConsensusPolicy
-        | ScopeConsensusPolicy
-        | TemporalAttachmentConsensusPolicy,
-        Field(discriminator="kind"),
-    ]
-    selection_digest: str
-
-class ConsensusPolicySelectionBundle(BaseModel):
-    selections: tuple[ConsensusPolicySelection, ...]
-    bundle_digest: str
-
 class FactOperationSemanticPolicyKey(BaseModel):
     kind: Literal["fact"]
     predicate_id: str
@@ -14711,22 +14671,6 @@ class SourceNormalizationPublicationCoordinate(BaseModel):
     expected_current_artifact_generation: int
     next_publication_generation: int
     coordinate_digest: str
-
-class SourceNormalizationRequest(BaseModel):
-    source: PreparedSource
-    proposal_run: SemanticProposalRun
-    analyses: LinguisticAnalysisBundle
-    interpretation_bundle: "GraphFreeInterpretationBundle"
-    predicate_events: PredicateEventInventory
-    temporal_resolution: TemporalResolution
-    consensus_policy_selections: ConsensusPolicySelectionBundle
-    language_construction_policies: LanguageConstructionPolicyAuthorityBundle
-    publication_coordinate: SourceNormalizationPublicationCoordinate
-    temporal_policy: TemporalPolicySnapshot
-    trust_policy: TrustPolicySnapshot
-    arbitration_as_of: datetime
-    capability_registry: CapabilityRegistrySnapshot
-    request_digest: str
 
 class GraphEvidenceNormalizationRequest(BaseModel):
     source_normalization: "SourceNormalizationResult"
@@ -15039,16 +14983,6 @@ performs no hidden policy lookup.
 #### 4.5.3 Alignment and scope output contract
 
 ```python
-class OperationAlignment(BaseModel):
-    operation_id: str
-    proposal_id: str
-    segment_id: str
-    segment_language_route_digest: str
-    parser_consensus_digest: str
-    scope_consensus_digest: str
-    temporal_attachment_consensus_digest: str
-    alignment_digest: str
-
 class SourceProposalAlignment(BaseModel):
     source_id: str
     segment_language_routes: SegmentLanguageRouteSet
@@ -15094,17 +15028,6 @@ class ParserConsensusAssessment(BaseModel):
     consensus_policy_fingerprint: str
     assessment_digest: str
 
-class AnalyzerScopeInterpretation(BaseModel):
-    analyzer_fingerprint: str
-    proposal_id: str
-    predicate_head_span: SourceSpanReference
-    governing_clause_spans: tuple[SourceSpanReference, ...]
-    polarity: CheckResult
-    commitment: CheckResult
-    attribution: CheckResult
-    attribution_bearer_span: SourceSpanReference | None
-    interpretation_digest: str
-
 class StableSemanticScope(BaseModel):
     polarity: Literal["positive", "negative"]
     commitment: Commitment
@@ -15113,22 +15036,6 @@ class StableSemanticScope(BaseModel):
     governing_clause_spans: tuple[SourceSpanReference, ...]
     scope_digest: str
 
-class SemanticScopeConsensus(BaseModel):
-    source_id: str
-    source_digest: str
-    preparation_fingerprint: str
-    segment_id: str
-    proposal_id: str
-    operation_id: str
-    segment_language_route_digest: str
-    analysis_bundle_fingerprint: str
-    primary_interpretation: AnalyzerScopeInterpretation
-    corroborating_interpretation: AnalyzerScopeInterpretation
-    stable_scope: StableSemanticScope | None
-    status: Literal["stable", "disagreement", "ambiguous", "unsupported"]
-    consensus_policy_fingerprint: str
-    consensus_digest: str
-
 class AnalyzerTemporalAttachment(BaseModel):
     analyzer_fingerprint: str
     proposal_id: str
@@ -15136,22 +15043,6 @@ class AnalyzerTemporalAttachment(BaseModel):
     candidate_ids: tuple[str, ...]
     attachment_spans: tuple[SourceSpanReference, ...]
     attachment_digest: str
-
-class TemporalAttachmentConsensus(BaseModel):
-    source_id: str
-    source_digest: str
-    preparation_fingerprint: str
-    segment_id: str
-    segment_language_route_digest: str
-    proposal_id: str
-    operation_id: str
-    temporal_resolution_fingerprint: str
-    primary_attachment: AnalyzerTemporalAttachment
-    corroborating_attachment: AnalyzerTemporalAttachment
-    stable_candidate_ids: tuple[str, ...] | None
-    status: Literal["stable", "disagreement", "ambiguous", "unsupported"]
-    consensus_policy_fingerprint: str
-    consensus_digest: str
 
 class CoveredPredicateEvent(BaseModel):
     kind: Literal["covered"]
@@ -15216,17 +15107,6 @@ class OperationCapabilitySelection(BaseModel):
     selection_policy_fingerprint: str
     selection_digest: str
 
-class SourceNormalizationEvidenceEntry(BaseModel):
-    kind: Literal["parser", "scope", "temporal_attachment"]
-    operation_id: str
-    proposal_id: str
-    segment_id: str
-    segment_language_route_digest: str
-    artifact_digest: str
-    selection_digest: str
-    retention: Literal["aligned", "terminal_unaligned"]
-    entry_digest: str
-
 class SourceNormalizationEvidenceManifest(BaseModel):
     source_id: str
     source_digest: str
@@ -15240,16 +15120,6 @@ class SourceNormalizationEvidenceManifest(BaseModel):
     completeness: Literal["complete"]
     bijection_verified: Literal[True]
     manifest_digest: str
-
-class SourceNormalizationResult(BaseModel):
-    source_alignment: SourceProposalAlignment
-    evidence_manifest: SourceNormalizationEvidenceManifest
-    interpretation_bundle_digest: str
-    identity_partition_evidence_digest: str
-    capability_selections: tuple[OperationCapabilitySelection, ...]
-    trust_policy_snapshot_digest: str
-    arbitration_as_of: datetime
-    result_digest: str
 
 class OperationCapabilityExecutionBinding(BaseModel):
     operation_id: str
@@ -15387,22 +15257,6 @@ would either duplicate candidate evidence per subject or silently select one
 operation. The source-normalization producer instead accepts one strict,
 frozen, closed-wire `GraphFreeInterpretationBundle` with `extra="forbid"`:
 
-```python
-class GraphFreeInterpretationBundle(BaseModel):
-    source_id: str
-    source_digest: str
-    proposal_run_fingerprint: str
-    analysis_bundle_fingerprint: str
-    temporal_resolution_fingerprint: str
-    operation_subjects: PreAlignmentSemanticOperationSubjectSet
-    primary_scope_interpretations: tuple[AnalyzerScopeInterpretation, ...]
-    corroborating_scope_interpretations: tuple[AnalyzerScopeInterpretation, ...]
-    primary_temporal_attachments: tuple[AnalyzerTemporalAttachment, ...]
-    corroborating_temporal_attachments: tuple[AnalyzerTemporalAttachment, ...]
-    identity_partition_evidence: SourceLocalIdentityPartitionEvidence
-    bundle_digest: str
-```
-
 Its digest is the lowercase SHA-256 CTV address in
 `memorii.semantic-ingestion.graph-free-interpretation-bundle.v1` over every
 field other than `bundle_digest`, in declaration order. Every tuple is sorted
@@ -15421,22 +15275,6 @@ authority: it contains a caller-provided cluster label and optional canonical
 entity field but has neither the complete grounded-mention universe nor a
 source-proof kind/support closure. `SourceLocalIdentityPartitionEvidence` is
 therefore a new strict, frozen, closed-wire source-only input:
-
-```python
-class SourceLocalIdentityPartitionEvidence(BaseModel):
-    source_id: str
-    source_digest: str
-    language_policy_fingerprint: str
-    grounded_mentions: tuple[GroundedMentionRef, ...]
-    assertions: tuple[SourceLocalIdentityAssertion, ...]
-    evidence_digest: str
-
-class SourceLocalIdentityAssertion(BaseModel):
-    mention_refs: tuple[GroundedMentionRef, ...]
-    proof_kind: Literal["explicit_alias", "explicit_apposition", "authenticated_external_id", "certified_unambiguous_repetition", "insufficient_evidence", "conflicting_evidence"]
-    source_evidence: tuple[SourceSpan, ...]
-    assertion_digest: str
-```
 
 All mentions/spans bind the exact source and selected route-language policy;
 `canonical_entity_id` is prohibited at this boundary. Mention and assertion
@@ -15563,14 +15401,6 @@ correction: no compatibility reader or mixed generation is permitted.
 `GraphFreeInterpretationBundle` is source-wide, not single-subject scoped:
 
 ```python
-class AnalyzerScopeObservation(BaseModel):
-    source_id: str; source_digest: str; preparation_fingerprint: str
-    segment_id: str; segment_language_route_digest: str
-    proposal_id: str; operation_id: str
-    analyzer_role: Literal["primary", "corroborating"]
-    interpretation: AnalyzerScopeInterpretation
-    observation_digest: str
-
 class AnalyzerTemporalAttachmentObservation(BaseModel):
     source_id: str; source_digest: str; preparation_fingerprint: str
     segment_id: str; segment_language_route_digest: str
@@ -15579,15 +15409,6 @@ class AnalyzerTemporalAttachmentObservation(BaseModel):
     attachment: AnalyzerTemporalAttachment
     observation_digest: str
 
-class GraphFreeInterpretationBundle(BaseModel):
-    source_id: str; source_digest: str; preparation_fingerprint: str
-    proposal_run_fingerprint: str; analysis_bundle_fingerprint: str
-    temporal_resolution_fingerprint: str
-    subject_sets: tuple[PreAlignmentSemanticOperationSubjectSet, ...]
-    scope_observations: tuple[AnalyzerScopeObservation, ...]
-    temporal_attachment_observations: tuple[AnalyzerTemporalAttachmentObservation, ...]
-    identity_partition_evidence: SourceLocalIdentityPartitionEvidence
-    bundle_digest: str
 ```
 
 Each observation digest uses its own `memorii.semantic-ingestion.analyzer-*
@@ -15633,15 +15454,6 @@ This is a required unreleased change to the prior eight-field receipt, not an
 alias or a reader fallback.
 
 Pre-partition mentions are source-only and have no cluster label:
-
-```python
-class SourcePrePartitionMention(BaseModel):
-    source_id: str; source_digest: str
-    segment_id: str; segment_language_route_digest: str
-    language_policy_fingerprint: str
-    mention_span: SourceSpanReference
-    mention_digest: str
-```
 
 `SourceLocalIdentityPartitionEvidence.grounded_mentions` is exactly this
 canonical tuple; each assertion references these mention digests, never a
@@ -18089,7 +17901,7 @@ reservation, proposal, evidence, publication, graph, or terminal calls.
 implementation of this runtime. Its constructor and execution boundary are
 closed:
 
-```python
+```text
 class SourceNormalizationExecutionOwner:
     def __init__(
         self, *,
@@ -18330,39 +18142,6 @@ It is historical with respect to bootstrap and is not an active bootstrap
 writer, recovery, replay, or trace contract:
 
 ```python
-class AtomicGenerationMember(BaseModel):
-    schema_version: Literal[2]
-    member_id: str
-    kind: Literal[
-        "progress", "source_normalization_request",
-        "graph_free_interpretation_bundle",
-        "source_local_identity_partition_evidence", "parser_consensus",
-        "semantic_scope_consensus", "temporal_attachment_consensus",
-        "source_local_identity_resolution", "source_proposal_alignment",
-        "source_dependency_groups", "source_normalization_result",
-        "source_normalization_evidence_manifest",
-        "graph_dependent_execution_policy",
-        "consensus_policy_selection_bundle",
-        "language_construction_policy_bundle",
-    ]
-    canonical_payload: bytes
-    payload_digest: str
-
-class AtomicGenerationRequest(BaseModel):
-    schema_version: Literal[2]
-    operation_lease_binding: OperationLeaseBinding
-    operation_fence_binding: OperationFenceBinding
-    writer_commit_binding: SemanticWriterCommitBinding
-    expected_operation_generation: int
-    expected_artifact_generation: int
-    members: tuple[AtomicGenerationMember, ...]
-    required_artifact_digests: tuple[str, ...]
-    request_digest: str
-
-class SourceCheckpointAtomicWriteRequest(AtomicGenerationRequest):
-    kind: Literal["checkpoint"]
-    progress_state: Literal["preplanning", "plan_published", "attempt_published", "planned"]
-
 class SourceNormalizationAtomicWriteRequest(SourceCheckpointAtomicWriteRequest):
     schema_version: Literal[2]
     operation_lease_binding: OperationLeaseBinding
@@ -18548,6 +18327,7 @@ foreign-generation substitution, lost-acknowledgement, partial-write,
 substitution-before-output, substitution-before-write, or digest-only
 substituted manifest members reject before replay reuse.
 
+```python
 class CanonicalAttributionBearerBinding(BaseModel):
     proposal_id: str
     scope_consensus_digest: str
@@ -20952,8 +20732,6 @@ class GraphDependentExecutionPolicy(BaseModel):
     maximum_decode_depth: int = Field(ge=1)
     policy_digest: str
 
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
 class GraphDependentExecutionPolicyReference(BaseModel):
     policy_version: Literal[1]
     policy_digest: str
@@ -20961,8 +20739,6 @@ class GraphDependentExecutionPolicyReference(BaseModel):
     repository_id: Literal["semantic_ingestion.graph_dependent_execution_policy"]
     repository_contract_fingerprint: str
     reference_digest: str
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
 class GraphDependentObservedCounters(BaseModel):
     policy: GraphDependentExecutionPolicyReference
@@ -20980,9 +20756,12 @@ class GraphDependentObservedCounters(BaseModel):
     observed_replay_bundle_bytes: int = Field(ge=0)
     observed_decode_depth: int = Field(ge=0)
     counters_digest: str
+```
 
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+The coordinator request and result are in-memory dataclasses, not persisted
+wire contracts; their shapes are:
 
+```text
 @dataclass(frozen=True)
 class GraphDependentCoordinatorRequest:
     alignment: SourceProposalAlignment
@@ -21136,19 +20915,6 @@ class BootstrapGraphDependentAttemptV3(BaseModel):
     status: Literal["eligible", "superseded", "rejected", "unresolved", "failed"]
     attempt_digest: str
 
-class BootstrapGroupPlanningAuthorizationV3(BaseModel):
-    schema_version: Literal[3]
-    transaction_group_id: str; source_dependency_group_digest: str
-    attempt_context_digest: str; transaction_group_plan_digest: str
-    group_plan_member_digest: str; compilation_artifact_digest: str
-    independence_certificate_digest: str
-    graph_snapshot_digest: str; sealed_read_set_digest: str
-    reservation_use_authorization_digests: tuple[str, ...]
-    execution_policy_reference_digest: str
-    operation_lease_binding_digest: str; operation_fence_binding_digest: str
-    writer_commit_binding_digest: str; control_epoch_digest: str
-    authorization_digest: str
-
 class BootstrapSourcePlanLineageEntryReferenceV3(BaseModel):
     repository_id: Literal["semantic_ingestion.bootstrap_source_plan_lineage.v3"]
     entry_digest: str; artifact_digest: str
@@ -21227,17 +20993,6 @@ BootstrapGraphAttemptAuthorityV3 = Annotated[
     BootstrapInitialAttemptAuthorityV3 | BootstrapSuccessorAttemptAuthorityV3,
     Field(discriminator="kind"),
 ]
-
-class BootstrapTransactionGroupPlanMemberV3(BaseModel):
-    schema_version: Literal[3]
-    transaction_group_id: str; source_dependency_group_digest: str
-    operation_ids: tuple[str, ...]; proposal_digests: tuple[str, ...]
-    member_digests: tuple[str, ...]; segment_ids: tuple[str, ...]
-    dependency_group_ids: tuple[str, ...]
-    claim_slot_digests: tuple[str, ...]
-    compilation_artifact_digest: str; independence_certificate_digest: str
-    proposed_delta_digest: str; event_batch_digest: str
-    member_digest: str
 
 class BootstrapTransactionGroupPlanV3(BaseModel):
     schema_version: Literal[3]
@@ -21409,21 +21164,6 @@ class BootstrapGraphGroupCasOutcomeV3(BaseModel):
     effect_carriers: tuple[BootstrapGraphGroupEffectCarrierV3, ...]
     outcome_digest: str
 
-class BootstrapGraphGroupResultConstructionV3(BaseModel):
-    schema_version: Literal[3]
-    request_digest: str; normalization_replay_digest: str
-    transaction_group_id: str; attempt_digest: str
-    source_plan_lineage_entry: BootstrapSourcePlanLineageEntryV3
-    group_plan_member: BootstrapTransactionGroupPlanMemberV3
-    planning_authorization: BootstrapGroupPlanningAuthorizationV3
-    disposition: Literal["committed", "noncommitting", "failed"]
-    terminal_observation_status: Literal[
-        "committed", "evidence_only", "rejected", "unresolved", "failed",
-    ]
-    execution_result: "BootstrapGraphGroupExecutionResultV3"
-    operation_fence_binding_digest: str; control_epoch_digest: str
-    construction_digest: str
-
 class BootstrapGraphCanonicalSourceResultV3(BaseModel):
     schema_version: Literal[3]
     request_digest: str; normalization_replay_digest: str
@@ -21448,41 +21188,6 @@ class BootstrapGraphCanonicalSourceOutcomeCoreV3(BaseModel):
     group_result_digests: tuple[str, ...]
     core_digest: str
 
-class BootstrapGraphCanonicalSourceResultInputV3(BaseModel):
-    schema_version: Literal[3]
-    request_digest: str; normalization_replay_digest: str
-    source_plan_lineage_digest: str
-    ordered_group_result_constructions: tuple[BootstrapGraphGroupResultConstructionV3, ...]
-    source_status: Literal[
-        "fully_committed", "partially_committed", "evidence_only",
-        "rejected", "unresolved", "failed",
-    ]
-    outcome_core: BootstrapGraphCanonicalSourceOutcomeCoreV3
-    canonical_source_terminal_outcome: CanonicalSourceTerminalOutcomeRecord
-    control_epoch_digest: str
-    input_digest: str
-
-class BootstrapGraphTerminalPublicationRequestV3(BaseModel):
-    schema_version: Literal[3]
-    coordinator_request: BootstrapGraphDependentCoordinatorRequestV3
-    control_epoch: BootstrapGraphControlEpochV3
-    final_attempt: BootstrapGraphDependentAttemptV3
-    final_plan: BootstrapTransactionGroupPlanV3
-    complete_lineage: BootstrapSourcePlanLineageV3
-    execution_manifest: IngestionExecutionManifest
-    ordered_group_result_constructions: tuple[BootstrapGraphGroupResultConstructionV3, ...]
-    canonical_source_result_input: BootstrapGraphCanonicalSourceResultInputV3
-    handoff_core: BootstrapGraphTerminalHandoffCoreV3
-    publication_intent: BootstrapGraphTerminalPublicationIntentV3
-    handoff: BootstrapGraphTerminalPersistenceHandoffV3
-    predecessor_generation: "BootstrapGraphCurrentGenerationV3"
-    authenticated_ingress: AuthenticatedIngressContext
-    required_outcome_scopes: RequiredOutcomeScopeSet
-    operation_lease_binding: OperationLeaseBinding
-    operation_fence_binding: OperationFenceBinding
-    writer_commit_binding: SemanticWriterCommitBinding
-    publication_request_digest: str
-
 class BootstrapGraphTerminalHostAuthorityV3(BaseModel):
     schema_version: Literal[3]
     source_id: str; source_digest: str; preparation_fingerprint: str
@@ -21496,20 +21201,6 @@ class BootstrapGraphTerminalHostAuthorityV3(BaseModel):
     required_outcome_scopes: RequiredOutcomeScopeSet
     operation_fence_binding: OperationFenceBinding
     authority_digest: str
-
-class BootstrapGraphFinalStageEvidenceV3(BaseModel):
-    schema_version: Literal[3]
-    request_digest: str; normalization_replay_digest: str
-    attempt_digest: str; transaction_group_plan_digest: str
-    source_plan_lineage_digest: str
-    ordered_transaction_group_ids: tuple[str, ...]
-    ordered_group_execution_result_digests: tuple[str, ...]
-    source_outcomes: tuple[IngestionStageOutcome, ...]
-    graph_validation_attempts: tuple[GraphDependentValidationAttempt, ...]
-    causal_blockers: tuple[IngestionStageInstanceRef, ...]
-    terminal_before_planning_proof_digests: tuple[str, ...]
-    control_epoch_digest: str
-    evidence_digest: str
 
 class BootstrapGraphTerminalPreparationV3(BaseModel):
     schema_version: Literal[3]
@@ -21530,24 +21221,6 @@ class BootstrapGraphTerminalReloadV3(BaseModel):
     control_epoch_digest: str
     checkpoint_receipt: "BootstrapGraphCheckpointReceiptV3"
     reload_digest: str
-
-class BootstrapGraphPlanAtomicMemberV3(BaseModel):
-    schema_version: Literal[3]
-    member_id: str
-    kind: Literal[
-        "bootstrap_graph_coordinator_request", "bootstrap_graph_snapshot_authority",
-        "bootstrap_graph_control_epoch",
-        "graph_base_read_set", "graph_read_set_extension", "graph_reconciliation",
-        "reference_closure", "group_compilation_request",
-        "group_compilation_artifact", "group_independence_certificate",
-        "bootstrap_graph_pre_execution_group_evidence",
-        "bootstrap_transaction_group_plan", "bootstrap_group_planning_authorization",
-        "bootstrap_graph_dependent_attempt", "bootstrap_source_plan_lineage_entry",
-        "bootstrap_graph_retry_progress", "bootstrap_graph_final_stage_evidence",
-        "ingestion_execution_manifest", "transaction_group_result",
-        "bootstrap_graph_terminal_handoff", "bootstrap_graph_canonical_source_result",
-    ]
-    canonical_payload: bytes; payload_digest: str; member_digest: str
 
 class BootstrapGraphCurrentGenerationV3(BaseModel):
     schema_version: Literal[3]
@@ -21608,38 +21281,6 @@ class BootstrapGraphPlanAtomicReloadV3(BaseModel):
     checkpoint_receipt: BootstrapGraphCheckpointReceiptV3
     reload_digest: str
 
-class BootstrapGraphGroupCasRequestV3(BaseModel):
-    schema_version: Literal[3]
-    request_digest: str; normalization_replay_digest: str
-    attempt_digest: str; transaction_group_id: str
-    group_plan_member_digest: str; planning_authorization_digest: str
-    source_plan_lineage_entry_digest: str
-    pre_execution_manifest_identity_digest: str
-    sealed_read_set_digest: str; proposed_delta_digest: str; event_batch_digest: str
-    control_epoch_digest: str; cas_digest: str
-
-class BootstrapGraphExecutionManifestGroupInputV3(BaseModel):
-    schema_version: Literal[3]
-    transaction_group_id: str
-    group_plan_member: BootstrapTransactionGroupPlanMemberV3
-    compilation_request_digest: str; compilation_artifact_digest: str
-    independence_certificate_digest: str
-    ordered_operation_ids: tuple[str, ...]
-    proposed_delta_digest: str; event_batch_digest: str
-    input_digest: str
-
-class BootstrapGraphPreExecutionGroupEvidenceV3(BaseModel):
-    schema_version: Literal[3]
-    request_digest: str; normalization_replay_digest: str
-    transaction_group_id: str; group_plan_member_digest: str
-    graph_snapshot_digest: str; sealed_read_set_digest: str
-    reconciliation_digest: str; reference_closure_digest: str
-    graph_validation_attempts: tuple[GraphDependentValidationAttempt, ...]
-    causal_blockers: tuple[IngestionStageInstanceRef, ...]
-    terminal_before_planning_proof_digests: tuple[str, ...]
-    control_epoch_digest: str
-    evidence_digest: str
-
 class BootstrapGraphPreExecutionManifestCoreV3(BaseModel):
     schema_version: Literal[3]
     request_digest: str; normalization_replay_digest: str
@@ -21697,38 +21338,6 @@ class BootstrapGraphExecutionManifestConstructionV3(BaseModel):
     ordered_group_execution_result_digests: tuple[str, ...]
     construction_digest: str
 
-class BootstrapGraphAttemptConstructionInputsV3(BaseModel):
-    schema_version: Literal[3]
-    attempt_id: str; attempt_index: int
-    trigger: Literal["initial_plan", "prior_group_commit", "related_version_conflict"]
-    request_digest: str; normalization_replay_digest: str
-    normalization_result_digest: str; source_alignment_digest: str
-    source_dependency_group_digests: tuple[str, ...]
-    graph_snapshot_digest: str; sealed_read_set_digest: str
-    read_set_extension_digests: tuple[str, ...]
-    reconciliation_digest: str; reference_closure_digest: str
-    capability_binding_digests: tuple[str, ...]
-    reservation_use_authorization_digests: tuple[str, ...]
-    transaction_group_plan_digest: str
-    pre_execution_evidence_digests: tuple[str, ...]
-    execution_policy_reference_digest: str
-    operation_lease_binding_digest: str; operation_fence_binding_digest: str
-    writer_commit_binding_digest: str; control_epoch_digest: str
-    observed_counters: GraphDependentObservedCounters
-    status: Literal["eligible", "superseded", "rejected", "unresolved", "failed"]
-    attempt_context_digest: str
-    inputs_digest: str
-
-class BootstrapGraphPlanCompilationV3(BaseModel):
-    schema_version: Literal[3]
-    request_digest: str; normalization_replay_digest: str
-    control_epoch_digest: str
-    plan: BootstrapTransactionGroupPlanV3
-    attempt_inputs: BootstrapGraphAttemptConstructionInputsV3
-    manifest_group_inputs: tuple[BootstrapGraphExecutionManifestGroupInputV3, ...]
-    pre_execution_evidence: tuple[BootstrapGraphPreExecutionGroupEvidenceV3, ...]
-    compilation_digest: str
-
 class BootstrapGraphPlanAuthorizationSetV3(BaseModel):
     schema_version: Literal[3]
     request_digest: str; plan_digest: str; control_epoch_digest: str
@@ -21746,16 +21355,6 @@ class BootstrapGraphV3ProducerUnavailable(BaseModel):
     request_digest: str; control_epoch_digest: str
     unavailable_digest: str
 
-class BootstrapGraphGroupExecutionResultV3(BaseModel):
-    schema_version: Literal[3]
-    cas_request: BootstrapGraphGroupCasRequestV3
-    cas_request_digest: str; control_epoch_digest: str
-    transaction_group_id: str; attempt_digest: str
-    cas_outcome: BootstrapGraphGroupCasOutcomeV3
-    effect_carriers: tuple[BootstrapGraphGroupEffectCarrierV3, ...]
-    effect_receipts: tuple[BootstrapGraphGroupEffectReceiptV3, ...]
-    result_digest: str
-
 class BootstrapGraphDependentCoordinatorSucceededV3(BaseModel):
     kind: Literal["succeeded"]
     terminal_reload: BootstrapGraphTerminalReloadV3
@@ -21769,20 +21368,6 @@ class BootstrapGraphDependentPreGraphNonCommitV3(BaseModel):
         "snapshot_unavailable", "planning_unavailable", "authorization_unavailable",
     ]
     reason_digest: str; response_digest: str
-
-class BootstrapGraphDurableRetryProgressV3(BaseModel):
-    kind: Literal["durable_retry"]
-    request_digest: str; normalization_replay_digest: str
-    attempt_digest: str; source_plan_lineage_digest: str
-    completed_group_result_digests: tuple[str, ...]
-    retry_group_ids: tuple[str, ...]
-    reason: Literal[
-        "related_conflict", "lease_renewal_required", "lease_reclaim_required",
-        "publication_retry", "storage_retry",
-    ]
-    operation_fence_binding_digest: str; writer_commit_binding_digest: str
-    control_epoch_digest: str
-    progress_digest: str; response_digest: str
 
 class BootstrapGraphFinalizedFailureV3(BaseModel):
     kind: Literal["finalized_failure"]
@@ -21934,23 +21519,6 @@ No group may be absent, duplicated, or represented by another arm.
 The host authority and execution protocols are exact:
 
 ```python
-class BootstrapGraphPlanCompilerPortV3(Protocol):
-    def compile(
-        self, *, request: BootstrapGraphDependentCoordinatorRequestV3,
-        control_epoch: BootstrapGraphControlEpochV3,
-        authenticated_ingress: AuthenticatedIngressContext,
-        required_outcome_scopes: RequiredOutcomeScopeSet,
-    ) -> BootstrapGraphPlanCompilationV3 | BootstrapGraphV3ProducerUnavailable: ...
-
-class BootstrapGraphPlanningAuthorizerPortV3(Protocol):
-    def authorize(
-        self, *, request: BootstrapGraphDependentCoordinatorRequestV3,
-        reloaded_plan: BootstrapGraphPlanAtomicReloadV3,
-        control_epoch: BootstrapGraphControlEpochV3,
-        authenticated_ingress: AuthenticatedIngressContext,
-        required_outcome_scopes: RequiredOutcomeScopeSet,
-    ) -> BootstrapGraphPlanAuthorizationSetV3 | BootstrapGraphV3ProducerUnavailable: ...
-
 class BootstrapGraphGroupExecutorPortV3(Protocol):
     def execute_cas(
         self, *, request: BootstrapGraphGroupCasRequestV3,
@@ -23041,15 +22609,12 @@ The required protocol boundaries are closed as follows:
       operation_lease: OperationLeaseBinding
       request_digest: str
 
-      model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
   class AuthorizedTransactionSemanticGroupPlanReadResult(BaseModel):
       kind: Literal["available", "unavailable"]
       request_digest: str
       plan: TransactionSemanticGroupPlan | None
       response_digest: str
 
-      model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
   ```
 
   The request digest domain is
@@ -24105,8 +23670,6 @@ class ReusedPredecessorGroupAuthority(BaseModel):
     predecessor_plan_member_digest: str
     authority_digest: str
 
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
 class ReplacementSuccessorGroupAuthority(BaseModel):
     kind: Literal["replacement_successor"]
     transaction_group_id: str
@@ -24114,15 +23677,11 @@ class ReplacementSuccessorGroupAuthority(BaseModel):
     successor_plan_member_digest: str
     authority_digest: str
 
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
 class TerminalBeforePlanningProofReference(BaseModel):
     repository_id: str
     repository_contract_fingerprint: str
     artifact_digest: str
     proof_digest: str
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
 class TerminalBeforePlanningProof(BaseModel):
     source_id: str
@@ -24141,8 +23700,6 @@ class TerminalBeforePlanningProof(BaseModel):
     operation_fence_binding: OperationFenceBinding
     execution_policy: GraphDependentExecutionPolicyReference
     proof_digest: str
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
 class TerminalBeforePlanningProofRepository(Protocol):
     def publish_and_reload(
@@ -24163,13 +23720,11 @@ class ReusedFinalNonCommittingNoAuthorityGroup(BaseModel):
     predecessor_plan_member_digest: str
     closure_final_result: "NonCommittingFinalTransactionGroupResultReference"
     terminal_before_planning_proof: TerminalBeforePlanningProofReference
-    planning_authorization_digest: None = None
-    authorizing_group_authority_digest: None = None
-    compilation_digest: None = None
-    cas_authorization: Literal["forbidden"] = "forbidden"
+    planning_authorization_digest: None = Field(default=None)
+    authorizing_group_authority_digest: None = Field(default=None)
+    compilation_digest: None = Field(default=None)
+    cas_authorization: Literal["forbidden"] = Field(default="forbidden")
     authority_digest: str
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
 SuccessorAttemptGroupAuthority = Annotated[
     ReusedPredecessorGroupAuthority
@@ -25422,7 +24977,7 @@ one of the projection's values from a fixture, a process-local cache, a static
 provider dictionary, a default, or an ambient repository search.
 
 ```python
-class BootstrapGraphNormalizationAuthorityMemberV3(_BootstrapV3Contract):
+class BootstrapGraphNormalizationAuthorityMemberV3(BaseModel):
     recovery_key_digest: str
     normalization_request_digest: str
     normalization_result_digest: str
@@ -25431,35 +24986,27 @@ class BootstrapGraphNormalizationAuthorityMemberV3(_BootstrapV3Contract):
     capability_registry: CapabilityRegistrySnapshot
     capability_registry_canonical_bytes: bytes
     member_digest: str
-    _digest_domain = b"memorii.semantic-ingestion.bootstrap-graph-normalization-authority-member.v3"
-    _digest_field = "member_digest"
 
-class BootstrapGraphNormalizationAuthorityReloadV3(_BootstrapV3Contract):
+class BootstrapGraphNormalizationAuthorityReloadV3(BaseModel):
     normalization_replay: BootstrapRecoveryReplayRecordV3
     normalization_atomic_write_digest: str
     normalization_operation_generation: int
     normalization_artifact_generation: int
     authority_member: BootstrapGraphNormalizationAuthorityMemberV3
     reload_digest: str
-    _digest_domain = b"memorii.semantic-ingestion.bootstrap-graph-normalization-authority-reload.v3"
-    _digest_field = "reload_digest"
 
-class BootstrapGraphPreparedSourceTerminalAuthorityV3(_BootstrapV3Contract):
+class BootstrapGraphPreparedSourceTerminalAuthorityV3(BaseModel):
     prepared_source: PreparedSource
     execution_graph: IngestionExecutionGraph
     terminal_authority_digest: str
-    _digest_domain = b"memorii.semantic-ingestion.bootstrap-graph-prepared-source-terminal-authority.v3"
-    _digest_field = "terminal_authority_digest"
 
-class BootstrapGraphTransactionAuthorityProjectionV3(_BootstrapV3Contract):
+class BootstrapGraphTransactionAuthorityProjectionV3(BaseModel):
     normalization_authority: BootstrapGraphNormalizationAuthorityReloadV3
     graph_authority: BootstrapGraphSnapshotAuthorityV3
     prepared_source_terminal: BootstrapGraphPreparedSourceTerminalAuthorityV3
     authority_projection_digest: str
-    _digest_domain = b"memorii.semantic-ingestion.bootstrap-graph-transaction-authority-projection.v3"
-    _digest_field = "authority_projection_digest"
 
-class BootstrapGraphAuthorityGenerationV3(_BootstrapV3Contract):
+class BootstrapGraphAuthorityGenerationV3(BaseModel):
     store_identity_digest: str
     recovery_key_digest: str
     normalization_atomic_write_digest: str
@@ -25469,10 +25016,8 @@ class BootstrapGraphAuthorityGenerationV3(_BootstrapV3Contract):
     operation_generation: int
     artifact_generation: int
     generation_digest: str
-    _digest_domain = b"memorii.semantic-ingestion.bootstrap-graph-authority-generation.v3"
-    _digest_field = "generation_digest"
 
-class BootstrapGraphTransactionAuthorityWriteRequestV3(_BootstrapV3Contract):
+class BootstrapGraphTransactionAuthorityWriteRequestV3(BaseModel):
     authority_projection: BootstrapGraphTransactionAuthorityProjectionV3
     authenticated_ingress: AuthenticatedIngressContext
     required_outcome_scopes: RequiredOutcomeScopeSet
@@ -25482,19 +25027,15 @@ class BootstrapGraphTransactionAuthorityWriteRequestV3(_BootstrapV3Contract):
     expected_normalization_operation_generation: int
     expected_normalization_artifact_generation: int
     write_digest: str
-    _digest_domain = b"memorii.semantic-ingestion.bootstrap-graph-transaction-authority-write.v3"
-    _digest_field = "write_digest"
 
-class BootstrapGraphAuthorityPublicationCoreV3(_BootstrapV3Contract):
+class BootstrapGraphAuthorityPublicationCoreV3(BaseModel):
     write_request_digest: str
     authority_projection: BootstrapGraphTransactionAuthorityProjectionV3
     publication_operation_generation: int
     publication_artifact_generation: int
     core_digest: str
-    _digest_domain = b"memorii.semantic-ingestion.bootstrap-graph-authority-publication-core.v3"
-    _digest_field = "core_digest"
 
-class BootstrapGraphAuthorityPublicationReceiptV3(_BootstrapV3Contract):
+class BootstrapGraphAuthorityPublicationReceiptV3(BaseModel):
     recovery_key_digest: str
     authority_projection_digest: str
     write_request_digest: str
@@ -25502,15 +25043,11 @@ class BootstrapGraphAuthorityPublicationReceiptV3(_BootstrapV3Contract):
     publication_core_digest: str
     successor_generation: BootstrapGraphAuthorityGenerationV3
     receipt_digest: str
-    _digest_domain = b"memorii.semantic-ingestion.bootstrap-graph-authority-publication-receipt.v3"
-    _digest_field = "receipt_digest"
 
-class BootstrapGraphTransactionAuthorityReloadV3(_BootstrapV3Contract):
+class BootstrapGraphTransactionAuthorityReloadV3(BaseModel):
     publication_core: BootstrapGraphAuthorityPublicationCoreV3
     publication_receipt: BootstrapGraphAuthorityPublicationReceiptV3
     reload_digest: str
-    _digest_domain = b"memorii.semantic-ingestion.bootstrap-graph-transaction-authority-reload.v3"
-    _digest_field = "reload_digest"
 ```
 
 The field-source rules are exact.  The normalization writer copies policy and
@@ -25714,7 +25251,7 @@ The V3 compiler, authorizer, and executor ports are not host extension points
 in an ordinary root. Direct, factory, filesystem, and Hermes composition must
 construct the same built-in adapters:
 
-```python
+```text
 class LocalBootstrapGraphPlanCompilerV3(BootstrapGraphPlanCompilerPortV3):
     def __init__(self, *, transaction_coordinator: SemanticIngestionTransactionCoordinator,
                  identity_planner: IdentityOperationPlanner) -> None: ...
@@ -25774,14 +25311,6 @@ BootstrapReservationUseAuthorityV3 = Annotated[
     Field(discriminator="kind"),
 ]
 
-class BootstrapTransactionGroupPlanMemberV3(BaseModel):
-    schema_version: Literal[3]
-    transaction_group_id: str
-    source_dependency_group_digest: str
-    native_planning_artifact: BootstrapNativeGroupPlanningArtifactV3
-    reference_integrity_ledger_digest: str
-    member_digest: str
-
 class BootstrapGraphPreExecutionGroupEvidenceV3(BaseModel):
     schema_version: Literal[3]
     request_digest: str
@@ -25814,20 +25343,6 @@ class BootstrapGraphGroupCasRequestV3(BaseModel):
     control_epoch_digest: str
     cas_digest: str
 
-class BootstrapGraphAtomicEffectReceiptV3(BaseModel):
-    schema_version: Literal[3]
-    transaction_group_id: str
-    group_result: SemanticEffectGroupResult
-    persisted_terminal_digest: str
-    persisted_artifact_closure_digest: str
-    graph_revision_before: str
-    graph_revision_after: str
-    event_revision_before: str
-    event_revision_after: str
-    observation_revision_before: str
-    observation_revision_after: str
-    atomic_write_digest: str
-    receipt_digest: str
 ```
 
 `BootstrapNativeGroupPlanningArtifactV3.artifact_digest` is a CTV of every
@@ -25936,16 +25451,6 @@ class NonPublishingIdentityPlanningResultV3(BaseModel):
     planning_state_after: GraphPlanningState
     result_digest: str
 
-class IdentityOperationPlanner(Protocol):
-    def plan_nonpublishing(
-        self, *, sealed_graph_snapshot: SealedGraphStateSnapshot,
-        transaction_group_id: str,
-        current_planning_state: GraphPlanningState,
-        accepted_operation_artifact: AcceptedIdentityOperationArtifact,
-        compiled_transition: CompiledIdentityLineageTransition,
-        trusted_decision: TrustedAcceptedIdentityOperationDecision,
-        authority_verification: VerifiedIdentityDecisionAuthority,
-    ) -> NonPublishingIdentityPlanningResultV3: ...
 ```
 
 `plan_nonpublishing` is the only compiler-callable identity API. It performs no
@@ -25963,82 +25468,12 @@ and are forbidden in V3 roots.
 The atomic store owns the complete V3 group-commit family:
 
 ```python
-class BootstrapGraphGroupCommitRequestV3(BaseModel):
-    schema_version: Literal[3]
-    operation_id: str
-    request_digest: str
-    normalization_replay_digest: str
-    attempt: BootstrapGraphDependentAttemptV3
-    group_plan_member: BootstrapTransactionGroupPlanMemberV3
-    planning_authorization: BootstrapGroupPlanningAuthorizationV3
-    source_plan_lineage_entry: BootstrapSourcePlanLineageEntryV3
-    pre_execution_manifest_identity: BootstrapGraphPreExecutionManifestIdentityV3
-    control_epoch: BootstrapGraphControlEpochV3
-    operation_fence_binding: OperationFenceBinding
-    operation_lease_binding: OperationLeaseBinding
-    writer_commit_binding: SemanticWriterCommitBinding
-    authenticated_ingress: AuthenticatedIngressContext
-    required_outcome_scopes: RequiredOutcomeScopeSet
-    expected_generation: BootstrapGraphCurrentGenerationV3
-    request_ctv_digest: str
-
-class BootstrapGraphGroupCommitResultCoreV3(BaseModel):
-    schema_version: Literal[3]
-    request_ctv_digest: str
-    disposition: Literal["committed", "noncommitting", "failed"]
-    semantic_group_result: SemanticEffectGroupResult
-    graph_revision_before: str
-    graph_revision_after: str
-    event_revision_before: str
-    event_revision_after: str
-    observation_revision_before: str
-    observation_revision_after: str
-    publication_operation_generation: int
-    publication_artifact_generation: int
-    atomic_write_digest: str
-    core_digest: str
-
-class BootstrapGraphAtomicEffectReceiptV3(BaseModel):
-    schema_version: Literal[3]
-    request_ctv_digest: str
-    result_core_digest: str
-    transaction_group_id: str
-    semantic_group_result_digest: str
-    persisted_terminal_digest: str
-    persisted_artifact_closure_digest: str
-    graph_revision_before: str
-    graph_revision_after: str
-    event_revision_before: str
-    event_revision_after: str
-    observation_revision_before: str
-    observation_revision_after: str
-    atomic_write_digest: str
-    receipt_digest: str
-
 class BootstrapGraphGroupCommitResultV3(BaseModel):
     schema_version: Literal[3]
     core: BootstrapGraphGroupCommitResultCoreV3
     receipt: BootstrapGraphAtomicEffectReceiptV3
     result_digest: str
 
-class BootstrapGraphGroupCommitReloadV3(BaseModel):
-    schema_version: Literal[3]
-    operation_id: str
-    request_ctv_digest: str
-    persisted_result: BootstrapGraphGroupCommitResultV3
-    successor_generation: BootstrapGraphCurrentGenerationV3
-    reload_digest: str
-
-class BootstrapGraphGroupCommitRepositoryV3(Protocol):
-    def commit_or_reload(
-        self, *, request: BootstrapGraphGroupCommitRequestV3
-    ) -> BootstrapGraphGroupCommitReloadV3: ...
-    def reload_exact(
-        self, *, operation_id: str, request_ctv_digest: str,
-        authenticated_ingress: AuthenticatedIngressContext,
-        required_outcome_scopes: RequiredOutcomeScopeSet,
-        operation_fence_binding: OperationFenceBinding,
-    ) -> BootstrapGraphGroupCommitReloadV3 | None: ...
 ```
 
 `SemanticIngestionAtomicStore` implements this repository. Inside one store
@@ -26112,7 +25547,7 @@ The v46 API omitted the domain `operation` and `candidate` required by the
 existing artifact builder and did not state delta sequence continuity. The
 canonical pure helper and planner contract are therefore replaced by:
 
-```python
+```text
 def build_frozen_identity_graph_planning_artifact_from_state(
     *,
     sealed_graph_snapshot: SealedGraphStateSnapshot,
@@ -26125,7 +25560,9 @@ def build_frozen_identity_graph_planning_artifact_from_state(
     trusted_decision: TrustedAcceptedIdentityOperationDecision,
     authority_verification: VerifiedIdentityDecisionAuthority,
 ) -> FrozenIdentityGraphPlanningArtifact: ...
+```
 
+```python
 class IdentityOperationPlanner(Protocol):
     def plan_nonpublishing(
         self, *,
@@ -26197,11 +25634,6 @@ class BootstrapGraphOperationCommitResultV3(BaseModel):
     observation_delta_digest: str
     result_digest: str
 
-class BootstrapGraphGroupCommitRequestV3(BaseModel):
-    # all v46 authority/generation fields remain in their stated order
-    ordered_operation_inputs: tuple[BootstrapGraphOperationCommitInputV3, ...]
-    request_ctv_digest: str
-
 class BootstrapGraphGroupCommitResultCoreV3(BaseModel):
     # request identity, disposition, revisions, generations, and atomic write
     # remain in their stated order
@@ -26266,72 +25698,6 @@ class BootstrapGraphAttemptConstructionInputsV3(BaseModel):
     pre_execution_evidence: tuple[BootstrapGraphPreExecutionGroupEvidenceV3, ...]
     attempt_input_digest: str
 
-class BootstrapGraphExecutionManifestGroupInputV3(BaseModel):
-    schema_version: Literal[3]
-    transaction_group_id: str
-    group_plan_member: BootstrapTransactionGroupPlanMemberV3
-    pre_execution_evidence: BootstrapGraphPreExecutionGroupEvidenceV3
-    group_commit_reload: BootstrapGraphGroupCommitReloadV3
-    input_digest: str
-
-class BootstrapGraphFinalStageEvidenceV3(BaseModel):
-    schema_version: Literal[3]
-    request_digest: str
-    normalization_replay_digest: str
-    attempt_digest: str
-    transaction_group_plan_digest: str
-    source_plan_lineage_digest: str
-    ordered_group_commit_reloads: tuple[BootstrapGraphGroupCommitReloadV3, ...]
-    source_outcomes: tuple[IngestionStageOutcome, ...]
-    graph_validation_attempts: tuple[GraphDependentValidationAttempt, ...]
-    causal_blockers: tuple[IngestionStageInstanceRef, ...]
-    terminal_before_planning_proof_digests: tuple[str, ...]
-    control_epoch_digest: str
-    evidence_digest: str
-
-class BootstrapGraphDurableRetryProgressV3(BaseModel):
-    schema_version: Literal[3]
-    request_digest: str
-    latest_attempt: BootstrapGraphDependentAttemptV3
-    complete_lineage: BootstrapSourcePlanLineageV3
-    ordered_completed_group_commit_reloads: tuple[BootstrapGraphGroupCommitReloadV3, ...]
-    pending_transaction_group_ids: tuple[str, ...]
-    control_epoch_digest: str
-    progress_digest: str
-
-class BootstrapGraphCanonicalSourceResultInputV3(BaseModel):
-    schema_version: Literal[3]
-    request_digest: str
-    normalization_replay_digest: str
-    source_plan_lineage_digest: str
-    ordered_group_result_constructions: tuple[BootstrapGraphGroupResultConstructionV3, ...]
-    ordered_group_commit_reloads: tuple[BootstrapGraphGroupCommitReloadV3, ...]
-    outcome_core: BootstrapGraphCanonicalSourceOutcomeCoreV3
-    canonical_source_terminal_outcome: CanonicalSourceTerminalOutcomeRecord
-    control_epoch_digest: str
-    input_digest: str
-
-class BootstrapGraphTerminalPublicationRequestV3(BaseModel):
-    schema_version: Literal[3]
-    coordinator_request: BootstrapGraphDependentCoordinatorRequestV3
-    control_epoch: BootstrapGraphControlEpochV3
-    final_attempt: BootstrapGraphDependentAttemptV3
-    final_plan: BootstrapTransactionGroupPlanV3
-    complete_lineage: BootstrapSourcePlanLineageV3
-    execution_manifest: IngestionExecutionManifest
-    ordered_group_commit_reloads: tuple[BootstrapGraphGroupCommitReloadV3, ...]
-    ordered_group_result_constructions: tuple[BootstrapGraphGroupResultConstructionV3, ...]
-    canonical_source_result_input: BootstrapGraphCanonicalSourceResultInputV3
-    handoff_core: BootstrapGraphTerminalHandoffCoreV3
-    publication_intent: BootstrapGraphTerminalPublicationIntentV3
-    handoff: BootstrapGraphTerminalPersistenceHandoffV3
-    predecessor_generation: BootstrapGraphCurrentGenerationV3
-    authenticated_ingress: AuthenticatedIngressContext
-    required_outcome_scopes: RequiredOutcomeScopeSet
-    operation_lease_binding: OperationLeaseBinding
-    operation_fence_binding: OperationFenceBinding
-    writer_commit_binding: SemanticWriterCommitBinding
-    publication_request_digest: str
 ```
 
 The plan, attempt, and pre-execution evidence carry only typed planning inputs;
@@ -26427,15 +25793,6 @@ v46/v47 `operation_id` field on `BootstrapGraphGroupCommitRequestV3` and
 `reload_exact`, are withdrawn and replaced as follows:
 
 ```python
-class BootstrapGraphGroupCommitRequestV3(BaseModel):
-    schema_version: Literal[3]
-    source_operation_id: str
-    transaction_group_id: str
-    operation_ids: tuple[str, ...]
-    # all authority, plan, authorization, lineage, identity, epoch, generation,
-    # and ordered_operation_inputs fields remain in their normative order
-    request_ctv_digest: str
-
 class BootstrapGraphGroupCommitReloadV3(BaseModel):
     schema_version: Literal[3]
     source_operation_id: str
@@ -26573,12 +25930,6 @@ class BootstrapGraphOperationStoreMaterializationInputV3(BaseModel):
     reservation_use_authority: BootstrapReservationUseAuthorityV3
     input_digest: str
 
-class BootstrapGraphGroupCommitRequestV3(BaseModel):
-    # v48 source/group/vector and all authority/generation fields remain
-    ordered_operation_inputs: tuple[
-        BootstrapGraphOperationStoreMaterializationInputV3, ...
-    ]
-    request_ctv_digest: str
 ```
 
 This v50 paragraph describes the withdrawn generic grammar only and is
@@ -29484,8 +28835,6 @@ class CommittedFinalTransactionGroupResultReference(BaseModel):
     plan_member_digest: str
     reference_digest: str
 
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
 class NonCommittingFinalTransactionGroupResultReference(BaseModel):
     kind: Literal["non_committing"]
     transaction_group_id: str
@@ -29496,8 +28845,6 @@ class NonCommittingFinalTransactionGroupResultReference(BaseModel):
     terminal_before_planning_proof: TerminalBeforePlanningProofReference | None
     plan_member_digest: str
     reference_digest: str
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
 FinalTransactionGroupResultReference = Annotated[
     CommittedFinalTransactionGroupResultReference
@@ -29512,8 +28859,6 @@ class GraphDependentReplanClosure(BaseModel):
     unfinished_transaction_group_ids: tuple[str, ...]
     replanned_transaction_group_ids: tuple[str, ...]
     closure_digest: str
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
 class PlanPublishedSourceIngestionProgress(BaseModel):
     kind: Literal["plan_published"]
