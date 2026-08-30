@@ -41,6 +41,9 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     AuthenticatedHostIngress,
     AuthenticatedIngressContext,
     AuthenticatedIngressResolutionError,
+    AuthenticatedSemanticEgressGovernance,
+    AuthenticatedSemanticSourceAuthority,
+    AuthenticatedSemanticSourceInterval,
     DeliveryIdentity,
     DeliveryPrincipalBinding,
     RequiredOutcomeScopeSet,
@@ -92,6 +95,31 @@ def _ingress(*scopes: str, required_scopes: tuple[str, ...] | None = None) -> Au
         language_evidence_kind="authenticated_host_declaration",
         language_evidence_trust="trusted",
         language_governance_agreement="agrees",
+        # The governed semantic boundary requires the host-authenticated
+        # egress and source-authority metadata; without them the resolved
+        # ingress is not a semantic-ingress ingress at all.
+        semantic_egress_governance=AuthenticatedSemanticEgressGovernance(
+            classification="internal",
+            provider="provider:test",
+            model="fixture",
+            region="local",
+            retention_mode="none",
+            training_use=False,
+        ),
+        semantic_source_authority=AuthenticatedSemanticSourceAuthority(
+            authority_class="official",
+            authenticated_provenance_class="host",
+            governing_principal_id="user:user:alice",
+            policy_revision="trust-r1",
+            provenance_digest="ab" * 32,
+        ),
+        semantic_source_interval=AuthenticatedSemanticSourceInterval(
+            start=datetime(2026, 1, 1, tzinfo=UTC),
+            end=datetime(2026, 2, 1, tzinfo=UTC),
+            authority_basis="server_source_metadata",
+            provenance_digest="cd" * 32,
+            policy_revision="trust-r1",
+        ),
     )
 
 
