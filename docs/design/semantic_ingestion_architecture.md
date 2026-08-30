@@ -15246,7 +15246,7 @@ every named artifact, selection, and authority bundle from that one attested
 store generation or fail closed; they must not reconstruct the retained set
 from live objects, a normalizer, or configuration owners.
 
-#### 3.4.2 Graph-free interpretation producer
+##### 4.5.3.1 Graph-free interpretation producer
 
 `IndependentSourceAnalysis` remains the candidate-scoped parser/source-evidence
 carrier. It is not extended with scope or attachment interpretations: one
@@ -15392,7 +15392,7 @@ release rollback removes the new codecs, stage composition, and unpublished
 generation members as one feature; retained generations remain readable only by
 the exact strict decoder and are never converted.
 
-##### 3.4.2a Coordinate and ambiguity remediation
+##### 4.5.3.2 Coordinate and ambiguity remediation
 
 This subsection supersedes the abbreviated bundle, scope, temporal, and
 pre-partition shapes immediately above. It is an unreleased strict-v1 contract
@@ -15492,10 +15492,10 @@ evidence; duplicate/out-of-universe mention; missing span; cross-route/policy;
 and no-assertion standalone mentions. These prove both total coverage and that
 no absent edge creates a merge.
 
-##### 3.4.2b Strict replacement schemas
+##### 4.5.3.3 Strict replacement schemas
 
-The following declarations replace every earlier producer shape in 3.4.2 and
-3.4.2a. Their displayed declaration order is the CTV preimage order, excluding
+The following declarations replace every earlier producer shape in 4.5.3.1 and
+4.5.3.2. Their displayed declaration order is the CTV preimage order, excluding
 only the trailing digest field. Every shape is strict, frozen, closed-wire V1,
 and `extra="forbid"`; prior shapes are deleted rather than accepted as aliases.
 
@@ -15675,10 +15675,10 @@ resolution digest. Every cluster's route/policy closure is the canonical unique
 set of its mention `(segment_id, route_digest, language_policy_fingerprint)`
 tuples. The assertion-level rule above is the sole mixed-route disposition.
 
-##### 3.4.2c Authoritative V2 replacement family
+##### 4.5.3.4 Authoritative V2 replacement family
 
 This is the sole normative producer schema family. Every earlier declaration,
-domain, projection, member list, or algorithm in 3.4.2, 3.4.2a, 3.4.2b, and
+domain, projection, member list, or algorithm in 4.5.3.1, 4.5.3.2, 4.5.3.3, and
 4.5.3 that names a singular temporal digest, a single subject set, a
 cluster-labelled pre-partition mention, `SourceLocalIdentityEvidence`, an
 affirmative-only partition, `operation-alignment.v1`,
@@ -15879,7 +15879,7 @@ or mixed union/check permutations reject.
 The V2 identity contracts are `SourcePrePartitionMentionV2`,
 `SourceLocalIdentityAssertionV2`, `SourceLocalIdentityPartitionEvidenceV2`,
 `SourceLocalEntityClusterDecisionV2`, and `SourceLocalIdentityResolutionV2`.
-Their declaration/digest rules are those in 3.4.2b with the assertion-level
+Their declaration/digest rules are those in 4.5.3.3 with the assertion-level
 route/policy closure. `cluster_id` is computed, never supplied: hash the
 complete cluster-decision body in declaration order excluding `cluster_id` and
 `decision_digest` under
@@ -15915,9 +15915,9 @@ contains both replacement and transition temporal entries, selections, and
 consensus-set roles; omitting, duplicating, swapping, or replacing either role
 rejects before alignment or atomic write.
 
-##### 3.4.2d Stable-name V2 type-graph closure
+##### 4.5.3.5 Stable-name V2 type-graph closure
 
-The temporary `*V2` names in 3.4.2c are non-normative drafting labels and are
+The temporary `*V2` names in 4.5.3.4 are non-normative drafting labels and are
 rejected as public, persisted, codec, member, or import identities. The
 following stable behavioral names replace them once at explicit
 `schema_version: Literal[2]`; no V1/V2 alias, bridge, reader, import facade,
@@ -15972,7 +15972,7 @@ class SourceNormalizationResult(BaseModel):
     capability_selections: tuple[OperationCapabilitySelection, ...]
     trust_policy_snapshot_digest: str; arbitration_as_of: datetime; result_digest: str
 
-# SourceNormalizationAtomicWriteRequest is declared once, in 3.4.2g. This
+# SourceNormalizationAtomicWriteRequest is declared once, in 4.5.3.12. This
 # earlier illustrative expansion is intentionally not a second declaration.
 ```
 
@@ -15983,7 +15983,7 @@ coordinates, distinct required roles/fingerprints, and the selected scope
 policy. A stable value is the exact supported-value projection; an unsupported
 result has `stable_scope=None` and exactly equal unsupported policy/reason arms.
 All pass/fail/unknown and supported/unsupported pair permutations follow the
-total table in 3.4.2c. `ConsensusPolicySelectionBundle` uses
+total table in 4.5.3.4. `ConsensusPolicySelectionBundle` uses
 `memorii.semantic-ingestion.consensus-policy-selection-bundle.v2` over
 `schema_version,selections`; selections are exactly the canonical complete
 parser/scope/role-bearing-temporal coordinate collection, every selection joins
@@ -16027,7 +16027,7 @@ it, and mutate each nested schema/member/digest to prove rejection. The vector
 includes the correction two-role closure and every replaced type.
 
 `SourceProposalAlignment.parser_consensus`, `scope_consensus`, and
-##### 3.4.2e Exhaustive stable V2 schema declaration
+##### 4.5.3.6 Exhaustive stable V2 schema declaration
 
 This table is the exhaustive replacement declaration for every active nested
 producer schema. Each row is a stable behavioral Python type name, carries the
@@ -16035,7 +16035,7 @@ first field `schema_version: Literal[2]`, is strict/frozen/closed-wire, and has
 one CTV preimage in the displayed comma-separated declaration order, excluding
 only the final digest. A semicolon separates nested field groups but does not
 alter order. No temporary `*V2` type, old singular-temporal type, or earlier
-3.4.2/3.4.2a/3.4.2b/3.4.2c schema remains in the active namespace.
+4.5.3.1/4.5.3.2/4.5.3.3/4.5.3.4 schema remains in the active namespace.
 
 | Stable type | Exact fields after `schema_version` / preimage | Domain |
 | --- | --- | --- |
@@ -16071,7 +16071,7 @@ mention/assertion and resolution: its exact post-version order is
 `polarity,commitment,attribution,attribution_bearer_span,governing_clause_spans,scope_digest`
 and domain `memorii.semantic-ingestion.stable-semantic-scope.v2`; it is null
 only outside the supported stable consensus arm. All tuples use the canonical
-orders frozen in 3.4.2c; each digest field is lower-case 64-hex SHA-256.
+orders frozen in 4.5.3.4; each digest field is lower-case 64-hex SHA-256.
 
 The only source-normalization atomic member discriminators, in canonical member
 order, are `progress`, `source_normalization_request`,
@@ -16095,11 +16095,11 @@ The active outer contracts are exact consumers of this table:
 the store/registry source-normalization member. Their validators decode the
 named stable type directly, verify every nested schema-version/digest pair, and
 admit no structural substitute. The type-graph and handoff vectors named in
-3.4.2d must instantiate and strict-decode every table row, mutate every field,
+4.5.3.5 must instantiate and strict-decode every table row, mutate every field,
 and reject every old/singular/temporary form before reopen, graph coordination,
 or NLI.
 
-##### 3.4.2f Host-supplied source-normalization authority bundle
+##### 4.5.3.7 Host-supplied source-normalization authority bundle
 
 The graph-free producer cannot derive its authority from installed packages,
 ambient process configuration, the prepared source, or a terminal-shaped
@@ -16218,10 +16218,10 @@ or defaulting bridge is accepted. The V3 migration is pre-release atomic: all
 affected member codecs, schema registry entries, manifests, vectors, and
 atomic-store readers publish together or bootstrap ingestion stays evidence-only.
 
-##### 3.4.2f.1 Exhaustive flattened bootstrap V3 closure
+##### 4.5.3.8 Exhaustive flattened bootstrap V3 closure
 
 For bootstrap analysis, this table supersedes every V2 source-normalization
-reference in 3.4.2e and all V2 references to the same nested values elsewhere.
+reference in 4.5.3.6 and all V2 references to the same nested values elsewhere.
 Each row is strict/frozen/closed-wire with `schema_version: Literal[3]` and
 one required `bootstrap_analysis_provenance: BootstrapAnalysisProvenanceV1`
 immediately before its final digest. Its V3 CTV domain is the displayed V2
@@ -16248,7 +16248,7 @@ normal-root activation. Rollback stops V3 normal writes and allows
 evidence-only reads of retained source evidence only; it never reinterprets V3
 bootstrap bytes through V2 codecs or removes a published V3 generation.
 
-##### 3.4.2f.3 Self-contained V3 payload carriers
+##### 4.5.3.9 Self-contained V3 payload carriers
 
 Option A is the sole V3 payload rule: persisted bootstrap records carry the
 closed typed proposal and four lane payloads, not digests requiring external
@@ -16583,7 +16583,7 @@ from zero; duplicate or reordered attempts/proposals reject. The sole
 `attempt_closure_digest` preimage is the definitive preimage above. No generic
 `SegmentLanguageRoute` is representable inside any bootstrap carrier.
 
-###### 3.4.2f.3.1 Bootstrap proposal operation algebra
+###### 4.5.3.10 Bootstrap proposal operation algebra
 
 The former `subject,predicate_span,predicate_quote,object_span,object_quote,
 evidence` shorthand is not a V3 semantic-operation carrier and is superseded.
@@ -17619,7 +17619,7 @@ This is causal: handoff creates identity, probe claims work, publication records
 the outcome. A missing/mismatched key, stale fence/generation, time regression,
 expired/replayed claim, or wrong state returns `Unavailable` before work.
 
-##### 3.4.2f.2 Active V3 recovery namespace and live-claim protocol
+##### 4.5.3.11 Active V3 recovery namespace and live-claim protocol
 
 The active recovery namespace deletes and forbids
 the retired absence arm, retired request,
@@ -18107,12 +18107,12 @@ filesystem, and Hermes root removal. Every negative case is non-disclosing,
 has zero graph/terminal effect, and no ambient fallback; a positive case proves
 one reloaded generation consumed every child authority exactly once.
 
-##### 3.4.2g Nested artifact and atomic-storage closure
+##### 4.5.3.12 Nested artifact and atomic-storage closure
 
 Every nested artifact reachable from `SourceProposalAlignment` or
 `SourceNormalizationResult` also has `schema_version: Literal[2]`, one strict
 decoder, and a declaration-order CTV preimage. The following complete closure
-extends the table in 3.4.2e; fields listed are after `schema_version` and before
+extends the table in 4.5.3.6; fields listed are after `schema_version` and before
 the trailing digest, and no referenced historical decoder is permitted.
 
 | Nested stable type | Exact fields / domain |
@@ -18310,7 +18310,7 @@ All reject before storage, recovery, trace, graph, or NLI handoff.
 The static/type-graph assertion is
 `test_source_normalization_atomic_write_has_one_active_declaration`: it parses
 the normative architecture and codec registry, requires exactly one active
-`SourceNormalizationAtomicWriteRequest` declaration (3.4.2g), and proves the
+`SourceNormalizationAtomicWriteRequest` declaration (4.5.3.12), and proves the
 4.8 protocol is a reference only. It also presents an old direct-field shape
 containing `interpretation_bundle` or `identity_partition_evidence`; strict
 decode rejects it before publication and recovery.
@@ -20804,7 +20804,7 @@ request digest, source-result `record_digest`, manifest digest, and lineage-refe
 digest. The coordinator rejects a result whose request digest differs before
 returning or persisting it.
 
-##### 4.8.1 Bootstrap V3 graph-dependent transaction boundary
+##### 4.8.1.1 Bootstrap V3 graph-dependent transaction boundary
 
 The V1 request/result above and every `SourceProposalAlignment` or
 `SourceDependencyGroup` consumer are generic-route-only. The ordinary bootstrap
@@ -24498,7 +24498,7 @@ class SourceCheckpointAtomicWriteRequest(AtomicGenerationRequest):
     progress_state: Literal["preplanning", "plan_published", "attempt_published", "planned"]
 
 # The sole SourceNormalizationAtomicWriteRequest declaration is the stable
-# schema-version-2 subtype in 3.4.2g. This 4.8 protocol consumes that exact
+# schema-version-2 subtype in 4.5.3.12. This 4.8 protocol consumes that exact
 # type; historical direct interpretation/identity fields are rejected before
 # publication or recovery and have no declaration here.
 
@@ -34359,7 +34359,7 @@ All preceding recovery-wire/probe phase-table and
 `source-normalization-authority-boundary` topology text in this section is
 historical, non-normative, and has zero active-contract effect. The complete
 active recovery namespace is defined only by the inventory in section
-3.4.2f.2; this archival clause neither shortens nor overrides that inventory.
+4.5.3.11; this archival clause neither shortens nor overrides that inventory.
 The key derives from pre-marker `handoff_request_digest`; the marker V3
 authenticates key/generation fields without entering the key preimage. The
 sole topology is the seven-field `bootstrap-v3-authority-boundary.json` schema

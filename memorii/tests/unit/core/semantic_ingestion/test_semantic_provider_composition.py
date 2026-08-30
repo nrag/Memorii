@@ -1,3 +1,4 @@
+import sys as _sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -5,8 +6,6 @@ from hashlib import sha256
 from pathlib import Path
 from threading import Barrier
 from unittest.mock import patch
-
-import sys as _sys
 
 # The sibling support module resolves as a top-level import under pytest's
 # prepend mode, but the bootstrap-graph process runner imports this module
