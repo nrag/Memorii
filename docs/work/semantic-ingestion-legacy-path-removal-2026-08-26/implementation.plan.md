@@ -1410,6 +1410,19 @@ Broad gate (once, at the final revision):
   `tests/ci/unit-test-durations.json` now carries all 4052 collected
   node IDs (0 missing, 0 stale against a live collection).
 
+- 2026-08-29 (USER DECISION — base classification CANCELLED, failures
+  are branch-owned): the base (c0bbc8e) classification run was
+  cancelled (the base tree has a severe performance problem — the
+  roots file alone was projected at roughly a day — and the user
+  states the outcome is known: the suite was green when M3.1 started,
+  and these failures come from the partially completed M3.1/M4 work).
+  DIRECTION CHANGED: the 356 broad-gate failures (plus 18
+  ingestion-oracle errors) are BRANCH-OWNED REGRESSIONS TO REPAIR,
+  not pre-existing to disposition.  Repair proceeds by block:
+  roots 148, ctv 61, admission 29, persistence 27, orchestration 17,
+  generation-closure 12, post-effect 10, and the remaining ~52 + 18
+  errors; a final broad gate re-runs at the repaired revision.
+
 ## Completion Record
 
 Slice 6 is COMPLETE: 6a (clarification family 20/20 including the

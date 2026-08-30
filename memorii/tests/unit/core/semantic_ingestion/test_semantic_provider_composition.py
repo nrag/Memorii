@@ -2,8 +2,17 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
+from pathlib import Path
 from threading import Barrier
 from unittest.mock import patch
+
+import sys as _sys
+
+# The sibling support module resolves as a top-level import under pytest's
+# prepend mode, but the bootstrap-graph process runner imports this module
+# in a fresh interpreter without that path entry.
+if (support_dir := str(Path(__file__).parent)) not in _sys.path:
+    _sys.path.insert(0, support_dir)
 
 import pytest
 from memorii.core.filesystem_storage.bundle import build_filesystem_provider
