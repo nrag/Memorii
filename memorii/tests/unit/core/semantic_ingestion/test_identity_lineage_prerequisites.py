@@ -19,7 +19,6 @@ from memorii.core.memory_evolution.graph_records import (
     graph_digest,
 )
 from memorii.core.memory_evolution.identity_lineage import (
-    AtomicStoreAcceptedIdentityOperationPlanner,
     ProductionIdentityLineageCompiler,
     identity_lineage_genesis_digest,
 )
@@ -403,7 +402,7 @@ def test_reference_integrity_bootstrap_retries_if_replay_state_appears_during_au
     assert snapshot == store.reference_integrity_snapshot()
 
 
-def test_ordinary_local_runtime_composes_the_production_lineage_compiler() -> None:
+def test_ordinary_local_runtime_keeps_identity_authority_store_owned() -> None:
     plane = MemoryPlaneService()
     writers = SemanticWriterAdmissionStore(
         plane, bounded_preplanning_ownership_manifest(), now_provider=lambda: NOW
@@ -428,19 +427,15 @@ def test_ordinary_local_runtime_composes_the_production_lineage_compiler() -> No
         policy_provider=SimpleNamespace(),
         writer_admission=writers,
         atomic_store=store,
-        identity_operation_resolver=SimpleNamespace(
-            resolve_accepted_identity_operation=lambda **kwargs: None
-        ),
-        identity_decision_authority_verifier=verifier,
     )
-    assert isinstance(
-        runtime.pipeline._identity_lineage_compiler,
-        ProductionIdentityLineageCompiler,
-    )
-    assert isinstance(
-        runtime.pipeline._identity_operation_planner,
-        AtomicStoreAcceptedIdentityOperationPlanner,
-    )
+    # Identity-lineage compilation is no longer runtime-composed: the M4
+    # boundary owns the decision verifier at the atomic store and compiles
+    # identity transitions through the graph-plane planning helper, so the
+    # runtime exposes no pipeline or lineage members of its own.
+    assert not hasattr(runtime, "pipeline")
+    assert not hasattr(runtime, "_identity_lineage_compiler")
+    assert not hasattr(runtime, "_identity_operation_planner")
+    assert store._identity_decision_authority_verifier is verifier
 
 
 @pytest.mark.parametrize(
@@ -473,7 +468,7 @@ def test_local_runtime_rejects_incomplete_or_malformed_identity_authority(
     )
     store = SemanticIngestionAtomicStore(plane, writers, now_provider=lambda: NOW)
 
-    with pytest.raises(ValueError, match="identity operation authority"):
+    with pytest.raises(TypeError, match="identity"):
         build_authorized_local_semantic_runtime(
             authorization_bytes=b"authority",
             authorization_verifier=SimpleNamespace(),
@@ -504,7 +499,9 @@ def test_local_runtime_rejects_verifier_not_owned_by_atomic_store() -> None:
         identity_decision_authority_verifier=store_verifier,
     )
 
-    with pytest.raises(ValueError, match="verifier is not store-owned"):
+    with pytest.raises(TypeError, match="identity"):
+        # The runtime accepts no verifier of its own: identity decision
+        # authority is verified only where it is owned, at the atomic store.
         build_authorized_local_semantic_runtime(
             authorization_bytes=b"authority",
             authorization_verifier=SimpleNamespace(),
@@ -539,4 +536,8 @@ def test_local_runtime_without_identity_authority_remains_nonplanning() -> None:
         atomic_store=store,
     )
 
-    assert runtime.pipeline._identity_operation_planner is None
+    # Without identity authority the runtime composes no planning surface at
+    # all: identity lineage enters only through the bootstrap-graph plane.
+    assert runtime.bootstrap_graph_host_bundle is None
+    assert store._identity_decision_authority_verifier is None
+    assert not hasattr(runtime, "pipeline")

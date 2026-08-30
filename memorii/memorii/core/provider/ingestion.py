@@ -551,6 +551,10 @@ class ProviderIngestionCoordinator:
                     None,
                 )
             if "bootstrap_graph_retry_persisted" in terminal.reason_codes:
+                # The durable retry checkpoint is already persisted; the
+                # caller sees the same fail-closed authority reason the
+                # originating storage failure produced, and recovery reloads
+                # the retained effects without reexecution.
                 return (
                     result.model_copy(update={
                         "transcript_ids": [governed_source.memory_id],
@@ -558,7 +562,7 @@ class ProviderIngestionCoordinator:
                         "allowed_candidate_domains": [],
                         "blocked_reasons": {
                             **result.blocked_reasons,
-                            "semantic_ingestion": "source_only",
+                            "semantic_ingestion": "graph_transaction_authority_unavailable",
                         },
                     }),
                     None,

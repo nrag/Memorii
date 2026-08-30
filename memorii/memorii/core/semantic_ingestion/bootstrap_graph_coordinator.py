@@ -286,29 +286,23 @@ class BootstrapGraphDependentCoordinatorV3:
                     control_epoch=epoch,
                 )
             except (PreplanningStoreError, ValueError):
-                try:
-                    group_reload = self._plans.publish_and_reload(
-                        request=group_checkpoint_request,
-                        delivery_principal_binding_digest=request.delivery_principal_binding_digest,
-                        required_outcome_scopes=request.required_outcome_scopes,
-                        control_epoch=epoch,
-                    )
-                except (PreplanningStoreError, ValueError):
-                    # The executor has already linearized the group CAS. Retain
-                    # its exact result before reporting a retry so recovery
-                    # cannot repeat an effect after two checkpoint failures.
-                    constructions.append(construction)
-                    return self._post_effect_retry(
-                        request=request,
-                        epoch=epoch,
-                        attempt=attempt,
-                        plan=compilation.plan,
-                        authorizations=authorizations,
-                        lineage=lineage,
-                        constructions=constructions,
-                        groups=compilation.plan.canonical_group_order,
-                        generation=group_commit_reload.successor_generation,
-                    )
+                # The executor has already linearized the group CAS.  A
+                # checkpoint acknowledgement failure publishes the durable
+                # post-effect retry instead of re-issuing the same request
+                # in-process: recovery reloads the retained construction
+                # and cannot repeat an effect.
+                constructions.append(construction)
+                return self._post_effect_retry(
+                    request=request,
+                    epoch=epoch,
+                    attempt=attempt,
+                    plan=compilation.plan,
+                    authorizations=authorizations,
+                    lineage=lineage,
+                    constructions=constructions,
+                    groups=compilation.plan.canonical_group_order,
+                    generation=group_commit_reload.successor_generation,
+                )
             current_generation = group_reload.checkpoint_receipt.successor_generation
             constructions.append(construction)
         return self._finalize_attempt(
