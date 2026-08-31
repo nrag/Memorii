@@ -1439,3 +1439,31 @@ decision recorded) and the M3.1 recovery packet (reconcile-branch
 disposition resolved).  The remaining broad-gate failures are
 pre-existing, outside this operation's families, and carried as the
 recorded follow-up above.
+- 2026-08-30 (REMAINING-356 STATUS after the repair campaign; recovery
+  ~275 of 356): repaired and verified this campaign (commits 544010b
+  through 1519c63): the CTV/traceability cascade (366 green), admission
+  (46), orchestration (23 + harness consumers 169), generation closure
+  + structural scalability (39 + 9), post-effect recovery (20),
+  retrieval defaults (9), lineage prerequisites (15), oracle (18),
+  persistence corruption/retained/singles (222 of 224).  REMAINING,
+  with the measured signature: (1) ROOTS DRIFT FAMILY - 28
+  in-memory redelivery scenarios, one uniform signature: the executor
+  fires exactly TWICE on the exact-redelivery sync (effect counters 4
+  vs 2, 12x conflict_calls / 12x partial / 4x exhausted), i.e. the
+  recovery probe misses and the redelivery takes the full execute path
+  instead of the reload path; this is a systematic regression in the
+  V3 recovery-probe/redelivery boundary, not 28 independent defects -
+  debug from `host_bundle.recovery_repository.probe` on a redelivery
+  of a retry-persisted first delivery (clock is fixed in the fixture,
+  so event-timestamp drift is excluded).  (2) ROOTS RACE FAMILY - 45
+  subprocess scenarios, previously import-blocked, now execute; last
+  verified 55 passing / 45 failing on scenario behavior; re-measure
+  after the drift fix (the drift regression likely explains most).
+  (3) TWO TEMPORAL VARIANTS - the atemporal single-assertion
+  promotion (projection outcome unknown vs pass;
+  `_typed_claim_projection_records` eligibility of an atemporal
+  optional-requirement claim) and the reopen variant sharing it.
+  (4) ~13 reason-mismatch singles in the roots file (the
+  partial-composition fix landed; the remainder need individual
+  review).  Next: debug-problem pass on the drift signature first - it
+  is one root cause covering 28 + likely most of the 45.
