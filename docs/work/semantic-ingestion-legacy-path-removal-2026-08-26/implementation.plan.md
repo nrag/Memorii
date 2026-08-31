@@ -1467,3 +1467,22 @@ recorded follow-up above.
   partial-composition fix landed; the remainder need individual
   review).  Next: debug-problem pass on the drift signature first - it
   is one root cause covering 28 + likely most of the 45.
+
+- 2026-08-30 (DRIFT REFINED, probe-level): the redelivery probe DOES
+  find the recovery (BootstrapRecoveryFoundV3 observed on the repeat);
+  the re-execution happens because the FIRST conflict delivery
+  persists NO durable graph outcome - zero terminal locators, zero
+  retry-index records - so both reload_terminal and reload_retry
+  return None and the ingestion falls through to execute.  The
+  fixture's injected error string ("injected graph group commit
+  conflict") contains "conflict", so `_is_related_group_conflict`
+  routes every injected failure to `_related_conflict_successor`
+  (NOT _post_effect_retry); that successor path ends with the first
+  delivery blocked graph_transaction_authority_unavailable (an
+  exception out of execute) and no terminal/retry checkpoint written.
+  Debug from `_related_conflict_successor`: what outcome is it
+  supposed to produce for a twice-conflicting group (the fixture
+  contract: conflict -> successor -> resolved), and why does its
+  write not persist a reloadable terminal or durable retry?  Probe
+  script preserved at /tmp/probe_redelivery.py (conflict provider
+  wired, counters 2 -> 4 reproduced).
