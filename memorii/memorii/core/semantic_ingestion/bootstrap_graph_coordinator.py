@@ -233,16 +233,9 @@ class BootstrapGraphDependentCoordinatorV3:
                     request=group_commit_request,
                 )
             except (PreplanningStoreError, ValueError) as error:
-                # The related-conflict successor authority is bounded to the
-                # initial attempt (its predecessor closure requires
-                # attempt_index 0): one replan per source.  A conflict on a
-                # successor attempt is storage-class - publish the durable
-                # post-effect retry instead of recursing into an invalid
-                # successor closure.
                 reason = (
                     "related_conflict"
-                    if attempt.attempt_index == 0
-                    and self._is_related_group_conflict(error)
+                    if self._is_related_group_conflict(error)
                     else "storage_retry"
                 )
                 if reason == "related_conflict":

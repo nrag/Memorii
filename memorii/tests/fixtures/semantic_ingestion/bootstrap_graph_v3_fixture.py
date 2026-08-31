@@ -1228,7 +1228,9 @@ class DeterministicBootstrapGraphAuthorityProviderV3:
                                 )
                         if self.cas_attempts is not None:
                             self.cas_attempts.append(request.transaction_group_id)
-                        self._run_before_compare_and_swap(request=request)
+                        type(recording_group_commits)._run_before_compare_and_swap(
+                            request=request
+                        )
                         reload = recording_group_commits.commit_or_reload(request=request)
                         return reload
 

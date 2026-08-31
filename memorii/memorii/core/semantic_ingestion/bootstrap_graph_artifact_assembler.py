@@ -457,8 +457,11 @@ class BootstrapGraphArtifactAssemblerV3:
         }
         group_ids = tuple(replacement_plan.canonical_group_order)
         if (
-            predecessor_attempt.attempt_index != 0
-            or predecessor_attempt.attempt_digest
+            # The predecessor closure binds through lineage membership and
+            # the exact group bijections below: successors chain at positive
+            # indices (the design contract), so neither the attempt index
+            # nor the initial trigger may gate the closure.
+            predecessor_attempt.attempt_digest
             not in {item.attempt_digest for item in predecessor_lineage.entries}
             or set(group_ids) != set(latest)
             or set(group_ids) != set(members)

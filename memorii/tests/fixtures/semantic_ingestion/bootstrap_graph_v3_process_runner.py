@@ -77,6 +77,26 @@ def _rewrite_jsonl_fixture(
     return changed
 
 
+def _member_payload(member: dict) -> dict:
+    """Decode a graph member's canonical payload through its envelope."""
+    from memorii.core.memory_evolution.ingestion_contracts import decode_typed_value
+
+    raw = member["canonical_payload"]
+    if isinstance(raw, bytes):
+        raw = raw.decode("utf-8")
+    payload = decode_typed_value(raw.encode("utf-8"))
+    while isinstance(payload, dict) and set(payload) == {"codec_key", "payload", "schema"}:
+        inner = payload["payload"]
+        payload = (
+            decode_typed_value(inner.encode("utf-8"))
+            if isinstance(inner, str)
+            else inner
+        )
+    if isinstance(payload, str):
+        payload = decode_typed_value(payload.encode("utf-8"))
+    return payload
+
+
 def _persisted_successor_evidence(service: object) -> dict[str, object]:
     """Expose persisted successor arms, lineage, and pre-execution identities."""
     from memorii.core.memory_evolution.ingestion_contracts import decode_typed_value
@@ -87,28 +107,65 @@ def _persisted_successor_evidence(service: object) -> dict[str, object]:
     attempts = []
     lineages = []
     pre_execution = []
+    lineage_entries = []
+    group_evidence = []
     for record in members:
         member = record.content["member"]
-        payload = decode_typed_value(member["canonical_payload"])
+        canonical_payload = member["canonical_payload"]
+        # The member content stores the typed-value JSON document (a str);
+        # raw-bytes members arrive from in-memory plane records.
+        if isinstance(canonical_payload, bytes):
+            canonical_payload = canonical_payload.decode("utf-8")
+        payload = _member_payload(member)
         kind = member["kind"]
-        if kind == "bootstrap_graph_dependent_attempt":
+        # Member payloads of one kind can carry the reuse-partition authority
+        # shape; select by the payload's own fields, not the member kind.
+        if kind == "bootstrap_graph_dependent_attempt" and "attempt_index" in payload:
             attempts.append({
                 "attempt_index": payload["attempt_index"],
                 "attempt_id": payload["attempt_id"],
                 "trigger": payload["trigger"],
                 "authority": payload["attempt_authority"],
             })
-        elif kind == "bootstrap_source_plan_lineage":
+        elif kind == "bootstrap_source_plan_lineage" and "latest_entry_by_group" in payload:
             lineages.append({
                 "latest_entry_by_group": payload["latest_entry_by_group"],
                 "entries": payload["entries"],
             })
-        elif kind == "bootstrap_graph_pre_execution_identity_closure":
+        elif kind == "bootstrap_source_plan_lineage_entry" and "entry_digest" in payload:
+            lineage_entries.append(payload)
+        elif kind == "bootstrap_graph_pre_execution_group_evidence" and "evidence_digest" in payload:
+            group_evidence.append(payload)
+        elif (
+            kind == "bootstrap_graph_pre_execution_identity_closure"
+            and "closure_digest" in payload
+        ):
             pre_execution.append({
                 "closure_digest": payload["closure_digest"],
                 "identity_by_group": payload["identity_by_group"],
                 "identities": payload["identities"],
             })
+    if not pre_execution and group_evidence:
+        pre_execution.append({
+            "closure_digest": None,
+            "identity_by_group": {
+                item["group_plan_member_digest"]: item for item in group_evidence
+            },
+            "identities": group_evidence,
+        })
+    if not lineages and lineage_entries:
+        # The plane retains one lineage-entry member per group append; derive
+        # the aggregate view (latest entry per group, ordinal order) from
+        # them when no aggregate member exists.
+        by_group: dict[str, object] = {}
+        for entry in sorted(lineage_entries, key=lambda item: item["lineage_ordinal"]):
+            group_id = entry["transaction_group_id"]
+            if group_id not in by_group or entry["lineage_ordinal"] >= by_group[group_id]["lineage_ordinal"]:
+                by_group[group_id] = entry
+        lineages.append({
+            "latest_entry_by_group": by_group,
+            "entries": lineage_entries,
+        })
     return {
         "attempts": attempts,
         "lineages": lineages,
