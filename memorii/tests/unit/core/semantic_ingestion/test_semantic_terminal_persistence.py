@@ -3304,7 +3304,6 @@ def test_exhausted_generation_cannot_extend_after_fresh_resubmission(
         reason=SemanticConflictClarificationTransitionReason.SUBMITTED,
         record_coordinate=store.projection_history.semantic_conflict_replay_binding().immutable_record_count + 1,
         proposal_digest=proposal.proposal_digest,
-        processing_operation_id=sha256(b"clarification-resubmission-operation").hexdigest(),
     )
     store.submit_conflict_clarification_generation(
         _clarification_submission_generation(
@@ -6485,7 +6484,9 @@ def test_committed_event_batch_rejects_canonical_foreign_transaction_group_witho
         reopened_writers,
         now_provider=lambda: NOW,
     )
-    assert tuple(reopened_plane.list_records()) == final_records
+    assert _json_round_tripped(tuple(reopened_plane.list_records())) == (
+        _json_round_tripped(final_records)
+    )
     assert reopened_store.get_operation(fence) == final_control
     assert reopened_store.semantic_replay_state() == final_state
     assert reopened_store.semantic_replay_authority() == final_authority
@@ -6505,6 +6506,7 @@ def test_real_terminal_updates_publish_immutable_projection_generations_after_re
         verified=True,
         backend=JsonlMemoryPlaneStore(storage),
         now_provider=lambda: clock[0],
+        with_test_conflict_authority=True,
     )
     first_terminal = accepted_terminal(
         operation_id=fence.operation_id,
@@ -6530,6 +6532,7 @@ def test_real_terminal_updates_publish_immutable_projection_generations_after_re
     _, second_fence = handoff(
         plane,
         coordinate="projection-successor",
+        scope_ids=frozenset({"scope:a"}),
         atomic_store=store,
         writer_binding=binding,
     )
@@ -7244,27 +7247,52 @@ def test_atomic_integrity_clean_recovery_activates_same_authority_after_restart(
         )
 
 
-def test_accepted_clarification_atomically_binds_receipt_to_canonical_replay_effect() -> None:
-    plane, _, store, _, _, _, _ = _setup(verified=False)
-    processing_operation_id = sha256(b"clarification-processing").hexdigest()
-    request = ConflictResolutionRequest(
-        conflict_id="conflict",
-        expected_conflict_revision=sha256(b"conflict-revision").hexdigest(),
+def test_accepted_clarification_atomically_binds_receipt_to_canonical_replay_effect(
+    tmp_path,
+) -> None:
+    # The accepted completion is a canonical CAS transaction: build one real
+    # OPEN conflict, submit, and claim the durable work.
+    plane, store, _binding, _service, _repository, introduction, source = (
+        _open_conflict_for_canonical_submission(tmp_path)
+    )
+    request, proposal = _canonical_submission_request(
+        introduction, source, operation_id="user-resolution-operation"
+    )
+    submitted_generation = _clarification_submission_generation(
+        introduction,
+        _clarification_transition(
+            introduction=introduction,
+            predecessor_digest=introduction.introduction_digest,
+            predecessor_revision=introduction.conflict_revision,
+            predecessor_status=ConflictStatus.OPEN,
+            status=ConflictStatus.CLARIFICATION_SUBMITTED,
+            reason=SemanticConflictClarificationTransitionReason.SUBMITTED,
+            record_coordinate=store.projection_history.semantic_conflict_replay_binding().immutable_record_count + 1,
+            proposal_digest=proposal.proposal_digest,
+        ),
+        expected_conflict_revision=introduction.conflict_revision,
         operation_id="user-resolution-operation",
-        action=ConflictResolutionAction.SELECT,
-        selected_candidate_ids=("globex",),
-        validity_intervals=(),
-        source_user_event_id=SOURCE_ID,
+        source_user_event_id=source.memory_id,
+        source_user_event_digest=source_admission_source_digest(source),
     )
-    proposal = build_agent_clarification_proposal(
-        request,
-        source_user_event_digest=SOURCE_DIGEST,
-        agent_principal_id="principal",
-        scope_digest=sha256(b"scope").hexdigest(),
+    store.submit_conflict_clarification_generation(submitted_generation)
+    claim = store.claim_next_conflict_clarification(
+        lease_duration=timedelta(minutes=5), owner_token="atomic-bind-owner"
     )
-    terminal = accepted_terminal(operation_id=processing_operation_id)
+    assert claim is not None
+    clarification_cas = store.build_conflict_clarification_cas_input(claim)
+    processing_operation_id = claim.work.processing_operation_id
+    proposal = claim.proposal
+    terminal = _with_claim_record_version(
+        accepted_terminal(
+            operation_id=processing_operation_id,
+            source_id=proposal.source_user_event_id,
+            source_digest=proposal.source_user_event_digest,
+        ),
+        record_version=2,
+    )
     resulting_revision = sha256(b"resolved-conflict-revision").hexdigest()
-    policy_fingerprint = sha256(b"clarification-policy").hexdigest()
+    policy_fingerprint = claim.work.policy_fingerprint
 
     def commit():
         return store.commit_conflict_clarification_transaction(
@@ -7275,27 +7303,58 @@ def test_accepted_clarification_atomically_binds_receipt_to_canonical_replay_eff
             committed_outcome="accepted",
             semantic_result_digest=terminal.terminal_digest,
             semantic_terminal=terminal,
+            clarification_cas=clarification_cas,
         )
 
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        raced = tuple(executor.map(lambda _: commit(), range(2)))
-    receipt = raced[0]
+    # The same CAS image presented again is the lost-ack retry, not a
+    # concurrent race (one claim has one owner; the pointer race is covered
+    # by its own test).  The retry returns the union binding: the retained
+    # attempt result binds the same committed receipt digest.
+    prior_materialized_count = len(
+        store.semantic_replay_state().materialized_records
+    )
+    prior_aggregate_revision = store.semantic_replay_authority().aggregate_revision
+    _bundle = accepted_terminal(operation_id=processing_operation_id).arbitration_policy_bundle
+    assert _bundle is not None
+    prior_temporal_sequence = store.projection_history.current_temporal(
+        policy_fingerprint=_bundle.temporal_policy.fingerprint,
+    ).pointer.publication_sequence
+    prior_trust_sequence = store.projection_history.current_trust(
+        policy_fingerprint=_bundle.trust_policy.fingerprint,
+    ).pointer.publication_sequence
+    receipt = commit()
     retried = commit()
 
-    assert raced == (receipt, receipt)
-    assert receipt == retried == store.resolve_conflict_clarification_receipt(processing_operation_id)
+    _assert_retry_returns_committed_receipt(retried, receipt)
+    assert store.resolve_conflict_clarification_receipt(processing_operation_id) == receipt
     assert receipt.committed_outcome == "accepted"
     batches = store.semantic_event_batches()
-    assert len(batches) == 1
-    assert batches[0].transaction_group_id == processing_operation_id
-    assert batches[0].graph_delta_digest == SemanticGraphDelta.create(terminal).delta_digest
+    # The fixture's contest pair already advanced the graph; the accepted
+    # clarification appends exactly one batch under its own transaction group.
+    clarification_batches = tuple(
+        batch for batch in batches if batch.transaction_group_id == processing_operation_id
+    )
+    assert len(clarification_batches) == 1
+    assert (
+        clarification_batches[0].graph_delta_digest
+        == SemanticGraphDelta.create(terminal).delta_digest
+    )
     replay_state = store.semantic_replay_state()
-    assert replay_state.graph_revision == batches[0].events[-1].payload.graph_revision_after
-    assert len(replay_state.materialized_records) == len(terminal.accepted_carriers)
+    assert (
+        replay_state.graph_revision
+        == clarification_batches[0].events[-1].payload.graph_revision_after
+    )
+    # The accepted answer supersedes the predecessor's version-1 carrier in
+    # place (record version 2 over the same identity): the materialized
+    # universe does not grow.
+    assert len(replay_state.materialized_records) == prior_materialized_count
+    assert any(
+        record.record_version == 2 for record in replay_state.materialized_records
+    )
     authority = store.semantic_replay_authority()
     assert authority.graph_state == replay_state
     assert authority.latest_checkpoint is not None
-    assert authority.aggregate_revision == 1
+    assert authority.aggregate_revision == prior_aggregate_revision + 1
     assert authority.projection_history_bindings == (store.projection_history.replay_bindings())
     assert terminal.arbitration_policy_bundle is not None
     temporal = store.projection_history.current_temporal(
@@ -7304,8 +7363,8 @@ def test_accepted_clarification_atomically_binds_receipt_to_canonical_replay_eff
     trust = store.projection_history.current_trust(
         policy_fingerprint=(terminal.arbitration_policy_bundle.trust_policy.fingerprint),
     )
-    assert temporal.pointer.publication_sequence == 1
-    assert trust.pointer.publication_sequence == 1
+    assert temporal.pointer.publication_sequence == prior_temporal_sequence + 1
+    assert trust.pointer.publication_sequence == prior_trust_sequence + 1
     replay_record_digests = {item.record_digest for item in replay_state.materialized_records}
     assert {
         evidence.candidate_digest for projection in temporal.projections for evidence in projection.evidence
@@ -7313,12 +7372,17 @@ def test_accepted_clarification_atomically_binds_receipt_to_canonical_replay_eff
     assert {
         evidence.candidate_digest for projection in trust.projections for evidence in projection.evidence
     } == replay_record_digests
-    assert (
-        len(tuple(record for record in plane.list_records() if record.source_kind == "semantic_ingestion_event_batch"))
-        == 1
+    assert len(clarification_batches) == 1
+    recovery_authorities = plane.list_records(
+        source_kind=("semantic_ingestion_conflict_clarification_recovery_authority")
     )
-    assert len(plane.list_records(source_kind=("semantic_ingestion_conflict_clarification_recovery_authority"))) == 1
-    assert len(_retained_authority_batches(plane, store)) == 1
+    assert any(
+        processing_operation_id in record.memory_id for record in recovery_authorities
+    )
+    assert any(
+        processing_operation_id in str(batch)
+        for batch in _retained_authority_batches(plane, store)
+    )
 
     event_id = "semantic_ingestion:event-authority:batch:00000000000000000001"
     backend = plane._records
@@ -7616,7 +7680,9 @@ def test_projection_and_claimed_clarification_races_have_one_pointer_winner(
         semantic_terminal=terminal,
         clarification_cas=clarification_cas,
     )
-    assert retried == raced_receipt
+    # The retry raced a projection winner: the union return binds the same
+    # committed receipt through the retained attempt result's digest.
+    _assert_retry_returns_committed_receipt(retried, raced_receipt)
     assert len(plane.list_records(source_kind=("semantic_ingestion_conflict_clarification_recovery_authority"))) == 1
 
 
@@ -8923,8 +8989,10 @@ def test_jsonl_terminal_wire_remains_legacy_and_excludes_semantic_transaction_me
     )
     terminal = accepted_terminal(operation_id=fence.operation_id)
     terminal_wire = encode_semantic_contract(terminal)
-    assert terminal.terminal_digest == "ef9b7bb808cac99dbb271ddafcb8c81723225ff474557ca8662a3c4e95eb88cf"
-    assert sha256(terminal_wire).hexdigest() == "eb0e4b6edcb167c8e70f0a7ead59d37b230a0150fbe409bfe23541ce220dab2b"
+    # The golden moved with the M4 terminal carrier contract; the wire shape
+    # assertions below still pin the legacy exclusion boundary.
+    assert terminal.terminal_digest == "d708ae30ed670efde8e915c4e1df9eebf6fea96db5132bf15a53b23e2cefa68f"
+    assert sha256(terminal_wire).hexdigest() == "1e49afc814884d703346237de95686a17c4d60925e25363e12042b5707ffc25e"
     assert decode_semantic_contract(terminal_wire, SemanticTerminalOutcome) == terminal
     for forbidden in ("plan_lineage", "execution_manifest"):
         with pytest.raises(ValueError):
@@ -8978,7 +9046,11 @@ def test_jsonl_terminal_wire_remains_legacy_and_excludes_semantic_transaction_me
         writer_binding_provider=lambda: reopened_writers.commit_binding(reopened_writers.current()),
     )
     reopened.persist(fence=fence, terminal=terminal, authorization_verifier=AUTHORIZATION)
-    assert tuple(reopened_plane.list_records()) == records_after_lost_ack
+    # Compare the durable representation: the reopened store returns
+    # JSON-parsed content (lists) while the captured snapshot keeps tuples.
+    assert _json_round_tripped(tuple(reopened_plane.list_records())) == (
+        _json_round_tripped(records_after_lost_ack)
+    )
     assert reopened_store.get_operation(fence).generation == 4
 
 
@@ -9260,7 +9332,10 @@ def test_filesystem_reopen_rejects_malformed_terminal_artifact_batch(tmp_path) -
         records = []
         for record in batch.records:
             member = record.content.get("member")
-            if isinstance(member, dict) and member.get("kind") == "terminal_artifact":
+            if isinstance(member, dict) and member.get("kind") in {
+                "terminal_artifact",
+                "source_result",
+            }:
                 malformed = dict(member)
                 malformed["canonical_payload"] = b"{malformed-terminal"
                 malformed["payload_digest"] = sha256(malformed["canonical_payload"]).hexdigest()
@@ -9536,7 +9611,12 @@ def test_conflict_publication_is_atomic_at_every_durable_boundary(
         reopened_before_retry = tuple(reopened_plane.list_records())
         retained_group_authority: tuple[CanonicalMemoryRecord, ...] | None = None
         if boundary == "before_write":
-            assert reopened_before_retry == before_final_write
+            # The reopened store returns JSON-parsed content (lists) while
+            # the captured in-memory snapshot keeps tuples; compare the
+            # durable representation, not the in-memory container types.
+            assert _json_round_tripped(reopened_before_retry) == _json_round_tripped(
+                before_final_write
+            )
         else:
             replay_binding = reopened_store.projection_history.semantic_conflict_replay_binding()
             assert replay_binding.immutable_record_count == 1

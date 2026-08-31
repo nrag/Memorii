@@ -3999,7 +3999,15 @@ class SemanticIngestionAtomicStore:
             status_record,
             request_record,
             _,
-        ) = self._validated_semantic_clean_recovery_plan(validated)
+        ) = self._validated_semantic_clean_recovery_plan(
+            validated,
+            # The plan's sealed verification already bound the request to the
+            # corrupt generation at prepare time; the freeze step's quarantine
+            # makes the live digest underivable afterwards, so activation
+            # must not re-derive it (the reconcile boundary passes False for
+            # the same reason).
+            require_retained_corrupt_generation=False,
+        )
         now = self._now()
         clean_records = [
             *(_semantic_event_batch_record(batch, now) for batch in batches),
@@ -6400,43 +6408,61 @@ class SemanticIngestionAtomicStore:
             # receipt, the successor pointer (and the transition it names),
             # and the replay closure the accepted effect recorded.  A missing
             # or divergent member is corruption, never a silent repair.
-            receipt_record = self._memory_plane.get_record(
-                f"semantic_ingestion:clarification:receipt:{processing_operation_id}"
-            )
-            if receipt_record is None:
-                raise ValueError
-            receipt_value = ConflictClarificationProcessingReceipt.model_validate_json(
-                json.dumps(receipt_record.content["receipt"])
-            )
-            if (
-                receipt_value.receipt_digest != result.downstream_receipt_digest
-                or receipt_value.processing_operation_id != processing_operation_id
-                or receipt_value.committed_outcome != result.outcome.value
-                or receipt_value.conflict_id != clarification_cas.conflict_id
-            ):
-                raise ValueError
-            pointer_record = self._memory_plane.get_record(
-                f"semantic_ingestion:conflict-authority:pointer:"
-                f"{clarification_cas.conflict_id}"
-            )
-            if pointer_record is None:
-                raise ValueError
-            _, pointer_value, _ = _decode_conflict_authority_record(pointer_record)
-            pointer = ActiveSemanticConflict.model_validate(pointer_value)
-            transition_record = self._memory_plane.get_record(pointer.current_record_id)
-            if transition_record is None:
-                raise ValueError
-            _, transition_value, _ = _decode_conflict_authority_record(transition_record)
-            transition = decode_persisted_conflict_generation(
-                transition_value, SemanticConflictClarificationTransition
-            )
-            if (
-                transition.processing_operation_id != processing_operation_id
-                or transition.reason.value != result.outcome.value
-                or transition.transition_digest != pointer.current_record_digest
-            ):
-                raise ValueError
-            self.semantic_replay_authority()
+            if result.downstream_receipt_digest is not None:
+                # A committed completion retains its receipt; verify every
+                # retained component still binds before replaying it.
+                receipt_record = self._memory_plane.get_record(
+                    f"semantic_ingestion:clarification:receipt:{processing_operation_id}"
+                )
+                if receipt_record is None:
+                    raise ValueError
+                receipt_value = ConflictClarificationProcessingReceipt.model_validate_json(
+                    json.dumps(receipt_record.content["receipt"])
+                )
+                if (
+                    receipt_value.receipt_digest != result.downstream_receipt_digest
+                    or receipt_value.processing_operation_id != processing_operation_id
+                    or receipt_value.committed_outcome != result.outcome.value
+                    or receipt_value.conflict_id != clarification_cas.conflict_id
+                ):
+                    raise ValueError
+                pointer_record = self._memory_plane.get_record(
+                    f"semantic_ingestion:conflict-authority:pointer:"
+                    f"{clarification_cas.conflict_id}"
+                )
+                if pointer_record is None:
+                    raise ValueError
+                _, pointer_value, _ = _decode_conflict_authority_record(pointer_record)
+                pointer = ActiveSemanticConflict.model_validate(pointer_value)
+                transition_record = self._memory_plane.get_record(
+                    pointer.current_record_id
+                )
+                if transition_record is None:
+                    raise ValueError
+                transition_type, transition_value, _ = _decode_conflict_authority_record(
+                    transition_record
+                )
+                if transition_type != "clarification_transition":
+                    # A natural projection won the pointer after this
+                    # completion: the successor is the projection's
+                    # transition, internally consistent without naming this
+                    # clarification's edge.
+                    if (
+                        transition_record.content.get("authority_digest")
+                        != pointer.current_record_digest
+                    ):
+                        raise ValueError
+                else:
+                    transition = decode_persisted_conflict_generation(
+                        transition_value, SemanticConflictClarificationTransition
+                    )
+                    if (
+                        transition.processing_operation_id != processing_operation_id
+                        or transition.reason.value != result.outcome.value
+                        or transition.transition_digest != pointer.current_record_digest
+                    ):
+                        raise ValueError
+                self.semantic_replay_authority()
             return result
         except (KeyError, TypeError, ValueError, ProjectionHistoryError) as exc:
             raise PreplanningStoreError(
