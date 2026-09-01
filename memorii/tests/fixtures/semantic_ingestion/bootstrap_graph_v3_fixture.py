@@ -604,7 +604,7 @@ class DeterministicBootstrapGraphSuccessfulExecutorV3:
 
     host_authority: BootstrapGraphTerminalHostAuthorityV3
     calls: list[str]
-    disposition: Literal["noncommitting", "failed"] = "noncommitting"
+    disposition: Literal["committed", "noncommitting", "failed"] = "noncommitting"
     terminal_status: Literal["evidence_only", "failed"] = "evidence_only"
     final_status: Literal["evidence_only", "failed"] = "evidence_only"
     not_applicable_reason: Literal["noncommitting", "failed"] = "noncommitting"
@@ -1178,11 +1178,11 @@ class DeterministicBootstrapGraphAuthorityProviderV3:
                         self.before_compare_and_swap(request.transaction_group_id)
 
                     def commit_or_reload(inner_self, *, request):
+                        if self.cas_attempts is not None:
+                            self.cas_attempts.append(request.transaction_group_id)
                         type(inner_self)._run_before_compare_and_swap(
                             request=request
                         )
-                        if self.cas_attempts is not None:
-                            self.cas_attempts.append(request.transaction_group_id)
                         reload = inner_self._repository.commit_or_reload(request=request)
                         self.successful_calls.append(request.transaction_group_id)
                         return reload
@@ -1193,6 +1193,7 @@ class DeterministicBootstrapGraphAuthorityProviderV3:
 
                 class ConflictInjectingGroupCommitRepository:
                     failures = {"remaining": max_conflict_failures}
+                    passed_first = False
 
                     def _record_conflict(inner_self, *, request, conflict_calls: list[str]):
                         if self.cas_attempts is not None:
@@ -1203,7 +1204,19 @@ class DeterministicBootstrapGraphAuthorityProviderV3:
                             inner_self.failures["remaining"] = 0
 
                     def commit_or_reload(inner_self, *, request):
-                        if inner_self.failures["remaining"] > 0:
+                        # A PARTIAL conflict scenario commits at least one
+                        # group before conflicting: the completed group is
+                        # the retained arm the successor authority must
+                        # classify (reused_committed/reused_final).  Plain
+                        # and exhausted scenarios conflict from the first
+                        # commit.
+                        if (
+                            inner_self.failures["remaining"] > 0
+                            and not (
+                                self.partial_conflict_calls is not None
+                                and not inner_self.passed_first
+                            )
+                        ):
                             if self.conflict_calls is not None:
                                 inner_self._record_conflict(
                                     request=request, conflict_calls=self.conflict_calls,
@@ -1231,6 +1244,7 @@ class DeterministicBootstrapGraphAuthorityProviderV3:
                         type(recording_group_commits)._run_before_compare_and_swap(
                             request=request
                         )
+                        inner_self.passed_first = True
                         reload = recording_group_commits.commit_or_reload(request=request)
                         return reload
 

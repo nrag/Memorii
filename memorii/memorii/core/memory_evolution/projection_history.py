@@ -6138,6 +6138,11 @@ def _typed_claim_projection_records(
             elif resolved.outcome == "pass" and resolver_selected:
                 temporal_selected = resolver_selected
                 temporal_outcome = resolved.outcome
+            elif resolved.outcome == "pass" and len(typed_claims) == 1:
+                # A single uncontested claim needs no resolver selection:
+                # its own assertion is the winner.
+                temporal_selected = (0,)
+                temporal_outcome = "pass"
             elif resolved.outcome == "pass":
                 # A passing resolution that selected no candidate has no
                 # winner to expose; the projection is unknown, not passing.

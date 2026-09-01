@@ -99,7 +99,6 @@ def _member_payload(member: dict) -> dict:
 
 def _persisted_successor_evidence(service: object) -> dict[str, object]:
     """Expose persisted successor arms, lineage, and pre-execution identities."""
-    from memorii.core.memory_evolution.ingestion_contracts import decode_typed_value
 
     members = service._memory_plane.list_records(
         source_kind="semantic_ingestion_bootstrap_graph_v3_member"
@@ -146,11 +145,20 @@ def _persisted_successor_evidence(service: object) -> dict[str, object]:
                 "identities": payload["identities"],
             })
     if not pre_execution and group_evidence:
+        # Group evidence is keyed by plan-member digest; the identity view is
+        # by transaction group, joined through the lineage entries.
+        member_to_group = {
+            item["group_plan_member_digest"]: item["transaction_group_id"]
+            for item in lineage_entries
+        }
+        identity_by_group = {}
+        for item in group_evidence:
+            group_id = member_to_group.get(item["group_plan_member_digest"])
+            if group_id is not None:
+                identity_by_group[group_id] = item
         pre_execution.append({
             "closure_digest": None,
-            "identity_by_group": {
-                item["group_plan_member_digest"]: item for item in group_evidence
-            },
+            "identity_by_group": identity_by_group,
             "identities": group_evidence,
         })
     if not lineages and lineage_entries:
@@ -178,7 +186,8 @@ def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str
     proposal = _graph_fact_proposal(
         3
         if behavior in {
-            "partial_commit", "reused_committed", "reused_final", "reused_unfinished",
+            "partial_commit", "reused_committed", "reused_final",
+            "reused_unfinished", "terminal_locator",
         }
         else 1
     )
@@ -220,7 +229,13 @@ def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str
             raise AssertionError("replay unexpectedly reached graph CAS")
         if behavior == "scope_revoked":
             current_scope[0] = "f" * 64
-            return
+            # The store-backed group commit derives its outcome from the
+            # sealed reductions and never consults the executor, so the
+            # revocation must fail the CAS itself: one attempt, zero
+            # effects, fail-closed at the graph boundary.
+            raise PreplanningStoreError(
+                "injected scope revocation before group CAS"
+            )
         service_holder[0]._memory_plane.upsert_record(
             CanonicalMemoryRecord(
                 memory_id="unrelated:independent-jsonl",
@@ -281,12 +296,17 @@ def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str
         successful_calls=successful_calls,
         acquire_errors=acquire_errors,
         cas_attempts=cas_attempts,
+        # The store derives the group result disposition from the compiled
+        # reductions (native terminal status), not the executor's outcome:
+        # committed retained arms need accepted materialization.
+        accepted_materialization=(behavior == "reused_committed"),
         unavailable_calls=unavailable_calls if behavior == "durable_retry" else None,
         conflict_calls=conflict_calls if behavior == "resolved_conflict" else None,
         partial_conflict_calls=(
             partial_conflict_calls
             if behavior in {
-                "partial_commit", "reused_committed", "reused_final", "reused_unfinished",
+                "partial_commit", "reused_committed", "reused_final",
+                "reused_unfinished", "terminal_locator",
             }
             else None
         ),
@@ -389,14 +409,20 @@ def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str
     terminal_locator_removed = 0
     mixed_version_fixture_mutations = 0
     if phase == "first" and behavior == "terminal_locator":
+        removed_locator = {"count": 0}
+
+        def drop_one_locator(record: dict[str, object]):
+            if (
+                record["source_kind"]
+                != "semantic_ingestion_bootstrap_graph_v3_terminal_locator"
+                or removed_locator["count"] >= 1
+            ):
+                return record
+            removed_locator["count"] += 1
+            return None
+
         terminal_locator_removed = _rewrite_jsonl_fixture(
-            fixture_path,
-            mutate_record=lambda record: (
-                None
-                if record["source_kind"]
-                == "semantic_ingestion_bootstrap_graph_v3_terminal_locator"
-                else record
-            ),
+            fixture_path, mutate_record=drop_one_locator
         )
     if phase == "first" and behavior == "mixed_version":
         def legacy_v2_fixture(record: dict[str, object]) -> dict[str, object]:
