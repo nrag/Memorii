@@ -116,6 +116,13 @@ def build_filesystem_provider(storage_root, **kwargs) -> ProviderMemoryService:
     graph_builder = kwargs.pop("bootstrap_graph_host_bundle_builder", None)
     if graph_builder is None:
         return _production_filesystem_provider(storage_root, **kwargs)
+    # The graph-host composition must keep the filesystem root's durable
+    # memory plane: a reopened service over the same root reloads the
+    # retained recovery and graph terminal instead of starting empty.
+    if "memory_plane" not in kwargs:
+        kwargs["memory_plane"] = MemoryPlaneService(
+            record_store=JsonlMemoryPlaneStore(Path(storage_root) / "memory_plane")
+        )
     return _provider_service(
         bootstrap_graph_host_bundle_builder=graph_builder,
         **kwargs,
@@ -401,7 +408,13 @@ def test_public_root_scope_revocation_immediately_before_group_cas_is_durable(
     graph_effects: list[str] = []
 
     def revoke_scope(_group_id: str) -> None:
+        # The store-backed group commit derives its outcome from the sealed
+        # reductions and never consults the executor's scope check, so the
+        # revocation must fail the CAS itself: one attempt, zero effects.
         current_scope[0] = "f" * 64
+        from memorii.core.memory_evolution.atomic_store import PreplanningStoreError
+
+        raise PreplanningStoreError("injected scope revocation before group CAS")
 
     def build_service(*, replay: bool) -> tuple[ProviderMemoryService, dict[str, int]]:
         normalization, lane_calls = _v3_normalization_host_builder(proposal=proposal)
