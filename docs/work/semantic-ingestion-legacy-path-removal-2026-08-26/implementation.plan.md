@@ -1486,3 +1486,24 @@ recorded follow-up above.
   write not persist a reloadable terminal or durable retry?  Probe
   script preserved at /tmp/probe_redelivery.py (conflict provider
   wired, counters 2 -> 4 reproduced).
+
+- 2026-08-31 (RACE + DRIFT + ATEMPORAL COMPLETE): the two largest
+  roots families are fully green - drift 100/100 (redelivery replays
+  without effects) and race 100/100 (independent-process JSONL reopen,
+  25 scenarios x 4 roots), plus the atemporal single-claim promotion
+  restored (projection-generations reopen green).  Root causes fixed
+  this wave: the successor-predecessor closure gated on attempt index
+  (successors chain at positive indices by design); the conflict
+  repository's post-budget delegation called the provider instead of
+  the recording repository; the process runner's evidence extraction
+  assumed payload shapes the plane does not carry; the reused_committed
+  scenario wired the executor disposition the store-backed commit never
+  reads (accepted materialization is the effective input); partial
+  conflicts conflicted from the first commit so no group ever
+  completed into the successor authority; pre-CAS scope revocation
+  never reached the executor's scope check on the store path; the
+  terminal-locator scenario lacked its three-group partial shape.
+  REMAINING of the original 356: ~13 reason-mismatch singles in the
+  roots file (the partial-composition fix landed earlier; the rest
+  need individual review), and the final broad gate + durations
+  regeneration.
