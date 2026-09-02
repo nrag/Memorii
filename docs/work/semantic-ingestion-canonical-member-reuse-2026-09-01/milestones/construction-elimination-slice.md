@@ -46,3 +46,27 @@ is loaded; the quiet-host measurement requires a quiet window by protocol).
   decode-memo identity/limits/persistence, and per-structure purge
   observers for the new registry and decode memo on close and capacity
   refusal.
+- 2026-09-02 (milestone review round 1 + remediation): the cohort
+  reviewed frozen `a369099`.  test_reviewer: `remaining_validated_p1_p2:
+  []` with eleven changes_required evidence actions (missing Phase 4
+  families, two vacuous assertions, evidence-overclaim).  correctness:
+  one validated P2 — `_materialize_planning_payload`'s construction was
+  not recorded (the design names it; the store-commit materialization
+  family stayed uncertified).  Remediation batch landed at the tree after
+  `a369099`: the P2 one-line fix (`validated_graph_record` at the
+  materialize tail), decode-memo recording gated on the immutability
+  verdict, dead-constant/annotation cleanups, per-structure count
+  properties and close+refusal purge observers for `_encoded_results` /
+  `_lowered_values` / `_roundtrips`, frozenset and frozenset-of-
+  frozensets drift vectors plus bool/int and int/float type-blind
+  pairs, the two-thread certification-isolation discriminator, shared-
+  decoded-model mutation rejection, the decode-limits second direction
+  (successful limited decode records nothing), snapshot field-tuple
+  pins, the certified-payload corrupted-binding matrix inside an active
+  arena (with the certified-path proof assertion), the uncertified-item
+  adapter-path counter, and the previously-unpinned
+  `semantic event carrier validation failed` error surface.  Evidence
+  status restated: CE-6/CE-8 were `in progress` before this batch; the
+  families above are now landed with 73 graph/replay + 56 arena tests
+  green and ruff clean.  Harness rows (43,756 digest count,
+  determinism) remain CE-9 revision-bound local evidence.

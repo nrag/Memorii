@@ -1482,7 +1482,7 @@ def _materialize_planning_payload(
         values["record_digest"] = graph_digest(
             b"memorii.canonical-graph-record.v1\0", values
         )
-    return canonical_graph_record_adapter().validate_python(values)
+    return validated_graph_record(values)
 
 
 def materialize_canonical_planning_payload(

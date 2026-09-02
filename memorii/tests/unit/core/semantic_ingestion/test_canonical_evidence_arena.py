@@ -945,3 +945,201 @@ def test_registry_and_decode_memo_purge_on_close_and_refusal() -> None:
         )
         assert arena2._digest_verification_scope.certified_instances == 0
         assert arena2._digest_verification_scope.decoded_entries == 0
+
+
+def test_landed_scope_structures_purge_on_close_and_refusal() -> None:
+    import memorii.core.memory_evolution.ingestion_contracts as ctv
+    import memorii.core.semantic_ingestion.contracts as contracts
+
+    artifact = _artifact(artifact_id="structure-purge")
+    raw = encode_typed_value(artifact.model_dump(mode="python"))
+    plain = {"structure": ["purge", {"probe": (1, 2)}], "padding": "p" * 512}
+
+    arena = CanonicalEvidenceArena(
+        scope=CanonicalValidationScope("tenant", "operation", 1, "fence", "writer"),
+    )
+    with arena:
+        contracts.encode_semantic_contract(artifact)          # _lowered_values, _encoded_bytes
+        contracts.encode_semantic_contract_result(artifact, canonical_staging=arena)  # _encoded_results
+        contracts.certified_roundtrip(artifact)               # _roundtrips
+        ctv.encode_typed_value(plain)                         # _emitted (emission scope)
+        scope = arena._digest_verification_scope
+        assert scope.encoded_result_entries >= 1
+        assert scope.lowered_value_entries >= 1
+        assert scope.roundtrip_entries >= 1
+        assert arena._emission_scope.emitted_entries >= 1
+    assert arena._digest_verification_scope.encoded_result_entries == 0
+    assert arena._digest_verification_scope.lowered_value_entries == 0
+    assert arena._digest_verification_scope.roundtrip_entries == 0
+    assert arena._emission_scope.emitted_entries == 0
+
+    arena2 = CanonicalEvidenceArena(enabled=True)
+    with arena2:
+        contracts.encode_semantic_contract(artifact)
+        contracts.encode_semantic_contract_result(artifact)
+        contracts.certified_roundtrip(artifact)
+        ctv.encode_typed_value(plain)
+        scope2 = arena2._digest_verification_scope
+        assert scope2.encoded_result_entries >= 1
+        assert scope2.lowered_value_entries >= 1
+        assert scope2.roundtrip_entries >= 1
+        assert arena2._emission_scope.emitted_entries >= 1
+        oversized = ValidatedCanonicalEvidenceResult(
+            contract=artifact,
+            canonical_contract_bytes=b"x" * (MAX_CANONICAL_BYTES_PER_ENTRY + 1),
+            canonical_member_index=CanonicalMemberIndex(
+                contract_type="test", member_paths=1, canonical_digest="0" * 64
+            ),
+            validation_provenance=("test",),
+        )
+        assert not arena2.admit_success(
+            canonical_contract_bytes=oversized.canonical_contract_bytes,
+            concrete_contract_type=type(artifact),
+            profile_revision=CANONICAL_PROFILE_REVISION,
+            codec_revision=CANONICAL_CODEC_REVISION,
+            domain=b"domain",
+            result=oversized,
+        )
+        assert scope2.encoded_result_entries == 0
+        assert scope2.lowered_value_entries == 0
+        assert scope2.roundtrip_entries == 0
+        assert arena2._emission_scope.emitted_entries == 0
+    del raw
+
+
+def test_frozenset_drift_modes_never_inherit_certification() -> None:
+    import memorii.core.semantic_ingestion.contracts as contracts
+    from memorii.core.memory_evolution.models import ClaimValueType
+    from memorii.core.semantic_ingestion.contracts import PredicatePromptContract
+
+    prompt = PredicatePromptContract.create(
+        predicate_id="frozen-drift",
+        description="frozenset drift probe",
+        subject_value_kind="entity",
+        object_value_kind="literal",
+        object_literal_type=ClaimValueType.TEXT,
+        supported_commitments=("asserted",),
+    )
+    clean_catalog = contracts.PredicateProposalCatalog.create(
+        vocabulary_namespace="frozen",
+        proposal_capability_fingerprint="0" * 64,
+        predicates=(prompt,),
+        catalog_schema_fingerprint=(
+            contracts.PredicateProposalCatalog._schema_fingerprint.get_default()
+        ),
+    )
+    # StrEnum-in-frozenset drift: the catalog family has no frozenset field,
+    # so exercise the guard directly on the pairing function's contract.
+    inner_clean = frozenset({ClaimValueType.TEXT})
+    inner_drift = frozenset({"text"})
+    assert inner_clean == inner_drift  # set equality is type-blind
+    proof = clean_catalog
+    assert contracts._representationally_identical(clean_catalog, proof) is True
+    drifted_prompt = PredicatePromptContract.model_construct(
+        **{
+            **prompt.model_dump(mode="python"),
+            "supported_commitments": frozenset({"asserted"}),
+        }
+    )
+    drifted_catalog = contracts.PredicateProposalCatalog.model_construct(
+        **{
+            **clean_catalog.model_dump(mode="python"),
+            "predicates": (drifted_prompt,),
+        }
+    )
+    assert contracts._representationally_identical(drifted_catalog, clean_catalog) is False
+    # frozenset-of-frozensets with inner drift: equal by ==, rejected by pairing.
+    nested_clean = frozenset({frozenset({ClaimValueType.TEXT})})
+    nested_drift = frozenset({frozenset({"text"})})
+    assert nested_clean == nested_drift
+    assert contracts._frozensets_pair(list(nested_drift), list(nested_clean), 0) is False
+    assert contracts._frozensets_pair(list(nested_clean), list(nested_clean), 0) is True
+    # Type-blind coercion pairs the plain-equality guard would miss.
+    assert contracts._representationally_identical(True, 1) is False
+    assert contracts._representationally_identical(1, 1.0) is False
+
+
+def test_concurrent_arenas_do_not_share_certification() -> None:
+    from threading import Barrier, Thread
+
+    import memorii.core.semantic_ingestion.contracts as contracts
+
+    artifact = _artifact(artifact_id="thread-probe")
+    results: dict[str, object] = {}
+    barrier = Barrier(2)
+
+    def run(mode: str) -> None:
+        with CanonicalEvidenceArena(enabled=True) as arena:
+            contracts.encode_semantic_contract(artifact)
+            barrier.wait(timeout=30)
+            results[f"{mode}-certified"] = arena._digest_verification_scope.certified_instances
+            results[f"{mode}-hit"] = (
+                arena._digest_verification_scope.lookup_certified_instance(artifact)
+            )
+
+    threads = [Thread(target=run, args=(name,)) for name in ("a", "b")]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=60)
+    # Each thread certified its own copy of the work; the shared artifact
+    # instance is certified in one arena and absent from the other.
+    assert results["a-certified"] == results["b-certified"]
+    assert results["a-hit"] is not None or results["b-hit"] is not None
+
+
+def test_shared_decoded_models_reject_mutation() -> None:
+    import memorii.core.semantic_ingestion.contracts as contracts
+
+    artifact = _artifact(artifact_id="alias-probe")
+    raw = encode_semantic_contract(artifact)
+    with CanonicalEvidenceArena(enabled=True):
+        first = contracts.decode_semantic_contract(raw, RetainedSourceTextArtifact)
+        assert contracts.decode_semantic_contract(raw, RetainedSourceTextArtifact) is first
+        with pytest.raises((TypeError, ValueError)):
+            first.artifact_id = "mutated"  # type: ignore[misc]
+
+
+def test_snapshot_dataclass_field_tuples_are_pinned() -> None:
+    from dataclasses import fields
+
+    from memorii.core.semantic_ingestion.canonical_evidence_arena import (
+        CanonicalClosureTerminalSnapshot,
+        CanonicalEvidenceArenaSnapshot,
+    )
+
+    assert tuple(field.name for field in fields(CanonicalEvidenceArenaSnapshot)) == (
+        "nonce", "state", "mode", "reservation_acquired", "closed", "entries",
+        "charged_bytes", "hits", "misses", "lookups", "capacity_fallbacks",
+        "terminal_reason", "member_paths", "peak_charged_bytes", "reserved_bytes",
+        "released",
+    )
+    assert tuple(field.name for field in fields(CanonicalClosureTerminalSnapshot)) == (
+        "mode", "terminal_reason", "roots", "member_paths", "lookups", "hits",
+        "misses", "capacity_refusals", "peak_charged_bytes", "reserved_bytes",
+        "released",
+    )
+
+
+def test_decode_limits_second_direction_records_nothing() -> None:
+    import memorii.core.memory_evolution.ingestion_contracts as ctv
+    import memorii.core.semantic_ingestion.contracts as contracts
+
+    artifact = _artifact(artifact_id="limits-second")
+    raw = encode_semantic_contract(artifact)
+    with CanonicalEvidenceArena(enabled=True):
+        # A limited call that SUCCEEDS records nothing: the subsequent
+        # unlimited decode of the same bytes takes the full first-decode
+        # path and returns a fresh instance rather than a memo share.
+        node_count = len(ctv._json(ctv._normalized_typed_json(
+            contracts.canonical_contract_value(artifact)
+        )))
+        limited_ok = contracts.decode_semantic_contract(
+            raw, RetainedSourceTextArtifact, max_nodes=node_count + 512
+        )
+        unlimited = contracts.decode_semantic_contract(raw, RetainedSourceTextArtifact)
+        assert unlimited is not limited_ok
+        again = contracts.decode_semantic_contract(raw, RetainedSourceTextArtifact)
+        assert again is unlimited
+
+

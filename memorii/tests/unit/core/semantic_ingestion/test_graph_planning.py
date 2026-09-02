@@ -928,3 +928,98 @@ def test_identity_closure_reprojects_each_current_projection_and_preserves_histo
             compiled_transition=transition,
             operation_id=transition.operation_id,
         )
+
+
+def test_certified_payload_corrupted_bindings_still_fail_inside_active_arena() -> None:
+    from memorii.core.semantic_ingestion.canonical_evidence_arena import (
+        CanonicalEvidenceArena,
+    )
+
+    manifest = {item.record_kind: item for item in canonical_graph_codec_manifest().entries}
+    with CanonicalEvidenceArena(enabled=True) as arena:
+        record = ReferenceDispositionRecord.create(
+            operation_id="certified-binding",
+            reference_disposition_id="disposition:v1",
+            target_record_kind="claim_assertion",
+            target_record_id="claim:target",
+            target_reference_path="subject",
+            predecessor_entity_revision_id="entity:alice:v1",
+            predecessor_logical_entity_id="entity:alice",
+            successor_entity_revision_ids=(),
+            successor_logical_entity_ids=(),
+            disposition="unresolved",
+            basis="insufficient_evidence",
+            source_evidence=(),
+            record_version=1,
+            codec_fingerprint=manifest["reference_disposition"].codec_fingerprint,
+        )
+        # Prove the certified path is the one under test: the construction
+        # certified the record inside this operation.
+        assert arena._digest_verification_scope.lookup_certified_instance(record) is not None
+        envelope = SnapshotGraphRecord(
+            record_id=graph_record_id(record),
+            record_version=record.record_version,
+            payload=record,
+            codec_fingerprint=manifest[record.record_kind].codec_fingerprint,
+            persistence_schema_fingerprint=manifest[record.record_kind].payload_schema_fingerprint,
+            record_digest=record.record_digest,
+        )
+        assert envelope.payload is record
+        for field, invalid in (
+            ("record_id", "substituted"),
+            ("record_version", envelope.record_version + 1),
+            ("record_digest", "0" * 64),
+            ("codec_fingerprint", "0" * 64),
+            ("persistence_schema_fingerprint", "0" * 64),
+        ):
+            corrupted = envelope.model_dump(mode="python")
+            corrupted[field] = invalid
+            with pytest.raises(ValueError, match="snapshot_graph_record_binding_mismatch"):
+                SnapshotGraphRecord.model_validate(corrupted)
+
+
+def test_uncertified_items_keep_the_adapter_path_inside_active_arena() -> None:
+    from memorii.core.memory_evolution.graph_records import (
+        canonical_graph_record_adapter,
+    )
+    from memorii.core.semantic_ingestion.canonical_evidence_arena import (
+        CanonicalEvidenceArena,
+    )
+
+    manifest = {item.record_kind: item for item in canonical_graph_codec_manifest().entries}
+    original_validate = canonical_graph_record_adapter().validate_python
+    calls = {"n": 0}
+
+    def counting(values):  # type: ignore[no-untyped-def]
+        calls["n"] += 1
+        return original_validate(values)
+
+    with CanonicalEvidenceArena(enabled=True):
+        # Bypass-constructed (uncertified) record: every conversion keeps
+        # the adapter path; nothing is shared.
+        uncertified = ReferenceDispositionRecord.model_construct(
+            **ReferenceDispositionRecord.create(
+                operation_id="uncertified-path",
+                reference_disposition_id="disposition:v2",
+                target_record_kind="claim_assertion",
+                target_record_id="claim:target",
+                target_reference_path="subject",
+                predecessor_entity_revision_id="entity:alice:v1",
+                predecessor_logical_entity_id="entity:alice",
+                successor_entity_revision_ids=(),
+                successor_logical_entity_ids=(),
+                disposition="unresolved",
+                basis="insufficient_evidence",
+                source_evidence=(),
+                record_version=1,
+                codec_fingerprint=manifest["reference_disposition"].codec_fingerprint,
+            ).model_dump(mode="python")
+        )
+        canonical_graph_record_adapter().validate_python = counting
+        try:
+            from memorii.core.memory_evolution.graph_planning import _snapshot_record
+
+            _snapshot_record(uncertified, manifest["reference_disposition"])
+        finally:
+            canonical_graph_record_adapter().validate_python = original_validate
+        assert calls["n"] >= 1

@@ -2674,3 +2674,24 @@ def test_semantic_conflict_replay_binding_rejects_every_prefix_and_pointer_mutat
                 semantic_conflict_verifier=_ExactSemanticConflictBindingVerifier(binding),
             )
         assert exposed is None
+
+
+def test_forged_carrier_error_surface_is_pinned() -> None:
+    """Bypass-constructed carriers reject with the exact closed error."""
+
+    valid = _graph_delta(version=1, statement="error-surface").carriers[0]
+    forged = valid.model_copy(update={"record_digest": "0" * 64})
+    with pytest.raises(SemanticEventReplayError, match="semantic event carrier validation failed"):
+        build_semantic_memory_event(
+            record=forged,
+            prior_record=None,
+            repository_id="repository",
+            source_id="source",
+            transaction_group_id="group",
+            operation_fence_id=_digest("fence:error-surface"),
+            writer_epoch=1,
+            graph_revision_before="genesis",
+            graph_revision_after="revision-1",
+            graph_delta_digest=_digest("delta:error-surface"),
+            timestamp=datetime(2026, 1, 1, tzinfo=UTC),
+        )

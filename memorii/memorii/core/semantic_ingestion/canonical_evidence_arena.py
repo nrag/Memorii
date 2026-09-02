@@ -315,6 +315,18 @@ class CanonicalDigestVerificationScope:
     def decoded_entries(self) -> int:
         return len(self._decoded)
 
+    @property
+    def encoded_result_entries(self) -> int:
+        return len(self._encoded_results)
+
+    @property
+    def lowered_value_entries(self) -> int:
+        return len(self._lowered_values)
+
+    @property
+    def roundtrip_entries(self) -> int:
+        return len(self._roundtrips)
+
     def purge(self) -> None:
         self._verified.clear()
         self._encoded_results.clear()
