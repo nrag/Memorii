@@ -24,5 +24,25 @@ is loaded; the quiet-host measurement requires a quiet window by protocol).
 
 ## Progress
 
-- 2026-09-02: opened at `e63d6f8`; implementation begins with CE-1..CE-4
-  (one commit), then CE-5/CE-6, then CE-7/CE-8.
+- 2026-09-02: opened at `e63d6f8`.
+- 2026-09-02 (CE-1..CE-5, commit `da50413`): registry + decode-memo
+  structures on the scope; the deep-immutability gate beside the scope
+  owner (lazy on the memory-evolution side to break the package-init
+  import cycle); the recursive representational-identity guard with
+  backtracking frozenset pairing; the codec proof skip for certified
+  gate-passing instances; digest-verification and round-trip recording
+  points.  Arena + codecs + vector + parity + compatibility green.
+- 2026-09-02 (CE-6/CE-7, commit `99ba698`): graph-family construction
+  recording (create, materialize, snapshot, both reprojection branches,
+  SnapshotGraphRecord admissions, carriers.py), the sharing-rule
+  conversions (record_kind direct reads, `_snapshot_record` passthrough,
+  adapter-line skips with binding checks always running, event-replay
+  carrier direct use), and the decode memo with the limits rule.
+  193 focused tests green; probe digest calls unchanged at 237.
+- 2026-09-02 (CE-8): Phase 4 families landed in the arena suite — the
+  three drift modes (the nested case proven against a gate-passing
+  catalog wrapper with a clean-catalog positive control), gate verdicts
+  for representative types including the gate-failing `ClaimAssertion`,
+  decode-memo identity/limits/persistence, and per-structure purge
+  observers for the new registry and decode memo on close and capacity
+  refusal.

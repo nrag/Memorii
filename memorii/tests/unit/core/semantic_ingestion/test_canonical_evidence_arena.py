@@ -780,3 +780,168 @@ def test_emission_replay_does_not_survive_arena_close() -> None:
         assert arena._emission_scope.emitted_entries >= 1
     assert arena._emission_scope.emitted_entries == 0
     assert arena._emission_scope.retained_bytes == 0
+
+
+def _drift_fixtures():
+    from datetime import timedelta
+
+    from memorii.core.memory_evolution.models import ClaimValueType
+    from memorii.core.semantic_ingestion.contracts import (
+        PredicatePromptContract,
+        TrustDecayStep,
+    )
+
+    prompt = PredicatePromptContract.create(
+        predicate_id="drift-probe",
+        description="drift probe",
+        subject_value_kind="entity",
+        object_value_kind="literal",
+        object_literal_type=ClaimValueType.TEXT,
+        supported_commitments=("asserted",),
+    )
+    step = TrustDecayStep.model_validate(
+        {"minimum_age": timedelta(0), "authority_loss": 3}
+    )
+    return prompt, step, ClaimValueType
+
+
+def test_representational_drift_modes_never_inherit_certification() -> None:
+    from datetime import timedelta
+
+    import memorii.core.semantic_ingestion.contracts as contracts
+    from memorii.core.semantic_ingestion.contracts import (
+        PredicatePromptContract,
+        TrustDecayStep,
+    )
+
+    prompt, _step, _claim_value_type = _drift_fixtures()
+    with CanonicalEvidenceArena(enabled=True) as arena:
+        scope = arena._digest_verification_scope
+        # Top-level lax coercion on a non-strict model: "3" for int passes
+        # the proof (unit-level: the proof instance validates) while the
+        # input keeps the str representation, so the recursive guard
+        # rejects it and certification never happens.
+        coerced = TrustDecayStep.model_construct(
+            minimum_age=timedelta(0), authority_loss="3"
+        )
+        proof = TrustDecayStep.model_validate(
+            {"minimum_age": timedelta(0), "authority_loss": "3"}
+        )
+        assert proof.authority_loss == 3 and coerced.authority_loss == "3"
+        assert contracts._representationally_identical(coerced, proof) is False
+        # Top-level enum restore: a plain str where the enum is declared.
+        enum_drift = PredicatePromptContract.model_construct(
+            **{
+                **prompt.model_dump(mode="python"),
+                "object_literal_type": "text",
+            }
+        )
+        assert contracts.encode_semantic_contract(enum_drift)
+        assert scope.lookup_certified_instance(enum_drift) is None
+        # Nested enum restore at depth >= 2 inside a gate-passing wrapper:
+        # the clean catalog certifies (the discriminator), the drifted twin
+        # with a plain str in predicates[0].object_literal_type does not.
+        clean_catalog = contracts.PredicateProposalCatalog.create(
+            vocabulary_namespace="drift",
+            proposal_capability_fingerprint="0" * 64,
+            predicates=(prompt,),
+            catalog_schema_fingerprint=(
+                contracts.PredicateProposalCatalog._schema_fingerprint.get_default()
+            ),
+        )
+        assert contracts.encode_semantic_contract(clean_catalog)
+        assert scope.lookup_certified_instance(clean_catalog) is not None
+        drifted_prompt = PredicatePromptContract.model_construct(
+            **{
+                **prompt.model_dump(mode="python"),
+                "object_literal_type": "text",
+            }
+        )
+        drifted_catalog = contracts.PredicateProposalCatalog.model_construct(
+            **{
+                **clean_catalog.model_dump(mode="python"),
+                "predicates": (drifted_prompt,),
+            }
+        )
+        assert drifted_catalog == clean_catalog  # equality is type-blind here
+        assert contracts.encode_semantic_contract(drifted_catalog)
+        assert scope.lookup_certified_instance(drifted_catalog) is None
+
+
+def test_deep_immutability_gate_rejects_mutable_families() -> None:
+    from memorii.core.memory_evolution.models import MemoryScope
+    from memorii.core.semantic_ingestion.canonical_evidence_arena import (
+        deeply_immutable_type,
+    )
+    from memorii.core.semantic_ingestion.contracts import (
+        ClaimAssertion,
+        PredicateTrustRule,
+        RetainedSourceTextArtifact,
+    )
+
+    assert deeply_immutable_type(RetainedSourceTextArtifact) is True
+    assert deeply_immutable_type(PredicateTrustRule) is False
+    assert deeply_immutable_type(MemoryScope) is False
+    assert deeply_immutable_type(ClaimAssertion) is False
+
+
+def test_decode_memo_serves_identical_bytes_and_respects_limits(monkeypatch) -> None:
+    import memorii.core.semantic_ingestion.contracts as contracts
+
+    calls = _count_codec_admissions(monkeypatch)
+    artifact = _artifact(artifact_id="decode-memo")
+    raw = encode_semantic_contract(artifact)
+    with CanonicalEvidenceArena(enabled=True):
+        first = contracts.decode_semantic_contract(raw, RetainedSourceTextArtifact)
+        baseline = calls["n"]
+        assert contracts.decode_semantic_contract(raw, RetainedSourceTextArtifact) is first
+        assert calls["n"] == baseline
+        with pytest.raises(SemanticContractCodecError):
+            contracts.decode_semantic_contract(
+                raw, RetainedSourceTextArtifact, max_nodes=2
+            )
+        # The rejected limited call validated nothing and recorded nothing;
+        # the memo still serves unlimited byte-identical decodes.
+        assert calls["n"] == baseline
+        assert contracts.decode_semantic_contract(raw, RetainedSourceTextArtifact) is first
+    assert contracts.decode_semantic_contract(raw, RetainedSourceTextArtifact) is not first
+
+
+def test_registry_and_decode_memo_purge_on_close_and_refusal() -> None:
+    import memorii.core.semantic_ingestion.contracts as contracts
+
+    artifact = _artifact(artifact_id="purge-probe")
+    raw = encode_semantic_contract(artifact)
+    arena = CanonicalEvidenceArena(enabled=True)
+    with arena:
+        contracts.decode_semantic_contract(raw, RetainedSourceTextArtifact)
+        encode_semantic_contract(artifact)
+        scope = arena._digest_verification_scope
+        assert scope.certified_instances >= 1
+        assert scope.decoded_entries >= 1
+        assert len(scope._roundtrips) >= 0
+    assert arena._digest_verification_scope.certified_instances == 0
+    assert arena._digest_verification_scope.decoded_entries == 0
+
+    arena2 = CanonicalEvidenceArena(enabled=True)
+    with arena2:
+        contracts.decode_semantic_contract(raw, RetainedSourceTextArtifact)
+        encode_semantic_contract(artifact)
+        oversized = ValidatedCanonicalEvidenceResult(
+            contract=artifact,
+            canonical_contract_bytes=b"x" * (MAX_CANONICAL_BYTES_PER_ENTRY + 1),
+            canonical_member_index=CanonicalMemberIndex(
+                contract_type="test", member_paths=1, canonical_digest="0" * 64
+            ),
+            validation_provenance=("test",),
+        )
+        assert not arena2.admit_success(
+            canonical_contract_bytes=oversized.canonical_contract_bytes,
+            concrete_contract_type=type(artifact),
+            profile_revision=CANONICAL_PROFILE_REVISION,
+            codec_revision=CANONICAL_CODEC_REVISION,
+            domain=b"domain",
+            result=oversized,
+        )
+        assert arena2._digest_verification_scope.certified_instances == 0
+        assert arena2._digest_verification_scope.decoded_entries == 0
