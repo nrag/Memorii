@@ -80,6 +80,7 @@ from memorii.core.semantic_ingestion.contracts import (
     SourceAuthorityEvidence,
     TextPreparationRequest,
     TimeInterval,
+    certified_roundtrip,
     contract_digest,
     encode_semantic_contract_result,
 )
@@ -861,9 +862,7 @@ class ProviderIngestionCoordinator:
         if isinstance(published, BootstrapRetainedPendingAuthorityUnavailable):
             return None
         try:
-            published_prepared = type(prepared).model_validate(
-                published.model_dump(mode="python")
-            )
+            published_prepared = certified_roundtrip(published)
         except (AttributeError, TypeError, ValueError):
             return None
         retry_assertion = self._atomic_store.assert_current_bootstrap_release(
@@ -961,7 +960,7 @@ class ProviderIngestionCoordinator:
             )
             if prepared is None:
                 return None
-            prepared = type(prepared).model_validate(prepared.model_dump(mode="python"))
+            prepared = certified_roundtrip(prepared)
         except (AttributeError, TypeError, ValueError):
             return None
         if (

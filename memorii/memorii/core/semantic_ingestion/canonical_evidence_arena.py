@@ -12,6 +12,12 @@ from typing import Generic, Literal, TypeVar
 
 from pydantic import BaseModel
 
+from memorii.core.memory_evolution.ingestion_contracts import (
+    CanonicalEmissionScope,
+    pop_emission_scope,
+    push_emission_scope,
+)
+
 MAX_ARENA_ENTRIES = 512
 MAX_CANONICAL_BYTES_PER_ENTRY = 2_097_152
 MAX_MEMBER_PATHS_PER_OPERATION = 32_768
@@ -170,10 +176,20 @@ class CanonicalDigestVerificationScope:
         # cannot be recycled while the entry lives.
         self._encoded_results: dict[int, tuple[object, CanonicalCodecResult]] = {}
         self._encoded_bytes: dict[int, tuple[object, bytes]] = {}
+        # Lowered-payload replay for the semantic codec: the same immutable
+        # member instance lowered once per operation instead of once per
+        # parent computation.  Bounded by the frozen member-path envelope.
+        self._lowered_values: dict[int, tuple[object, object]] = {}
+        # Identity-keyed round-trip replay: an instance whose complete
+        # dump/validate round-trip already succeeded in this operation is
+        # served that proven result; any other instance pays the full path.
+        self._roundtrips: dict[int, tuple[object, object]] = {}
         self._result_reuses = 0
         self._result_records = 0
         self._bytes_reuses = 0
         self._bytes_records = 0
+        self._lowered_records = 0
+        self._roundtrip_reuses = 0
 
     @property
     def reuses(self) -> int:
@@ -237,10 +253,36 @@ class CanonicalDigestVerificationScope:
         self._encoded_bytes[id(value)] = (value, canonical_bytes)
         self._bytes_records += 1
 
+    def lookup_lowered_value(self, value: object) -> object | None:
+        entry = self._lowered_values.get(id(value))
+        if entry is not None and entry[0] is value:
+            return entry[1]
+        return None
+
+    def record_lowered_value(self, value: object, lowered: object) -> None:
+        if len(self._lowered_values) >= MAX_MEMBER_PATHS_PER_OPERATION:
+            return
+        self._lowered_values[id(value)] = (value, lowered)
+        self._lowered_records += 1
+
+    def lookup_roundtrip(self, value: object) -> object | None:
+        entry = self._roundtrips.get(id(value))
+        if entry is not None and entry[0] is value:
+            self._roundtrip_reuses += 1
+            return entry[1]
+        return None
+
+    def record_roundtrip(self, value: object, validated: object) -> None:
+        if len(self._roundtrips) >= MAX_ARENA_ENTRIES:
+            return
+        self._roundtrips[id(value)] = (value, validated)
+
     def purge(self) -> None:
         self._verified.clear()
         self._encoded_results.clear()
         self._encoded_bytes.clear()
+        self._lowered_values.clear()
+        self._roundtrips.clear()
 
 
 _CURRENT_DIGEST_VERIFICATION_SCOPES = threading_local()
@@ -769,6 +811,8 @@ class CanonicalEvidenceArena(AbstractContextManager["CanonicalEvidenceArena"]):
         self._scope = scope
         self._digest_verification_scope = CanonicalDigestVerificationScope()
         self._digest_verification_active = False
+        self._emission_scope = CanonicalEmissionScope()
+        self._emission_scope_active = False
         self._owner = CanonicalClosureScopeOwner(
             coordinator=_PROCESS_RESERVATIONS,
             scope=self._scope,
@@ -904,8 +948,10 @@ class CanonicalEvidenceArena(AbstractContextManager["CanonicalEvidenceArena"]):
     def _inert_verification_scope_after_refusal(self) -> None:
         if self._owner.state == _STATE_REJECTED:
             # Capacity refusal selects the full path: no proven verification
-            # may be reused for the remainder of the operation.
+            # or traversal replay may be reused for the remainder of the
+            # operation.
             self._digest_verification_scope.purge()
+            self._emission_scope.purge()
 
     def lease(
         self,
@@ -961,15 +1007,22 @@ class CanonicalEvidenceArena(AbstractContextManager["CanonicalEvidenceArena"]):
         if self._owner.mode == _OP_MODE_ENABLED:
             _push_digest_verification_scope(self._digest_verification_scope)
             self._digest_verification_active = True
+            push_emission_scope(self._emission_scope)
+            self._emission_scope_active = True
         return self
 
     def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
         if self._digest_verification_active:
             _pop_digest_verification_scope(self._digest_verification_scope)
             self._digest_verification_active = False
-        # The verification memo never outlives its operation, including on
-        # rejection paths that otherwise keep the arena object reachable.
+        if self._emission_scope_active:
+            pop_emission_scope(self._emission_scope)
+            self._emission_scope_active = False
+        # The verification and traversal-replay memos never outlive their
+        # operation, including on rejection paths that otherwise keep the
+        # arena object reachable.
         self._digest_verification_scope.purge()
+        self._emission_scope.purge()
         if exc_type is None:
             self.close()
         else:

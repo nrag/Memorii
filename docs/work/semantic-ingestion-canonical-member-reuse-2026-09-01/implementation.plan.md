@@ -255,8 +255,66 @@ fixtures, diagnostics, CI jobs, or serialized outputs.
   byte-emission cross-check, per-span member digests, whole-tree codec
   revalidation) and non-codec pydantic round-trips.
 
+- 2026-09-01 (CMR-EXP-004/004b shared-instance census,
+  `evidence/cmr-exp-004*-v1.json-line`): 75,325 model-lowering visits across
+  22,833 unique instances — **69.7% of visits are same-instance repeats**,
+  concentrated in the deep prepared-source tree members (text artifacts,
+  spans, proofs; thousands of visits each). Member-granular identity reuse
+  has the coverage the whole-object memo lacked.
+- 2026-09-01 (member-reuse slices landed; profiles CMR-EXP-005..007 in
+  `evidence/`):
+  - **Fused member-splicing emitter**: `encode_typed_value` (unbudgeted
+    path) now emits in one normalize+emit walk (`_emit_canonical`) whose
+    operation-scoped memo replays bytes previously emitted for the same
+    container node — the approved Cross-Root Reuse contract's child-slice
+    consumption. A first two-phase memo attempt saturated its entry bound
+    (measured 32,768/32,768 entries, 15.4MB) and broke node identity
+    mid-tree; the fused form retains only emitted bytes (12MiB cap,
+    256B recording floor, no eviction) and post-order recording fills the
+    deep high-multiplicity members first. The reference two-phase traversal
+    remains authoritative for budgeted (`check`-carrying) encodes, the
+    with-spans pipeline, and the decode canonicity cross-check; the decode
+    check runs unmemoized. Byte identity is gated by a differential suite
+    (all container/wrapper/leaf families, in-scope repeats, shared
+    subtrees) plus the frozen codec/vector/compatibility suites.
+  - **Value-keyed string memo** (strings immutable → value key sound) and
+    **byte-exact canonicity-verdict replay** for `decode_typed_value`
+    (94 decode calls over 28 unique byte strings per delivery; parse and
+    typed validation still run fresh every call — only the redundant
+    re-encode comparison for already-verified bytes replays; bounded
+    variants keep exact behavior).
+  - **Lowering memo** on the digest-verification scope
+    (id-keyed, member-path bound) and an **identity fast path** in
+    `_digest_verification_hit`.
+  - **Lazy schema completion**: `_BootstrapV3Contract.create` resolves its
+    own class from module globals before falling back to the family-wide
+    namespace cascade (15 distinct classes tripped the guard per delivery,
+    each paying a ~114-model rebuild they did not need).
+  - **Certified round-trip replay** (`certified_roundtrip`): the
+    internal-composition `model_validate(model_dump())` sites whose input
+    is an already-validated same-operation instance — the
+    `TextPreparationService.prepare` edge (the validation-boundary design's
+    reference-proven selection), the in-memory and atomic-store prepared
+    source repositories, and the two provider-ingestion post-boundary
+    round-trips — reuse the proven result by identity; any other instance
+    pays the full path. Writer admissions, decode boundaries, and all
+    mandatory boundaries are untouched.
+  - Measured progression (enabled children, quiet machine unless noted):
+    49.0s baseline → ~15.8s (whole-object memo + lean bytes path) →
+    ~9.7s (fused emitter) → ~9.1s (string/canonicity memos + lazy
+    completion). Digest calls exactly **237** in every probe; post-H8
+    accounting asserted in every child. In-process A/B: gc disabled
+    5.8-5.9s vs enabled 6.7-8.6s — the residual is dominated by
+    generational GC over the delivery's live container population
+    (10-22 gen2 collections per delivery), not codec compute.
+  - Machine-load finding: host load average 57-80 from unrelated user
+    processes invalidated later timing probes (38-72s readings); all
+    post-load measurements are deferred to a quiet machine.
+
 ## Next Action
 
-Analyze the CMR-EXP-002 cProfile attribution, then land the first
-implementation slice (codec-level certified-result memo riding the arena's
-digest-verification scope) with focused frozen-suite gates.
+Land the remaining correctness gates for the fused-emitter and round-trip
+slices (mode parity, provider service/compatibility, bootstrap coordinator
+family), then re-measure on a quiet machine (external load invalidated
+timing on 2026-09-01 evening; load average 57-80 from unrelated host
+processes).

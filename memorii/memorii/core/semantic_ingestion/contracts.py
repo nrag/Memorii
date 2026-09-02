@@ -121,9 +121,17 @@ class _CanonicalContractMap(dict[str, object]):
 def canonical_contract_value(value: object) -> object:
     """Lower nested Pydantic values before entering the closed CTV codec."""
     if isinstance(value, BaseModel):
-        return _CanonicalContractMap(
+        reuse_scope = current_digest_verification_scope()
+        if reuse_scope is not None:
+            lowered = reuse_scope.lookup_lowered_value(value)
+            if lowered is not None:
+                return lowered
+        lowered = _CanonicalContractMap(
             {name: canonical_contract_value(getattr(value, name)) for name in type(value).model_fields}
         )
+        if reuse_scope is not None:
+            reuse_scope.record_lowered_value(value, lowered)
+        return lowered
     if isinstance(value, dict):
         return {key: canonical_contract_value(item) for key, item in value.items()}
     if isinstance(value, tuple):
@@ -199,20 +207,46 @@ def _digest_verification_hit(instance: object, declared: str) -> bool:
     Reuse requires the same concrete type and declared digest plus full
     structural equality with the certified instance, so a forged declaration
     can never inherit an entry and always falls through to the full
-    computation.
+    computation.  Identity short-circuits the equality walk for the common
+    same-instance repeat; it proves strictly more than equality.
     """
 
     scope = current_digest_verification_scope()
     if scope is None:
         return False
     certified = scope.lookup_verified(type(instance), declared)
-    return certified is not None and type(certified) is type(instance) and certified == instance
+    return certified is not None and (
+        certified is instance or (type(certified) is type(instance) and certified == instance)
+    )
 
 
 def _record_digest_verification(instance: object, declared: str) -> None:
     scope = current_digest_verification_scope()
     if scope is not None:
         scope.record_verified(type(instance), declared, instance)
+
+
+def certified_roundtrip(value: BaseModel) -> BaseModel:
+    """Round-trip validation of a typed value, reusing proven work by identity.
+
+    Internal composition boundaries re-derive validation from content by
+    dumping and re-validating a value that is already a typed instance of
+    the same contract.  Within one enabled operation, an instance whose
+    complete round-trip already succeeded is served that proven result; any
+    other instance — a fresh construction, a copy, or a forgery — pays the
+    full existing path, so this never validates untrusted input and never
+    weakens a first admission.  Writer admissions and decode boundaries do
+    not use this helper.
+    """
+    scope = current_digest_verification_scope()
+    if scope is not None:
+        cached = scope.lookup_roundtrip(value)
+        if cached is not None:
+            return cached  # type: ignore[return-value]
+    validated = type(value).model_validate(value.model_dump(mode="python"))
+    if scope is not None:
+        scope.record_roundtrip(value, validated)
+    return validated
 
 
 class CandidateTransportError(ValueError):
@@ -7749,7 +7783,13 @@ class _BootstrapV3Contract(_ContentAddressedContract):
     @classmethod
     def create(cls, **values: object):  # type: ignore[no-untyped-def]
         if not cls.__pydantic_complete__:
-            rebuild_bootstrap_graph_effect_contracts()
+            # Resolve this class from its module globals first — the same
+            # resolution pydantic applies lazily at first construction.  Only
+            # the cross-module effect payloads need the full namespace
+            # cascade, so the expensive family-wide rebuild stays a fallback.
+            cls.model_rebuild(raise_errors=False)
+            if not cls.__pydantic_complete__:
+                rebuild_bootstrap_graph_effect_contracts()
         return super().create(schema_version=3, **values)
 
 

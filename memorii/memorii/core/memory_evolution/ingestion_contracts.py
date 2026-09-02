@@ -14,6 +14,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta  # type: ignore[attr-defined]
 from hashlib import sha256
+from threading import local as threading_local
 from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -41,6 +42,147 @@ class CanonicalTypedValueSpan:
     begin: int
     end: int
     value_type: str
+
+
+class CanonicalEmissionScope:
+    """Operation-local replay of pure canonical emission traversals.
+
+    Within one enabled operation the codec repeatedly emits the same
+    immutable container nodes inside different parent computations.  Each
+    memo returns bytes this operation already computed for the exact same
+    input node, so a hit is deterministic-function replay, not validation
+    authority: the first pass ran the complete original traversal, and any
+    freshly built value has a new identity and takes the full path.  Entries
+    hold their key nodes so a keyed identity cannot be recycled while an
+    entry lives.  Traversals that carry a ``check`` budget callback bypass
+    this memo entirely so per-call bound semantics are unchanged.
+    """
+
+    MAX_ENTRIES = 20_480
+    MAX_RETAINED_BYTES = 12 * 1024 * 1024
+    # Subtrees below this size replay cheaper than their memo entries cost
+    # the generational collector: each entry is a tracked tuple retaining a
+    # node tree, so recording is reserved for members whose splice saves
+    # real traversal work.
+    MIN_RECORDABLE_BYTES = 256
+    MAX_STRING_ENTRIES = 131_072
+    MAX_STRING_RETAINED_BYTES = 4 * 1024 * 1024
+    MAX_CANONICITY_ENTRIES = 512
+    MAX_CANONICITY_RETAINED_BYTES = 8 * 1024 * 1024
+
+    def __init__(
+        self,
+        *,
+        max_entries: int = MAX_ENTRIES,
+        max_retained_bytes: int = MAX_RETAINED_BYTES,
+    ) -> None:
+        self._max_entries = max_entries
+        self._max_retained_bytes = max_retained_bytes
+        self._emitted: dict[int, tuple[object, bytes]] = {}
+        self._retained_bytes = 0
+        # Value-keyed scalar-encoding replay: strings are immutable, so a
+        # value key cannot alias mutable state and needs no identity check.
+        self._strings: dict[str, bytes] = {}
+        self._string_retained_bytes = 0
+        # Byte-exact canonicity verdicts: decode still parses and validates
+        # fresh input every call; only the redundant re-encode comparison for
+        # bytes this operation already verified is replayed.
+        self._canonicity_verified: set[bytes] = set()
+        self._canonicity_retained_bytes = 0
+
+    @property
+    def emitted_entries(self) -> int:
+        return len(self._emitted)
+
+    @property
+    def retained_bytes(self) -> int:
+        return self._retained_bytes
+
+    @property
+    def string_entries(self) -> int:
+        return len(self._strings)
+
+    def encode_string(self, value: str) -> bytes:
+        cached = self._strings.get(value)
+        if cached is not None:
+            return cached
+        encoded = _json_string(value)
+        if (
+            len(self._strings) < self.MAX_STRING_ENTRIES
+            and self._string_retained_bytes + len(encoded) <= self.MAX_STRING_RETAINED_BYTES
+        ):
+            self._strings[value] = encoded
+            self._string_retained_bytes += len(encoded)
+        return encoded
+
+    def canonicity_verified(self, raw: bytes) -> bool:
+        return raw in self._canonicity_verified
+
+    def record_canonicity_verified(self, raw: bytes) -> None:
+        if (
+            len(self._canonicity_verified) >= self.MAX_CANONICITY_ENTRIES
+            or self._canonicity_retained_bytes + len(raw) > self.MAX_CANONICITY_RETAINED_BYTES
+        ):
+            return
+        self._canonicity_verified.add(raw)
+        self._canonicity_retained_bytes += len(raw)
+
+    def lookup_emitted(self, node: object) -> bytes | None:
+        entry = self._emitted.get(id(node))
+        if entry is not None and entry[0] is node:
+            return entry[1]
+        return None
+
+    def record_emitted(self, node: object, encoded: bytes) -> None:
+        if len(encoded) < self.MIN_RECORDABLE_BYTES:
+            return
+        if len(self._emitted) >= self._max_entries:
+            return
+        if self._retained_bytes + len(encoded) > self._max_retained_bytes:
+            return
+        self._emitted[id(node)] = (node, encoded)
+        self._retained_bytes += len(encoded)
+
+    def purge(self) -> None:
+        self._emitted.clear()
+        self._retained_bytes = 0
+        self._strings.clear()
+        self._string_retained_bytes = 0
+        self._canonicity_verified.clear()
+        self._canonicity_retained_bytes = 0
+
+
+_CURRENT_EMISSION_SCOPES = threading_local()
+
+
+def current_emission_scope() -> CanonicalEmissionScope | None:
+    """Return the innermost active canonical emission scope, if any."""
+
+    stack: list[CanonicalEmissionScope] | None = getattr(
+        _CURRENT_EMISSION_SCOPES, "stack", None
+    )
+    if not stack:
+        return None
+    return stack[-1]
+
+
+def push_emission_scope(scope: CanonicalEmissionScope) -> None:
+    stack: list[CanonicalEmissionScope] | None = getattr(
+        _CURRENT_EMISSION_SCOPES, "stack", None
+    )
+    if stack is None:
+        stack = []
+        _CURRENT_EMISSION_SCOPES.stack = stack
+    stack.append(scope)
+
+
+def pop_emission_scope(scope: CanonicalEmissionScope) -> None:
+    stack: list[CanonicalEmissionScope] | None = getattr(
+        _CURRENT_EMISSION_SCOPES, "stack", None
+    )
+    if stack is None or not stack or stack[-1] is not scope:
+        raise RuntimeError("canonical emission scope stack is empty or substituted")
+    stack.pop()
 
 
 class _HashableCtvMap(tuple[tuple[str, Any], ...]):
@@ -853,10 +995,127 @@ def _normalized_typed_json(value: Any, *, check: Callable[[], None] | None = Non
 
 def encode_typed_value(value: Any, *, check: Callable[[], None] | None = None) -> bytes:
     """Encode the closed CTV algebra; no runtime numeric coercions are allowed."""
-    return _json(
-        _normalized_typed_json(value, check=check),
-        check=check,
+    if check is not None:
+        return _json(
+            _normalized_typed_json(value, check=check),
+            check=check,
+        )
+    scope = current_emission_scope()
+    if scope is None:
+        return _json(_normalized_typed_json(value))
+    return _emit_canonical(value, scope)
+
+
+def _emit_leaf(value: Any, scope: CanonicalEmissionScope) -> bytes:
+    # Leaf compositions are byte-identical to emitting each normalized leaf
+    # mapping through ``_json`` (keys already in encoded order); the
+    # differential suite in the arena tests asserts the equivalence.
+    if value is None:
+        return b"null"
+    if value is True:
+        return b"true"
+    if value is False:
+        return b"false"
+    if isinstance(value, int) and not isinstance(value, bool):
+        return b'{"$type":"integer","value":"' + str(value).encode("ascii") + b'"}'
+    if isinstance(value, bytes):
+        return b'{"$type":"bytes","value":"' + base64.b64encode(value) + b'"}'
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            raise CanonicalTypedValueError("canonical_datetime_naive")
+        utc = value.astimezone(UTC)
+        return (
+            b'{"$type":"datetime","value":"'
+            + (utc.strftime("%Y-%m-%dT%H:%M:%S.") + f"{utc.microsecond:06d}Z").encode("ascii")
+            + b'"}'
+        )
+    if isinstance(value, timedelta):
+        microseconds = value.days * 86_400_000_000 + value.seconds * 1_000_000 + value.microseconds
+        if not -(2**63) <= microseconds < 2**63:
+            raise CanonicalTypedValueError("canonical_duration_overflow")
+        return b'{"$type":"duration_microseconds","value":"' + str(microseconds).encode("ascii") + b'"}'
+    if isinstance(value, str):
+        return scope.encode_string(value)
+    raise CanonicalTypedValueError("canonical_value_type_invalid")
+
+
+def _emit_sequence(value: Any, tag: str, scope: CanonicalEmissionScope) -> bytes:
+    return (
+        b'{"$type":"' + tag.encode("ascii") + b'","items":['
+        + b",".join(_emit_canonical(item, scope) for item in value)
+        + b"]}"
     )
+
+
+def _emit_set(value: Any, tag: str, scope: CanonicalEmissionScope, *, reject_duplicates: bool) -> bytes:
+    encoded_items = [_emit_canonical(item, scope) for item in value]
+    if reject_duplicates and len(set(encoded_items)) != len(encoded_items):
+        raise CanonicalTypedValueError("canonical_set_duplicate")
+    return (
+        b'{"$type":"' + tag.encode("ascii") + b'","items":['
+        + b",".join(sorted(encoded_items))
+        + b"]}"
+    )
+
+
+def _emit_mapping(value: Mapping[str, Any], scope: CanonicalEmissionScope) -> bytes:
+    if any(not isinstance(key, str) for key in value):
+        raise CanonicalTypedValueError("canonical_map_key_invalid")
+    encoded_entries = sorted(
+        (scope.encode_string(key), _emit_canonical(value[key], scope))
+        for key in _validated_keys(value)
+    )
+    return (
+        b'{"$type":"map","entries":['
+        + b",".join(b"[" + key + b"," + item + b"]" for key, item in encoded_entries)
+        + b"]}"
+    )
+
+
+def _emit_canonical(value: Any, scope: CanonicalEmissionScope) -> bytes:
+    """Emit the canonical form of one value, splicing replayed member bytes.
+
+    This is the fused single-pass form of ``_json(_normalized_typed_json(x))``
+    for unbudgeted traversals: normalization and emission happen in one walk,
+    and an operation-scoped memo replays the exact bytes previously emitted
+    for the same container node.  Byte identity with the reference two-phase
+    encoding is asserted by the differential suite and the frozen codec
+    fixtures.
+    """
+    if value is None or isinstance(value, (bool, str, int, bytes, datetime, timedelta)):
+        return _emit_leaf(value, scope)
+    cached = scope.lookup_emitted(value)
+    if cached is not None:
+        return cached
+    if isinstance(value, _HashableCtvMap):
+        encoded = _emit_mapping(dict(value), scope)
+    elif isinstance(value, _ImmutableCtvList):
+        encoded = _emit_sequence(value, "list", scope)
+    elif isinstance(value, _ImmutableCtvTuple):
+        encoded = _emit_sequence(value, "tuple", scope)
+    elif isinstance(value, _ImmutableCtvSet):
+        encoded = _emit_set(value, "set", scope, reject_duplicates=False)
+    elif isinstance(value, _TagAwareCtvFrozenSet):
+        encoded = _emit_set(value, "frozenset", scope, reject_duplicates=False)
+    elif isinstance(value, _TagAwareCtvSet):
+        encoded = _emit_set(value, "set", scope, reject_duplicates=False)
+    elif isinstance(value, tuple):
+        encoded = _emit_sequence(value, "tuple", scope)
+    elif isinstance(value, list):
+        encoded = _emit_sequence(value, "list", scope)
+    elif isinstance(value, (set, frozenset)):
+        encoded = _emit_set(
+            value,
+            "frozenset" if isinstance(value, frozenset) else "set",
+            scope,
+            reject_duplicates=True,
+        )
+    elif isinstance(value, Mapping):
+        encoded = _emit_mapping(value, scope)
+    else:
+        raise CanonicalTypedValueError("canonical_value_type_invalid")
+    scope.record_emitted(value, encoded)
+    return encoded
 
 
 def encode_typed_value_with_spans(value: Any) -> tuple[bytes, tuple[CanonicalTypedValueSpan, ...]]:
@@ -1031,11 +1290,26 @@ def decode_typed_value(
         )
     except RecursionError as exc:
         raise CanonicalTypedValueError("canonical_typed_value_depth_limit") from exc
+    # The canonicity cross-check always runs the reference two-phase
+    # traversal: decoded trees are freshly built objects whose entries
+    # would never be replayed, and an unmemoized comparison is the
+    # stronger proof.  Byte-exact inputs already verified by this
+    # operation replay only that proven verdict; parsing and typed
+    # validation still execute in full on every call.
+    scope = (
+        current_emission_scope()
+        if max_nodes is None and max_depth is None
+        else None
+    )
+    if scope is not None and scope.canonicity_verified(raw):
+        return result
     try:
-        if encode_typed_value(result) != raw:
+        if _json(_normalized_typed_json(result)) != raw:
             raise CanonicalTypedValueError("canonical_reencode_mismatch")
     except RecursionError as exc:
         raise CanonicalTypedValueError("canonical_typed_value_depth_limit") from exc
+    if scope is not None:
+        scope.record_canonicity_verified(raw)
     return result
 
 

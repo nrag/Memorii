@@ -53,7 +53,7 @@ def main() -> None:
     profiler.disable()
     elapsed = time.perf_counter() - started
 
-    dump_path = EVIDENCE / "cmr-exp-002-profile-v1.pstats"
+    dump_path = EVIDENCE / "cmr-exp-007-profile-current-v1.pstats"
     profiler.dump_stats(str(dump_path))
 
     stats = pstats.Stats(profiler)
@@ -90,7 +90,7 @@ def main() -> None:
     stats_stream.sort_stats("cumulative").print_stats(45)
     stats_stream.sort_stats("tottime").print_stats(45)
     stats_stream.print_callers("validate_python")
-    (EVIDENCE / "cmr-exp-002-profile-v1.txt").write_text(out.getvalue(), encoding="utf-8")
+    (EVIDENCE / "cmr-exp-007-profile-current-v1.txt").write_text(out.getvalue(), encoding="utf-8")
     print(json.dumps(summary, sort_keys=True))
 
 

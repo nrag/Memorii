@@ -30,6 +30,7 @@ from memorii.core.semantic_ingestion.contracts import (
     ProjectionTextSpan,
     SegmentLocalTextSpan,
     SourceSpanReference,
+    certified_roundtrip,
     contract_digest,
 )
 
@@ -55,7 +56,7 @@ class InMemoryPreparedSourceRepository:
         self._lock = RLock()
 
     def publish(self, prepared: PreparedSource) -> PreparedSource:
-        value = PreparedSource.model_validate(prepared.model_dump(mode="python"))
+        value = certified_roundtrip(prepared)
         key = (value.source_id, value.source_digest)
         with self._lock:
             existing = self._values.get(key)
@@ -70,7 +71,7 @@ class InMemoryPreparedSourceRepository:
         if value is None:
             return None
         try:
-            return PreparedSource.model_validate(value.model_dump(mode="python"))
+            return certified_roundtrip(value)
         except ValueError as exc:
             raise ValueError("published prepared source is invalid") from exc
 
@@ -86,7 +87,7 @@ class AtomicStorePreparedSourceRepository:
         published = self._atomic_store.publish_prepared_source(
             prepared, writer_binding=self._writer_binding()
         )
-        return PreparedSource.model_validate(published.model_dump(mode="python"))
+        return certified_roundtrip(published)
 
     def load(self, *, source_id: str, source_digest: str) -> PreparedSource | None:
         value = self._atomic_store.load_prepared_source(
@@ -94,7 +95,7 @@ class AtomicStorePreparedSourceRepository:
         )
         if value is None:
             return None
-        return PreparedSource.model_validate(value.model_dump(mode="python"))
+        return certified_roundtrip(value)
 
 
 class BootstrapTextPreparationProducer:
@@ -431,9 +432,7 @@ class TextPreparationService:
     def prepare(self, request: TextPreparationRequest) -> PreparedSource:
         """Produce and validate exact source authority without publishing it."""
         observation = request.observation
-        prepared = PreparedSource.model_validate(
-            self._producer(request).model_dump(mode="python")
-        )
+        prepared = certified_roundtrip(self._producer(request))
         if (
             prepared.source_id != observation.source_id
             or prepared.source_digest != observation.source_digest

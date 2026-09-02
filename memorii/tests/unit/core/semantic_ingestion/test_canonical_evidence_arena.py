@@ -4,6 +4,10 @@ from hashlib import sha256
 from threading import Barrier, Thread
 
 import pytest
+from memorii.core.memory_evolution.ingestion_contracts import (
+    decode_typed_value,
+    encode_typed_value,
+)
 from memorii.core.semantic_ingestion.canonical_evidence_arena import (
     CANONICAL_CODEC_REVISION,
     CANONICAL_PROFILE_REVISION,
@@ -689,3 +693,90 @@ def test_encoded_bytes_reuse_inert_after_capacity_refusal(monkeypatch) -> None:
         )
         encode_semantic_contract(first)
         assert calls["n"] > baseline
+
+
+def _fused_emission_families() -> list[object]:
+    from datetime import UTC as _UTC
+    from datetime import datetime as _datetime
+    from datetime import timedelta as _timedelta
+
+    scalar_leaves = [
+        None,
+        True,
+        False,
+        0,
+        -17,
+        2**70,
+        "plain",
+        'quote"and\\slash',
+        "ünïcödé✓",
+        "\u0007control",
+        b"\x00\xff\x10",
+        _datetime(2026, 7, 30, 12, 30, 5, 123456, tzinfo=_UTC),
+        _timedelta(days=-1, seconds=7, microseconds=654321),
+    ]
+    families: list[object] = list(scalar_leaves)
+    families.extend(
+        [
+            ["list", ["nested", ["deeper", None, False]]],
+            ("tuple", ("nested", ("deeper", 0, -1))),
+            {"zebra": 1, "alpha": {"beta": [1, 2], "gamma": ("x", "y")}, "mid": None},
+            {"set": {"s", "a", "m"}},
+            {"frozenset": frozenset({"z", "b", "q"})},
+            {"map_with_tuple_keys_value": {"k": (1, 2)}},
+            {"deep": {"a": {"b": {"c": {"d": ["e", ("f", {"g": 7})]}}}}},
+        ]
+    )
+    # Decoded wrapper algebra: sets carrying map/tuple members lower to the
+    # immutable wrapper classes, which the fused emitter must reproduce.
+    # Python cannot write a set of maps literally, so the canonical bytes are
+    # composed from the members' own encodings and decoded back.
+    map_member_a = encode_typed_value({"k": 1})
+    map_member_b = encode_typed_value({"k": 2})
+    set_of_maps_raw = (
+        b'{"$type":"set","items":['
+        + b",".join(sorted([map_member_a, map_member_b]))
+        + b"]}"
+    )
+    families.append(decode_typed_value(set_of_maps_raw))
+    encoded_tagged = encode_typed_value({"members": {("t", 1), ("t", 2)}})
+    families.append(decode_typed_value(encoded_tagged))
+    return families
+
+
+def test_fused_emission_matches_reference_two_phase_across_container_families() -> None:
+    import memorii.core.memory_evolution.ingestion_contracts as ctv
+
+    families = _fused_emission_families()
+    for value in families:
+        reference = ctv._json(ctv._normalized_typed_json(value))
+        assert encode_typed_value(value) == reference
+        with CanonicalEvidenceArena(enabled=True):
+            first = encode_typed_value(value)
+            assert first == reference
+            assert encode_typed_value(value) == reference
+        assert encode_typed_value(value) == reference
+
+
+def test_fused_emission_splices_shared_subtrees_byte_identically() -> None:
+    shared = {"shared": ["subtree", {"inner": (1, 2, 3)}]}
+    parent_one = {"first": shared, "tail": 1}
+    parent_two = {"second": shared, "tail": 2}
+    with CanonicalEvidenceArena(enabled=True):
+        one = encode_typed_value(parent_one)
+        two = encode_typed_value(parent_two)
+    assert one == encode_typed_value(parent_one)
+    assert two == encode_typed_value(parent_two)
+
+
+def test_emission_replay_does_not_survive_arena_close() -> None:
+    import memorii.core.memory_evolution.ingestion_contracts as ctv
+
+    # The replay memo records only substantial subtrees, so the fixture must
+    # exceed the recording floor to observe entries and their purge.
+    value = {"close": ["scope", {"probe": (4, 5)}], "padding": "p" * 512}
+    with CanonicalEvidenceArena(enabled=True) as arena:
+        assert encode_typed_value(value) == ctv._json(ctv._normalized_typed_json(value))
+        assert arena._emission_scope.emitted_entries >= 1
+    assert arena._emission_scope.emitted_entries == 0
+    assert arena._emission_scope.retained_bytes == 0

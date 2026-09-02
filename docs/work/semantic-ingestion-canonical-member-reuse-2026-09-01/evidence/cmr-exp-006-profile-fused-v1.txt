@@ -1,0 +1,115 @@
+         29583169 function calls (24156061 primitive calls) in 24.383 seconds
+
+   Ordered by: cumulative time
+   List reduced from 1938 to 45 due to restriction <45>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000   24.400   24.400 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_coordinator_v3.py:797(_delivery)
+        1    0.000    0.000   24.399   24.399 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/provider/service.py:611(sync_event)
+        1    0.000    0.000   24.376   24.376 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/provider/service.py:688(_ingest_event)
+        1    0.000    0.000   24.034   24.034 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/provider/ingestion.py:259(ingest)
+        1    0.000    0.000   23.470   23.470 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/provider/ingestion.py:1008(_run_semantic_ingestion)
+        1    0.000    0.000   15.410   15.410 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/semantic_ingestion/bootstrap_graph_host.py:56(execute)
+405948/22754    0.905    0.000   11.676    0.001 {method 'join' of 'bytes' objects}
+197438/97181    0.546    0.000    9.757    0.000 {built-in method builtins.sorted}
+        1    0.000    0.000    8.907    8.907 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/semantic_ingestion/bootstrap_graph_builtin.py:431(build_builtin_bootstrap_graph_execution_v3)
+        1    0.001    0.001    8.907    8.907 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/semantic_ingestion/bootstrap_graph_builtin.py:281(build)
+     5491    0.008    0.000    8.585    0.002 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/ingestion_contracts.py:943(encode_typed_value)
+586035/5491    1.023    0.000    8.570    0.002 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/ingestion_contracts.py:1022(_emit_canonical)
+81249/5081    0.383    0.000    8.467    0.002 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/ingestion_contracts.py:1008(_emit_mapping)
+627569/33872    0.604    0.000    8.248    0.000 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/ingestion_contracts.py:1011(<genexpr>)
+2902/1866    0.993    0.000    7.864    0.004 {method 'validate_python' of 'pydantic_core._pydantic_core.SchemaValidator' objects}
+       57    0.017    0.000    7.809    0.137 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/semantic_ingestion/contracts.py:13130(decode_semantic_contract)
+       96    0.025    0.000    7.268    0.076 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/ingestion_contracts.py:1118(decode_typed_value)
+13030/6430    0.045    0.000    6.838    0.001 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/ingestion_contracts.py:989(_emit_sequence)
+37563/20686    0.020    0.000    6.785    0.000 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/ingestion_contracts.py:992(<genexpr>)
+        1    0.000    0.000    6.498    6.498 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/semantic_ingestion/bootstrap_graph_coordinator.py:62(coordinate)
+  812/804    0.001    0.000    5.869    0.007 /Users/nandaraghunathan/Code/Memorii/Memorii/.venv/lib/python3.12/site-packages/pydantic/main.py:693(model_validate)
+        1    0.000    0.000    5.864    5.864 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/semantic_ingestion/bootstrap_graph_coordinator.py:167(_execute_attempt)
+965183/207472    1.635    0.000    5.643    0.000 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/ingestion_contracts.py:803(_json)
+      186    0.001    0.000    5.594    0.030 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/semantic_ingestion/contracts.py:7757(create)
+        3    0.002    0.001    5.118    1.706 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/atomic_store.py:2152(recover_bootstrap_v3_source_normalization)
+     2019    0.019    0.000    5.051    0.003 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/semantic_ingestion/contracts.py:200(contract_digest)
+        3    0.001    0.000    5.021    1.674 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/semantic_ingestion/source_normalization_repository.py:190(validate_bootstrap_v3_reloaded_members)
+204372/579    0.153    0.000    4.656    0.008 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/ingestion_contracts.py:828(<genexpr>)
+862247/810    0.468    0.000    4.647    0.006 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/ingestion_contracts.py:818(<genexpr>)
+      266    0.006    0.000    4.386    0.016 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/semantic_ingestion/contracts.py:4128(create)
+        1    0.000    0.000    3.980    3.980 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/semantic_ingestion/source_normalization_execution.py:357(normalize_after_recovery_claim)
+        1    0.000    0.000    3.980    3.980 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/semantic_ingestion/source_normalization_execution.py:500(_normalize_bootstrap_v3)
+       24    0.002    0.000    3.938    0.164 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/semantic_ingestion/source_normalization_repository.py:214(decode_bounded)
+      120    0.006    0.000    3.930    0.033 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/semantic_ingestion/contracts.py:13098(encode_semantic_contract)
+  1721525    1.895    0.000    3.753    0.000 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/ingestion_contracts.py:792(_json_string)
+        1    0.000    0.000    3.603    3.603 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/semantic_ingestion/source_normalization_stage.py:252(normalize)
+        1    0.001    0.001    3.137    3.137 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/atomic_store.py:4410(reload_bootstrap_semantic_reduction_authority_v3)
+2090/1779    0.003    0.000    3.035    0.002 /Users/nandaraghunathan/Code/Memorii/Memorii/.venv/lib/python3.12/site-packages/pydantic/main.py:253(__init__)
+    39059    0.042    0.000    3.007    0.000 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/semantic_ingestion/contracts.py:4113(validate_content_digest)
+        1    0.001    0.001    2.748    2.748 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/semantic_ingestion/bootstrap_graph_coordinator.py:462(_finalize_attempt)
+        1    0.000    0.000    2.714    2.714 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/semantic_ingestion/source_normalization_repository.py:299(normalize)
+        1    0.000    0.000    2.714    2.714 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/semantic_ingestion/source_normalization_repository.py:74(publish_and_reload)
+  9889093    2.447    0.000    2.608    0.000 {built-in method builtins.isinstance}
+       96    0.006    0.000    2.538    0.026 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/ingestion_contracts.py:850(_strict_json)
+   480705    0.906    0.000    2.439    0.000 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/ingestion_contracts.py:956(_emit_leaf)
+
+
+         29583169 function calls (24156061 primitive calls) in 24.383 seconds
+
+   Ordered by: internal time
+   List reduced from 1938 to 45 due to restriction <45>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+  9889093    2.447    0.000    2.608    0.000 {built-in method builtins.isinstance}
+  1721525    1.895    0.000    3.753    0.000 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/ingestion_contracts.py:792(_json_string)
+965183/207472    1.635    0.000    5.643    0.000 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/ingestion_contracts.py:803(_json)
+  1721525    1.208    0.000    1.208    0.000 {method 'search' of 're.Pattern' objects}
+586035/5491    1.023    0.000    8.570    0.002 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/ingestion_contracts.py:1022(_emit_canonical)
+2902/1866    0.993    0.000    7.864    0.004 {method 'validate_python' of 'pydantic_core._pydantic_core.SchemaValidator' objects}
+377824/55944    0.986    0.000    1.296    0.000 /Users/nandaraghunathan/Code/Memorii/Memorii/.venv/lib/python3.12/site-packages/pydantic/main.py:1164(__eq__)
+  2583400    0.967    0.000    0.967    0.000 {method 'encode' of 'str' objects}
+   480705    0.906    0.000    2.439    0.000 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/ingestion_contracts.py:956(_emit_leaf)
+405948/22754    0.905    0.000   11.676    0.001 {method 'join' of 'bytes' objects}
+      428    0.797    0.002    0.806    0.002 /Users/nandaraghunathan/Code/Memorii/Memorii/.venv/lib/python3.12/site-packages/pydantic/plugin/_schema_validator.py:22(create_schema_validator)
+436215/428    0.699    0.000    1.026    0.002 /Users/nandaraghunathan/Code/Memorii/Memorii/.venv/lib/python3.12/site-packages/pydantic/_internal/_schema_gather.py:96(traverse_schema)
+627569/33872    0.604    0.000    8.248    0.000 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/ingestion_contracts.py:1011(<genexpr>)
+197438/97181    0.546    0.000    9.757    0.000 {built-in method builtins.sorted}
+222794/4291    0.523    0.000    0.994    0.000 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/semantic_ingestion/contracts.py:121(canonical_contract_value)
+862247/810    0.468    0.000    4.647    0.006 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/ingestion_contracts.py:818(<genexpr>)
+105938/97    0.460    0.000    1.310    0.014 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/ingestion_contracts.py:872(_normalized_typed_json)
+   627569    0.421    0.000    0.421    0.000 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/ingestion_contracts.py:1017(<genexpr>)
+81249/5081    0.383    0.000    8.467    0.002 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/ingestion_contracts.py:1008(_emit_mapping)
+105058/96    0.369    0.000    1.045    0.011 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/ingestion_contracts.py:1126(_decode_typed_value)
+   149651    0.347    0.000    0.598    0.000 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/ingestion_contracts.py:832(_validated_keys)
+  1150007    0.330    0.000    0.335    0.000 {built-in method builtins.getattr}
+   949684    0.312    0.000    0.314    0.000 {method 'get' of 'dict' objects}
+216125/140    0.304    0.000    0.449    0.003 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/semantic_ingestion/contracts.py:13154(restore_closed_wire_enums)
+154800/152182    0.270    0.000    0.802    0.000 {built-in method builtins.any}
+   627569    0.255    0.000    0.353    0.000 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/ingestion_contracts.py:1009(<genexpr>)
+     8590    0.245    0.000    0.245    0.000 {built-in method _hashlib.openssl_sha256}
+   432507    0.196    0.000    0.313    0.000 /Users/nandaraghunathan/Code/Memorii/Memorii/.venv/lib/python3.12/site-packages/pydantic/_internal/_schema_gather.py:69(traverse_metadata)
+114075/1494    0.194    0.000    0.418    0.000 /usr/local/Cellar/python@3.12/3.12.14/Frameworks/Python.framework/Versions/3.12/lib/python3.12/copy.py:118(deepcopy)
+     2152    0.155    0.000    0.243    0.000 /Users/nandaraghunathan/Code/Memorii/Memorii/.venv/lib/python3.12/site-packages/pydantic/main.py:427(model_dump)
+    33923    0.153    0.000    0.153    0.000 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/ingestion_contracts.py:841(_pairs)
+204372/579    0.153    0.000    4.656    0.008 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/ingestion_contracts.py:828(<genexpr>)
+   204372    0.107    0.000    0.381    0.000 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/ingestion_contracts.py:824(<genexpr>)
+    65086    0.104    0.000    0.138    0.000 /Users/nandaraghunathan/Code/Memorii/Memorii/.venv/lib/python3.12/site-packages/pydantic/_internal/_model_construction.py:364(init_private_attributes)
+93330/2736    0.100    0.000    0.254    0.000 /Users/nandaraghunathan/Code/Memorii/Memorii/.venv/lib/python3.12/site-packages/pydantic/json_schema.py:2635(_make_json_hashable)
+    95360    0.098    0.000    0.154    0.000 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/ingestion_contracts.py:89(record_emitted)
+   105330    0.097    0.000    0.182    0.000 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/ingestion_contracts.py:83(lookup_emitted)
+352445/352385    0.091    0.000    0.091    0.000 {built-in method builtins.len}
+     2515    0.090    0.000    0.090    0.000 {method 'to_python' of 'pydantic_core._pydantic_core.SchemaSerializer' objects}
+    41777    0.084    0.000    1.394    0.000 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/semantic_ingestion/contracts.py:204(_digest_verification_hit)
+   204372    0.081    0.000    0.106    0.000 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/ingestion_contracts.py:820(<genexpr>)
+   301776    0.074    0.000    0.074    0.000 {built-in method builtins.id}
+     1238    0.073    0.000    0.073    0.000 {built-in method binascii.b2a_base64}
+       96    0.072    0.001    0.225    0.002 /usr/local/Cellar/python@3.12/3.12.14/Frameworks/Python.framework/Versions/3.12/lib/python3.12/json/decoder.py:344(raw_decode)
+   103088    0.069    0.000    0.541    0.000 /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/ingestion_contracts.py:935(<lambda>)
+
+
+   Ordered by: internal time
+   List reduced from 1938 to 1 due to restriction <'validate_python'>
+
+Function                                                                              was called by...
+                                                                                          ncalls  tottime  cumtime
+{method 'validate_python' of 'pydantic_core._pydantic_core.SchemaValidator' objects}  <- 2090/1779    0.075    2.292  /Users/nandaraghunathan/Code/Memorii/Memorii/.venv/lib/python3.12/site-packages/pydantic/main.py:253(__init__)
+                                                                                         812/804    0.917    5.614  /Users/nandaraghunathan/Code/Memorii/Memorii/.venv/lib/python3.12/site-packages/pydantic/main.py:693(model_validate)
+
+
