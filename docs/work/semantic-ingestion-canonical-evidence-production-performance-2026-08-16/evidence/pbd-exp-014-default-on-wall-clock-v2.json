@@ -1,0 +1,217 @@
+{
+  "content_digest_calls": {
+    "disabled": [
+      43756
+    ],
+    "enabled": [
+      237
+    ]
+  },
+  "digest_call_reduction_fraction": 0.9945835999634336,
+  "distributions_seconds": {
+    "disabled": {
+      "maximum": 130.5017480259994,
+      "mean": 109.12453475799994,
+      "median": 109.86540687599336,
+      "minimum": 73.38319648298784,
+      "population_stdev": 19.716451340897652
+    },
+    "enabled": {
+      "maximum": 62.94004517799476,
+      "mean": 48.729347287595736,
+      "median": 48.996435615001246,
+      "minimum": 36.62423008697806,
+      "population_stdev": 8.608198284066473
+    }
+  },
+  "enabled_median_reduction_fraction": 0.55403218348516,
+  "experiment": "PBD-EXP-014",
+  "historical_anchor": {
+    "note": "Pre-H8 tree, frozen 2026-08-16 scenario: safe_reference median 0.9046s with 833 content-digest validations; persisted-reload counterfactual median 0.8073s with 777 (pbd-exp-004-duplicate-step2-v1.json). The 2026-08-16 runner rendering no longer exists; this harness is not a controlled comparison against that tree."
+  },
+  "manifest": {
+    "child_timeout_seconds": 240,
+    "delivery_content": "Atlas owner is Alice.",
+    "order": [
+      {
+        "mode": "disabled",
+        "ordinal": 0,
+        "sample": 4
+      },
+      {
+        "mode": "disabled",
+        "ordinal": 1,
+        "sample": 0
+      },
+      {
+        "mode": "disabled",
+        "ordinal": 2,
+        "sample": 2
+      },
+      {
+        "mode": "enabled",
+        "ordinal": 3,
+        "sample": 3
+      },
+      {
+        "mode": "enabled",
+        "ordinal": 4,
+        "sample": 2
+      },
+      {
+        "mode": "enabled",
+        "ordinal": 5,
+        "sample": 0
+      },
+      {
+        "mode": "disabled",
+        "ordinal": 6,
+        "sample": 3
+      },
+      {
+        "mode": "disabled",
+        "ordinal": 7,
+        "sample": 1
+      },
+      {
+        "mode": "enabled",
+        "ordinal": 8,
+        "sample": 1
+      },
+      {
+        "mode": "enabled",
+        "ordinal": 9,
+        "sample": 4
+      }
+    ],
+    "random_seed": 20260827,
+    "samples_per_mode": 5,
+    "script_sha256": "19153b6931e6a3983e7aa2a94c887dbcdb9b5a4e2264f1ac254ce4c1d30f9cf6"
+  },
+  "measures": "One deterministic corpus delivery through the public sync_event root on the current tree: default substituted path versus explicitly disabled full-validation path; identical durable outputs and post-H8 lifecycle accounting asserted in every child.",
+  "output_sha256_samples": [
+    "1f3dc9ce632a801636a303cc08c0b561ecf26e7b7b9dcee0967689ecd53ce171",
+    "2a98850066d2088d13dd9df6e624ee834a17ebe8b08c779c2c511c1a281ae105",
+    "2de586aea52d409cacce9e663bef339d1137e779a3eb3ff9ea6a3390206a4132",
+    "303b0e5b07e43e657ecb247125efa82284e9558eb277935e6a6c8c6a7c808e01",
+    "48c1511a2209e1d9ffe930e2b46bb90f192b536e9e060501ac61212962b543f7",
+    "4b95931d0a3e217888fd31aff384f07f47d28f4e66e3c1c2dc5015b4756770b4",
+    "711c1f8b6bef5a5017ec5610e70cde15ce7997e971c5fff216517f862e789ad5",
+    "87543e82c206febc2208a2ac2f825ffc7cea53f89e2243cb3ab5c1a4c20eaa3d",
+    "b98c9d0eead6ce301e00b1523599cd57512482322b43b46dcfe34b8aaf6d6e76",
+    "f69dd44602ca354c5ee2ad689ed0cf2b81ba6f256fdc781e99423733ddbffefa"
+  ],
+  "runs": [
+    {
+      "bootstrap_publish_calls": 1,
+      "content_digest_calls": 43756,
+      "elapsed_seconds": 73.38319648298784,
+      "mode": "disabled",
+      "ordinal": 0,
+      "output_sha256": "1f3dc9ce632a801636a303cc08c0b561ecf26e7b7b9dcee0967689ecd53ce171",
+      "producer_calls": 1,
+      "sample": 4,
+      "semantic_publish_calls": 0
+    },
+    {
+      "bootstrap_publish_calls": 1,
+      "content_digest_calls": 43756,
+      "elapsed_seconds": 123.54925378900953,
+      "mode": "disabled",
+      "ordinal": 1,
+      "output_sha256": "87543e82c206febc2208a2ac2f825ffc7cea53f89e2243cb3ab5c1a4c20eaa3d",
+      "producer_calls": 1,
+      "sample": 0,
+      "semantic_publish_calls": 0
+    },
+    {
+      "bootstrap_publish_calls": 1,
+      "content_digest_calls": 43756,
+      "elapsed_seconds": 108.32306861600955,
+      "mode": "disabled",
+      "ordinal": 2,
+      "output_sha256": "b98c9d0eead6ce301e00b1523599cd57512482322b43b46dcfe34b8aaf6d6e76",
+      "producer_calls": 1,
+      "sample": 2,
+      "semantic_publish_calls": 0
+    },
+    {
+      "bootstrap_publish_calls": 1,
+      "content_digest_calls": 237,
+      "elapsed_seconds": 50.63667373399949,
+      "mode": "enabled",
+      "ordinal": 3,
+      "output_sha256": "303b0e5b07e43e657ecb247125efa82284e9558eb277935e6a6c8c6a7c808e01",
+      "producer_calls": 1,
+      "sample": 3,
+      "semantic_publish_calls": 0
+    },
+    {
+      "bootstrap_publish_calls": 1,
+      "content_digest_calls": 237,
+      "elapsed_seconds": 36.62423008697806,
+      "mode": "enabled",
+      "ordinal": 4,
+      "output_sha256": "2a98850066d2088d13dd9df6e624ee834a17ebe8b08c779c2c511c1a281ae105",
+      "producer_calls": 1,
+      "sample": 2,
+      "semantic_publish_calls": 0
+    },
+    {
+      "bootstrap_publish_calls": 1,
+      "content_digest_calls": 237,
+      "elapsed_seconds": 44.449351824005134,
+      "mode": "enabled",
+      "ordinal": 5,
+      "output_sha256": "f69dd44602ca354c5ee2ad689ed0cf2b81ba6f256fdc781e99423733ddbffefa",
+      "producer_calls": 1,
+      "sample": 0,
+      "semantic_publish_calls": 0
+    },
+    {
+      "bootstrap_publish_calls": 1,
+      "content_digest_calls": 43756,
+      "elapsed_seconds": 109.86540687599336,
+      "mode": "disabled",
+      "ordinal": 6,
+      "output_sha256": "4b95931d0a3e217888fd31aff384f07f47d28f4e66e3c1c2dc5015b4756770b4",
+      "producer_calls": 1,
+      "sample": 3,
+      "semantic_publish_calls": 0
+    },
+    {
+      "bootstrap_publish_calls": 1,
+      "content_digest_calls": 43756,
+      "elapsed_seconds": 130.5017480259994,
+      "mode": "disabled",
+      "ordinal": 7,
+      "output_sha256": "711c1f8b6bef5a5017ec5610e70cde15ce7997e971c5fff216517f862e789ad5",
+      "producer_calls": 1,
+      "sample": 1,
+      "semantic_publish_calls": 0
+    },
+    {
+      "bootstrap_publish_calls": 1,
+      "content_digest_calls": 237,
+      "elapsed_seconds": 48.996435615001246,
+      "mode": "enabled",
+      "ordinal": 8,
+      "output_sha256": "48c1511a2209e1d9ffe930e2b46bb90f192b536e9e060501ac61212962b543f7",
+      "producer_calls": 1,
+      "sample": 1,
+      "semantic_publish_calls": 0
+    },
+    {
+      "bootstrap_publish_calls": 1,
+      "content_digest_calls": 237,
+      "elapsed_seconds": 62.94004517799476,
+      "mode": "enabled",
+      "ordinal": 9,
+      "output_sha256": "2de586aea52d409cacce9e663bef339d1137e779a3eb3ff9ea6a3390206a4132",
+      "producer_calls": 1,
+      "sample": 4,
+      "semantic_publish_calls": 0
+    }
+  ],
+  "schema": "memorii.semantic-ingestion.production-performance.default-on-wall-clock.v2"
+}
