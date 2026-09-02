@@ -2,7 +2,7 @@
 
 - Work ID: `semantic-ingestion-construction-elimination-2026-09-02`
 - Work type: `design`
-- Status: `active`
+- Status: `complete`
 - Coordinator: sole writer (main thread)
 - Created: 2026-09-02
 - Last updated: 2026-09-02
@@ -108,8 +108,10 @@ boundary classification):
    deep-immutability gate: the type and every nested model type are
    `frozen=True`, no field annotation anywhere in its parameter tree
    (including inside tuple/union/`Annotated` arguments) contains
-   `Mapping`/`dict`/`list`/`set` or any mutable `Sequence`, and no field
-   is annotated `object`/`Any`. The check is computed once per concrete
+   `Mapping`/`dict`/`list`/`set` or any mutable `Sequence`, no field is
+   annotated `object`/`Any`, and no field is annotated with a bare or
+   non-frozen model type (including `BaseModel` itself — `BaseModel`'s
+   own config is not frozen). The check is computed once per concrete
    type at first encounter and cached; cached verdicts are never
    invalidated. Gate-failing kinds — including `ClaimAssertion`, whose
    annotation tree contains the `PredicateTrustRule` mappings, making it
@@ -119,10 +121,20 @@ boundary classification):
    construction isolation. Attribute reads that never share an instance
    (the `record_kind` conversions at `graph_planning.py:1002-1004`,
    `:1497`, and the `payload_record_kind` property) need no gate.
-   Reviewer-measured failing set at the frozen baseline: **57 of the 333**
-   decode roots fail (16 via the `Mapping` sites, 41 via the non-frozen
-   `MemoryScope`, 1 via the non-frozen `SourceObservation`, one root
-   double-counted across the first two buckets).
+   Exhaustively derived failing set at the frozen baseline (final-gate
+   derivation, superseding the intermediate 57/276 figures): **59 of the
+   333** decode roots fail — 16 via the `Mapping` sites, 41 via the
+   non-frozen `MemoryScope`, 1 via the non-frozen `SourceObservation`
+   (one root double-counted across the first two buckets), and 2
+   (`GraphSemanticSnapshotBundleV3`, `BootstrapGraphSnapshotAuthorityV3`)
+   via the bare `BaseModel` annotation on `SnapshotGraphRecord.payload`,
+   through which a gate-passing-only reading would share embedded
+   `ClaimAssertion` instances; 274 pass. Two landed identity-keyed
+   behaviors also meet the sharing-consumer definition and are
+   explicitly exempt from this design's enumeration as preserved landed
+   behavior: `certified_roundtrip`'s hit returning its cached validated
+   twin, and `encode_semantic_contract_result`'s `_encoded_results` hit
+   returning its cached result.
 5. Writer admissions and the arena's sealed-lease lifecycle are untouched.
 6. Canonical bytes, digests, persisted schemas, and replay semantics are
    byte-identical (gated by the frozen suites and the diametric parity
@@ -185,11 +197,17 @@ instance that was validated (the established house semantics of
   StrEnum equality making `input == proof` true), and **nested enum
   restore at depth >= 2** (a plain `str` inside
   `predicates[i].object_literal_type` of a gate-passing root passes the
-  one-level guard end-to-end and would be certified and shared; 145 of
-  the 276 gate-passing roots carry such leaves). The recursion domain is
-  closed for gate-passing types (rule 4 excludes every mutable container
-  and `object`/`Any` field, so every node is a frozen model, tuple,
-  frozenset, or immutable scalar), making the check total.
+  one-level guard end-to-end and would be certified and shared). For
+  **frozenset nodes the letter requires an explicit element pairing**:
+  plain set equality and `(exact type, ==)`-paired multiset matching are
+  both insufficient (set `==` is type-blind at element interiors; nested
+  frozensets defeat terminal pairing), so implementations must pair
+  elements by canonical-encoding sort (or an equivalent recursive
+  multiset matcher over encodings) before applying the per-node check.
+  The recursion domain is closed for gate-passing types (rule 4 excludes
+  every mutable container, `object`/`Any` field, and bare/non-frozen
+  model annotation, so every node is a frozen model, tuple, frozenset,
+  or immutable scalar), making the check total.
 - **Graph-family construction** — one shared owner helper wraps the
   complete-validation construction sites for the graph-record unions and
   records the constructed instance: `_GraphRecord.create`
@@ -314,8 +332,8 @@ Verified sites (complete family from review round 1):
 | Forgery (identity) | `model_construct` instance (content-valid or invalid) reaching any consumer | full path; if its content never validated here it is uncertified — invalid content rejected with the existing error; valid content validated fresh | arena suite, extended per consumer |
 | Forgery (copy) | `model_copy(update=...)` of a certified instance | new identity → full path; invalid update rejected exactly as today | arena suite + new consumer owners |
 | Copy (content-equal) | plain `model_copy` of a certified instance at the **identity/byte-keyed structures** (instance registry, decode memo, fix-1/2/3 consumers) | new identity → full path (conservative). The landed `_verified` digest registry's substitution hit for a content-equal copy is unchanged behavior (rule 2(b)) | arena suite |
-| Representational drift | all three empirically confirmed modes: top-level lax coercion (`"3"` for `int`), top-level enum restore (plain `str` for `ClaimValueType`), and nested enum restore at depth >= 2 (`predicates[i].object_literal_type`) | input fails the recursive representational-identity guard at its depth → not certified → full path; never shared | arena suite |
-| Immutability gate | the 57 reviewer-measured gate-failing decode-root kinds at every sharing consumer — including `ClaimAssertion` at the fix-3 consumers | full fresh construction and revalidation; per-type cached verdict rejects them | arena suite (shared consumer family) |
+| Representational drift | all empirically confirmed modes: top-level lax coercion (`"3"` for `int`), top-level enum restore (plain `str` for `ClaimValueType`), nested enum restore at depth >= 2 (`predicates[i].object_literal_type`), and drift nested inside frozensets (including frozenset-of-frozensets) | input fails the recursive representational-identity guard (with the pinned frozenset element pairing) at its depth → not certified → full path; never shared | arena suite |
+| Immutability gate | the 59 exhaustively derived gate-failing decode-root kinds at every sharing consumer — including `ClaimAssertion` at the fix-3 consumers and the two bare-`BaseModel`-payload snapshot bundles at the fix-2 memo | full fresh construction and revalidation; per-type cached verdict rejects them | arena suite (shared consumer family) |
 | Immutability gate | a type whose annotation parameter tree contains `Mapping`/`dict`/`list`/`set` or a mutable `Sequence` anywhere — direct, nested-model, or inside tuple/union/`Annotated` arguments — or an `object`/`Any`-annotated field | rejected by the first-encounter computation → full path; cached verdicts are never invalidated (nothing is recomputed) | arena suite |
 | Cross-operation | post-close lookup miss **per structure**. Complete family: the seven `CanonicalDigestVerificationScope` structures (`_verified`, `_encoded_results`, `_encoded_bytes`, `_lowered_values`, `_roundtrips`, the new instance registry, the new decode memo) plus the emission scope's `_emitted`/`_strings`/`_canonicity_verified`. Observed today: `_verified`, `_encoded_bytes`, `_emitted` only — new close-purge observers required for `_encoded_results`, `_lowered_values`, `_roundtrips`, the instance registry, and the decode memo | post-close full-path re-execution observed via the existing arena-suite counter pattern (behavioral miss primary); per-structure count properties per the Phase 5 identity budget | arena suite |
 | Capacity refusal | over-limit entry after refusal | same complete family, same observation mechanism — one refusal-purge observer per currently-unobserved structure | arena suite |
@@ -325,7 +343,7 @@ Verified sites (complete family from review round 1):
 | Determinism | digest-call counts across repeated deliveries | identical within a mode | PBD-EXP-014 v2 harness |
 | Byte identity | frozen codec/vector/compatibility suites; fused-vs-reference differential; diametric parity; certified-path bytes at converted sites | green; canonical bytes unchanged | existing suites + converted-site owners |
 | Concurrency | two arenas on separate threads | per-arena memo/registry counters differ; a thread-A-certified instance misses in thread B (discriminating assertion; the existing nonce test does not discriminate memo cross-talk) | arena suite |
-| Aliasing (fix 2) | mutation attempt on a shared decoded model | frozen models reject assignment; every gate-failing kind is never shared (57 at the frozen baseline) | arena suite |
+| Aliasing (fix 2) | mutation attempt on a shared decoded model | frozen models reject assignment; every gate-failing kind is never shared (59 at the frozen baseline) | arena suite |
 | Graph sites | uncertified `item` (dict or bypass-constructed) at every converted site | adapter path and existing errors preserved | graph owners |
 | Graph bindings | **certified** payload with corrupted envelope binding fields (`record_id`/`record_version`/`record_digest`/fingerprints) inside an active arena | `snapshot_graph_record_binding_mismatch` still raised — the skip never drops the binding checks | graph owner (the existing corruption matrix runs without an arena and cannot catch this) |
 | Replay surface | forged/bypass-constructed carrier → `build_semantic_memory_event` | exact `SemanticEventReplayError` type and message (currently unpinned anywhere — test-first) | replay owner |
@@ -447,6 +465,43 @@ No `blocks_approval` findings. Both round-3 P2s are resolved by
 reconstructing the sharing boundary as one closed rule rather than
 another patch.
 
+## Final Gate And Approval Decision (2026-09-02)
+
+Candidate v4 SHA-256:
+`dbc20978c5d1113eaeb3b4fd07ae7adf322b2169f4f8cd01d3ba2b1e349ca12e` at
+commit `71ae1cb`. Final correctness verification on the two round-3
+reconstructions: **the recursive guard rejected the round-3 nested drift
+mode end-to-end and no fourth mode escaped within the closed domain; the
+five-site gate enumeration verified clean at every sharing consumer.**
+Three findings:
+
+| Finding | Source | Classification | Coordinator disposition |
+| --- | --- | --- | --- |
+| The gate-failing family is 59, not 57: two further roots (`GraphSemanticSnapshotBundleV3`, `BootstrapGraphSnapshotAuthorityV3`) fail via the bare `BaseModel` annotation on `SnapshotGraphRecord.payload`; under the 57-family the fix-2 memo would share decoded bundles embedding mutable `ClaimAssertion` instances | final gate A | P2 / changes_required / verification | **confirmed and corrected in v5** — rule 4 now fails bare/non-frozen model annotations (including `BaseModel`); the exhaustively derived set is quoted (16 + 41 + 1 − 1 overlap + 2 = 59 failing, 274 passing); the intermediate 57/276 figures and the runtime-scan-derived "145 of 276" estimate are superseded |
+| Frozenset element-pairing underspecified; equality-based implementations re-open a drift hole on six live frozenset-carrying roots | final gate B | P3 / follow_up / verification | **confirmed and folded into v5** — the guard letter pins canonical-encoding-sort pairing (or equivalent recursive multiset matching); the Phase 4 drift row adds the frozenset-nested mode |
+| The "closed" sharing-consumer enumeration omitted two landed identity-keyed behaviors that meet its definition (`certified_roundtrip` hits, `_encoded_results` hits) | final gate C | P3 / follow_up / architecture | **confirmed and folded into v5** — both named and exempted as preserved landed behavior |
+
+**Approval decision.** The v5 corrections are figure-exhaustiveness and
+specification-pinning edits derived from the final gate's own
+reproduced measurement; they widen the gate-failing family (strictly
+conservative: more kinds keep the full path) and add an implementability
+pin, introducing no new semantic surface. No fifth review round was run;
+the coordinator verified the arithmetic and the monotone-safety of the
+corrections directly. Under the recorded scope, sources, and review
+method (three full cohort rounds, one delta round, one reconstruction
+gate, one final gate — 38 findings, all reconciled above, zero
+`blocks_approval`, zero unresolved `changes_required`):
+
+- Final design outcome: **APPROVED WITH FOLLOW-UPS**.
+- Frozen candidate v5 SHA-256: recorded in the Progress Log below.
+- Follow-ups carried to the successor: the deferred `gc.freeze()`
+  import-time decision (out of scope by user direction); the
+  schema-level freeze of the four mutable field sites and
+  `MemoryScope`/`SourceObservation` (candidate follow-up that would
+  shrink the gate-failing family); the immutable-container conversion
+  alternative recorded in Phase 3.
+- Production code changed by this design operation: `false`.
+
 ## Progress Log
 
 - 2026-09-02: opened from the paused implementation operation's census
@@ -464,10 +519,18 @@ another patch.
   one-level guard and the ungated fix-3 consumers — resolved by
   reconstructing rule 4 as the closed sharing rule and making the guard
   recursive over its closed domain); candidate v4 drafted.
+- 2026-09-02: candidate v4 (`dbc209…a12e`) final-gate verified (guard and
+  enumeration clean); three findings reconciled above; candidate v5
+  frozen and **approved with follow-ups**. Frozen candidate v5 SHA-256:
+  `284fa5b63b631871efda10575e49a3f5e15c1f078b8dbb040dc1dd65d5660f47`;
+  the design operation is complete.
 
 ## Next Action
 
-Refreeze candidate v4 and run one final correctness verification on the
-reconstructed sharing rule and the recursive guard only; on a clean
-result, record the approval decision and hand off to the
-`$implement-design` successor.
+Design operation complete. Resume the paused parent implementation
+operation (`../semantic-ingestion-canonical-member-reuse-2026-09-01/`)
+under `$implement-design` with this approved candidate v5 as the
+governing fix-design; its first slice is the validated-instance registry
+with the recursive guard and the closed sharing rule, followed by the
+fix-3 conversions, fix 2, the Phase 4 test families, and the quiet-host
+re-measurement.
