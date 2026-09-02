@@ -355,6 +355,17 @@ fixtures, diagnostics, CI jobs, or serialized outputs.
 
 ## Next Action
 
+The construction-elimination slice (CE-1..CE-8) is implemented and
+focused-gated at `a266ce7` (156 focused tests green, ruff clean, probe
+digest accounting unchanged at 237; load ~6 during probes).  Remaining
+for the milestone: the once-only broad gate and the quiet-host v2
+re-measurement (CE-9), the independent milestone review cohort, and the
+link-record in the VCC implementation plan.  The broad gate runs at the
+final revision in a quiet window per the repository no-repeat-broad-suite
+rule; the measurement requires the same.
+
+(resume context follows)
+
 RESUMED 2026-09-02: the linked design
 (`../semantic-ingestion-construction-elimination-2026-09-02/design.plan.md`,
 APPROVED WITH FOLLOW-UPS, candidate v5 at commit `a49b32b`) governs the
