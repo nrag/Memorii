@@ -98,22 +98,31 @@ boundary classification):
    object identity (including `model_construct` and `model_copy`) always
    takes the full path unless its own content completed validation here;
    nothing is ever certified by proximity or declaration alone.
-4. **Instance sharing is gated on verified deep immutability.** Any
-   consumer that returns or embeds a certified instance it did not freshly
-   construct engages only for concrete types that pass a recursive
-   immutability check: the type and every nested model type are
+4. **One closed sharing rule governs every instance-sharing consumer.**
+   A sharing consumer is any site that returns or embeds a certified
+   instance it did not freshly construct: fix 1's result `contract`
+   field, fix 2's memo return, and fix 3's `_snapshot_record` payload
+   passthrough, `SnapshotGraphRecord` re-validation skips, and
+   `build_semantic_memory_event` carrier direct use. A sharing consumer
+   engages only when the instance's concrete type passes the
+   deep-immutability gate: the type and every nested model type are
    `frozen=True`, no field annotation anywhere in its parameter tree
    (including inside tuple/union/`Annotated` arguments) contains
    `Mapping`/`dict`/`list`/`set` or any mutable `Sequence`, and no field
    is annotated `object`/`Any`. The check is computed once per concrete
-   type at first encounter and cached on the type; cached verdicts are
-   never invalidated. Reviewer-measured failing set at the frozen
-   baseline: 59 of the 333 decode roots fail (16 via the `Mapping` sites
-   `PredicateTrustRule.authority_rank_by_class`/`.decay_schedule_by_class`
-   and `SemanticScopePolicy.embedding_head_lemmas`, 41 via the non-frozen
-   `MemoryScope`, 1 via the non-frozen `SourceObservation`, 2
-   overlapping); every gate-failing kind keeps fresh construction and the
-   full existing path, preserving today's construction isolation.
+   type at first encounter and cached; cached verdicts are never
+   invalidated. Gate-failing kinds — including `ClaimAssertion`, whose
+   annotation tree contains the `PredicateTrustRule` mappings, making it
+   gate-failing even though it is a carrier kind and union member that
+   fix 3 constructs and consumes — keep fresh construction and the full
+   existing path at every sharing consumer, preserving today's
+   construction isolation. Attribute reads that never share an instance
+   (the `record_kind` conversions at `graph_planning.py:1002-1004`,
+   `:1497`, and the `payload_record_kind` property) need no gate.
+   Reviewer-measured failing set at the frozen baseline: **57 of the 333**
+   decode roots fail (16 via the `Mapping` sites, 41 via the non-frozen
+   `MemoryScope`, 1 via the non-frozen `SourceObservation`, one root
+   double-counted across the first two buckets).
 5. Writer admissions and the arena's sealed-lease lifecycle are untouched.
 6. Canonical bytes, digests, persisted schemas, and replay semantics are
    byte-identical (gated by the frozen suites and the diametric parity
@@ -134,7 +143,7 @@ them exhaustively); consumers are revalidation sites whose inputs the
 recording points actually certify.
 
 ## Phase 3 — Reality Analysis (verified against current code; revised
-## v2 after independent review)
+## through candidate v4 after three review rounds)
 
 ### The unified mechanism: validated-instance registry
 
@@ -163,17 +172,24 @@ instance that was validated (the established house semantics of
 - `_revalidated_contract_instance` success — the codec's own proof.
   The proof output is always recorded (it is fully validated by
   construction). The **input** is recorded only when it is
-  representationally identical to the proof — for every `model_fields`
-  name, `type(getattr(input, name)) is type(getattr(proof, name))` and
-  the values compare equal. The guard is required because the proof
-  validates the normalized payload, and two empirically confirmed drift
-  modes would otherwise certify representations that never validated:
-  lax-coercion drift (`model_construct` carrying `"3"` where an `int` is
-  declared passes the proof while the input keeps the `str`) and
-  enum-restore drift (a plain `str` where `ClaimValueType` is declared is
-  restored to the enum in the payload copy, and StrEnum equality makes
-  `input == proof` true, so payload-level equality alone cannot
-  discriminate the mode).
+  representationally identical to the proof by a **recursive** per-node
+  check: at every nesting level — top-level fields, nested-model fields,
+  and tuple/frozenset elements — `type(node_input) is type(node_proof)`
+  and the values compare equal. Plain equality is insufficient at any
+  depth: pydantic `__eq__` compares `__dict__`s with `==`, which is
+  type-blind for `(str, StrEnum)`, `(bool, int)`, `(int, float)`, and
+  `(Decimal, float)`. Three empirically confirmed drift modes drive the
+  recursion requirement: top-level lax coercion (`"3"` where `int` is
+  declared), top-level enum restore (a plain `str` where
+  `ClaimValueType` is declared — restored in the payload copy, with
+  StrEnum equality making `input == proof` true), and **nested enum
+  restore at depth >= 2** (a plain `str` inside
+  `predicates[i].object_literal_type` of a gate-passing root passes the
+  one-level guard end-to-end and would be certified and shared; 145 of
+  the 276 gate-passing roots carry such leaves). The recursion domain is
+  closed for gate-passing types (rule 4 excludes every mutable container
+  and `object`/`Any` field, so every node is a frozen model, tuple,
+  frozenset, or immutable scalar), making the check total.
 - **Graph-family construction** — one shared owner helper wraps the
   complete-validation construction sites for the graph-record unions and
   records the constructed instance: `_GraphRecord.create`
@@ -196,7 +212,8 @@ instance that was validated (the established house semantics of
 Coverage against the census's 79 first-encounter encode roots:
 content-addressed and BootstrapV3 contracts (~45 classes) via the digest
 registry; `PreparedSource` via `certified_roundtrip`; decoded reloads via
-fix 2; graph records and carriers via the adapter recording points.
+fix 2; graph records and carriers via the graph-family construction
+recording points (adapter and `model_validate` constructions alike).
 Instances constructed by owner code with no recording point stay
 uncertified and pay the full path — the design claims no universal skip.
 
@@ -250,10 +267,14 @@ Verified sites (complete family from review round 1):
   payloads (`:794`) and `create()`/reprojection/carrier-constructed
   outputs (`:941-999`; including the `carriers.py`-constructed
   `identity_record` and the `:1329`-constructed temporal carriers), all
-  certified at their construction recording points in the v3 family. The certified path passes the payload through, and
-  `SnapshotGraphRecord` skips only the **adapter re-validation lines**
-  (`validate_payload`'s revalidate call when the input is a certified
-  instance, and `validate_record`'s redundant adapter call); the
+  certified at their construction recording points in the v3 family.
+  The certified **gate-passing** path passes the payload through
+  (gate-failing kinds — concretely `ClaimAssertion` — keep the full
+  adapter path, rule 4), and `SnapshotGraphRecord` skips only the
+  **adapter re-validation lines** (`validate_payload`'s revalidate call
+  when the input is a certified gate-passing instance, and
+  `validate_record`'s redundant adapter call under the same condition);
+  the
   binding checks in `validate_record` (`record_id == graph_record_id`,
   `record_version`, `record_digest`, `codec_fingerprint`,
   `persistence_schema_fingerprint` against the manifest) and payload
@@ -262,8 +283,10 @@ Verified sites (complete family from review round 1):
   one (the construction); records constructed at sites outside the
   recording family conservatively keep the full count.
 - `event_replay.py:817` (`build_semantic_memory_event`): a certified
-  carrier instance (already a `CommittedRecord` union member) is used
-  directly; anything else keeps the full adapter call and its exact
+  carrier instance that is both a `CommittedRecord` union member
+  (runtime type-family check, rule 2) and gate-passing (rule 4 — so
+  `ClaimAssertion` carriers keep the adapter path) is used directly;
+  anything else keeps the full adapter call and its exact
   error surface (`SemanticEventReplayError("semantic event carrier
   validation failed")`) — a surface currently pinned by no test and
   therefore added test-first by the successor.
@@ -291,9 +314,9 @@ Verified sites (complete family from review round 1):
 | Forgery (identity) | `model_construct` instance (content-valid or invalid) reaching any consumer | full path; if its content never validated here it is uncertified — invalid content rejected with the existing error; valid content validated fresh | arena suite, extended per consumer |
 | Forgery (copy) | `model_copy(update=...)` of a certified instance | new identity → full path; invalid update rejected exactly as today | arena suite + new consumer owners |
 | Copy (content-equal) | plain `model_copy` of a certified instance at the **identity/byte-keyed structures** (instance registry, decode memo, fix-1/2/3 consumers) | new identity → full path (conservative). The landed `_verified` digest registry's substitution hit for a content-equal copy is unchanged behavior (rule 2(b)) | arena suite |
-| Representational drift | `model_construct` with a lax-coercible value (`"3"` for `int`) or a plain `str` where `ClaimValueType` is declared, reaching the codec proof | input fails the representational-identity guard → not certified → full path; never shared (both modes empirically confirmed in review) | arena suite |
-| Immutability gate | the 59 reviewer-measured gate-failing decode-root kinds at every sharing consumer | full fresh construction and revalidation; per-type cached verdict rejects them | arena suite (shared consumer family) |
-| Immutability gate | a type whose annotation tree contains `Mapping`/`dict`/`list`/`set` at any depth (direct or nested-model), or an `object`/`Any`-annotated field | rejected by the first-encounter computation → full path; cached verdicts are never invalidated (nothing is recomputed) | arena suite |
+| Representational drift | all three empirically confirmed modes: top-level lax coercion (`"3"` for `int`), top-level enum restore (plain `str` for `ClaimValueType`), and nested enum restore at depth >= 2 (`predicates[i].object_literal_type`) | input fails the recursive representational-identity guard at its depth → not certified → full path; never shared | arena suite |
+| Immutability gate | the 57 reviewer-measured gate-failing decode-root kinds at every sharing consumer — including `ClaimAssertion` at the fix-3 consumers | full fresh construction and revalidation; per-type cached verdict rejects them | arena suite (shared consumer family) |
+| Immutability gate | a type whose annotation parameter tree contains `Mapping`/`dict`/`list`/`set` or a mutable `Sequence` anywhere — direct, nested-model, or inside tuple/union/`Annotated` arguments — or an `object`/`Any`-annotated field | rejected by the first-encounter computation → full path; cached verdicts are never invalidated (nothing is recomputed) | arena suite |
 | Cross-operation | post-close lookup miss **per structure**. Complete family: the seven `CanonicalDigestVerificationScope` structures (`_verified`, `_encoded_results`, `_encoded_bytes`, `_lowered_values`, `_roundtrips`, the new instance registry, the new decode memo) plus the emission scope's `_emitted`/`_strings`/`_canonicity_verified`. Observed today: `_verified`, `_encoded_bytes`, `_emitted` only — new close-purge observers required for `_encoded_results`, `_lowered_values`, `_roundtrips`, the instance registry, and the decode memo | post-close full-path re-execution observed via the existing arena-suite counter pattern (behavioral miss primary); per-structure count properties per the Phase 5 identity budget | arena suite |
 | Capacity refusal | over-limit entry after refusal | same complete family, same observation mechanism — one refusal-purge observer per currently-unobserved structure | arena suite |
 | Decode limits | bounded `max_nodes`/`max_depth` call for bytes already decoded unbounded; and a limited call followed by an unlimited call | limited calls neither consult nor record; the limit still rejects; the later unlimited call takes the full first-decode path | arena suite (codec rows extend the arena suite — no separate codec suite file exists) |
@@ -302,7 +325,7 @@ Verified sites (complete family from review round 1):
 | Determinism | digest-call counts across repeated deliveries | identical within a mode | PBD-EXP-014 v2 harness |
 | Byte identity | frozen codec/vector/compatibility suites; fused-vs-reference differential; diametric parity; certified-path bytes at converted sites | green; canonical bytes unchanged | existing suites + converted-site owners |
 | Concurrency | two arenas on separate threads | per-arena memo/registry counters differ; a thread-A-certified instance misses in thread B (discriminating assertion; the existing nonce test does not discriminate memo cross-talk) | arena suite |
-| Aliasing (fix 2) | mutation attempt on a shared decoded model | frozen models reject assignment; the six mutable-root kinds are never shared | codec owner test |
+| Aliasing (fix 2) | mutation attempt on a shared decoded model | frozen models reject assignment; every gate-failing kind is never shared (57 at the frozen baseline) | arena suite |
 | Graph sites | uncertified `item` (dict or bypass-constructed) at every converted site | adapter path and existing errors preserved | graph owners |
 | Graph bindings | **certified** payload with corrupted envelope binding fields (`record_id`/`record_version`/`record_digest`/fingerprints) inside an active arena | `snapshot_graph_record_binding_mismatch` still raised — the skip never drops the binding checks | graph owner (the existing corruption matrix runs without an arena and cannot catch this) |
 | Replay surface | forged/bypass-constructed carrier → `build_semantic_memory_event` | exact `SemanticEventReplayError` type and message (currently unpinned anywhere — test-first) | replay owner |
@@ -316,7 +339,7 @@ tests in the arena suite; profiles for construction-count deltas. No
 live or operational claim. All codec-behavior rows extend the arena
 suite — no separate codec suite file exists.
 
-## Phase 5 — Draft Design Summary (v2)
+## Phase 5 — Draft Design Summary (v4)
 
 One registry, six recording-point groups, four consumer families, one
 deep-immutability gate, all riding the landed arena scope lifecycle.
@@ -398,6 +421,32 @@ revised sections only.
 No `blocks_approval` findings. Both round-2 P2 defects are determinately
 corrected in candidate v3; every follow-up is folded or recorded.
 
+## Review Round 3 (convergence verification) — Reconciliation Ledger (2026-09-02)
+
+Candidate v3 SHA-256:
+`63551dab661dfbf78945d1b7709ca641cc8d81aa39d6b97504f64b558b81f876` at
+commit `09b0117`. All three reviewers verified the v3 corrections;
+spec_auditor returned CLEAN; test_reviewer returned one residual
+`changes_required` plus three polish follow-ups; correctness_reviewer
+returned two validated P2s in the same semantic boundary (instance
+sharing) that rule 4 governs — triggering the PLANS reconstruction rule
+(two successive confirmed findings on one boundary: reconstruct the
+boundary, do not patch).
+
+| Finding | Source | Classification | Coordinator disposition |
+| --- | --- | --- | --- |
+| The representational-identity guard was one level deep; a third drift mode at nesting depth >= 2 (nested enum restore inside `predicates[i].object_literal_type` of a gate-passing root) passes it end-to-end and is certified and shared; 145 of 276 gate-passing roots carry such leaves | correctness R3-1 | P2 / changes_required / runtime behavior | **confirmed — boundary reconstructed**: the guard is now specified as a recursive per-node exact-type-and-equality check over the closed domain of gate-passing types (rule 4 excludes every mutable container and `object`/`Any`, so every node is a frozen model, tuple, frozenset, or immutable scalar, making the check total); the Phase 4 drift row names all three empirically confirmed modes |
+| Fix 3's letter never applied the rule-4 gate at its sharing consumers, while `ClaimAssertion` (a carrier kind, union member, and gate-failing type by annotation) flows exactly through them | correctness R3-2 | P2 / changes_required / architecture | **confirmed — boundary reconstructed**: rule 4 restated as the one closed sharing rule enumerating every sharing consumer by name (fix 1 `contract` field, fix 2 memo return, fix 3 payload passthrough / `SnapshotGraphRecord` skips / carrier direct use); fix 3 states the gate condition and the `ClaimAssertion` consequence at each site; attribute-read conversions explicitly need no gate |
+| Gate-failing count is 57, not 59 (16 + 41 + 1 - one true bucket overlap) | correctness R3-3 + test R3-3 (arithmetic) | P3 / follow_up / verification | **confirmed and corrected** — 57 of 333 with the corrected overlap note |
+| Residual phantom "codec owner test" owner cell (Aliasing row) contradicting the evidence-classes paragraph | test R3-1 | Not applicable / changes_required / verification | **confirmed** — cell re-homed to the arena suite |
+| Immutability row parenthetical omitted tuple/union/`Annotated` hiding places | test R3-2 | P3 / follow_up / verification | **confirmed and folded** — parameter-tree wording |
+| Aliasing row retained the stale "six kinds" framing | test R3-4 | P3 / follow_up / verification | **confirmed and folded** |
+| Editorial residue: stale v2 section tags; coverage sentence said "adapter recording points" while the family includes `model_validate` constructions; `:1003` vs `:1002-1004` | spec R3 (non-finding) | record-only | **folded** — tags updated, sentence corrected; ledger rows keep their original `:1003` citations as history |
+
+No `blocks_approval` findings. Both round-3 P2s are resolved by
+reconstructing the sharing boundary as one closed rule rather than
+another patch.
+
 ## Progress Log
 
 - 2026-09-02: opened from the paused implementation operation's census
@@ -410,9 +459,15 @@ corrected in candidate v3; every follow-up is folded or recorded.
   13 findings reconciled above (two P2 defects corrected — the missing
   temporal-carrier/carrier recording points and the representational-
   drift certification hole); candidate v3 drafted.
+- 2026-09-02: candidate v3 (`63551da…876`) convergence-verified; seven
+  findings reconciled above (two P2s in the sharing boundary — the
+  one-level guard and the ungated fix-3 consumers — resolved by
+  reconstructing rule 4 as the closed sharing rule and making the guard
+  recursive over its closed domain); candidate v4 drafted.
 
 ## Next Action
 
-Refreeze candidate v3 and run one final targeted verification pass with
-the cohort on the v3 corrections only; on a clean result, record the
-approval decision and hand off to the `$implement-design` successor.
+Refreeze candidate v4 and run one final correctness verification on the
+reconstructed sharing rule and the recursive guard only; on a clean
+result, record the approval decision and hand off to the
+`$implement-design` successor.
