@@ -521,8 +521,10 @@ gate, one final gate — 38 findings, all reconciled above, zero
   recursive over its closed domain); candidate v4 drafted.
 - 2026-09-02: candidate v4 (`dbc209…a12e`) final-gate verified (guard and
   enumeration clean); three findings reconciled above; candidate v5
-  frozen and **approved with follow-ups**. Frozen candidate v5 SHA-256:
-  `284fa5b63b631871efda10575e49a3f5e15c1f078b8dbb040dc1dd65d5660f47`;
+  frozen and **approved with follow-ups**. Frozen identity: the tree of
+  commit `a49b32b` (a document cannot record its own content digest —
+  the digest of the approved text absent this annotation was
+  `284fa5b63b631871efda10575e49a3f5e15c1f078b8dbb040dc1dd65d5660f47`);
   the design operation is complete.
 
 ## Next Action
