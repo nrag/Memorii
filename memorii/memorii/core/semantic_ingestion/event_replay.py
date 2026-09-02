@@ -21,7 +21,15 @@ from memorii.core.memory_evolution.conflict_attention import (
     SemanticConflictReplayBinding,
 )
 from memorii.core.memory_evolution.graph_records import (
+    AliasRevision,
+    CitationRecord,
+    ClaimProjection,
+    EntityRevision,
     NonOwningGraphRecord,
+    ProvenanceRecord,
+    ReferenceDispositionRecord,
+    RelationRevision,
+    TypeEvidence,
     graph_record_id,
 )
 from memorii.core.memory_evolution.ingestion_contracts import (
@@ -32,6 +40,11 @@ from memorii.core.memory_evolution.ingestion_contracts import (
 )
 from memorii.core.memory_evolution.projection_binding import (
     ProjectionHistoryReplayBinding,
+)
+from memorii.core.semantic_ingestion.canonical_evidence_arena import (
+    certified_instance,
+    deeply_immutable_type,
+    record_certified_instance,
 )
 from memorii.core.semantic_ingestion.contracts import (
     ActionRevision,
@@ -87,6 +100,25 @@ CommittedRecord = Annotated[
     Field(discriminator="record_kind"),
 ]
 _CARRIER_ADAPTER = TypeAdapter(CommittedRecord)
+
+_CARRIER_UNION_MEMBER_TYPES = (
+    ActionRevision,
+    ClaimAssertion,
+    IdentityLineageRecord,
+    TemporalTransitionRecord,
+    CitationRecord,
+    ClaimProjection,
+    EntityRevision,
+    AliasRevision,
+    ProvenanceRecord,
+    ReferenceDispositionRecord,
+    RelationRevision,
+    TypeEvidence,
+)
+
+
+def _CARRIER_UNION_MEMBER(value: object) -> bool:
+    return isinstance(value, _CARRIER_UNION_MEMBER_TYPES)
 
 
 class SemanticEventReplayError(ValueError):
@@ -814,7 +846,15 @@ def build_semantic_memory_event(
     """Construct one full-state event from a store-owned durable carrier."""
 
     try:
-        record = _CARRIER_ADAPTER.validate_python(record.model_dump(mode="python"))
+        if (
+            certified_instance(record)
+            and deeply_immutable_type(type(record))
+            and _CARRIER_UNION_MEMBER(record)
+        ):
+            pass
+        else:
+            record = _CARRIER_ADAPTER.validate_python(record.model_dump(mode="python"))
+            record_certified_instance(record)
     except (TypeError, ValueError) as exc:
         raise SemanticEventReplayError("semantic event carrier validation failed") from exc
     if (

@@ -18,10 +18,13 @@ from memorii.core.memory_evolution.graph_records import (
     SnapshotGraphRecord,
     TrustedAcceptedIdentityOperationDecision,
     VerifiedIdentityDecisionAuthority,
+    _graph_record_union_member,
     canonical_graph_codec_manifest,
     canonical_graph_record_adapter,
+    certified_graph_record_kind,
     graph_digest,
     graph_record_id,
+    validated_graph_record,
 )
 from memorii.core.memory_evolution.reference_integrity import (
     ReferenceTarget,
@@ -31,6 +34,11 @@ from memorii.core.memory_evolution.reference_integrity import (
 from memorii.core.memory_evolution.semantic_state import (
     CompiledIdentityLineageTransition,
     LineageReferenceDisposition,
+)
+from memorii.core.semantic_ingestion.canonical_evidence_arena import (
+    certified_instance,
+    deeply_immutable_type,
+    record_certified_instance,
 )
 from memorii.core.semantic_ingestion.carriers import compile_accepted_carriers
 from memorii.core.semantic_ingestion.contracts import (
@@ -998,11 +1006,7 @@ def build_frozen_identity_graph_planning_artifact_from_state(
             (
                 _snapshot_record(
                     item,
-                    codec_by_kind[
-                        canonical_graph_record_adapter()
-                        .validate_python(item.model_dump(mode="python"))
-                        .record_kind
-                    ],
+                    codec_by_kind[_certified_or_validated_record_kind(item)],
                 )
                 for item in outputs
             ),
@@ -1326,7 +1330,7 @@ def _rebuild_reprojected_record(
         record,
         (ClaimAssertion, ActionRevision, IdentityLineageRecord, TemporalTransitionRecord),
     ):
-        return type(record).model_validate(
+        temporal = type(record).model_validate(
             values
             | {
                 "record_digest": contract_digest(
@@ -1334,16 +1338,32 @@ def _rebuild_reprojected_record(
                 )
             }
         )
+        record_certified_instance(temporal)
+        return temporal
     values["record_digest"] = graph_digest(
         b"memorii.canonical-graph-record.v1\0", values
     )
-    return canonical_graph_record_adapter().validate_python(values)
+    return validated_graph_record(values)
+
+
+def _certified_or_validated_record_kind(record: BaseModel) -> str:
+    certified_kind = certified_graph_record_kind(record)
+    if certified_kind is not None:
+        return certified_kind
+    return canonical_graph_record_adapter().validate_python(
+        record.model_dump(mode="python")
+    ).record_kind
 
 
 def _snapshot_record(record: BaseModel, codec) -> SnapshotGraphRecord:
-    payload = canonical_graph_record_adapter().validate_python(
-        record.model_dump(mode="python")
-    )
+    if (
+        certified_instance(record)
+        and deeply_immutable_type(type(record))
+        and _graph_record_union_member(record)
+    ):
+        payload = record
+    else:
+        payload = validated_graph_record(record.model_dump(mode="python"))
     return SnapshotGraphRecord(
         record_id=graph_record_id(payload),
         record_version=payload.record_version,
@@ -1494,7 +1514,9 @@ def _planning_payload(record: BaseModel, *, transaction_group_id: str):
         "identity_lineage": PlanningIdentityLineage,
         "reference_disposition": PlanningReferenceDisposition,
     }
-    kind = record.model_dump(mode="python").get("record_kind")
+    kind: object = certified_graph_record_kind(record)
+    if kind is None:
+        kind = record.model_dump(mode="python").get("record_kind")
     if not isinstance(kind, str):
         raise ValueError("identity_planning_output_kind_invalid")
     cls = classes.get(kind)

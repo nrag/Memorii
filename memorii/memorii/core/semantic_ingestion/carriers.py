@@ -8,6 +8,9 @@ from typing import Any
 
 from memorii.core.memory_evolution.semantic_state import CompiledIdentityLineageTransition
 from memorii.core.memory_evolution.time_contracts import TimeInterval
+from memorii.core.semantic_ingestion.canonical_evidence_arena import (
+    record_certified_instance,
+)
 from memorii.core.semantic_ingestion.contracts import (
     AcceptedTemporalEvidence,
     ActionRevision,
@@ -20,6 +23,15 @@ from memorii.core.semantic_ingestion.contracts import (
     TemporalTransitionRecord,
     contract_digest,
 )
+
+
+def _record_and_certify(kind, body):
+    validated = kind.model_validate(
+        body | {"record_digest": _record_digest(kind, body)}
+    )
+    record_certified_instance(validated)
+    return validated
+
 
 SEMANTIC_INGESTION_CODEC_FINGERPRINT = sha256(b"memorii.semantic-ingestion.closed-codec.v1").hexdigest()
 
@@ -78,9 +90,7 @@ def _claim(
                 "predicate_trust_rule": predicate_trust_rule,
             }
         )
-    return ClaimAssertion.model_validate(
-        body | {"record_digest": _record_digest(ClaimAssertion, body)}
-    )
+    return _record_and_certify(ClaimAssertion, body)
 
 
 def compile_accepted_carriers(
@@ -107,9 +117,7 @@ def compile_accepted_carriers(
             ),
         }
         carriers = (
-            ActionRevision.model_validate(
-                body | {"record_digest": _record_digest(ActionRevision, body)}
-            ),
+            _record_and_certify(ActionRevision, body),
         )
     elif operation.kind == "correction":
         transition_body = _base(operation, candidate, "transition") | {
@@ -127,10 +135,7 @@ def compile_accepted_carriers(
         }
         carriers = (
             _claim(operation, candidate, "replacement", predicate_trust_rule),
-            TemporalTransitionRecord.model_validate(
-                transition_body
-                | {"record_digest": _record_digest(TemporalTransitionRecord, transition_body)}
-            ),
+            _record_and_certify(TemporalTransitionRecord, transition_body),
         )
     elif operation.kind == "retraction":
         body = _base(operation, candidate, "transition") | {
@@ -147,9 +152,7 @@ def compile_accepted_carriers(
             ),
         }
         carriers = (
-            TemporalTransitionRecord.model_validate(
-                body | {"record_digest": _record_digest(TemporalTransitionRecord, body)}
-            ),
+            _record_and_certify(TemporalTransitionRecord, body),
         )
     else:
         if identity_transition is None:
@@ -166,9 +169,7 @@ def compile_accepted_carriers(
             "transition": identity_transition,
         }
         carriers = (
-            IdentityLineageRecord.model_validate(
-                body | {"record_digest": _record_digest(IdentityLineageRecord, body)}
-            ),
+            _record_and_certify(IdentityLineageRecord, body),
         )
     return tuple(sorted(carriers, key=lambda value: (value.operation_id, value.record_kind, value.record_digest)))
 

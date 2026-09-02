@@ -24,6 +24,18 @@ from memorii.core.memory_evolution.semantic_state import (
 )
 from memorii.core.memory_evolution.time_contracts import TimeInterval
 
+
+def _arena_registry():
+    # Lazy: importing the arena package at module level re-enters this
+    # module through the semantic-ingestion package initializer.
+    from memorii.core.semantic_ingestion.canonical_evidence_arena import (
+        certified_instance,
+        deeply_immutable_type,
+        record_certified_instance,
+    )
+
+    return certified_instance, deeply_immutable_type, record_certified_instance
+
 GraphRecordKind = Literal[
     "entity_revision", "alias_revision", "type_evidence", "claim_assertion",
     "claim_projection", "relation_revision", "action_revision", "citation",
@@ -101,10 +113,12 @@ class _GraphRecord(BaseModel):
     @classmethod
     def create(cls, **values: object):
         body = {"record_kind": cls.model_fields["record_kind"].default, **values}
-        return cls.model_validate(
+        validated = cls.model_validate(
             body
             | {"record_digest": graph_digest(b"memorii.canonical-graph-record.v1\0", body)}
         )
+        _arena_registry()[2](validated)
+        return validated
 
 
 class EntityRevision(_GraphRecord):
@@ -368,8 +382,17 @@ class SnapshotGraphRecord(BaseModel):
     @field_validator("payload", mode="before")
     @classmethod
     def validate_payload(cls, value: object) -> BaseModel:
+        _certified, _immutable, _record_certified = _arena_registry()
+        if (
+            _certified(value)
+            and _immutable(type(value))
+            and _graph_record_union_member(value)
+        ):
+            return value  # type: ignore[return-value]
         raw = value.model_dump(mode="python") if isinstance(value, BaseModel) else value
-        return canonical_graph_record_adapter().validate_python(raw)
+        payload = canonical_graph_record_adapter().validate_python(raw)
+        _arena_registry()[2](payload)
+        return payload
 
     @field_serializer("payload")
     def serialize_payload(self, value: BaseModel) -> object:
@@ -377,9 +400,18 @@ class SnapshotGraphRecord(BaseModel):
 
     @model_validator(mode="after")
     def validate_record(self) -> SnapshotGraphRecord:
-        payload = canonical_graph_record_adapter().validate_python(
-            self.payload.model_dump(mode="python")
-        )
+        _certified, _immutable, _record_certified = _arena_registry()
+        if (
+            _certified(self.payload)
+            and _immutable(type(self.payload))
+            and _graph_record_union_member(self.payload)
+        ):
+            payload = self.payload
+        else:
+            payload = canonical_graph_record_adapter().validate_python(
+                self.payload.model_dump(mode="python")
+            )
+            _record_certified(payload)
         manifest = {item.record_kind: item for item in canonical_graph_codec_manifest().entries}
         codec = manifest[payload.record_kind]
         if (
@@ -395,7 +427,12 @@ class SnapshotGraphRecord(BaseModel):
 
     @property
     def payload_record_kind(self) -> GraphRecordKind:
-        kind = self.payload.model_dump(mode="python").get("record_kind")
+        certified_kind = certified_graph_record_kind(self.payload)
+        kind: object
+        if certified_kind is not None:
+            kind = certified_kind
+        else:
+            kind = self.payload.model_dump(mode="python").get("record_kind")
         if kind not in GraphRecordKind.__args__:
             raise ValueError("snapshot_graph_record_kind_invalid")
         return cast(GraphRecordKind, kind)
@@ -416,6 +453,55 @@ def canonical_graph_record_adapter() -> TypeAdapter:
         Field(discriminator="record_kind"),
     ]
     return TypeAdapter(union)
+
+
+def validated_graph_record(values: object):
+    """Construct one graph-record union member and certify it when scoped.
+
+    Complete validation always runs through the discriminated-union
+    adapter; inside an enabled operation the constructed instance is also
+    recorded in the validated-instance registry so downstream
+    revalidation sites can reuse it under the sharing rule.
+    """
+
+    payload = canonical_graph_record_adapter().validate_python(values)
+    _arena_registry()[2](payload)
+    return payload
+
+
+def _graph_record_union_member(value: object) -> bool:
+    from memorii.core.semantic_ingestion.contracts import (
+        ActionRevision,
+        ClaimAssertion,
+        IdentityLineageRecord,
+        TemporalTransitionRecord,
+    )
+
+    return isinstance(
+        value,
+        (
+            EntityRevision,
+            AliasRevision,
+            TypeEvidence,
+            ClaimAssertion,
+            ClaimProjection,
+            RelationRevision,
+            ActionRevision,
+            CitationRecord,
+            ProvenanceRecord,
+            TemporalTransitionRecord,
+            IdentityLineageRecord,
+            ReferenceDispositionRecord,
+        ),
+    )
+
+
+def certified_graph_record_kind(record: object) -> str | None:
+    """Direct ``record_kind`` read for certified union members only."""
+
+    if _arena_registry()[0](record) and _graph_record_union_member(record):
+        return record.record_kind  # type: ignore[return-value]
+    return None
 
 
 class GraphPartitionVersion(BaseModel):

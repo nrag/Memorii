@@ -13237,21 +13237,41 @@ def decode_semantic_contract(
     max_nodes: int | None = None,
     max_depth: int | None = None,
 ) -> _ContractModel:
-    """Decode only exact active bytes; pre-closure and unknown variants reject."""
+    """Decode only exact active bytes; pre-closure and unknown variants reject.
+
+    Unlimited repeat decodes of byte-identical input within one enabled
+    operation replay the frozen model recorded by the first decode
+    (sharing gated on the deep-immutability verdict); limited calls never
+    consult or record the memo, and the first decode of any bytes always
+    runs the complete decode, envelope check, and validation.
+    """
     expected_kind = _CONTRACT_KINDS.get(expected_type)
     if expected_kind is None:
         raise SemanticContractCodecError(f"unsupported semantic ingestion contract type: {expected_type.__name__}")
+    reuse_scope = (
+        current_digest_verification_scope()
+        if max_nodes is None and max_depth is None
+        else None
+    )
+    if reuse_scope is not None:
+        cached = reuse_scope.lookup_decoded_contract(expected_type, raw)
+        if cached is not None and deeply_immutable_type(expected_type):
+            return cached  # type: ignore[return-value]
     try:
         decoded = decode_typed_value(raw, max_nodes=max_nodes, max_depth=max_depth)
         if not isinstance(decoded, dict) or set(decoded) != {"schema", "kind", "payload"}:
             raise SemanticContractCodecError("semantic ingestion contract envelope is not closed")
         if decoded["schema"] != _CANONICAL_CONTRACT_ENVELOPE or decoded["kind"] != expected_kind:
             raise SemanticContractCodecError("legacy or mismatched semantic ingestion contract variant")
-        return expected_type.model_validate(restore_closed_wire_enums(decoded["payload"]))
+        validated = expected_type.model_validate(restore_closed_wire_enums(decoded["payload"]))
     except (TypeError, ValueError) as exc:
         if isinstance(exc, SemanticContractCodecError):
             raise
         raise SemanticContractCodecError("semantic ingestion contract validation failed") from exc
+    if reuse_scope is not None:
+        reuse_scope.record_decoded_contract(expected_type, raw, validated)
+        reuse_scope.record_certified_instance(validated)
+    return validated
 
 
 def restore_closed_wire_enums(value: object) -> object:
