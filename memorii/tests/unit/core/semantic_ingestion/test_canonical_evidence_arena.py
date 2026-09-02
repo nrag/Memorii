@@ -568,3 +568,124 @@ def test_capacity_refusal_inerts_verified_digest_reuse(monkeypatch) -> None:
         )
         _equal_copy(first)
         assert calls["n"] > baseline
+
+
+def _count_codec_admissions(monkeypatch):
+    import memorii.core.semantic_ingestion.contracts as _contracts
+
+    calls = {"n": 0}
+    original = _contracts._revalidated_contract_instance
+
+    def counted(value, canonical_payload):
+        calls["n"] += 1
+        return original(value, canonical_payload)
+
+    monkeypatch.setattr(_contracts, "_revalidated_contract_instance", counted)
+    return calls
+
+
+def test_enabled_arena_reuses_certified_encode_bytes_within_operation(monkeypatch) -> None:
+    calls = _count_codec_admissions(monkeypatch)
+    with CanonicalEvidenceArena(enabled=True) as arena:
+        first = _artifact(artifact_id="bytes-reuse")
+        raw = encode_semantic_contract(first)
+        baseline = calls["n"]
+        assert baseline >= 1
+        assert encode_semantic_contract(first) == raw
+        assert calls["n"] == baseline
+        assert arena.bytes_reuses >= 1
+        assert arena.bytes_records >= 1
+
+
+def test_certified_bytes_and_result_memos_are_separate_but_byte_identical(monkeypatch) -> None:
+    with CanonicalEvidenceArena(enabled=True):
+        first = _artifact(artifact_id="twin-memos")
+        raw = encode_semantic_contract(first)
+        staged = encode_semantic_contract_result(first)
+        assert staged.canonical_contract_bytes == raw
+
+
+def test_encoded_bytes_reuse_does_not_survive_arena_close(monkeypatch) -> None:
+    calls = _count_codec_admissions(monkeypatch)
+    with CanonicalEvidenceArena(enabled=True):
+        first = _artifact(artifact_id="closed-bytes")
+        encode_semantic_contract(first)
+        baseline = calls["n"]
+        assert calls["n"] == baseline
+    encode_semantic_contract(first)
+    assert calls["n"] > baseline
+
+
+def test_structurally_equal_copy_takes_full_encode_path_inside_active_scope(monkeypatch) -> None:
+    calls = _count_codec_admissions(monkeypatch)
+    with CanonicalEvidenceArena(enabled=True):
+        first = _artifact(artifact_id="identity-only")
+        raw = encode_semantic_contract(first)
+        baseline = calls["n"]
+        copy = _equal_copy(first)
+        assert copy == first
+        assert encode_semantic_contract(copy) == raw
+        assert calls["n"] > baseline
+
+
+def test_forged_model_copy_fails_closed_inside_active_scope() -> None:
+    with CanonicalEvidenceArena(enabled=True):
+        good = _artifact(artifact_id="forged-copy")
+        encode_semantic_contract(good)
+        forged = good.model_copy(update={"content_digest": "1" * 64})
+        with pytest.raises(SemanticContractCodecError, match="semantic ingestion contract validation failed"):
+            encode_semantic_contract(forged)
+
+
+def test_disabled_arena_keeps_full_encode_admission(monkeypatch) -> None:
+    calls = _count_codec_admissions(monkeypatch)
+    with CanonicalEvidenceArena(enabled=False) as arena:
+        first = _artifact(artifact_id="disabled-bytes")
+        encode_semantic_contract(first)
+        baseline = calls["n"]
+        encode_semantic_contract(first)
+        assert calls["n"] > baseline
+        assert arena.bytes_reuses == 0
+
+
+def test_result_memo_returns_certified_result_and_refuses_duplicate_staging(monkeypatch) -> None:
+    with CanonicalEvidenceArena(
+        scope=CanonicalValidationScope("tenant", "operation", 1, "fence", "writer"),
+    ) as arena:
+        first = _artifact(artifact_id="result-reuse")
+        staged = encode_semantic_contract_result(first, canonical_staging=arena)
+        entries = arena.snapshot().entries
+        assert entries == 1
+        again = encode_semantic_contract_result(first, canonical_staging=arena)
+        assert again is staged
+        assert arena.snapshot().entries == entries
+        assert arena.result_reuses >= 1
+
+
+def test_encoded_bytes_reuse_inert_after_capacity_refusal(monkeypatch) -> None:
+    calls = _count_codec_admissions(monkeypatch)
+    arena = CanonicalEvidenceArena(enabled=True)
+    with arena:
+        first = _artifact(artifact_id="refused-bytes")
+        encode_semantic_contract(first)
+        baseline = calls["n"]
+        oversized = ValidatedCanonicalEvidenceResult(
+            contract=first,
+            canonical_contract_bytes=b"x" * (MAX_CANONICAL_BYTES_PER_ENTRY + 1),
+            canonical_member_index=CanonicalMemberIndex(
+                contract_type="test",
+                member_paths=1,
+                canonical_digest="0" * 64,
+            ),
+            validation_provenance=("test",),
+        )
+        assert not arena.admit_success(
+            canonical_contract_bytes=oversized.canonical_contract_bytes,
+            concrete_contract_type=type(first),
+            profile_revision=CANONICAL_PROFILE_REVISION,
+            codec_revision=CANONICAL_CODEC_REVISION,
+            domain=b"domain",
+            result=oversized,
+        )
+        encode_semantic_contract(first)
+        assert calls["n"] > baseline

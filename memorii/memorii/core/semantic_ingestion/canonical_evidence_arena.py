@@ -162,6 +162,18 @@ class CanonicalDigestVerificationScope:
         self._verified: dict[tuple[type, str], object] = {}
         self._reuses = 0
         self._records = 0
+        # Identity-keyed codec-result memos.  A hit returns work this
+        # operation's codec already produced for the exact same object, so a
+        # hit is object continuity, not a declarable digest; any forged,
+        # copied, or reconstructed value has a new identity and takes the
+        # full path.  Each entry holds its key object so a keyed identity
+        # cannot be recycled while the entry lives.
+        self._encoded_results: dict[int, tuple[object, CanonicalCodecResult]] = {}
+        self._encoded_bytes: dict[int, tuple[object, bytes]] = {}
+        self._result_reuses = 0
+        self._result_records = 0
+        self._bytes_reuses = 0
+        self._bytes_records = 0
 
     @property
     def reuses(self) -> int:
@@ -170,6 +182,22 @@ class CanonicalDigestVerificationScope:
     @property
     def records(self) -> int:
         return self._records
+
+    @property
+    def result_reuses(self) -> int:
+        return self._result_reuses
+
+    @property
+    def result_records(self) -> int:
+        return self._result_records
+
+    @property
+    def bytes_reuses(self) -> int:
+        return self._bytes_reuses
+
+    @property
+    def bytes_records(self) -> int:
+        return self._bytes_records
 
     def lookup_verified(self, contract_type: type, declared_digest: str) -> object | None:
         certified = self._verified.get((contract_type, declared_digest))
@@ -183,8 +211,36 @@ class CanonicalDigestVerificationScope:
         self._verified[(contract_type, declared_digest)] = instance
         self._records += 1
 
+    def lookup_encoded_result(self, value: object) -> CanonicalCodecResult | None:
+        entry = self._encoded_results.get(id(value))
+        if entry is not None and entry[0] is value:
+            self._result_reuses += 1
+            return entry[1]
+        return None
+
+    def record_encoded_result(self, value: object, result: CanonicalCodecResult) -> None:
+        if len(self._encoded_results) >= MAX_ARENA_ENTRIES:
+            return
+        self._encoded_results[id(value)] = (value, result)
+        self._result_records += 1
+
+    def lookup_encoded_bytes(self, value: object) -> bytes | None:
+        entry = self._encoded_bytes.get(id(value))
+        if entry is not None and entry[0] is value:
+            self._bytes_reuses += 1
+            return entry[1]
+        return None
+
+    def record_encoded_bytes(self, value: object, canonical_bytes: bytes) -> None:
+        if len(self._encoded_bytes) >= MAX_ARENA_ENTRIES:
+            return
+        self._encoded_bytes[id(value)] = (value, canonical_bytes)
+        self._bytes_records += 1
+
     def purge(self) -> None:
         self._verified.clear()
+        self._encoded_results.clear()
+        self._encoded_bytes.clear()
 
 
 _CURRENT_DIGEST_VERIFICATION_SCOPES = threading_local()
@@ -755,6 +811,22 @@ class CanonicalEvidenceArena(AbstractContextManager["CanonicalEvidenceArena"]):
     @property
     def digest_verification_records(self) -> int:
         return self._digest_verification_scope.records
+
+    @property
+    def result_reuses(self) -> int:
+        return self._digest_verification_scope.result_reuses
+
+    @property
+    def result_records(self) -> int:
+        return self._digest_verification_scope.result_records
+
+    @property
+    def bytes_reuses(self) -> int:
+        return self._digest_verification_scope.bytes_reuses
+
+    @property
+    def bytes_records(self) -> int:
+        return self._digest_verification_scope.bytes_records
 
     def require_active_nonce(self, nonce: str) -> None:
         if (

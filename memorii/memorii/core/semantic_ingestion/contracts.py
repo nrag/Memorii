@@ -135,6 +135,22 @@ def canonical_contract_value(value: object) -> object:
     return value
 
 
+def _revalidated_contract_instance(value: BaseModel, canonical_payload: object) -> BaseModel:
+    """Re-derive validation from the lowered payload; forgeries fail closed.
+
+    ``model_copy``/``model_construct`` instances never inherit validation:
+    the payload is re-validated as freshly parsed content on every codec
+    admission.
+    """
+    try:
+        return type(value).model_validate(
+            restore_closed_wire_enums(canonical_payload),
+            context=None,
+        )
+    except (TypeError, ValueError) as exc:
+        raise SemanticContractCodecError("semantic ingestion contract validation failed") from exc
+
+
 def _build_validated_semantic_contract_result(
     *,
     value: BaseModel,
@@ -143,13 +159,7 @@ def _build_validated_semantic_contract_result(
     member_spans: tuple[object, ...],
     domain: bytes,
 ) -> ValidatedCanonicalEvidenceResult:
-    try:
-        validated = type(value).model_validate(
-            restore_closed_wire_enums(canonical_payload),
-            context=None,
-        )
-    except (TypeError, ValueError) as exc:
-        raise SemanticContractCodecError("semantic ingestion contract validation failed") from exc
+    validated = _revalidated_contract_instance(value, canonical_payload)
 
     return ValidatedCanonicalEvidenceResult(
         contract=validated,
@@ -13028,6 +13038,24 @@ def encode_semantic_contract_result(
     kind = _CONTRACT_KINDS.get(type(value))
     if kind is None:
         raise SemanticContractCodecError(f"unsupported semantic ingestion contract type: {type(value).__name__}")
+    reuse_scope = current_digest_verification_scope()
+    if reuse_scope is not None:
+        certified = reuse_scope.lookup_encoded_result(value)
+        if certified is not None:
+            # Object continuity within one operation: this exact instance
+            # already passed the complete codec pipeline.  A staging owner
+            # still receives its admission so sealed lookup behavior is
+            # unchanged (duplicate keys are refused by the arena itself).
+            if canonical_staging is not None:
+                canonical_staging.admit_success(
+                    canonical_contract_bytes=certified.canonical_contract_bytes,
+                    concrete_contract_type=type(value),
+                    profile_revision=CANONICAL_PROFILE_REVISION,
+                    codec_revision=CANONICAL_CODEC_REVISION,
+                    domain=certified.domain,
+                    result=certified,
+                )
+            return certified
     payload = canonical_contract_value(value)
     domain = _CANONICAL_CONTRACT_ENVELOPE.encode("ascii") + b"\0" + kind.encode("ascii")
     canonical_bytes, member_spans = encode_typed_value_with_spans(
@@ -13054,12 +13082,41 @@ def encode_semantic_contract_result(
             domain=domain,
             result=result,
         )
+    if reuse_scope is not None:
+        reuse_scope.record_encoded_result(value, result)
     return result
 
 
 def encode_semantic_contract(value: BaseModel) -> bytes:
-    """Encode with full validation; ordinary callers receive no cache authority."""
-    return encode_semantic_contract_result(value).canonical_contract_bytes
+    """Encode with full validation; ordinary callers receive no cache authority.
+
+    The bytes-only path emits through the single canonical writer without
+    span issuance or member-evidence minting (those belong to the staged
+    result pipeline) and still re-derives validation from the lowered
+    payload, so forged copies fail closed exactly as the result path does.
+    Within one enabled operation, an instance the codec already certified is
+    served its proven bytes by object identity.
+    """
+    kind = _CONTRACT_KINDS.get(type(value))
+    if kind is None:
+        raise SemanticContractCodecError(f"unsupported semantic ingestion contract type: {type(value).__name__}")
+    reuse_scope = current_digest_verification_scope()
+    if reuse_scope is not None:
+        certified_bytes = reuse_scope.lookup_encoded_bytes(value)
+        if certified_bytes is not None:
+            return certified_bytes
+    payload = canonical_contract_value(value)
+    canonical_bytes = encode_typed_value(
+        {
+            "schema": _CANONICAL_CONTRACT_ENVELOPE,
+            "kind": kind,
+            "payload": payload,
+        }
+    )
+    _revalidated_contract_instance(value, payload)
+    if reuse_scope is not None:
+        reuse_scope.record_encoded_bytes(value, canonical_bytes)
+    return canonical_bytes
 
 
 def decode_semantic_contract(
