@@ -103,6 +103,18 @@ durations artifact is regenerated per CI run by `memorii.tools.test_shards`.
 - 2026-09-02: opened. Phase 1 attribution recorded from the durations
   artifact and `pr-gates.yml`; the race family's two-subprocesses-per-node
   structure confirmed in the test source.
+- 2026-09-02 (lever-1 feasibility): the project venv carries no `pip`
+  (uv-managed environment — reviewer tooling bootstrap created an
+  `uv.lock` during the milestone review, since removed as noise), so
+  adding pytest-xdist is a dev-dependency change through `pyproject` +
+  `uv`, not an ad-hoc install; the spike is recorded as blocked on that
+  normal dependency decision rather than availability.  The CE-9 broad
+  gate now running provides the post-optimization serial baseline this
+  design's Step 0 needs; a pre-optimization attribution curiosity is
+  also recorded: three test files failed collection at the prior
+  campaign's closed revision `21dcaf3` (clean worktree-proven) from a
+  stale private import, so the durations artifact's provenance for those
+  nodes predates the public rename.
 
 ## Next Action
 
