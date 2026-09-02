@@ -2,7 +2,7 @@
 
 - Work ID: `semantic-ingestion-legacy-path-removal-2026-08-26-implementation`
 - Work type: `implementation`
-- Status: `active`
+- Status: `complete`
 - Coordinator: sole writer (main thread)
 - Created: `2026-08-26`
 - Last updated: `2026-08-26`
