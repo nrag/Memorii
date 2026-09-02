@@ -194,9 +194,9 @@ fixtures, diagnostics, CI jobs, or serialized outputs.
 | ID | Requirement | Acceptance criterion | Status |
 | --- | --- | --- | --- |
 | CMR-001 | Re-baseline both modes pre-change | v2 evidence JSON recorded at the pre-change revision; determinism and accounting assertions pass | complete |
-| CMR-002 | Revision-bound reuse map | Profile confirms remaining cost attribution and lists every whole-object re-encode and internal round-trip site with mandatory/internal classification before production edits | in progress |
-| CMR-003 | Member-level canonical reuse | Certified member bytes/spans/instances are reused across roots within the operation; identical members are encoded once; canonical bytes unchanged | pending |
-| CMR-004 | Revalidation elimination (internal only) | Same-trust-domain certified-instance reuse replaces internal `model_dump`/`model_validate` round-trips; mandatory boundaries unchanged; first-admission validators always run | pending |
+| CMR-002 | Revision-bound reuse map | Profile confirms remaining cost attribution and lists every whole-object re-encode and internal round-trip site with mandatory/internal classification before production edits | complete |
+| CMR-003 | Member-level canonical reuse | Certified member bytes/spans/instances are reused across roots within the operation; identical members are encoded once; canonical bytes unchanged | complete (fused splicing emitter + lowering/string/canonicity memos) |
+| CMR-004 | Revalidation elimination (internal only) | Same-trust-domain certified-instance reuse replaces internal `model_dump`/`model_validate` round-trips; mandatory boundaries unchanged; first-admission validators always run | landed for the prepare edge, prepared-source repositories, and provider post-boundary wrappers; graph-planning/event-replay clusters remain follow-up candidates |
 | CMR-005 | Accounting and parity | Disabled-mode digest counts and lifecycle accounting unchanged; digest-count determinism holds; parity gate green | pending |
 | CMR-006 | Performance target | Enabled median < 5s per delivery on the v2 harness at the final revision | pending |
 | CMR-007 | Gates | Frozen byte-identity suites green; broad gate once at final revision; ruff and identity hygiene clean | pending |
@@ -311,10 +311,33 @@ fixtures, diagnostics, CI jobs, or serialized outputs.
     processes invalidated later timing probes (38-72s readings); all
     post-load measurements are deferred to a quiet machine.
 
+- 2026-09-01/02 (gates at `585d51c`, under external load ~8-80): arena 46
+  passed (including the differential fused-vs-reference families, memo
+  lifecycle, forged-copy fail-closed, and duplicate-staging refusal),
+  consensus codecs + proposal vector + provider compatibility +
+  provider service + mode parity 56 passed, bootstrap coordinator V3
+  family 19 passed; ruff clean; identity hygiene clean apart from the 124
+  known `tests/ci/unit-test-durations.json` CI-artifact keys dispositioned
+  in the legacy-path removal completion record.  `__eq__` attribution
+  (CMR-EXP-007): 41,212 of the calls are the digest-verification hit
+  checks themselves — the landed substitution contract's verification
+  price, not removable without weakening it.
+- 2026-09-02 (blocker recorded): final wall-clock evidence (v2 full run)
+  and the once-only broad gate require a quiet host.  External load
+  (57-80, later ~8.5 of 16 logical cores) invalidated every timing probe
+  after the ~9.1s quiet-machine reading; at load ~8.5 the mode is
+  11.6-12.2s.  Remaining compute levers are small (graph-planning
+  quadruple validation, event-replay carrier adapter, dispatch ordering);
+  the decisive residual is generational GC over the delivery's live
+  container population (gc-disabled in-process A/B: 5.8-5.9s vs
+  6.7-8.6s).  Closing to <5s likely requires an explicit, reviewed
+  operability decision on GC policy for the arena's operation lifecycle
+  (deferring generational collection to operation end), which touches
+  global interpreter state from library code and is not taken
+  unilaterally.
+
 ## Next Action
 
-Land the remaining correctness gates for the fused-emitter and round-trip
-slices (mode parity, provider service/compatibility, bootstrap coordinator
-family), then re-measure on a quiet machine (external load invalidated
-timing on 2026-09-01 evening; load average 57-80 from unrelated host
-processes).
+Re-run the v2 wall-clock harness and the once-only broad gate on a quiet
+host; from those numbers either close the acceptance or record the GC
+policy decision (with the measured residual) for external review.
