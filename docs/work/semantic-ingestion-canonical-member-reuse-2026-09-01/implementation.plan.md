@@ -2,7 +2,7 @@
 
 - Work ID: `semantic-ingestion-canonical-member-reuse-2026-09-01`
 - Work type: `implementation`
-- Status: `paused (2026-09-02): the user routed the construction-elimination work through a design pass first; linked design operation ../semantic-ingestion-construction-elimination-2026-09-02/design.plan.md owns the next slice`
+- Status: `active (resumed 2026-09-02): the linked construction-elimination design is approved (candidate v5, commit a49b32b) and governs the next slice`
 - Coordinator: sole writer (main thread)
 - Created: 2026-09-01
 - Last updated: 2026-09-01
@@ -355,11 +355,11 @@ fixtures, diagnostics, CI jobs, or serialized outputs.
 
 ## Next Action
 
-PAUSED 2026-09-02: the construction-elimination follow-on (proof-tree
-avoidance, decode-instance memo, graph/event round-trip conversions) is
-being designed first under
-`../semantic-ingestion-construction-elimination-2026-09-02/design.plan.md`
-(user routing decision; the GC disable/enable bracket is rejected for
-multi-session concurrent hosts).  Resume this plan when the linked design
-is approved; its remaining items are the quiet-host v2 re-measurement and
-the once-only broad gate at the final revision.
+RESUMED 2026-09-02: the linked design
+(`../semantic-ingestion-construction-elimination-2026-09-02/design.plan.md`,
+APPROVED WITH FOLLOW-UPS, candidate v5 at commit `a49b32b`) governs the
+next slice.  Implement in order: the validated-instance registry with
+the recursive representational-identity guard and the closed sharing
+rule (fix 1), the graph/event conversions (fix 3), the decode-instance
+memo (fix 2), the Phase 4 test families from the design's owner column,
+then the quiet-host v2 re-measurement and the once-only broad gate.
