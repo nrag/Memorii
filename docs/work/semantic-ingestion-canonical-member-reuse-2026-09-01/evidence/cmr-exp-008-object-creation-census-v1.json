@@ -1,0 +1,251 @@
+{
+  "decode": {
+    "calls": 106,
+    "tree_nodes_total": 16412,
+    "tree_nodes_unique": 5441,
+    "unique_raws": 34
+  },
+  "elapsed_seconds": 552.6247884840122,
+  "gc": {
+    "collections": {
+      "gen0": 1134,
+      "gen1": 103,
+      "gen2": 8
+    },
+    "collections_after": [
+      1497,
+      136,
+      13
+    ],
+    "collections_before": [
+      363,
+      33,
+      4
+    ],
+    "time_seconds": {
+      "gen0": 0.492,
+      "gen1": 0.181,
+      "gen2": 1.045
+    }
+  },
+  "live_after_close": {
+    "Decorator": 1107,
+    "DecoratorInfos": 1011,
+    "FieldInfo": 10969,
+    "GenericAlias": 1468,
+    "LazyClassAttribute": 984,
+    "ModelMetaclass": 1011,
+    "ReferenceType": 4613,
+    "SchemaSerializer": 987,
+    "SchemaValidator": 985,
+    "_PydanticGeneralMetadata": 1606,
+    "_abc_data": 1330,
+    "builtin_function_or_method": 1490,
+    "cell": 3419,
+    "dict": 39711,
+    "frozenset": 2375,
+    "function": 17210,
+    "getset_descriptor": 3387,
+    "list": 18618,
+    "method": 1214,
+    "method_descriptor": 2230,
+    "partial": 992,
+    "set": 13307,
+    "tuple": 21395,
+    "type": 1912,
+    "wrapper_descriptor": 1911
+  },
+  "live_after_total": 171539,
+  "live_inside_arena": {
+    "CanonicalMemberEvidence": 3128,
+    "FieldInfo": 10969,
+    "GenericAlias": 1468,
+    "ProjectionTextSpan": 2378,
+    "ReferenceType": 4613,
+    "RetainedSourceTextArtifact": 2349,
+    "SegmentLocalTextArtifact": 2367,
+    "SegmentLocalTextSpan": 2368,
+    "SemanticProjectionTextArtifact": 2377,
+    "_CanonicalContractMap": 22833,
+    "_PydanticGeneralMetadata": 1606,
+    "_abc_data": 1330,
+    "builtin_function_or_method": 1490,
+    "cell": 3420,
+    "dict": 54985,
+    "frozenset": 2808,
+    "function": 17211,
+    "getset_descriptor": 3387,
+    "list": 18835,
+    "method": 1215,
+    "method_descriptor": 2230,
+    "set": 36323,
+    "tuple": 45783,
+    "type": 1912,
+    "wrapper_descriptor": 1911
+  },
+  "live_inside_total": 283850,
+  "lowering": {
+    "calls": 222818,
+    "fresh": 22830,
+    "memo_hits": 2949
+  },
+  "memo_sizes": {
+    "digest_verified": 244,
+    "emitted_entries": 5634,
+    "emitted_retained_bytes": 12582837,
+    "encoded_bytes": 79,
+    "encoded_results": 1,
+    "lowered_entries": 22833,
+    "roundtrip_entries": 3,
+    "string_entries": 2417
+  },
+  "model_dump_calls": {
+    "AtomicGenerationMember": 189,
+    "BootstrapDeclaredSegmentLanguageRoute": 50,
+    "BootstrapGraphPlanAtomicMemberV3": 58,
+    "BootstrapNormalizationReadyControlRecordV3": 42,
+    "BootstrapRecoveryClaimV3": 79,
+    "BootstrapRecoveryKeyV3": 35,
+    "BootstrapSourceLocalIdentityClusterDecisionV3": 188,
+    "CanonicalMemoryRecord": 74,
+    "CapabilityRegistrySnapshot": 45,
+    "ComponentSymbolFingerprint": 40,
+    "CurrentBootstrapReleaseAssertion": 36,
+    "GovernanceCarrierArtifact": 55,
+    "GraphPlanningState": 58,
+    "IngestionStageInstanceRef": 65,
+    "IngestionStageOutcome": 73,
+    "MessageAdmissionCarrierSet": 121,
+    "OperationFenceBinding": 200,
+    "OperationLeaseBinding": 153,
+    "RequiredOutcomeScopeSet": 109,
+    "SegmentLanguageRouteSet": 36
+  },
+  "model_dump_total": 2282,
+  "model_validate_calls": {
+    "AtomicGenerationMember": 135,
+    "BootstrapAnalysisLaneResultV3": 28,
+    "BootstrapGraphGroupCommitRequestV3": 5,
+    "BootstrapGraphPlanAtomicMemberV3": 9,
+    "BootstrapGraphPlanAtomicWriteRequestV3": 10,
+    "BootstrapGraphTransactionAuthorityReloadV3": 5,
+    "BootstrapNormalizationRequestCoreV3": 12,
+    "BootstrapProposalRunPayloadV3": 7,
+    "BootstrapRecoveryClaimV3": 9,
+    "BootstrapSemanticReductionAuthorityMemberV3": 12,
+    "BootstrapSourceNormalizationRequestV3": 6,
+    "BootstrapSourceNormalizationResultV3": 14,
+    "CurrentBootstrapReleaseAssertion": 14,
+    "OperationFenceBinding": 15,
+    "PreparedSource": 10,
+    "PreplanningOperationControl": 103,
+    "ReferenceFieldAnnotation": 29,
+    "SemanticRecordOwnershipManifest": 134,
+    "SemanticWriterAdmission": 134,
+    "SemanticWriterCommitBinding": 12
+  },
+  "model_validate_total": 816,
+  "tracemalloc_peak_bytes": 95866659,
+  "tracemalloc_top_sites": [
+    {
+      "blocks": 67297,
+      "bytes": 6593488,
+      "site": "_schema_validator.py:53"
+    },
+    {
+      "blocks": 905,
+      "bytes": 4811491,
+      "site": "main.py:475"
+    },
+    {
+      "blocks": 130,
+      "bytes": 1933110,
+      "site": "pathlib.py:404"
+    },
+    {
+      "blocks": 1655,
+      "bytes": 1504459,
+      "site": "main.py:732"
+    },
+    {
+      "blocks": 1,
+      "bytes": 636201,
+      "site": "atomic_store.py:13135"
+    },
+    {
+      "blocks": 1,
+      "bytes": 429709,
+      "site": "atomic_store.py:12202"
+    },
+    {
+      "blocks": 2509,
+      "bytes": 398632,
+      "site": "ingestion_contracts.py:1144"
+    },
+    {
+      "blocks": 2770,
+      "bytes": 371698,
+      "site": "<frozen importlib._bootstrap_external>:757"
+    },
+    {
+      "blocks": 1,
+      "bytes": 357689,
+      "site": "atomic_store.py:12203"
+    },
+    {
+      "blocks": 2,
+      "bytes": 352288,
+      "site": "atomic_store.py:12244"
+    },
+    {
+      "blocks": 4616,
+      "bytes": 348296,
+      "site": "core_schema.py:4350"
+    },
+    {
+      "blocks": 1,
+      "bytes": 318113,
+      "site": "writer_admission.py:2951"
+    },
+    {
+      "blocks": 912,
+      "bytes": 239984,
+      "site": "copy.py:221"
+    },
+    {
+      "blocks": 9,
+      "bytes": 229149,
+      "site": "ingestion_contracts.py:1069"
+    },
+    {
+      "blocks": 1,
+      "bytes": 214867,
+      "site": "writer_admission.py:3189"
+    },
+    {
+      "blocks": 2045,
+      "bytes": 212286,
+      "site": "decoder.py:354"
+    },
+    {
+      "blocks": 1,
+      "bytes": 178857,
+      "site": "writer_admission.py:3190"
+    },
+    {
+      "blocks": 1,
+      "bytes": 175638,
+      "site": "writer_admission.py:3312"
+    },
+    {
+      "blocks": 1604,
+      "bytes": 148296,
+      "site": "_known_annotated_metadata.py:193"
+    },
+    {
+      "blocks": 751,
+      "bytes": 147960,
+      "site": "main.py:263"
+    }
+  ]
+}

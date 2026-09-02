@@ -2,7 +2,7 @@
 
 - Work ID: `semantic-ingestion-canonical-member-reuse-2026-09-01`
 - Work type: `implementation`
-- Status: `active`
+- Status: `paused (2026-09-02): the user routed the construction-elimination work through a design pass first; linked design operation ../semantic-ingestion-construction-elimination-2026-09-02/design.plan.md owns the next slice`
 - Coordinator: sole writer (main thread)
 - Created: 2026-09-01
 - Last updated: 2026-09-01
@@ -355,9 +355,11 @@ fixtures, diagnostics, CI jobs, or serialized outputs.
 
 ## Next Action
 
-Obtain the GC-policy decision for the arena's operation lifecycle (defer
-generational collection to operation end — global interpreter state from
-library code, therefore explicit and reviewed, not unilateral), land the
-remaining graph-planning/event-replay round-trip conversions if approved
-scope allows, then re-run the v2 harness on a quiet host and run the
-once-only broad gate at the final revision.
+PAUSED 2026-09-02: the construction-elimination follow-on (proof-tree
+avoidance, decode-instance memo, graph/event round-trip conversions) is
+being designed first under
+`../semantic-ingestion-construction-elimination-2026-09-02/design.plan.md`
+(user routing decision; the GC disable/enable bracket is rejected for
+multi-session concurrent hosts).  Resume this plan when the linked design
+is approved; its remaining items are the quiet-host v2 re-measurement and
+the once-only broad gate at the final revision.
