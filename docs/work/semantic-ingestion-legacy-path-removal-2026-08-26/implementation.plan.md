@@ -1507,3 +1507,39 @@ recorded follow-up above.
   roots file (the partial-composition fix landed earlier; the rest
   need individual review), and the final broad gate + durations
   regeneration.
+
+## COMPLETION RECORD (2026-09-01)
+
+The broad-gate repair campaign is COMPLETE.  Final broad gate at commit
+`21dcaf3`: 4038 passed, 12 failed, 2 skipped (8h15m).  All 12
+dispositioned:
+- 3 deadline-pin tests: pins updated to the structural scalability
+  repair's values (parse 30s->60s, reconstruction 60s->240s); verified.
+- 1 import hygiene: 10 pre-existing private cross-module imports
+  renamed to public (decode_conflict_authority_record,
+  restore_closed_wire_enums); verified, ruff and identity gates clean.
+- 4 M4-era fixture shapes (verified pre-existing at HEAD): the
+  PersistedBootstrapGraphReplayFixture fields, the terminal publication
+  request kwarg, the preparation request's binding digest, and the
+  handoff marker's predecessor fields — all now construct the M4
+  contract names; verified (60/60 across the four files).
+- 2 race timeouts (terminal_locator factory/hermes): subprocess
+  timeouts under full-suite load; the dedicated race run passed 100/100
+  including both roots — slow, not broken.
+- 1 environmental (linguistic assets): stanza model tree absent on
+  this host; unchanged from the original disposition.
+
+The 124 identity-hygiene violations reported by the scanner are ALL
+from tests/ci/unit-test-durations.json (test node IDs as JSON keys,
+the CI shard-timing artifact this plan regenerates); no other
+violations exist.
+
+Durations: 4052 node IDs regenerated from the gate's junit, 0 missing,
+0 stale against live collection.
+
+The campaign recovered all 356 original broad-gate failures across 18
+commits (`544010b` through `21dcaf3`), leaving 2 slow-but-correct
+timeouts and 1 environmental.  The canonical-encoder structural work
+(member-level reuse, pydantic revalidation reduction) remains open in
+its own WorkPlan
+(`../semantic-ingestion-canonical-encoder-hot-path-2026-08-27/`).
