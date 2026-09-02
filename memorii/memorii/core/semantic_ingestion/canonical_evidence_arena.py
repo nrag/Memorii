@@ -8,7 +8,7 @@ from hashlib import sha256
 from secrets import token_hex
 from threading import Lock
 from threading import local as threading_local
-from typing import Generic, Literal, TypeVar
+from typing import Any, Generic, Literal, TypeVar, get_args, get_origin
 
 from pydantic import BaseModel
 
@@ -184,12 +184,22 @@ class CanonicalDigestVerificationScope:
         # dump/validate round-trip already succeeded in this operation is
         # served that proven result; any other instance pays the full path.
         self._roundtrips: dict[int, tuple[object, object]] = {}
+        # Validated-instance registry: an entry certifies that this exact
+        # object's content passed complete pydantic validation inside this
+        # operation.  Consumers gate every sharing use on the
+        # deep-immutability verdict for the concrete type.
+        self._certified: dict[int, tuple[object, object]] = {}
+        # Byte-identical unlimited decode replay: the frozen model returned
+        # for one exact (type, raw) pair is served to unlimited repeat
+        # decodes of the same bytes; limited calls never touch this memo.
+        self._decoded: dict[tuple[type, bytes], BaseModel] = {}
         self._result_reuses = 0
         self._result_records = 0
         self._bytes_reuses = 0
         self._bytes_records = 0
         self._lowered_records = 0
         self._roundtrip_reuses = 0
+        self._certified_reuses = 0
 
     @property
     def reuses(self) -> int:
@@ -277,12 +287,42 @@ class CanonicalDigestVerificationScope:
             return
         self._roundtrips[id(value)] = (value, validated)
 
+    def lookup_certified_instance(self, value: object) -> object | None:
+        entry = self._certified.get(id(value))
+        if entry is not None and entry[0] is value:
+            self._certified_reuses += 1
+            return entry[0]
+        return None
+
+    def record_certified_instance(self, value: object) -> None:
+        if len(self._certified) >= MAX_MEMBER_PATHS_PER_OPERATION:
+            return
+        self._certified[id(value)] = (value,)
+
+    def lookup_decoded_contract(self, expected_type: type, raw: bytes) -> object | None:
+        return self._decoded.get((expected_type, raw))
+
+    def record_decoded_contract(self, expected_type: type, raw: bytes, validated: BaseModel) -> None:
+        if len(self._decoded) >= MAX_DECODED_CONTRACT_ENTRIES:
+            return
+        self._decoded[(expected_type, raw)] = validated
+
+    @property
+    def certified_instances(self) -> int:
+        return len(self._certified)
+
+    @property
+    def decoded_entries(self) -> int:
+        return len(self._decoded)
+
     def purge(self) -> None:
         self._verified.clear()
         self._encoded_results.clear()
         self._encoded_bytes.clear()
         self._lowered_values.clear()
         self._roundtrips.clear()
+        self._certified.clear()
+        self._decoded.clear()
 
 
 _CURRENT_DIGEST_VERIFICATION_SCOPES = threading_local()
@@ -320,6 +360,107 @@ def _pop_digest_verification_scope(
     if stack is None or not stack or stack[-1] is not scope:
         raise RuntimeError("digest verification scope stack is unbalanced")
     stack.pop()
+
+
+def record_certified_instance(value: object) -> None:
+    """Certify one instance whose content just passed complete validation.
+
+    Recording is a no-op outside an enabled operation.  Callers are the
+    validation-success sites named in the governing design; every sharing
+    consumer gates use of a certified instance on the deep-immutability
+    verdict for its concrete type.
+    """
+
+    scope = current_digest_verification_scope()
+    if scope is not None:
+        scope.record_certified_instance(value)
+
+
+def certified_instance(value: object) -> bool:
+    """True when this exact object's content was certified in this operation."""
+
+    scope = current_digest_verification_scope()
+    if scope is None:
+        return False
+    return scope.lookup_certified_instance(value) is not None
+
+
+MAX_DECODED_CONTRACT_ENTRIES = 2_048
+
+_IMMUTABILITY_VERDICTS: dict[type, bool] = {}
+_IMMUTABILITY_IN_PROGRESS: set[type] = set()
+
+_MUTABLE_CONTAINER_TYPES = (dict, list, set)
+_MUTABLE_ORIGIN_NAMES = {
+    "typing.Mapping",
+    "typing.MutableMapping",
+    "typing.Dict",
+    "typing.List",
+    "typing.Set",
+    "typing.MutableSequence",
+    "collections.abc.Mapping",
+    "collections.abc.MutableMapping",
+    "collections.abc.MutableSequence",
+    "typing.MutableSet",
+}
+
+
+def _annotation_allows_sharing(annotation: object) -> bool:
+    """One annotation node and its parameter tree contain no mutable surface."""
+
+    origin = get_origin(annotation)
+    if origin is None:
+        if annotation is object or annotation is Any:
+            return False
+        if isinstance(annotation, type):
+            if annotation in _MUTABLE_CONTAINER_TYPES:
+                return False
+            if issubclass(annotation, dict):
+                return False
+            if annotation is BaseModel:
+                return False
+            if issubclass(annotation, BaseModel):
+                return deeply_immutable_type(annotation)
+            return True
+        return True
+    if origin in _MUTABLE_CONTAINER_TYPES:
+        return False
+    if getattr(origin, "__module__", "") == "collections.abc" and origin.__name__ in {
+        "Mapping",
+        "MutableMapping",
+        "MutableSequence",
+        "MutableSet",
+    }:
+        return False
+    return all(_annotation_allows_sharing(argument) for argument in get_args(annotation))
+
+
+def deeply_immutable_type(model_type: type) -> bool:
+    """Verified deep immutability gate for one concrete contract type.
+
+    The type and every nested model type must be ``frozen=True``; no field
+    annotation anywhere in its parameter tree may contain a mutable
+    container, ``object``/``Any``, or a bare or non-frozen model type
+    (including ``BaseModel`` itself).  Verdicts are computed once per type
+    at first encounter and cached; an in-progress reference cycle
+    resolves conservatively to failure.
+    """
+
+    cached = _IMMUTABILITY_VERDICTS.get(model_type)
+    if cached is not None:
+        return cached
+    if model_type in _IMMUTABILITY_IN_PROGRESS:
+        return False
+    _IMMUTABILITY_IN_PROGRESS.add(model_type)
+    try:
+        verdict = bool(model_type.model_config.get("frozen")) and all(
+            _annotation_allows_sharing(field.annotation)
+            for field in model_type.model_fields.values()
+        )
+    finally:
+        _IMMUTABILITY_IN_PROGRESS.discard(model_type)
+    _IMMUTABILITY_VERDICTS[model_type] = verdict
+    return verdict
 
 
 @dataclass(frozen=True)

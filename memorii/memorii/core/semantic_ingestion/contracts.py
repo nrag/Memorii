@@ -98,6 +98,7 @@ from memorii.core.semantic_ingestion.canonical_evidence_arena import (
     CanonicalMemberIndex,
     ValidatedCanonicalEvidenceResult,
     current_digest_verification_scope,
+    deeply_immutable_type,
 )
 
 Commitment = Literal[
@@ -143,20 +144,88 @@ def canonical_contract_value(value: object) -> object:
     return value
 
 
+def _representationally_identical(input_value: object, proof_value: object, depth: int = 0) -> bool:
+    """Per-node exact-type identity and equality at every nesting level.
+
+    Plain equality is type-blind for ``(str, StrEnum)``, ``(bool, int)``,
+    and ``(int, float)`` at any depth, so every node requires the exact
+    runtime type to match before values compare.  Frozensets are paired by
+    a backtracking multiset match over the same recursive predicate
+    (canonical-encoding sorting is the design's equivalent alternative).
+    The recursion domain is closed for gate-passing types: every node is a
+    frozen model, tuple, frozenset, or immutable scalar.
+    """
+
+    if depth > 64:
+        return False
+    if type(input_value) is not type(proof_value):
+        return False
+    if isinstance(proof_value, BaseModel):
+        return all(
+            _representationally_identical(
+                getattr(input_value, name), getattr(proof_value, name), depth + 1
+            )
+            for name in type(proof_value).model_fields
+        )
+    if isinstance(proof_value, tuple):
+        return len(input_value) == len(proof_value) and all(
+            _representationally_identical(left, right, depth + 1)
+            for left, right in zip(input_value, proof_value, strict=True)
+        )
+    if isinstance(proof_value, frozenset):
+        return _frozensets_pair(list(input_value), list(proof_value), depth)
+    return input_value == proof_value
+
+
+def _frozensets_pair(input_items: list[object], proof_items: list[object], depth: int) -> bool:
+    if len(input_items) != len(proof_items):
+        return False
+    if len(input_items) > 32:
+        return False
+    if not input_items:
+        return True
+    first = input_items[0]
+    rest = input_items[1:]
+    for index, candidate in enumerate(proof_items):
+        if (
+            type(first) is type(candidate)
+            and _representationally_identical(first, candidate, depth + 1)
+            and _frozensets_pair(rest, proof_items[:index] + proof_items[index + 1 :], depth)
+        ):
+            return True
+    return False
+
+
 def _revalidated_contract_instance(value: BaseModel, canonical_payload: object) -> BaseModel:
     """Re-derive validation from the lowered payload; forgeries fail closed.
 
     ``model_copy``/``model_construct`` instances never inherit validation:
     the payload is re-validated as freshly parsed content on every codec
-    admission.
+    admission.  Within one enabled operation, an instance already
+    certified by complete validation is served directly for
+    deeply-immutable types; any other instance pays the full proof.  The
+    proof output is always certified; the input is certified only when
+    representationally identical to the proof, because the proof validates
+    the normalized payload and drifted representations (lax coercion,
+    enum restore, at any nesting depth) must never inherit validation.
     """
+    reuse_scope = current_digest_verification_scope()
     try:
-        return type(value).model_validate(
+        if reuse_scope is not None:
+            certified = reuse_scope.lookup_certified_instance(value)
+            if certified is not None and deeply_immutable_type(type(value)):
+                return certified  # type: ignore[return-value]
+        validated = type(value).model_validate(
             restore_closed_wire_enums(canonical_payload),
             context=None,
         )
     except (TypeError, ValueError) as exc:
         raise SemanticContractCodecError("semantic ingestion contract validation failed") from exc
+    if reuse_scope is not None:
+        reuse_scope.record_certified_instance(validated)
+        if _representationally_identical(value, validated):
+            reuse_scope.record_certified_instance(value)
+    return validated
 
 
 def _build_validated_semantic_contract_result(
@@ -224,6 +293,7 @@ def _record_digest_verification(instance: object, declared: str) -> None:
     scope = current_digest_verification_scope()
     if scope is not None:
         scope.record_verified(type(instance), declared, instance)
+        scope.record_certified_instance(instance)
 
 
 def certified_roundtrip(value: BaseModel) -> BaseModel:
@@ -246,6 +316,7 @@ def certified_roundtrip(value: BaseModel) -> BaseModel:
     validated = type(value).model_validate(value.model_dump(mode="python"))
     if scope is not None:
         scope.record_roundtrip(value, validated)
+        scope.record_certified_instance(validated)
     return validated
 
 
