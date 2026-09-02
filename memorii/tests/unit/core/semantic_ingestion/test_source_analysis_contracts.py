@@ -29,9 +29,9 @@ from memorii.core.semantic_ingestion.contracts import (
     SourceMention,
     TemporalResolutionRequest,
     TemporalResolverManifest,
-    _restore_closed_wire_enums,
     decode_semantic_contract,
     encode_semantic_contract,
+    restore_closed_wire_enums,
 )
 
 _FIXTURE = (
@@ -48,7 +48,7 @@ def _proposal() -> SemanticProposal:
     body = decode_typed_value(zlib.decompress(base64.b64decode(vector["expected_ctv_preimage_zlib_base64"])))
     payload = json.loads(zlib.decompress(base64.b64decode(vector["semantic_proposal_zlib_base64"])))
     body["proposal_digest"] = payload["proposal_digest"]
-    body = _restore_closed_wire_enums(body)
+    body = restore_closed_wire_enums(body)
     body["preparation_fingerprint"] = "1" * 64
     route = body["language_route"]
     assert isinstance(route, dict)

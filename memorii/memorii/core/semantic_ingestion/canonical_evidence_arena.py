@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import collections
+import typing
+from collections import deque
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from hashlib import sha256
@@ -188,7 +191,7 @@ class CanonicalDigestVerificationScope:
         # object's content passed complete pydantic validation inside this
         # operation.  Consumers gate every sharing use on the
         # deep-immutability verdict for the concrete type.
-        self._certified: dict[int, tuple[object, object]] = {}
+        self._certified: dict[int, tuple[object, ...]] = {}
         # Byte-identical unlimited decode replay: the frozen model returned
         # for one exact (type, raw) pair is served to unlimited repeat
         # decodes of the same bytes; limited calls never touch this memo.
@@ -402,19 +405,22 @@ MAX_DECODED_CONTRACT_ENTRIES = 2_048
 _IMMUTABILITY_VERDICTS: dict[type, bool] = {}
 _IMMUTABILITY_IN_PROGRESS: set[type] = set()
 
-_MUTABLE_CONTAINER_TYPES = (dict, list, set)
-_MUTABLE_ORIGIN_NAMES = {
-    "typing.Mapping",
-    "typing.MutableMapping",
-    "typing.Dict",
-    "typing.List",
-    "typing.Set",
-    "typing.MutableSequence",
-    "collections.abc.Mapping",
-    "collections.abc.MutableMapping",
-    "collections.abc.MutableSequence",
-    "typing.MutableSet",
-}
+_BARE_MUTABLE_BASES = (dict, list, set, bytearray, deque)
+_BARE_MUTABLE_SPECIAL_FORMS = frozenset(
+    (
+        typing.Mapping,
+        typing.MutableMapping,
+        typing.MutableSequence,
+        typing.MutableSet,
+        deque,
+        collections.defaultdict,
+        typing.OrderedDict,
+        typing.Counter,
+        dict,
+        list,
+        set,
+    )
+)
 
 
 def _annotation_allows_sharing(annotation: object) -> bool:
@@ -425,24 +431,22 @@ def _annotation_allows_sharing(annotation: object) -> bool:
         if annotation is object or annotation is Any:
             return False
         if isinstance(annotation, type):
-            if annotation in _MUTABLE_CONTAINER_TYPES:
-                return False
-            if issubclass(annotation, dict):
+            if annotation is frozenset or annotation is tuple:
+                return True
+            if issubclass(annotation, _BARE_MUTABLE_BASES):
                 return False
             if annotation is BaseModel:
                 return False
             if issubclass(annotation, BaseModel):
                 return deeply_immutable_type(annotation)
             return True
-        return True
-    if origin in _MUTABLE_CONTAINER_TYPES:
+        return annotation not in _BARE_MUTABLE_SPECIAL_FORMS
+    if isinstance(origin, type) and issubclass(origin, _BARE_MUTABLE_BASES):
         return False
-    if getattr(origin, "__module__", "") == "collections.abc" and origin.__name__ in {
-        "Mapping",
-        "MutableMapping",
-        "MutableSequence",
-        "MutableSet",
-    }:
+    if (
+        getattr(origin, "__module__", "") == "collections.abc"
+        and origin.__name__ in {"Mapping", "MutableMapping", "MutableSequence", "MutableSet"}
+    ):
         return False
     return all(_annotation_allows_sharing(argument) for argument in get_args(annotation))
 

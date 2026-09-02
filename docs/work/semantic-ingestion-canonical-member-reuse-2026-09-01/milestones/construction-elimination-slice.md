@@ -67,6 +67,26 @@ is loaded; the quiet-host measurement requires a quiet window by protocol).
   adapter-path counter, and the previously-unpinned
   `semantic event carrier validation failed` error surface.  Evidence
   status restated: CE-6/CE-8 were `in progress` before this batch; the
-  families above are now landed with 73 graph/replay + 56 arena tests
-  green and ruff clean.  Harness rows (43,756 digest count,
-  determinism) remain CE-9 revision-bound local evidence.
+  families above are now landed with 135 focused tests green and ruff
+  clean.  Harness rows (43,756 digest count, determinism) remain CE-9
+  revision-bound local evidence.
+- 2026-09-02 (spec reconciliation): spec_auditor's round-1 report
+  confirmed the P2 (duplicate), confirmed the family remediation, and
+  raised two further findings, both now landed: F4 — the prior
+  remediation entry had recorded two production cleanups that were in a
+  failed edit run and had NOT landed (decode-memo gating, dead constant,
+  annotation) — landed now and this entry corrects the record; F2 — the
+  gate walker accepted parameterized mutable typing aliases
+  (`Deque`/`DefaultDict`/`OrderedDict`/`Counter`) and bare
+  `deque`/`bytearray` — the walker now rejects them (no current contract
+  kind used them; latent hole closed), and the one vacuous
+  `_roundtrips` assertion was deleted.  Also: an accidental
+  `memorii/uv.lock` created by reviewer tooling bootstrap was swept into
+  `f6d323c` by `git add -A` — removed as environment noise; and three
+  test files (`test_source_analysis_contracts`, `test_linguistic_adapters`,
+  `test_duckling_temporal_adapter`) failed collection at HEAD and at
+  clean `21dcaf3` (worktree-proven) from a stale private import the
+  prior campaign's public-rename missed — renamed to the public
+  `restore_closed_wire_enums`; their one failure
+  (`test_shipped_manifests_verify_real_local_english_assets`) is the
+  campaign-dispositioned stanza-asset environmental absence.

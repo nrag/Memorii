@@ -13269,7 +13269,8 @@ def decode_semantic_contract(
             raise
         raise SemanticContractCodecError("semantic ingestion contract validation failed") from exc
     if reuse_scope is not None:
-        reuse_scope.record_decoded_contract(expected_type, raw, validated)
+        if deeply_immutable_type(expected_type):
+            reuse_scope.record_decoded_contract(expected_type, raw, validated)
         reuse_scope.record_certified_instance(validated)
     return validated
 

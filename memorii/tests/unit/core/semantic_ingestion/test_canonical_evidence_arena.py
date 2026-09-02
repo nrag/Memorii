@@ -919,7 +919,6 @@ def test_registry_and_decode_memo_purge_on_close_and_refusal() -> None:
         scope = arena._digest_verification_scope
         assert scope.certified_instances >= 1
         assert scope.decoded_entries >= 1
-        assert len(scope._roundtrips) >= 0
     assert arena._digest_verification_scope.certified_instances == 0
     assert arena._digest_verification_scope.decoded_entries == 0
 
