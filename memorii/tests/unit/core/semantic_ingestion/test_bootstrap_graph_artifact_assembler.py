@@ -60,7 +60,7 @@ def test_terminal_request_rejects_generation_mismatch_before_schema_construction
             handoff=handoff,
             predecessor_generation=SimpleNamespace(
                 operation_generation=3, artifact_generation=3,
-            ), authenticated_ingress=object(),
+            ), delivery_principal_binding_digest="b" * 64,
             required_outcome_scopes=object(), operation_lease_binding=object(),
             operation_fence_binding=object(), writer_commit_binding=object(),
         )
@@ -139,9 +139,7 @@ def test_durable_retry_rejects_unavailable_epoch_substitution() -> None:
 def test_graph_epoch_fixture_rejects_foreign_replay_authority() -> None:
     fixture = PersistedBootstrapGraphReplayFixture(
         replay=SimpleNamespace(replay_digest="a" * 64),
-        authenticated_ingress=SimpleNamespace(
-            delivery_principal_binding=SimpleNamespace(binding_digest="b" * 64),
-        ),
+        delivery_principal_binding_digest="b" * 64,
         required_outcome_scopes=SimpleNamespace(scope_set_digest="c" * 64),
         operation_fence_binding=object(), operation_lease_binding=object(),
         writer_commit_binding=object(), control_epoch=SimpleNamespace(required_scope_set_digest="c" * 64),

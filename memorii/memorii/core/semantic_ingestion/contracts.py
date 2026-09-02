@@ -145,7 +145,7 @@ def _build_validated_semantic_contract_result(
 ) -> ValidatedCanonicalEvidenceResult:
     try:
         validated = type(value).model_validate(
-            _restore_closed_wire_enums(canonical_payload),
+            restore_closed_wire_enums(canonical_payload),
             context=None,
         )
     except (TypeError, ValueError) as exc:
@@ -13079,14 +13079,14 @@ def decode_semantic_contract(
             raise SemanticContractCodecError("semantic ingestion contract envelope is not closed")
         if decoded["schema"] != _CANONICAL_CONTRACT_ENVELOPE or decoded["kind"] != expected_kind:
             raise SemanticContractCodecError("legacy or mismatched semantic ingestion contract variant")
-        return expected_type.model_validate(_restore_closed_wire_enums(decoded["payload"]))
+        return expected_type.model_validate(restore_closed_wire_enums(decoded["payload"]))
     except (TypeError, ValueError) as exc:
         if isinstance(exc, SemanticContractCodecError):
             raise
         raise SemanticContractCodecError("semantic ingestion contract validation failed") from exc
 
 
-def _restore_closed_wire_enums(value: object) -> object:
+def restore_closed_wire_enums(value: object) -> object:
     """Restore the one strict enum lowered by the generic CTV codec."""
     if isinstance(value, dict):
         return {
@@ -13096,13 +13096,13 @@ def _restore_closed_wire_enums(value: object) -> object:
             if key == "object_literal_type" and isinstance(item, str)
             else ExtractionTriggerMode(item)
             if key == "trigger_mode" and isinstance(item, str)
-            else _restore_closed_wire_enums(item)
+            else restore_closed_wire_enums(item)
             for key, item in value.items()
         }
     if isinstance(value, tuple):
-        return tuple(_restore_closed_wire_enums(item) for item in value)
+        return tuple(restore_closed_wire_enums(item) for item in value)
     if isinstance(value, list):
-        return [_restore_closed_wire_enums(item) for item in value]
+        return [restore_closed_wire_enums(item) for item in value]
     return value
 
 

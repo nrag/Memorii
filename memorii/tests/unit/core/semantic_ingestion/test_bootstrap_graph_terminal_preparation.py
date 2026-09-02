@@ -17,9 +17,7 @@ def _inputs() -> tuple[SimpleNamespace, ...]:
     fence = SimpleNamespace(binding_digest="a" * 64)
     request = SimpleNamespace(
         request_digest="b" * 64,
-        authenticated_ingress=SimpleNamespace(
-            delivery_principal_binding=SimpleNamespace(binding_digest="c" * 64)
-        ),
+        delivery_principal_binding_digest="c" * 64,
         required_outcome_scopes=SimpleNamespace(scope_set_digest="d" * 64),
         initial_control_epoch=SimpleNamespace(operation_fence_binding=fence),
     )

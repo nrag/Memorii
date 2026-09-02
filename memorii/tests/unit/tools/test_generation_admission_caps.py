@@ -32,7 +32,9 @@ ROOT = Path(__file__).parents[4]
 
 
 def test_structural_builder_installs_default_parse_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
-    ticks = iter((0.0, 31.0))
+    # The parse deadline moved 30s -> 60s with the structural scalability
+    # repair (the manifest derivation deadline is 240s post-parse).
+    ticks = iter((0.0, 61.0))
     monkeypatch.setattr(manifest, "monotonic", lambda: next(ticks))
     with pytest.raises(manifest.StructuralManifestError, match="deadline exceeded"):
         manifest.build_structural_manifest(
@@ -54,7 +56,9 @@ def test_structural_builder_propagates_cooperative_cancellation() -> None:
 
 
 def test_independent_checker_installs_default_parse_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
-    ticks = iter((0.0, 31.0))
+    # The independent parser deadline moved 30s -> 60s with the structural
+    # scalability repair.
+    ticks = iter((0.0, 61.0))
     monkeypatch.setattr(checker, "monotonic", lambda: next(ticks))
     with pytest.raises(TraceabilityCoverageError, match="parser deadline exceeded"):
         checker.rebuild_structural_manifest_bytes(
@@ -64,7 +68,9 @@ def test_independent_checker_installs_default_parse_deadline(monkeypatch: pytest
 
 
 def test_independent_checker_installs_default_reconstruction_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
-    ticks = iter((0.0, 0.0, 0.0, 61.0))
+    # The reconstruction deadline moved 60s -> 240s with the structural
+    # scalability repair.
+    ticks = iter((0.0, 0.0, 0.0, 241.0))
     monkeypatch.setattr(checker, "monotonic", lambda: next(ticks))
     monkeypatch.setattr(checker, "_independent_extract", lambda *_args, **_kwargs: ())
     with pytest.raises(TraceabilityCoverageError, match="reconstruction deadline exceeded"):

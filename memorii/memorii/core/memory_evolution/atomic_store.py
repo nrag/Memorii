@@ -5456,7 +5456,7 @@ class SemanticIngestionAtomicStore:
 
         from memorii.core.memory_evolution.projection_history import (
             ProjectionHistoryError,
-            _decode_conflict_authority_record,
+            decode_conflict_authority_record,
         )
 
         record = self._memory_plane.get_record(
@@ -5466,7 +5466,7 @@ class SemanticIngestionAtomicStore:
         if record is None:
             return None
         try:
-            record_type, payload, _ = _decode_conflict_authority_record(record)
+            record_type, payload, _ = decode_conflict_authority_record(record)
             from memorii.core.memory_evolution.conflict_attention import (
                 SemanticConflictClarificationSubmissionOperation,
             )
@@ -5485,7 +5485,7 @@ class SemanticIngestionAtomicStore:
             )
             if generation_record is None:
                 raise ValueError
-            generation_type, generation_payload, _ = _decode_conflict_authority_record(generation_record)
+            generation_type, generation_payload, _ = decode_conflict_authority_record(generation_record)
             generation = decode_persisted_conflict_generation(
                 generation_payload, SemanticConflictClarificationSubmissionGeneration
             )
@@ -5985,7 +5985,7 @@ class SemanticIngestionAtomicStore:
         )
         from memorii.core.memory_evolution.projection_history import (
             ProjectionHistoryError,
-            _decode_conflict_authority_record,
+            decode_conflict_authority_record,
         )
 
         now = self._now()
@@ -6035,9 +6035,9 @@ class SemanticIngestionAtomicStore:
             )
             if pointer_record is None or work_record is None or attempt_record is None:
                 raise ValueError
-            pointer_type, pointer_payload, _ = _decode_conflict_authority_record(pointer_record)
-            work_type, work_payload, _ = _decode_conflict_authority_record(work_record)
-            attempt_type, attempt_payload, _ = _decode_conflict_authority_record(attempt_record)
+            pointer_type, pointer_payload, _ = decode_conflict_authority_record(pointer_record)
+            work_type, work_payload, _ = decode_conflict_authority_record(work_record)
+            attempt_type, attempt_payload, _ = decode_conflict_authority_record(attempt_record)
             if (
                 pointer_type != "active_pointer"
                 or ActiveSemanticConflict.model_validate(pointer_payload) != pointer
@@ -6091,14 +6091,14 @@ class SemanticIngestionAtomicStore:
         # An acknowledgement can be lost after the successor record commits.
         # Look up the one predecessor-keyed child before demanding that the
         # caller's claimed image is still current.
-        from memorii.core.memory_evolution.projection_history import _decode_conflict_authority_record
+        from memorii.core.memory_evolution.projection_history import decode_conflict_authority_record
         retained_record = self._memory_plane.get_record(
             "semantic_ingestion:conflict-authority:clarification-work:"
             f"{claim.work.work_digest}"
         )
         if retained_record is not None:
             try:
-                record_type, payload, _ = _decode_conflict_authority_record(retained_record)
+                record_type, payload, _ = decode_conflict_authority_record(retained_record)
                 retained = decode_persisted_conflict_generation(
                     payload, SemanticConflictClarificationWorkGeneration
                 )
@@ -6328,7 +6328,7 @@ class SemanticIngestionAtomicStore:
         )
         from memorii.core.memory_evolution.projection_history import (
             ProjectionHistoryError,
-            _decode_conflict_authority_record,
+            decode_conflict_authority_record,
         )
 
         record = self._memory_plane.get_record(
@@ -6348,7 +6348,7 @@ class SemanticIngestionAtomicStore:
                 )
             return None
         try:
-            record_type, payload, _ = _decode_conflict_authority_record(record)
+            record_type, payload, _ = decode_conflict_authority_record(record)
             generation = decode_persisted_conflict_generation(
                 payload, SemanticConflictClarificationWorkGeneration
             )
@@ -6369,8 +6369,8 @@ class SemanticIngestionAtomicStore:
             attempt_record = self._memory_plane.get_record(clarification_cas.attempt_record_id)
             if work_record is None or attempt_record is None:
                 raise ValueError
-            work_type, work_payload, _ = _decode_conflict_authority_record(work_record)
-            attempt_type, attempt_payload, _ = _decode_conflict_authority_record(attempt_record)
+            work_type, work_payload, _ = decode_conflict_authority_record(work_record)
+            attempt_type, attempt_payload, _ = decode_conflict_authority_record(attempt_record)
             work = decode_persisted_conflict_generation(work_payload, ConflictClarificationWork)
             attempt = decode_persisted_conflict_generation(
                 attempt_payload, ConflictClarificationAttempt
@@ -6432,14 +6432,14 @@ class SemanticIngestionAtomicStore:
                 )
                 if pointer_record is None:
                     raise ValueError
-                _, pointer_value, _ = _decode_conflict_authority_record(pointer_record)
+                _, pointer_value, _ = decode_conflict_authority_record(pointer_record)
                 pointer = ActiveSemanticConflict.model_validate(pointer_value)
                 transition_record = self._memory_plane.get_record(
                     pointer.current_record_id
                 )
                 if transition_record is None:
                     raise ValueError
-                transition_type, transition_value, _ = _decode_conflict_authority_record(
+                transition_type, transition_value, _ = decode_conflict_authority_record(
                     transition_record
                 )
                 if transition_type != "clarification_transition":
@@ -6531,7 +6531,7 @@ class SemanticIngestionAtomicStore:
             SemanticConflictClarificationWorkGeneration,
         )
         from memorii.core.memory_evolution.projection_history import (
-            _decode_conflict_authority_record,
+            decode_conflict_authority_record,
         )
         from memorii.core.semantic_ingestion.contracts import (
             SemanticGraphDelta,
@@ -6675,20 +6675,20 @@ class SemanticIngestionAtomicStore:
                 )
                 terminal_work = next(
                     decode_persisted_conflict_generation(
-                        _decode_conflict_authority_record(record)[1], ConflictClarificationWork
+                        decode_conflict_authority_record(record)[1], ConflictClarificationWork
                     )
                     for record in work_members
                     if decode_persisted_conflict_generation(
-                        _decode_conflict_authority_record(record)[1], ConflictClarificationWork
+                        decode_conflict_authority_record(record)[1], ConflictClarificationWork
                     ).downstream_receipt_digest == persisted_receipt.receipt_digest
                 )
                 terminal_result = next(
                     decode_persisted_conflict_generation(
-                        _decode_conflict_authority_record(record)[1], ConflictClarificationAttemptResult
+                        decode_conflict_authority_record(record)[1], ConflictClarificationAttemptResult
                     )
                     for record in result_members
                     if decode_persisted_conflict_generation(
-                        _decode_conflict_authority_record(record)[1], ConflictClarificationAttemptResult
+                        decode_conflict_authority_record(record)[1], ConflictClarificationAttemptResult
                     ).downstream_receipt_digest == persisted_receipt.receipt_digest
                 )
                 if (
@@ -6725,7 +6725,7 @@ class SemanticIngestionAtomicStore:
                 ActiveSemanticConflict,
                 SemanticConflictClarificationTransition,
             )
-            from memorii.core.memory_evolution.projection_history import _decode_conflict_authority_record
+            from memorii.core.memory_evolution.projection_history import decode_conflict_authority_record
 
             pointer_id = (
                 "semantic_ingestion:conflict-authority:pointer:"
@@ -6738,7 +6738,7 @@ class SemanticIngestionAtomicStore:
                 if pointer_record is None or work_record is None or attempt_record is None:
                     raise ValueError
                 pointer = ActiveSemanticConflict.model_validate(
-                    _decode_conflict_authority_record(pointer_record)[1]
+                    decode_conflict_authority_record(pointer_record)[1]
                 )
                 current = self._projection_history._current_semantic_conflicts().get(
                     clarification_cas.conflict_id
@@ -6873,8 +6873,8 @@ class SemanticIngestionAtomicStore:
             "insufficient": SemanticConflictClarificationTransitionReason.INSUFFICIENT,
         }[committed_outcome]
         try:
-            work_type, work_payload, _ = _decode_conflict_authority_record(work_record)
-            attempt_type, attempt_payload, _ = _decode_conflict_authority_record(attempt_record)
+            work_type, work_payload, _ = decode_conflict_authority_record(work_record)
+            attempt_type, attempt_payload, _ = decode_conflict_authority_record(attempt_record)
             current_work = decode_persisted_conflict_generation(
                 work_payload, ConflictClarificationWork
             )
@@ -7207,7 +7207,7 @@ class SemanticIngestionAtomicStore:
         from memorii.core.memory_evolution.projection_history import (
             ProjectionCommitRequest,
             ProjectionHistoryError,
-            _decode_conflict_authority_record,
+            decode_conflict_authority_record,
             projection_records_from_replay_state,
         )
         from memorii.core.memory_evolution.projection_scheduler import (
@@ -7301,7 +7301,7 @@ class SemanticIngestionAtomicStore:
                 sorted(
                     {
                         decode_persisted_conflict_generation(
-                            _decode_conflict_authority_record(record)[1],
+                            decode_conflict_authority_record(record)[1],
                             SemanticConflictClarificationTransition,
                         ).conflict_id
                         for record in pending_conflict_records

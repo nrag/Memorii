@@ -162,7 +162,7 @@ def _conflict_authority_record_type(memory_id: str) -> str | None:
     )
 
 
-def _decode_conflict_authority_record(
+def decode_conflict_authority_record(
     record: CanonicalMemoryRecord,
 ) -> tuple[str, object, int | None]:
     record_type = _conflict_authority_record_type(record.memory_id)
@@ -328,14 +328,14 @@ class SemanticConflictResolverAuthorityRepository:
         if existing_authority is not None and existing_pointer_record is not None:
             try:
                 recovered_authority = SemanticConflictResolverAuthority.model_validate(
-                    _decode_conflict_authority_record(existing_authority)[1]
+                    decode_conflict_authority_record(existing_authority)[1]
                 )
                 recovered_pointer = ActiveSemanticConflictResolverAuthority.model_validate(
-                    _decode_conflict_authority_record(existing_pointer_record)[1]
+                    decode_conflict_authority_record(existing_pointer_record)[1]
                 )
                 recovered_pointer_history = (
                     ActiveSemanticConflictResolverAuthority.model_validate(
-                        _decode_conflict_authority_record(existing_pointer_history)[1]
+                        decode_conflict_authority_record(existing_pointer_history)[1]
                     )
                     if existing_pointer_history is not None
                     else None
@@ -363,7 +363,7 @@ class SemanticConflictResolverAuthorityRepository:
                 raise ProjectionHistoryError("stale_materialized_projection")
             try:
                 current_pointer = ActiveSemanticConflictResolverAuthority.model_validate(
-                    _decode_conflict_authority_record(existing_pointer_record)[1]
+                    decode_conflict_authority_record(existing_pointer_record)[1]
                 )
             except ValueError as exc:
                 raise ProjectionHistoryError(
@@ -379,7 +379,7 @@ class SemanticConflictResolverAuthorityRepository:
                 raise ProjectionHistoryError("projection_history_integrity_error")
             try:
                 current_authority = SemanticConflictResolverAuthority.model_validate(
-                    _decode_conflict_authority_record(current_authority_record)[1]
+                    decode_conflict_authority_record(current_authority_record)[1]
                 )
             except ValueError as exc:
                 raise ProjectionHistoryError(
@@ -950,7 +950,7 @@ class ProjectionHistoryRepository:
         retained_transition_record = self._memory_plane.get_record(transition_id)
         if retained_transition_record is not None:
             try:
-                record_type, payload, _ = _decode_conflict_authority_record(retained_transition_record)
+                record_type, payload, _ = decode_conflict_authority_record(retained_transition_record)
                 retained_transition = decode_persisted_conflict_generation(
                     payload, SemanticConflictClarificationTransition
                 )
@@ -958,7 +958,7 @@ class ProjectionHistoryRepository:
                     f"semantic_ingestion:conflict-authority:pointer:{transition.conflict_id}"
                 )
                 retained_pointer = ActiveSemanticConflict.model_validate(
-                    _decode_conflict_authority_record(pointer_record)[1]
+                    decode_conflict_authority_record(pointer_record)[1]
                 ) if pointer_record is not None else None
             except (TypeError, ValueError, ProjectionHistoryError) as exc:
                 raise ProjectionHistoryError("projection_history_integrity_error") from exc
@@ -993,13 +993,13 @@ class ProjectionHistoryRepository:
                         )
                         if work_member is None or generation_record is None or operation_record is None:
                             raise ValueError
-                        member_type, member_payload, _ = _decode_conflict_authority_record(
+                        member_type, member_payload, _ = decode_conflict_authority_record(
                             work_member
                         )
-                        generation_type, generation_payload, _ = _decode_conflict_authority_record(
+                        generation_type, generation_payload, _ = decode_conflict_authority_record(
                             generation_record
                         )
-                        operation_type, operation_payload, _ = _decode_conflict_authority_record(
+                        operation_type, operation_payload, _ = decode_conflict_authority_record(
                             operation_record
                         )
                         if (
@@ -1028,7 +1028,7 @@ class ProjectionHistoryRepository:
                             )
                             if proof_record is None:
                                 raise ValueError
-                            proof_type, proof_payload, _ = _decode_conflict_authority_record(proof_record)
+                            proof_type, proof_payload, _ = decode_conflict_authority_record(proof_record)
                             if (
                                 proof_type != "clarification_confirmation_proof"
                                 or decode_persisted_conflict_generation(
@@ -1051,7 +1051,7 @@ class ProjectionHistoryRepository:
                             )
                             if nonce_record is None:
                                 raise ValueError
-                            nonce_type, nonce_payload, _ = _decode_conflict_authority_record(nonce_record)
+                            nonce_type, nonce_payload, _ = decode_conflict_authority_record(nonce_record)
                             if (
                                 nonce_type != "clarification_nonce_consumption"
                                 or decode_persisted_conflict_generation(
@@ -1073,10 +1073,10 @@ class ProjectionHistoryRepository:
             if pointer_record is None or head_record is None:
                 raise ValueError
             pointer = ActiveSemanticConflict.model_validate(
-                _decode_conflict_authority_record(pointer_record)[1]
+                decode_conflict_authority_record(pointer_record)[1]
             )
             head = SemanticConflictLedgerHead.model_validate(
-                _decode_conflict_authority_record(head_record)[1]
+                decode_conflict_authority_record(head_record)[1]
             )
             if (
                 head.repository_id != self._repository_id
@@ -1111,7 +1111,7 @@ class ProjectionHistoryRepository:
             existing_generation = self._memory_plane.get_record(generation_id)
             if existing_generation is not None:
                 try:
-                    generation_type, generation_payload, _ = _decode_conflict_authority_record(existing_generation)
+                    generation_type, generation_payload, _ = decode_conflict_authority_record(existing_generation)
                     retained_generation = decode_persisted_conflict_generation(
                         generation_payload, SemanticConflictClarificationSubmissionGeneration
                     )
@@ -1124,7 +1124,7 @@ class ProjectionHistoryRepository:
             raise ProjectionHistoryError("projection_history_integrity_error")
         if existing_transition is not None:
             try:
-                existing_type, existing_payload, _ = _decode_conflict_authority_record(
+                existing_type, existing_payload, _ = decode_conflict_authority_record(
                     existing_transition
                 )
                 existing = decode_persisted_conflict_generation(
@@ -1139,7 +1139,7 @@ class ProjectionHistoryRepository:
                 raise ProjectionHistoryError("projection_history_integrity_error")
             try:
                 retained = ActiveSemanticConflict.model_validate(
-                    _decode_conflict_authority_record(current_pointer)[1]
+                    decode_conflict_authority_record(current_pointer)[1]
                 )
             except (TypeError, ValueError, ProjectionHistoryError) as exc:
                 raise ProjectionHistoryError("projection_history_integrity_error") from exc
@@ -1185,7 +1185,7 @@ class ProjectionHistoryRepository:
             retained_work_member = self._memory_plane.get_record(work_member_id)
             if retained_work_member is not None:
                 try:
-                    member_type, member_payload, _ = _decode_conflict_authority_record(
+                    member_type, member_payload, _ = decode_conflict_authority_record(
                         retained_work_member
                     )
                     retained_work = decode_persisted_conflict_generation(
@@ -1285,10 +1285,10 @@ class ProjectionHistoryRepository:
             if pointer_record is None or head_record is None:
                 raise ValueError
             pointer = ActiveSemanticConflict.model_validate(
-                _decode_conflict_authority_record(pointer_record)[1]
+                decode_conflict_authority_record(pointer_record)[1]
             )
             head = SemanticConflictLedgerHead.model_validate(
-                _decode_conflict_authority_record(head_record)[1]
+                decode_conflict_authority_record(head_record)[1]
             )
             current = self._current_semantic_conflicts().get(transition.conflict_id)
             if current is None:
@@ -1444,7 +1444,7 @@ class ProjectionHistoryRepository:
             if record.source_kind != "semantic_ingestion_conflict_authority":
                 continue
             try:
-                record_type, payload, _ = _decode_conflict_authority_record(record)
+                record_type, payload, _ = decode_conflict_authority_record(record)
                 if record_type == "clarification_submission":
                     generation = decode_persisted_conflict_generation(
                         payload, SemanticConflictClarificationSubmissionGeneration
@@ -1763,7 +1763,7 @@ class ProjectionHistoryRepository:
             try:
                 if record is None:
                     raise ValueError
-                record_type, payload, _ = _decode_conflict_authority_record(record)
+                record_type, payload, _ = decode_conflict_authority_record(record)
                 if (
                     record_type not in model_by_type
                     or decode_persisted_conflict_generation(
@@ -1799,7 +1799,7 @@ class ProjectionHistoryRepository:
         existing = self._memory_plane.get_record(record_id)
         if existing is not None:
             try:
-                record_type, payload, _ = _decode_conflict_authority_record(existing)
+                record_type, payload, _ = decode_conflict_authority_record(existing)
                 retained = decode_persisted_conflict_generation(
                     payload, SemanticConflictClarificationWorkGeneration
                 )
@@ -1836,7 +1836,7 @@ class ProjectionHistoryRepository:
             if record.source_kind != "semantic_ingestion_conflict_authority":
                 continue
             try:
-                record_type, payload, _ = _decode_conflict_authority_record(record)
+                record_type, payload, _ = decode_conflict_authority_record(record)
                 work = (
                     decode_persisted_conflict_generation(
                         payload, SemanticConflictClarificationSubmissionGeneration
@@ -1883,10 +1883,10 @@ class ProjectionHistoryRepository:
                 raise ProjectionHistoryError("stale_materialized_projection")
             try:
                 pointer = ActiveSemanticConflict.model_validate(
-                    _decode_conflict_authority_record(pointer_record)[1]
+                    decode_conflict_authority_record(pointer_record)[1]
                 )
                 head = SemanticConflictLedgerHead.model_validate(
-                    _decode_conflict_authority_record(head_record)[1]
+                    decode_conflict_authority_record(head_record)[1]
                 )
                 if (
                     transition.predecessor_conflict_revision != pointer.current_conflict_revision
@@ -2262,7 +2262,7 @@ class ProjectionHistoryRepository:
             if record.source_kind != "semantic_ingestion_conflict_authority":
                 continue
             try:
-                record_type, decoded, _ = _decode_conflict_authority_record(record)
+                record_type, decoded, _ = decode_conflict_authority_record(record)
                 if record_type == "introduction":
                     introduction = decode_persisted_conflict_generation(
                         decoded, SemanticConflictIntroduction
@@ -2449,7 +2449,7 @@ class ProjectionHistoryRepository:
             if record.source_kind == "semantic_ingestion_conflict_authority":
                 records[record.memory_id] = record
         decoded_records = {
-            memory_id: _decode_conflict_authority_record(record)
+            memory_id: decode_conflict_authority_record(record)
             for memory_id, record in records.items()
         }
         immutable = tuple(
@@ -2877,7 +2877,7 @@ class ProjectionHistoryRepository:
             ledger_head = None
             next_record_coordinate = 1
         else:
-            record_type, decoded_head, _ = _decode_conflict_authority_record(
+            record_type, decoded_head, _ = decode_conflict_authority_record(
                 ledger_head_record
             )
             if record_type != "ledger_head":
@@ -3147,7 +3147,7 @@ class ProjectionHistoryRepository:
             else:
                 try:
                     current_pointer = ActiveSemanticConflict.model_validate(
-                        _decode_conflict_authority_record(existing_pointer)[1]
+                        decode_conflict_authority_record(existing_pointer)[1]
                     )
                 except (KeyError, TypeError, ValueError, CanonicalTypedValueError) as exc:
                     raise ProjectionHistoryError("projection_history_integrity_error") from exc
@@ -3373,7 +3373,7 @@ class ProjectionHistoryRepository:
                 if current is None:
                     raise ProjectionHistoryError("projection_history_integrity_error")
                 try:
-                    _, decoded, _ = _decode_conflict_authority_record(current)
+                    _, decoded, _ = decode_conflict_authority_record(current)
                     actual_digest = (
                         SemanticConflictResolverAuthority.model_validate(decoded).authority_record_digest
                         if isinstance(payload, SemanticConflictResolverAuthority)
@@ -3585,7 +3585,7 @@ class ProjectionHistoryRepository:
                 raise ProjectionHistoryError("projection_history_integrity_error")
             try:
                 decoded = SemanticConflictResolverAuthority.model_validate(
-                    _decode_conflict_authority_record(resolver_record)[1]
+                    decode_conflict_authority_record(resolver_record)[1]
                 )
             except (KeyError, TypeError, ValueError, CanonicalTypedValueError) as exc:
                 raise ProjectionHistoryError(

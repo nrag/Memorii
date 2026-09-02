@@ -74,10 +74,10 @@ def _step_one_observation_fields(record: CanonicalMemoryRecord) -> dict[str, obj
         SegmentGovernanceCarrierSet,
         SourceSemanticContext,
         SourceSemanticTextProjection,
-        _restore_closed_wire_enums,
+        restore_closed_wire_enums,
     )
 
-    material = _restore_closed_wire_enums(material)
+    material = restore_closed_wire_enums(material)
 
     try:
         values = {

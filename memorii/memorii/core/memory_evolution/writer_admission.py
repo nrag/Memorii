@@ -904,11 +904,11 @@ def _validate_conflict_authority_administration_write(
     )
     from memorii.core.memory_evolution.projection_history import (
         ProjectionHistoryError,
-        _decode_conflict_authority_record,
+        decode_conflict_authority_record,
     )
 
     try:
-        decoded = tuple(_decode_conflict_authority_record(record) for record in records)
+        decoded = tuple(decode_conflict_authority_record(record) for record in records)
         by_type = {record_type: value for record_type, value, _ in decoded}
         if (
             len(records) != 3
@@ -976,7 +976,7 @@ def _validate_conflict_authority_administration_write(
         )
     if current_pointer_record is not None:
         try:
-            _, current_value, _ = _decode_conflict_authority_record(
+            _, current_value, _ = decode_conflict_authority_record(
                 current_pointer_record
             )
             current_pointer = ActiveSemanticConflictResolverAuthority.model_validate(
@@ -1008,7 +1008,7 @@ def _validate_conflict_authority_administration_write(
                 "current conflict authority record is absent"
             )
         try:
-            _, current_authority_value, _ = _decode_conflict_authority_record(
+            _, current_authority_value, _ = decode_conflict_authority_record(
                 current_authority_record
             )
             current_authority = SemanticConflictResolverAuthority.model_validate(
@@ -1054,11 +1054,11 @@ def _validate_conflict_authority_atomic_closure(
     )
     from memorii.core.memory_evolution.projection_history import (
         ProjectionHistoryError,
-        _decode_conflict_authority_record,
+        decode_conflict_authority_record,
     )
 
     try:
-        decoded = tuple(_decode_conflict_authority_record(record) for record in records)
+        decoded = tuple(decode_conflict_authority_record(record) for record in records)
         record_types = tuple(value[0] for value in decoded)
         immutable_coordinates = tuple(
             coordinate
@@ -1272,7 +1272,7 @@ def _validate_conflict_authority_atomic_closure(
             for record in current:
                 if record.source_kind != "semantic_ingestion_conflict_authority":
                     continue
-                record_type, value, _ = _decode_conflict_authority_record(record)
+                record_type, value, _ = decode_conflict_authority_record(record)
                 if (
                     record_type == "active_pointer"
                     and record.memory_id
@@ -1584,7 +1584,7 @@ def _validate_conflict_authority_atomic_closure(
                 if record.memory_id
                 == "semantic_ingestion:conflict-authority:clarification-attempt-member:"
                 f"{result_members[0].attempt_digest}"
-                for record_type, value, _ in (_decode_conflict_authority_record(record),)
+                for record_type, value, _ in (decode_conflict_authority_record(record),)
                 if record_type == "clarification_attempt_member"
             )
             if (
@@ -1703,10 +1703,10 @@ def _validate_conflict_authority_atomic_closure(
             )
         try:
             authority = SemanticConflictResolverAuthority.model_validate(
-                _decode_conflict_authority_record(authority_record)[1]
+                decode_conflict_authority_record(authority_record)[1]
             )
             pointer = ActiveSemanticConflictResolverAuthority.model_validate(
-                _decode_conflict_authority_record(pointer_record)[1]
+                decode_conflict_authority_record(pointer_record)[1]
             )
         except (ProjectionHistoryError, ValueError) as exc:
             raise SemanticWriterAdmissionError(
