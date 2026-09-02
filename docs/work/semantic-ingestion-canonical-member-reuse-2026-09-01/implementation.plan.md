@@ -336,8 +336,28 @@ fixtures, diagnostics, CI jobs, or serialized outputs.
   global interpreter state from library code and is not taken
   unilaterally.
 
+- 2026-09-02 (CMR-006 interim measurement, v2 harness at `585d51c` under
+  recorded external load ~8-13 of 16 logical cores,
+  `evidence/post-slice-v2-run.log` + `evidence/post-slice-load-context.txt`):
+  **enabled median 12.47s** (min 11.89 / max 13.44), disabled median
+  74.68s; **digest calls exactly 237 vs 43,756, deterministic**; post-H8
+  accounting asserted in every child; enabled median reduction vs
+  disabled 83.3%.  Quiet-host probes at the same revision measured
+  ~9.1s; the load context is part of the evidence because the absolute
+  acceptance number (<5s) cannot be judged under load.  The disabled leg
+  also got faster (109.9 -> 74.7 under different load; the lean bytes
+  path applies in both modes) with its accounting exactly unchanged.
+  Acceptance status: **not yet met** — measured residual is
+  GC-dominated (gc-disabled floor ~5.8s compute); closing the last gap
+  requires the recorded GC-policy decision plus the remaining
+  graph-planning/event-replay round-trip clusters, then a quiet-host
+  re-measurement and the once-only broad gate.
+
 ## Next Action
 
-Re-run the v2 wall-clock harness and the once-only broad gate on a quiet
-host; from those numbers either close the acceptance or record the GC
-policy decision (with the measured residual) for external review.
+Obtain the GC-policy decision for the arena's operation lifecycle (defer
+generational collection to operation end — global interpreter state from
+library code, therefore explicit and reviewed, not unilateral), land the
+remaining graph-planning/event-replay round-trip conversions if approved
+scope allows, then re-run the v2 harness on a quiet host and run the
+once-only broad gate at the final revision.
