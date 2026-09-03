@@ -400,7 +400,9 @@ def test_unit_pytest_owners_partition_the_live_unit_corpus_exactly_once() -> Non
             "tests/unit/core/semantic_ingestion/test_provider_compatibility.py",
         ),
         "bootstrap-graph-transaction-boundary": (
-            "tests/unit/core/semantic_ingestion/test_bootstrap_graph_production_roots.py",
+            "tests/unit/core/semantic_ingestion/test_bootstrap_graph_jsonl_race_reopen.py",
+            "tests/unit/core/semantic_ingestion/test_bootstrap_graph_scenario_replay.py",
+            "tests/unit/core/semantic_ingestion/test_bootstrap_graph_root_composition.py",
         ),
         # Owned by the scheduled diametric mode-parity workflow
         # (.github/workflows/canonical-evidence-parity-scheduled.yml).

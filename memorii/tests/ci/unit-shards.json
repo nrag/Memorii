@@ -11,7 +11,9 @@
     "--ignore=tests/unit/core/semantic_ingestion/test_identity_lineage_prerequisites.py",
     "--ignore=tests/unit/core/semantic_ingestion/test_semantic_terminal_persistence.py",
     "--ignore=tests/unit/core/semantic_ingestion/test_provider_compatibility.py",
-    "--ignore=tests/unit/core/semantic_ingestion/test_bootstrap_graph_production_roots.py",
+    "--ignore=tests/unit/core/semantic_ingestion/test_bootstrap_graph_jsonl_race_reopen.py",
+    "--ignore=tests/unit/core/semantic_ingestion/test_bootstrap_graph_scenario_replay.py",
+    "--ignore=tests/unit/core/semantic_ingestion/test_bootstrap_graph_root_composition.py",
     "--ignore=tests/unit/core/semantic_ingestion/test_canonical_evidence_mode_parity.py"
   ],
   "assignment_scope": "file",

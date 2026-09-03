@@ -26,10 +26,10 @@ from tests.fixtures.semantic_ingestion import bootstrap_graph_v3_fixture
 from tests.fixtures.semantic_ingestion.bootstrap_graph_v3_fixture import (
     DeterministicBootstrapGraphAuthorityProviderV3,
 )
-from tests.unit.core.semantic_ingestion.test_bootstrap_graph_production_roots import (
-    _GRAPH_SCENARIO_BEHAVIOR,
-    _graph_fact_proposal,
-    _RemovedBootstrapGraphHostBundleBuilder,
+from tests.unit.core.semantic_ingestion.bootstrap_graph_production_roots_support import (
+    GRAPH_SCENARIO_BEHAVIOR,
+    RemovedBootstrapGraphHostBundleBuilder,
+    graph_fact_proposal,
 )
 from tests.unit.core.semantic_ingestion.test_semantic_provider_composition import (
     TEST_NOW,
@@ -182,8 +182,8 @@ def _persisted_successor_evidence(service: object) -> dict[str, object]:
 
 
 def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str, object]:
-    behavior = _GRAPH_SCENARIO_BEHAVIOR[scenario]
-    proposal = _graph_fact_proposal(
+    behavior = GRAPH_SCENARIO_BEHAVIOR[scenario]
+    proposal = graph_fact_proposal(
         3
         if behavior in {
             "partial_commit", "reused_committed", "reused_final",
@@ -333,7 +333,7 @@ def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str
     }
     if behavior == "coordinator_removed":
         common["bootstrap_graph_host_bundle_builder"] = (
-            _RemovedBootstrapGraphHostBundleBuilder()
+            RemovedBootstrapGraphHostBundleBuilder()
         )
     else:
         common["bootstrap_graph_host_bundle_builder"] = BootstrapGraphHostBundleBuilder(
@@ -470,7 +470,7 @@ def main() -> None:
     parser.add_argument("root", choices=("direct", "factory", "filesystem", "hermes"))
     parser.add_argument(
         "scenario",
-        choices=tuple(_GRAPH_SCENARIO_BEHAVIOR),
+        choices=tuple(GRAPH_SCENARIO_BEHAVIOR),
     )
     parser.add_argument("phase", choices=("first", "reopen"))
     parser.add_argument("output", type=Path)

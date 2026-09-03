@@ -1,20 +1,15 @@
-"""Production-root composition proof for the mandatory bootstrap graph bundle."""
+"""Production-root composition, revocation, conflict, and reopen proofs."""
+
+
 
 from __future__ import annotations
 
 import inspect
-import json
-import os
-import subprocess
-import sys
-from datetime import timedelta
-from pathlib import Path
 
 import pytest
 from memorii.core.filesystem_storage.bundle import (
     build_filesystem_provider as _production_filesystem_provider,
 )
-from memorii.core.memory_evolution.writer_admission import SemanticWriterAdmissionError
 from memorii.core.memory_plane import JsonlMemoryPlaneStore, MemoryPlaneService
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.provider.factory import (
@@ -24,10 +19,6 @@ from memorii.core.provider.models import ProviderOperation
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.semantic_ingestion.bootstrap_graph_host import (
     BootstrapGraphHostBundleBuilder,
-    ScenarioBootstrapGraphHostBundle,
-)
-from memorii.core.semantic_ingestion.bootstrap_graph_repository import (
-    AtomicStoreBootstrapGraphControlEpochRepositoryV3,
 )
 from memorii.core.semantic_ingestion.contracts import (
     ProviderEntityObject,
@@ -42,6 +33,15 @@ from memorii.integrations.hermes_provider import (
 from tests.fixtures.semantic_ingestion.bootstrap_graph_v3_fixture import (
     DeterministicBootstrapGraphAuthorityProviderV3,
 )
+from tests.unit.core.semantic_ingestion.bootstrap_graph_production_roots_support import (
+    RemovedBootstrapGraphHostBundleBuilder,
+    build_filesystem_provider,
+    build_provider_memory_service_from_env,
+    graph_fact_proposal,
+    graph_host_bundle_builders,
+    hermes_provider,
+    provider_service,
+)
 from tests.unit.core.semantic_ingestion.test_semantic_provider_composition import (
     TEST_NOW,
     DeterministicTestHostBootstrapMaterialVerifier,
@@ -50,153 +50,12 @@ from tests.unit.core.semantic_ingestion.test_semantic_provider_composition impor
     _v3_normalization_host_builder,
 )
 
-_GRAPH_SCENARIO_BEHAVIOR = {
-    "initial_attempt": "normal_success",
-    "successor_attempt": "resolved_conflict",
-    "reused_committed": "reused_committed",
-    "reused_final": "reused_final",
-    "reused_unfinished": "reused_unfinished",
-    "replacement": "resolved_conflict",
-    "epoch_zero": "normal_success",
-    "lease_renewed": "lease_renewed",
-    "lease_reclaimed": "lease_reclaimed",
-    "writer_changed": "writer_changed",
-    "writer_unavailable": "writer_unavailable",
-    "pre_cas_scope_revoked": "scope_revoked",
-    "unrelated_conflict": "unrelated_conflict",
-    "related_conflict": "resolved_conflict",
-    "partial_commit": "partial_commit",
-    "durable_retry": "durable_retry",
-    "finalized_failure": "exhausted_conflict",
-    "success_finalization": "normal_success",
-    "terminal_locator": "terminal_locator",
-    "lost_ack": "lost_ack",
-    "reopen": "normal_success",
-    "mixed_version": "mixed_version",
-    "rollback": "rollback",
-    "coordinator_removed": "coordinator_removed",
-    "authority_omitted": "authority_omitted",
-}
-
-
-class _RemovedBootstrapGraphHostBundleBuilder:
-    """Build the private negative-test host with no graph coordinator authority."""
-
-    def build(self, *, atomic_store: object) -> ScenarioBootstrapGraphHostBundle:
-        return ScenarioBootstrapGraphHostBundle(
-            atomic_store=atomic_store,
-            authority_provider=None,
-        )
-
-
-def _provider_service(**kwargs) -> ProviderMemoryService:
-    graph_builder = kwargs.pop("bootstrap_graph_host_bundle_builder", None)
-    if graph_builder is None:
-        return ProviderMemoryService(**kwargs)
-    kwargs["host_bootstrap_capability"] = _built_in_local_capability(
-        scenario_test=True
-    )
-    return ProviderMemoryService._from_scenario_test_host(
-        bootstrap_graph_host_bundle_builder=graph_builder,
-        **kwargs,
-    )
-
-
-def build_provider_memory_service_from_env(**kwargs) -> ProviderMemoryService:
-    graph_builder = kwargs.pop("bootstrap_graph_host_bundle_builder", None)
-    if graph_builder is None:
-        return _production_factory_provider(**kwargs)
-    return _provider_service(
-        bootstrap_graph_host_bundle_builder=graph_builder,
-        **kwargs,
-    )
-
-
-def build_filesystem_provider(storage_root, **kwargs) -> ProviderMemoryService:
-    graph_builder = kwargs.pop("bootstrap_graph_host_bundle_builder", None)
-    if graph_builder is None:
-        return _production_filesystem_provider(storage_root, **kwargs)
-    # The graph-host composition must keep the filesystem root's durable
-    # memory plane: a reopened service over the same root reloads the
-    # retained recovery and graph terminal instead of starting empty.
-    if "memory_plane" not in kwargs:
-        kwargs["memory_plane"] = MemoryPlaneService(
-            record_store=JsonlMemoryPlaneStore(Path(storage_root) / "memory_plane")
-        )
-    return _provider_service(
-        bootstrap_graph_host_bundle_builder=graph_builder,
-        **kwargs,
-    )
-
-
-def _hermes_provider(*, service=None, **kwargs):
-    graph_builder = kwargs.pop("bootstrap_graph_host_bundle_builder", None)
-    if service is not None:
-        return _ProductionHermesMemoryProvider(service=service)
-    if graph_builder is None:
-        return _ProductionHermesMemoryProvider(**kwargs)
-    return _ProductionHermesMemoryProvider(
-        service=_provider_service(
-            bootstrap_graph_host_bundle_builder=graph_builder,
-            **kwargs,
-        )
-    )
-
-
-def _builders() -> tuple[object, BootstrapGraphHostBundleBuilder]:
-    normalization, _calls = _v3_normalization_host_builder(
-        proposal=ProviderSemanticProposal(abstained=True)
-    )
-    graph = BootstrapGraphHostBundleBuilder(
-        authority_provider=DeterministicBootstrapGraphAuthorityProviderV3(
-            successful_calls=[]
-        )
-    )
-    return normalization, graph
-
-
-def _graph_fact_proposal(group_count: int = 1) -> ProviderSemanticProposal:
-    facts = (
-        ProviderFact(
-            local_id="owner", predicate_id="owner_is", subject_entity_ref="atlas",
-            object=ProviderEntityObject(entity_ref="bob"),
-            assertion_quote="Atlas owner is Bob.", predicate_anchor_quote="owner",
-            polarity="positive", commitment="asserted",
-        ),
-        ProviderFact(
-            local_id="owned-by", predicate_id="owned_by", subject_entity_ref="bob",
-            object=ProviderEntityObject(entity_ref="atlas"),
-            assertion_quote="Atlas owner is Bob.", predicate_anchor_quote="Bob",
-            polarity="positive", commitment="asserted",
-        ),
-        ProviderFact(
-            local_id="managed-by", predicate_id="managed_by", subject_entity_ref="atlas",
-            object=ProviderEntityObject(entity_ref="bob"),
-            assertion_quote="Atlas owner is Bob.", predicate_anchor_quote="owner",
-            polarity="positive", commitment="asserted",
-        ),
-    )
-    return ProviderSemanticProposal(
-        mentions=(
-            ProviderMention(
-                local_id="atlas", mention_quote="Atlas",
-                mention_context_quote="Atlas owner is Bob.",
-            ),
-            ProviderMention(
-                local_id="bob", mention_quote="Bob",
-                mention_context_quote="Atlas owner is Bob.",
-            ),
-        ),
-        facts=facts[:group_count],
-        abstained=False,
-    )
-
 
 @pytest.mark.parametrize("root", ("direct", "factory", "filesystem", "hermes"))
 def test_all_normal_roots_compose_same_graph_host_bundle(
     root: str, tmp_path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    normalization, graph = _builders()
+    normalization, graph = graph_host_bundle_builders()
     common = {
         "host_bootstrap_capability": _built_in_local_capability(),
         "host_bootstrap_material_verifier": DeterministicTestHostBootstrapMaterialVerifier(),
@@ -205,13 +64,13 @@ def test_all_normal_roots_compose_same_graph_host_bundle(
     }
     service: ProviderMemoryService
     if root == "direct":
-        service = _provider_service(**common)
+        service = provider_service(**common)
     elif root == "factory":
         service = build_provider_memory_service_from_env(**common)
     elif root == "filesystem":
         service = build_filesystem_provider(tmp_path / "memorii", **common)
     else:
-        provider = _hermes_provider(**common)
+        provider = hermes_provider(**common)
         service = provider._service
 
     runtime = service._provider_ingestion._semantic_runtime
@@ -235,13 +94,13 @@ def test_all_normal_roots_install_builtin_graph_host_without_injection(
         "source_normalization_host_bundle_builder": normalization,
     }
     if root == "direct":
-        service = _provider_service(**common)
+        service = provider_service(**common)
     elif root == "factory":
         service = build_provider_memory_service_from_env(**common)
     elif root == "filesystem":
         service = build_filesystem_provider(tmp_path / "builtin-graph", **common)
     else:
-        service = _hermes_provider(
+        service = hermes_provider(
             host_bootstrap_capability=common["host_bootstrap_capability"],
             host_bootstrap_material_verifier=common["host_bootstrap_material_verifier"],
             source_normalization_host_bundle_builder=common[
@@ -277,7 +136,7 @@ def test_all_normal_roots_execute_builtin_native_graph_path_without_injection(
     root: str, tmp_path,
 ) -> None:
     """A real fact reaches native graph commit through every normal root."""
-    proposal = _graph_fact_proposal()
+    proposal = graph_fact_proposal()
     normalization, _calls = _v3_normalization_host_builder(proposal=proposal)
     common = {
         "now_provider": lambda: TEST_NOW,
@@ -286,13 +145,13 @@ def test_all_normal_roots_execute_builtin_native_graph_path_without_injection(
         "source_normalization_host_bundle_builder": normalization,
     }
     if root == "direct":
-        service = _provider_service(**common)
+        service = provider_service(**common)
     elif root == "factory":
         service = build_provider_memory_service_from_env(**common)
     elif root == "filesystem":
         service = build_filesystem_provider(tmp_path / "builtin-native-graph", **common)
     else:
-        service = _hermes_provider(service=_provider_service(**common))._service
+        service = hermes_provider(service=provider_service(**common))._service
     result = service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="Atlas owner is Bob.", operation_id=f"builtin-native-graph-{root}",
@@ -309,7 +168,7 @@ def test_all_normal_roots_execute_builtin_native_graph_path_without_injection(
 def test_all_normal_roots_execute_graph_terminal_once(
     root: str, tmp_path,
 ) -> None:
-    proposal = _graph_fact_proposal()
+    proposal = graph_fact_proposal()
     normalization, lane_calls = _v3_normalization_host_builder(proposal=proposal)
     graph_calls: list[str] = []
     graph = BootstrapGraphHostBundleBuilder(
@@ -325,13 +184,13 @@ def test_all_normal_roots_execute_graph_terminal_once(
         "bootstrap_graph_host_bundle_builder": graph,
     }
     if root == "direct":
-        service = _provider_service(**common)
+        service = provider_service(**common)
     elif root == "factory":
         service = build_provider_memory_service_from_env(**common)
     elif root == "filesystem":
         service = build_filesystem_provider(tmp_path / "memorii-executable", **common)
     else:
-        service = _hermes_provider(service=_provider_service(**common))._service
+        service = hermes_provider(service=provider_service(**common))._service
 
     result = service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
@@ -365,12 +224,12 @@ def test_partial_normal_composition_fails_closed_before_graph_effects() -> None:
             abstained=False,
         )
     )
-    service = _provider_service(
+    service = provider_service(
         # The M4 built-in capability always wires its own graph host, so a
         # graph-authority-less composition is built explicitly: the removed
         # builder installs a scenario host bundle with no authority provider,
         # and the run must fail closed at the graph boundary before effects.
-        bootstrap_graph_host_bundle_builder=_RemovedBootstrapGraphHostBundleBuilder(),
+        bootstrap_graph_host_bundle_builder=RemovedBootstrapGraphHostBundleBuilder(),
         now_provider=lambda: TEST_NOW,
         host_bootstrap_capability=_built_in_local_capability(scenario_test=True),
         host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
@@ -401,7 +260,7 @@ def test_partial_normal_composition_fails_closed_before_graph_effects() -> None:
 def test_public_root_scope_revocation_immediately_before_group_cas_is_durable(
     root: str, backend: str, tmp_path,
 ) -> None:
-    proposal = _graph_fact_proposal()
+    proposal = graph_fact_proposal()
     ingress = _host_ingress()
     current_scope = [""]
     cas_attempts: list[str] = []
@@ -451,10 +310,10 @@ def test_public_root_scope_revocation_immediately_before_group_cas_is_durable(
                 memory_plane=memory_plane, **common
             ), lane_calls
         if root == "hermes":
-            return _hermes_provider(
-                service=_provider_service(memory_plane=memory_plane, **common)
+            return hermes_provider(
+                service=provider_service(memory_plane=memory_plane, **common)
             )._service, lane_calls
-        return _provider_service(memory_plane=memory_plane, **common), lane_calls
+        return provider_service(memory_plane=memory_plane, **common), lane_calls
 
     first, _first_lanes = build_service(replay=False)
     resolved_ingress = first._resolve_ingress(ingress)
@@ -501,7 +360,7 @@ def test_public_root_scope_revocation_immediately_before_group_cas_is_durable(
 def test_unrelated_foreign_write_does_not_conflict_with_group_cas(
     root: str, backend: str, tmp_path,
 ) -> None:
-    proposal = _graph_fact_proposal()
+    proposal = graph_fact_proposal()
     normalization, lane_calls = _v3_normalization_host_builder(proposal=proposal)
     cas_attempts: list[str] = []
     graph_effects: list[str] = []
@@ -550,11 +409,11 @@ def test_unrelated_foreign_write_does_not_conflict_with_group_cas(
     elif root == "factory":
         service = build_provider_memory_service_from_env(memory_plane=memory_plane, **common)
     elif root == "hermes":
-        service = _hermes_provider(
-            service=_provider_service(memory_plane=memory_plane, **common)
+        service = hermes_provider(
+            service=provider_service(memory_plane=memory_plane, **common)
         )._service
     else:
-        service = _provider_service(memory_plane=memory_plane, **common)
+        service = provider_service(memory_plane=memory_plane, **common)
     service_holder.append(service)
     result = service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
@@ -570,324 +429,6 @@ def test_unrelated_foreign_write_does_not_conflict_with_group_cas(
     assert service._memory_plane.get_record(f"unrelated:{root}:{backend}") is not None
 
 
-@pytest.mark.parametrize("root", ("direct", "factory", "filesystem", "hermes"))
-@pytest.mark.parametrize("scenario", tuple(_GRAPH_SCENARIO_BEHAVIOR))
-def test_graph_race_reopens_in_an_independent_jsonl_process(
-    root: str, scenario: str, tmp_path,
-) -> None:
-    behavior = _GRAPH_SCENARIO_BEHAVIOR[scenario]
-    storage_root = tmp_path / scenario / root
-    environment = dict(os.environ)
-    environment["PYTHONPATH"] = "memorii"
-    outputs: list[dict[str, object]] = []
-    for phase in ("first", "reopen"):
-        output = tmp_path / f"{scenario}-{phase}.json"
-        subprocess.run(
-            (
-                sys.executable,
-                "-m",
-                "tests.fixtures.semantic_ingestion.bootstrap_graph_v3_process_runner",
-                str(storage_root),
-                root,
-                scenario,
-                phase,
-                str(output),
-            ),
-            cwd=Path(__file__).parents[5],
-            env=environment,
-            check=True,
-            timeout=180,
-        )
-        outputs.append(json.loads(output.read_text(encoding="utf-8")))
-
-    first, reopened = outputs
-    if behavior == "scope_revoked":
-        assert first["semantic_ingestion"] == "graph_transaction_authority_unavailable"
-        assert first["cas_attempts"] == 1
-        assert first["graph_effects"] == 0
-    elif behavior in {
-        "unrelated_conflict", "normal_success", "lease_renewed", "lease_reclaimed",
-        "mixed_version", "rollback",
-    }:
-        assert first["semantic_ingestion"] == "source_only"
-        assert first["cas_attempts"] == 1
-        assert first["graph_effects"] == 1
-    elif behavior in {
-        "durable_retry", "coordinator_removed", "authority_omitted",
-        "writer_changed", "writer_unavailable",
-    }:
-        assert first["semantic_ingestion"] == "graph_transaction_authority_unavailable"
-        assert first["unavailable_calls"] == (1 if behavior == "durable_retry" else 0)
-        assert first["graph_effects"] == 0
-    elif behavior == "resolved_conflict":
-        assert first["semantic_ingestion"] == "source_only"
-        assert first["conflict_calls"] == 2
-        assert first["graph_effects"] == 1
-    elif behavior == "exhausted_conflict":
-        assert first["semantic_ingestion"] == "source_only"
-        assert first["exhausted_conflict_calls"] == 2
-        assert first["graph_effects"] == 1
-    elif behavior == "lost_ack":
-        assert first["semantic_ingestion"] == "source_only"
-        assert first["partial_conflict_calls"] == 0
-        assert first["graph_effects"] == 1
-    else:
-        assert first["semantic_ingestion"] == "source_only"
-        assert first["partial_conflict_calls"] == 4
-        assert first["graph_effects"] == 3
-    if behavior == "lost_ack":
-        assert first["lost_ack_injected"] is True
-    if behavior == "terminal_locator":
-        assert first["terminal_locator_removed"] == 1
-    if behavior == "terminal_locator":
-        assert reopened["semantic_ingestion"] != "source_only"
-        assert reopened["scan_calls"] == 0
-    elif behavior == "mixed_version":
-        assert reopened["semantic_ingestion"] in {
-            "graph_transaction_authority_unavailable",
-            "source_alignment_authority_unavailable",
-        }
-    elif behavior == "rollback":
-        assert reopened["semantic_ingestion"] == "graph_transaction_authority_unavailable"
-        assert reopened["prior_terminal_semantic_ingestion"] == "source_only"
-    elif behavior in {"writer_changed", "writer_unavailable"}:
-        assert reopened["semantic_ingestion"] in {
-            "graph_transaction_authority_unavailable", "source_only",
-            "source_alignment_authority_unavailable",
-        }
-    else:
-        assert reopened["semantic_ingestion"] == first["semantic_ingestion"]
-    assert reopened["cas_attempts"] == 0
-    assert reopened["graph_effects"] == 0
-    assert reopened["unavailable_calls"] == 0
-    assert reopened["conflict_calls"] == 0
-    assert reopened["partial_conflict_calls"] == 0
-    assert reopened["exhausted_conflict_calls"] == 0
-    if behavior != "rollback":
-        assert all(value == 0 for value in reopened["lane_calls"].values())
-    if behavior == "mixed_version":
-        assert first["mixed_version_fixture_mutations"] > 0
-    if behavior in {"reused_committed", "reused_final", "reused_unfinished"}:
-        evidence = first["successor_evidence"]
-        successor = next(item for item in evidence["attempts"] if item["attempt_index"] == 1)
-        assert successor["trigger"] == "related_version_conflict"
-        assert evidence["lineages"]
-        assert evidence["pre_execution"]
-        authorities = successor["authority"]["group_member_authorities"]
-        expected_kind = behavior
-        assert any(item["kind"] == expected_kind for item in authorities)
-        # The retained arm is carried through both the successor lineage and
-        # the pre-execution identity closure; it is not a selector alias.
-        retained = next(item for item in authorities if item["kind"] == expected_kind)
-        retained_group_id = retained["transaction_group_id"]
-        latest = dict(evidence["lineages"][-1]["latest_entry_by_group"])
-        identities = dict(evidence["pre_execution"][-1]["identity_by_group"])
-        assert retained_group_id in latest
-        assert retained_group_id in identities
-
-
-@pytest.mark.parametrize("root", ("direct", "factory", "filesystem", "hermes"))
-@pytest.mark.parametrize("scenario", tuple(_GRAPH_SCENARIO_BEHAVIOR))
-def test_graph_scenario_replays_without_effects_in_memory(
-    root: str, scenario: str, tmp_path,
-) -> None:
-    behavior = _GRAPH_SCENARIO_BEHAVIOR[scenario]
-    proposal = _graph_fact_proposal(
-        3
-        if behavior in {
-            "partial_commit", "reused_committed", "reused_final", "reused_unfinished",
-        }
-        else 1
-    )
-    normalization, lane_calls = _v3_normalization_host_builder(proposal=proposal)
-    successful_calls: list[str] = []
-    unavailable_calls: list[str] = []
-    conflict_calls: list[str] = []
-    partial_conflict_calls: list[str] = []
-    exhausted_conflict_calls: list[str] = []
-    clock = [TEST_NOW]
-    class UnavailableAuthorityProvider:
-        def acquire(self, **_kwargs: object) -> None:
-            return None
-
-    def before_epoch_created(atomic_store: object) -> None:
-        if behavior == "writer_changed":
-            original = atomic_store._writers.commit_binding
-            atomic_store._writers.commit_binding = lambda record: original(record).model_copy(
-                update={"admission_digest": "f" * 64}
-            )
-        elif behavior == "writer_unavailable":
-            def reject(_binding: object) -> None:
-                raise SemanticWriterAdmissionError("writer authority is unavailable")
-            atomic_store._writers.require_current = reject
-
-    def after_epoch_created(atomic_store: object, request: object, epoch: object) -> object:
-        if behavior not in {
-            "lease_renewed", "lease_reclaimed", "writer_changed", "writer_unavailable"
-        }:
-            return epoch
-        fence = request.graph_authority.operation_fence_binding
-        control = atomic_store.get_operation(fence)
-        if behavior in {"writer_changed", "writer_unavailable"}:
-            return epoch
-        if behavior == "lease_reclaimed":
-            clock[0] = control.lease.expires_at + timedelta(seconds=1)
-            atomic_store.acquire_lease(
-                operation_fence=fence,
-                writer_binding=control.writer_binding,
-                execution_token="graph-reclaimed-execution",
-                owner_id="graph-reclaimed-owner",
-                duration=timedelta(minutes=10),
-            )
-        else:
-            atomic_store.renew_lease(
-                operation_fence=fence,
-                writer_binding=control.writer_binding,
-                lease=control.lease,
-                duration=timedelta(minutes=10),
-            )
-        refreshed = AtomicStoreBootstrapGraphControlEpochRepositoryV3(
-            atomic_store=atomic_store
-        ).refresh_current(request=request, current_epoch=epoch).epoch
-        return refreshed
-
-    provider = DeterministicBootstrapGraphAuthorityProviderV3(
-        successful_calls=successful_calls,
-            unavailable_calls=unavailable_calls if behavior == "durable_retry" else None,
-            conflict_calls=conflict_calls if behavior == "resolved_conflict" else None,
-        partial_conflict_calls=(
-                partial_conflict_calls
-                if behavior in {
-                    "partial_commit", "reused_committed", "reused_final", "reused_unfinished",
-                }
-                else None
-        ),
-        exhausted_conflict_calls=(
-                exhausted_conflict_calls if behavior == "exhausted_conflict" else None
-        ),
-        after_epoch_created=after_epoch_created,
-        before_epoch_created=before_epoch_created,
-    )
-    memory_plane = MemoryPlaneService()
-    common = {
-        "now_provider": lambda: clock[0],
-        "host_bootstrap_capability": _built_in_local_capability(),
-        "host_bootstrap_material_verifier": DeterministicTestHostBootstrapMaterialVerifier(),
-        "source_normalization_host_bundle_builder": normalization,
-    }
-    if behavior == "coordinator_removed":
-        common["bootstrap_graph_host_bundle_builder"] = (
-            _RemovedBootstrapGraphHostBundleBuilder()
-        )
-    else:
-        common["bootstrap_graph_host_bundle_builder"] = BootstrapGraphHostBundleBuilder(
-            authority_provider=(
-                UnavailableAuthorityProvider()
-                    if behavior == "authority_omitted"
-                else provider
-            )
-        )
-    if root == "filesystem":
-        service = build_filesystem_provider(
-            tmp_path / "memory-replay", memory_plane=memory_plane, **common
-        )
-    elif root == "factory":
-        service = build_provider_memory_service_from_env(
-            memory_plane=memory_plane, **common
-        )
-    elif root == "hermes":
-        service = _hermes_provider(
-            service=_provider_service(memory_plane=memory_plane, **common)
-        )._service
-    else:
-        service = _provider_service(memory_plane=memory_plane, **common)
-
-    operation_id = f"memory-{scenario}-{root}"
-    first = service.sync_event(
-        operation=ProviderOperation.CHAT_USER_TURN,
-        content="Atlas owner is Bob.", operation_id=operation_id,
-        task_id="task:one", user_id="user:alice",
-        authenticated_host_ingress=_host_ingress(),
-    )
-    if behavior in {"writer_changed", "writer_unavailable"}:
-        assert first.blocked_reasons["semantic_ingestion"] == "graph_transaction_authority_unavailable"
-        assert successful_calls == []
-    if behavior in {"lease_renewed", "lease_reclaimed"}:
-        assert len(successful_calls) == 1
-        assert first.blocked_reasons["semantic_ingestion"] == "source_only"
-    counts = (
-        len(successful_calls), len(unavailable_calls), len(conflict_calls),
-        len(partial_conflict_calls), len(exhausted_conflict_calls),
-    )
-    lanes = dict(lane_calls)
-    if behavior == "lease_reclaimed":
-        clock[0] = TEST_NOW
-    if behavior == "mixed_version":
-        members = service._memory_plane.list_records(
-            source_kind="semantic_ingestion_bootstrap_graph_v3_member"
-        )
-        assert members
-        class CorruptionPolicy:
-            def validate(self, *_args: object, **_kwargs: object) -> None:
-                return None
-        service._memory_plane._records.install_governed_write_policy(CorruptionPolicy())
-        for member in members:
-            content = dict(member.content)
-            content["member"] = {"schema_version": 2, "kind": "legacy_graph_member"}
-            service._memory_plane.upsert_record(
-                member.model_copy(update={"content": content})
-            )
-        locators = service._memory_plane.list_records(
-            source_kind="semantic_ingestion_bootstrap_graph_v3_terminal_locator"
-        )
-        assert locators
-        for locator in locators:
-            content = dict(locator.content)
-            content["reload"] = {"schema_version": 2, "kind": "legacy_graph_reload"}
-            service._memory_plane.upsert_record(
-                locator.model_copy(update={"content": content})
-            )
-    if behavior == "rollback":
-        graph_bundle = (
-            service._provider_ingestion._semantic_runtime.bootstrap_graph_host_bundle
-        )
-        assert graph_bundle is not None
-        object.__setattr__(graph_bundle, "promotion_enabled", False)
-    repeated_operation_id = (
-        f"{operation_id}-after-rollback" if behavior == "rollback" else operation_id
-    )
-    repeated = service.sync_event(
-        operation=ProviderOperation.CHAT_USER_TURN,
-        content="Atlas owner is Bob.", operation_id=repeated_operation_id,
-        task_id="task:one", user_id="user:alice",
-        authenticated_host_ingress=_host_ingress(),
-    )
-    if behavior == "mixed_version":
-        assert repeated.blocked_reasons["semantic_ingestion"] in {
-            "graph_transaction_authority_unavailable",
-            "source_alignment_authority_unavailable",
-        }
-    elif behavior in {"writer_changed", "writer_unavailable"}:
-        assert repeated.blocked_reasons["semantic_ingestion"] in {
-            "graph_transaction_authority_unavailable", "source_only",
-            "source_alignment_authority_unavailable",
-        }
-    elif behavior == "rollback":
-        assert repeated.blocked_reasons["semantic_ingestion"] == (
-            "graph_transaction_authority_unavailable"
-        )
-        assert len(successful_calls) == counts[0]
-        assert service._memory_plane.list_records(
-            source_kind="semantic_ingestion_bootstrap_graph_v3_terminal_locator"
-        )
-    else:
-        assert repeated.blocked_reasons["semantic_ingestion"] == first.blocked_reasons["semantic_ingestion"]
-    assert (
-        len(successful_calls), len(unavailable_calls), len(conflict_calls),
-        len(partial_conflict_calls), len(exhausted_conflict_calls),
-    ) == counts
-    if behavior != "rollback":
-        assert lane_calls == lanes
 
 
 def test_filesystem_root_reopens_graph_terminal_without_reexecuting(tmp_path) -> None:
@@ -1039,7 +580,7 @@ def test_filesystem_root_reloads_graph_successor_without_reexecuting(
     tmp_path, scenario: str, group_count: int, conflict_count: int, effect_count: int,
 ) -> None:
     storage_root = tmp_path / f"memorii-{scenario}-successor-reopen"
-    proposal = _graph_fact_proposal(group_count)
+    proposal = graph_fact_proposal(group_count)
     first_normalization, _first_lanes = _v3_normalization_host_builder(proposal=proposal)
     first_conflicts: list[str] = []
     first_effects: list[str] = []
@@ -1128,7 +669,7 @@ def test_direct_root_replans_once_after_related_conflict() -> None:
     normalization, _lane_calls = _v3_normalization_host_builder(proposal=proposal)
     conflict_calls: list[str] = []
     successful_calls: list[str] = []
-    service = _provider_service(
+    service = provider_service(
         now_provider=lambda: TEST_NOW,
         host_bootstrap_capability=_built_in_local_capability(),
         host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
@@ -1201,7 +742,7 @@ def test_direct_root_preserves_completed_group_during_related_conflict() -> None
     normalization, _lane_calls = _v3_normalization_host_builder(proposal=proposal)
     conflict_calls: list[str] = []
     successful_calls: list[str] = []
-    service = _provider_service(
+    service = provider_service(
         now_provider=lambda: TEST_NOW,
         host_bootstrap_capability=_built_in_local_capability(),
         host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),

@@ -65,9 +65,14 @@ def build_manifest() -> dict[str, object]:
                     if backend == "memory"
                     else "test_graph_race_reopens_in_an_independent_jsonl_process"
                 )
+                test_module = (
+                    "test_bootstrap_graph_scenario_replay.py"
+                    if backend == "memory"
+                    else "test_bootstrap_graph_jsonl_race_reopen.py"
+                )
                 selector = (
                     "tests/unit/core/semantic_ingestion/"
-                    f"test_bootstrap_graph_production_roots.py::{test_name}"
+                    f"{test_module}::{test_name}"
                     f"[{scenario}-{root}]"
                 )
                 durable, calls, cas, event, graph = _oracle(scenario)

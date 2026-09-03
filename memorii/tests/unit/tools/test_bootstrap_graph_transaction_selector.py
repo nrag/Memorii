@@ -138,7 +138,14 @@ def test_receipt_mutations_fail_closed(tmp_path: Path, mutation: str) -> None:
 
 def test_dedicated_owner_is_excluded_from_generic_unit_shards() -> None:
     shards = json.loads(UNIT_SHARDS_PATH.read_text(encoding="utf-8"))
-    assert "--ignore=tests/unit/core/semantic_ingestion/test_bootstrap_graph_production_roots.py" in shards["pytest_args"]
+    assert all(
+        ignore in shards["pytest_args"]
+        for ignore in (
+            "--ignore=tests/unit/core/semantic_ingestion/test_bootstrap_graph_jsonl_race_reopen.py",
+            "--ignore=tests/unit/core/semantic_ingestion/test_bootstrap_graph_scenario_replay.py",
+            "--ignore=tests/unit/core/semantic_ingestion/test_bootstrap_graph_root_composition.py",
+        )
+    )
     owners = json.loads(OWNERS_PATH.read_text(encoding="utf-8"))["dedicated_pytest_jobs"]
     assert owners["bootstrap-graph-transaction-boundary"] == {
         "runtime_budget_seconds": 4200,

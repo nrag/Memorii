@@ -257,6 +257,27 @@ pytest-xdist dev-dependency decision.
 
 ## Progress Log
 
+- 2026-09-02 (L1a landed): the production-roots file split into
+  `bootstrap_graph_production_roots_support.py` (public-named shared
+  helpers) + three family modules (`test_bootstrap_graph_jsonl_race_reopen`,
+  `test_bootstrap_graph_scenario_replay`,
+  `test_bootstrap_graph_root_composition`).  Full definition-of-done
+  evidence at the landed revision: runner import re-pointed
+  (`bootstrap_graph_v3_process_runner.py`); selector path construction
+  updated and `bootstrap-graph-transaction-boundary.json` regenerated
+  via `--write` (**200 rows validated across the two family files — CI
+  boundary coverage provably retained**); `unit-shards.json` ignores
+  re-pointed at all three files (status-quo exclusion preserved); both
+  pinning tests updated and green (29 passed with the tooling suites);
+  **identity proof: 241 nodes, IDs identical modulo the path component
+  against the artifact; whole-suite collection unchanged at 4,076**;
+  smoke green on one node per family including the subprocess path
+  (3 passed); ruff clean; identity hygiene clean outside the known
+  artifact (new module names coordinate-clean).  Pre-existing note:
+  `test_shards verify` reports the estimated-shard-runtime-over-target
+  warning against the stale pre-optimization durations over an
+  unchanged node set — unchanged by the split, recalibrated by L4.
+
 - 2026-09-02: opened. Phase 1 attribution recorded from the durations
   artifact and `pr-gates.yml`; the race family's two-subprocesses-per-node
   structure confirmed in the test source.
