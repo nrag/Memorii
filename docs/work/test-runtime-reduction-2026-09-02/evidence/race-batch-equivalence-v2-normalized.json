@@ -1,0 +1,21 @@
+{
+  "elements": 200,
+  "mismatches": [
+    {
+      "count": 8,
+      "differing_keys": [
+        "acquire_errors[0]",
+        "cas_attempts",
+        "graph_effects",
+        "lane_calls.predicate",
+        "lane_calls.proposal",
+        "lane_calls.spacy",
+        "lane_calls.stanza",
+        "lane_calls.temporal"
+      ],
+      "element": "initial_attempt-direct-first"
+    }
+  ],
+  "normalized_identical": false,
+  "rule": "leaf equality with hex identity values (digest/id/attempt/nonce/token/fingerprint keys) normalized"
+}

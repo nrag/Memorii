@@ -295,6 +295,28 @@ pytest-xdist dev-dependency decision.
   adoption gate launches after it.  L2 is not adoption-complete until
   both land green.
 
+- 2026-09-02 (L2 adoption gate COMPLETE — PASS with one recorded
+  pre-existing flake): the first verdict (v1, raw byte equality) showed
+  26 mismatches; investigation split them into two classes.  (1) All 24
+  `reused_*` elements differ **between two single-mode runs of the same
+  element** in exactly the same 396 identity-shaped leaf keys
+  (digests/ids) — by-design per-run unique identities, so raw byte
+  equality is an ill-formed criterion for these outputs (the same caveat
+  the CE-9 harness recorded for durable bytes).  Recomputed with hex
+  identity normalization
+  (`race-batch-equivalence-v2-normalized.json`): **199 of 200 elements
+  identical**.  (2) The one remaining mismatch
+  (`initial_attempt-direct-first`) is a **single-mode flake**: the
+  script's single leg produced a rare no-coordinator outcome
+  (cas_attempts 0, lanes 0, empty acquire_errors) that three independent
+  re-runs — including at the identical storage-path shape — cannot
+  reproduce (all cas=1 matching the batch, which was deterministic
+  across the family run and the equivalence batch leg).  Recorded as a
+  pre-existing race-family flake (~1 observed in ~400 single
+  executions); follow-up only.  Measured: singles leg 4,187.5s vs batch
+  leg 2,347.6s — the spawn collapse saved ~1,840s (31%) on this
+  workload even before parallelism.  **L2 is adoption-complete.**
+
 - 2026-09-02: opened. Phase 1 attribution recorded from the durations
   artifact and `pr-gates.yml`; the race family's two-subprocesses-per-node
   structure confirmed in the test source.
