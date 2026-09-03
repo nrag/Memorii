@@ -17,6 +17,7 @@ result it is.  Writes a JSON verdict beside this script.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import time
 import xml.etree.ElementTree as ET
@@ -56,8 +57,40 @@ def main() -> None:
         "revision": subprocess.run(
             ("git", "rev-parse", "HEAD"), cwd=REPO_ROOT, capture_output=True, text=True, check=True
         ).stdout.strip(),
+        "environment": {
+            "pythonpath": os.environ.get("PYTHONPATH", ""),
+            "dirty_tree": subprocess.run(
+                ("git", "status", "--short"), cwd=REPO_ROOT, capture_output=True, text=True, check=True
+            ).stdout.splitlines()[:10],
+        },
         "runs": {},
     }
+    # Pre-flight: collection must pass before any timed configuration runs,
+    # and the harness environment must not carry a PYTHONPATH that differs
+    # from the plain CI invocation (round one's serial leg died at
+    # collection on an import that never reproduces manually).
+    os.environ.pop("PYTHONPATH", None)
+    preflight = subprocess.run(
+        [
+            str(PYTHON),
+            "-m",
+            "pytest",
+            "tests/unit",
+            "--collect-only",
+            "-q",
+            "-W",
+            "error",
+            "-p",
+            "no:cacheprovider",
+        ],
+        cwd=REPO_ROOT / "memorii",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if preflight.returncode != 0:
+        raise SystemExit(f"preflight collection failed:\n{preflight.stderr[-2000:]}")
+    verdict["environment"]["preflight_collected"] = preflight.stdout.strip().splitlines()[-1]
     outcomes_by_config: dict[str, dict[str, str]] = {}
     for name, extra_args in CONFIGS:
         junit = EVIDENCE / f"xdist-equivalence-{name}.xml"
