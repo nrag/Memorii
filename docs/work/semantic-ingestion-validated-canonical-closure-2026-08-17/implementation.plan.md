@@ -3,7 +3,9 @@
 ## Operation And Baseline
 
 - Work type: `implementation`.
-- Status: `in progress; trigger-family and recovery milestones complete 2026-08-26; performance milestone active`.
+- Status: `in progress; performance evidence complete; final closure active
+  2026-09-03 (acceptance-matrix gap fills, gate repair, candidate refreeze,
+  independent reviews, CI parity, and current-state documentation)`.
 - Repository: `Memorii`.
 - Approved design:
   `docs/design/semantic_ingestion_validated_canonical_closure.md`.
@@ -25,12 +27,12 @@
   `docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/design.plan.md`.
 - Active milestone packet:
   `docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/milestones/performance-rollout-gates-and-final-closure.md`
-  (to be created at performance-milestone start; until then the recovery and
-  trigger-family packets record the latest completed evidence).
+  (performance evidence recorded; final-closure items in progress).
 - Completed milestone packets: `direct-ingress-closure-slice.md`,
   `complete-trigger-and-durable-path-propagation.md` (family-proof closure
   2026-08-26), and `recovery-reconciliation-fresh-owner-propagation.md`
-  (redelivery-door closure 2026-08-26, reconcile-branch disposition pending).
+  (redelivery-door closure 2026-08-26; reconcile-branch disposition resolved
+  2026-08-29 by the linked removal operation).
 - Active linked operation:
   `docs/work/semantic-ingestion-recovery-reconcile-baseline-debug-2026-08-18/debug.plan.md`
   (complete 2026-08-26; closure reviewed by `spec_auditor`,
@@ -115,7 +117,7 @@ Excluded:
 
 | Requirement | Implementation | Tests | Other evidence | Status |
 | --- | --- | --- | --- | --- |
-| `VCC-R01` digest reduction | substitution wired at writer handoff and replay reload for all families; codec-level child-slice reuse and production-bound measurement not started | None | Approved reference counterfactual (42,955 baseline vs 176 counterfactual) | not started (performance milestone is next) |
+| `VCC-R01` digest reduction | digest-verification reuse landed 2026-08-26 (production-bound census 49,054 → 2,054 calls, 95.8% total / 96.5% repeated); default-on enablement and codec-level construction elimination landed through the linked default-on, encoder-hot-path, and member-reuse operations (successor v2 harness: 43,756 → 237 digest calls per delivery, 99.46%) | mode-parity diametric proofs; family and recovery production-root proofs | performance packet census; default-on PBD-EXP-014 v1/v2; member-reuse CE slice evidence | verified: reduction gate met with margin at every measured layer |
 | `VCC-R02` one-pass canonical result | prepared-source staging is explicit through every trigger family; lease reaches both durable consumers | family + recovery production-root proofs | milestone packets | supported in production for all families |
 | `VCC-R03` typed non-ambient authority | explicit sealed-only binding; fresh arena per delivery through every family root | arena tests, v11, family proofs | milestone packets | supported in production for all families |
 | `VCC-R04` exact path/span identity | traversal-issued member evidence including equal-value paths | arena tests | remediation slice | supported locally |
@@ -136,7 +138,7 @@ Excluded:
 | Direct ingress closure slice | Prepared-source `sync_event` stages, seals, leases, and reaches atomic handoff | R02-R10 partial; R03/R04/R07/R08/R11/R12 locally supported | complete |
 | Complete trigger and durable-path propagation | Direct, composite, memory-write, and Hermes hooks each proven to stage, seal, lease, and consume at both durable consumers | R02-R12 | complete (2026-08-26, `02502eb`); builder-blocked writer-preservation cells recorded as follow-ups |
 | Recovery/reconciliation fresh-owner propagation | V3 mid-ingestion recovery proven through the redelivery door with fresh owner, sealed lease into the replay reload, five-coordinate rejection, and enabled/disabled parity; reconcile branch structural finding recorded with pending repair-or-remove decision | R02/R03/R05-R12; R01 measurement contribution only | complete for the redelivery door (2026-08-26, `4560d29`); reconcile branch disposition pending |
-| Performance, rollout, gates, and final closure | 90 percent production-bound reduction met with margin (96.5 percent repeated); broad-gate reconciliation partially complete (provider-service green, identity gate green, +3 composition fixes); 47 pre-existing legacy-fixture failures classified for a dedicated operation; acceptance matrix, refreeze, reviews, CI, and docs remain | All | active |
+| Performance, rollout, gates, and final closure | 90 percent production-bound reduction met with margin (96.5 percent repeated; successor layers reach 99.46 percent); broad-gate baseline reconciled through the linked removal and suite-reconciliation operations (final broad gate 4038 passed / 12 dispositioned at `21dcaf3`); default-on rollout landed with diametric parity gate; final-closure items (acceptance-matrix gap fills, gate repair, refreeze, reviews, CI parity, docs) active 2026-09-03 | All | active |
 
 Milestone labels organize work only and may not appear in production or test
 filenames, symbols, schemas, fixtures, artifacts, diagnostics, or workflow jobs.
@@ -216,7 +218,7 @@ success-shaped fallback, or test-only composition root fails readiness.
 | Evidence identities | `canonical_evidence_arena.py`, `canonical_evidence_lock_resolver.py`, `canonical_evidence_performance_runner.py`, `test_canonical_evidence_arena.py` and fixture helpers | behavioral | Behavioral fixture names and helper modules are not planning/evidence coordinate names; validated by `milestones/readiness-identity-ledger.md` |
 | Persisted/public values | `CanonicalCodecResult`, `CanonicalMemberIndex`, `ValidatedCanonicalClosure` | behavioral | No persisted/public identity drift introduced; governed by canonical contract files noted in `changed-surface-ownership-ledger.md` |
 | Traceability coordinates | `VCC-R01` through `VCC-R12` | planning/evidence (non-behavioral) | Allowed only in WorkPlan, design, evidence, and review records; explicitly excluded from production tests, fixtures, symbols, workflow jobs, and serialized outputs |
-| CI and command identities | `identity_hygiene` command invocation and benchmark/acceptance matrix rows | behavioral with evidence scope | Behavioral command identities only; follow-up required is running the field-aware identity gate and representative mutation rows in `implementation-acceptance-v12.md` after identity drift reconciliation |
+| CI and command identities | `identity_hygiene` command invocation, shard-plan verification, diametric parity workflow, and benchmark/acceptance matrix rows | behavioral with evidence scope | Behavioral command identities only; the field-aware identity gate is green and the representative coordinate mutation corpus (6 spellings x 18 surfaces plus the traceability and concealment corpora) passes with behavioral node IDs (2026-09-03); CI execution evidence stays unclaimed until a workflow runs at a reviewed revision |
 
 ## Validation Matrix
 
@@ -260,7 +262,11 @@ fast unit suite.
 ## Migration, Rollout, Rollback, And Compatibility
 
 - No persisted-data migration or replay conversion.
-- Private mode is disabled by default.
+- Rollout contract as amended by the 2026-08-27 user decision (recorded in
+  `docs/design/semantic_ingestion_validated_canonical_closure.md`): the
+  substitution is enabled by default for every verified runtime; an explicit
+  `canonical_evidence_enabled=False` constructor request is the only disabled
+  path and is also the rollback switch (migration-free).
 - Disabled mode allocates no evidence capability, index charge, or process
   reservation and executes the current full path.
 - Capacity rejection occurs before substitution and executes the same full path.
@@ -269,6 +275,10 @@ fast unit suite.
   introduced; process-local typed objects do not cross version boundaries.
 - Observability is content-free and non-authoritative; sink unavailability cannot
   alter ingestion or durable outcomes.
+- The diametric enabled/disabled parity gate runs on a four-hour scheduled
+  cadence (`.github/workflows/canonical-evidence-parity-scheduled.yml`); its
+  executed-CI evidence stays unclaimed until the branch reaches the default
+  branch.
 
 ## Evidence Maturity Ledger
 
@@ -277,50 +287,52 @@ fast unit suite.
 | Design and operation contract | specified and approved | unchanged approved baseline |
 | Codec/span, capacity, security, rollback references | locally verified reference | corroborated by production implementation tests |
 | Production binding | implemented and focused-proven for every mapped family (direct, composite, memory-write, Hermes turn/write, redelivery recovery) at revisions `4560d29`/`02502eb` | unchanged: implemented, source-bound, nonzero callers, focused path proof |
-| Digest reduction | locally verified reference counterfactual | locally verified production-bound implementation evidence and required CI if workflow-owned |
-| Lifecycle and observability | deterministic implementation tests including per-family exactly-once terminal snapshots; concurrency/privacy remain arena-local | deterministic implementation tests including concurrency/privacy at production roots |
+| Digest reduction | production-bound census (49,054 → 2,054; 95.8/96.5 percent) plus successor v2-harness evidence (43,756 → 237; 99.46 percent) recorded 2026-08-26 through 2026-09-02 | unchanged: locally verified production-bound implementation evidence and required CI if workflow-owned (CI execution not yet claimed; no workflow run at a reviewed revision) |
+| Lifecycle and observability | deterministic tests including per-family exactly-once terminal snapshots; production-root capacity-refusal (reservation exhaustion), in-flight concurrent-writer lease isolation, and full-sentinel snapshot-privacy proofs added 2026-09-03 in `test_canonical_evidence_production_limits.py`; arena member-path-envelope, first-cause-latching, and hostile-sink cells added the same day | deterministic implementation tests including concurrency/privacy at production roots |
 | CI | not claimed | exact applicable required jobs passing at reviewed revision |
 | Live and operational | not claimed | separately identified; not inflated from local evidence |
 
 ## Gate And Known-Failure Ledger
 
-Current known facts:
+Current known facts (reconciled 2026-09-03):
 
-- The current production path exhibits severe duplicate reconstruction/digest
-  cost; the frozen reference family records 42,955 full computations and the
-  approved counterfactual records 176.
-- The arena is the approved closure owner for lifecycle/leases; codec-level
-  child-slice reuse and the production-bound digest counter are not yet
-  implemented (performance milestone).
-- Candidate v12 reference evidence passes but is not production proof.
-- Remaining implementation follow-ups: performance reduction, broad-gate
-  baseline reconciliation, candidate refreeze, and independent review.
+- Performance is landed and measured at every layer: the 2026-08-26
+  production-bound census (49,054 → 2,054 digest calls, 95.8% total / 96.5%
+  repeated) and the linked default-on/encoder-hot-path/member-reuse operations
+  (v2 harness: 43,756 → 237 calls per delivery, 99.46%); the 90 percent gate is
+  met with margin.
+- The 47 pre-existing broad failures were resolved by the linked legacy-path
+  removal operation plus its suite-reconciliation work; that operation's final
+  broad gate at `21dcaf3` records 4038 passed / 12 dispositioned / 2 skipped,
+  and the member-reuse CE-9 broad gate at `c9995a1` records 4070 passed /
+  4 dispositioned.
+- Gate repairs made 2026-09-03 during final closure: (1) the identity-hygiene
+  gate, re-broken after the durations regeneration exposed 124 planning
+  coordinates inside regenerated test node IDs, is green again — the three
+  scanner corpus parametrizations now carry behavioral `ids=` and the durations
+  artifact keys were remapped 1:1 (124 keys, values preserved); (2) the unit
+  shard plan, red at ~730s estimated per shard against the 600s target after
+  the corpus re-measurement, now uses six shards (~487s estimated, 19 percent
+  headroom, matrix and config updated together); (3) the CI pyright command
+  was discovered red with 868 errors against a clean merge base
+  (`2a7a55e`, 0 errors, identical config) — all branch-introduced, dominated
+  by `object`/`BaseModel`-loose annotations in `atomic_store.py` and
+  `writer_admission.py`; remediation is in flight as the final-closure type
+  gate.
+- Candidate v12 reference evidence remains reference-class; production proof
+  is carried by the milestone packets and linked-operation evidence above.
+- Remaining implementation follow-ups: candidate refreeze, independent
+  milestone and final reviews, CI parity record, and current-state
+  documentation updates.
 - Focused evidence recorded 2026-08-26 at `4560d29`/`02502eb`: family proofs
   `4 passed in 923.04s`; recovery proofs
-  (`test_redelivery_recovery_uses_fresh_owner_and_leases_exact_prepared_bytes`,
+  (`test_redelivery_recovery_uses_a_fresh_owner_and_leases_exact_prepared_bytes`,
   `test_redelivery_recovery_rejects_mutated_lease_coordinates`,
   `test_redelivery_recovery_outcomes_are_identical_across_enabled_and_disabled_modes`)
   each passing (~2-4 minutes each); replay/reopen modules `9 passed in
-  752.70s` at `5bd516b`; arena `29 passed`; writer-admission focused matrix
-  `9 passed`; provider-service module `39 passed` with one pre-existing
-  failure; ruff clean on all changed files.
-- Pre-existing broad failures verified against clean base
-  `b9daf00a0e6956e51106756f1baaf23190c688bb` (isolated worktree, 2026-08-26):
-  `test_semantic_provider_composition.py` failed 45 of 59 at base vs 43 of 65
-  on the current branch (this work net-fixed 8);
-  `test_bootstrap_graph_coordinator_v3.py` has 4 failures verified pre-existing
-  at `5f61c9c` via stash-revert; `test_provider_service.py::
-  test_provider_preserves_caller_owned_event_time` is pre-existing. These
-  belong to broad-gate reconciliation, not to closure-feature regressions.
-- `memorii.tools.identity_hygiene` currently fails during allowlist
-  validation: two `legacy_rejection_vector` exceptions pin exact
-  line:column locations in `test_semantic_ingestion_pipeline.py` (modified by
-  this branch's original dirty tree, commit `5bd516b`) and
-  `test_semantic_pipeline.py` that no longer match
-  (`legacy rejection exception requires an exact rejecting test proof`). The
-  allowlist itself is unmodified since `eb70c9d`. Reconciling the pinned
-  locations (or the field-aware identity gate follow-up below) belongs to
-  broad-gate reconciliation.
+  752.70s` at `5bd516b`; arena suite green (62 passed 2026-09-03 including the
+  new member-path-envelope, first-cause-latching, and hostile-sink cells);
+  writer-admission focused matrix `9 passed`; ruff clean on all changed files.
 
 No existing failure may be dismissed without identical clean-baseline evidence;
 no broad suite should run repeatedly during construction.
@@ -378,6 +390,35 @@ resolved inside this WorkPlan.
   and the runtime-validation bridge cleanup landed with a focused deferral
   test. Builder-blocked cells (factory/filesystem existing-record preservation
   and JSONL variants) are recorded as follow-ups in the M2 packet.
+- `2026-08-27` through `2026-09-02` (linked successor operations, recorded
+  here as the performance-milestone link-record required by the member-reuse
+  plan's CMR-008): the default-on operation landed enable-by-default with the
+  amended rollout contract and the diametric parity gate; the legacy-path
+  removal operation closed (final broad gate `21dcaf3`: 4038 passed, 12
+  dispositioned); the suite-reconciliation debugging operation closed; the
+  encoder-hot-path and member-reuse (construction-elimination) operations
+  landed the codec-level reuse layers (CE-9 broad gate `c9995a1`: 4070
+  passed, 4 dispositioned; digest calls per delivery 43,756 → 237); the
+  test-runtime-reduction operation landed the production-roots family split,
+  the race batching, the xdist equivalence proof (all four configurations
+  equivalent at `253cee9`), and the durations regeneration. The member-reuse
+  and test-runtime operations remain active on their own quiet-host
+  measurement, review-closure, and GC-policy items; they are not blockers for
+  this plan's 90 percent gate.
+- `2026-09-03`: Final closure opened. Gate repairs: identity-hygiene 124
+  findings resolved via behavioral corpus node IDs plus a 1:1 durations-key
+  remap; unit shard capacity raised 4 → 6 shards on the re-measured corpus
+  (~487s estimated per shard, under the unchanged 600s target); CI pyright
+  command discovered red with 868 branch-introduced errors against the clean
+  merge base and delegated to a single annotation-precision writer.
+  Acceptance-matrix gap fills: production-root reservation-exhaustion
+  capacity refusal, in-flight concurrent-writer lease isolation, and
+  full-sentinel snapshot-privacy proofs added
+  (`test_canonical_evidence_production_limits.py`); arena member-path
+  envelope (exact/one-over at 32,768), first-cause latching through
+  conflicting closes, and hostile-observability-sink cells added. Both
+  binding validators (v11/v14) fail on source-hash drift and must be
+  regenerated at the frozen revision.
 
 ## Remediation Reopening (2026-08-18)
 

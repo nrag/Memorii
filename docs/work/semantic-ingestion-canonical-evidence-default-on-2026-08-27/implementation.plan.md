@@ -2,9 +2,10 @@
 
 - Work ID: `semantic-ingestion-canonical-evidence-default-on-2026-08-27`
 - Work type: `implementation`
-- Status: `active`
+- Status: `complete (closed 2026-09-03 by the parent operation's final-closure reconciliation; no code or test work remained)`.
 - Coordinator: sole writer (main thread)
 - Created: `2026-08-27`
+- Last updated: `2026-09-03`
 - Parent WorkPlan:
   `../semantic-ingestion-validated-canonical-closure-2026-08-17/implementation.plan.md`
   (this operation delivers its performance milestone's enablement leg and the
@@ -92,7 +93,7 @@ claims; any reopening of the legacy-path removal's slices.
 | Milestone | Observable outcome | Status |
 | --------- | ------------------ | ------ |
 | Enable-by-default | every verified runtime substitutes; explicit `canonical_evidence_enabled=False` is the only off path; arena + service + parity suites green | complete (commit `b33a171`) |
-| Parity gate | fewer-than-ten diametric nodes, slow-tier workflow cadence, gate-change log recorded | wired (module + workflow + shard exclusion; module green run pending) |
+| Parity gate | fewer-than-ten diametric nodes, slow-tier workflow cadence, gate-change log recorded | complete (module + workflow + shard exclusion wired 2026-08-27; module green 2 passed in 6:26, commit `b84de70`) |
 | H8 removal | single prepare-and-publish per ingestion; family proofs green | complete (47 passed) |
 | Re-profile | frozen-scenario numbers with ON+H8 recorded; H7 scoped or closed | complete (63.7% wall-clock reduction measured; H7 budget = residual ~36s) |
 
@@ -160,9 +161,29 @@ claims; any reopening of the legacy-path removal's slices.
   operation) — the measurement uses the production-domain composition
   instead.
 
-## Next Action
+## Closure Record (2026-09-03)
 
-All four milestones are complete. Resume the paused legacy-path removal
-operation (slice-5 failure classification first), and open the H7 unit
-(persistence-composition kernel, ~36s residual per delivery) as its own
-linked operation when ready.
+Closed by the parent operation's final-closure reconciliation with every
+completion-contract item already evidenced above:
+
+1. every verified runtime constructs the substitution ON
+   (`ProviderMemoryService.__init__` kwarg `canonical_evidence_enabled=None`
+   resolves to enabled once the bootstrap profile verifies); the explicit
+   `canonical_evidence_enabled=False` request is the only off path;
+2. the diametric parity gate exists as
+   `.github/workflows/canonical-evidence-parity-scheduled.yml` (4-hour
+   cadence, exact collection-count pin) over
+   `memorii/tests/unit/core/semantic_ingestion/test_canonical_evidence_mode_parity.py`;
+   the module is green locally (2 passed in 6:26 at `b84de70`). CI execution
+   evidence remains unclaimed until the branch reaches the default branch
+   (no pull request or scheduled run has executed the workflow);
+3. the H8 duplicate prepare-and-publish is removed with 47 focused proofs;
+4. PBD-EXP-014 v1 records ON+H8 numbers (63.7% wall-clock, 99.46% digest-call
+   reduction) and scopes H7 to the ~36s non-digest residual;
+5. the amended rollout contract is recorded in
+   `docs/design/semantic_ingestion_validated_canonical_closure.md`.
+
+The former Next Action's pointers are historical: the legacy-path removal
+operation resumed 2026-08-27 and closed 2026-09-01, and the H7 unit opened as
+the linked canonical-encoder-hot-path (complete) and canonical-member-reuse
+(active) operations.

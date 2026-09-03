@@ -112,10 +112,67 @@ Explicitly remaining (not repairable by the shared-cause pattern):
   `$design-tests`), not a closure-feature defect; no product behavior
   evidence links these failures to the validated-closure changes.
 
+## Final-Closure Session (2026-09-03)
+
+Acceptance-matrix gap analysis (row-by-row mapping against
+`implementation-acceptance-v12.md`) found nine NOT-FOUND cells. Two were
+already evidenced outside tests (the production-bound digest-reduction census
+above and the successor v2 harness); the remaining seven are closed or
+dispositioned as follows:
+
+- Production-root capacity refusal: `test_process_reservation_exhaustion_at_the_root_uses_the_full_path`
+  in `memorii/tests/unit/core/semantic_ingestion/test_canonical_evidence_production_limits.py`
+  — four deliveries held in-flight at the writer handoff exhaust the 64 MiB
+  process reservation (4 x 16 MiB), the fifth real delivery's arena is refused
+  at construction (`capacity_rejected_full_path` / `capacity-refused`, no
+  sealed lease reaches its handoff), its public outcome equals the enabled
+  warm delivery's, and reservation release permits later reacquisition. A
+  content-size refusal is structurally unreachable: canonical contracts are
+  digest-based (`RetainedSourceTextArtifact` stores `content_digest` +
+  scalar length), so the 2 MiB per-entry envelope is crossed by structure,
+  not payload bytes.
+- Production-root concurrency: `test_concurrent_inflight_writers_hold_isolated_leases_at_the_durable_boundary`
+  — two deliveries in flight simultaneously (first paused at the durable
+  boundary while the second completes): distinct arenas, tokens, owners, and
+  scopes; both leases carry member evidence and drain released; exactly two
+  `enabled/completed` terminal snapshots; all controls terminal.
+- Production-root privacy: `test_terminal_snapshots_carry_no_delivery_sentinel_in_any_field`
+  — every snapshot field name and string value is scanned recursively against
+  the delivery content, its sha256, the leased canonical root digest and
+  contract type, and the task/user scope coordinates; nothing appears. The
+  same scanner runs over the capacity and concurrency phases' snapshots.
+- Arena-local matrix cells: the 32,768 member-path envelope exact/one-over
+  boundary, first-terminal-cause latching through conflicting closes
+  (exception/cancelled/validation-failed orders), and a hostile
+  observability sink (raising or returning an unknown outcome) are added to
+  `test_canonical_evidence_arena.py` (62 passing).
+- The new production-limits module is slow-tier (one full-path delivery per
+  test): excluded from the unit shard plan and owned by the scheduled
+  canonical-evidence cadence workflow with an exact collection-count pin,
+  mirroring the mode-parity tier.
+
+Gate repairs in the same session:
+
+- `identity_hygiene` (124 findings, all structured keys of the regenerated
+  durations artifact): resolved with behavioral parametrize IDs on the three
+  scanner corpus tests plus a 1:1 durations-key remap; exit 0 with the
+  mutation corpus (6 coordinate spellings x 18 surfaces, 13 traceability
+  binding shapes, 3 concealment shapes) passing.
+- Unit shard plan: 4 -> 6 shards on the re-measured corpus (~487s estimated
+  per shard, unchanged 600s target, `pr-gates.yml` matrix updated in lockstep);
+  both shard configs verify green.
+- The CI pyright command was discovered red (868 errors; clean merge base
+  `2a7a55e` reports 0 under the identical config — the errors are
+  branch-introduced, dominated by loose `object`/`BaseModel` annotations in
+  `atomic_store.py` and `writer_admission.py`); delegated to a single
+  annotation-precision writer as the type-gate remediation.
+- Both production-entrypoint binding validators (v11, v14) fail on
+  source-hash drift against the current tree; regeneration at the frozen
+  revision is a freeze-gate step.
+
 ## Next Action
 
-Decide whether to open the dedicated legacy-fixture reconciliation
-operation for the 47 remaining pre-existing failures, then proceed to the
-final closure items: full acceptance-matrix run, candidate refreeze,
-independent milestone and final reviews, CI wiring, and current-state
-documentation updates.
+Land the pyright annotation remediation and the reservation-exhaustion proof
+result, freeze the candidate revision (regenerating the v11/v14 entrypoint
+bindings and the implementation candidate manifest), run the frozen-revision
+gate set, then launch the independent milestone and final review cohort.

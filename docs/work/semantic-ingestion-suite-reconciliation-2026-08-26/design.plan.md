@@ -2,8 +2,9 @@
 
 - Work type: `debugging` (test-contract reconciliation; `$debug-problem`
   process, `$design-tests` skills apply to the fixture architecture).
-- Status: `active; root cause pinned, repair architecture partially
-  validated, fixture construction in progress`.
+- Status: `complete; closed by the Closure Record below (2026-08-29, commit
+  02d977d); header flipped 2026-09-03 during the parent operation's
+  final-closure reconciliation`.
 - Created: `2026-08-26`.
 - Coordinator: sole writer.
 - Parent context: the validated-canonical-closure implementation

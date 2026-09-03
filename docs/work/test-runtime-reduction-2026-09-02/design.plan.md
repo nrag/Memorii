@@ -377,13 +377,27 @@ pytest-xdist dev-dependency decision.
   stale private import, so the durations artifact's provenance for those
   nodes predates the public rename.
 
+## Resolved Follow-Ups (2026-09-03, by the parent closure operation)
+
+Both recorded follow-ups were resolved by the validated-canonical-closure
+final-closure reconciliation, recorded there:
+
+- Shard estimate vs target: the unit shard plan was raised from 4 to 6 shards
+  on the re-measured corpus (estimated ~487s per shard against the unchanged
+  600s target; `unit-shards.json` and the `pr-gates.yml` matrix changed
+  together; verify green). The target itself was not weakened. The
+  production-root admission-limits module
+  (`test_canonical_evidence_production_limits.py`, added by the same
+  operation) is excluded from the shard plan and owned by the scheduled
+  canonical-evidence cadence workflow, matching the mode-parity tier.
+- The 124 identity-hygiene findings: the scanner corpus parametrizations now
+  carry behavioral `ids=` (test node IDs are a prohibited coordinate surface),
+  and `unit-test-durations.json` keys were remapped 1:1 with durations
+  preserved; the gate is green with the corpus mutation rows passing.
+
 ## Next Action
 
-Run the independent `test_reviewer` and `correctness_reviewer` passes
-on this design (the coherent topology change), then implement in
-order: the production_roots split (L1a, coordinated consumer update
-per its definition of done), the xdist
-equivalence experiment and runner (L1b — needs the pytest-xdist
-dev-dependency addition via uv, user-approved), race batching (L2),
-and durations regeneration (L4); L3 only if the measured wall exceeds
-45m.
+Quiet-host confirmation run of the adopted command (`../.venv/bin/python3.12
+-m pytest tests/unit -W error -p no:cacheprovider -q -n 8 --dist loadfile`,
+15-45m target) plus the implementation-phase `test_reviewer` and
+`correctness_reviewer` passes; L3 only if the quiet measured wall exceeds 45m.

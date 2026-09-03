@@ -352,6 +352,18 @@ fixtures, diagnostics, CI jobs, or serialized outputs.
   requires the recorded GC-policy decision plus the remaining
   graph-planning/event-replay round-trip clusters, then a quiet-host
   re-measurement and the once-only broad gate.
+- 2026-09-03 (evidence-housekeeping by the parent closure operation): a
+  further loaded-host v2 run (2026-09-02 12:51, load 8.3-13.5,
+  `evidence/ce9-v2-run.log` + `evidence/ce9-v2-run-load-context.txt`)
+  replaced the working-tree copy of
+  `../semantic-ingestion-canonical-evidence-production-performance-2026-08-16/evidence/pbd-exp-014-default-on-wall-clock-v2.json`
+  with enabled median 13.65s (min 11.77 / max 20.66), disabled median 75.87s,
+  digest calls 237 vs 43,756 unchanged, reduction fraction 0.820. It is
+  committed as interim evidence with this note: it is NOT quiet-host and
+  cannot judge the <5s acceptance; it supersedes the 12.47s interim only as
+  the latest recorded run, and the quiet-host re-measurement obligation is
+  unchanged. The parent's CMR-008 link-record is satisfied in the VCC
+  implementation plan's decision log (2026-09-03).
 
 ## Next Action
 

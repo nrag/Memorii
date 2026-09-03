@@ -10,21 +10,21 @@
   "digest_call_reduction_fraction": 0.9945835999634336,
   "distributions_seconds": {
     "disabled": {
-      "maximum": 91.38961446200847,
-      "mean": 77.45836724519613,
-      "median": 74.67683926399332,
-      "minimum": 65.8196432129771,
-      "population_stdev": 9.482458467387536
+      "maximum": 89.27379994100193,
+      "mean": 78.18764727300149,
+      "median": 75.87252869701479,
+      "minimum": 72.88991150600486,
+      "population_stdev": 5.776413822751316
     },
     "enabled": {
-      "maximum": 13.436897720996058,
-      "mean": 12.525860569591169,
-      "median": 12.474671381991357,
-      "minimum": 11.888242487999378,
-      "population_stdev": 0.5274055523792035
+      "maximum": 20.66012774402043,
+      "mean": 15.025641833792907,
+      "median": 13.654634784994414,
+      "minimum": 11.766472408984555,
+      "population_stdev": 3.1227490208912325
     }
   },
-  "enabled_median_reduction_fraction": 0.8329512670201318,
+  "enabled_median_reduction_fraction": 0.8200319006168612,
   "experiment": "PBD-EXP-014",
   "historical_anchor": {
     "note": "Pre-H8 tree, frozen 2026-08-16 scenario: safe_reference median 0.9046s with 833 content-digest validations; persisted-reload counterfactual median 0.8073s with 777 (pbd-exp-004-duplicate-step2-v1.json). The 2026-08-16 runner rendering no longer exists; this harness is not a controlled comparison against that tree."
@@ -90,25 +90,25 @@
   },
   "measures": "One deterministic corpus delivery through the public sync_event root on the current tree: default substituted path versus explicitly disabled full-validation path; identical durable outputs and post-H8 lifecycle accounting asserted in every child.",
   "output_sha256_samples": [
-    "01b59e7be93568450d1fbb5249b0a955adc0c0ba8e21daa0fba45a0e1c94fdde",
-    "0769b96eefaf55d36eae8e9e67f9e4dc8b9c7667652d3e6dfaea55d12c8bd6a6",
-    "08ef3319e36091197ed224c7673f23f3236f9b47e38d818db695ca8f62922220",
-    "285fe1c574c14ad82bdc12e112b2bf04a7af04ea3b15cc1efb6027f2c3f09533",
-    "3edcd7ac78dae88357a7d5aea5711c9520734ed5ab66e8bfbbdb0382b720dfde",
-    "4d64c3ccc4068a1d350ae840ae52d6704d05b278f72ce653a4075a9ad0b670cb",
-    "5e61296cbb1247e80fd567bc6ec87bfb65009d6adeb5ce16c251a80a8781f6f6",
-    "764399d46e58fe3384e9fd5a0830498678fd78511dd51ba21253c08d49e9b96a",
-    "d5541cde17c58a8688ea42033b777737863085cbf5d5070b399cd1a667e70eb0",
-    "e3d8fc119eb52dc4329ee3bc27ea1c2452acfb093ba7afde462850400b5db3bf"
+    "07d4a8f24b7194f7ce5af5e5aa666d9b7c3687a3fa3bfa9a4472c713ee687104",
+    "117351bd9de20b92c6f630d81822ec5436c852a02d84443b4dfc1d32e48d755b",
+    "413f389c19f18ac4b4d640b634da751dae1a7efb3debbd1b0bdbfaa49a384a8a",
+    "86543ae2b448204514c3ea6b0ef4cc34bf119dc312865f567cbad3dffc0d6e65",
+    "a2fd54b6ff830232975d6397c35a9c8f4517d2d200818e9d6c2c3a98c62a3267",
+    "b094f27b25b6bd363c1950edbc7aaa0abed7e40711b69dfd7ba0412a7e150d16",
+    "bb780103cf830d35b8ae9e4d66c04df94d3fb370150870864e1b791c7d95d3bf",
+    "c5f0609b4f05721c84d0f70168b859f85b05ae3819c4340399970a54434b30e3",
+    "e8932f3fa80fa298a1ff60116bca7d35dc9a5fd6b86ce4d64639d70842e7f22e",
+    "eef0b65911fbb95d7587b2be698c3ba019dd784a54b4e4d7173b6a1e6a879a39"
   ],
   "runs": [
     {
       "bootstrap_publish_calls": 1,
       "content_digest_calls": 43756,
-      "elapsed_seconds": 74.67683926399332,
+      "elapsed_seconds": 72.88991150600486,
       "mode": "disabled",
       "ordinal": 0,
-      "output_sha256": "5e61296cbb1247e80fd567bc6ec87bfb65009d6adeb5ce16c251a80a8781f6f6",
+      "output_sha256": "eef0b65911fbb95d7587b2be698c3ba019dd784a54b4e4d7173b6a1e6a879a39",
       "producer_calls": 1,
       "sample": 4,
       "semantic_publish_calls": 0
@@ -116,10 +116,10 @@
     {
       "bootstrap_publish_calls": 1,
       "content_digest_calls": 43756,
-      "elapsed_seconds": 85.19249867499457,
+      "elapsed_seconds": 74.9552836699877,
       "mode": "disabled",
       "ordinal": 1,
-      "output_sha256": "08ef3319e36091197ed224c7673f23f3236f9b47e38d818db695ca8f62922220",
+      "output_sha256": "c5f0609b4f05721c84d0f70168b859f85b05ae3819c4340399970a54434b30e3",
       "producer_calls": 1,
       "sample": 0,
       "semantic_publish_calls": 0
@@ -127,10 +127,10 @@
     {
       "bootstrap_publish_calls": 1,
       "content_digest_calls": 43756,
-      "elapsed_seconds": 91.38961446200847,
+      "elapsed_seconds": 77.9467125509982,
       "mode": "disabled",
       "ordinal": 2,
-      "output_sha256": "4d64c3ccc4068a1d350ae840ae52d6704d05b278f72ce653a4075a9ad0b670cb",
+      "output_sha256": "117351bd9de20b92c6f630d81822ec5436c852a02d84443b4dfc1d32e48d755b",
       "producer_calls": 1,
       "sample": 2,
       "semantic_publish_calls": 0
@@ -138,10 +138,10 @@
     {
       "bootstrap_publish_calls": 1,
       "content_digest_calls": 237,
-      "elapsed_seconds": 12.162828795990208,
+      "elapsed_seconds": 13.654634784994414,
       "mode": "enabled",
       "ordinal": 3,
-      "output_sha256": "3edcd7ac78dae88357a7d5aea5711c9520734ed5ab66e8bfbbdb0382b720dfde",
+      "output_sha256": "b094f27b25b6bd363c1950edbc7aaa0abed7e40711b69dfd7ba0412a7e150d16",
       "producer_calls": 1,
       "sample": 3,
       "semantic_publish_calls": 0
@@ -149,10 +149,10 @@
     {
       "bootstrap_publish_calls": 1,
       "content_digest_calls": 237,
-      "elapsed_seconds": 11.888242487999378,
+      "elapsed_seconds": 15.938444954983424,
       "mode": "enabled",
       "ordinal": 4,
-      "output_sha256": "285fe1c574c14ad82bdc12e112b2bf04a7af04ea3b15cc1efb6027f2c3f09533",
+      "output_sha256": "a2fd54b6ff830232975d6397c35a9c8f4517d2d200818e9d6c2c3a98c62a3267",
       "producer_calls": 1,
       "sample": 2,
       "semantic_publish_calls": 0
@@ -160,10 +160,10 @@
     {
       "bootstrap_publish_calls": 1,
       "content_digest_calls": 237,
-      "elapsed_seconds": 13.436897720996058,
+      "elapsed_seconds": 20.66012774402043,
       "mode": "enabled",
       "ordinal": 5,
-      "output_sha256": "0769b96eefaf55d36eae8e9e67f9e4dc8b9c7667652d3e6dfaea55d12c8bd6a6",
+      "output_sha256": "86543ae2b448204514c3ea6b0ef4cc34bf119dc312865f567cbad3dffc0d6e65",
       "producer_calls": 1,
       "sample": 0,
       "semantic_publish_calls": 0
@@ -171,10 +171,10 @@
     {
       "bootstrap_publish_calls": 1,
       "content_digest_calls": 43756,
-      "elapsed_seconds": 65.8196432129771,
+      "elapsed_seconds": 75.87252869701479,
       "mode": "disabled",
       "ordinal": 6,
-      "output_sha256": "e3d8fc119eb52dc4329ee3bc27ea1c2452acfb093ba7afde462850400b5db3bf",
+      "output_sha256": "bb780103cf830d35b8ae9e4d66c04df94d3fb370150870864e1b791c7d95d3bf",
       "producer_calls": 1,
       "sample": 3,
       "semantic_publish_calls": 0
@@ -182,10 +182,10 @@
     {
       "bootstrap_publish_calls": 1,
       "content_digest_calls": 43756,
-      "elapsed_seconds": 70.21324061200721,
+      "elapsed_seconds": 89.27379994100193,
       "mode": "disabled",
       "ordinal": 7,
-      "output_sha256": "01b59e7be93568450d1fbb5249b0a955adc0c0ba8e21daa0fba45a0e1c94fdde",
+      "output_sha256": "e8932f3fa80fa298a1ff60116bca7d35dc9a5fd6b86ce4d64639d70842e7f22e",
       "producer_calls": 1,
       "sample": 1,
       "semantic_publish_calls": 0
@@ -193,10 +193,10 @@
     {
       "bootstrap_publish_calls": 1,
       "content_digest_calls": 237,
-      "elapsed_seconds": 12.666662460978841,
+      "elapsed_seconds": 11.766472408984555,
       "mode": "enabled",
       "ordinal": 8,
-      "output_sha256": "764399d46e58fe3384e9fd5a0830498678fd78511dd51ba21253c08d49e9b96a",
+      "output_sha256": "07d4a8f24b7194f7ce5af5e5aa666d9b7c3687a3fa3bfa9a4472c713ee687104",
       "producer_calls": 1,
       "sample": 1,
       "semantic_publish_calls": 0
@@ -204,10 +204,10 @@
     {
       "bootstrap_publish_calls": 1,
       "content_digest_calls": 237,
-      "elapsed_seconds": 12.474671381991357,
+      "elapsed_seconds": 13.10852927598171,
       "mode": "enabled",
       "ordinal": 9,
-      "output_sha256": "d5541cde17c58a8688ea42033b777737863085cbf5d5070b399cd1a667e70eb0",
+      "output_sha256": "413f389c19f18ac4b4d640b634da751dae1a7efb3debbd1b0bdbfaa49a384a8a",
       "producer_calls": 1,
       "sample": 4,
       "semantic_publish_calls": 0
