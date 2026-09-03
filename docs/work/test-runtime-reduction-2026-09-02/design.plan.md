@@ -317,6 +317,24 @@ pytest-xdist dev-dependency decision.
   leg 2,347.6s — the spawn collapse saved ~1,840s (31%) on this
   workload even before parallelism.  **L2 is adoption-complete.**
 
+- 2026-09-03 (L1b protocol round 2 — EQUIVALENT; mode decided):
+  with the hardened harness (stripped inherited environment, recorded
+  tree, collection pre-flight), all four configurations at `253cee9`
+  produced **identical node sets and identical per-node outcomes (zero
+  differences)** across serial, `loadfile -n 8`, `load -n 8`, and
+  `load -n 4`: 4,072 nodes, 3 failed / 2 skipped everywhere — exactly
+  the three known-disposition failures (stanza environmental,
+  provider-composition pre-existing, identity-hygiene artifact).  The
+  round-1 transient collection error did not recur, and the round-1
+  load-n8 contention failures did not recur.  Wall clock: serial
+  11,998s; **loadfile-n8 3,419s (56:59, 3.5x)**; load-n8 4,950s;
+  load-n4 6,820s (overnight host conditions).  **Mode decision:
+  `loadfile -n 8`** — fastest and stablest, and it mirrors the CI
+  shard semantics (whole-file assignment).  Quiet-host projection
+  ~44m (the serial leg ran ~1.3x faster than the CE-9 loaded gate,
+  indicating residual overnight load); a quiet confirmation run is the
+  completion-evidence step.
+
 - 2026-09-02: opened. Phase 1 attribution recorded from the durations
   artifact and `pr-gates.yml`; the race family's two-subprocesses-per-node
   structure confirmed in the test source.
