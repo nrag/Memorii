@@ -22,6 +22,37 @@ claims. Completion criteria: CE-1..CE-8 locally verified with focused suites;
 CE-9 recorded (broad gate may run in a following session window if the host
 is loaded; the quiet-host measurement requires a quiet window by protocol).
 
+## CE-9 Broad Gate (2026-09-02, commit `c9995a1`)
+
+**4 failed, 4,070 passed, 2 skipped in 4:24:36** (serial, host load ~8
+throughout; log `../evidence/ce9-broad-gate-run.log`). Against the
+8h15m pre-optimization baseline in comparable conditions this is a
+**1.87x loaded serial reduction** (the quiet-machine expectation remains
+2.5-3.5x per the paired probes). Dispositions:
+
+1. `test_linguistic_adapters::test_shipped_manifests_verify_real_local_english_assets`
+   — environmental: the stanza model tree (`/private/tmp/memorii-stanza-en-1.14.0`)
+   is absent on this host; reproduced directly and identical to the prior
+   campaign's final-gate disposition.
+2. `test_identity_hygiene::test_repository_identity_hygiene_is_clean` —
+   the known 124 structured-key findings, all from
+   `tests/ci/unit-test-durations.json` (the stale CI shard-timing
+   artifact); identical to the prior campaign's final disposition. The
+   artifact regeneration is queued in the linked test-runtime design
+   operation.
+3. `test_memory_evolution_architecture::test_source_does_not_import_cross_module_private_symbols`
+   — **slice regression, fixed**: the conversion introduced the private
+   `_graph_record_union_member` cross-module import; renamed to the
+   public `graph_record_union_member` (verified: architecture + graph
+   suites green).
+4. `test_semantic_provider_composition::test_public_flow_prepared_source_contract_is_frozen_across_runs`
+   — **pre-existing, worktree-proven**: fails identically at the clean
+   slice base `e63d6f8` (fresh worktree run). Not a slice regression;
+   recorded as a follow-up for a separate operation.
+
+The final-revision gate re-runs at the rename-fix revision per the
+once-only-at-final-revision rule; the dispositions above carry.
+
 ## Progress
 
 - 2026-09-02: opened at `e63d6f8`.

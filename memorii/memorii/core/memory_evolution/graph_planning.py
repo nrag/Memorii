@@ -18,12 +18,12 @@ from memorii.core.memory_evolution.graph_records import (
     SnapshotGraphRecord,
     TrustedAcceptedIdentityOperationDecision,
     VerifiedIdentityDecisionAuthority,
-    _graph_record_union_member,
     canonical_graph_codec_manifest,
     canonical_graph_record_adapter,
     certified_graph_record_kind,
     graph_digest,
     graph_record_id,
+    graph_record_union_member,
     validated_graph_record,
 )
 from memorii.core.memory_evolution.reference_integrity import (
@@ -1359,7 +1359,7 @@ def _snapshot_record(record: BaseModel, codec) -> SnapshotGraphRecord:
     if (
         certified_instance(record)
         and deeply_immutable_type(type(record))
-        and _graph_record_union_member(record)
+        and graph_record_union_member(record)
     ):
         payload = record
     else:

@@ -386,7 +386,7 @@ class SnapshotGraphRecord(BaseModel):
         if (
             _certified(value)
             and _immutable(type(value))
-            and _graph_record_union_member(value)
+            and graph_record_union_member(value)
         ):
             return value  # type: ignore[return-value]
         raw = value.model_dump(mode="python") if isinstance(value, BaseModel) else value
@@ -404,7 +404,7 @@ class SnapshotGraphRecord(BaseModel):
         if (
             _certified(self.payload)
             and _immutable(type(self.payload))
-            and _graph_record_union_member(self.payload)
+            and graph_record_union_member(self.payload)
         ):
             payload = self.payload
         else:
@@ -469,7 +469,7 @@ def validated_graph_record(values: object):
     return payload
 
 
-def _graph_record_union_member(value: object) -> bool:
+def graph_record_union_member(value: object) -> bool:
     from memorii.core.semantic_ingestion.contracts import (
         ActionRevision,
         ClaimAssertion,
@@ -499,7 +499,7 @@ def _graph_record_union_member(value: object) -> bool:
 def certified_graph_record_kind(record: object) -> str | None:
     """Direct ``record_kind`` read for certified union members only."""
 
-    if _arena_registry()[0](record) and _graph_record_union_member(record):
+    if _arena_registry()[0](record) and graph_record_union_member(record):
         return record.record_kind  # type: ignore[return-value]
     return None
 
