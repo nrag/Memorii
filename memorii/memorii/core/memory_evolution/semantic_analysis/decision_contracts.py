@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from hashlib import sha256
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -147,7 +147,7 @@ class SourceNormalizationEvidenceEntry(BaseModel):
         retention: Literal["aligned", "terminal_unaligned"],
     ) -> SourceNormalizationEvidenceEntry:
         """Create an entry from its complete retained-artifact coordinate."""
-        body = {
+        body: dict[str, Any] = {
             "kind": kind,
             "operation_id": operation_id,
             "proposal_id": proposal_id,

@@ -8,7 +8,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
-from typing import Literal
+from typing import Any, Literal
 
 from memorii.core.memory_evolution.delivery_coordinate_migration import (
     DeliveryCoordinateMigrationActivation,
@@ -2924,7 +2924,7 @@ def _migration_records(
 
 
 def _is_bootstrap_graph_v3_authority_write(
-    governed: list[CanonicalMemoryRecord], current: list[CanonicalMemoryRecord],
+    governed: list[CanonicalMemoryRecord], current: tuple[CanonicalMemoryRecord, ...],
 ) -> bool:
     """Admit only one exact pre-epoch authority record and its reverse index."""
     expected = {
@@ -2979,7 +2979,7 @@ def _is_bootstrap_graph_v3_authority_write(
 
 
 def _is_bootstrap_graph_v3_epoch_transition_write(
-    governed: list[CanonicalMemoryRecord], current: list[CanonicalMemoryRecord],
+    governed: list[CanonicalMemoryRecord], current: tuple[CanonicalMemoryRecord, ...],
 ) -> bool:
     """Admit only the sealed epoch/head/transition append closure."""
     expected = {
@@ -3012,7 +3012,7 @@ def _is_bootstrap_graph_v3_epoch_transition_write(
 
 
 def _is_bootstrap_graph_v3_checkpoint_write(
-    governed: list[CanonicalMemoryRecord], current: list[CanonicalMemoryRecord],
+    governed: list[CanonicalMemoryRecord], current: tuple[CanonicalMemoryRecord, ...],
 ) -> bool:
     """Admit the dedicated graph checkpoint closure before generic generations.
 
@@ -3140,7 +3140,7 @@ def _is_bootstrap_graph_v3_checkpoint_write(
 
 
 def _is_bootstrap_graph_v3_group_commit_write(
-    governed: list[CanonicalMemoryRecord], current: list[CanonicalMemoryRecord],
+    governed: list[CanonicalMemoryRecord], current: tuple[CanonicalMemoryRecord, ...],
 ) -> bool:
     """Admit only the complete native group-commit CAS closure."""
     from memorii.core.semantic_ingestion.contracts import (
@@ -3417,13 +3417,17 @@ def _is_bootstrap_graph_v3_group_commit_write(
             None,
         )
         successor = reload.successor_generation
+        # The prior control body is untyped persisted JSON (dict[str, Any]);
+        # bind the generation lookup once so the arithmetic below checks the
+        # exact same value the boolean chain compares.
+        prior_generation: Any = prior.get("generation") if isinstance(prior, dict) else None
         return (
             isinstance(prior, dict)
             and request.expected_generation.operation_generation
-            == prior.get("generation")
+            == prior_generation
             and request.expected_generation.artifact_generation
-            == prior.get("generation")
-            and proposed_control.get("generation") == prior.get("generation") + 1
+            == prior_generation
+            and proposed_control.get("generation") == prior_generation + 1
             and successor.operation_generation == proposed_control.get("generation")
             and successor.artifact_generation == proposed_control.get("generation")
             and proposed_control.get("last_request_digest")
@@ -3440,7 +3444,7 @@ def _is_bootstrap_graph_v3_group_commit_write(
 
 
 def _is_bootstrap_graph_v3_terminal_write(
-    governed: list[CanonicalMemoryRecord], current: list[CanonicalMemoryRecord],
+    governed: list[CanonicalMemoryRecord], current: tuple[CanonicalMemoryRecord, ...],
 ) -> bool:
     """Admit only the complete V3 terminal publication closure."""
     kinds = [item.content.get("semantic_ingestion_kind") for item in governed]

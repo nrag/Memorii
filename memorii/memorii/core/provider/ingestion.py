@@ -11,6 +11,7 @@ from memorii.core.memory_evolution.admission import GovernedSourceAdmissionServi
 from memorii.core.memory_evolution.atomic_store import (
     BootstrapHandoffAccessDenied,
     BootstrapRetainedPendingAuthorityUnavailable,
+    BootstrapWriterHandoffMarkerV3,
     BootstrapWriterHandoffRequest,
     BootstrapWriterHandoffResult,
     PreplanningOperationControl,
@@ -67,11 +68,16 @@ from memorii.core.semantic_ingestion.contracts import (
     BootstrapGraphDependentPreGraphNonCommitV3,
     BootstrapGraphDurableRetryProgressV3,
     BootstrapGraphFinalizedFailureV3,
+    BootstrapGraphTerminalReloadV3,
     BootstrapRecoveryClaimedV3,
     BootstrapRecoveryFoundV3,
     BootstrapRecoveryKeyV3,
     BootstrapRecoveryProbeV3,
     BootstrapSourceNormalizationResultV3,
+    GovernanceCarrierArtifact,
+    MessageAdmissionCarrierSet,
+    PreparedSource,
+    SegmentGovernanceCarrierSet,
     SemanticArbitrationPolicyBundle,
     SemanticAuthorizationReadSet,
     SemanticPipelinePolicyProvider,
@@ -358,6 +364,7 @@ class ProviderIngestionCoordinator:
         # caller-owned event timestamp is immutable delivery identity; local
         # processing time is not.
         retained_at = event.timestamp
+        assert retained_at is not None
         source_digest = step_one_source_digest(
             source_id=source_id,
             delivery_key_digest=identity.delivery_key_digest,
@@ -388,6 +395,21 @@ class ProviderIngestionCoordinator:
                 None,
             )
         assert governance_result.material is not None
+        # The material's contract payloads are annotated as object at the
+        # model boundary (import-cycle isolation); their constructor is the
+        # single derivation owner above, so narrow once for these bindings.
+        assert isinstance(
+            governance_result.material.segment_governance_carriers,
+            SegmentGovernanceCarrierSet,
+        )
+        assert isinstance(
+            governance_result.material.governance_carrier_artifact,
+            GovernanceCarrierArtifact,
+        )
+        assert isinstance(
+            governance_result.material.message_admission_carriers,
+            MessageAdmissionCarrierSet,
+        )
         request = request.bind_bootstrap_language_evidence(
             ingress=authenticated_ingress,
             source_id=source_id,
@@ -963,6 +985,7 @@ class ProviderIngestionCoordinator:
             prepared = certified_roundtrip(prepared)
         except (AttributeError, TypeError, ValueError):
             return None
+        assert isinstance(prepared, PreparedSource)
         if (
             prepared.source_id != handoff_marker.source_id
             or prepared.source_digest != handoff_marker.source_digest
@@ -1151,6 +1174,7 @@ class ProviderIngestionCoordinator:
         try:
             if marker is None or not hasattr(marker, "recovery_key_digest"):
                 raise ValueError("V3 bootstrap handoff marker is required")
+            assert isinstance(marker, BootstrapWriterHandoffMarkerV3)
             key_body = {
                 "source_id": prepared_source.source_id,
                 "source_digest": prepared_source.source_digest,
@@ -1189,6 +1213,9 @@ class ProviderIngestionCoordinator:
         except (AttributeError, TypeError, ValueError):
             recovery = None
         if isinstance(recovery, BootstrapRecoveryFoundV3):
+            # A found recovery implies the probe block above completed, so the
+            # handoff marker already passed its V3 discriminator guard.
+            assert isinstance(marker, BootstrapWriterHandoffMarkerV3)
             normalized = host_bundle.recovery_repository.reload_found(
                 recovery_key_digest=recovery.recovery_key_digest
             )
@@ -1221,16 +1248,21 @@ class ProviderIngestionCoordinator:
                             .required_outcome_scopes.tenant_partition_id
                         ),
                     )
-                    graph_reload = graph_bundle.reload_terminal(
-                        normalization_replay=replay,
-                        required_outcome_scopes=(
-                            prepared_source.governance_carrier_artifact.required_outcome_scopes
-                        ),
-                        operation_fence_binding=operation_fence,
+                    graph_reload = (
+                        graph_bundle.reload_terminal(
+                            normalization_replay=replay,
+                            required_outcome_scopes=(
+                                prepared_source.governance_carrier_artifact.required_outcome_scopes
+                            ),
+                            operation_fence_binding=operation_fence,
+                        )
+                        if replay is not None
+                        else None
                     )
                 except (AttributeError, TypeError, ValueError, PreplanningStoreError):
                     graph_reload = None
                 if graph_reload is not None:
+                    assert isinstance(graph_reload, BootstrapGraphTerminalReloadV3)
                     canonical = graph_reload.canonical_source_result.canonical_source_result
                     return SemanticTerminalOutcome.create(
                         operation_id=operation_id, status="evidence_only",
@@ -1240,12 +1272,16 @@ class ProviderIngestionCoordinator:
                         candidates=(), temporal_closures=(), attempt_count=0,
                     ), authorization_guard
                 try:
-                    graph_retry = graph_bundle.reload_retry(
-                        normalization_replay=replay,
-                        required_outcome_scopes=(
-                            prepared_source.governance_carrier_artifact.required_outcome_scopes
-                        ),
-                        operation_fence_binding=operation_fence,
+                    graph_retry = (
+                        graph_bundle.reload_retry(
+                            normalization_replay=replay,
+                            required_outcome_scopes=(
+                                prepared_source.governance_carrier_artifact.required_outcome_scopes
+                            ),
+                            operation_fence_binding=operation_fence,
+                        )
+                        if replay is not None
+                        else None
                     )
                 except (AttributeError, TypeError, ValueError, PreplanningStoreError):
                     return SemanticTerminalOutcome.create(
@@ -1271,17 +1307,21 @@ class ProviderIngestionCoordinator:
                     ), None
                 try:
                     control = self._atomic_store.get_operation(operation_fence)
-                    graph_result = graph_bundle.execute(
-                        request=BootstrapGraphAuthorityRequestV3(
-                            normalization_replay=replay,
-                            prepared_source=prepared_source,
-                            required_outcome_scopes=(
-                                prepared_source.governance_carrier_artifact.required_outcome_scopes
-                            ),
-                            operation_fence_binding=operation_fence,
-                            operation_lease_binding=self._atomic_store.lease_binding(control),
-                            writer_commit_binding=control.writer_binding,
+                    graph_result = (
+                        graph_bundle.execute(
+                            request=BootstrapGraphAuthorityRequestV3(
+                                normalization_replay=replay,
+                                prepared_source=prepared_source,
+                                required_outcome_scopes=(
+                                    prepared_source.governance_carrier_artifact.required_outcome_scopes
+                                ),
+                                operation_fence_binding=operation_fence,
+                                operation_lease_binding=self._atomic_store.lease_binding(control),
+                                writer_commit_binding=control.writer_binding,
+                            )
                         )
+                        if replay is not None
+                        else None
                     )
                 except (AttributeError, TypeError, ValueError, PreplanningStoreError):
                     graph_result = None
@@ -1333,6 +1373,7 @@ class ProviderIngestionCoordinator:
                 operation_id=operation_id, status="evidence_only",
                 reason_codes=("source_alignment_authority_unavailable",), candidates=(), temporal_closures=(), attempt_count=0,
             ), None
+        assert isinstance(marker, BootstrapWriterHandoffMarkerV3)
         source_normalization_authority = host_bundle.authority_provider.build(
             invocation=invocation,
             handoff=bootstrap_handoff,
@@ -1408,17 +1449,21 @@ class ProviderIngestionCoordinator:
                     ),
                 )
                 control = self._atomic_store.get_operation(operation_fence)
-                graph_result = graph_bundle.execute(
-                    request=BootstrapGraphAuthorityRequestV3(
-                        normalization_replay=replay,
-                        prepared_source=prepared_source,
-                        required_outcome_scopes=(
-                            prepared_source.governance_carrier_artifact.required_outcome_scopes
-                        ),
-                        operation_fence_binding=operation_fence,
-                        operation_lease_binding=self._atomic_store.lease_binding(control),
-                        writer_commit_binding=control.writer_binding,
+                graph_result = (
+                    graph_bundle.execute(
+                        request=BootstrapGraphAuthorityRequestV3(
+                            normalization_replay=replay,
+                            prepared_source=prepared_source,
+                            required_outcome_scopes=(
+                                prepared_source.governance_carrier_artifact.required_outcome_scopes
+                            ),
+                            operation_fence_binding=operation_fence,
+                            operation_lease_binding=self._atomic_store.lease_binding(control),
+                            writer_commit_binding=control.writer_binding,
+                        )
                     )
+                    if replay is not None
+                    else None
                 )
             except (AttributeError, TypeError, ValueError, PreplanningStoreError):
                 graph_result = None
@@ -1450,11 +1495,11 @@ class ProviderIngestionCoordinator:
                     reason_codes=(reason,),
                     candidates=(), temporal_closures=(), attempt_count=0,
                 ), None
-            return SemanticTerminalOutcome.create(
-                operation_id=operation_id, status="evidence_only",
-                reason_codes=("graph_transaction_authority_unavailable",),
-                candidates=(), temporal_closures=(), attempt_count=0,
-            ), None
+        return SemanticTerminalOutcome.create(
+            operation_id=operation_id, status="evidence_only",
+            reason_codes=("graph_transaction_authority_unavailable",),
+            candidates=(), temporal_closures=(), attempt_count=0,
+        ), None
 
     def _load_admitted_observation(self, fence: OperationFenceBinding) -> SourceObservation:
         """Reload the immutable source record before a learned stage or replay."""

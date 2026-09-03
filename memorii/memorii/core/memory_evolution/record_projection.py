@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 from hashlib import sha256
+from typing import TYPE_CHECKING
 
 from memorii.core.memory_evolution.admission import source_admission_source_digest
 from memorii.core.memory_evolution.ingestion_contracts import decode_typed_value
@@ -19,6 +20,34 @@ from memorii.core.memory_evolution.temporal_contracts import TemporalAnchor
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.domain.enums import CommitStatus, MemoryDomain, SourceType, TemporalValidityStatus
 
+if TYPE_CHECKING:
+    from typing import TypedDict
+
+    from memorii.core.memory_evolution.bootstrap_profile import BootstrapAuthenticatedLanguageEvidence
+    from memorii.core.memory_evolution.source_governance import AdmissionScopeAuthorizationProof
+    from memorii.core.semantic_ingestion.contracts import (
+        GovernanceCarrierArtifact,
+        MessageAdmissionCarrierSet,
+        RequiredOutcomeScopeSet,
+        RetainedSourceTextArtifact,
+        SegmentGovernanceCarrierSet,
+        SourceSemanticContext,
+        SourceSemanticTextProjection,
+    )
+
+    class _StepOneObservationValues(TypedDict, total=False):
+        """Typed shape of the sealed Step-1 payload spread into SourceObservation."""
+
+        required_outcome_scopes: RequiredOutcomeScopeSet
+        semantic_context: SourceSemanticContext
+        semantic_text_projection: SourceSemanticTextProjection
+        segment_governance_carriers: SegmentGovernanceCarrierSet
+        message_admission_carriers: MessageAdmissionCarrierSet
+        governance_carrier_artifact: GovernanceCarrierArtifact
+        admission_scope_authorization_proof: AdmissionScopeAuthorizationProof
+        bootstrap_language_evidence: BootstrapAuthenticatedLanguageEvidence | None
+        retained_text_artifact: RetainedSourceTextArtifact
+
 
 def source_observation_from_record(record: CanonicalMemoryRecord) -> SourceObservation:
     governed = record.source_kind in {
@@ -30,7 +59,7 @@ def source_observation_from_record(record: CanonicalMemoryRecord) -> SourceObser
         if governed and record.memory_id.startswith("semantic_ingestion:source:")
         else None
     )
-    step_one = _step_one_observation_fields(record) if governed else {}
+    step_one: _StepOneObservationValues = _step_one_observation_fields(record) if governed else {}
     return SourceObservation(
         source_id=record.memory_id,
         text=record.text,
@@ -48,7 +77,7 @@ def source_observation_from_record(record: CanonicalMemoryRecord) -> SourceObser
     )
 
 
-def _step_one_observation_fields(record: CanonicalMemoryRecord) -> dict[str, object]:
+def _step_one_observation_fields(record: CanonicalMemoryRecord) -> _StepOneObservationValues:
     """Reload the sealed Step-1 payload; older source records remain legacy."""
 
     admission = record.content.get("source_admission")
@@ -78,9 +107,10 @@ def _step_one_observation_fields(record: CanonicalMemoryRecord) -> dict[str, obj
     )
 
     material = restore_closed_wire_enums(material)
+    assert isinstance(material, dict)
 
     try:
-        values = {
+        values: _StepOneObservationValues = {
             "required_outcome_scopes": RequiredOutcomeScopeSet.model_validate(material["required_outcome_scopes"]),
             "semantic_context": SourceSemanticContext.model_validate(material["semantic_context"]),
             "semantic_text_projection": SourceSemanticTextProjection.model_validate(material["semantic_text_projection"]),

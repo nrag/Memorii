@@ -42,6 +42,8 @@ class _Addressed(BaseModel):
             rebuild_graph_effect_contracts()
         digest_field = cls.__private_attributes__["_digest_field"].default
         domain = cls.__private_attributes__["_digest_domain"].default
+        assert isinstance(digest_field, str)
+        assert isinstance(domain, bytes)
         return cls(**values, **{digest_field: _contract_digest(domain, values)})
 
 
@@ -231,12 +233,12 @@ class CanonicalSourceTerminalOutcomeRecord(_Addressed):
         source_result_digest = _contract_digest(
             b"memorii.semantic-ingestion.bootstrap-graph-source-result.v3", body
         )
+        domain = cls.__private_attributes__["_digest_domain"].default
+        assert isinstance(domain, bytes)
         completed = {**body, "source_result_digest": source_result_digest}
         return cls(
             **completed,
-            record_digest=_contract_digest(
-                cls.__private_attributes__["_digest_domain"].default, completed
-            ),
+            record_digest=_contract_digest(domain, completed),
         )
 
     @model_validator(mode="after")

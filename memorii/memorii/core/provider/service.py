@@ -7,7 +7,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
-from typing import Protocol, cast
+from typing import Any, Protocol, cast
 
 from memorii.core.decision_state.service import DecisionStateService
 from memorii.core.decision_state.summary import DecisionStateSummary
@@ -71,9 +71,9 @@ from memorii.core.memory_evolution.conflict_attention import (
 from memorii.core.memory_evolution.conflict_attention_repository import (
     AtomicStoreConflictClarificationProcessingRepository,
     ConflictAttentionReadError,
-    ConflictAttentionRepository,
     ConflictClarificationError,
     ConflictClarificationProcessor,
+    ConflictClarificationRepository,
     FileConflictAttentionRepository,
 )
 from memorii.core.memory_evolution.conflict_integrity import (
@@ -191,7 +191,7 @@ class ProviderMemoryService:
         host_bootstrap_capability: HostBootstrapCapability,
         host_bootstrap_material_verifier: HostBootstrapMaterialVerifier,
         bootstrap_graph_host_bundle_builder: BootstrapGraphHostBundleBuilder | None = None,
-        **kwargs: object,
+        **kwargs: Any,
     ) -> ProviderMemoryService:
         """Private fixture composition path; ordinary construction is production-only."""
         if bootstrap_graph_host_bundle_builder is not None:
@@ -230,7 +230,7 @@ class ProviderMemoryService:
         memory_evolution_query_analyzer: QueryAnalyzer | None = None,
         memory_evolution_operation_repository: EvolutionOperationRepository | None = None,
         now_provider: Callable[[], datetime] | None = None,
-        conflict_attention_repository: ConflictAttentionRepository | None = None,
+        conflict_attention_repository: ConflictClarificationRepository | None = None,
         conflict_attention_enabled: bool = False,
         conflict_attention_observability_sink: ConflictAttentionObservabilitySink
         | None = None,
@@ -1284,9 +1284,9 @@ class ProviderMemoryService:
             )
         if source_record is None:
             raise ConflictClarificationError("invalid_source_user_event")
-        resolution_scope_digest = (
-            target.scope_digest if target is not None else file_target.scope_digest
-        )
+        resolution_target = target if target is not None else file_target
+        assert resolution_target is not None
+        resolution_scope_digest = resolution_target.scope_digest
         canonical_source_bytes = source_admission_source_bytes(source_record)
         try:
             source = verifier.verify_user_event(
@@ -1341,6 +1341,7 @@ class ProviderMemoryService:
                 answering_user_event_digest=source.source_user_event_digest,
             )
         else:
+            assert file_target is not None
             proposal = build_agent_clarification_proposal(
                 request,
                 source_user_event_digest=source.source_user_event_digest,
@@ -1392,6 +1393,7 @@ class ProviderMemoryService:
         if target is None:
             # File-only conflicts terminate at the display projection: no
             # retained context, no canonical generation, no claim work.
+            assert self._conflict_attention_repository is not None
             return self._conflict_attention_repository.submit_clarification(
                 access,
                 request,

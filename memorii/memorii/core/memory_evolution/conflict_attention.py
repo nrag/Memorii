@@ -13,7 +13,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from enum import StrEnum
 from hashlib import sha256
-from typing import Literal, Protocol
+from typing import Literal, NotRequired, Protocol, TypedDict, TypeVar, Unpack
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic_core import to_json
@@ -77,10 +77,13 @@ def _contract_digest(domain: bytes, value: object) -> str:
     return sha256(domain + encode_typed_value(_contract_value(value))).hexdigest()
 
 
+_ConflictGenerationModelT = TypeVar("_ConflictGenerationModelT", bound=BaseModel)
+
+
 def decode_persisted_conflict_generation(
     payload: object,
-    model: type[BaseModel],
-) -> BaseModel:
+    model: type[_ConflictGenerationModelT],
+) -> _ConflictGenerationModelT:
     """Strictly parse canonical typed-value output through JSON wire mode.
 
     Typed-value replay restores datetimes and tuples as Python values, while
@@ -1017,6 +1020,15 @@ def conflict_clarification_processing_operation_id(
     )
 
 
+class _SubmissionOperationCreateValues(TypedDict):
+    operation_id: str
+    request_digest: str
+    proposal_digest: str
+    operation_receipt_digest: str
+    generation_digest: str
+    verified_confirmation_digest: NotRequired[str | None]
+
+
 class SemanticConflictClarificationSubmissionOperation(BaseModel):
     """The separately-addressable idempotency index for one submission."""
 
@@ -1049,7 +1061,7 @@ class SemanticConflictClarificationSubmissionOperation(BaseModel):
         return self
 
     @classmethod
-    def create(cls, **values: object) -> SemanticConflictClarificationSubmissionOperation:
+    def create(cls, **values: Unpack[_SubmissionOperationCreateValues]) -> SemanticConflictClarificationSubmissionOperation:
         provisional = cls.model_construct(**values, operation_digest="0" * 64)
         return cls(
             **values,
@@ -1058,6 +1070,12 @@ class SemanticConflictClarificationSubmissionOperation(BaseModel):
                 provisional.model_dump(mode="python", exclude={"operation_digest"}),
             ),
         )
+
+
+class _NonceConsumptionCreateValues(TypedDict):
+    nonce_digest: str
+    verified_confirmation_digest: str
+    operation_id: str
 
 
 class SemanticConflictClarificationNonceConsumption(BaseModel):
@@ -1085,7 +1103,7 @@ class SemanticConflictClarificationNonceConsumption(BaseModel):
         return self
 
     @classmethod
-    def create(cls, **values: object) -> SemanticConflictClarificationNonceConsumption:
+    def create(cls, **values: Unpack[_NonceConsumptionCreateValues]) -> SemanticConflictClarificationNonceConsumption:
         provisional = cls.model_construct(**values, consumption_digest="0" * 64)
         return cls(
             **values,
@@ -1222,6 +1240,14 @@ class ConflictClarificationWork(BaseModel):
         return self
 
 
+class _SubmissionGenerationCreateValues(TypedDict):
+    operation_receipt: ConflictClarificationOperationReceipt
+    proposal: AgentClarificationProposal
+    verified_confirmation: NotRequired[VerifiedUserConfirmation | None]
+    work: ConflictClarificationWork
+    transition: SemanticConflictClarificationTransition
+
+
 class SemanticConflictClarificationSubmissionGeneration(BaseModel):
     """The immutable, same-plane closure for first submitting a clarification.
 
@@ -1303,7 +1329,7 @@ class SemanticConflictClarificationSubmissionGeneration(BaseModel):
         return self
 
     @classmethod
-    def create(cls, **values: object) -> SemanticConflictClarificationSubmissionGeneration:
+    def create(cls, **values: Unpack[_SubmissionGenerationCreateValues]) -> SemanticConflictClarificationSubmissionGeneration:
         provisional = cls.model_construct(**values, generation_digest="0" * 64)
         return cls(
             **values,
@@ -1312,6 +1338,14 @@ class SemanticConflictClarificationSubmissionGeneration(BaseModel):
                 provisional.model_dump(mode="python", exclude={"generation_digest"}),
             ),
         )
+
+
+class _WorkGenerationCreateValues(TypedDict):
+    predecessor_work_digest: str
+    work: ConflictClarificationWork
+    attempt: NotRequired[ConflictClarificationAttempt | None]
+    attempt_result: NotRequired[ConflictClarificationAttemptResult | None]
+    transition: NotRequired[SemanticConflictClarificationTransition | None]
 
 
 class SemanticConflictClarificationWorkGeneration(BaseModel):
@@ -1376,7 +1410,7 @@ class SemanticConflictClarificationWorkGeneration(BaseModel):
         return self
 
     @classmethod
-    def create(cls, **values: object) -> SemanticConflictClarificationWorkGeneration:
+    def create(cls, **values: Unpack[_WorkGenerationCreateValues]) -> SemanticConflictClarificationWorkGeneration:
         provisional = cls.model_construct(**values, generation_digest="0" * 64)
         return cls(
             **values,
@@ -2316,6 +2350,21 @@ class ActiveSemanticConflict(BaseModel):
         return self
 
 
+class _CasInputCreateValues(TypedDict):
+    conflict_id: str
+    expected_pointer_digest: str
+    expected_pointer_revision: int
+    expected_conflict_revision: str
+    work_record_id: str
+    work_record_digest: str
+    attempt_record_id: str
+    attempt_record_digest: str
+    processing_operation_id: str
+    ownership_epoch: int
+    owner_token_digest: str
+    proposal_digest: str
+
+
 class SemanticConflictClarificationCasInput(BaseModel):
     """The exact same-plane state a claimed clarification is allowed to finish.
 
@@ -2359,7 +2408,7 @@ class SemanticConflictClarificationCasInput(BaseModel):
     )
 
     @classmethod
-    def create(cls, **values: object) -> SemanticConflictClarificationCasInput:
+    def create(cls, **values: Unpack[_CasInputCreateValues]) -> SemanticConflictClarificationCasInput:
         provisional = cls.model_construct(**values, input_digest="0" * 64)
         return cls(
             **values,

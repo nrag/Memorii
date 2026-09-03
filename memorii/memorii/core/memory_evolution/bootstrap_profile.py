@@ -14,7 +14,7 @@ from importlib import import_module
 from importlib.metadata import PackageNotFoundError, entry_points, packages_distributions, version
 from importlib.util import find_spec
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Literal, Protocol, cast
+from typing import TYPE_CHECKING, Annotated, Literal, Protocol, TypedDict, Unpack, cast
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
@@ -158,6 +158,21 @@ class CurrentBootstrapReleaseVerifier(Protocol):
     ) -> CurrentBootstrapReleaseAssertion: ...
 
 
+class _AuthenticatedLanguageEvidenceCreateValues(TypedDict):
+    source_id: str
+    source_digest: str
+    original_text_digest: str
+    delivery_principal_binding_digest: str
+    segment_governance_set_digest: str
+    governance_carrier_artifact_digest: str
+    segment_governance_carriers_digest: str
+    message_admission_carriers_digest: str
+    language_declaration: str | None
+    language_evidence_kind: Literal["authenticated_host_declaration", "missing", "untrusted", "mismatched"]
+    language_evidence_trust: Literal["trusted", "missing", "untrusted", "mismatched"]
+    language_governance_agreement: Literal["agrees", "missing", "disagrees"]
+
+
 class BootstrapAuthenticatedLanguageEvidence(BaseModel):
     """Immutable Step-1 proof; current session authority is deliberately absent."""
 
@@ -187,13 +202,25 @@ class BootstrapAuthenticatedLanguageEvidence(BaseModel):
         return self
 
     @classmethod
-    def create(cls, **body: object) -> BootstrapAuthenticatedLanguageEvidence:
+    def create(
+        cls, **body: Unpack[_AuthenticatedLanguageEvidenceCreateValues]
+    ) -> BootstrapAuthenticatedLanguageEvidence:
         return cls(
             **body,
             evidence_digest=_domain_digest(
                 b"memorii.semantic_ingestion.bootstrap_authenticated_language_evidence.v1", body
             ),
         )
+
+
+class _AdmissionPinCreateValues(TypedDict):
+    coordinate: BootstrapProfileCoordinate
+    profile_digest: str
+    release_evidence_digest: str
+    bootstrap_language_evidence_digest: str
+    source_id: str
+    source_digest: str
+    operation_fence_binding_digest: str
 
 
 class BootstrapAdmissionPin(BaseModel):
@@ -220,7 +247,7 @@ class BootstrapAdmissionPin(BaseModel):
         return self
 
     @classmethod
-    def create(cls, **body: object) -> BootstrapAdmissionPin:
+    def create(cls, **body: Unpack[_AdmissionPinCreateValues]) -> BootstrapAdmissionPin:
         digest_body = cls.model_construct(
             **body, pin_digest="0" * 64
         ).model_dump(mode="python", exclude={"pin_digest"})
@@ -231,6 +258,20 @@ class BootstrapAdmissionPin(BaseModel):
                 digest_body,
             ),
         )
+
+
+class _SegmentGrammarProofCreateValues(TypedDict):
+    source_id: str
+    segment_id: str
+    language_evidence_tuple: tuple[
+        Literal["en"],
+        Literal["authenticated_host_declaration"],
+        Literal["trusted"],
+        Literal["agrees"],
+    ]
+    bootstrap_language_evidence_digest: str
+    corpus_case_id: str
+    normalized_segment_digest: str
 
 
 class BootstrapSegmentGrammarProof(BaseModel):
@@ -265,7 +306,7 @@ class BootstrapSegmentGrammarProof(BaseModel):
         return self
 
     @classmethod
-    def create(cls, **body: object) -> BootstrapSegmentGrammarProof:
+    def create(cls, **body: Unpack[_SegmentGrammarProofCreateValues]) -> BootstrapSegmentGrammarProof:
         return cls(
             **body,
             proof_digest=_domain_digest(

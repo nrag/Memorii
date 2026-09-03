@@ -12,7 +12,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 from hashlib import sha256
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, ClassVar, Literal, TypedDict, Unpack
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -57,6 +57,15 @@ class ProviderEnvelopeMessage(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
 
+class _GovernedMessageSemanticContextCreateValues(TypedDict):
+    message_id: str
+    source_reference: str
+    effective_scope: str
+    authority_digest: str
+    data_classification: str
+    modality: str
+    remote_egress_eligible: bool
+
 class GovernedMessageSemanticContext(BaseModel):
     """Authenticated semantic context retained only inside a snapshot envelope."""
 
@@ -82,7 +91,9 @@ class GovernedMessageSemanticContext(BaseModel):
         return self
 
     @classmethod
-    def create(cls, **body: object) -> GovernedMessageSemanticContext:
+    def create(
+        cls, **body: Unpack[_GovernedMessageSemanticContextCreateValues]
+    ) -> GovernedMessageSemanticContext:
         return cls(
             **body,
             context_digest=sha256(
@@ -287,7 +298,7 @@ class ProviderEventNormalizer:
 
     ingress: AuthenticatedIngressContext
 
-    _MAPPING = {
+    _MAPPING: ClassVar[dict[str, SourceKind]] = {
         "chat_user_turn": "conversation_turn",
         "chat_assistant_turn": "conversation_turn",
         "session_end": "conversation_snapshot",
@@ -510,6 +521,7 @@ def build_structured_step_one_material_from_governance(
         MessageAdmissionCarrierSet,
         MessageAdmissionIdentity,
         ProjectionTextSpan,
+        RequiredOutcomeScopeSet,
         RetainedSourceTextArtifact,
         SegmentGovernanceBinding,
         SegmentGovernanceCarrierSet,
@@ -517,11 +529,17 @@ def build_structured_step_one_material_from_governance(
         SegmentLocalTextSpan,
         SemanticProjectionSegment,
         SemanticProjectionTextArtifact,
+        SourceSemanticContext,
         SourceSemanticTextProjection,
         contract_digest,
     )
     if not isinstance(governance, DerivedSourceGovernanceMaterial):
         raise ValueError("Step-1 requires governed source material")
+    # The material's contract payloads are typed as object on the model
+    # (import-cycle isolation); its constructor is the single derivation
+    # owner, so narrow once for the projections below.
+    assert isinstance(governance.semantic_context, SourceSemanticContext)
+    assert isinstance(governance.required_outcome_scopes, RequiredOutcomeScopeSet)
     if _canonical_json(envelope.model_dump(mode="json")) != original_text:
         raise ValueError("structured Step-1 envelope bytes are substituted")
     if isinstance(envelope, GovernedConversationSnapshotInput):
@@ -554,6 +572,7 @@ def build_structured_step_one_material_from_governance(
         segment_id = f"semantic_ingestion:segment:{sha256(encode_typed_value((source_id, message.message_id, message.source_reference))).hexdigest()}"
         text_digest = sha256(message.content.encode("utf-8")).hexdigest()
         if context is None:
+            assert isinstance(envelope, DelegationResultSourceEnvelope)
             context_digest = None
             authority_digest = contract_digest(b"memorii.semantic-ingestion.delegation-result-authority.v1", {"task_id": envelope.task_id, "result_id": envelope.result_id, "reference": message.source_reference})
             classification = "authenticated_delegation_result"

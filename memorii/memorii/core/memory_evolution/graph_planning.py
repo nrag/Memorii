@@ -5,7 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import datetime, timedelta
 from hashlib import sha256
-from typing import Annotated, Literal
+from typing import TYPE_CHECKING, Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -26,6 +26,9 @@ from memorii.core.memory_evolution.graph_records import (
     graph_record_union_member,
     validated_graph_record,
 )
+
+if TYPE_CHECKING:
+    from memorii.core.memory_evolution.graph_records import CanonicalGraphRecord
 from memorii.core.memory_evolution.reference_integrity import (
     ReferenceTarget,
     extract_reference_edges,
@@ -1435,7 +1438,7 @@ def _materialize_planning_payload(
     *,
     commit_values: PlanningCommitValues,
     authorizing_transaction_group_id: str,
-) -> BaseModel:
+) -> CanonicalGraphRecord:
     if commit_values.transaction_group_id != authorizing_transaction_group_id:
         raise ValueError("planning_commit_group_mismatch")
     values = deepcopy(payload.planning_record)
@@ -1490,7 +1493,7 @@ def materialize_canonical_planning_payload(
     *,
     commit_values: PlanningCommitValues,
     authorizing_transaction_group_id: str,
-) -> BaseModel:
+) -> CanonicalGraphRecord:
     """Materialize one validated native planning payload at store commit time."""
     return _materialize_planning_payload(
         payload,

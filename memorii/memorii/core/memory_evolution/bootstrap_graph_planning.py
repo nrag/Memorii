@@ -14,12 +14,14 @@ from memorii.core.memory_evolution.graph_planning import (
     PendingPlanningStateRecord,
 )
 from memorii.core.memory_evolution.graph_records import (
+    GraphReadSet,
     GraphReadSetExtension,
     GraphRecordKind,
     GraphWriteIntent,
     PlannedEntityIdentity,
     PlannedIdentityReservation,
 )
+from memorii.core.memory_evolution.transaction_coordinator import SealedGraphStateSnapshot
 from memorii.core.semantic_ingestion.contracts import (
     BootstrapAbsentCanonicalIdentityDecisionV3,
     BootstrapCanonicalClusterReferenceOccurrenceV3,
@@ -27,6 +29,7 @@ from memorii.core.semantic_ingestion.contracts import (
     BootstrapCanonicalFirstUseDependencyV3,
     BootstrapCanonicalIdentityBindingAllocationAuthorityV3,
     BootstrapCanonicalIdentityBindingAllocationReloadV3,
+    BootstrapCanonicalIdentityClusterDecisionV3,
     BootstrapCanonicalIdentityDecisionProofV3,
     BootstrapCanonicalPlanningPrefixProofV3,
     BootstrapGraphTargetReferenceV3,
@@ -39,7 +42,9 @@ from memorii.core.semantic_ingestion.contracts import (
     BootstrapNewCanonicalIdentityAllocationV3,
     BootstrapNewFirstUseTargetAuthorityV3,
     BootstrapPendingTargetAuthorityV3,
+    BootstrapProposalOperationMemberV3,
     BootstrapSnapshotTargetAuthorityV3,
+    BootstrapSourceLocalIdentityResolutionV3,
     BootstrapSourceOperationMembershipV3,
     contract_digest,
 )
@@ -155,8 +160,8 @@ class BootstrapCanonicalIdentityBindingAllocationProjectorV3:
         *,
         operation_inputs: tuple[BootstrapNativeOperationReductionInputV3, ...],
         recovery_key_digest: str,
-        sealed_snapshot: object,
-        effective_read_set: object,
+        sealed_snapshot: SealedGraphStateSnapshot,
+        effective_read_set: GraphReadSet,
         current_planning_state: GraphPlanningState,
         required_scope_set_digest: str,
         authorized_scope_identity: str,
@@ -304,8 +309,8 @@ class BootstrapNativeTargetResolutionProjectorV3:
         *,
         operation_input: BootstrapNativeOperationReductionInputV3,
         transaction_group_id: str,
-        sealed_snapshot: object,
-        effective_read_set: object,
+        sealed_snapshot: SealedGraphStateSnapshot,
+        effective_read_set: GraphReadSet,
         current_planning_state: GraphPlanningState,
         canonical_identity_authority: BootstrapCanonicalIdentityBindingAllocationReloadV3,
     ) -> BootstrapNativeTargetResolutionAuthorityV3:
@@ -381,7 +386,11 @@ class BootstrapNativeTargetResolutionProjectorV3:
 
     @staticmethod
     def _target_for_decision(
-        *, decision: object, dependency: object, membership: object, coordinate: str,
+        *,
+        decision: BootstrapCanonicalIdentityClusterDecisionV3,
+        dependency: BootstrapCanonicalFirstUseDependencyV3,
+        membership: BootstrapSourceOperationMembershipV3,
+        coordinate: str,
         prefix: BootstrapCanonicalPlanningPrefixProofV3, planning_state: GraphPlanningState,
         sealed_snapshot_digest: str, effective_read_set_digest: str,
     ) -> tuple[BootstrapNativeTargetAuthorityV3, str, str]:
@@ -558,7 +567,9 @@ def derive_source_memberships_and_dependencies_v3(
     return memberships, tuple(dependencies)
 
 
-def _operation_mention_occurrences(member: object) -> tuple[tuple[str, str], ...]:
+def _operation_mention_occurrences(
+    member: BootstrapProposalOperationMemberV3,
+) -> tuple[tuple[str, str], ...]:
     """Return retained mention sites without collapsing equal mentions."""
 
     if member.kind == "fact":
@@ -568,8 +579,11 @@ def _operation_mention_occurrences(member: object) -> tuple[tuple[str, str], ...
         if member.attributed_to_mention_digest is not None:
             rows.append(("fact.attribution", member.attributed_to_mention_digest))
         return tuple(rows)
-    if member.kind in {"correction", "retraction"}:
-        facts = (member.corrected_fact, member.replacement_fact) if member.kind == "correction" else (member.retracted_fact,)
+    if member.kind == "correction" or member.kind == "retraction":
+        if member.kind == "correction":
+            facts = (member.corrected_fact, member.replacement_fact)
+        else:
+            facts = (member.retracted_fact,)
         rows: list[tuple[str, str]] = []
         for index, fact in enumerate(facts):
             prefix = "correction" if member.kind == "correction" else "retraction"
@@ -591,7 +605,10 @@ def _operation_mention_occurrences(member: object) -> tuple[tuple[str, str], ...
     raise ValueError("unknown native operation member")
 
 
-def _referenced_clusters(resolution: object, operation_inputs: tuple[BootstrapNativeOperationReductionInputV3, ...]):
+def _referenced_clusters(
+    resolution: BootstrapSourceLocalIdentityResolutionV3,
+    operation_inputs: tuple[BootstrapNativeOperationReductionInputV3, ...],
+):
     mentions = {
         mention_digest
         for item in operation_inputs

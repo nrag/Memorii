@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from hashlib import sha256
-from typing import Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -22,6 +22,13 @@ from memorii.core.memory_evolution.models import ExtractionTriggerMode, MemorySc
 from memorii.core.provider.models import ProviderEvent
 from memorii.domain.enums import SourceModality
 
+if TYPE_CHECKING:
+    # Annotation-only contract import: a runtime import here would close a
+    # semantic_ingestion -> memory_evolution import cycle through atomic_store.
+    from memorii.core.semantic_ingestion.contracts import (
+        RequiredOutcomeScopeSet as SemanticRequiredOutcomeScopeSet,
+    )
+
 
 class SourceGovernanceError(ValueError):
     """A source cannot cross from retention into semantic processing."""
@@ -30,6 +37,10 @@ class SourceGovernanceError(ValueError):
 class DerivedSourceGovernanceMaterial(BaseModel):
     """Complete server-owned governance material for one verbatim source."""
 
+    # The contract payloads are typed as object at runtime: resolving their
+    # concrete semantic_ingestion classes here would close an import cycle.
+    # ``derive_source_governance_material`` is their sole constructor and
+    # stores exactly those types.
     semantic_context: object
     required_outcome_scopes: object
     segment_governance_carriers: object
@@ -87,7 +98,7 @@ class AdmissionScopeAuthorizationProof(BaseModel):
         return self
 
     @classmethod
-    def create(cls, **body: object) -> AdmissionScopeAuthorizationProof:
+    def create(cls, **body: Any) -> AdmissionScopeAuthorizationProof:
         return cls(
             **body,
             proof_digest=sha256(
@@ -269,6 +280,8 @@ def derive_source_governance_material(
         egress_disposition="allow_verbatim",
     )
     carriers = SegmentGovernanceCarrierSet.create(source_id=source_id, bindings=(binding,))
+    # The nonpromoting guard above already rejected missing content.
+    assert event.content is not None
     admission = MessageAdmissionIdentity.create(
         delivery_principal_binding_digest=ingress.delivery_principal_binding.binding_digest,
         authenticated_source_reference=event.event_id,
@@ -312,10 +325,11 @@ def derive_source_governance_material(
 
 def _semantic_required_scopes(
     scopes: RequiredOutcomeScopeSet,
-) -> object | None:
+) -> SemanticRequiredOutcomeScopeSet | None:
     from memorii.core.semantic_ingestion.contracts import (
         RequiredOutcomeScopeSet as SemanticRequiredOutcomeScopeSet,
     )
+
     projected: list[MemoryScope] = []
     for scope in scopes.scopes:
         kind, separator, value = scope.partition(":")

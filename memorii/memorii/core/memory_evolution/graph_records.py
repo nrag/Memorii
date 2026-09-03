@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from functools import lru_cache
 from hashlib import sha256
-from typing import Annotated, Literal, cast
+from typing import TYPE_CHECKING, Annotated, Literal, TypeAlias, TypeGuard, cast
 
 from pydantic import (
     BaseModel,
@@ -455,7 +455,7 @@ def canonical_graph_record_adapter() -> TypeAdapter:
     return TypeAdapter(union)
 
 
-def validated_graph_record(values: object):
+def validated_graph_record(values: object) -> CanonicalGraphRecord:
     """Construct one graph-record union member and certify it when scoped.
 
     Complete validation always runs through the discriminated-union
@@ -469,7 +469,7 @@ def validated_graph_record(values: object):
     return payload
 
 
-def graph_record_union_member(value: object) -> bool:
+def graph_record_union_member(value: object) -> TypeGuard[CanonicalGraphRecord]:
     from memorii.core.semantic_ingestion.contracts import (
         ActionRevision,
         ClaimAssertion,
@@ -822,6 +822,22 @@ class GraphStateSnapshot(BaseModel):
         if self.snapshot_digest != graph_digest(b"memorii.graph-state-snapshot.v1\0", body):
             raise ValueError("graph_state_snapshot_digest_mismatch")
         return self
+
+
+if TYPE_CHECKING:
+    from memorii.core.semantic_ingestion.contracts import (
+        ActionRevision,
+        ClaimAssertion,
+        IdentityLineageRecord,
+        TemporalTransitionRecord,
+    )
+
+    CanonicalGraphRecord: TypeAlias = Annotated[
+        EntityRevision | AliasRevision | TypeEvidence | ClaimAssertion | ClaimProjection
+        | RelationRevision | ActionRevision | CitationRecord | ProvenanceRecord
+        | TemporalTransitionRecord | IdentityLineageRecord | ReferenceDispositionRecord,
+        Field(discriminator="record_kind"),
+    ]
 
 
 __all__ = [

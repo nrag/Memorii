@@ -882,7 +882,7 @@ def _json(value: Any, *, check: Callable[[], None] | None = None) -> bytes:
     raise CanonicalTypedValueError("canonical_json_value_invalid")
 
 
-def _validated_keys(value: dict[str, Any]) -> list[str]:
+def _validated_keys(value: Mapping[str, Any]) -> list[str]:
     for key in value:
         try:
             key.encode("utf-8", "strict")

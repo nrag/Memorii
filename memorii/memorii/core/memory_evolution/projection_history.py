@@ -6,7 +6,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
-from typing import Literal, TypeGuard, TypeVar
+from typing import Literal, TypeGuard, TypeVar, overload
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -1209,7 +1209,9 @@ class ProjectionHistoryRepository:
                 )
         records = (
             *((self._conflict_authority_record(generation_id, submission_generation, timestamp),)
-              if generation_id is not None and self._memory_plane.get_record(generation_id) is None else ()),
+              if generation_id is not None
+              and submission_generation is not None
+              and self._memory_plane.get_record(generation_id) is None else ()),
             *submission_member_records,
             self._conflict_authority_record(transition_id, transition, timestamp),
             self._conflict_authority_record(history_id, successor_pointer, timestamp),
@@ -1775,11 +1777,29 @@ class ProjectionHistoryRepository:
             except (TypeError, ValueError, ProjectionHistoryError) as exc:
                 raise ProjectionHistoryError("projection_history_integrity_error") from exc
 
+    @overload
+    def append_clarification_work_generation(
+        self,
+        generation: SemanticConflictClarificationWorkGeneration,
+        *,
+        authorization: SemanticWriterWriteAuthorization | None,
+        prepare_only: Literal[True],
+    ) -> tuple[tuple[CanonicalMemoryRecord, ...], tuple[MemoryPlanePrecondition, ...]]: ...
+
+    @overload
     def append_clarification_work_generation(
         self,
         generation: SemanticConflictClarificationWorkGeneration,
         *,
         authorization: SemanticWriterWriteAuthorization,
+        prepare_only: Literal[False] = ...,
+    ) -> SemanticConflictClarificationWorkGeneration: ...
+
+    def append_clarification_work_generation(
+        self,
+        generation: SemanticConflictClarificationWorkGeneration,
+        *,
+        authorization: SemanticWriterWriteAuthorization | None,
         prepare_only: bool = False,
     ) -> SemanticConflictClarificationWorkGeneration | tuple[
         tuple[CanonicalMemoryRecord, ...], tuple[MemoryPlanePrecondition, ...]
@@ -3095,7 +3115,7 @@ class ProjectionHistoryRepository:
                 attempt_result=result,
             )
             generated_records, generated_preconditions = self.append_clarification_work_generation(
-                generation, authorization=None, prepare_only=True  # type: ignore[arg-type]
+                generation, authorization=None, prepare_only=True
             )
             records.extend(generated_records)
             preconditions.extend(generated_preconditions)

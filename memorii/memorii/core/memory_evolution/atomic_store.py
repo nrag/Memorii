@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from secrets import token_hex
-from typing import TYPE_CHECKING, Annotated, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol, TypedDict, Unpack
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -83,6 +83,27 @@ from memorii.core.memory_plane.store import (
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility, TemporalValidityStatus
 
 if TYPE_CHECKING:
+
+    class _GraphV3AuthorityRequest(Protocol):
+        """The store's current-authority verifier's deliberately small view."""
+
+        @property
+        def control_epoch_digest(self) -> str: ...
+
+        @property
+        def operation_fence_binding(self) -> OperationFenceBinding: ...
+
+        @property
+        def operation_lease_binding(self) -> OperationLeaseBinding: ...
+
+        @property
+        def writer_commit_binding(self) -> SemanticWriterCommitBinding: ...
+
+        @property
+        def write_digest(self) -> str: ...
+
+
+if TYPE_CHECKING:
     from memorii.core.memory_evolution.conflict_attention import (
         ActiveSemanticConflict,
         AgentClarificationProposal,
@@ -92,6 +113,7 @@ if TYPE_CHECKING:
         SemanticConflictAuthorityResolver,
         SemanticConflictClarificationTransition,
     )
+    from memorii.core.memory_evolution.graph_records import CanonicalGraphRecord
     from memorii.core.memory_evolution.policy_migration import (
         PolicyMigrationRepository,
         PreparedPolicyMigrationProgress,
@@ -116,6 +138,38 @@ if TYPE_CHECKING:
     )
     from memorii.core.semantic_ingestion.canonical_evidence_arena import CanonicalEvidenceLease
     from memorii.core.semantic_ingestion.contracts import (
+        BootstrapCanonicalIdentityBindingAllocationReloadV3,
+        BootstrapGraphControlEpochAdvancedV3,
+        BootstrapGraphControlEpochFoundV3,
+        BootstrapGraphControlEpochTransitionRequestV3,
+        BootstrapGraphControlEpochTransitionResultV3,
+        BootstrapGraphControlEpochUnavailableV3,
+        BootstrapGraphControlEpochV3,
+        BootstrapGraphCurrentGenerationV3,
+        BootstrapGraphDependentCoordinatorRequestV3,
+        BootstrapGraphDurableRetryProgressV3,
+        BootstrapGraphGroupCommitReloadV3,
+        BootstrapGraphGroupCommitRequestV3,
+        BootstrapGraphPlanAtomicMemberV3,
+        BootstrapGraphPlanAtomicReloadV3,
+        BootstrapGraphPlanAtomicWriteIdentityV3,
+        BootstrapGraphPlanAtomicWriteRequestV3,
+        BootstrapGraphTerminalControlV3,
+        BootstrapGraphTerminalPersistenceHandoffV3,
+        BootstrapGraphTerminalPublicationRequestV3,
+        BootstrapGraphTerminalReloadV3,
+        BootstrapGraphTransactionAuthorityReloadV3,
+        BootstrapRecoveryAbortedV3,
+        BootstrapRecoveryClaimV3,
+        BootstrapRecoveryKeyV3,
+        BootstrapRecoveryProbeResultV3,
+        BootstrapRecoveryProbeV3,
+        BootstrapRecoveryRenewalResultV3,
+        BootstrapRecoveryReplayRecordV3,
+        BootstrapRecoveryUnavailableV3,
+        BootstrapSourceNormalizationAtomicWriteRequestV3,
+        PreparedSource,
+        RequiredOutcomeScopeSet,
         SemanticArbitrationPolicyBundle,
         SemanticArtifactClosure,
         SemanticGraphDelta,
@@ -516,6 +570,17 @@ class SourceFinalizationAtomicWriteRequest(AtomicGenerationRequest):
     expected_group_result_digests: tuple[str, ...]
 
 
+class _RetainedPendingAuthorityUnavailableCreateValues(TypedDict):
+    source_id: str
+    source_digest: str
+    authority_pin_digest: str
+    release_evidence_digest: str
+    bootstrap_language_evidence_digest: str
+    delivery_identity: DeliveryIdentity
+    operation_fence_binding: OperationFenceBinding
+    reason: Literal["authorization_unavailable", "release_unavailable", "pin_mismatch"]
+
+
 class BootstrapRetainedPendingAuthorityUnavailable(BaseModel):
     kind: Literal["retained_pending"] = "retained_pending"
     source_id: str
@@ -547,8 +612,8 @@ class BootstrapRetainedPendingAuthorityUnavailable(BaseModel):
         return self
 
     @classmethod
-    def create(cls, **values: object) -> BootstrapRetainedPendingAuthorityUnavailable:
-        body = dict(values)
+    def create(cls, **values: Unpack[_RetainedPendingAuthorityUnavailableCreateValues]) -> BootstrapRetainedPendingAuthorityUnavailable:
+        body: dict[str, Any] = dict(values)
         body.pop("terminal_digest", None)
         digest_body = cls.model_construct(
             **body, terminal_digest="0" * 64
@@ -560,6 +625,19 @@ class BootstrapRetainedPendingAuthorityUnavailable(BaseModel):
                 + encode_typed_value(digest_body)
             ).hexdigest(),
         )
+
+
+class _PreparedPublishedAuthorityUnavailableCreateValues(TypedDict):
+    source_id: str
+    source_digest: str
+    prepared_generation: int
+    prepared_source_digest: str
+    authority_pin_digest: str
+    release_evidence_digest: str
+    bootstrap_language_evidence_digest: str
+    delivery_identity: DeliveryIdentity
+    operation_fence_binding: OperationFenceBinding
+    reason: Literal["authorization_unavailable", "release_unavailable"]
 
 
 class BootstrapPreparedPublishedAuthorityUnavailable(BaseModel):
@@ -595,8 +673,8 @@ class BootstrapPreparedPublishedAuthorityUnavailable(BaseModel):
         return self
 
     @classmethod
-    def create(cls, **values: object) -> BootstrapPreparedPublishedAuthorityUnavailable:
-        body = dict(values)
+    def create(cls, **values: Unpack[_PreparedPublishedAuthorityUnavailableCreateValues]) -> BootstrapPreparedPublishedAuthorityUnavailable:
+        body: dict[str, Any] = dict(values)
         body.pop("terminal_digest", None)
         digest_body = cls.model_construct(
             **body, terminal_digest="0" * 64
@@ -608,6 +686,22 @@ class BootstrapPreparedPublishedAuthorityUnavailable(BaseModel):
                 + encode_typed_value(digest_body)
             ).hexdigest(),
         )
+
+
+class _WriterHandoffRequestCreateValues(TypedDict):
+    source_id: str
+    source_digest: str
+    prepared_generation: int
+    prepared_source_digest: str
+    authority_pin: BootstrapAdmissionPin
+    release_evidence: HostVerifiedBootstrapReleaseEvidence
+    bootstrap_language_evidence: BootstrapAuthenticatedLanguageEvidence
+    delivery_identity: DeliveryIdentity
+    operation_fence_binding: OperationFenceBinding
+    current_delivery_authorization: DeliveryAuthorizationRequest
+    current_release_assertion: CurrentBootstrapReleaseAssertion
+    expected_writer_admission_digest: str
+    expected_writer_epoch: int
 
 
 class BootstrapWriterHandoffRequest(BaseModel):
@@ -657,8 +751,8 @@ class BootstrapWriterHandoffRequest(BaseModel):
         return self
 
     @classmethod
-    def create(cls, **values: object) -> BootstrapWriterHandoffRequest:
-        body = dict(values)
+    def create(cls, **values: Unpack[_WriterHandoffRequestCreateValues]) -> BootstrapWriterHandoffRequest:
+        body: dict[str, Any] = dict(values)
         body.pop("request_digest", None)
         digest_body = cls.model_construct(
             **body,
@@ -678,6 +772,22 @@ class BootstrapWriterHandoffRequest(BaseModel):
                 + encode_typed_value(digest_body)
             ).hexdigest(),
         )
+
+
+class _WriterHandoffMarkerCreateValues(TypedDict):
+    source_id: str
+    source_digest: str
+    handoff_request_digest: str
+    prepared_generation: int
+    prepared_source_digest: str
+    authority_pin_digest: str
+    release_evidence_digest: str
+    bootstrap_language_evidence_digest: str
+    delivery_identity: DeliveryIdentity
+    operation_fence_binding: OperationFenceBinding
+    writer_commit_binding: SemanticWriterCommitBinding
+    pending_operation_id: str
+    pending_operation_digest: str
 
 
 class BootstrapWriterHandoffMarker(BaseModel):
@@ -715,8 +825,8 @@ class BootstrapWriterHandoffMarker(BaseModel):
         return self
 
     @classmethod
-    def create(cls, **values: object) -> BootstrapWriterHandoffMarker:
-        body = dict(values)
+    def create(cls, **values: Unpack[_WriterHandoffMarkerCreateValues]) -> BootstrapWriterHandoffMarker:
+        body: dict[str, Any] = dict(values)
         body.pop("marker_digest", None)
         digest_body = cls.model_construct(
             **body, marker_digest="0" * 64
@@ -727,6 +837,14 @@ class BootstrapWriterHandoffMarker(BaseModel):
                 b"memorii.semantic_ingestion.bootstrap_writer_handoff_marker.v1\0" + encode_typed_value(digest_body)
             ).hexdigest(),
         )
+
+
+class _WriterHandoffMarkerV3CreateValues(_WriterHandoffMarkerCreateValues):
+    schema_version: Literal[3]
+    recovery_key_digest: str
+    expected_predecessor_operation_generation: int
+    expected_predecessor_artifact_generation: int
+    expected_predecessor_control_digest: str
 
 
 class BootstrapWriterHandoffMarkerV3(BootstrapWriterHandoffMarker):
@@ -757,8 +875,8 @@ class BootstrapWriterHandoffMarkerV3(BootstrapWriterHandoffMarker):
         return self
 
     @classmethod
-    def create(cls, **values: object) -> BootstrapWriterHandoffMarkerV3:
-        body = dict(values)
+    def create(cls, **values: Unpack[_WriterHandoffMarkerV3CreateValues]) -> BootstrapWriterHandoffMarkerV3:
+        body: dict[str, Any] = dict(values)
         body.pop("marker_digest", None)
         digest_body = cls.model_construct(
             **body,
@@ -779,14 +897,18 @@ class BootstrapWriterHandoffMarkerV3(BootstrapWriterHandoffMarker):
 class BootstrapWriterHandoffResult(BaseModel):
     kind: Literal["started", "already_started", "authority_unavailable", "writer_unavailable", "conflict"]
     marker: BootstrapWriterHandoffMarker | BootstrapWriterHandoffMarkerV3 | None = None
-    authority_unavailable: BootstrapPreparedPublishedAuthorityUnavailable | None = None
+    authority_unavailable: (
+        BootstrapPreparedPublishedAuthorityUnavailable
+        | BootstrapRetainedPendingAuthorityUnavailable
+        | None
+    ) = None
     result_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     @classmethod
     def create(cls, *, kind: str, marker: BootstrapWriterHandoffMarker | BootstrapWriterHandoffMarkerV3 | None = None,
-               authority_unavailable: BootstrapPreparedPublishedAuthorityUnavailable | None = None) -> BootstrapWriterHandoffResult:
+               authority_unavailable: BootstrapPreparedPublishedAuthorityUnavailable | BootstrapRetainedPendingAuthorityUnavailable | None = None) -> BootstrapWriterHandoffResult:
         body = {"kind": kind, "marker": marker, "authority_unavailable": authority_unavailable}
         digest_body = cls.model_construct(
             **body, result_digest="0" * 64
@@ -963,7 +1085,7 @@ class SemanticIngestionAtomicStore:
             return self._load_prepared_source_record(existing, prepared.source_id, prepared.source_digest)
         return prepared
 
-    def load_prepared_source(self, *, source_id: str, source_digest: str) -> object | None:
+    def load_prepared_source(self, *, source_id: str, source_digest: str) -> PreparedSource | None:
         record = self._memory_plane.get_record(
             "semantic_ingestion:prepared_source:" + sha256(source_id.encode("utf-8")).hexdigest()
         )
@@ -980,7 +1102,7 @@ class SemanticIngestionAtomicStore:
         operation_fence_binding: OperationFenceBinding,
         authorization: DeliveryAuthorizationRequest,
         release_assertion: CurrentBootstrapReleaseAssertion,
-    ) -> tuple[object, int]:
+    ) -> tuple[PreparedSource | BootstrapRetainedPendingAuthorityUnavailable | BootstrapPreparedPublishedAuthorityUnavailable, int]:
         """Source-owned Step-2 CAS.  It has no writer control side effect."""
         from memorii.core.semantic_ingestion.contracts import PreparedSource, encode_semantic_contract
 
@@ -1035,7 +1157,8 @@ class SemanticIngestionAtomicStore:
             != tuple(route.segment_id for route in expected_routes)
             or any(
                 proof.source_id != prepared.source_id
-                or proof.normalized_segment_digest != route.normalized_segment_digest
+                or proof.normalized_segment_digest
+                != getattr(route, "normalized_segment_digest", None)
                 or proof.proof_digest != getattr(route, "grammar_proof_digest", None)
                 for proof, route in zip(grammar_proofs, expected_routes, strict=True)
             )
@@ -1563,7 +1686,7 @@ class SemanticIngestionAtomicStore:
         return terminal
 
     @staticmethod
-    def _load_prepared_source_record(record: CanonicalMemoryRecord, source_id: str, source_digest: str) -> object:
+    def _load_prepared_source_record(record: CanonicalMemoryRecord, source_id: str, source_digest: str) -> PreparedSource:
         from memorii.core.semantic_ingestion.contracts import (
             PreparedSource,
             decode_semantic_contract,
@@ -2203,7 +2326,9 @@ class SemanticIngestionAtomicStore:
             rows.append((key, content["state"], digest))
         return tuple(sorted(rows))
 
-    def probe_bootstrap_v3_recovery(self, *, probe: object, server_time: datetime, monotonic_tick: int) -> object:
+    def probe_bootstrap_v3_recovery(
+        self, *, probe: BootstrapRecoveryProbeV3, server_time: datetime, monotonic_tick: int
+    ) -> BootstrapRecoveryProbeResultV3:
         """Atomically return Found, one live claim, or a closed unavailable arm."""
         from memorii.core.semantic_ingestion.contracts import (
             BootstrapNormalizationReadyControlRecordV3,
@@ -2367,7 +2492,9 @@ class SemanticIngestionAtomicStore:
         except (KeyError, TypeError, ValueError):
             return _bootstrap_v3_unavailable(probe.recovery_key.recovery_key_digest, "index_corrupt")
 
-    def renew_or_abort_bootstrap_v3_recovery(self, *, claim: object, server_time: datetime, monotonic_tick: int) -> object:
+    def renew_or_abort_bootstrap_v3_recovery(
+        self, *, claim: BootstrapRecoveryClaimV3, server_time: datetime, monotonic_tick: int
+    ) -> BootstrapRecoveryRenewalResultV3:
         from memorii.core.semantic_ingestion.contracts import (
             BootstrapRecoveryClaimV3,
             BootstrapRecoveryRenewedV3,
@@ -4214,7 +4341,7 @@ class SemanticIngestionAtomicStore:
         canonical_evidence_lease: CanonicalEvidenceLease | None = None,
         handoff_marker: BootstrapWriterHandoffMarkerV3 | None = None,
         tenant_partition_id: str | None = None,
-    ) -> object | None:
+    ) -> BootstrapRecoveryReplayRecordV3 | None:
         """Reload one exact found normalization closure; never scan generations."""
         from memorii.core.semantic_ingestion.contracts import (
             BootstrapRecoveryFoundV3,
@@ -4329,7 +4456,7 @@ class SemanticIngestionAtomicStore:
             )
         except (AttributeError, PreplanningStoreError, TypeError, ValueError):
             return False
-        return (
+        return bool(
             type(evidence.contract) is type(prepared)
             and evidence.contract == prepared
             and leased_prepared == prepared
@@ -5839,6 +5966,8 @@ class SemanticIngestionAtomicStore:
             raise PreplanningStoreError("clarification claim generation is stale or corrupt")
         if retained:
             state = retained[0]
+            # The retained filter above admits only states with a live attempt.
+            assert state.attempt is not None
             return ConflictClarificationClaim(
                 proposal=state.proposal, work=state.work, attempt=state.attempt
             )
@@ -5854,6 +5983,9 @@ class SemanticIngestionAtomicStore:
         )
         if reclaimable:
             state = reclaimable[0]
+            # The reclaimable filter above admits only states with a live
+            # prior attempt and expired lease.
+            assert state.attempt is not None
             previous = state.work
             work = self._claimed_clarification_work(
                 previous,
@@ -5861,6 +5993,7 @@ class SemanticIngestionAtomicStore:
                 ownership_epoch=previous.ownership_epoch + 1,
                 lease_expires_at=now + lease_duration,
             )
+            assert work.lease_expires_at is not None
             attempt = self._clarification_attempt(
                 previous=previous,
                 work=work,
@@ -6162,6 +6295,7 @@ class SemanticIngestionAtomicStore:
             if current is None or not isinstance(current[1], SemanticConflictClarificationTransition):
                 raise PreplanningStoreError("clarification failure generation is stale or corrupt")
             _, predecessor, pointer = current
+            assert isinstance(predecessor, SemanticConflictClarificationTransition)
             attention_values = predecessor.resulting_attention.model_dump(mode="python")
             attention_values.update(
                 conflict_revision=sha256(
@@ -6221,7 +6355,7 @@ class SemanticIngestionAtomicStore:
         return SemanticIngestionAtomicStore._clarification_work_from_values(values)
 
     @staticmethod
-    def _clarification_work_from_values(values: dict[str, object]) -> ConflictClarificationWork:
+    def _clarification_work_from_values(values: dict[str, Any]) -> ConflictClarificationWork:
         provisional = ConflictClarificationWork.model_construct(**values, work_digest="0" * 64)
         return ConflictClarificationWork(
             **values,
@@ -8483,7 +8617,8 @@ class SemanticIngestionAtomicStore:
             raise PreplanningStoreError("terminal semantic conflict authority preflight failed") from exc
 
     def checkpoint_source_progress(
-        self, request: SourceCheckpointAtomicWriteRequest | AtomicGenerationRequest
+        self,
+        request: SourceCheckpointAtomicWriteRequest | BootstrapSourceNormalizationAtomicWriteRequestV3,
     ) -> tuple[AtomicGenerationMember, ...]:
         recovered = self._recover_exact_generation_if_current(request)
         if recovered is not None:
@@ -8603,6 +8738,7 @@ class SemanticIngestionAtomicStore:
             "bootstrap_graph_normalization_authority",
         }
         progress_state = getattr(request, "progress_state", None)
+        assert progress_state is not None
         source_normalization_members = {
             "source_normalization_request",
             "source_normalization_result",
@@ -8619,7 +8755,9 @@ class SemanticIngestionAtomicStore:
             raise PreplanningStoreError("source normalization checkpoint progress is invalid")
         return self._publish_generation(request, next_state=progress_state, allowed_kinds=allowed)
 
-    def transition_or_find_bootstrap_graph_control_epoch_v3(self, *, request: object) -> object:
+    def transition_or_find_bootstrap_graph_control_epoch_v3(
+        self, *, request: BootstrapGraphControlEpochTransitionRequestV3
+    ) -> BootstrapGraphControlEpochTransitionResultV3:
         """Append one immutable V3 control epoch or recover its exact prior write."""
         from memorii.core.semantic_ingestion.contracts import (
             BootstrapGraphControlEpochAdvancedV3,
@@ -8648,7 +8786,7 @@ class SemanticIngestionAtomicStore:
 
     def load_bootstrap_graph_control_epoch_v3(
         self, *, request_core_digest: str
-    ) -> object | None:
+    ) -> BootstrapGraphControlEpochV3 | None:
         """Return the current control epoch for a request core if one is present."""
         if not request_core_digest:
             return None
@@ -8679,8 +8817,12 @@ class SemanticIngestionAtomicStore:
             return None
 
     def _transition_or_find_bootstrap_graph_control_epoch_v3_linearized(
-        self, *, request: object, found_type: type, advanced_type: type
-    ) -> object:
+        self,
+        *,
+        request: BootstrapGraphControlEpochTransitionRequestV3,
+        found_type: type[BootstrapGraphControlEpochFoundV3],
+        advanced_type: type[BootstrapGraphControlEpochAdvancedV3],
+    ) -> BootstrapGraphControlEpochTransitionResultV3:
         from memorii.core.semantic_ingestion.contracts import BootstrapGraphControlEpochV3
 
         transition_record = self._memory_plane.get_record(
@@ -8836,11 +8978,11 @@ class SemanticIngestionAtomicStore:
     def checkpoint_bootstrap_graph_transaction_v3(
         self,
         *,
-        request: object,
+        request: BootstrapGraphPlanAtomicWriteRequestV3,
         delivery_principal_binding_digest: str,
-        required_outcome_scopes: object,
-        control_epoch: object,
-    ) -> object:
+        required_outcome_scopes: RequiredOutcomeScopeSet,
+        control_epoch: BootstrapGraphControlEpochV3,
+    ) -> BootstrapGraphPlanAtomicReloadV3:
         """Publish and reload one sealed V3 graph checkpoint.
 
         Bootstrap graph artifacts intentionally have a separate persisted
@@ -8891,9 +9033,10 @@ class SemanticIngestionAtomicStore:
             )
 
     def load_bootstrap_graph_current_generation_v3(
-        self, *, request: object, control_epoch: object, delivery_principal_binding_digest: str,
-        required_outcome_scopes: object,
-    ) -> object:
+        self, *, request: BootstrapGraphDependentCoordinatorRequestV3,
+        control_epoch: BootstrapGraphControlEpochV3, delivery_principal_binding_digest: str,
+        required_outcome_scopes: RequiredOutcomeScopeSet,
+    ) -> BootstrapGraphCurrentGenerationV3:
         """Return the sealed predecessor snapshot; callers cannot supply scalars."""
         from memorii.core.semantic_ingestion.contracts import (
             BootstrapGraphControlEpochV3,
@@ -8924,15 +9067,15 @@ class SemanticIngestionAtomicStore:
     def _checkpoint_bootstrap_graph_transaction_v3_linearized(
         self,
         *,
-        request: object,
+        request: BootstrapGraphPlanAtomicWriteRequestV3,
         delivery_principal_binding_digest: str,
-        required_outcome_scopes: object,
-        control_epoch: object,
+        required_outcome_scopes: RequiredOutcomeScopeSet,
+        control_epoch: BootstrapGraphControlEpochV3,
         current_generation_type: type,
         reload_core_type: type,
         receipt_type: type,
         reload_type: type,
-    ) -> object:
+    ) -> BootstrapGraphPlanAtomicReloadV3:
         from memorii.core.semantic_ingestion.contracts import (
             validate_bootstrap_graph_plan_atomic_members_v3,
         )
@@ -9067,11 +9210,11 @@ class SemanticIngestionAtomicStore:
     def reload_bootstrap_graph_transaction_v3(
         self,
         *,
-        request: object,
+        request: BootstrapGraphPlanAtomicWriteRequestV3,
         delivery_principal_binding_digest: str,
-        required_outcome_scopes: object,
-        control_epoch: object,
-    ) -> object:
+        required_outcome_scopes: RequiredOutcomeScopeSet,
+        control_epoch: BootstrapGraphControlEpochV3,
+    ) -> BootstrapGraphPlanAtomicReloadV3:
         """Re-read the exact persisted V3 checkpoint after current-authority checks."""
         from memorii.core.semantic_ingestion.contracts import (
             BootstrapGraphCheckpointReceiptV3,
@@ -9097,11 +9240,11 @@ class SemanticIngestionAtomicStore:
     def reload_bootstrap_graph_retry_by_request_v3(
         self,
         *,
-        request: object,
+        request: BootstrapGraphDependentCoordinatorRequestV3,
         delivery_principal_binding_digest: str,
-        required_outcome_scopes: object,
-        control_epoch: object,
-    ) -> object | None:
+        required_outcome_scopes: RequiredOutcomeScopeSet,
+        control_epoch: BootstrapGraphControlEpochV3,
+    ) -> BootstrapGraphPlanAtomicReloadV3 | None:
         """Reload the exact durable retry checkpoint without scanning generations."""
         from memorii.core.semantic_ingestion.contracts import (
             BootstrapGraphPlanAtomicWriteRequestV3,
@@ -9119,7 +9262,7 @@ class SemanticIngestionAtomicStore:
             or retry.content.get("request_digest") != request.request_digest
         ):
             raise PreplanningStoreError("bootstrap graph retry index is corrupt")
-        write_digest = retry.content.get("write_digest")
+        write_digest: Any = retry.content.get("write_digest")
         index = self._memory_plane.get_record(
             _bootstrap_graph_v3_idempotency_id(write_digest)
         )
@@ -9150,9 +9293,11 @@ class SemanticIngestionAtomicStore:
         )
 
     def reload_bootstrap_graph_retry_by_recovery_v3(
-        self, *, normalization_replay: object, delivery_principal_binding_digest: str,
-        required_outcome_scopes: object, operation_fence_binding: object,
-    ) -> object | None:
+        self, *, normalization_replay: BootstrapRecoveryReplayRecordV3,
+        delivery_principal_binding_digest: str,
+        required_outcome_scopes: RequiredOutcomeScopeSet,
+        operation_fence_binding: OperationFenceBinding,
+    ) -> BootstrapGraphDurableRetryProgressV3 | None:
         """Recover sealed retry progress without requiring a live operation lease."""
         from memorii.core.semantic_ingestion.contracts import (
             BootstrapGraphRetryRecoveryLocatorV3,
@@ -9218,11 +9363,11 @@ class SemanticIngestionAtomicStore:
     def reload_bootstrap_graph_terminal_v3(
         self,
         *,
-        handoff: object,
+        handoff: BootstrapGraphTerminalPersistenceHandoffV3,
         delivery_principal_binding_digest: str,
-        required_outcome_scopes: object,
-        control_epoch: object,
-    ) -> object:
+        required_outcome_scopes: RequiredOutcomeScopeSet,
+        control_epoch: BootstrapGraphControlEpochV3,
+    ) -> BootstrapGraphTerminalReloadV3:
         """Found-only terminal recovery through the prepublication locator.
 
         This deliberately does not scan generations or infer a terminal write
@@ -9292,7 +9437,9 @@ class SemanticIngestionAtomicStore:
             raise PreplanningStoreError("bootstrap graph terminal reload is substituted")
         return reload
 
-    def persist_bootstrap_graph_terminal_v3(self, *, request: object) -> object:
+    def persist_bootstrap_graph_terminal_v3(
+        self, *, request: BootstrapGraphTerminalPublicationRequestV3
+    ) -> BootstrapGraphTerminalReloadV3:
         """Atomically publish the sealed terminal V3 closure or reload its locator.
 
         The locator is intentionally the only recovery coordinate.  In
@@ -9346,7 +9493,9 @@ class SemanticIngestionAtomicStore:
                 encoder=encode_semantic_contract,
             )
 
-    def reload_bootstrap_graph_terminal_by_request_v3(self, *, request: object) -> object | None:
+    def reload_bootstrap_graph_terminal_by_request_v3(
+        self, *, request: BootstrapGraphDependentCoordinatorRequestV3
+    ) -> BootstrapGraphTerminalReloadV3 | None:
         """Reload an acknowledged terminal result by its authenticated request identity."""
         from memorii.core.semantic_ingestion.contracts import (
             BootstrapGraphTerminalReloadV3,
@@ -9394,9 +9543,11 @@ class SemanticIngestionAtomicStore:
         )
 
     def reload_bootstrap_graph_terminal_by_recovery_v3(
-        self, *, normalization_replay: object, delivery_principal_binding_digest: str,
-        required_outcome_scopes: object, operation_fence_binding: object,
-    ) -> object | None:
+        self, *, normalization_replay: BootstrapRecoveryReplayRecordV3,
+        delivery_principal_binding_digest: str,
+        required_outcome_scopes: RequiredOutcomeScopeSet,
+        operation_fence_binding: OperationFenceBinding,
+    ) -> BootstrapGraphTerminalReloadV3 | None:
         """Recover a terminal graph result from the exact normalization replay key."""
         from memorii.core.semantic_ingestion.contracts import (
             BootstrapGraphTerminalReloadV3,
@@ -9449,11 +9600,11 @@ class SemanticIngestionAtomicStore:
         )
 
     def _persist_bootstrap_graph_terminal_v3_linearized(
-        self, *, request: object, member_type: type, group_result_type: type,
-        canonical_result_type: type, identity_type: type, terminal_control_type: type,
-        current_generation_type: type, receipt_type: type,
-        reload_type: type, encoder: Callable[[object], bytes],
-    ) -> object:
+        self, *, request: BootstrapGraphTerminalPublicationRequestV3, member_type: type,
+        group_result_type: type, canonical_result_type: type, identity_type: type,
+        terminal_control_type: type, current_generation_type: type, receipt_type: type,
+        reload_type: type, encoder: Callable[[BaseModel], bytes],
+    ) -> BootstrapGraphTerminalReloadV3:
         intent = request.publication_intent
         locator_id = _bootstrap_graph_v3_terminal_locator_id(intent.locator_digest)
         existing = self._memory_plane.get_record(locator_id)
@@ -9614,7 +9765,9 @@ class SemanticIngestionAtomicStore:
                 raise PreplanningStoreError("bootstrap graph terminal CAS conflicted") from exc
         return self._reload_bootstrap_graph_terminal_v3(request=request, reload_type=reload_type)
 
-    def _reload_bootstrap_graph_terminal_v3(self, *, request: object, reload_type: type) -> object:
+    def _reload_bootstrap_graph_terminal_v3(
+        self, *, request: BootstrapGraphTerminalPublicationRequestV3, reload_type: type
+    ) -> BootstrapGraphTerminalReloadV3:
         """Validate a terminal locator and every persisted immutable join."""
         intent = request.publication_intent
         if (
@@ -9650,7 +9803,7 @@ class SemanticIngestionAtomicStore:
         self,
         *,
         locator_digest: str,
-        expected_reload: object | None = None,
+        expected_reload: BootstrapGraphTerminalReloadV3 | None = None,
         reload_type: type | None = None,
         expected_handoff_digest: str | None = None,
         expected_request_digest: str | None = None,
@@ -9660,7 +9813,7 @@ class SemanticIngestionAtomicStore:
         expected_operation_fence_binding: OperationFenceBinding,
         expected_operation_lease_binding_digest: str | None = None,
         expected_control_epoch_digest: str | None = None,
-    ) -> object:
+    ) -> BootstrapGraphTerminalReloadV3:
         """Reload one terminal only after proving its immutable persisted closure."""
         from memorii.core.semantic_ingestion.contracts import (
             BootstrapGraphPlanAtomicMemberV3,
@@ -9813,15 +9966,15 @@ class SemanticIngestionAtomicStore:
     def _reload_bootstrap_graph_transaction_v3(
         self,
         *,
-        request: object,
+        request: BootstrapGraphPlanAtomicWriteRequestV3,
         delivery_principal_binding_digest: str,
-        required_outcome_scopes: object,
-        control_epoch: object,
+        required_outcome_scopes: RequiredOutcomeScopeSet,
+        control_epoch: BootstrapGraphControlEpochV3,
         current_generation_type: type,
         reload_core_type: type,
         receipt_type: type,
         reload_type: type,
-    ) -> object:
+    ) -> BootstrapGraphPlanAtomicReloadV3:
         from memorii.core.semantic_ingestion.contracts import (
             validate_bootstrap_graph_plan_atomic_members_v3,
         )
@@ -9905,10 +10058,10 @@ class SemanticIngestionAtomicStore:
     def _validate_bootstrap_graph_v3_current_authority(
         self,
         *,
-        request: object,
+        request: _GraphV3AuthorityRequest,
         delivery_principal_binding_digest: str,
-        required_outcome_scopes: object,
-        control_epoch: object,
+        required_outcome_scopes: RequiredOutcomeScopeSet,
+        control_epoch: BootstrapGraphControlEpochV3,
         allow_terminal_recovery: bool = False,
     ) -> None:
         """Validate mutable authority before any V3 graph record lookup."""
@@ -9954,7 +10107,9 @@ class SemanticIngestionAtomicStore:
         ):
             raise PreplanningStoreError("bootstrap graph control epoch is not current")
 
-    def commit_or_reload_bootstrap_graph_group_v3(self, *, request: object) -> object:
+    def commit_or_reload_bootstrap_graph_group_v3(
+        self, *, request: BootstrapGraphGroupCommitRequestV3
+    ) -> BootstrapGraphGroupCommitReloadV3:
         """Atomically materialize and persist one complete V3 group outcome.
 
         This deliberately has no per-operation write entry point: the primary
@@ -9998,7 +10153,7 @@ class SemanticIngestionAtomicStore:
         if existing is not None:
             return _bootstrap_graph_v3_group_commit_reload_from_record(existing, request)
 
-        def write() -> object:
+        def write() -> BootstrapGraphGroupCommitReloadV3:
             control_record = self._required_control_record(request.operation_fence_binding)
             control = _control_from_record(control_record)
             if (
@@ -10024,12 +10179,12 @@ class SemanticIngestionAtomicStore:
             committed_at = self._now()
             operation_results = []
             effect_records: list[CanonicalMemoryRecord] = []
-            all_materialized_records: list[object] = []
+            all_materialized_records: list[CanonicalGraphRecord] = []
             for item in request.ordered_operation_inputs:
                 reduction = item.reduction
                 materialization = reduction.effect_materialization
                 is_accepted = reduction.native_terminal.status == "accepted"
-                materialized_records: tuple[object, ...] = ()
+                materialized_records: tuple[CanonicalGraphRecord, ...] = ()
                 if is_accepted:
                     from memorii.core.memory_evolution.graph_planning import (
                         PlanningCommitValues,
@@ -10338,9 +10493,9 @@ class SemanticIngestionAtomicStore:
     def reload_exact_bootstrap_graph_group_v3(
         self, *, source_operation_id: str, transaction_group_id: str,
         operation_ids: tuple[str, ...], request_ctv_digest: str,
-        delivery_principal_binding_digest: str, required_outcome_scopes: object,
-        operation_fence_binding: object,
-    ) -> object | None:
+        delivery_principal_binding_digest: str, required_outcome_scopes: RequiredOutcomeScopeSet,
+        operation_fence_binding: OperationFenceBinding,
+    ) -> BootstrapGraphGroupCommitReloadV3 | None:
         """Reload one group primary only after caller authority is authenticated."""
         primary_id = _bootstrap_graph_v3_group_commit_primary_id(
             source_operation_id, transaction_group_id, operation_ids, request_ctv_digest,
@@ -12191,7 +12346,8 @@ def _bootstrap_graph_v3_group_commit_fanout_id(
 
 
 def _bootstrap_graph_v3_group_commit_primary_record(
-    primary_id: str, request: object, reload: object, *, timestamp: datetime,
+    primary_id: str, request: BootstrapGraphGroupCommitRequestV3,
+    reload: BootstrapGraphGroupCommitReloadV3, *, timestamp: datetime,
 ) -> CanonicalMemoryRecord:
     from memorii.core.semantic_ingestion.contracts import encode_semantic_contract
 
@@ -12249,7 +12405,9 @@ def _bootstrap_graph_v3_group_commit_effect_record(
     )
 
 
-def _bootstrap_graph_v3_group_commit_request_from_record(record: CanonicalMemoryRecord) -> object:
+def _bootstrap_graph_v3_group_commit_request_from_record(
+    record: CanonicalMemoryRecord,
+) -> BootstrapGraphGroupCommitRequestV3:
     from memorii.core.semantic_ingestion.contracts import (
         BootstrapGraphGroupCommitRequestV3,
         decode_semantic_contract,
@@ -12263,7 +12421,9 @@ def _bootstrap_graph_v3_group_commit_request_from_record(record: CanonicalMemory
     return request
 
 
-def _bootstrap_graph_v3_group_commit_reload_from_record(record: CanonicalMemoryRecord, request: object) -> object:
+def _bootstrap_graph_v3_group_commit_reload_from_record(
+    record: CanonicalMemoryRecord, request: BootstrapGraphGroupCommitRequestV3,
+) -> BootstrapGraphGroupCommitReloadV3:
     from memorii.core.semantic_ingestion.contracts import (
         BootstrapGraphGroupCommitReloadV3,
         decode_semantic_contract,
@@ -12356,7 +12516,7 @@ def _bootstrap_graph_v3_terminal_identity_id(locator_digest: str) -> str:
 class _TerminalAuthorityRequest:
     """The common current-authority validator's deliberately small view."""
 
-    request: object
+    request: BootstrapGraphTerminalPublicationRequestV3
 
     @property
     def control_epoch_digest(self) -> str:
@@ -12379,8 +12539,9 @@ class _TerminalAuthorityRequest:
         return self.request.publication_request_digest
 
 
-def _bootstrap_graph_v3_terminal_payloads(*, request: object, group_result_type: type,
-                                          canonical_result_type: type) -> dict[str, tuple[object, ...]]:
+def _bootstrap_graph_v3_terminal_payloads(*, request: BootstrapGraphTerminalPublicationRequestV3,
+                                          group_result_type: type,
+                                          canonical_result_type: type) -> dict[str, tuple[Any, ...]]:
     """Materialize the sealed nine-kind terminal grammar in its declared order."""
     group_results = tuple(
         group_result_type.model_validate(item.model_dump(mode="python"))
@@ -12425,8 +12586,9 @@ def _bootstrap_graph_v3_terminal_payloads(*, request: object, group_result_type:
     }
 
 
-def _bootstrap_graph_v3_terminal_members(*, request: object, payloads: dict[str, tuple[object, ...]],
-                                         member_type: type, encoder: Callable[[object], bytes]) -> tuple[object, ...]:
+def _bootstrap_graph_v3_terminal_members(*, request: BootstrapGraphTerminalPublicationRequestV3,
+                                         payloads: dict[str, tuple[Any, ...]],
+                                         member_type: type, encoder: Callable[[BaseModel], bytes]) -> tuple[BootstrapGraphPlanAtomicMemberV3, ...]:
     digest_field_by_kind = {
         "bootstrap_graph_coordinator_request": "request_digest",
         "bootstrap_graph_control_epoch": "epoch_digest",
@@ -12437,7 +12599,7 @@ def _bootstrap_graph_v3_terminal_members(*, request: object, payloads: dict[str,
         "transaction_group_result": "result_digest",
         "bootstrap_graph_canonical_source_result": "result_digest",
     }
-    members: list[object] = []
+    members: list[BootstrapGraphPlanAtomicMemberV3] = []
     offsets: dict[str, int] = {}
     for intent in request.publication_intent.member_intents:
         index = offsets.get(intent.kind, 0)
@@ -13120,7 +13282,7 @@ def _generation_manifest_record(
 
 
 def _bootstrap_graph_v3_authority_record(
-    reload: object, timestamp: datetime,
+    reload: BootstrapGraphTransactionAuthorityReloadV3, timestamp: datetime,
 ) -> CanonicalMemoryRecord:
     from memorii.core.semantic_ingestion.contracts import encode_semantic_contract
 
@@ -13142,7 +13304,7 @@ def _bootstrap_graph_v3_authority_record(
 
 
 def _bootstrap_graph_v3_authority_index_record(
-    reload: object, timestamp: datetime,
+    reload: BootstrapGraphTransactionAuthorityReloadV3, timestamp: datetime,
 ) -> CanonicalMemoryRecord:
     projection = reload.publication_core.authority_projection
     recovery_key = reload.publication_receipt.recovery_key_digest
@@ -13167,7 +13329,9 @@ def _bootstrap_graph_v3_authority_index_record(
     )
 
 
-def _bootstrap_graph_v3_authority_from_record(record: CanonicalMemoryRecord) -> object:
+def _bootstrap_graph_v3_authority_from_record(
+    record: CanonicalMemoryRecord,
+) -> BootstrapGraphTransactionAuthorityReloadV3:
     from memorii.core.semantic_ingestion.contracts import (
         BootstrapGraphTransactionAuthorityReloadV3,
         decode_semantic_contract,
@@ -13191,7 +13355,9 @@ def _bootstrap_graph_v3_authority_from_record(record: CanonicalMemoryRecord) -> 
     return reload
 
 
-def _bootstrap_canonical_identity_authority_from_record(record: CanonicalMemoryRecord) -> object:
+def _bootstrap_canonical_identity_authority_from_record(
+    record: CanonicalMemoryRecord,
+) -> BootstrapCanonicalIdentityBindingAllocationReloadV3:
     from memorii.core.semantic_ingestion.contracts import (
         BootstrapCanonicalIdentityBindingAllocationReloadV3,
         decode_semantic_contract,
@@ -13214,7 +13380,7 @@ def _bootstrap_canonical_identity_authority_from_record(record: CanonicalMemoryR
 
 
 def _bootstrap_graph_v3_member_record(
-    *, namespace_id: str, generation: int, member: object, timestamp: datetime
+    *, namespace_id: str, generation: int, member: BootstrapGraphPlanAtomicMemberV3, timestamp: datetime
 ) -> CanonicalMemoryRecord:
     return CanonicalMemoryRecord(
         memory_id=_bootstrap_graph_v3_member_id(namespace_id, generation, member.member_id),
@@ -13232,7 +13398,7 @@ def _bootstrap_graph_v3_member_record(
 
 
 def _bootstrap_graph_v3_manifest_record(
-    *, namespace_id: str, request: object, timestamp: datetime
+    *, namespace_id: str, request: BootstrapGraphPlanAtomicWriteRequestV3, timestamp: datetime
 ) -> CanonicalMemoryRecord:
     return CanonicalMemoryRecord(
         memory_id=_bootstrap_graph_v3_manifest_id(
@@ -13252,8 +13418,8 @@ def _bootstrap_graph_v3_manifest_record(
 
 
 def _bootstrap_graph_v3_terminal_manifest_record(
-    *, namespace_id: str, generation: int, members: tuple[object, ...],
-    manifest_digest: str, request: object, timestamp: datetime,
+    *, namespace_id: str, generation: int, members: tuple[BootstrapGraphPlanAtomicMemberV3, ...],
+    manifest_digest: str, request: BootstrapGraphTerminalPublicationRequestV3, timestamp: datetime,
 ) -> CanonicalMemoryRecord:
     return CanonicalMemoryRecord(
         memory_id=_bootstrap_graph_v3_manifest_id(namespace_id, generation),
@@ -13271,7 +13437,9 @@ def _bootstrap_graph_v3_terminal_manifest_record(
     )
 
 
-def _bootstrap_graph_v3_terminal_control_record(control: object, timestamp: datetime) -> CanonicalMemoryRecord:
+def _bootstrap_graph_v3_terminal_control_record(
+    control: BootstrapGraphTerminalControlV3, timestamp: datetime
+) -> CanonicalMemoryRecord:
     return CanonicalMemoryRecord(
         memory_id=_bootstrap_graph_v3_terminal_control_id(control.locator_digest),
         domain=MemoryDomain.EXECUTION, text="",
@@ -13282,7 +13450,9 @@ def _bootstrap_graph_v3_terminal_control_record(control: object, timestamp: date
     )
 
 
-def _bootstrap_graph_v3_terminal_identity_record(identity: object, timestamp: datetime) -> CanonicalMemoryRecord:
+def _bootstrap_graph_v3_terminal_identity_record(
+    identity: BootstrapGraphPlanAtomicWriteIdentityV3, timestamp: datetime
+) -> CanonicalMemoryRecord:
     return CanonicalMemoryRecord(
         memory_id=_bootstrap_graph_v3_terminal_identity_id(identity.locator_digest),
         domain=MemoryDomain.EXECUTION, text="",
@@ -13294,7 +13464,7 @@ def _bootstrap_graph_v3_terminal_identity_record(identity: object, timestamp: da
 
 
 def _bootstrap_graph_v3_terminal_locator_record(
-    *, locator_digest: str, handoff_digest: str, reload: object, timestamp: datetime,
+    *, locator_digest: str, handoff_digest: str, reload: BootstrapGraphTerminalReloadV3, timestamp: datetime,
 ) -> CanonicalMemoryRecord:
     return CanonicalMemoryRecord(
         memory_id=_bootstrap_graph_v3_terminal_locator_id(locator_digest),
@@ -13311,7 +13481,7 @@ def _bootstrap_graph_v3_terminal_locator_record(
 
 
 def _bootstrap_graph_v3_terminal_request_record(
-    *, request_digest: str, locator_digest: str, reload: object, timestamp: datetime,
+    *, request_digest: str, locator_digest: str, reload: BootstrapGraphTerminalReloadV3, timestamp: datetime,
 ) -> CanonicalMemoryRecord:
     return CanonicalMemoryRecord(
         memory_id=_bootstrap_graph_v3_terminal_request_id(request_digest),
@@ -13329,8 +13499,8 @@ def _bootstrap_graph_v3_terminal_request_record(
 
 
 def _bootstrap_graph_v3_terminal_recovery_record(
-    *, normalization_replay: object, locator_digest: str, reload: object,
-    timestamp: datetime,
+    *, normalization_replay: BootstrapRecoveryReplayRecordV3, locator_digest: str,
+    reload: BootstrapGraphTerminalReloadV3, timestamp: datetime,
 ) -> CanonicalMemoryRecord:
     return CanonicalMemoryRecord(
         memory_id=_bootstrap_graph_v3_terminal_recovery_id(
@@ -13354,7 +13524,7 @@ def _bootstrap_graph_v3_terminal_recovery_record(
 
 
 def _bootstrap_graph_v3_idempotency_record(
-    *, namespace_id: str, request: object, timestamp: datetime
+    *, namespace_id: str, request: BootstrapGraphPlanAtomicWriteRequestV3, timestamp: datetime
 ) -> CanonicalMemoryRecord:
     return CanonicalMemoryRecord(
         memory_id=_bootstrap_graph_v3_idempotency_id(request.write_digest),
@@ -13379,7 +13549,7 @@ def _bootstrap_graph_v3_idempotency_record(
 
 
 def _bootstrap_graph_v3_retry_record(
-    *, request: object, timestamp: datetime
+    *, request: BootstrapGraphPlanAtomicWriteRequestV3, timestamp: datetime
 ) -> CanonicalMemoryRecord:
     return CanonicalMemoryRecord(
         memory_id=_bootstrap_graph_v3_retry_id(request.request_digest),
@@ -13398,8 +13568,8 @@ def _bootstrap_graph_v3_retry_record(
 
 
 def _bootstrap_graph_v3_retry_recovery_record(
-    *, request: object, delivery_principal_binding_digest: str,
-    required_outcome_scopes: object, manifest_id: str, timestamp: datetime,
+    *, request: BootstrapGraphPlanAtomicWriteRequestV3, delivery_principal_binding_digest: str,
+    required_outcome_scopes: RequiredOutcomeScopeSet, manifest_id: str, timestamp: datetime,
 ) -> CanonicalMemoryRecord:
     from memorii.core.semantic_ingestion.contracts import (
         BootstrapGraphDurableRetryProgressV3,
@@ -13457,7 +13627,9 @@ def _bootstrap_graph_v3_retry_recovery_record(
     )
 
 
-def _bootstrap_graph_v3_epoch_record(*, epoch: object, timestamp: datetime) -> CanonicalMemoryRecord:
+def _bootstrap_graph_v3_epoch_record(
+    *, epoch: BootstrapGraphControlEpochV3, timestamp: datetime
+) -> CanonicalMemoryRecord:
     return CanonicalMemoryRecord(
         memory_id=_bootstrap_graph_v3_epoch_id(epoch.request_core_digest, epoch.epoch),
         domain=MemoryDomain.EXECUTION,
@@ -13470,7 +13642,9 @@ def _bootstrap_graph_v3_epoch_record(*, epoch: object, timestamp: datetime) -> C
     )
 
 
-def _bootstrap_graph_v3_epoch_head_record(*, epoch: object, timestamp: datetime) -> CanonicalMemoryRecord:
+def _bootstrap_graph_v3_epoch_head_record(
+    *, epoch: BootstrapGraphControlEpochV3, timestamp: datetime
+) -> CanonicalMemoryRecord:
     return CanonicalMemoryRecord(
         memory_id=_bootstrap_graph_v3_epoch_head_id(epoch.request_core_digest),
         domain=MemoryDomain.EXECUTION,
@@ -13489,7 +13663,8 @@ def _bootstrap_graph_v3_epoch_head_record(*, epoch: object, timestamp: datetime)
 
 
 def _bootstrap_graph_v3_transition_record(
-    *, transition: object, epoch: object, timestamp: datetime
+    *, transition: BootstrapGraphControlEpochTransitionRequestV3,
+    epoch: BootstrapGraphControlEpochV3, timestamp: datetime,
 ) -> CanonicalMemoryRecord:
     return CanonicalMemoryRecord(
         memory_id=_bootstrap_graph_v3_transition_id(transition.transition_digest),
@@ -13508,7 +13683,7 @@ def _bootstrap_graph_v3_transition_record(
     )
 
 
-def _bootstrap_graph_v3_epoch_from_record(record: CanonicalMemoryRecord) -> object:
+def _bootstrap_graph_v3_epoch_from_record(record: CanonicalMemoryRecord) -> BootstrapGraphControlEpochV3:
     from memorii.core.semantic_ingestion.contracts import BootstrapGraphControlEpochV3
 
     if (
@@ -13524,7 +13699,7 @@ def _bootstrap_graph_v3_epoch_from_record(record: CanonicalMemoryRecord) -> obje
         raise PreplanningStoreError("bootstrap graph epoch record is corrupt") from exc
 
 
-def _bootstrap_graph_v3_epoch_from_transition_record(record: CanonicalMemoryRecord) -> object:
+def _bootstrap_graph_v3_epoch_from_transition_record(record: CanonicalMemoryRecord) -> BootstrapGraphControlEpochV3:
     from memorii.core.semantic_ingestion.contracts import BootstrapGraphControlEpochV3
 
     if (
@@ -13540,7 +13715,9 @@ def _bootstrap_graph_v3_epoch_from_transition_record(record: CanonicalMemoryReco
         raise PreplanningStoreError("bootstrap graph transition record is corrupt") from exc
 
 
-def _bootstrap_graph_v3_epoch_unavailable(request: object, reason: str) -> object:
+def _bootstrap_graph_v3_epoch_unavailable(
+    request: BootstrapGraphControlEpochTransitionRequestV3, reason: str
+) -> BootstrapGraphControlEpochUnavailableV3:
     from memorii.core.semantic_ingestion.contracts import (
         BootstrapGraphControlEpochUnavailableV3,
         contract_digest,
@@ -13558,7 +13735,8 @@ def _bootstrap_graph_v3_epoch_unavailable(request: object, reason: str) -> objec
 
 
 def _bootstrap_v3_recovery_index_record(
-    *, control: PreplanningOperationControl, generation: int, request: object, timestamp: datetime
+    *, control: PreplanningOperationControl, generation: int,
+    request: BootstrapSourceNormalizationAtomicWriteRequestV3, timestamp: datetime
 ) -> CanonicalMemoryRecord:
     """Build the Found index record written in the publication CAS.
 
@@ -13601,7 +13779,7 @@ def _bootstrap_v3_recovery_id(recovery_key_digest: str) -> str:
 
 
 def _bootstrap_v3_unclaimed_recovery_record(
-    *, recovery_key: object, operation_generation: int, artifact_generation: int,
+    *, recovery_key: BootstrapRecoveryKeyV3, operation_generation: int, artifact_generation: int,
     marker: BootstrapWriterHandoffMarkerV3, timestamp: datetime
 ) -> CanonicalMemoryRecord:
     return CanonicalMemoryRecord(
@@ -13623,18 +13801,32 @@ def _bootstrap_v3_unclaimed_recovery_record(
     )
 
 
-def _bootstrap_v3_unavailable(recovery_key_digest: str, reason: str) -> object:
+def _bootstrap_v3_unavailable(
+    recovery_key_digest: str,
+    reason: Literal[
+        "invalid_probe", "stale_predecessor", "invalid_control_transition",
+        "stale_control_snapshot", "lease_unavailable", "writer_unavailable",
+        "foreign_live_claim", "storage_unavailable", "index_corrupt",
+    ],
+) -> BootstrapRecoveryUnavailableV3:
     from memorii.core.semantic_ingestion.contracts import BootstrapRecoveryUnavailableV3, contract_digest
     core = {"kind": "unavailable", "recovery_key_digest": recovery_key_digest, "reason": reason}
-    body = {**core, "reason_digest": contract_digest(b"memorii.semantic-ingestion.bootstrap-recovery-unavailable.v3", core)}
+    body: dict[str, Any] = {**core, "reason_digest": contract_digest(b"memorii.semantic-ingestion.bootstrap-recovery-unavailable.v3", core)}
     return BootstrapRecoveryUnavailableV3(**body, response_digest=contract_digest(
         b"memorii.semantic-ingestion.bootstrap-recovery-unavailable.v3", body))
 
 
-def _bootstrap_v3_aborted(recovery_key_digest: str, reason: str) -> object:
+def _bootstrap_v3_aborted(
+    recovery_key_digest: str,
+    reason: Literal[
+        "expired", "foreign", "consumed", "snapshot_substituted",
+        "control_advanced", "lease_expired", "writer_superseded",
+        "clock_regressed", "renewal_bound",
+    ],
+) -> BootstrapRecoveryAbortedV3:
     from memorii.core.semantic_ingestion.contracts import BootstrapRecoveryAbortedV3, contract_digest
     core = {"kind": "aborted", "recovery_key_digest": recovery_key_digest, "reason": reason}
-    body = {**core, "reason_digest": contract_digest(b"memorii.semantic-ingestion.bootstrap-recovery-aborted.v3", core)}
+    body: dict[str, Any] = {**core, "reason_digest": contract_digest(b"memorii.semantic-ingestion.bootstrap-recovery-aborted.v3", core)}
     return BootstrapRecoveryAbortedV3(**body, response_digest=contract_digest(
         b"memorii.semantic-ingestion.bootstrap-recovery-aborted.v3", body))
 

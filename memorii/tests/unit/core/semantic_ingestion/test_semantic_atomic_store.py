@@ -8,6 +8,7 @@ from memorii.core.memory_evolution.atomic_store import (
     BootstrapPreparedPublishedAuthorityUnavailable,
     BootstrapRetainedPendingAuthorityUnavailable,
     BootstrapWriterHandoffMarkerV3,
+    BootstrapWriterHandoffResult,
     PreplanningStoreError,
     SemanticIngestionAtomicStore,
 )
@@ -746,3 +747,43 @@ def test_final_bootstrap_release_recheck_fails_closed_before_any_write(
             ),
         )
     assert tuple(plane.list_records()) == before
+
+
+@pytest.mark.parametrize("prepared", (False, True))
+def test_writer_handoff_result_carries_either_authority_unavailable_terminal(
+    prepared: bool,
+) -> None:
+    """A retained-pending retry must re-report unavailability, not crash.
+
+    The matched retained-pending branch of the writer handoff builds its
+    unavailable outcome through this create call; before the result contract
+    accepted both terminal shapes, that branch raised a pydantic
+    ValidationError instead of failing closed.
+    """
+
+    plane = MemoryPlaneService(record_store=InMemoryMemoryPlaneStore())
+    admission, fence = _handoff(plane)
+    common = {
+        "source_id": admission.source_id,
+        "source_digest": admission.source_digest,
+        "authority_pin_digest": "1" * 64,
+        "release_evidence_digest": "2" * 64,
+        "bootstrap_language_evidence_digest": "3" * 64,
+        "delivery_identity": fence.delivery_identity,
+        "operation_fence_binding": fence,
+    }
+    terminal = (
+        BootstrapPreparedPublishedAuthorityUnavailable.create(
+            **common, prepared_generation=1, prepared_source_digest="4" * 64, reason="release_unavailable"
+        )
+        if prepared
+        else BootstrapRetainedPendingAuthorityUnavailable.create(**common, reason="release_unavailable")
+    )
+
+    result = BootstrapWriterHandoffResult.create(
+        kind="authority_unavailable", authority_unavailable=terminal
+    )
+
+    assert result.kind == "authority_unavailable"
+    assert result.authority_unavailable == terminal
+    assert BootstrapWriterHandoffResult.model_validate(result.model_dump(mode="python")) == result
