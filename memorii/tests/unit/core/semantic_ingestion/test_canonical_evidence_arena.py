@@ -14,6 +14,7 @@ from memorii.core.semantic_ingestion.canonical_evidence_arena import (
     MAX_ARENA_CHARGED_BYTES,
     MAX_ARENA_ENTRIES,
     MAX_CANONICAL_BYTES_PER_ENTRY,
+    MAX_MEMBER_PATHS_PER_OPERATION,
     CanonicalBinding,
     CanonicalClosureObservabilityDispatcher,
     CanonicalEvidenceArena,
@@ -38,7 +39,13 @@ def _artifact(*, artifact_id: str = "artifact") -> RetainedSourceTextArtifact:
     )
 
 
-def _admit(arena: CanonicalEvidenceArena, value: RetainedSourceTextArtifact, raw: bytes) -> bool:
+def _admit(
+    arena: CanonicalEvidenceArena,
+    value: RetainedSourceTextArtifact,
+    raw: bytes,
+    *,
+    member_paths: int = 1,
+) -> bool:
     return arena.admit_success(
         canonical_contract_bytes=raw,
         concrete_contract_type=type(value),
@@ -50,7 +57,7 @@ def _admit(arena: CanonicalEvidenceArena, value: RetainedSourceTextArtifact, raw
             canonical_contract_bytes=raw,
             canonical_member_index=CanonicalMemberIndex(
                 contract_type=f"{type(value).__module__}.{type(value).__qualname__}",
-                member_paths=1,
+                member_paths=member_paths,
                 canonical_digest=sha256(raw).hexdigest(),
             ),
             validation_provenance=("test",),
@@ -1142,3 +1149,99 @@ def test_decode_limits_second_direction_records_nothing() -> None:
         assert again is unlimited
 
 
+
+
+def test_member_path_envelope_boundary_is_exact_and_one_over() -> None:
+    value = _artifact()
+    with CanonicalEvidenceArena() as arena:
+        assert _admit(
+            arena,
+            value,
+            b"at-envelope",
+            member_paths=MAX_MEMBER_PATHS_PER_OPERATION,
+        )
+        at_envelope = arena.snapshot()
+        assert at_envelope.entries == 1
+        assert at_envelope.member_paths == MAX_MEMBER_PATHS_PER_OPERATION
+        assert at_envelope.capacity_fallbacks == 0
+
+        assert not _admit(arena, value, b"over-envelope", member_paths=1)
+        over_envelope = arena.snapshot()
+        assert over_envelope.entries == 0
+        assert over_envelope.member_paths == MAX_MEMBER_PATHS_PER_OPERATION
+        assert over_envelope.mode == "capacity_rejected_full_path"
+        assert over_envelope.terminal_reason == "capacity-refused"
+        assert over_envelope.capacity_fallbacks == 1
+        assert over_envelope.released
+
+    terminal = arena.terminal_snapshot
+    assert terminal is not None
+    assert terminal.terminal_reason == "capacity-refused"
+    assert terminal.mode == "capacity_rejected_full_path"
+
+
+@pytest.mark.parametrize(
+    "first_cause",
+    ("exception", "cancelled", "validation-failed"),
+)
+def test_first_terminal_cause_latches_through_conflicting_closes(first_cause: str) -> None:
+    dispatcher = RetainingCanonicalClosureObservabilityDispatcher()
+    arena, value, raw, binding = _sealed_arena_with_entry(dispatcher=dispatcher)
+    lease = _lookup(arena, value, raw, binding)
+    assert lease is not None
+
+    if first_cause == "exception":
+        arena.close_as_exception()
+        arena.abort("cancelled")
+    elif first_cause == "cancelled":
+        arena.abort("cancelled")
+        arena.close_as_exception()
+    else:
+        arena.abort("validation-failed")
+        arena.abort("cancelled")
+    assert arena.snapshot().state == "closing"
+
+    lease.release()
+    terminal = arena.terminal_snapshot
+    assert terminal is not None
+    assert terminal.terminal_reason == first_cause
+    assert terminal.mode == "enabled"
+    assert terminal.released
+    snapshots = dispatcher.snapshots
+    assert len(snapshots) == 1
+    assert snapshots[0].terminal_reason == first_cause
+
+
+class _HostileObservabilitySink(CanonicalClosureObservabilityDispatcher):
+    def __init__(self, behavior: str) -> None:
+        self.behavior = behavior
+        self.calls = 0
+
+    def record(
+        self, snapshot: object,
+    ) -> str:
+        self.calls += 1
+        if self.behavior == "raise":
+            raise RuntimeError("observability sink exploded")
+        return "denied"
+
+
+@pytest.mark.parametrize("behavior", ("raise", "denied"))
+def test_hostile_observability_sink_cannot_alter_closure_outcome(behavior: str) -> None:
+    dispatcher = _HostileObservabilitySink(behavior)
+    arena = CanonicalEvidenceArena(
+        scope=CanonicalValidationScope("tenant", "operation", 1, "fence", "writer"),
+        observability_dispatcher=dispatcher,
+    )
+    value = _artifact()
+    assert _admit(arena, value, b"canonical")
+    arena.seal()
+    arena.close()
+
+    terminal = arena.terminal_snapshot
+    assert terminal is not None
+    assert terminal.mode == "enabled"
+    assert terminal.terminal_reason == "completed"
+    assert terminal.released
+    assert arena.snapshot().closed
+    assert dispatcher.calls == 1

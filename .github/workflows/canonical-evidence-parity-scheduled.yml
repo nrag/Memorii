@@ -41,3 +41,37 @@ jobs:
           python -W error -m pytest
           tests/unit/core/semantic_ingestion/test_canonical_evidence_mode_parity.py
           -p no:cacheprovider
+
+  production-admission-limits:
+    name: Canonical-Evidence Production Admission Limits
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: 'pip'
+          cache-dependency-path: memorii/pyproject.toml
+
+      - name: Install package + test deps
+        working-directory: memorii
+        run: pip install -e '.[local,dev]'
+
+      - name: Verify exact admission-limits collection count
+        working-directory: memorii
+        run: |
+          observed="$(pytest --collect-only -q \
+            tests/unit/core/semantic_ingestion/test_canonical_evidence_production_limits.py \
+            -p no:cacheprovider | tail -1)"
+          [[ "$observed" == "3 tests collected in "* ]]
+
+      - name: Run production-root admission-boundary proofs
+        working-directory: memorii
+        run: >-
+          python -W error -m pytest
+          tests/unit/core/semantic_ingestion/test_canonical_evidence_production_limits.py
+          -p no:cacheprovider

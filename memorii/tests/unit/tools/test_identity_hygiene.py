@@ -15,6 +15,17 @@ _COORDINATE_CASES = (
     ("R22", "R22Owner", "r22-owner", "r22_owner"),
     ("SIA-R22", "SIA_R22_OWNER", "sia-r22-owner", "sia_r22_owner"),
 )
+# Node IDs are durable test-selection surfaces, so the corpus spellings get
+# behavioral labels; the coordinate values themselves stay inside the corpus
+# data where the rejection proof needs them.
+_COORDINATE_CASE_IDS = (
+    "milestone-numeral-first",
+    "milestone-numeral-second",
+    "milestone-numeral-third",
+    "scenario-numeral-code",
+    "requirement-numeral-bare",
+    "requirement-numeral-prefixed",
+)
 _MUTATION_SURFACES = (
     "production_identifier",
     "test_identifier",
@@ -119,7 +130,11 @@ def test_repository_identity_hygiene_is_clean() -> None:
 
 
 @pytest.mark.parametrize("surface", _MUTATION_SURFACES)
-@pytest.mark.parametrize(("coordinate", "identifier", "value", "module"), _COORDINATE_CASES)
+@pytest.mark.parametrize(
+    ("coordinate", "identifier", "value", "module"),
+    _COORDINATE_CASES,
+    ids=_COORDINATE_CASE_IDS,
+)
 def test_fixed_coordinate_corpus_is_rejected_on_every_owned_surface(
     tmp_path: Path,
     surface: str,
@@ -164,6 +179,7 @@ def test_static_concatenation_cannot_hide_a_planning_coordinate(tmp_path: Path) 
         'from enum import StrEnum\nclass ContractKind(StrEnum):\n    CURRENT = "m3"\n',
         'message = "M3"\nraise DomainFailure(message)\n',
     ],
+    ids=("interpolated-stage", "enum-member-value", "variable-bound-message"),
 )
 def test_alias_enum_and_custom_raise_cannot_hide_a_planning_coordinate(
     tmp_path: Path, content: str
@@ -434,6 +450,21 @@ def test_python_traceability_exception_requires_exact_registry_proof(tmp_path: P
         'builtins.globals()["UnitRequirementMapping"] = lambda **values: values\n'
         'UnitRequirementMapping(requirement_id="SIA-' + 'R22")\n',
     ],
+    ids=(
+        "plain-assignment",
+        "unqualified-helper",
+        "local-mapping-def",
+        "constructor-shadow-def",
+        "constructor-lambda-rebind",
+        "parameter-shadow",
+        "nested-import-binding",
+        "import-alias-shadow",
+        "star-import-shadow",
+        "module-attribute-rebind",
+        "globals-item-rebind",
+        "match-capture-shadow",
+        "builtins-globals-item-rebind",
+    ),
 )
 def test_traceability_exception_requires_a_typed_keyword_call(
     tmp_path: Path, source_text: str

@@ -409,6 +409,13 @@ def test_unit_pytest_owners_partition_the_live_unit_corpus_exactly_once() -> Non
         "canonical-evidence-parity": (
             "tests/unit/core/semantic_ingestion/test_canonical_evidence_mode_parity.py",
         ),
+        # Owned by the same scheduled canonical-evidence cadence gate: the
+        # production-root admission-boundary proofs (reservation exhaustion,
+        # in-flight writer isolation, snapshot privacy) each contain one
+        # full-path delivery and cannot fit the unit shard budget.
+        "canonical-evidence-production-limits": (
+            "tests/unit/core/semantic_ingestion/test_canonical_evidence_production_limits.py",
+        ),
     }
     owners = {"broad": broad}
     for owner, paths in owner_paths.items():
