@@ -57,7 +57,7 @@ duration-balanced shards plus dedicated jobs for the excluded heavy files;
 `assignment_scope: file` is the sanctioned isolation boundary; the
 durations artifact is regenerated per CI run by `memorii.tools.test_shards`.
 
-## Phase 2 — The Fix Design (v2, from the measured CE-9 baseline)
+## Phase 2 — The Fix Design (v4, from the measured CE-9 baseline)
 
 Measured post-optimization serial baseline (CE-9 gate, `c9995a1`, load
 ~8): **4h24m** for 4,076 nodes (pre-optimization 8h15m; quiet-machine
@@ -181,8 +181,8 @@ exists or is added.
 | Block | Serial (quiet est.) | Wall under L1+L2 |
 | --- | --- | --- |
 | Split race family (post-L2 spawn collapse) | ~25-35m | ~5-8m |
-| Split replay family | ~30-40m | ~6-9m |
-| terminal persistence + other SI (incl. the artifact's 16 uncounted nodes) | ~50-65m | ~9-13m |
+| Split replay family (quiet; ~35-45m loaded) | ~30-40m | ~6-9m |
+| terminal persistence + other SI + core misc | ~55-70m | ~10-14m |
 | tools (46.4m/794 nodes per artifact) | ~40-50m | ~8-11m |
 | collection overhead ×8 workers | — | ~2-3m |
 | **Total** | ~2.5-3.5h | **~30-44m quiet** |
@@ -195,7 +195,7 @@ quiet-host claim, and the L3 conditional covers the loaded case.
 
 - No assertion, family, threshold, or coverage change; the file split
   proves node identity modulo the path component with live-collected
-  count equality (257), retains the 200-node CI boundary coverage
+  count equality (241), retains the 200-node CI boundary coverage
   provably, and the identity-hygiene allowlist pins no node IDs (only
   four traceability field values), so it survives the split.
 - The serial command remains available and equivalent (results must
@@ -223,13 +223,37 @@ quiet-host claim, and the L3 conditional covers the loaded case.
 ## Completion Contract
 
 - Post-optimization serial baseline recorded (from the linked CE-9 gate).
-- The local full-suite command runs the complete corpus in ~15-45 min
-  wall with identical pass/fail results and no deselected nodes.
+- On a quiet host (load <= 4), the local full-suite command runs the
+  complete corpus in ~15-45 min wall with identical pass/fail results
+  and no deselected nodes; under CE-9-like sustained load (~8) the
+  projected wall is ~57-85m and the conditional L3 lever covers it.
 - Isolation verification: a parallel run's results equal the serial
   run's at the same revision.
 - Timing evidence regenerated; WorkPlan records before/after counts and
   durations; reviewers (`test_reviewer`, `correctness_reviewer`) pass
   with `remaining_validated_p1_p2: []`.
+
+## Review Ledger And Approval (2026-09-02)
+
+Round 1 (design v2 @ `86c0b8a`): correctness reviewer —
+`remaining_validated_p1_p2: []`, three changes_required (batch manifest
+shape, batched-vs-unbatched gate, split companions) all folded into v3;
+test reviewer — one validated P1 (the split's seven-consumer set and
+the false "no dedicated PR job" CI fact) and three P2s (L4 junitxml
+infeasibility, L2 timeout mechanism, L1b single-shot protocol), all
+folded into v3 (`e9d0b19`).  Round 2 (delta on v3): all round-1
+resolutions verified clean against the repository except three bounded
+findings — DREV-001 (P2: the 257-node identity baseline was false; the
+deterministic live count is 241 and the artifact is current — the
+round-1 reviewer's "widened to 16" claim was itself wrong), DREV-002
+(the Next Action still said "pure move"), DREV-003 (budget derivation
+clarity, record-only) — all corrected in v4.
+
+**Design outcome: APPROVED WITH FOLLOW-UPS.** Follow-ups: the
+`--collect-only` verification of the 241 count executes at L1a split
+time (the venv currently lacks pytest for a live check — the sanctioned
+uv dev-dependency path installs it); L1b remains gated on the user's
+pytest-xdist dev-dependency decision.
 
 ## Progress Log
 
@@ -253,7 +277,8 @@ quiet-host claim, and the L3 conditional covers the loaded case.
 
 Run the independent `test_reviewer` and `correctness_reviewer` passes
 on this design (the coherent topology change), then implement in
-order: the production_roots file split (L1a, pure move), the xdist
+order: the production_roots split (L1a, coordinated consumer update
+per its definition of done), the xdist
 equivalence experiment and runner (L1b — needs the pytest-xdist
 dev-dependency addition via uv, user-approved), race batching (L2),
 and durations regeneration (L4); L3 only if the measured wall exceeds
