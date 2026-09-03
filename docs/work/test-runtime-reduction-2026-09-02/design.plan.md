@@ -335,6 +335,32 @@ pytest-xdist dev-dependency decision.
   indicating residual overnight load); a quiet confirmation run is the
   completion-evidence step.
 
+- 2026-09-03 (L4 executed; local runner adopted):
+  `tests/ci/unit-test-durations.json` regenerated from the round-2
+  serial junit via a verified 1:1 mapping against live collection
+  (4,077 node IDs, 3.33h total; first attempt produced malformed
+  `None::` keys because pytest's junit omits the file attribute —
+  caught by `test_shards verify` degrading to `measured: 0`, redone
+  with classname/name matching, `measured: 3461` now real).  Shard
+  estimate is now data-driven at ~730s/shard vs the 600s target —
+  the rebalance is CI's own regeneration flow's output (the
+  post-split file inventory changed the balance); recorded as the
+  remaining L4 follow-up, not silently tweaked.  The 124
+  identity-hygiene findings persist because they are the LIVE node
+  IDs of the hygiene suite's own rejection-vector parametrizations
+  (coordinate snippets embedded by design, e.g. `CURRENT = "m3"`)
+  used as JSON keys — the campaign-known artifact-format class; the
+  determinate fix (scanner treats durations keys as data, or the
+  artifact stores IDs as a list) is a P3 follow-up requiring its own
+  small reviewed change, not a silent hack.  **Adopted local
+  full-suite command** (CI-parity statement: same interpreter, cwd
+  `memorii/`, `-W error`, `-p no:cacheprovider`; whole-file
+  assignment mirrors the CI shard semantics; the 4-shard CI matrix
+  remains the authoritative required gate): `../.venv/bin/python3.12
+  -m pytest tests/unit -W error -p no:cacheprovider -q -n 8 --dist
+  loadfile` — measured 56:59 under residual overnight load, quiet-host
+  projection ~44m, confirmation run pending a quiet window.
+
 - 2026-09-02: opened. Phase 1 attribution recorded from the durations
   artifact and `pr-gates.yml`; the race family's two-subprocesses-per-node
   structure confirmed in the test source.
