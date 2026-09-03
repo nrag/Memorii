@@ -29,6 +29,15 @@ pre-optimization serial baseline (post-optimization serial expected
 approximately 30 minutes ±15, without weakening any assertion, family,
 threshold, or gate.
 
+## Process Note (user direction 2026-09-02)
+
+Before kicking off any expensive gate: verify the working tree is at the
+intended final revision and no pending fix is likely to move it — the
+CE-9 rerun launched one revision before its own fix landed and was
+stopped at ~10% as wasted time.  Every gate launch in this operation
+records `git rev-parse HEAD` + `git status --short` immediately before
+the command starts.
+
 ## Phase 1 — Measured Baseline And Cost Attribution
 
 Pre-optimization serial attribution (durations artifact):
@@ -48,29 +57,94 @@ duration-balanced shards plus dedicated jobs for the excluded heavy files;
 `assignment_scope: file` is the sanctioned isolation boundary; the
 durations artifact is regenerated per CI run by `memorii.tools.test_shards`.
 
-## Phase 2 — Levers, Sized And Ordered
+## Phase 2 — The Fix Design (v2, from the measured CE-9 baseline)
 
-1. **Local parallel execution at the sanctioned isolation boundary**
-   (pytest-xdist, `--dist loadfile`, `-n` ≈ physical cores): mirrors the
-   CI shard semantics exactly (whole files per worker, in-file order
-   preserved); per-test `tmp_path` storage isolation already holds for
-   the subprocess and replay families. Expected wall ≈ serial/6-8 for
-   the CPU-bound portion; subprocess families partially serialize on
-   child processes. This lever alone plausibly reaches the 30±15 target
-   from a ~2.5-4h serial base. Cost: one dev dependency, one runner
-   entry point, an isolation-verification pass, and a documented
-   CI-parity statement.
-2. **Race-family process batching**: extend the test-owned
-   `tests.fixtures.semantic_ingestion.bootstrap_graph_v3_process_runner`
-   to accept multiple (scenario, phase) pairs per invocation, amortizing
-   ~200 interpreter+import launches down to ~8-16. Saves ~50-70m serial
-   and relieves parallel CPU contention; also reduces the CI dedicated
-   job's time. Per-node 180s subprocess timeouts preserved per batch.
-3. **Conditional census-driven suite work** (only if the target is still
-   missed): `test_semantic_terminal_persistence` (84.6m) and the tools
-   family (~45m) attribution, session-scoped fixture derivation, and —
-   only behind a case-by-case retention map proving class equivalence —
-   any matrix reduction. No assertion, family, or threshold weakening.
+Measured post-optimization serial baseline (CE-9 gate, `c9995a1`, load
+~8): **4h24m** for 4,076 nodes (pre-optimization 8h15m; quiet-machine
+expectation ~2.5-3.5h). Loaded composition estimate:
+`test_bootstrap_graph_production_roots` ~120-140m (race ~60-75m
+including ~23m of 200 subprocess spawn/import tax; in-memory replay
+~35-45m; other families ~15m), `semantic_terminal_persistence`
+~25-35m, other `semantic_ingestion` ~25-35m, `tools` ~45-55m, core
+misc ~10-15m. CI facts: `production_roots` is ignored by the 4 file-
+scope shards and has no dedicated PR job — its cost is local-only; the
+durations artifact regenerates via `memorii.tools.test_shards`.
+
+**Target: 15-45 minutes wall for the complete local suite.**
+
+### L1 — Parallel local execution (the primary lever)
+
+`pytest-xdist` (dev dependency via `uv`; not yet installed) with
+workers ≈ physical cores. Two distribution modes, decided by an
+equivalence experiment, not assumption:
+
+- `--dist loadfile` mirrors the CI shard semantics exactly (whole
+  files per worker, in-file order preserved) — but its wall clock is
+  capped by the largest single file: `production_roots` (~130m) would
+  alone exceed the target.
+- `--dist load` (per-node) splits the parametrized matrices across
+  workers (the 100-node race and replay families become ~8-12m each),
+  which is where the target is reachable — but it requires intra-file
+  parallel safety, which the CI shard structure does not prove.
+
+Design: **(a)** split `test_bootstrap_graph_production_roots.py` into
+per-family modules — a pure mechanical move (same nodes, same bodies,
+retention map is the identity map; behavioral file names: race-reopen,
+scenario-replay, root-composition families) which also unblocks CI
+file-scope shard balance; **(b)** run the full suite serially and under
+both xdist modes at the same quiet revision and require identical
+results (and identical failures) before adopting a mode; per-node
+`tmp_path` isolation already holds for both subprocess families.
+Expected wall from 264m serial: **~35-55m** at 8 workers.
+
+### L2 — Race-family process batching
+
+Extend the test-owned
+`tests.fixtures.semantic_ingestion.bootstrap_graph_v3_process_runner`
+to accept a batch manifest (list of scenario/root/phase triples) and
+emit one JSON array: ~200 interpreter+import launches (~6.8s each,
+~23m) collapse to ~8-16. The per-scenario 180s timeout is preserved
+per batch element (the runner enforces it internally); outputs remain
+per-scenario and the test's assertions are unchanged. Expected: -20m
+serial, -5-8m wall under L1, and lower timeout flakiness under
+parallel load.
+
+### L3 — Conditional: tools attribution + session fixtures
+
+Only if the measured wall after L1+L2 exceeds 45m: attribute the
+~45-55m `tools` block (scenario runner, CTV reference compiler,
+traceability manifest), apply session-scoped derivation for stateless
+fixtures, and verify placement against the PR-gate owners. No coverage
+change without a retention map.
+
+### L4 — Timing-evidence regeneration
+
+Regenerate `tests/ci/unit-test-durations.json` from a `--junitxml` run
+via the existing `memorii.tools.test_shards merge` flow — this also
+closes the known identity-hygiene finding (124 stale structured keys)
+and re-balances the CI shard config against the split files.
+
+### Budget table (post-L1+L2, 8 workers, quiet ~load 4)
+
+| Block | Serial (quiet est.) | Wall under L1+L2 |
+| --- | --- | --- |
+| Split race family | ~45-55m | ~8-12m |
+| Split replay family | ~30-40m | ~6-9m |
+| terminal persistence + other SI | ~45-60m | ~8-12m |
+| tools | ~40-50m | ~8-11m |
+| collection overhead ×8 workers | — | ~2-3m |
+| **Total** | ~2.5-3.5h | **~30-45m** |
+
+### Guardrails
+
+- No assertion, family, threshold, or coverage change; the file split
+  proves node-identity (count + names) before and after.
+- The serial command remains available and equivalent (results must
+  match the parallel run at the same revision).
+- CI structure stays authoritative; local changes document command
+  equivalence against the shard config; the split rebalances it.
+- Determinism preserved: no wall-clock or sleep dependencies; xdist
+  must not change outcomes (the equivalence experiment is the gate).
 
 ## Phase 3 — Contract And Guardrails
 
@@ -118,6 +192,10 @@ durations artifact is regenerated per CI run by `memorii.tools.test_shards`.
 
 ## Next Action
 
-Wait for the linked operation's CE-9 broad gate to record the
-post-optimization serial baseline, then implement lever 1 (xdist
-loadfile runner + isolation verification) as the first slice.
+Run the independent `test_reviewer` and `correctness_reviewer` passes
+on this design (the coherent topology change), then implement in
+order: the production_roots file split (L1a, pure move), the xdist
+equivalence experiment and runner (L1b — needs the pytest-xdist
+dev-dependency addition via uv, user-approved), race batching (L2),
+and durations regeneration (L4); L3 only if the measured wall exceeds
+45m.
