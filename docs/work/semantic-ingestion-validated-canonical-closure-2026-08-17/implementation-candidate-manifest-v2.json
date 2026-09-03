@@ -8,7 +8,7 @@
     {
       "path": ".github/workflows/pr-gates.yml",
       "role": "owned_runtime_or_test",
-      "sha256": "c79b08e94a53db86ebfcaaf26e352dddb32b472bf205af481323d053d51154cb"
+      "sha256": "5553ef6bbccde6a6eaf24e7ac3d9fee4d21e917a40e5802aa6c8a98185ad2537"
     },
     {
       "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/build_implementation_candidate_manifest_v2.py",
@@ -276,7 +276,7 @@
       "sha256": "e46cd53e2c330f936c8887f72cbcb08f79e294562ac7f7fcface51afdd9b6523"
     }
   ],
-  "base_revision": "b9d763b7651648df69360c2d2dbfc646ad7dff22",
+  "base_revision": "812501bbea1af441b8d5d1ceb1c6937fab76071a",
   "dirty_tree": {
     "all_status": [],
     "clean": true
