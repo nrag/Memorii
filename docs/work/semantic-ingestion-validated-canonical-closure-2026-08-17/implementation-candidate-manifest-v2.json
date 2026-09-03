@@ -1,0 +1,298 @@
+{
+  "artifacts": [
+    {
+      "path": ".github/workflows/canonical-evidence-parity-scheduled.yml",
+      "role": "owned_runtime_or_test",
+      "sha256": "aed1ff34a91be333cb7d06ac23c40e273167ed7eadfbfb98e06b186686481a87"
+    },
+    {
+      "path": ".github/workflows/pr-gates.yml",
+      "role": "owned_runtime_or_test",
+      "sha256": "c79b08e94a53db86ebfcaaf26e352dddb32b472bf205af481323d053d51154cb"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/build_implementation_candidate_manifest_v2.py",
+      "role": "governance_or_evidence",
+      "sha256": "f7cb84970313002b2d8c499637b40718d3d7d971d2307542eab2de10fed6103f"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/build_production_entrypoint_bindings_v14.py",
+      "role": "governance_or_evidence",
+      "sha256": "c513531c71eb7a18443ea6f03f7faf7507b5159585f20b8df59b0cbc7e28dc06"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/canonical-closure-operation-contract-v1.json",
+      "role": "governance_or_evidence",
+      "sha256": "92d0c821a6c66f0fe78354b38adb423ca3a19b8b7b1db69f63de7166b91d2ad4"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/implementation-acceptance-v12.md",
+      "role": "governance_or_evidence",
+      "sha256": "0ba5fef3f83dfa82a9a9d94966e528303a819af5a33e84a60016563c4f40d79b"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/implementation.plan.md",
+      "role": "governance_or_evidence",
+      "sha256": "689409b45b2f3b3443e27aacb332a554e07988525c83b45e65b0e407a12ea188"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/milestones/changed-surface-ownership-ledger.md",
+      "role": "governance_or_evidence",
+      "sha256": "bee6b267be853587f568e58b355ee03944eaf79ac5d93388d46e9e0d7b2b77d7"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/milestones/complete-trigger-and-durable-path-propagation.md",
+      "role": "governance_or_evidence",
+      "sha256": "1dd30d5dbbbdd7a63f81c1a78d506d62f17fd0acbb1b45cc01464d224d164517"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/milestones/direct-ingress-closure-slice.md",
+      "role": "governance_or_evidence",
+      "sha256": "5c11a1aff98741fa8334d10b867c70c8e3a2137829ad26daca1cf392e60311ba"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/milestones/performance-rollout-gates-and-final-closure.md",
+      "role": "governance_or_evidence",
+      "sha256": "e4f644643a0f86ba3ff18e6e5deb5dec50245e41320dd3c590602a8c171b1e64"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/milestones/readiness-and-production-path-map.md",
+      "role": "governance_or_evidence",
+      "sha256": "781c9c3f015ebd4c109f77d01066a2369c8b49921933c280341a616593a43ed8"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/milestones/readiness-identity-ledger.md",
+      "role": "governance_or_evidence",
+      "sha256": "793fa013e04ed342f9ef64801d260199d46b917983e554457dfeb3fea95e6610"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/milestones/readiness-validation-matrix-readout.md",
+      "role": "governance_or_evidence",
+      "sha256": "2cefa74a845d648a9fcefba3fdd6f066b0dbc6c27b348e0c9e7e0f6b4f97a17e"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/milestones/reconstruction-digest-owner-census.md",
+      "role": "governance_or_evidence",
+      "sha256": "a0a613d50ffe11e9309a7b785135393dda461f6e0ed9c4209eda22205694be2c"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/milestones/recovery-reconciliation-fresh-owner-propagation.md",
+      "role": "governance_or_evidence",
+      "sha256": "46b6e14cecf486a89e8b743235d8d79853d746e8a1c429ba9d8829f4a11170b0"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/milestones/sealed-authority-lifecycle-remediation.md",
+      "role": "governance_or_evidence",
+      "sha256": "b6c18bcbc171e2de403c33a152de0afce934adb1e5518fb1a6af83b2c6e1d893"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/milestones/source-bound-production-entrypoint-map.md",
+      "role": "governance_or_evidence",
+      "sha256": "044afc2590f70d3cf522093f33879444b2970415184c00fce6ce3998b30d67b2"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/milestones/test-and-workflow-inventory.md",
+      "role": "governance_or_evidence",
+      "sha256": "9b26b6b0139ed113a363bb183b1fed8161295855e0d870f7b8085a64a9dbcd68"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-entrypoint-bindings-v11-validation.json",
+      "role": "governance_or_evidence",
+      "sha256": "955a19f40e86e4a041b9f87835ea750891f2a3908e05d06daeaf2de0f4e9b125"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-entrypoint-bindings-v11.json",
+      "role": "governance_or_evidence",
+      "sha256": "86bfc6e5a41e89261153f12df568d35e84f4fd92d5307e2994996c9ad3a33293"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-entrypoint-bindings-v14-validation.json",
+      "role": "governance_or_evidence",
+      "sha256": "740741dea3da267327e59890fc9516682bb47901075b6c952779ad63e0221a1e"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-entrypoint-bindings-v14.json",
+      "role": "governance_or_evidence",
+      "sha256": "e4a412467d1cf94870e588e22a5d3e9040ac03812f96f45910df8eddba4d038b"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-entrypoint-expected-graph-v11.json",
+      "role": "governance_or_evidence",
+      "sha256": "86bfc6e5a41e89261153f12df568d35e84f4fd92d5307e2994996c9ad3a33293"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-owner-oracle-v8.json",
+      "role": "governance_or_evidence",
+      "sha256": "86bfc6e5a41e89261153f12df568d35e84f4fd92d5307e2994996c9ad3a33293"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/validate_implementation_candidate_manifest_v2.py",
+      "role": "governance_or_evidence",
+      "sha256": "17fdee57fe7e171b802202f809efc801d21cf3c5e77c9a274f6fbab39266c486"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/validate_production_entrypoint_bindings_v11.py",
+      "role": "governance_or_evidence",
+      "sha256": "26a71b300df43cd3e1554abf36298de83b0ab4edeaf4c555ec51e30a9bc3f8d5"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/validate_production_entrypoint_bindings_v14.py",
+      "role": "governance_or_evidence",
+      "sha256": "89bd5f442141948f2b44f725f0bb181618b2ed2d4ad522e37f1421bd2d5dfaba"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/atomic_store.py",
+      "role": "owned_runtime_or_test",
+      "sha256": "0696c2ce4e4e47ced182b722b865bf520bf1d41e7b4fbbd961024ef259632658"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/bootstrap_graph_planning.py",
+      "role": "owned_runtime_or_test",
+      "sha256": "124a698359933c4740ffef70f0923e72a13fec2bda290c0093c4930deeecfff6"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/bootstrap_profile.py",
+      "role": "owned_runtime_or_test",
+      "sha256": "459e290766e65d81c3a42b69513f52353a2d62744d44037d91607e7aa3badc4f"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/conflict_attention.py",
+      "role": "owned_runtime_or_test",
+      "sha256": "91f5225d5b8f9c6dafd044b46b8f15ec51456f20459a04a51ea6ade3c3d127c9"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/graph_effect_contracts.py",
+      "role": "owned_runtime_or_test",
+      "sha256": "3d25d7d2a903f576fb02832823ee04e78571f04b4e3e1f7022481459e7ea14de"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/graph_planning.py",
+      "role": "owned_runtime_or_test",
+      "sha256": "38f29abf2c509c719b0b160013249f3d7b184c4064ffbee9b36c539ed336aec3"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/graph_records.py",
+      "role": "owned_runtime_or_test",
+      "sha256": "9f63896200a562e802741d263efac3f753b28fd27ead7ecc752b106fcf170e69"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/ingestion_contracts.py",
+      "role": "owned_runtime_or_test",
+      "sha256": "79831397ac729992b22b96487f70ba9ac26d806359cac0ad1119d01400cc803a"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/projection_history.py",
+      "role": "owned_runtime_or_test",
+      "sha256": "b7de42eca4a015a6168ca0232643b4a6cd08fac10ee73bec0809e59cadd11ec5"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/record_projection.py",
+      "role": "owned_runtime_or_test",
+      "sha256": "b525f6276405d13f75189f42bb717f343c75f2e0d1f8df7f055a3995cc3a7760"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/semantic_analysis/decision_contracts.py",
+      "role": "owned_runtime_or_test",
+      "sha256": "0f382908e508208151943820523641279edd1a984f5779054407f3cf5e410e8c"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/source_admission.py",
+      "role": "owned_runtime_or_test",
+      "sha256": "af2faecd18c554b7c2d3b1e3a1fc44c35db46bb71bea76f074c19e882c87eccc"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/source_governance.py",
+      "role": "owned_runtime_or_test",
+      "sha256": "defbc61d39b11f5602b832dab72a51469dcfd0ec86664b09bc2f45e277ef2206"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/writer_admission.py",
+      "role": "owned_runtime_or_test",
+      "sha256": "bd46b1d80b25daf0301669dfe543ab2a934e1d4d1dbf7cb8bc2e39f6d320da8f"
+    },
+    {
+      "path": "memorii/memorii/core/provider/ingestion.py",
+      "role": "owned_runtime_or_test",
+      "sha256": "b3e28e88ac97bfb8555c2b5f203ce8845c6c0669deff05543c02c7fa5b7d3573"
+    },
+    {
+      "path": "memorii/memorii/core/provider/service.py",
+      "role": "owned_runtime_or_test",
+      "sha256": "163acdff07307ee6c31a93cd84a5ba616094f2b51003e12a39baa3f859ba7664"
+    },
+    {
+      "path": "memorii/memorii/core/semantic_ingestion/canonical_evidence_arena.py",
+      "role": "owned_runtime_or_test",
+      "sha256": "a686a4e3103efa3d667004bdf0492cc04d15cda9b4bb28d2d91c716d66691442"
+    },
+    {
+      "path": "memorii/memorii/core/semantic_ingestion/contracts.py",
+      "role": "owned_runtime_or_test",
+      "sha256": "6dae50d13268c46c4356c32de0eadb9216d3aac6d4b737c7468c752f9bcc02bc"
+    },
+    {
+      "path": "memorii/tests/ci/unit-shards.json",
+      "role": "owned_runtime_or_test",
+      "sha256": "149c8e6866ce7805037c4d8163bec5e957fc7ba190f457d91742a277b63b81be"
+    },
+    {
+      "path": "memorii/tests/ci/unit-test-durations.json",
+      "role": "owned_runtime_or_test",
+      "sha256": "339ec48475d39a15641d3c584a721e3297d19629a02f27eb94b5b7fc2b185e15"
+    },
+    {
+      "path": "memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_coordinator_v3.py",
+      "role": "owned_runtime_or_test",
+      "sha256": "837cfae65d16d90cd9a16de7e9755c61d126e9590f5e86ce4f899ee44233bb61"
+    },
+    {
+      "path": "memorii/tests/unit/core/semantic_ingestion/test_canonical_evidence_arena.py",
+      "role": "owned_runtime_or_test",
+      "sha256": "3702a673e93a596c3a7cdb7b1d46a8a16a6e4c749baacdc15073d2dfbdabb389"
+    },
+    {
+      "path": "memorii/tests/unit/core/semantic_ingestion/test_canonical_evidence_mode_parity.py",
+      "role": "owned_runtime_or_test",
+      "sha256": "09c83fbc0f13e9ee97d4916b439323ca4791c618c9a66b478bf1e4340967a62f"
+    },
+    {
+      "path": "memorii/tests/unit/core/semantic_ingestion/test_canonical_evidence_production_limits.py",
+      "role": "owned_runtime_or_test",
+      "sha256": "d35c1c7019f0bbb8bc91a506d87840ace7564e84c92585e0a764e1786da6be84"
+    },
+    {
+      "path": "memorii/tests/unit/core/test_provider_service.py",
+      "role": "owned_runtime_or_test",
+      "sha256": "44bad7fdf46b3dbb4779498c519df321fedc514a626b8f66dd708868dc081659"
+    },
+    {
+      "path": "memorii/tests/unit/tools/test_identity_hygiene.py",
+      "role": "owned_runtime_or_test",
+      "sha256": "f30c3fcf89016d769b03f1d6b4f4f1cf8aa8d20e86ed21267f724c21d65c20bd"
+    },
+    {
+      "path": "memorii/tests/unit/tools/test_static_tooling_config.py",
+      "role": "owned_runtime_or_test",
+      "sha256": "e46cd53e2c330f936c8887f72cbcb08f79e294562ac7f7fcface51afdd9b6523"
+    }
+  ],
+  "base_revision": "b9d763b7651648df69360c2d2dbfc646ad7dff22",
+  "dirty_tree": {
+    "all_status": [],
+    "clean": true
+  },
+  "focused_results": [
+    "identity_hygiene: exit 0 (124 findings resolved via behavioral corpus ids)",
+    "unit shard plan: 6 shards, ~487s estimated per shard, verify exit 0",
+    "arena suite: 62 passed",
+    "production-limits module: 3 passed (reservation exhaustion, in-flight writers, snapshot privacy)",
+    "CI pyright command: 0 errors after the annotation-precision remediation (868 -> 0; clean merge base parity recorded)",
+    "ruff check memorii tests: clean",
+    "v11 bindings validator: 32/32 mutations, passed",
+    "v14 bindings validator: 5/5 mutations, passed",
+    "atomic-store pair + writer admission: 176 passed",
+    "frozen-witness contract: 1 passed (environment-coupling documented)"
+  ],
+  "schema": "memorii.implementation-candidate.v2",
+  "scope": "final closure: validated-canonical-closure runtime and gate surfaces, the annotation-precision type-gate remediation, and this operation's governance artifacts at one frozen revision"
+}

@@ -66,10 +66,15 @@ REQUIRED = (
 # Frozen-revision gate evidence; finalized at freeze time.
 FOCUSED_RESULTS = (
     "identity_hygiene: exit 0 (124 findings resolved via behavioral corpus ids)",
-    "unit shard plan: 6 shards, ~487s estimated, verify exit 0",
+    "unit shard plan: 6 shards, ~487s estimated per shard, verify exit 0",
     "arena suite: 62 passed",
-    "production-limits module: 3 passed",
-    "CI pyright command: exit 0 after annotation-precision remediation",
+    "production-limits module: 3 passed (reservation exhaustion, in-flight writers, snapshot privacy)",
+    "CI pyright command: 0 errors after the annotation-precision remediation (868 -> 0; clean merge base parity recorded)",
+    "ruff check memorii tests: clean",
+    "v11 bindings validator: 32/32 mutations, passed",
+    "v14 bindings validator: 5/5 mutations, passed",
+    "atomic-store pair + writer admission: 176 passed",
+    "frozen-witness contract: 1 passed (environment-coupling documented)",
 )
 
 
