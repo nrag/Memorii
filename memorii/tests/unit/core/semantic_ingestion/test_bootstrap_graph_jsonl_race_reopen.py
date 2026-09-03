@@ -1,7 +1,5 @@
 """Independent-process JSONL race-reopen proof across graph scenarios."""
 
-
-
 from __future__ import annotations
 
 import json
@@ -15,38 +13,65 @@ from tests.unit.core.semantic_ingestion.bootstrap_graph_production_roots_support
     GRAPH_SCENARIO_BEHAVIOR,
 )
 
+REPO_ROOT = Path(__file__).parents[5]
+ROOTS = ("direct", "factory", "filesystem", "hermes")
 
-@pytest.mark.parametrize("root", ("direct", "factory", "filesystem", "hermes"))
-@pytest.mark.parametrize("scenario", tuple(GRAPH_SCENARIO_BEHAVIOR))
-def test_graph_race_reopens_in_an_independent_jsonl_process(
-    root: str, scenario: str, tmp_path,
-) -> None:
-    behavior = GRAPH_SCENARIO_BEHAVIOR[scenario]
-    storage_root = tmp_path / scenario / root
+
+@pytest.fixture(scope="module")
+def race_reopen_outputs(tmp_path_factory) -> dict[tuple[str, str, str], dict[str, object]]:
+    """One batched interpreter for every scenario/root/phase element.
+
+    Each element runs with its own storage root (first/reopen pairs share
+    one root) through the same per-element ``run`` the single-element
+    mode uses, guarded by the runner's per-element alarm timeout.
+    """
+
+    base = tmp_path_factory.mktemp("race_batch")
+    elements = []
+    for scenario in GRAPH_SCENARIO_BEHAVIOR:
+        for root in ROOTS:
+            storage_root = base / scenario / root
+            for phase in ("first", "reopen"):
+                elements.append(
+                    {
+                        "storage_root": str(storage_root),
+                        "root": root,
+                        "scenario": scenario,
+                        "phase": phase,
+                        "output": str(base / "outputs" / f"{scenario}-{root}-{phase}.json"),
+                    }
+                )
+    (base / "outputs").mkdir(parents=True, exist_ok=True)
+    manifest = base / "batch-manifest.json"
+    manifest.write_text(json.dumps({"elements": elements}), encoding="utf-8")
     environment = dict(os.environ)
     environment["PYTHONPATH"] = "memorii"
-    outputs: list[dict[str, object]] = []
-    for phase in ("first", "reopen"):
-        output = tmp_path / f"{scenario}-{phase}.json"
-        subprocess.run(
-            (
-                sys.executable,
-                "-m",
-                "tests.fixtures.semantic_ingestion.bootstrap_graph_v3_process_runner",
-                str(storage_root),
-                root,
-                scenario,
-                phase,
-                str(output),
-            ),
-            cwd=Path(__file__).parents[5],
-            env=environment,
-            check=True,
-            timeout=180,
+    subprocess.run(
+        (
+            sys.executable,
+            "-m",
+            "tests.fixtures.semantic_ingestion.bootstrap_graph_v3_process_runner",
+            "--batch",
+            str(manifest),
+        ),
+        cwd=REPO_ROOT,
+        env=environment,
+        check=True,
+        timeout=180 * len(elements),
+    )
+    return {
+        (element["scenario"], element["root"], element["phase"]): json.loads(
+            Path(element["output"]).read_text(encoding="utf-8")
         )
-        outputs.append(json.loads(output.read_text(encoding="utf-8")))
+        for element in elements
+    }
 
-    first, reopened = outputs
+
+def _assert_race_outputs(
+    behavior: str,
+    first: dict[str, object],
+    reopened: dict[str, object],
+) -> None:
     if behavior == "scope_revoked":
         assert first["semantic_ingestion"] == "graph_transaction_authority_unavailable"
         assert first["cas_attempts"] == 1
@@ -132,3 +157,53 @@ def test_graph_race_reopens_in_an_independent_jsonl_process(
         assert retained_group_id in identities
 
 
+@pytest.mark.parametrize("root", ROOTS)
+@pytest.mark.parametrize("scenario", tuple(GRAPH_SCENARIO_BEHAVIOR))
+def test_graph_race_reopens_in_an_independent_jsonl_process(
+    root: str,
+    scenario: str,
+    race_reopen_outputs: dict[tuple[str, str, str], dict[str, object]],
+) -> None:
+    behavior = GRAPH_SCENARIO_BEHAVIOR[scenario]
+    first = race_reopen_outputs[(scenario, root, "first")]
+    reopened = race_reopen_outputs[(scenario, root, "reopen")]
+    _assert_race_outputs(behavior, first, reopened)
+
+
+def test_graph_race_canary_reopens_via_two_independent_subprocesses(
+    tmp_path,
+) -> None:
+    """Permanent canary: one scenario pair stays on the two-subprocess path.
+
+    The batched mode must stay equivalent to genuinely independent
+    first/reopen processes; this canary keeps that property continuously
+    proven on the real two-interpreter flow.
+    """
+
+    scenario = "reused_committed"
+    behavior = GRAPH_SCENARIO_BEHAVIOR[scenario]
+    storage_root = tmp_path / scenario / "direct"
+    environment = dict(os.environ)
+    environment["PYTHONPATH"] = "memorii"
+    outputs: list[dict[str, object]] = []
+    for phase in ("first", "reopen"):
+        output = tmp_path / f"{scenario}-{phase}.json"
+        subprocess.run(
+            (
+                sys.executable,
+                "-m",
+                "tests.fixtures.semantic_ingestion.bootstrap_graph_v3_process_runner",
+                str(storage_root),
+                "direct",
+                scenario,
+                phase,
+                str(output),
+            ),
+            cwd=REPO_ROOT,
+            env=environment,
+            check=True,
+            timeout=180,
+        )
+        outputs.append(json.loads(output.read_text(encoding="utf-8")))
+    first, reopened = outputs
+    _assert_race_outputs(behavior, first, reopened)

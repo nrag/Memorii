@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import signal
+import sys
 from datetime import timedelta
 from pathlib import Path
 
@@ -22,7 +24,6 @@ from memorii.core.semantic_ingestion.bootstrap_graph_repository import (
 )
 from memorii.domain.enums import CommitStatus, MemoryDomain
 from memorii.integrations.hermes_provider import HermesMemoryProvider
-from tests.fixtures.semantic_ingestion import bootstrap_graph_v3_fixture
 from tests.fixtures.semantic_ingestion.bootstrap_graph_v3_fixture import (
     DeterministicBootstrapGraphAuthorityProviderV3,
 )
@@ -204,25 +205,6 @@ def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str
     service_holder: list[object] = []
     lost_ack_injected = False
     scan_calls = 0
-    if behavior == "reused_committed":
-        original_successful_executor = (
-            bootstrap_graph_v3_fixture.DeterministicBootstrapGraphSuccessfulExecutorV3
-        )
-
-        def committed_successful_executor(*, host_authority, calls, **kwargs):
-            return original_successful_executor(
-                host_authority=host_authority,
-                calls=calls,
-                disposition="committed",
-                **kwargs,
-            )
-
-        # The fixture's provider resolves this constructor at acquisition time.
-        # Keep the committed arm process-local so all public roots still use the
-        # canonical production coordinator and persistence path.
-        bootstrap_graph_v3_fixture.DeterministicBootstrapGraphSuccessfulExecutorV3 = (
-            committed_successful_executor
-        )
 
     def before_cas(_group_id: str) -> None:
         if phase != "first":
@@ -464,17 +446,79 @@ def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str
     }
 
 
+ELEMENT_TIMEOUT_SECONDS = 180
+
+
+def run_batch(manifest_path: Path) -> None:
+    """Run manifest elements sequentially in this one interpreter.
+
+    Each element record carries its own ``storage_root`` (first/reopen
+    pairs share one root; roots are never shared across scenarios), so
+    per-element fresh store construction reproduces the single-element
+    disk-reload semantics.  A per-element alarm preserves the single
+    element's timeout budget and identifies the failing element on
+    fail-fast.
+    """
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    elements = manifest["elements"]
+
+    def _element_expired(signum: int, frame: object) -> None:
+        raise TimeoutError(f"batch element exceeded {ELEMENT_TIMEOUT_SECONDS}s")
+
+    previous_handler = signal.signal(signal.SIGALRM, _element_expired)
+    try:
+        for index, element in enumerate(elements):
+            signal.alarm(ELEMENT_TIMEOUT_SECONDS)
+            try:
+                result = run(
+                    storage_root=Path(element["storage_root"]),
+                    root=element["root"],
+                    scenario=element["scenario"],
+                    phase=element["phase"],
+                )
+            except Exception as exc:
+                print(
+                    json.dumps(
+                        {
+                            "batch_element_failed": index,
+                            "element": element,
+                            "error": f"{type(exc).__name__}: {exc}",
+                        }
+                    ),
+                    file=sys.stderr,
+                )
+                raise SystemExit(1) from exc
+            finally:
+                signal.alarm(0)
+            Path(element["output"]).write_text(
+                json.dumps(result, sort_keys=True), encoding="utf-8"
+            )
+    finally:
+        signal.signal(signal.SIGALRM, previous_handler)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("storage_root", type=Path)
-    parser.add_argument("root", choices=("direct", "factory", "filesystem", "hermes"))
+    parser.add_argument("--batch", type=Path)
+    parser.add_argument("storage_root", type=Path, nargs="?")
+    parser.add_argument("root", choices=("direct", "factory", "filesystem", "hermes"), nargs="?")
     parser.add_argument(
         "scenario",
         choices=tuple(GRAPH_SCENARIO_BEHAVIOR),
+        nargs="?",
     )
-    parser.add_argument("phase", choices=("first", "reopen"))
-    parser.add_argument("output", type=Path)
+    parser.add_argument("phase", choices=("first", "reopen"), nargs="?")
+    parser.add_argument("output", type=Path, nargs="?")
     args = parser.parse_args()
+    if args.batch is not None:
+        run_batch(args.batch)
+        return
+    if any(
+        value is None
+        for value in (args.storage_root, args.root, args.scenario, args.phase, args.output)
+    ):
+        parser.error("single-element mode requires all five positional arguments")
     result = run(
         storage_root=args.storage_root,
         root=args.root,

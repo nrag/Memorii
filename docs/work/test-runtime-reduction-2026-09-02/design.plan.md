@@ -278,6 +278,23 @@ pytest-xdist dev-dependency decision.
   warning against the stale pre-optimization durations over an
   unchanged node set — unchanged by the split, recalibrated by L4.
 
+- 2026-09-02 (L2 landed, gates running): the process runner gained
+  `--batch` mode (per-element `(storage_root, root, scenario, phase,
+  output)` records; first/reopen pairs share a root; roots never shared
+  across scenarios; per-element SIGALRM timeout with fail-fast element
+  identification; single-element mode preserved for the canary and the
+  equivalence gate); the dead `reused_committed` module-global patch and
+  its now-unused fixture import are deleted (class-never-instantiated,
+  verified by two reviewers); the race test converts to a module-scoped
+  batch fixture with the assertion body extracted to one shared
+  `_assert_race_outputs` authority, plus a permanent two-subprocess
+  canary on the `reused_committed` scenario (the dead patch's own
+  scenario).  101 nodes collect (100 + canary); ruff clean.  Gates in
+  flight: the full batched family run (101 nodes, one interpreter for
+  all 200 elements); the batched-vs-unbatched 200-output byte-identity
+  adoption gate launches after it.  L2 is not adoption-complete until
+  both land green.
+
 - 2026-09-02: opened. Phase 1 attribution recorded from the durations
   artifact and `pr-gates.yml`; the race family's two-subprocesses-per-node
   structure confirmed in the test source.
