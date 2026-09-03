@@ -317,8 +317,23 @@ Current known facts (reconciled 2026-09-03):
   was discovered red with 868 errors against a clean merge base
   (`2a7a55e`, 0 errors, identical config) — all branch-introduced, dominated
   by `object`/`BaseModel`-loose annotations in `atomic_store.py` and
-  `writer_admission.py`; remediation is in flight as the final-closure type
-  gate.
+  `writer_admission.py`; resolved to 0 errors at `633307f` by a
+  delegated annotation-precision writer. The remediation also surfaced and
+  repaired one latent runtime crash: the matched retained-pending branch of
+  `bootstrap_writer_handoff` built its authority-unavailable outcome with a
+  terminal shape the result contract rejected, so a matching retry raised a
+  pydantic `ValidationError` instead of failing closed;
+  `BootstrapWriterHandoffResult.authority_unavailable` now accepts either
+  authority-unavailable terminal (a runtime result contract, not a persisted
+  schema; the digest body is computed over dumped runtime values and the
+  crashing path never produced valid instances, so existing encodings are
+  unchanged), with regression test
+  `test_writer_handoff_result_carries_either_authority_unavailable_terminal`.
+  Capacity-accounting precision note: the production arena charges the
+  conservative flat approximation of the design's packed representation
+  (`ENTRY_METADATA_CHARGE = 512` plus 64 bytes per member path); all frozen
+  limits are enforced exactly, and the approximation is at least as large as
+  the packed layout for the measured corpus.
 - Candidate v12 reference evidence remains reference-class; production proof
   is carried by the milestone packets and linked-operation evidence above.
 - Remaining implementation follow-ups: candidate refreeze, independent
@@ -410,15 +425,56 @@ resolved inside this WorkPlan.
   remap; unit shard capacity raised 4 → 6 shards on the re-measured corpus
   (~487s estimated per shard, under the unchanged 600s target); CI pyright
   command discovered red with 868 branch-introduced errors against the clean
-  merge base and delegated to a single annotation-precision writer.
+  merge base and resolved to 0 by a delegated annotation-precision writer.
   Acceptance-matrix gap fills: production-root reservation-exhaustion
   capacity refusal, in-flight concurrent-writer lease isolation, and
   full-sentinel snapshot-privacy proofs added
   (`test_canonical_evidence_production_limits.py`); arena member-path
   envelope (exact/one-over at 32,768), first-cause latching through
   conflicting closes, and hostile-observability-sink cells added. Both
-  binding validators (v11/v14) fail on source-hash drift and must be
-  regenerated at the frozen revision.
+  binding validators (v11/v14) failed on source-hash drift and were
+  regenerated at the frozen revision (32/32 and 5/5 mutations).
+- `2026-09-03` (independent final review round, frozen candidate `542cd86`):
+  `spec_auditor` APPROVED (`remaining_validated_p1_p2: []`; three P3
+  follow-ups: stale next-action text, an under-recorded repair, and a
+  charge-model precision note — the first fixed in this update, the latter
+  two recorded above). `test_reviewer` found one `changes_required`
+  verification defect: the CI pin refresh missed its mirrored assertions in
+  `test_static_tooling_config.py`, leaving three unit-gate nodes red at the
+  frozen revision — fixed at `78f844e` (module 18 passed).
+  `correctness_reviewer` found one validated P2 (`changes_required`,
+  runtime/verification): the reservation-exhaustion proof failed
+  intermittently at the frozen revision, appearing as a wedged holder thread.
+  Coordinator diagnosis (validated against the failure signature): a test
+  protocol defect, not a product race — the holder release events were
+  indexed by handoff-arrival order while the join loop iterated threads by
+  start order; under load the orders diverge, so the loop released one
+  thread's event while joining a different, still-paused holder, a
+  guaranteed spurious join timeout. Fixed at `1b07094`: the wrapper captures
+  the pausing thread under the same guard that assigns the arrival index and
+  the release/join loop pairs them strictly; the reviewer's follow-ups
+  (four-arena precondition before the fifth delivery; profile/codec/domain/
+  schema sentinels in the privacy scan) are included. Green-run evidence at
+  the fixed revision: module `3 passed in 244.91s` under load 7-10 (a second
+  stability run recorded with the closure evidence). The reviewer's two P3
+  follow-ups are recorded below.
+- `2026-09-03` (recorded follow-ups, non-blocking):
+  1. Path-level proof for the retained-pending arm of
+     `bootstrap_writer_handoff` (five-field match/mismatch through the real
+     method; the result-contract regression test covers the repaired crash
+     site) — verification follow-up.
+  2. A rare recovery-race corner in `_run_semantic_ingestion` now opens one
+     bounded lease session before returning the same authority-unavailable
+     outcome the pre-annotation code produced via an AttributeError (outcome
+     and reason codes identical; identified by the correctness review of
+     `633307f`) — runtime follow-up.
+  3. `RetainingCanonicalClosureObservabilityDispatcher` retains terminal
+     snapshots without bound in long-lived service processes (hundreds of
+     bytes per delivery) — operability follow-up: bound it or default the
+     production sink to the non-retaining dispatcher.
+  4. The unit durations manifest lacks this session's eight new fast unit
+     nodes until the next CI timing merge (default duration applies; shard
+     estimates unaffected).
 
 ## Remediation Reopening (2026-08-18)
 
@@ -458,10 +514,8 @@ superseded on 2026-08-26 by the family-proof and recovery milestones.)
 
 ## Next Action
 
-Land the pyright annotation remediation (single delegated writer) and the
-reservation-exhaustion production-root proof, then freeze the candidate
-revision — regenerate the v11/v14 production-entrypoint bindings, build the
-v2 implementation candidate manifest over a clean tree — and run the
-frozen-revision gate set (broad unit gate via the adopted xdist command,
-ruff, pyright, identity hygiene, both shard-plan verifies, package smoke)
-before launching the independent milestone and final review cohort.
+Complete the final verification sequence at the refrozen candidate
+(`ec64a89` lineage): the once-only broad unit gate via the adopted xdist
+command, the targeted delta reviews (correctness on the reservation-protocol
+fix, test on the mirror-pin fix and refreeze), then append the
+revision-bound closure record and flip this plan to complete.
