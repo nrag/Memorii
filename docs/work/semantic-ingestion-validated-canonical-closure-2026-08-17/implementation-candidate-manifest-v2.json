@@ -33,7 +33,7 @@
     {
       "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/implementation.plan.md",
       "role": "governance_or_evidence",
-      "sha256": "62cafa4326d81c1f48cd786d13b9945a0f8593f6969dabd927cb0e7e565e9787"
+      "sha256": "b13eaf2df3952eb4088c9eb358394399065fdf41b48f853dcb74e01706feb472"
     },
     {
       "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/milestones/changed-surface-ownership-ledger.md",
@@ -276,7 +276,7 @@
       "sha256": "13d1980efea5853e87683c9299925982d9bcdc38637ba215101f006d140b63f9"
     }
   ],
-  "base_revision": "1b07094ad95372febb77d9df355e147c076310d0",
+  "base_revision": "33192d30fac94e0fe94f916904a3784d1923c8e4",
   "dirty_tree": {
     "all_status": [],
     "clean": true
