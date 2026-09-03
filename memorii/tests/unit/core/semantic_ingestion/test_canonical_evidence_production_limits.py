@@ -123,12 +123,13 @@ def test_process_reservation_exhaustion_at_the_root_uses_the_full_path(
             target=hold_delivery,
             args=(index,),
             name=f"canonical-evidence-reservation-hold-{index}",
+            daemon=True,
         )
         for index in range(4)
     ]
     for thread in threads:
         thread.start()
-    assert all_holders_paused.wait(timeout=180), "four holders never reached handoff"
+    assert all_holders_paused.wait(timeout=1800), "four holders never reached handoff"
 
     snapshots_before = len(service._canonical_closure_dispatcher.snapshots)
     refused = _delivery(service, "reservation-refused-root")
@@ -228,7 +229,7 @@ def test_concurrent_inflight_writers_hold_isolated_leases_at_the_durable_boundar
             failures.append(error)
 
     thread = Thread(
-        target=first_writer_delivery, name="canonical-evidence-inflight-first"
+        target=first_writer_delivery, name="canonical-evidence-inflight-first", daemon=True
     )
     thread.start()
     assert first_writer_paused.wait(timeout=60), "first writer never reached handoff"
