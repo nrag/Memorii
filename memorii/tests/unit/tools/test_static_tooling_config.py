@@ -345,7 +345,7 @@ def test_terminal_persistence_job_is_exact_node_balanced_and_disjoint() -> None:
         if step["name"] == "Verify exact terminal-persistence collection count"
     )
     assert count_command.count(terminal_path) == 1
-    assert '"156 tests collected in "*' in count_command
+    assert '"224 tests collected in "*' in count_command
     run_command = next(
         step["run"]
         for step in job["steps"]
@@ -535,7 +535,6 @@ def test_exact_semantic_ingestion_workflow_argv_is_pinned() -> None:
         "pytest",
         "-W",
         "error",
-        "tests/integration/test_semantic_ingestion_pipeline.py",
         "tests/integration/test_semantic_ingestion_process_safety.py",
         "tests/integration/test_conflict_attention_persistence.py",
         "tests/integration/test_semantic_ingestion_replay.py",
@@ -547,8 +546,7 @@ def test_exact_semantic_ingestion_workflow_argv_is_pinned() -> None:
         for step in steps
         if step["name"] == "Verify exact semantic ingestion collection count"
     )
-    assert '"34 tests collected in "*' in count_command
-    assert count_command.count("tests/integration/test_semantic_ingestion_pipeline.py") == 1
+    assert '"10 tests collected in "*' in count_command
     assert count_command.count("tests/integration/test_semantic_ingestion_process_safety.py") == 1
     assert count_command.count("tests/integration/test_conflict_attention_persistence.py") == 1
     assert count_command.count("tests/integration/test_semantic_ingestion_replay.py") == 1
@@ -570,7 +568,7 @@ def test_projection_history_job_is_exact_and_disjoint_from_broad_unit_shards() -
     count_command = next(
         step["run"] for step in steps if step["name"] == "Verify exact projection-history collection count"
     )
-    assert '"84 tests collected in "*' in count_command
+    assert '"87 tests collected in "*' in count_command
     assert all(count_command.count(path) == 1 for path in expected_files)
 
     shard_config = json.loads((PROJECT_ROOT / "tests" / "ci" / "unit-shards.json").read_text())
