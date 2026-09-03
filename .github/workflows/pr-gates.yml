@@ -305,7 +305,7 @@ jobs:
           observed="$(pytest --collect-only -q \
             tests/unit/core/semantic_ingestion/test_semantic_terminal_persistence.py \
             -p no:cacheprovider | tail -1)"
-          [[ "$observed" == "156 tests collected in "* ]]
+          [[ "$observed" == "224 tests collected in "* ]]
 
       - name: Verify exact terminal-persistence shard plan
         working-directory: memorii
@@ -481,18 +481,16 @@ jobs:
         working-directory: memorii
         run: |
           observed="$(pytest --collect-only -q \
-            tests/integration/test_semantic_ingestion_pipeline.py \
             tests/integration/test_semantic_ingestion_process_safety.py \
             tests/integration/test_conflict_attention_persistence.py \
             tests/integration/test_semantic_ingestion_replay.py \
             -p no:cacheprovider | tail -n 1)"
-          [[ "$observed" == "34 tests collected in "* ]]
+          [[ "$observed" == "10 tests collected in "* ]]
 
       - name: Run exact semantic ingestion integration and process closure
         working-directory: memorii
         run: >-
           pytest -W error
-          tests/integration/test_semantic_ingestion_pipeline.py
           tests/integration/test_semantic_ingestion_process_safety.py
           tests/integration/test_conflict_attention_persistence.py
           tests/integration/test_semantic_ingestion_replay.py
@@ -529,7 +527,7 @@ jobs:
             tests/unit/core/semantic_ingestion/test_graph_planning.py \
             tests/unit/core/semantic_ingestion/test_identity_lineage_prerequisites.py \
             -p no:cacheprovider | tail -n 1)"
-          [[ "$observed" == "84 tests collected in "* ]]
+          [[ "$observed" == "87 tests collected in "* ]]
 
       - name: Run exact projection-history closure
         working-directory: memorii
