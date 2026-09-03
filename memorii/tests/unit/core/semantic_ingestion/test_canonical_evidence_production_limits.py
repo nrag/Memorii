@@ -13,7 +13,7 @@ from __future__ import annotations
 import dataclasses
 from hashlib import sha256
 from pathlib import Path
-from threading import Event, Lock, Thread
+from threading import Event, Lock, Thread, current_thread
 from typing import Any
 
 from memorii.core.memory_plane.service import MemoryPlaneService
@@ -88,6 +88,9 @@ def test_process_reservation_exhaustion_at_the_root_uses_the_full_path(
     handoff_leases: list[object] = []
     all_holders_paused = Event()
     holder_releases = [Event() for _ in range(4)]
+    # Arrival order and thread start order diverge under load; the release
+    # loop must pair each event with the thread that actually paused on it.
+    holders_in_arrival_order: list[Thread] = []
     remaining = {"count": 4}
     guard = Lock()
 
@@ -99,6 +102,7 @@ def test_process_reservation_exhaustion_at_the_root_uses_the_full_path(
                 remaining["count"] -= 1
                 pause_index = 4 - remaining["count"] - 1
                 last = remaining["count"] == 0
+                holders_in_arrival_order.append(current_thread())
         handoff_leases.append(canonical_evidence_lease)
         if pause_index is not None:
             if last:
@@ -130,6 +134,10 @@ def test_process_reservation_exhaustion_at_the_root_uses_the_full_path(
     for thread in threads:
         thread.start()
     assert all_holders_paused.wait(timeout=1800), "four holders never reached handoff"
+    # The refusal proof is coupled to exactly these four open arenas: the
+    # fifth delivery's arena must be the process reservation's fifth
+    # simultaneous request.
+    assert len(constructed) == 4
 
     snapshots_before = len(service._canonical_closure_dispatcher.snapshots)
     refused = _delivery(service, "reservation-refused-root")
@@ -150,10 +158,10 @@ def test_process_reservation_exhaustion_at_the_root_uses_the_full_path(
     assert len(handoff_leases) == 5
     assert handoff_leases[4] is None
 
-    for index, thread in enumerate(threads):
-        holder_releases[index].set()
-        thread.join(timeout=1800)
-        assert not thread.is_alive()
+    for release, holder in zip(holder_releases, holders_in_arrival_order, strict=True):
+        release.set()
+        holder.join(timeout=1800)
+        assert not holder.is_alive()
     assert failures == []
     assert all(lease is not None for lease in handoff_leases[:4])
     assert all(lease._released for lease in handoff_leases[:4])
@@ -300,11 +308,16 @@ def test_terminal_snapshots_carry_no_delivery_sentinel_in_any_field(
     lease = handoff_leases[0]
     assert lease is not None
     member_index = lease.result.canonical_member_index
+    evidence = lease.result.member_evidence[0]
     sentinels = (
         "Atlas owner is Bob.",
         sha256(b"Atlas owner is Bob.").hexdigest(),
         member_index.canonical_digest,
         member_index.contract_type,
+        evidence.profile_revision,
+        evidence.codec_revision,
+        evidence.domain.decode("utf-8", "replace"),
+        evidence.schema,
         "task:one",
         "user:alice",
     )
