@@ -121,10 +121,10 @@
   ],
   "schema": "memorii.production-entrypoint-bindings.v11",
   "source_hashes": {
-    "memorii/memorii/core/memory_evolution/atomic_store.py": "0f25f7220b6ea83ce45236670539fc00283231707364fd3ce9364a55325910c4",
-    "memorii/memorii/core/provider/ingestion.py": "987818ad1798e1113047369060aa447bf74293d080cea1ae01d16ef5739f34f6",
-    "memorii/memorii/core/provider/service.py": "031d33290c4100f958511dda9868ddf85e8ca080c4b9f834ff8c51e877832d5a",
-    "memorii/memorii/core/semantic_ingestion/canonical_evidence_arena.py": "edb2e0dab3b895ea575ab460a4b2cff6db278674bef902ba556a800b721491f6",
-    "memorii/memorii/core/semantic_ingestion/contracts.py": "2b6e8f3b13d1e9e17fb8fa8e2e99fa637dc2ce36b109b86aa171ef3cb3dc4266"
+    "memorii/memorii/core/memory_evolution/atomic_store.py": "0696c2ce4e4e47ced182b722b865bf520bf1d41e7b4fbbd961024ef259632658",
+    "memorii/memorii/core/provider/ingestion.py": "b3e28e88ac97bfb8555c2b5f203ce8845c6c0669deff05543c02c7fa5b7d3573",
+    "memorii/memorii/core/provider/service.py": "163acdff07307ee6c31a93cd84a5ba616094f2b51003e12a39baa3f859ba7664",
+    "memorii/memorii/core/semantic_ingestion/canonical_evidence_arena.py": "a686a4e3103efa3d667004bdf0492cc04d15cda9b4bb28d2d91c716d66691442",
+    "memorii/memorii/core/semantic_ingestion/contracts.py": "6dae50d13268c46c4356c32de0eadb9216d3aac6d4b737c7468c752f9bcc02bc"
   }
 }

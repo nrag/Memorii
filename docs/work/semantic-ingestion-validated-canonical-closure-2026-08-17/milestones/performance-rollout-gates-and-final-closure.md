@@ -169,6 +169,21 @@ Gate repairs in the same session:
 - Both production-entrypoint binding validators (v11, v14) fail on
   source-hash drift against the current tree; regeneration at the frozen
   revision is a freeze-gate step.
+- Known failure RESOLVED 2026-09-03 (commit `e4dfda8`):
+  `test_semantic_provider_composition.py::test_public_flow_prepared_source_contract_is_frozen_across_runs`.
+  Complete causal chain: the preparation fingerprint transitively covers the
+  bootstrap profile's verified component digests, which pin live component
+  source bytes (`find_spec(...).origin` read) and installed package versions
+  by design (`verify_bootstrap_profile`). Its absolute value therefore moves
+  with the environment and with any fingerprinted-module edit — confirmed by
+  body dumps differing only in `route_digest`/`bootstrap_profile_manifest_digest`/`component_root_digest`
+  across sessions, checkouts, and the type-remediation commit — while the
+  cross-run equality invariant passes everywhere. The hex-pinned constant was
+  unpinnable; the test now pins the environment-independent source digest and
+  checks the fingerprint shape, with the coupling documented in the test. The
+  remaining broad-gate failures from the equivalence record are the
+  environmental stanza-assets node (host asset availability, unchanged
+  disposition) and the hygiene-clean node (fixed 2026-09-03).
 
 ## Next Action
 
