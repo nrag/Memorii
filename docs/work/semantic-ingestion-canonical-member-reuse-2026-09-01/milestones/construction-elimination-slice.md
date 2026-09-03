@@ -50,8 +50,14 @@ throughout; log `../evidence/ce9-broad-gate-run.log`). Against the
    slice base `e63d6f8` (fresh worktree run). Not a slice regression;
    recorded as a follow-up for a separate operation.
 
-The final-revision gate re-runs at the rename-fix revision per the
-once-only-at-final-revision rule; the dispositions above carry.
+A final-revision re-run at the rename-fix revision (`60c8c0b`) was
+launched per the once-only-at-final-revision rule and **stopped at ~10%
+by user direction (2026-09-02 17:5x)**.  The recorded broad-gate
+evidence therefore remains the `c9995a1` run above; the slice's closure
+record must not claim a final-revision gate until either a rerun is
+sanctioned or the user records an explicit revision-identity exception
+(the only delta between the two revisions is the public rename of one
+helper, verified by its focused gates).
 
 ## Progress
 
