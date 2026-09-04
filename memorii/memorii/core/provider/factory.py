@@ -12,6 +12,12 @@ from memorii.core.memory_evolution.bootstrap_profile import (
     HostBootstrapCapability,
     HostBootstrapMaterialVerifier,
 )
+from memorii.core.memory_evolution.conflict_attention import (
+    ConflictAttentionObservabilitySink,
+)
+from memorii.core.memory_evolution.conflict_attention_repository import (
+    ConflictClarificationRepository,
+)
 from memorii.core.memory_evolution.conflict_integrity import (
     PrivilegedSemanticIntegrityLifecycle,
 )
@@ -52,6 +58,10 @@ def build_provider_memory_service_from_env(
     host_bootstrap_material_verifier: HostBootstrapMaterialVerifier | None = None,
     source_normalization_host_bundle_builder: SourceNormalizationHostBundleBuilder | None = None,
     verified_production_host_authority: VerifiedProductionHostAuthority | None = None,
+    conflict_attention_repository: ConflictClarificationRepository | None = None,
+    conflict_attention_enabled: bool = False,
+    conflict_attention_observability_sink: ConflictAttentionObservabilitySink
+    | None = None,
     now_provider: Callable[[], datetime] | None = None,
 ) -> ProviderMemoryService:
     """Build the source-only governed-source admission provider composition without ambient model dependencies."""
@@ -105,6 +115,9 @@ def build_provider_memory_service_from_env(
         host_bootstrap_material_verifier=host_bootstrap_material_verifier,
         source_normalization_host_bundle_builder=source_normalization_host_bundle_builder,
         verified_production_host_authority=verified_production_host_authority,
+        conflict_attention_repository=conflict_attention_repository,
+        conflict_attention_enabled=conflict_attention_enabled,
+        conflict_attention_observability_sink=conflict_attention_observability_sink,
         identity_lineage_audit_reader=audit_reader,
         identity_lineage_audit_authorizer=audit_authorizer,
         now_provider=now_provider,

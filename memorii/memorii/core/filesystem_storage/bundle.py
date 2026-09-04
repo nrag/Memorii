@@ -19,6 +19,14 @@ from memorii.core.memory_evolution.bootstrap_profile import (
     HostBootstrapCapability,
     HostBootstrapMaterialVerifier,
 )
+from memorii.core.memory_evolution.conflict_attention import (
+    ConflictAttentionObservabilitySink,
+)
+from memorii.core.memory_evolution.conflict_attention_repository import (
+    ConflictClarificationRepository,
+    ConflictCursorKey,
+    FileConflictAttentionRepository,
+)
 from memorii.core.memory_evolution.conflict_integrity import (
     PrivilegedSemanticIntegrityLifecycle,
 )
@@ -87,6 +95,10 @@ class FilesystemStorageBundle:
         host_bootstrap_material_verifier: HostBootstrapMaterialVerifier | None = None,
         source_normalization_host_bundle_builder: SourceNormalizationHostBundleBuilder | None = None,
         verified_production_host_authority: VerifiedProductionHostAuthority | None = None,
+        conflict_attention_repository: ConflictClarificationRepository | None = None,
+        conflict_attention_enabled: bool = False,
+        conflict_attention_observability_sink: ConflictAttentionObservabilitySink
+        | None = None,
         now_provider: Callable[[], datetime] | None = None,
     ) -> ProviderMemoryService:
         return build_provider_memory_service_from_env(
@@ -103,7 +115,18 @@ class FilesystemStorageBundle:
             host_bootstrap_material_verifier=host_bootstrap_material_verifier,
             source_normalization_host_bundle_builder=source_normalization_host_bundle_builder,
             verified_production_host_authority=verified_production_host_authority,
+            conflict_attention_repository=conflict_attention_repository,
+            conflict_attention_enabled=conflict_attention_enabled,
+            conflict_attention_observability_sink=conflict_attention_observability_sink,
             now_provider=now_provider,
+        )
+
+    def build_conflict_attention_repository(
+        self, keys: tuple[ConflictCursorKey, ...]
+    ) -> FileConflictAttentionRepository:
+        """Build the file-backed conflict-attention ledger for this root."""
+        return FileConflictAttentionRepository(
+            self.storage_root / "conflict_attention", keys=keys
         )
 
     def storage_status(self) -> StorageRootStatus:
@@ -121,6 +144,10 @@ def build_filesystem_provider(
     host_bootstrap_material_verifier: HostBootstrapMaterialVerifier | None = None,
     source_normalization_host_bundle_builder: SourceNormalizationHostBundleBuilder | None = None,
     verified_production_host_authority: VerifiedProductionHostAuthority | None = None,
+    conflict_attention_repository: ConflictClarificationRepository | None = None,
+    conflict_attention_enabled: bool = False,
+    conflict_attention_observability_sink: ConflictAttentionObservabilitySink
+    | None = None,
     now_provider: Callable[[], datetime] | None = None,
 ) -> ProviderMemoryService:
     return FilesystemStorageBundle.from_root(
@@ -132,5 +159,8 @@ def build_filesystem_provider(
         host_bootstrap_material_verifier=host_bootstrap_material_verifier,
         source_normalization_host_bundle_builder=source_normalization_host_bundle_builder,
         verified_production_host_authority=verified_production_host_authority,
+        conflict_attention_repository=conflict_attention_repository,
+        conflict_attention_enabled=conflict_attention_enabled,
+        conflict_attention_observability_sink=conflict_attention_observability_sink,
         now_provider=now_provider,
     )

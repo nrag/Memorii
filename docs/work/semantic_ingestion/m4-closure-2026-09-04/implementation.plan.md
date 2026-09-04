@@ -63,13 +63,17 @@ Complete only when:
 
 ## Current Exact Next Action
 
-Complete M4-A closure evidence: add the end-to-end configured-profile replan
-race proof described in the linked debug plan's Exact Next Action (one
-committed clarification winner between terminal compilation and publication;
-exactly one internal conflict-replan delivery; completion at the current graph
-revision; second staleness fail-closed), rerun the affected families, then
-perform the linked debug's frozen three-role closure review before starting
-M4-B.
+Implement the composite attention repository slice of M4-B: the typed
+`CompositeConflictListingSnapshot`/`CompositeConflictListingCursorClaims`
+contract family with the v2 composite cursor grammar, two
+`(semantic, integrity)` child bindings, snapshot/binding digest validation,
+and metadata-index routing (semantic members to the same-store repository,
+integrity members to `operator_action_required`), exactly as governed by
+`docs/design/conflict_attention.md` (composite cursor grammar, member-key,
+and continuation contracts).  Then wire the provider composite listing and
+run its equivalence-class matrix.  The provider/factory/filesystem/Hermes
+builder enablement below is complete; the frozen three-role closure review of
+the linked debug and of this milestone remains after that slice.
 
 ## Progress Log
 
@@ -77,6 +81,22 @@ M4-B.
   successor identity v82 re-pinning all artifacts at HEAD `bd1ebf0`).
 - 2026-09-04: Coordinator mapping of the replan owner boundary complete
   (read-only); sole writer dispatched for the implementation slice.
+- 2026-09-04: M4-B builder enablement complete: `build_provider_memory_service_from_env`
+  and `build_filesystem_provider`/`FilesystemStorageBundle.build_provider_memory_service`
+  now forward `conflict_attention_repository`, `conflict_attention_enabled`,
+  and `conflict_attention_observability_sink`; the filesystem bundle gained
+  `build_conflict_attention_repository(keys)`; Hermes self-built services
+  inherit the wiring.  The fail-closed default (disabled without explicit
+  authority) and the enabled-without-repository rejection are pinned by
+  `tests/unit/core/test_conflict_attention_composition.py` (`5 passed in
+  10.79s`); provider families `47 passed`; full Ruff, compilation, and diff
+  hygiene clean.  Composite listing and derived-cache surfaces remain
+  (see Exact Next Action).
+- 2026-09-04: M4-A end-to-end proof complete: production-owner tests
+  `2 passed in 57.55s` (one replan, terminal completion at the derived
+  coordinate, fail-closed second staleness); exposed and fixed the replan
+  arena rebinding defect with a fresh provider-factory canonical evidence
+  arena; regression `47 passed`, configured-root node `1 passed in 64.16s`.
 - 2026-09-04: M4-A production replan owner implemented in
   `ProviderIngestionCoordinator._ingest_semantic_source` with the reserved
   `conflict-replan:v1:` delivery coordinate; contract proof `4 passed`,

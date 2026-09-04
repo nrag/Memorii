@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import ExitStack
 from datetime import UTC, datetime
 from hashlib import sha256
 from typing import Literal
@@ -373,165 +374,253 @@ class ProviderIngestionCoordinator:
         its existing terminal handling.
         """
         replanned = False
-        while True:
-            delivery_event = (
-                pipeline_event
-                if not replanned
-                else pipeline_event.model_copy(
-                    update={
-                        "event_id": derive_conflict_replan_delivery_id(
-                            pipeline_event.event_id
-                        )
-                    }
-                )
-            )
-            try:
-                request = ProviderEventNormalizer(authenticated_ingress).normalize(delivery_event)
-            except ValueError as exc:
-                # A snapshot/delegation event without its host-authenticated
-                # envelope is retained only as provider evidence, never guessed
-                # into a semantic source.
-                return (
-                    result.model_copy(update={
-                        "transcript_ids": [], "candidate_ids": [], "allowed_candidate_domains": [],
-                        "blocked_reasons": {**result.blocked_reasons, "semantic_ingestion": str(exc)},
-                    }), None, None,
-                )
-            identity = request.delivery_identity
-            source_id = f"semantic_ingestion:source:{identity.delivery_key_digest}"
-            # Exact redelivery must reconstruct identical admission evidence. The
-            # caller-owned event timestamp is immutable delivery identity; local
-            # processing time is not.
-            retained_at = delivery_event.timestamp
-            assert retained_at is not None
-            source_digest = step_one_source_digest(
-                source_id=source_id,
-                delivery_key_digest=identity.delivery_key_digest,
-                original_text=request.original_text,
-            )
-            governance_result = derive_source_governance_material(
-                ingress=authenticated_ingress,
-                event=delivery_event,
-                source_id=source_id,
-                source_digest=source_digest,
-                received_at=retained_at,
-                retained_at=retained_at,
-            )
-            if governance_result.kind == "nonpromoting":
-                return (
-                    result.model_copy(
+        replan_arenas = ExitStack()
+        try:
+            while True:
+                delivery_event = (
+                    pipeline_event
+                    if not replanned
+                    else pipeline_event.model_copy(
                         update={
-                            "transcript_ids": [],
-                            "candidate_ids": [],
-                            "allowed_candidate_domains": [],
-                            "blocked_reasons": {
-                                **result.blocked_reasons,
-                                "semantic_ingestion": governance_result.reason_codes[0],
-                            },
+                            "event_id": derive_conflict_replan_delivery_id(
+                                pipeline_event.event_id
+                            )
                         }
-                    ),
-                    None,
-                    None,
-                )
-            assert governance_result.material is not None
-            # The material's contract payloads are annotated as object at the
-            # model boundary (import-cycle isolation); their constructor is the
-            # single derivation owner above, so narrow once for these bindings.
-            assert isinstance(
-                governance_result.material.segment_governance_carriers,
-                SegmentGovernanceCarrierSet,
-            )
-            assert isinstance(
-                governance_result.material.governance_carrier_artifact,
-                GovernanceCarrierArtifact,
-            )
-            assert isinstance(
-                governance_result.material.message_admission_carriers,
-                MessageAdmissionCarrierSet,
-            )
-            request = request.bind_bootstrap_language_evidence(
-                ingress=authenticated_ingress,
-                source_id=source_id,
-                source_digest=source_digest,
-                segment_governance_set_digest=(
-                    governance_result.material.segment_governance_carriers.carrier_set_digest
-                ),
-                governance_carrier_artifact_digest=(
-                    governance_result.material.governance_carrier_artifact.artifact_digest
-                ),
-                segment_governance_carriers_digest=(
-                    governance_result.material.segment_governance_carriers.carrier_set_digest
-                ),
-                message_admission_carriers_digest=(
-                    governance_result.material.message_admission_carriers.carrier_set_digest
-                ),
-            )
-            step_one_material = (
-                build_structured_step_one_material_from_governance(
-                    source_id=source_id, source_digest=source_digest, original_text=request.original_text,
-                    envelope=request.structured_source_envelope, governance=governance_result.material,
-                )
-                if request.structured_source_envelope is not None
-                else build_step_one_material_from_governance(
-                    source_id=source_id, source_digest=source_digest, original_text=request.original_text,
-                    source_reference=delivery_event.event_id, governance=governance_result.material,
-                )
-            )
-            governed_source = build_admitted_source_record(
-                request=request,
-                source_id=source_id,
-                retained_at=retained_at,
-                material=step_one_material,
-                session_id=delivery_event.session_id,
-                task_id=delivery_event.task_id,
-                user_id=delivery_event.user_id,
-            )
-            outcome = "unavailable"
-            reason = self._bootstrap_unavailable_reason
-            matched_case_id = None
-            if self._bootstrap_profile is not None:
-                outcome, reason, matched_case_id = (
-                    BootstrapTextPreparationProducer.classify_projection_eligibility(
-                        profile=self._bootstrap_profile,
-                        ingress=authenticated_ingress,
-                        projection=step_one_material.semantic_text_projection,
                     )
                 )
-            def prepare(
-                *,
-                operation_id: str = delivery_event.event_id,
-                normalized_input: bytes = (delivery_event.content or "").encode("utf-8"),
-                source: CanonicalMemoryRecord = governed_source,
-                delivery_identity: DeliveryIdentity = identity,
-                outcome_kind: str = outcome,
-                outcome_reason: str | None = reason,
-                matched_case_id: str | None = matched_case_id,
-                bootstrap_language_evidence: object = request.bootstrap_language_evidence,
-            ) -> PreparedSourceAdmission:
-                return self._admission_service.prepare_atomic(
-                    source=source,
-                delivery_identity=delivery_identity,
-                ingress=authenticated_ingress,
-                operation_id=operation_id,
-                outcome_kind=outcome_kind,
-                outcome_reason=outcome_reason,
-                normalized_input=normalized_input,
-                matched_corpus_case_id=matched_case_id,
-                selection_digest=(self._bootstrap_profile.selection_digest if self._bootstrap_profile else None),
-                verification_digest=(self._bootstrap_profile.verification_digest if self._bootstrap_profile else None),
-                bootstrap_language_evidence=bootstrap_language_evidence,
+                # A canonical evidence arena binds exactly one validation
+                # scope; the replan attempt is a distinct delivery and must
+                # own a fresh arena from the provider's factory.
+                if replanned and self._canonical_evidence_arena_factory is not None:
+                    canonical_evidence_arena = replan_arenas.enter_context(
+                        self._canonical_evidence_arena_factory()
+                    )
+                try:
+                    request = ProviderEventNormalizer(authenticated_ingress).normalize(delivery_event)
+                except ValueError as exc:
+                    # A snapshot/delegation event without its host-authenticated
+                    # envelope is retained only as provider evidence, never guessed
+                    # into a semantic source.
+                    return (
+                        result.model_copy(update={
+                            "transcript_ids": [], "candidate_ids": [], "allowed_candidate_domains": [],
+                            "blocked_reasons": {**result.blocked_reasons, "semantic_ingestion": str(exc)},
+                        }), None, None,
+                    )
+                identity = request.delivery_identity
+                source_id = f"semantic_ingestion:source:{identity.delivery_key_digest}"
+                # Exact redelivery must reconstruct identical admission evidence. The
+                # caller-owned event timestamp is immutable delivery identity; local
+                # processing time is not.
+                retained_at = delivery_event.timestamp
+                assert retained_at is not None
+                source_digest = step_one_source_digest(
+                    source_id=source_id,
+                    delivery_key_digest=identity.delivery_key_digest,
+                    original_text=request.original_text,
                 )
-            prepared_admission = self._admit_with_writer_retry(prepare)
-            if outcome == "selected_pipeline_pending":
-                handoff_with_lease = self._bootstrap_prepare_and_handoff(
-                    prepared_admission=prepared_admission,
-                    authenticated_ingress=authenticated_ingress,
-                    canonical_evidence_arena=canonical_evidence_arena,
+                governance_result = derive_source_governance_material(
+                    ingress=authenticated_ingress,
+                    event=delivery_event,
+                    source_id=source_id,
+                    source_digest=source_digest,
+                    received_at=retained_at,
+                    retained_at=retained_at,
                 )
-                if handoff_with_lease is None:
+                if governance_result.kind == "nonpromoting":
                     return (
                         result.model_copy(
                             update={
+                                "transcript_ids": [],
+                                "candidate_ids": [],
+                                "allowed_candidate_domains": [],
+                                "blocked_reasons": {
+                                    **result.blocked_reasons,
+                                    "semantic_ingestion": governance_result.reason_codes[0],
+                                },
+                            }
+                        ),
+                        None,
+                        None,
+                    )
+                assert governance_result.material is not None
+                # The material's contract payloads are annotated as object at the
+                # model boundary (import-cycle isolation); their constructor is the
+                # single derivation owner above, so narrow once for these bindings.
+                assert isinstance(
+                    governance_result.material.segment_governance_carriers,
+                    SegmentGovernanceCarrierSet,
+                )
+                assert isinstance(
+                    governance_result.material.governance_carrier_artifact,
+                    GovernanceCarrierArtifact,
+                )
+                assert isinstance(
+                    governance_result.material.message_admission_carriers,
+                    MessageAdmissionCarrierSet,
+                )
+                request = request.bind_bootstrap_language_evidence(
+                    ingress=authenticated_ingress,
+                    source_id=source_id,
+                    source_digest=source_digest,
+                    segment_governance_set_digest=(
+                        governance_result.material.segment_governance_carriers.carrier_set_digest
+                    ),
+                    governance_carrier_artifact_digest=(
+                        governance_result.material.governance_carrier_artifact.artifact_digest
+                    ),
+                    segment_governance_carriers_digest=(
+                        governance_result.material.segment_governance_carriers.carrier_set_digest
+                    ),
+                    message_admission_carriers_digest=(
+                        governance_result.material.message_admission_carriers.carrier_set_digest
+                    ),
+                )
+                step_one_material = (
+                    build_structured_step_one_material_from_governance(
+                        source_id=source_id, source_digest=source_digest, original_text=request.original_text,
+                        envelope=request.structured_source_envelope, governance=governance_result.material,
+                    )
+                    if request.structured_source_envelope is not None
+                    else build_step_one_material_from_governance(
+                        source_id=source_id, source_digest=source_digest, original_text=request.original_text,
+                        source_reference=delivery_event.event_id, governance=governance_result.material,
+                    )
+                )
+                governed_source = build_admitted_source_record(
+                    request=request,
+                    source_id=source_id,
+                    retained_at=retained_at,
+                    material=step_one_material,
+                    session_id=delivery_event.session_id,
+                    task_id=delivery_event.task_id,
+                    user_id=delivery_event.user_id,
+                )
+                outcome = "unavailable"
+                reason = self._bootstrap_unavailable_reason
+                matched_case_id = None
+                if self._bootstrap_profile is not None:
+                    outcome, reason, matched_case_id = (
+                        BootstrapTextPreparationProducer.classify_projection_eligibility(
+                            profile=self._bootstrap_profile,
+                            ingress=authenticated_ingress,
+                            projection=step_one_material.semantic_text_projection,
+                        )
+                    )
+                def prepare(
+                    *,
+                    operation_id: str = delivery_event.event_id,
+                    normalized_input: bytes = (delivery_event.content or "").encode("utf-8"),
+                    source: CanonicalMemoryRecord = governed_source,
+                    delivery_identity: DeliveryIdentity = identity,
+                    outcome_kind: str = outcome,
+                    outcome_reason: str | None = reason,
+                    matched_case_id: str | None = matched_case_id,
+                    bootstrap_language_evidence: object = request.bootstrap_language_evidence,
+                ) -> PreparedSourceAdmission:
+                    return self._admission_service.prepare_atomic(
+                        source=source,
+                    delivery_identity=delivery_identity,
+                    ingress=authenticated_ingress,
+                    operation_id=operation_id,
+                    outcome_kind=outcome_kind,
+                    outcome_reason=outcome_reason,
+                    normalized_input=normalized_input,
+                    matched_corpus_case_id=matched_case_id,
+                    selection_digest=(self._bootstrap_profile.selection_digest if self._bootstrap_profile else None),
+                    verification_digest=(self._bootstrap_profile.verification_digest if self._bootstrap_profile else None),
+                    bootstrap_language_evidence=bootstrap_language_evidence,
+                    )
+                prepared_admission = self._admit_with_writer_retry(prepare)
+                if outcome == "selected_pipeline_pending":
+                    handoff_with_lease = self._bootstrap_prepare_and_handoff(
+                        prepared_admission=prepared_admission,
+                        authenticated_ingress=authenticated_ingress,
+                        canonical_evidence_arena=canonical_evidence_arena,
+                    )
+                    if handoff_with_lease is None:
+                        return (
+                            result.model_copy(
+                                update={
+                                    "transcript_ids": [governed_source.memory_id],
+                                    "candidate_ids": [],
+                                    "allowed_candidate_domains": [],
+                                    "blocked_reasons": {
+                                        **result.blocked_reasons,
+                                        "semantic_ingestion": "source_only",
+                                    },
+                                }
+                            ),
+                            None,
+                            None,
+                        )
+                    handoff, canonical_evidence_lease = handoff_with_lease
+                    fence = prepared_admission.operation_fence_binding
+                    # Every handoff marker is the V3 marker: the atomic store mints
+                    # and reloads only that type.  The V3 normalization boundary runs
+                    # before any lease session so the recovery probe can linearize
+                    # its ready control and claim first.
+                    try:
+                        terminal, authorization_guard = self._run_semantic_ingestion(
+                            operation_id=fence.operation_id,
+                            observation=self._load_admitted_observation(fence),
+                            authenticated_ingress=authenticated_ingress,
+                            lease_session=None,
+                            operation_fence=fence,
+                            bootstrap_handoff=handoff,
+                            canonical_evidence_arena=canonical_evidence_arena,
+                            canonical_evidence_lease=canonical_evidence_lease,
+                        )
+                    except PreplanningStoreError:
+                        terminal = SemanticTerminalOutcome.create(
+                            operation_id=fence.operation_id,
+                            status="evidence_only",
+                            reason_codes=("graph_transaction_authority_unavailable",),
+                            candidates=(),
+                            temporal_closures=(),
+                            attempt_count=0,
+                        )
+                        authorization_guard = None
+                    except OSError:
+                        terminal = None
+                        authorization_guard = None
+                    finally:
+                        if canonical_evidence_lease is not None:
+                            canonical_evidence_lease.release()
+                    if (
+                        terminal is None
+                        or "source_alignment_authority_unavailable" in terminal.reason_codes
+                    ):
+                        return (
+                            result.model_copy(update={
+                                "transcript_ids": [governed_source.memory_id],
+                                "candidate_ids": [],
+                                "allowed_candidate_domains": [],
+                                "blocked_reasons": {
+                                    **result.blocked_reasons,
+                                    "semantic_ingestion": "source_alignment_authority_unavailable",
+                                },
+                            }),
+                            None,
+                            None,
+                        )
+                    if "graph_transaction_authority_unavailable" in terminal.reason_codes:
+                        return (
+                            result.model_copy(update={
+                                "transcript_ids": [governed_source.memory_id],
+                                "candidate_ids": [],
+                                "allowed_candidate_domains": [],
+                                "blocked_reasons": {
+                                    **result.blocked_reasons,
+                                    "semantic_ingestion": "graph_transaction_authority_unavailable",
+                                },
+                            }),
+                            None,
+                            None,
+                        )
+                    if "bootstrap_graph_terminal_persisted" in terminal.reason_codes:
+                        return (
+                            result.model_copy(update={
                                 "transcript_ids": [governed_source.memory_id],
                                 "candidate_ids": [],
                                 "allowed_candidate_domains": [],
@@ -539,76 +628,57 @@ class ProviderIngestionCoordinator:
                                     **result.blocked_reasons,
                                     "semantic_ingestion": "source_only",
                                 },
-                            }
-                        ),
-                        None,
-                        None,
-                    )
-                handoff, canonical_evidence_lease = handoff_with_lease
-                fence = prepared_admission.operation_fence_binding
-                # Every handoff marker is the V3 marker: the atomic store mints
-                # and reloads only that type.  The V3 normalization boundary runs
-                # before any lease session so the recovery probe can linearize
-                # its ready control and claim first.
-                try:
-                    terminal, authorization_guard = self._run_semantic_ingestion(
-                        operation_id=fence.operation_id,
-                        observation=self._load_admitted_observation(fence),
-                        authenticated_ingress=authenticated_ingress,
-                        lease_session=None,
-                        operation_fence=fence,
-                        bootstrap_handoff=handoff,
-                        canonical_evidence_arena=canonical_evidence_arena,
-                        canonical_evidence_lease=canonical_evidence_lease,
-                    )
-                except PreplanningStoreError:
-                    terminal = SemanticTerminalOutcome.create(
-                        operation_id=fence.operation_id,
-                        status="evidence_only",
-                        reason_codes=("graph_transaction_authority_unavailable",),
-                        candidates=(),
-                        temporal_closures=(),
-                        attempt_count=0,
-                    )
-                    authorization_guard = None
-                except OSError:
-                    terminal = None
-                    authorization_guard = None
-                finally:
-                    if canonical_evidence_lease is not None:
-                        canonical_evidence_lease.release()
-                if (
-                    terminal is None
-                    or "source_alignment_authority_unavailable" in terminal.reason_codes
-                ):
-                    return (
-                        result.model_copy(update={
-                            "transcript_ids": [governed_source.memory_id],
-                            "candidate_ids": [],
-                            "allowed_candidate_domains": [],
-                            "blocked_reasons": {
-                                **result.blocked_reasons,
-                                "semantic_ingestion": "source_alignment_authority_unavailable",
-                            },
-                        }),
-                        None,
-                        None,
-                    )
-                if "graph_transaction_authority_unavailable" in terminal.reason_codes:
-                    return (
-                        result.model_copy(update={
-                            "transcript_ids": [governed_source.memory_id],
-                            "candidate_ids": [],
-                            "allowed_candidate_domains": [],
-                            "blocked_reasons": {
-                                **result.blocked_reasons,
-                                "semantic_ingestion": "graph_transaction_authority_unavailable",
-                            },
-                        }),
-                        None,
-                        None,
-                    )
-                if "bootstrap_graph_terminal_persisted" in terminal.reason_codes:
+                            }),
+                            None,
+                            None,
+                        )
+                    if "bootstrap_graph_retry_persisted" in terminal.reason_codes:
+                        # The durable retry checkpoint is already persisted; the
+                        # caller sees the same fail-closed authority reason the
+                        # originating storage failure produced, and recovery reloads
+                        # the retained effects without reexecution.
+                        return (
+                            result.model_copy(update={
+                                "transcript_ids": [governed_source.memory_id],
+                                "candidate_ids": [],
+                                "allowed_candidate_domains": [],
+                                "blocked_reasons": {
+                                    **result.blocked_reasons,
+                                    "semantic_ingestion": "graph_transaction_authority_unavailable",
+                                },
+                            }),
+                            None,
+                            None,
+                        )
+                    try:
+                        self._persist_semantic_terminal(
+                            fence,
+                            terminal,
+                            authorization_guard=authorization_guard,
+                        )
+                    except SemanticEventReplayError:
+                        # A committed conflict clarification won the memory plane and
+                        # invalidated this terminal's compiled graph fence.  Replan
+                        # once from a fresh internal delivery coordinate against the
+                        # current graph; a second staleness propagates fail-closed.
+                        if replanned:
+                            raise
+                        replanned = True
+                        continue
+                    except (OSError, SemanticAuthorizationReadSetError):
+                        return (
+                            result.model_copy(update={
+                                "transcript_ids": [governed_source.memory_id],
+                                "candidate_ids": [],
+                                "allowed_candidate_domains": [],
+                                "blocked_reasons": {
+                                    **result.blocked_reasons,
+                                    "semantic_ingestion": "retryable_outage",
+                                },
+                            }),
+                            None,
+                            None,
+                        )
                     return (
                         result.model_copy(update={
                             "transcript_ids": [governed_source.memory_id],
@@ -622,68 +692,10 @@ class ProviderIngestionCoordinator:
                         None,
                         None,
                     )
-                if "bootstrap_graph_retry_persisted" in terminal.reason_codes:
-                    # The durable retry checkpoint is already persisted; the
-                    # caller sees the same fail-closed authority reason the
-                    # originating storage failure produced, and recovery reloads
-                    # the retained effects without reexecution.
-                    return (
-                        result.model_copy(update={
-                            "transcript_ids": [governed_source.memory_id],
-                            "candidate_ids": [],
-                            "allowed_candidate_domains": [],
-                            "blocked_reasons": {
-                                **result.blocked_reasons,
-                                "semantic_ingestion": "graph_transaction_authority_unavailable",
-                            },
-                        }),
-                        None,
-                        None,
-                    )
-                try:
-                    self._persist_semantic_terminal(
-                        fence,
-                        terminal,
-                        authorization_guard=authorization_guard,
-                    )
-                except SemanticEventReplayError:
-                    # A committed conflict clarification won the memory plane and
-                    # invalidated this terminal's compiled graph fence.  Replan
-                    # once from a fresh internal delivery coordinate against the
-                    # current graph; a second staleness propagates fail-closed.
-                    if replanned:
-                        raise
-                    replanned = True
-                    continue
-                except (OSError, SemanticAuthorizationReadSetError):
-                    return (
-                        result.model_copy(update={
-                            "transcript_ids": [governed_source.memory_id],
-                            "candidate_ids": [],
-                            "allowed_candidate_domains": [],
-                            "blocked_reasons": {
-                                **result.blocked_reasons,
-                                "semantic_ingestion": "retryable_outage",
-                            },
-                        }),
-                        None,
-                        None,
-                    )
-                return (
-                    result.model_copy(update={
-                        "transcript_ids": [governed_source.memory_id],
-                        "candidate_ids": [],
-                        "allowed_candidate_domains": [],
-                        "blocked_reasons": {
-                            **result.blocked_reasons,
-                            "semantic_ingestion": "source_only",
-                        },
-                    }),
-                    None,
-                    None,
-                )
-            return (result.model_copy(update={"transcript_ids": [governed_source.memory_id], "candidate_ids": [], "allowed_candidate_domains": [], "blocked_reasons": {**result.blocked_reasons, "semantic_ingestion": "source_only"}}), None, None)
+                return (result.model_copy(update={"transcript_ids": [governed_source.memory_id], "candidate_ids": [], "allowed_candidate_domains": [], "blocked_reasons": {**result.blocked_reasons, "semantic_ingestion": "source_only"}}), None, None)
 
+        finally:
+            replan_arenas.close()
     def reconcile(self) -> list[ProviderEvolutionOutcome]:
         """Complete retained found publications from retained durable records.
 

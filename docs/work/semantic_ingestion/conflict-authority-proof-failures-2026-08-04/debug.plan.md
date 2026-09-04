@@ -497,12 +497,36 @@ prove clarification-winner replan without a reverse progress transition.
 
 ## Exact Next Action
 
-Prove the production replan end to end through a configured bootstrap-profile
-provider root: a committed clarification winner between terminal compilation
-and publication must trigger exactly one internal conflict-replan delivery and
-complete at the current graph revision (second staleness propagates
-fail-closed).  Then rerun the affected families and perform the frozen
-three-role closure review.
+Perform the frozen three-role closure review of this debug operation (the
+production replan evidence below is complete), then hand the provider,
+factory, filesystem, derived-cache, composite, and Hermes conflict-attention
+composition slice to the M4 completion operation
+(`docs/work/semantic_ingestion/m4-closure-2026-09-04/implementation.plan.md`).
+
+### Production replan end-to-end proof complete (2026-09-04)
+
+- `tests/unit/core/semantic_ingestion/test_conflict_replan_production_owner.py`
+  `2 passed in 57.55s` through a real configured provider root
+  (`provider_service` composition with the scenario normalization host and
+  graph bundle builder):
+  - `test_stale_projection_publication_replans_once_and_completes`: with the
+    proven losing-race signal injected at the exact persistence boundary the
+    store raises it, the coordinator persisted exactly twice — the public
+    delivery, then `derive_conflict_replan_delivery_id` of it — the replan
+    operation reached `terminal`, the stale public operation did not, exactly
+    two governed admission indexes were retained, and the public outcome kept
+    the ordinary `source_only` shape.
+  - `test_second_consecutive_staleness_propagates_fail_closed`: a second
+    consecutive staleness propagates `SemanticEventReplayError` after exactly
+    two attempts.
+- The proof exposed and fixed one real composition defect: a canonical
+  evidence arena binds exactly one validation scope, so the replan attempt now
+  owns a fresh arena from the provider's canonical-evidence-arena factory
+  (closed via `ExitStack` on every exit path of `_ingest_semantic_source`).
+- Regression after the arena correction: provider compatibility plus
+  conflict-attention provider families `47 passed in 23.70s`; configured-root
+  scenario node `initial_attempt-direct` `1 passed in 64.16s`; scoped Ruff,
+  compilation, and diff checks clean.
 
 ### Production replan owner implemented (2026-09-04)
 
