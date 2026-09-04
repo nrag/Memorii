@@ -81,6 +81,22 @@ def _access() -> ConflictAccessContext:
     )
 
 
+def _integrity_conflict_id() -> str:
+    # Mirrors the ledger's domain-separated incident conflict id.
+    from memorii.core.memory_evolution.conflict_attention_repository import (
+        _INTEGRITY_CONFLICT_ID_DOMAIN,
+        _digest,
+    )
+
+    return _digest(
+        _INTEGRITY_CONFLICT_ID_DOMAIN,
+        {
+            "repository_id": "integrity-repository",
+            "incident_evidence_digest": D("incident-evidence"),
+        },
+    )
+
+
 def _seeded_repository(tmp_path, clock=None) -> FileConflictAttentionRepository:
     current = clock or [NOW]
     repository = FileConflictAttentionRepository(
@@ -119,10 +135,9 @@ def test_composite_pages_both_children_through_v2_cursors(tmp_path) -> None:
         _access(),
         ConflictListRequest(page_size=2, cursor=first.next_cursor),
     )
-    assert tuple(item.conflict_id for item in second.items) == (
-        D("incident-evidence")[:0] or second.items[0].conflict_id,
-    )
+    assert len(second.items) == 1
     assert second.items[0].kind is ConflictKind.STORAGE_INTEGRITY
+    assert second.items[0].conflict_id == _integrity_conflict_id()
     assert second.next_cursor is None
 
 
@@ -145,7 +160,9 @@ def test_composite_continuation_survives_repository_reopen(tmp_path) -> None:
     )
     assert tuple(item.conflict_id for item in second.items) == (
         "conflict-semantic-1",
-    ) or len(second.items) == 2
+        _integrity_conflict_id(),
+    )
+    assert second.items[1].kind is ConflictKind.STORAGE_INTEGRITY
     assert second.total_pending == 3
 
 
@@ -213,3 +230,97 @@ def test_provider_composite_requires_file_ledger_child() -> None:
     )
     with pytest.raises(RuntimeError, match="file ledger child"):
         service._attention_page(_access(), ConflictListRequest(page_size=1))
+
+
+def test_scoped_composite_listing_continues_past_first_page(tmp_path) -> None:
+    wide = ConflictAccessContext(
+        tenant_id="tenant:a",
+        principal_id="principal:a",
+        principal_binding_digest=D("binding"),
+        authorized_scope_ids=("scope:a", "scope:b"),
+        scope_digest=D("scopes"),
+        authorization_snapshot_digest=D("authz"),
+    )
+    repository = FileConflictAttentionRepository(
+        tmp_path / "conflict-attention.jsonl",
+        keys=(_key(),),
+        now_provider=lambda: NOW,
+    )
+    for index in range(2):
+        repository.append_open(_semantic_attention(index), scope_ids=("scope:a",))
+    composite = CompositeConflictListingRepository(repository)
+
+    first = composite.list_conflicts(
+        wide,
+        ConflictListRequest(page_size=1, scope_ids=("scope:a",)),
+    )
+    assert first.total_pending == 2
+    assert first.next_cursor is not None
+    second = composite.list_conflicts(
+        wide,
+        ConflictListRequest(page_size=1, cursor=first.next_cursor),
+    )
+    assert tuple(item.conflict_id for item in second.items) == (
+        "conflict-semantic-1",
+    )
+    assert second.total_pending == 2
+
+
+def test_composite_cursor_emission_maps_to_closed_error_boundary(tmp_path) -> None:
+    clock = [NOW]
+    repository = FileConflictAttentionRepository(
+        tmp_path / "conflict-attention.jsonl",
+        keys=(
+            ConflictCursorKey(
+                key_id="key-1",
+                key_epoch=1,
+                secret=b"x" * 32,
+                valid_from=NOW - timedelta(days=1),
+                expires_at=NOW + timedelta(seconds=1000),
+                signing=True,
+            ),
+        ),
+        now_provider=lambda: clock[0],
+    )
+    for index in range(2):
+        repository.append_open(_semantic_attention(index), scope_ids=("scope:a",))
+    composite = CompositeConflictListingRepository(repository)
+    clock[0] = NOW + timedelta(seconds=200)
+    with pytest.raises(
+        ConflictAttentionReadError, match="conflict_cursor_key_unavailable"
+    ):
+        composite.list_conflicts(_access(), ConflictListRequest(page_size=1))
+
+
+def test_retained_composite_snapshot_excludes_post_snapshot_conflicts(tmp_path) -> None:
+    repository = _seeded_repository(tmp_path)
+    composite = CompositeConflictListingRepository(repository)
+    first = composite.list_conflicts(
+        _access(), ConflictListRequest(page_size=1)
+    )
+    assert first.total_pending == 3
+    repository.append_open(
+        _semantic_attention(9), scope_ids=("scope:a",)
+    )
+    second = composite.list_conflicts(
+        _access(),
+        ConflictListRequest(page_size=10, cursor=first.next_cursor),
+    )
+    assert second.total_pending == 3
+    assert "conflict-semantic-9" not in tuple(
+        item.conflict_id for item in second.items
+    )
+
+
+def test_composite_listing_with_only_semantic_children(tmp_path) -> None:
+    repository = FileConflictAttentionRepository(
+        tmp_path / "conflict-attention.jsonl",
+        keys=(_key(),),
+        now_provider=lambda: NOW,
+    )
+    repository.append_open(_semantic_attention(0), scope_ids=("scope:a",))
+    composite = CompositeConflictListingRepository(repository)
+    page = composite.list_conflicts(_access(), ConflictListRequest(page_size=10))
+    assert page.total_pending == 1
+    assert page.items[0].conflict_id == "conflict-semantic-0"
+    assert page.next_cursor is None

@@ -355,6 +355,7 @@ def assemble_composite_snapshot(
     ordered_semantic_keys: tuple[CompositeConflictMemberKey, ...],
     ordered_integrity_keys: tuple[CompositeConflictMemberKey, ...],
     created_at: datetime,
+    listing_scope_ids: tuple[str, ...] | None = None,
 ) -> CompositeConflictListingSnapshot:
     """Freeze both child bindings and every member key in one snapshot.
 
@@ -394,7 +395,11 @@ def assemble_composite_snapshot(
         "principal_binding_digest": access.principal_binding_digest,
         "authorization_snapshot_digest": access.authorization_snapshot_digest,
         "authorized_scope_ids": access.authorized_scope_ids,
-        "listing_scope_ids": access.authorized_scope_ids,
+        "listing_scope_ids": (
+            listing_scope_ids
+            if listing_scope_ids is not None
+            else access.authorized_scope_ids
+        ),
         "scope_digest": access.scope_digest,
         "child_bindings": (
             semantic_binding.model_dump(mode="python"),
@@ -592,15 +597,19 @@ class CompositeConflictListingRepository:
                 integrity_keys,
                 _items,
             ) = self._ledger.create_composite_child_bindings(access, scopes=scopes)
-            snapshot = assemble_composite_snapshot(
-                snapshot_id=token_hex(16),
-                access=access,
-                semantic_binding=semantic_binding,
-                integrity_binding=integrity_binding,
-                ordered_semantic_keys=semantic_keys,
-                ordered_integrity_keys=integrity_keys,
-                created_at=self._now(),
-            )
+            try:
+                snapshot = assemble_composite_snapshot(
+                    snapshot_id=token_hex(16),
+                    access=access,
+                    semantic_binding=semantic_binding,
+                    integrity_binding=integrity_binding,
+                    ordered_semantic_keys=semantic_keys,
+                    ordered_integrity_keys=integrity_keys,
+                    created_at=self._now(),
+                    listing_scope_ids=tuple(scopes),
+                )
+            except CompositeConflictListingError as exc:
+                raise ConflictAttentionReadError(exc.reason) from None
             self._ledger.retain_composite_snapshot(snapshot)
             start = 0
         else:
@@ -633,10 +642,13 @@ class CompositeConflictListingRepository:
         next_cursor = None
         if start + len(selected) < len(items):
             last = snapshot.members[start + len(selected) - 1]
-            next_cursor = encode_composite_cursor(
-                _cursor_claims(snapshot, last),
-                key=self._ledger.cursor_signing_key(),
-            )
+            try:
+                next_cursor = encode_composite_cursor(
+                    _cursor_claims(snapshot, last),
+                    key=self._ledger.cursor_signing_key(),
+                )
+            except CompositeConflictListingError as exc:
+                raise ConflictAttentionReadError(exc.reason) from None
         return ConflictAttentionPage(
             items=tuple(selected),
             total_pending=len(items),

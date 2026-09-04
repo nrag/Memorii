@@ -63,10 +63,45 @@ Complete only when:
 
 ## Current Exact Next Action
 
-Run the frozen three-role closure reviews: first the linked semantic-conflict
-debug operation (M4-A replan evidence is complete), then the M4 milestone
-(including the composite listing slice below).  The child-binding API,
-composite repository, and provider/builder wiring are complete.
+The frozen three-role closure review of the M4-A/M4-B surface is complete
+with remediation (see the Review Log).  Remaining arrays are empty.  Proceed
+to M4-C: byte-equivalent genesis/checkpoint replay across every active read
+schema and the adversarial history families, then M4-D milestone closure.
+
+## Review Log
+
+### 2026-09-04 frozen three-role closure review (39a8b01^..b1413cc)
+
+`spec_auditor`, `correctness_reviewer`, and `test_reviewer` reviewed the
+complete M4-A/M4-B changed surface concurrently at HEAD `b1413cc`; the
+correctness and test reviewers re-executed the focused suites (`33 passed`).
+
+Coordinator classification and remediation:
+
+- Confirmed P2 / `changes_required` (correctness, both empirically
+  reproduced): (1) a scoped composite listing could never continue past its
+  first page — `assemble_composite_snapshot` discarded the effective listing
+  scopes; (2) `CompositeConflictListingError` escaped the closed tool error
+  boundary at cursor emission during the key-rotation window.  Both fixed:
+  the snapshot now records the effective `listing_scope_ids`, and every
+  composite raise site in `list_conflicts` maps to
+  `ConflictAttentionReadError`.
+- Confirmed P2/P3 / `changes_required` (test): watermark immutability,
+  empty-integrity-side, and the weakened reopen-continuation/tautological
+  assertions.  Fixed with four discriminating tests plus pinned assertions;
+  suite now `9 passed`.
+- `follow_up` recorded (no edit): R1 second-staleness raise is untyped on
+  the public surface (fail-closed holds); R2 replan without an arena factory
+  degrades to `source_only` (no production path); C1 the composite opt-in
+  phasing must be recorded in `docs/design/conflict_attention.md` before the
+  default flips; C2 composite metadata routing is contract-owned but unwired
+  (the child ledger enforces the same verdict by kind); Correctness F3
+  `_LedgerEntry` alias omits the composite record (typing-only); Test G5-G10
+  boundary/rotation/corruption/flag-forwarding polish tests.
+
+`remaining_validated_p1_p2: []`, `remaining_blocks_approval: []`,
+`remaining_changes_required: []` after remediation at the remediation
+revision.
 
 ## Progress Log
 
