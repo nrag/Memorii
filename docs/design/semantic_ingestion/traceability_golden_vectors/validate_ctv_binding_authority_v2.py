@@ -93,6 +93,9 @@ EXPECTED_PROTOCOL_CLASSES = {
 EXPECTED_STRENUM_CLASSES = {"SourceKind"}
 EXPECTED_UNREACHABLE_DEFAULT_NONE_FIELDS = {
     ("ActionTransitionRoleRequirement", "maximum_cardinality_override"),
+    ("ReusedFinalNonCommittingNoAuthorityGroup", "authorizing_group_authority_digest"),
+    ("ReusedFinalNonCommittingNoAuthorityGroup", "compilation_digest"),
+    ("ReusedFinalNonCommittingNoAuthorityGroup", "planning_authorization_digest"),
     ("ActionTransitionRoleRequirement", "minimum_cardinality_override"),
     ("AuthenticatedIngressContext", "language_declaration"),
     ("AuthenticatedIngressContext", "semantic_egress_governance"),

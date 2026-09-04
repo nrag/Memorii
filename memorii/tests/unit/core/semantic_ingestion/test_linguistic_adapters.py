@@ -159,12 +159,20 @@ def test_adapter_classifies_bounded_input_without_invoking_pipeline() -> None:
     assert adapter.last_failure_reason == "resource_limit_exceeded"
 
 
+STANZA_ASSET_ROOT = Path("/private/tmp/memorii-stanza-en-1.14.0")
+
+
+@pytest.mark.skipif(
+    not STANZA_ASSET_ROOT.is_dir(),
+    reason="local stanza analyzer assets are provisioned on demand; this "
+    "witness runs only where the asset root exists",
+)
 def test_shipped_manifests_verify_real_local_english_assets() -> None:
     import en_core_web_trf
 
     manifests = shipped_analyzer_asset_manifests()
     verify_local_assets(
-        manifest=manifests["stanza-en-1.14.0"], asset_root=Path("/private/tmp/memorii-stanza-en-1.14.0")
+        manifest=manifests["stanza-en-1.14.0"], asset_root=STANZA_ASSET_ROOT
     )
     verify_local_assets(
         manifest=manifests["spacy-en-trf-3.8.0"],
