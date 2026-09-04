@@ -2,7 +2,7 @@
 
 - Work ID: semantic_conflict_authority_proof_failures
 - Work type: debugging
-- Status: blocked
+- Status: active (unblocked 2026-09-04: the M3.1 closure supplies the required append-only plan lineage)
 - Coordinator: Codex main thread
 - Created: 2026-08-04
 - Last updated: 2026-08-04
@@ -497,6 +497,45 @@ prove clarification-winner replan without a reverse progress transition.
 
 ## Exact Next Action
 
-Resume after the reopened M3 correction supplies append-only source/group plan
-lineage and exact terminal binding. Then wire clarification-winner replan,
+Prove the production replan end to end through a configured bootstrap-profile
+provider root: a committed clarification winner between terminal compilation
+and publication must trigger exactly one internal conflict-replan delivery and
+complete at the current graph revision (second staleness propagates
+fail-closed).  Then rerun the affected families and perform the frozen
+three-role closure review.
+
+### Production replan owner implemented (2026-09-04)
+
+- `ProviderIngestionCoordinator` now owns the clarification-winner replan at
+  the projection-publication seam.  The semantic-source pipeline was extracted
+  into `_ingest_semantic_source` with a bounded one-replan loop: when
+  `SemanticEventReplayError` (stale compiled graph fence, the deterministic
+  clarification-winner signal proven by the reproducer) escapes
+  `_persist_semantic_terminal`, the orchestrator re-runs the complete governed
+  chain — normalization, governance material, admission, handoff, ingestion,
+  publication — under a fresh internal delivery coordinate derived by
+  `derive_conflict_replan_delivery_id`
+  (`memorii/memorii/core/memory_evolution/ingestion_contracts.py`), a
+  domain-separated `conflict-replan:v1:` coordinate that public
+  `ProviderEvent` validation rejects as reserved.  A second staleness
+  propagates; all other failure classes keep their existing handling; no
+  planned-to-preplanning regression and no detached write was added.
+- Mapping evidence for the owner choice: the admission index binds one
+  delivery identity to one operation fence
+  (`admission.py:_recover_exact_admission`), and `persist_terminal_group`
+  hard-requires the request graph revision to equal the control's frozen
+  revision (`atomic_store.py:10538`), so the lawful replan is a fresh derived
+  delivery through the full canonical chain — exactly the shape the
+  reproducer's manual replan uses.
+- Contract proof: `tests/unit/core/semantic_ingestion/test_conflict_replan_delivery_coordinate.py`
+  `4 passed in 12.57s` (domain separation, determinism, parent
+  non-embedment, composite distinctness, public reserved rejection, public
+  event immutability).
+- Regression: exact reproducer both winner orders `2 passed in 243.10s`;
+  provider compatibility plus conflict-attention provider service `47 passed
+  in 27.40s`; conflict clarification plus provider service `61 passed in
+  387.64s`; scoped Ruff, bytecode compilation, and `git diff --check` pass.
+- The original exact next action (wire clarification-winner replan) is
+  implemented at the coordinator seam; the store-level race proof above
+  remains the required closure evidence.
 rerun affected families and the exact reproducer, and perform frozen review.

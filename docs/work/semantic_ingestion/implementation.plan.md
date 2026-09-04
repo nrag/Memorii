@@ -87,22 +87,15 @@ The index and milestone packets own current navigation and status.
   authority is not approved for consumption.
 - M1: complete.
 - M2: complete.
-- M3: graph-dependent production closure is implemented and in final M3.1
-  verification.
-- M3.1: the active implementation operation is
-  `docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/implementation.plan.md`.
-  Frozen candidate v81 contains the v78 runtime/persistence/composition closure
-  plus the governance-only active-state and exact-next-action corrections.  No product-code action is
-  pending unless final review confirms a P1/P2 or contract-conformance defect.
-- Terminal-persistence performance, timing inventory, seven-shard topology, and
-  PR-gate ownership are owned by the linked testing WorkPlan. They are evidence
-  gaps, not an M3 product-correctness blocker.
-- The linked bootstrap Step-1/Step-2 route design is complete and approved at
-  canonical SHA-256 `43550572621383259ed31c3dd7942c2e5cf43e0acd4692cd50abefede6afd1bd`:
-  `docs/work/semantic_ingestion/bootstrap-step12-route-2026-08-08/design.plan.md`.
-- M4: dependency-blocked on that correction. Core conflict authority passes
-  its exact reproducer; clarification-winner replan requires append-only plan
-  lineage.
+- M3: graph-dependent production closure is implemented; M3.1 final closure
+  recorded 2026-09-04 at HEAD `bd1ebf0` with the v81 disposition and empty
+  remaining arrays.  No product-code action is pending unless a confirmed
+  P1/P2 or contract-conformance defect is found.
+- M4: unblocked as of the M3.1 closure.  Core conflict authority passes its
+  exact reproducer; the completion operation is
+  `docs/work/semantic_ingestion/m4-closure-2026-09-04/implementation.plan.md`
+  (clarification-winner replan via the linked debug, then composition and
+  milestone closure).
 - M5: pending.
 
 Current Git HEAD is `4691c03` with a dirty working tree. The M3 remediation
@@ -127,8 +120,8 @@ activation artifacts remain governed by their registered SIA-ED gates.
 | M0 | SIA-R03, SIA-R13, SIA-R22 | blocked | `docs/work/semantic_ingestion/milestones/m0-proof-compatibility.plan.md` | Layer1 and external trust authority |
 | M1 | SIA-R01, SIA-R04, SIA-R08, SIA-R12, SIA-R19, SIA-R22, SIA-R23 | complete | `docs/work/semantic_ingestion/milestones/m1-source-admission.plan.md` | M0 compatibility foundation |
 | M2 | SIA-R10, SIA-R11, SIA-R20, SIA-R21 | complete | `docs/work/semantic_ingestion/milestones/m2-writer-atomicity.plan.md` | M1 admitted source |
-| M3 | SIA-R02, SIA-R04 through SIA-R07, SIA-R09, SIA-R12 | active | `docs/work/semantic_ingestion/milestones/m3-semantic-pipeline.plan.md` | reopened correction plus approved bootstrap Step-1/Step-2 V1 authority design |
-| M4 | SIA-R10, SIA-R18 | blocked | `docs/work/semantic_ingestion/milestones/m4-event-history.plan.md` | corrected M3 plan lineage and linked debug closure |
+| M3 | SIA-R02, SIA-R04 through SIA-R07, SIA-R09, SIA-R12 | complete | `docs/work/semantic_ingestion/milestones/m3-semantic-pipeline.plan.md` | M3.1 closure recorded 2026-09-04 |
+| M4 | SIA-R10, SIA-R18 | active | `docs/work/semantic_ingestion/milestones/m4-event-history.plan.md` | unblocked by M3 closure; completion operation `m4-closure-2026-09-04` |
 | M5 | SIA-R03, SIA-R08, SIA-R13 through SIA-R17, SIA-R19 | pending | `docs/work/semantic_ingestion/milestones/m5-deployment-acceptance.plan.md` | M4 and external activation authority |
 
 ## Requirement Coverage Ledger
@@ -235,11 +228,12 @@ now names those contracts; implementing them is the next bounded operation.
 
 ## Next Action
 
-Validate `implementation-candidate-identity-v81.json`, obtain targeted test and
-correctness review of the measured graph-gate budget and exact traceability
-field rule, and record the final deterministic branch-gate disposition.  Do not
-resume M4 replan integration until M3.1 records empty validated P1/P2,
-blocks-approval, and changes-required arrays at the same candidate.
+Execute the M4 completion operation at
+`docs/work/semantic_ingestion/m4-closure-2026-09-04/implementation.plan.md`:
+resume the linked semantic-conflict debug at production-owned
+clarification-winner replan (append-only plan lineage), then the
+provider/factory/cache/Hermes conflict-attention composition slice, then M4
+milestone closure review.
 
 ## 2026-08-10 Bootstrap V3 Atomic Slice
 

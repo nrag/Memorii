@@ -344,6 +344,27 @@ def is_reserved_composite_delivery_id(value: str) -> bool:
     return value.startswith("composite:v1:")
 
 
+def derive_conflict_replan_delivery_id(parent_delivery_id: str) -> str:
+    """Derive the internal delivery coordinate for one stale-projection replan.
+
+    When a committed semantic-conflict clarification invalidates a prepared
+    projection, the projection publisher replans from a fresh delivery whose
+    coordinate is domain-separated from the public parent delivery ID.  The
+    value is internal: public provider events reject it like a composite
+    coordinate.
+    """
+
+    parent = normalize_delivery_id(parent_delivery_id).encode("utf-8")
+    return (
+        "conflict-replan:v1:"
+        + _digest(b"memorii.semantic-ingestion.conflict-replan-delivery.v1", parent)
+    )
+
+
+def is_reserved_conflict_replan_delivery_id(value: str) -> bool:
+    return value.startswith("conflict-replan:v1:")
+
+
 class DeliveryPrincipalBinding(BaseModel):
     """Stable authenticated principal coordinate, excluding session authority."""
 

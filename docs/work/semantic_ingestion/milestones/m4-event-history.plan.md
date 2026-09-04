@@ -1,7 +1,7 @@
 # Event History, Replay, Trust, And Identity Milestone
 
 - Parent WorkPlan: `docs/work/semantic_ingestion/implementation.plan.md`
-- Status: blocked
+- Status: active (unblocked by the 2026-09-04 M3.1 closure)
 - Requirements: SIA-R10, SIA-R18
 - Active linked debugging WorkPlan: `docs/work/semantic_ingestion/conflict-authority-proof-failures-2026-08-04/debug.plan.md`
 - Approved linked design: `docs/work/semantic_ingestion/semantic-conflict-introduction-authority-2026-08-04/design.plan.md`
@@ -101,9 +101,11 @@ these arrays; M4 must not duplicate its ledger or claim the arrays cleared.
 
 ## Current Exact Next Action
 
-Complete the reopened M3 source/group plan-lineage correction. Then resume the
-linked debug at clarification-winner replan and continue to the provider,
-factory, cache, and Hermes composition slice.
+Execute the M4 completion operation
+`docs/work/semantic_ingestion/m4-closure-2026-09-04/implementation.plan.md`.
+Its first milestone resumes the linked debug at production-owned
+clarification-winner replan on the now-complete M3 append-only plan lineage,
+then proceeds to the provider, factory, cache, and Hermes composition slice.
 
 ## Delegation And Review Gate
 

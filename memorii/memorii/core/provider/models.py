@@ -126,6 +126,7 @@ def normalize_delivery_id(value: str) -> str:
 
     from memorii.core.memory_evolution.ingestion_contracts import (
         is_reserved_composite_delivery_id,
+        is_reserved_conflict_replan_delivery_id,
     )
     from memorii.core.memory_evolution.ingestion_contracts import (
         normalize_delivery_id as normalize,
@@ -134,6 +135,8 @@ def normalize_delivery_id(value: str) -> str:
     normalized = normalize(value)
     if is_reserved_composite_delivery_id(normalized):
         raise ValueError("public delivery ID cannot use a reserved composite coordinate")
+    if is_reserved_conflict_replan_delivery_id(normalized):
+        raise ValueError("public delivery ID cannot use a reserved conflict-replan coordinate")
     return normalized
 
 

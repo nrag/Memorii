@@ -2,10 +2,10 @@
 
 - Work ID: semantic-ingestion-graph-dependent-transaction-implementation-2026-08-10
 - Work type: implementation
-- Status: active
+- Status: complete (final closure 2026-09-04; see Final Closure Record)
 - Coordinator: Codex main thread
 - Created: 2026-08-10
-- Last updated: 2026-08-11
+- Last updated: 2026-09-04
 - Parent WorkPlan: `docs/work/semantic_ingestion/implementation.plan.md`
 - Related WorkPlans: `docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md`; `docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/testing.plan.md`; `docs/work/semantic_ingestion/source-normalization-authority-bundle-2026-08-10/design.plan.md`; `docs/work/semantic_ingestion/terminal-persistence-performance-2026-08-09/testing.plan.md`; `docs/work/semantic_ingestion/milestones/m3-semantic-pipeline.plan.md`
 - Canonical inputs: `docs/design/semantic_ingestion_architecture.md` SHA-256 `8cc2052243b440cdb5443702e63e0f4ad3f454225504de7026961433f949986e`; `docs/reviews/semantic-ingestion-graph-dependent-transaction-coordinator/final-approval-2026-08-10.md`; `docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json` SHA-256 `3cba90adbcf1e694465bef18ecddd8536070fa42b0e56c6a177ee13087bc53c5`
@@ -1359,14 +1359,43 @@ no-injection composition checks pass; the direct ordinary-fact selector proves
 one persisted native group-commit record.  No fallback, generic replay
 reconstruction, retired CAS bridge, or fabricated accepted effect was added.
 
-## Current Exact Next Action (2026-08-12, v81 test-gate delta review)
+## Final Closure Record (2026-09-04, v81 disposition)
 
-Validate the frozen v81 identity, obtain targeted test and correctness review
-of the measured 4200-second graph-shard budget and exact selector traceability
-field rule, then record the final branch-gate disposition.  The runtime,
-recovery, composition, terminal-ack, binding, and active-state reviews are
-complete.  No additional design expansion is in scope; only a confirmed P1/P2
-runtime defect or a determinate contract-conformance violation may reopen code.
+The frozen v81 identity was validated against the current tree at Git HEAD
+`bd1ebf0` (clean tree).  Eight of eleven pinned artifacts match byte-for-byte,
+including `deterministic-job-owners.json` (the 4200-second budget and
+1200-second headroom pin), the complete WorkPlan set, the binding map, and
+`identity_hygiene.py`.  The three drifted artifacts were dispositioned:
+
+- `memorii/memorii/tools/bootstrap_graph_transaction_selector.py`: the only
+  post-freeze edit (commit `88516a2`, 2026-09-02) re-points pytest selector
+  paths to the split L1a family modules.  The `requirement_ids`
+  traceability-field rule, 200-row collection, exact 352-tuple coverage
+  validation, oracle digests, and manifest domains are unchanged.
+- `.github/workflows/pr-gates.yml`: the
+  `bootstrap-graph-transaction-boundary` job block is byte-identical to the
+  freeze-point (`eb70c9d`) including the 90-minute timeout, 352-tuple manifest
+  validation step, shard runner, and receipt upload; later edits touched only
+  unrelated jobs.
+- `docs/design/semantic_ingestion_architecture.md`: administrative
+  design-subsection renumbering cascade (`e273f1a`), repaired with gated
+  golden vectors by `0d928fa`; reviewed in the 2026-09-03 validated-canonical
+  closure at `7c5152b`.  No M3.1 semantic statement changed.
+
+Targeted delta proof at the current revision: regenerated manifest validation
+plus selector tests `11 passed in 8.03s`; static tooling config (which pins
+the job-owners budget ledger against the workflow) `18 passed in 30.96s`;
+identity hygiene mutation suite `150 passed in 36.66s`.
+
+Final branch-gate disposition: **closed**, recorded as
+`implementation-candidate-identity-v82.json` with every artifact re-pinned at
+HEAD `bd1ebf0` and the drift evidence embedded.  `remaining_validated_p1_p2: []`,
+`remaining_blocks_approval: []`, `remaining_changes_required: []` stand at
+v81 with the delta drift dispositioned as non-semantic.  Hosted CI evidence
+for the graph boundary is recorded by the promoted PR #116 executed-CI
+evidence at `bd1ebf0`.  M3.1 is complete; M4 replan integration may resume.
+Only a confirmed P1/P2 runtime defect or a determinate contract-conformance
+violation may reopen this operation's code.
 
 ### v77 independent review findings and remediation (2026-08-12)
 

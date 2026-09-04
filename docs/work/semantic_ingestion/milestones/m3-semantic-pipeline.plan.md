@@ -1,7 +1,7 @@
 # Candidate-To-Terminal Semantic Pipeline Milestone
 
 - Parent WorkPlan: `docs/work/semantic_ingestion/implementation.plan.md`
-- Status: active
+- Status: complete (M3.1 final closure recorded 2026-09-04 at bd1ebf0)
 - Requirements: SIA-R02, SIA-R04, SIA-R05, SIA-R06, SIA-R07, SIA-R09, SIA-R12
 - Historical authority: archive headings `M3 - Candidate-to-terminal semantic pipeline`, the M3 closure increments, `M3 Administrative Completion`, and `Post-completion hosted-CI remediation`
 

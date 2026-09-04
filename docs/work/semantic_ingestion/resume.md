@@ -5,9 +5,9 @@
 - Active milestone: M3.1 graph-dependent semantic transaction closure
 - Frozen candidate: `docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/implementation-candidate-identity-v81.json`
 - Candidate predecessor: `implementation-candidate-identity-v80.json`
-- Status: runtime closure reviews are clean; v81 freezes the measured test-gate budget and identity-field correction for targeted review
+- Status: complete — final closure recorded 2026-09-04 at HEAD `bd1ebf0`; see the Final Closure Record in the active implementation plan
 - Coordinator: Codex main thread
-- Last updated: 2026-08-12
+- Last updated: 2026-09-04
 - Git base: `4691c0374b3b01617a6a50fd83d4e3ff8a61aa84`
 - Tree state: dirty shared worktree; preserve all unrelated changes
 
@@ -83,11 +83,16 @@ root signatures and calls.
 
 ## Exact Next Action
 
-Validate the frozen v81 hashes, obtain targeted test/correctness review of the
-measured 4200-second graph-shard budget and exact selector traceability-field
-rule, then record the final branch-gate disposition.  Do not reopen product code
-unless a confirmed P1/P2 or determinate contract-conformance defect is found.
-M4 remains out of scope until this M3.1 closure review completes.
+M3.1 is complete.  The v81 final branch-gate disposition was recorded
+2026-09-04 at HEAD `bd1ebf0`: 8/11 pinned artifacts match byte-for-byte, the
+three drifted artifacts (selector path re-point from the L1a split,
+unrelated workflow jobs, and the repaired design renumbering cascade) were
+dispositioned as non-semantic, and the targeted delta gates passed
+(selector 11, static tooling 18, identity hygiene 150).  The next operation
+is the M4 completion plan at
+`docs/work/semantic_ingestion/m4-closure-2026-09-04/implementation.plan.md`,
+which resumes the linked debug at clarification-winner replan and proceeds to
+the provider/factory/cache/Hermes conflict-attention composition slice.
 
 ## Historical Navigation
 
