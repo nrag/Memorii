@@ -258,7 +258,11 @@ def test_scoped_composite_listing_continues_past_first_page(tmp_path) -> None:
     assert first.next_cursor is not None
     second = composite.list_conflicts(
         wide,
-        ConflictListRequest(page_size=1, cursor=first.next_cursor),
+        # The retained scope set is restated byte-for-byte: the exact
+        # continuation shape the scoped-listing defect falsely rejected.
+        ConflictListRequest(
+            page_size=1, cursor=first.next_cursor, scope_ids=("scope:a",)
+        ),
     )
     assert tuple(item.conflict_id for item in second.items) == (
         "conflict-semantic-1",

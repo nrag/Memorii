@@ -103,6 +103,27 @@ Coordinator classification and remediation:
 `remaining_changes_required: []` after remediation at the remediation
 revision.
 
+### 2026-09-04 targeted delta review of the remediation
+
+`correctness_reviewer` and `test_reviewer` reviewed exactly
+`b1413cc..2f7b382`.  Both confirmed the two P2 corrections complete in
+production: the scoped listing records and enforces the effective listing
+scopes end-to-end with v1-identical `invalid_cursor_scope` semantics, and
+every `CompositeConflictListingError` raise site reachable from
+`CompositeConflictListingRepository.list_conflicts` is mapped into the closed
+`ConflictAttentionReadError` boundary.  G1-G4 confirmed resolved by exact
+pins; 26 delta tests passed.
+
+One verification finding (NA / `changes_required`): the committed scoped
+continuation test did not discriminate the scoped-listing defect because its
+continuation request omitted `scope_ids`.  Corrected by restating the
+retained scope set byte-for-byte on the continuation request; the coordinator
+empirically verified the strengthened test fails against the pre-fix
+production module and passes against the fixed module.  The reviewers'
+transient-tree observation was the coordinator's own single-writer
+discriminator verification (module swap in/out); the closure run below is on
+the quiesced committed tree.  Delta arrays remain empty.
+
 ## Progress Log
 
 - 2026-09-04: Operation created; M3.1 closure recorded (v81 disposition plus
