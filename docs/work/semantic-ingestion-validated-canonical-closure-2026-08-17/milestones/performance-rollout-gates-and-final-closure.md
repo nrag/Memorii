@@ -1,8 +1,8 @@
 # Performance, Rollout, Gates, And Final Closure
 
 - Parent WorkPlan: `../implementation.plan.md`.
-- Status: active; digest-reduction implementation landed 2026-08-26,
-  broad-gate reconciliation and final closure pending.
+- Status: complete (final closure 2026-09-03 at `7c5152b`; gate evidence and
+  dispositions below).
 - Requirements: `VCC-R01` primarily; full acceptance matrix for closure.
 - Started: `2026-08-26`.
 - Base revision: `e89aa28` (documentation reconciliation commit).
@@ -185,9 +185,36 @@ Gate repairs in the same session:
   environmental stanza-assets node (host asset availability, unchanged
   disposition) and the hygiene-clean node (fixed 2026-09-03).
 
-## Next Action
+## Milestone Closure (2026-09-03)
 
-Land the pyright annotation remediation and the reservation-exhaustion proof
-result, freeze the candidate revision (regenerating the v11/v14 entrypoint
-bindings and the implementation candidate manifest), run the frozen-revision
-gate set, then launch the independent milestone and final review cohort.
+Independent review round at frozen candidate `542cd86`: `spec_auditor`
+APPROVED (three P3 follow-ups, all addressed or recorded);
+`test_reviewer` returned one `changes_required` (mirrored workflow pin
+assertions red at the frozen revision) — fixed at `78f844e`;
+`correctness_reviewer` returned one validated P2 `changes_required`
+(reservation-proof failure presenting as a wedged holder thread) —
+diagnosed as the test's arrival/start-order release-join mismatch, fixed at
+`1b07094` with both reviewers' follow-ups applied. Targeted delta reviews:
+both APPROVED with empty remaining lists. The candidate was refrozen at
+`7c5152b` (validator 9/9, clean tree); the production-limits module holds
+two green runs at the fixed revision (`3 passed in 244.91s` at load 7-10
+and `3 passed in 388.09s` at load 31).
+
+Final gate evidence at `7c5152b`: ruff clean; CI pyright command 0 errors;
+identity hygiene exit 0; both shard plans verify (6 x ~487s, 7 x ~569s
+against the unchanged 600s target); package smoke green; bindings v11
+(32/32) and v14 (5/5) regenerated and passing; manifest v2 validated 9/9;
+workflow collection pins and mirrors consistent; selector manifest valid.
+Broad unit gate (adopted xdist command): two runs at sustained external
+host load 17-70 recorded `5 failed, 4081 passed, 2 skipped` (junit at
+`../evidence/final-broad-gate-junit.xml`); every failure is dispositioned
+in the parent Final Closure Record (one stable environmental analyzer-assets
+node; four load-conditioned wall-clock-deadline/subprocess-timeout nodes
+with prior representative-load green evidence from the 2026-09-02
+equivalence runs and isolation greens at load ~8; the isolated CI shard
+runner is their wired authoritative environment).
+
+The milestone and the parent operation close together. Non-blocking
+follow-ups (path-level retained-pending handoff proof, recovery-race lease
+drift, bounded observability retention, durations backfill for eight new
+fast nodes) are recorded in the parent plan's decision log.

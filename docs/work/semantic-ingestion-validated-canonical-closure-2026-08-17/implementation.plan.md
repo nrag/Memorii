@@ -3,9 +3,9 @@
 ## Operation And Baseline
 
 - Work type: `implementation`.
-- Status: `in progress; performance evidence complete; final closure active
-  2026-09-03 (acceptance-matrix gap fills, gate repair, candidate refreeze,
-  independent reviews, CI parity, and current-state documentation)`.
+- Status: `complete (final closure 2026-09-03 at 7c5152b; see the Final
+  Closure Record; live/operational and executed-CI evidence remain
+  explicitly unclaimed)`.
 - Repository: `Memorii`.
 - Approved design:
   `docs/design/semantic_ingestion_validated_canonical_closure.md`.
@@ -514,8 +514,137 @@ superseded on 2026-08-26 by the family-proof and recovery milestones.)
 
 ## Next Action
 
-Complete the final verification sequence at the refrozen candidate
-(`ec64a89` lineage): the once-only broad unit gate via the adopted xdist
-command, the targeted delta reviews (correctness on the reservation-protocol
-fix, test on the mirror-pin fix and refreeze), then append the
-revision-bound closure record and flip this plan to complete.
+None. The operation is complete under the Final Closure Record below; the
+recorded follow-ups are non-blocking and owned by their listed surfaces.
+
+## Final Closure Record (2026-09-03)
+
+The completion contract is satisfied at frozen revision `7c5152b` (manifest
+`implementation-candidate-manifest-v2.json`, validator 9/9 mutations, clean
+tree):
+
+- every `VCC-R01`..`VCC-R12` row is implemented and verified (requirement
+  coverage ledger; the 2026-09-03 gap fills complete the production-root
+  capacity, concurrency, and privacy cells);
+- the acceptance matrix passes through real production owners (v11 bindings
+  32/32 mutations, v14 5/5, regenerated at the frozen tree; family,
+  recovery, parity, production-limits, and arena owners cited in the
+  milestone packets);
+- the reduction gate is met with margin at every measured layer
+  (95.8/96.5 percent production-bound census; 99.46 percent successor v2
+  harness);
+- enabled, disabled, and capacity-refused modes produce identical outcomes
+  (diametric parity proofs plus the reservation-exhaustion root proof);
+- every mapped root has a nonzero production caller and an exact typed
+  authority chain (v11/v14 ledgers);
+- all changed identities are behavioral; the field-aware identity gate and
+  the representative coordinate mutation corpus pass (behavioral node IDs);
+- the frozen-revision gate set: ruff clean; CI pyright command 0 errors;
+  identity hygiene exit 0; both shard plans verify (6 x ~487s and 7 x ~569s
+  against the unchanged 600s target); package smoke green; all workflow
+  collection pins and their mirrors consistent; selector manifest valid;
+  the broad unit gate recorded below;
+- independent final reviews: `spec_auditor` APPROVED; `test_reviewer`
+  APPROVED after the mirror-pin remediation; `correctness_reviewer`
+  APPROVED after the reservation-protocol remediation — all three with
+  `remaining_validated_p1_p2: []`, `remaining_blocks_approval: []`,
+  `remaining_changes_required: []` (delta reviews 2026-09-03);
+- production code, tests, evidence, ledgers, binding artifacts, and the
+  candidate manifest agree; live/operational evidence and executed-CI
+  evidence are explicitly unclaimed (no pull request exists; the parity and
+  cadence workflows are wired and fire from the default branch only).
+
+Broad unit gate at the frozen revision (adopted xdist command
+`../.venv/bin/python3.12 -m pytest tests/unit -W error -p no:cacheprovider
+-q -n 8 --dist loadfile`): two runs, `5 failed, 4081 passed, 2 skipped`
+(1:45:46 and 2:08:50; junit preserved at
+`evidence/final-broad-gate-junit.xml`). Every failure is dispositioned with
+its exact signature:
+
+1. `test_shipped_manifests_verify_real_local_english_assets` —
+   `LinguisticAdapterUnavailable: local analyzer asset root is missing` —
+   environmental on this host (stable across every recorded run and
+   configuration; previously dispositioned by the CE and removal
+   operations);
+2. `test_exact_scenario_generation_closure_is_accepted` —
+   `generation verification deadline exceeded` (wall-clock monotonic
+   deadline);
+3. `test_scenario_fixture_authority_passes_only_when_installed_as_explicit_authority` —
+   `structural_derivation_unavailable`;
+4. `test_registered_scenario_publishes_sequence_two_after_sequence_one` —
+   `structural_derivation_unavailable`;
+5. `test_jsonl_egress_repository_is_process_safe_reopenable_and_idempotent` —
+   spawned-process exitcode timeout.
+
+Nodes 2-5 are load-conditioned wall-clock/subprocess-timeout failures: the
+host carried sustained external load 17-70 through both runs (recorded at
+launch and in the run logs); the same nodes passed in the 2026-09-02
+equivalence runs at representative load (all four configurations, 3 failures
+total, two of which this closure fixed) and in today's isolation runs at
+load ~8 where they were re-executed; their authoritative environment is the
+isolated CI shard runner, which the wired six-shard gate enforces. This
+matches the recorded dispositions of the removal operation's final gate
+(deadline pins and slow-but-correct race timeouts under load).
+
+```yaml
+base_revision: 2a7a55e2f1ea265a5c7f824db1a38ce07cd9fb93
+reviewed_revision: 7c5152b0b2a8977a9fb572e6805c956141e0e606
+tested_revision: 7c5152b0b2a8977a9fb572e6805c956141e0e606
+tested_tree_digest: clean working tree at launch; junit preserved
+tree_state: clean
+changed_surface_inventory_complete: true
+scope_delta_resolved: true
+authority_chains_complete: true
+required_local_jobs:
+  - ruff check memorii tests
+  - pyright (CI command, memorii/ cwd)
+  - memorii.tools.identity_hygiene
+  - test_shards verify (unit, 6 shards)
+  - test_shards verify (semantic-terminal-persistence, 7 shards)
+  - package smoke (wheel + imports + dry-run eval + artifact validation)
+  - broad unit gate (adopted xdist command)
+  - bindings validators v11 (32 mutations) and v14 (5 mutations)
+  - candidate manifest v2 validator (9 mutations)
+  - workflow collection pins (10 / 87 / 224 / 3 / 2) plus mirrors
+  - bootstrap graph transaction selector manifest validation
+passed_local_jobs: same as required; broad gate 4081/4086 passed with the
+  five failures dispositioned above
+known_local_failures:
+  - stanza local-analyzer-assets node (environmental, stable)
+  - four load-conditioned deadline/subprocess nodes (dispositioned above)
+failure_exclusions:
+  - environmental: identical signature across every recorded run and
+    configuration; assets absent on this host by design of the check
+  - load-conditioned: prior representative-load green (equivalence record,
+    all four configurations) plus isolation greens at load ~8; isolated CI
+    shard runner is the wired authoritative environment
+workflow_identities:
+  - .github/workflows/pr-gates.yml (static-analysis, package-smoke,
+    unit-test-shards 0-5, semantic-terminal-persistence 0-6, aggregates,
+    provider-compatibility, semantic-ingestion family, benchmark gates)
+  - .github/workflows/canonical-evidence-parity-scheduled.yml (mode parity
+    + production admission limits, 4-hour cadence, exact count pins)
+ci_event: not_applicable (no pull request; branch not on the default branch;
+  scheduled workflows execute from the default branch only)
+ci_executed_sha: not_applicable (same reason)
+ci_executed_ref: not_applicable
+remaining_validated_p1_p2: []
+remaining_blocks_approval: []
+remaining_changes_required: []
+local_ci_parity: all workflow-selected deterministic commands reproduced
+  locally green; GitHub-only behavior (matrix scheduling, artifact upload,
+  runner isolation) unexecuted and unclaimed
+acceptance_gate_inventory: implementation-acceptance-v12.md rows mapped to
+  owners in the milestone packets; identity mutation corpus green
+github_run_urls: []
+pr_head_sha: not_applicable
+pr_base_sha: not_applicable
+merge_base_sha: 2a7a55e2f1ea265a5c7f824db1a38ce07cd9fb93
+required_checks_green: not_applicable with reason (no pull request exists;
+  execution of the wired gates is the promotion step recorded below)
+```
+
+Promotion note: opening the pull request and letting `pr-gates.yml` execute
+at this head is the recorded next repository action; per
+`.agents/PLANS.md`, that execution converts the wired-but-unclaimed CI
+enforcement into executed evidence and is the entry point for `$review-pr`.
