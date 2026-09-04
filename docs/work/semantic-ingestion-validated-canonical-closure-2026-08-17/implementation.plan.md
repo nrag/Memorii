@@ -648,3 +648,32 @@ Promotion note: opening the pull request and letting `pr-gates.yml` execute
 at this head is the recorded next repository action; per
 `.agents/PLANS.md`, that execution converts the wired-but-unclaimed CI
 enforcement into executed evidence and is the entry point for `$review-pr`.
+
+### Promotion Executed (2026-09-03/04)
+
+Pull request #116 (`semantic-indexing-m4` -> `main`) was opened and
+`pr-gates.yml` executed. The first run exposed two gate-integrity defects
+that local runs could not see: the frozen traceability chains (CTV exact,
+lifecycle-root, structural) had been desynchronized by the traceability
+registry cascade's design edit without regenerating their pinned hashes and
+known-answer vector, and the stanza analyzer-asset witness failed on every
+environment without the provisioned asset root. Both were repaired at
+`0d928fa` (chain regeneration with the compiler verifying the authority
+byte-identical; the witness gated on asset availability with adversarial
+coverage retained) and the full workflow then completed green:
+
+- PR: https://github.com/nrag/Memorii/pull/116
+- Run: https://github.com/nrag/Memorii/actions/runs/33832592411
+  (event `pull_request`, head `0d928fa`, conclusion `success`, all jobs)
+- The executed evidence covers the previously unclaimed CI items: the
+  static-analysis type gate (CI's floating pyright agrees, 0 errors), the
+  six-shard unit gate (the four load-conditioned deadline/subprocess nodes
+  pass on isolated runners, completing their disposition), the CTV exact
+  chain, package smoke, provider compatibility recapture, the semantic
+  ingestion families, the bootstrap-graph transaction matrix, and the
+  benchmark artifact gates.
+
+The closure record's revision-bound evidence stands at `7c5152b`; the
+`0d928fa` gate-integrity repair is recorded here per the
+post-closure-change rule, with every affected gate re-executed green by the
+run above. `$review-pr` on PR #116 is the remaining approval step.
