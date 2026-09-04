@@ -63,17 +63,16 @@ Complete only when:
 
 ## Current Exact Next Action
 
-Implement the composite attention repository slice of M4-B: the typed
-`CompositeConflictListingSnapshot`/`CompositeConflictListingCursorClaims`
-contract family with the v2 composite cursor grammar, two
-`(semantic, integrity)` child bindings, snapshot/binding digest validation,
-and metadata-index routing (semantic members to the same-store repository,
-integrity members to `operator_action_required`), exactly as governed by
-`docs/design/conflict_attention.md` (composite cursor grammar, member-key,
-and continuation contracts).  Then wire the provider composite listing and
-run its equivalence-class matrix.  The provider/factory/filesystem/Hermes
-builder enablement below is complete; the frozen three-role closure review of
-the linked debug and of this milestone remains after that slice.
+Extend the child-repository snapshot boundary so the composite owner can
+bind real children: the child listing API must expose per-member
+`conflict_revision` and `conflict_record_digest` (the design's
+`CompositeConflictMemberKey` inputs) plus a typed child-binding construction
+path on the semantic and integrity repositories.  Then wire the provider
+composite listing onto the completed contracts in
+`memorii/core/memory_evolution/composite_conflict_listing.py` and run its
+integration families.  The provider/factory/filesystem/Hermes builder
+enablement and the complete composite contract/codec/validation slice below
+are done; the frozen three-role closure reviews follow the wiring.
 
 ## Progress Log
 
@@ -81,6 +80,21 @@ the linked debug and of this milestone remains after that slice.
   successor identity v82 re-pinning all artifacts at HEAD `bd1ebf0`).
 - 2026-09-04: Coordinator mapping of the replan owner boundary complete
   (read-only); sole writer dispatched for the implementation slice.
+- 2026-09-04: M4-B composite contract slice complete:
+  `memorii/core/memory_evolution/composite_conflict_listing.py` owns the five
+  typed design contracts (member key, child binding, listing member,
+  composite snapshot, v2 cursor claims) with domain-separated digest
+  validation; the v2 cursor codec (grammar, MAC domain, key-ring lifecycle,
+  900-second expiry, cross-principal/tenant/scope and downgraded-protocol
+  rejection); snapshot assembly with child-ordered contiguous ordinals,
+  duplicate-member-key and both-children-same-conflict-ID
+  `semantic_conflict_replay_integrity_failure`; continuation snapshot/binding
+  digest validation; and metadata routing (semantic to repository, integrity
+  to `operator_action_required`).  Equivalence-class matrix:
+  `tests/unit/core/test_composite_conflict_listing.py` `17 passed in 11.13s`.
+  This is a contract-owner slice: child-repository binding APIs and provider
+  wiring are the recorded next action, and no production listing behavior
+  change is claimed.
 - 2026-09-04: M4-B builder enablement complete: `build_provider_memory_service_from_env`
   and `build_filesystem_provider`/`FilesystemStorageBundle.build_provider_memory_service`
   now forward `conflict_attention_repository`, `conflict_attention_enabled`,
