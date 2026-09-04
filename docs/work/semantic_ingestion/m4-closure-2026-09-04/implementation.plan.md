@@ -63,16 +63,10 @@ Complete only when:
 
 ## Current Exact Next Action
 
-Extend the child-repository snapshot boundary so the composite owner can
-bind real children: the child listing API must expose per-member
-`conflict_revision` and `conflict_record_digest` (the design's
-`CompositeConflictMemberKey` inputs) plus a typed child-binding construction
-path on the semantic and integrity repositories.  Then wire the provider
-composite listing onto the completed contracts in
-`memorii/core/memory_evolution/composite_conflict_listing.py` and run its
-integration families.  The provider/factory/filesystem/Hermes builder
-enablement and the complete composite contract/codec/validation slice below
-are done; the frozen three-role closure reviews follow the wiring.
+Run the frozen three-role closure reviews: first the linked semantic-conflict
+debug operation (M4-A replan evidence is complete), then the M4 milestone
+(including the composite listing slice below).  The child-binding API,
+composite repository, and provider/builder wiring are complete.
 
 ## Progress Log
 
@@ -80,6 +74,22 @@ are done; the frozen three-role closure reviews follow the wiring.
   successor identity v82 re-pinning all artifacts at HEAD `bd1ebf0`).
 - 2026-09-04: Coordinator mapping of the replan owner boundary complete
   (read-only); sole writer dispatched for the implementation slice.
+- 2026-09-04: M4-B composite wiring complete.  The file ledger gained
+  `create_composite_child_bindings` (one retained v1 child snapshot per
+  audience side at one watermark, per-member keys binding the introduction
+  revision and immutable ledger entry digest), `retain/load_composite_snapshot`
+  (new strictly validated `composite_snapshot` ledger record kind), and
+  `composite_snapshot_items` (watermark-bounded re-derivation).
+  `CompositeConflictListingRepository` pages the frozen member sequence
+  through v2 composite cursors with reopen-safe continuation.
+  `ProviderMemoryService` routes `_attention_page` through the composite owner
+  under the fail-closed opt-in `conflict_attention_composite` flag (requires
+  the file-ledger child; direct v1 behavior is unchanged by default), with the
+  flag forwarded through the factory and filesystem builders.  Integration
+  proof: `tests/unit/core/test_composite_conflict_listing_repository.py`
+  `5 passed in 5.95s`; full conflict-attention family `104 passed in 7.98s`;
+  clarification plus composition `25 passed in 181.03s`; provider service
+  `41 passed`; full Ruff and diff hygiene clean.
 - 2026-09-04: M4-B composite contract slice complete:
   `memorii/core/memory_evolution/composite_conflict_listing.py` owns the five
   typed design contracts (member key, child binding, listing member,

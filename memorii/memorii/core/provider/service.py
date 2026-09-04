@@ -44,6 +44,9 @@ from memorii.core.memory_evolution.bootstrap_profile import (
     VerifiedBootstrapProfile,
     verify_bootstrap_profile,
 )
+from memorii.core.memory_evolution.composite_conflict_listing import (
+    CompositeConflictListingRepository,
+)
 from memorii.core.memory_evolution.conflict_attention import (
     AuthorizedUserEventProof,
     ClarificationSubmissionOutcome,
@@ -234,6 +237,7 @@ class ProviderMemoryService:
         conflict_attention_enabled: bool = False,
         conflict_attention_observability_sink: ConflictAttentionObservabilitySink
         | None = None,
+        conflict_attention_composite: bool = False,
         authenticated_ingress_resolver: AuthenticatedIngressContextResolver | None = None,
         source_user_event_verifier: SourceUserEventVerifier | None = None,
         user_confirmation_receipt_verifier: UserConfirmationReceiptVerifier | None = None,
@@ -373,6 +377,10 @@ class ProviderMemoryService:
             raise ValueError("conflict attention is enabled without a repository")
         self._conflict_attention_repository = conflict_attention_repository
         self._conflict_attention_enabled = conflict_attention_enabled
+        self._conflict_attention_composite = conflict_attention_composite
+        self._composite_attention_repository_instance: (
+            CompositeConflictListingRepository | None
+        ) = None
         self._conflict_attention_observability_sink = (
             conflict_attention_observability_sink
         )
@@ -1474,7 +1482,28 @@ class ProviderMemoryService:
             access.authorized_scope_ids
         ):
             raise ConflictAttentionReadError("invalid_conflict_scope")
-        return self._conflict_attention_repository.list_conflicts(access, request)
+        repository = self._conflict_attention_repository
+        if self._conflict_attention_composite:
+            # The composite owner pages one frozen (semantic, integrity)
+            # snapshot through v2 cursors instead of the direct child ledger.
+            if not isinstance(repository, FileConflictAttentionRepository):
+                raise RuntimeError(
+                    "composite conflict attention requires the file ledger child"
+                )
+            repository = self._composite_attention_repository(repository)
+        return repository.list_conflicts(access, request)
+
+    def _composite_attention_repository(
+        self, ledger: FileConflictAttentionRepository
+    ) -> CompositeConflictListingRepository:
+        cached = self._composite_attention_repository_instance
+        if cached is not None and cached._ledger is ledger:
+            return cached
+        built = CompositeConflictListingRepository(
+            ledger, now_provider=self._now_provider
+        )
+        self._composite_attention_repository_instance = built
+        return built
 
     def seed_committed_record(self, record: ProviderStoredRecord) -> None:
         self._memory_plane.seed_provider_committed_record(record)

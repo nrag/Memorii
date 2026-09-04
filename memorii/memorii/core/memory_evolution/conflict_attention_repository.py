@@ -20,6 +20,13 @@ from typing import TYPE_CHECKING, Literal, Protocol, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from memorii.core.memory_evolution.composite_conflict_listing import (
+    CompositeChildKind,
+    CompositeConflictChildSnapshotBinding,
+    CompositeConflictListingSnapshot,
+    CompositeConflictMemberKey,
+    composite_snapshot_digest,
+)
 from memorii.core.memory_evolution.conflict_attention import (
     INTEGRITY_ATTENTION_QUESTION,
     AgentClarificationProposal,
@@ -62,6 +69,9 @@ from memorii.core.memory_evolution.ingestion_contracts import (
 )
 
 _CURSOR_DOMAIN = b"memorii.conflict-listing-cursor.v1\0"
+_COMPOSITE_SNAPSHOT_LEDGER_DOMAIN = b"memorii.composite-conflict-snapshot-ledger.v1\0"
+_CHILD_REPOSITORY_ID_DOMAIN = b"memorii.composite-conflict-child-repository-id.v1\0"
+_CHILD_AUTHORITY_SET_DOMAIN = b"memorii.composite-conflict-child-authority-set.v1\0"
 _CONFLICT_ENTRY_DOMAIN = b"memorii.conflict-attention-ledger-entry.v1\0"
 _SNAPSHOT_DOMAIN = b"memorii.conflict-listing-snapshot.v1\0"
 _CLARIFICATION_GENERATION_DOMAIN = b"memorii.conflict-clarification-generation.v1\0"
@@ -194,6 +204,22 @@ class _SnapshotLedgerEntry(BaseModel):
         expected = _digest(_SNAPSHOT_DOMAIN, _snapshot_payload(self.snapshot))
         if self.snapshot.snapshot_digest != expected:
             raise ValueError("listing snapshot digest mismatch")
+        return self
+
+
+class _CompositeSnapshotLedgerEntry(BaseModel):
+    schema_version: Literal[1] = 1
+    record_type: Literal["composite_snapshot"] = "composite_snapshot"
+    snapshot: CompositeConflictListingSnapshot
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    @model_validator(mode="after")
+    def validate_composite_snapshot(self) -> _CompositeSnapshotLedgerEntry:
+        if self.snapshot.snapshot_digest != composite_snapshot_digest(
+            self.snapshot
+        ):
+            raise ValueError("composite listing snapshot digest mismatch")
         return self
 
 
@@ -740,6 +766,150 @@ class FileConflictAttentionRepository:
             next_cursor = self._encode_cursor(access, snapshot, self._sort_key(selected[-1]))
         return ConflictAttentionPage(items=tuple(selected), total_pending=len(members), next_cursor=next_cursor)
 
+    def create_composite_child_bindings(
+        self,
+        access: ConflictAccessContext,
+        *,
+        scopes: tuple[str, ...],
+    ) -> tuple[
+        CompositeConflictChildSnapshotBinding,
+        CompositeConflictChildSnapshotBinding,
+        tuple[CompositeConflictMemberKey, ...],
+        tuple[CompositeConflictMemberKey, ...],
+        tuple[ConflictAttention, ...],
+    ]:
+        """Create one retained child snapshot per audience side and member keys.
+
+        The semantic side owns user-audience conflict introductions and the
+        integrity side owns sanitized storage-integrity incidents, both at one
+        ledger watermark.  Every member key binds the introduction's conflict
+        revision and its immutable ledger entry digest.
+        """
+        self._authorize_new_scope(access, scopes)
+        records = self._read_all()
+        state = self._replay(records)
+        watermark = len(records)
+        ordered = self._open_members(records, scopes=scopes)
+        semantic_members = [
+            item for item in ordered if item.kind is not ConflictKind.STORAGE_INTEGRITY
+        ]
+        integrity_members = [
+            item for item in ordered if item.kind is ConflictKind.STORAGE_INTEGRITY
+        ]
+
+        def keys_for(
+            members: list[ConflictAttention], child_kind: CompositeChildKind
+        ) -> tuple[CompositeConflictMemberKey, ...]:
+            return tuple(
+                CompositeConflictMemberKey.create(
+                    child_kind=child_kind,
+                    child_repository_id=_digest(
+                        _CHILD_REPOSITORY_ID_DOMAIN,
+                        {
+                            "repository_id": self._repository_id,
+                            "child_kind": str(child_kind),
+                        },
+                    ),
+                    conflict_id=item.conflict_id,
+                    conflict_revision=item.conflict_revision,
+                    conflict_record_digest=(
+                        state.introductions[item.conflict_id].entry_digest
+                    ),
+                )
+                for item in members
+            )
+
+        semantic_keys = keys_for(semantic_members, CompositeChildKind.SEMANTIC)
+        integrity_keys = keys_for(integrity_members, CompositeChildKind.INTEGRITY)
+
+        def binding_for(
+            members: list[ConflictAttention],
+            keys: tuple[CompositeConflictMemberKey, ...],
+            child_kind: CompositeChildKind,
+        ) -> CompositeConflictChildSnapshotBinding:
+            retained = self._create_snapshot(
+                access, scopes=scopes, members=members, watermark=watermark
+            )
+            self._append(_SnapshotLedgerEntry(snapshot=retained))
+            return CompositeConflictChildSnapshotBinding.create(
+                child_kind=child_kind,
+                child_repository_id=keys[0].child_repository_id if keys else _digest(
+                    _CHILD_REPOSITORY_ID_DOMAIN,
+                    {
+                        "repository_id": self._repository_id,
+                        "child_kind": str(child_kind),
+                    },
+                ),
+                child_snapshot_id=retained.snapshot_id,
+                child_snapshot_digest=retained.snapshot_digest,
+                child_watermark=watermark,
+                child_authority_set_digest=_digest(
+                    _CHILD_AUTHORITY_SET_DOMAIN,
+                    {"ordered_member_key_digests": list(
+                        key.member_key_digest for key in keys
+                    )},
+                ),
+                ordered_member_key_digests=tuple(
+                    key.member_key_digest for key in keys
+                ),
+            )
+
+        semantic_binding = binding_for(
+            semantic_members, semantic_keys, CompositeChildKind.SEMANTIC
+        )
+        integrity_binding = binding_for(
+            integrity_members, integrity_keys, CompositeChildKind.INTEGRITY
+        )
+        return (
+            semantic_binding,
+            integrity_binding,
+            semantic_keys,
+            integrity_keys,
+            tuple(semantic_members) + tuple(integrity_members),
+        )
+
+    def retain_composite_snapshot(
+        self, snapshot: CompositeConflictListingSnapshot
+    ) -> None:
+        self._append(_CompositeSnapshotLedgerEntry(snapshot=snapshot))
+
+    def load_composite_snapshot(
+        self, snapshot_id: str
+    ) -> CompositeConflictListingSnapshot:
+        for entry in self._read_all():
+            if (
+                isinstance(entry, _CompositeSnapshotLedgerEntry)
+                and entry.snapshot.snapshot_id == snapshot_id
+            ):
+                return entry.snapshot
+        raise ConflictAttentionReadError("invalid_conflict_cursor")
+
+    def composite_snapshot_items(
+        self, snapshot: CompositeConflictListingSnapshot
+    ) -> tuple[ConflictAttention, ...]:
+        """Re-derive the composite member items at the retained child watermark."""
+
+        watermark = snapshot.child_bindings[0].child_watermark
+        records = self._read_all()
+        if watermark > len(records):
+            raise ConflictAttentionReadError("invalid_conflict_cursor")
+        state = self._replay(records[:watermark])
+        items: list[ConflictAttention] = []
+        for member in snapshot.members:
+            attention = state.current.get(member.member_key.conflict_id)
+            if attention is None or attention.conflict_revision != (
+                member.member_key.conflict_revision
+            ):
+                raise ConflictAttentionReadError("invalid_conflict_cursor")
+            items.append(attention)
+        return tuple(items)
+
+    def cursor_signing_key(self) -> ConflictCursorKey:
+        return self._active
+
+    def cursor_keys(self) -> dict[tuple[str, int], ConflictCursorKey]:
+        return dict(self._keys)
+
     @staticmethod
     def _authorize_new_scope(access: ConflictAccessContext, scopes: tuple[str, ...]) -> None:
         if not set(scopes) <= set(access.authorized_scope_ids):
@@ -1025,7 +1195,7 @@ class FileConflictAttentionRepository:
     def _replay(self, records: list[_LedgerEntry]) -> _ReplayState:
         state = _ReplayState()
         for entry in records:
-            if isinstance(entry, _SnapshotLedgerEntry):
+            if isinstance(entry, (_SnapshotLedgerEntry, _CompositeSnapshotLedgerEntry)):
                 continue
             if isinstance(entry, _ConflictLedgerEntry):
                 conflict_id = entry.attention.conflict_id
@@ -1441,6 +1611,8 @@ class FileConflictAttentionRepository:
                 entries.append(_ConflictLedgerEntry.model_validate_json(wire))
             elif record_type == "snapshot":
                 entries.append(_SnapshotLedgerEntry.model_validate_json(wire))
+            elif record_type == "composite_snapshot":
+                entries.append(_CompositeSnapshotLedgerEntry.model_validate_json(wire))
             elif record_type == "clarification_generation":
                 entries.append(_ClarificationGenerationEntry.model_validate_json(wire))
             else:

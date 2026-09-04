@@ -62,6 +62,7 @@ def build_provider_memory_service_from_env(
     conflict_attention_enabled: bool = False,
     conflict_attention_observability_sink: ConflictAttentionObservabilitySink
     | None = None,
+    conflict_attention_composite: bool = False,
     now_provider: Callable[[], datetime] | None = None,
 ) -> ProviderMemoryService:
     """Build the source-only governed-source admission provider composition without ambient model dependencies."""
@@ -118,6 +119,7 @@ def build_provider_memory_service_from_env(
         conflict_attention_repository=conflict_attention_repository,
         conflict_attention_enabled=conflict_attention_enabled,
         conflict_attention_observability_sink=conflict_attention_observability_sink,
+        conflict_attention_composite=conflict_attention_composite,
         identity_lineage_audit_reader=audit_reader,
         identity_lineage_audit_authorizer=audit_authorizer,
         now_provider=now_provider,

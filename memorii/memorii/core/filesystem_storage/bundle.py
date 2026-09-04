@@ -99,6 +99,7 @@ class FilesystemStorageBundle:
         conflict_attention_enabled: bool = False,
         conflict_attention_observability_sink: ConflictAttentionObservabilitySink
         | None = None,
+        conflict_attention_composite: bool = False,
         now_provider: Callable[[], datetime] | None = None,
     ) -> ProviderMemoryService:
         return build_provider_memory_service_from_env(
@@ -118,6 +119,7 @@ class FilesystemStorageBundle:
             conflict_attention_repository=conflict_attention_repository,
             conflict_attention_enabled=conflict_attention_enabled,
             conflict_attention_observability_sink=conflict_attention_observability_sink,
+            conflict_attention_composite=conflict_attention_composite,
             now_provider=now_provider,
         )
 
@@ -148,6 +150,7 @@ def build_filesystem_provider(
     conflict_attention_enabled: bool = False,
     conflict_attention_observability_sink: ConflictAttentionObservabilitySink
     | None = None,
+    conflict_attention_composite: bool = False,
     now_provider: Callable[[], datetime] | None = None,
 ) -> ProviderMemoryService:
     return FilesystemStorageBundle.from_root(
@@ -162,5 +165,6 @@ def build_filesystem_provider(
         conflict_attention_repository=conflict_attention_repository,
         conflict_attention_enabled=conflict_attention_enabled,
         conflict_attention_observability_sink=conflict_attention_observability_sink,
+        conflict_attention_composite=conflict_attention_composite,
         now_provider=now_provider,
     )

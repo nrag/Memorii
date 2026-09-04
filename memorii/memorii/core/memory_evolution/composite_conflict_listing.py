@@ -15,21 +15,27 @@ import binascii
 import hashlib
 import hmac
 import json
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from hashlib import sha256
-from typing import Literal
+from secrets import token_hex
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+if TYPE_CHECKING:
+    from memorii.core.memory_evolution.conflict_attention_repository import (
+        ConflictCursorKey,
+        FileConflictAttentionRepository,
+    )
 
 from memorii.core.memory_evolution.conflict_attention import (
     _DIGEST,
     ConflictAccessContext,
+    ConflictAttentionPage,
+    ConflictListRequest,
     _identifier,
     _utc,
-)
-from memorii.core.memory_evolution.conflict_attention_repository import (
-    ConflictCursorKey,
 )
 from memorii.core.memory_evolution.ingestion_contracts import (
     decode_typed_value,
@@ -331,6 +337,15 @@ class CompositeConflictListingCursorClaims(BaseModel):
         return self
 
 
+def composite_snapshot_digest(
+    snapshot: CompositeConflictListingSnapshot,
+) -> str:
+    """Recompute the composite snapshot's own domain-separated digest."""
+
+    body = snapshot.model_dump(mode="python", exclude={"snapshot_digest"})
+    return _digest(_COMPOSITE_SNAPSHOT_DOMAIN, body)
+
+
 def assemble_composite_snapshot(
     *,
     snapshot_id: str,
@@ -419,7 +434,9 @@ def encode_composite_cursor(
 ) -> str:
     """Encode one v2 composite cursor under the active signing key."""
 
-    issued_at = claims_body["issued_at"]
+    issued_at = claims_body.get("issued_at")
+    if issued_at is None:
+        issued_at = datetime.now(UTC)
     assert isinstance(issued_at, datetime)
     if not _key_may_sign(key, issued_at):
         raise CompositeConflictListingError("conflict_cursor_key_unavailable")
@@ -429,6 +446,7 @@ def encode_composite_cursor(
             "protocol": COMPOSITE_CURSOR_PROTOCOL,
             "key_id": key.key_id,
             "key_epoch": key.key_epoch,
+            "issued_at": issued_at,
             "expires_at": issued_at + COMPOSITE_CURSOR_LIFETIME,
         }
     )
@@ -537,6 +555,135 @@ def route_composite_member(
     return CompositeMemberRoute.OPERATOR_ACTION_REQUIRED
 
 
+class CompositeConflictListingRepository:
+    """Single-paged composite listing over the retained child snapshots.
+
+    A fresh listing creates one retained child snapshot per audience side,
+    freezes both bindings and every member key in one composite snapshot, and
+    pages that immutable member sequence through v2 composite cursors.  The
+    file ledger remains the durable child authority; this owner performs no
+    introduction or transition writes.
+    """
+
+    def __init__(
+        self,
+        ledger: FileConflictAttentionRepository,
+        *,
+        now_provider: object = None,
+    ) -> None:
+        self._ledger = ledger
+        self._now = now_provider or (lambda: datetime.now(UTC))
+
+    def list_conflicts(
+        self,
+        access: ConflictAccessContext,
+        request: ConflictListRequest,
+    ) -> ConflictAttentionPage:
+        from memorii.core.memory_evolution.conflict_attention_repository import (
+            ConflictAttentionReadError,
+        )
+
+        if request.cursor is None:
+            scopes = request.scope_ids or access.authorized_scope_ids
+            (
+                semantic_binding,
+                integrity_binding,
+                semantic_keys,
+                integrity_keys,
+                _items,
+            ) = self._ledger.create_composite_child_bindings(access, scopes=scopes)
+            snapshot = assemble_composite_snapshot(
+                snapshot_id=token_hex(16),
+                access=access,
+                semantic_binding=semantic_binding,
+                integrity_binding=integrity_binding,
+                ordered_semantic_keys=semantic_keys,
+                ordered_integrity_keys=integrity_keys,
+                created_at=self._now(),
+            )
+            self._ledger.retain_composite_snapshot(snapshot)
+            start = 0
+        else:
+            try:
+                claims = decode_composite_cursor(
+                    request.cursor,
+                    keys=self._ledger.cursor_keys(),
+                    access=access,
+                    now=self._now(),
+                )
+            except CompositeConflictListingError as exc:
+                raise ConflictAttentionReadError(exc.reason) from None
+            if (
+                request.scope_ids is not None
+                and request.scope_ids != claims.listing_scope_ids
+            ):
+                raise ConflictAttentionReadError("invalid_cursor_scope")
+            try:
+                snapshot = self._ledger.load_composite_snapshot(
+                    claims.composite_snapshot_id
+                )
+                validate_composite_continuation(
+                    claims=claims, snapshot=snapshot, now=self._now()
+                )
+            except (CompositeConflictListingError, ConflictAttentionReadError):
+                raise ConflictAttentionReadError("invalid_conflict_cursor") from None
+            start = self._continuation_start(snapshot, claims)
+        items = self._ledger.composite_snapshot_items(snapshot)
+        selected = items[start : start + request.page_size]
+        next_cursor = None
+        if start + len(selected) < len(items):
+            last = snapshot.members[start + len(selected) - 1]
+            next_cursor = encode_composite_cursor(
+                _cursor_claims(snapshot, last),
+                key=self._ledger.cursor_signing_key(),
+            )
+        return ConflictAttentionPage(
+            items=tuple(selected),
+            total_pending=len(items),
+            next_cursor=next_cursor,
+        )
+
+    @staticmethod
+    def _continuation_start(
+        snapshot: CompositeConflictListingSnapshot,
+        claims: CompositeConflictListingCursorClaims,
+    ) -> int:
+        from memorii.core.memory_evolution.conflict_attention_repository import (
+            ConflictAttentionReadError,
+        )
+
+        matches = [
+            index
+            for index, member in enumerate(snapshot.members)
+            if member.snapshot_ordinal == claims.last_snapshot_ordinal
+            and member.member_key.member_key_digest == claims.last_member_key_digest
+        ]
+        if len(matches) != 1:
+            raise ConflictAttentionReadError("invalid_conflict_cursor")
+        return matches[0] + 1
+
+
+def _cursor_claims(
+    snapshot: CompositeConflictListingSnapshot,
+    last: CompositeConflictListingMember,
+) -> dict[str, object]:
+    return {
+        "tenant_id": snapshot.tenant_id,
+        "principal_id": snapshot.principal_id,
+        "principal_binding_digest": snapshot.principal_binding_digest,
+        "authorization_snapshot_digest": snapshot.authorization_snapshot_digest,
+        "authorized_scope_ids": snapshot.authorized_scope_ids,
+        "listing_scope_ids": snapshot.listing_scope_ids,
+        "scope_digest": snapshot.scope_digest,
+        "composite_snapshot_id": snapshot.snapshot_id,
+        "composite_snapshot_digest": snapshot.snapshot_digest,
+        "semantic_child_binding_digest": snapshot.child_bindings[0].binding_digest,
+        "integrity_child_binding_digest": snapshot.child_bindings[1].binding_digest,
+        "last_snapshot_ordinal": last.snapshot_ordinal,
+        "last_member_key_digest": last.member_key.member_key_digest,
+    }
+
+
 def _b64(value: bytes) -> str:
     return base64.urlsafe_b64encode(value).decode("ascii").rstrip("=")
 
@@ -553,10 +700,12 @@ __all__ = [
     "CompositeConflictListingCursorClaims",
     "CompositeConflictListingError",
     "CompositeConflictListingMember",
+    "CompositeConflictListingRepository",
     "CompositeConflictListingSnapshot",
     "CompositeConflictMemberKey",
     "CompositeMemberRoute",
     "assemble_composite_snapshot",
+    "composite_snapshot_digest",
     "decode_composite_cursor",
     "encode_composite_cursor",
     "route_composite_member",
