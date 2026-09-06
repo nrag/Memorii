@@ -2,8 +2,8 @@
 
 - Work ID: semantic_ingestion_m3_1_m4_completion_2026_09_04
 - Work type: implementation
-- Status: active; candidates through `53b5363` are superseded and the bounded
-  CI duration-inventory correction is under final local verification
+- Status: active; candidates through `7174670` are superseded and the bounded
+  hosted full-suite test/fixture correction is under final local verification
 - Coordinator: Codex main thread
 - Created: 2026-09-04
 - Last updated: 2026-09-06
@@ -526,6 +526,18 @@ bounded contract/repository/coordinator slice.
   once-only shards estimated at 601.629s and 583.932-583.933s; the slow module
   is isolated and the established 15-minute timeout remains unchanged. Static
   workflow and sharding contract tests pass 28/28.
+- 2026-09-06: Candidate `7174670` hosted execution exposed only stale tests and
+  fixture authority, not a new product-semantic defect. Exact replay errors are
+  now asserted directly across unresolved dependency and noncurrent event-batch
+  cases. Scenario planning authority derives its predicate from the sealed
+  proposal. Coordinator proof uses the current store snapshot and typed
+  related-conflict request, and asserts that host refresh begins only after the
+  coordinator returns its typed signal. Lost-ack recovery now interrupts after
+  the durable Found reload, while graph-unactivated production roots prove
+  handoff leases without falsely claiming graph reload or terminal control.
+  The scenario runner passes 11/11, the exposed coordinator family passes 6/6,
+  the exact 34-case terminal shard passes, and the five changed terminal
+  discriminators pass.
 
 ## Decision Log
 

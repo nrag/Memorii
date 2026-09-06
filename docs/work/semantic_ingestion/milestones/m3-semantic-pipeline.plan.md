@@ -1429,6 +1429,11 @@ proof did not run/reopen in separate interpreters. Correct only those existing
 contract boundaries, then finish the replacement freeze, hosted matrix, and
 whole-candidate review; no adjacent M3.1 behavior is authorized.
 
+Candidate `7174670` is superseded because hosted full-suite tests retained old
+generic replay-error, synthetic snapshot, generic conflict, and graph-activation
+fixture assumptions. Their bounded correction changes test authority only; the
+reviewed M3.1 runtime remains unchanged.
+
 Candidate `223e0cba` is superseded because its stronger store check exposed a
 multi-group successor defect: the first owned replacement effect advanced the
 sealed graph before the next replacement group. The bounded correction now

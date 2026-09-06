@@ -2,7 +2,7 @@
 
 - Work ID: semantic_conflict_authority_proof_failures
 - Work type: debugging
-- Status: active; candidates through `53b5363` are superseded; the product
+- Status: active; candidates through `7174670` are superseded; the product
   corrections are locally green and final shared-candidate evidence is pending
 - Coordinator: Codex main thread
 - Created: 2026-08-04
@@ -770,6 +770,12 @@ shared M3.1/M4 candidate freeze.
   module lacked measured CI duration ownership. Its fresh 609.56s timing run
   is now recorded so the shared candidate can execute within the existing
   bounded unit-shard topology.
+- 2026-09-06 candidate `7174670` disposition: hosted full-suite failures were
+  stale test/fixture expectations. The coordinator test now injects the typed
+  related-conflict signal against the current store snapshot and expects the
+  coordinator to return one host-owned refresh request, preserving the
+  approved ownership boundary. No runtime correction or scope expansion was
+  required.
 
 - Contracts checkpoint: added the closed persisted replan closure, final-result
   and successor-authority unions, policy/counter references, intermediate

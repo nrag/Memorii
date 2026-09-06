@@ -5861,8 +5861,8 @@ def test_direct_checkpoint_rejects_missing_retained_planned_terminal() -> None:
     before_authority = store.semantic_replay_authority()
 
     with pytest.raises(
-        PreplanningStoreError,
-        match="semantic replay member authority is corrupt",
+        SemanticEventReplayError,
+        match="semantic replay member has an unresolved cross-generation reference",
     ):
         store.checkpoint_source_progress(checkpoint)
 
@@ -6271,14 +6271,17 @@ def test_cross_group_graph_delta_substitution_has_zero_atomic_effects(
 
 
 @pytest.mark.parametrize(
-    "event_payload",
+    ("event_payload", "error_message"),
     (
-        b"opaque historical event input",
-        encode_typed_value(
-            {
-                "schema": "memorii.semantic-memory-event-batch-envelope.v999",
-                "payload": {},
-            }
+        (b"opaque historical event input", "semantic event batch validation failed"),
+        (
+            encode_typed_value(
+                {
+                    "schema": "memorii.semantic-memory-event-batch-envelope.v999",
+                    "payload": {},
+                }
+            ),
+            "semantic event batch envelope is not closed",
         ),
     ),
     ids=("opaque", "wrong-envelope-schema"),
@@ -6286,6 +6289,7 @@ def test_cross_group_graph_delta_substitution_has_zero_atomic_effects(
 def test_committed_event_batch_rejects_noncurrent_bytes_without_any_effect(
     monkeypatch: pytest.MonkeyPatch,
     event_payload: bytes,
+    error_message: str,
 ) -> None:
     plane, _, store, _, fence, service, repository = _setup(verified=True)
     terminal = accepted_terminal(operation_id=fence.operation_id)
@@ -6321,8 +6325,8 @@ def test_committed_event_batch_rejects_noncurrent_bytes_without_any_effect(
         before_projection_bindings = store.projection_history.replay_bindings()
 
         with pytest.raises(
-            PreplanningStoreError,
-            match="canonical semantic event batch is invalid",
+            SemanticEventReplayError,
+            match=error_message,
         ):
             original(mutant)
 
@@ -8760,8 +8764,8 @@ def test_replay_authority_rejects_absent_or_later_dependency() -> None:
     request = request.model_copy(update={"request_digest": generation_request_digest(request)})
 
     with pytest.raises(
-        PreplanningStoreError,
-        match="semantic replay member authority is corrupt",
+        SemanticEventReplayError,
+        match="semantic replay member has an unresolved cross-generation reference",
     ):
         store.checkpoint_source_progress(request)
     assert store.get_operation(fence).generation == 1
@@ -8806,8 +8810,8 @@ def test_replay_authority_rejects_peer_only_digest_advertisement() -> None:
     request = request.model_copy(update={"request_digest": generation_request_digest(request)})
 
     with pytest.raises(
-        PreplanningStoreError,
-        match="semantic replay member authority is corrupt",
+        SemanticEventReplayError,
+        match="semantic replay member has an unresolved cross-generation reference",
     ):
         store.checkpoint_source_progress(request)
     assert store.get_operation(fence).generation == 1

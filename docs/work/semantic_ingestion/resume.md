@@ -6,8 +6,8 @@
 - Active linked debugging WorkPlan: `docs/work/semantic_ingestion/conflict-authority-proof-failures-2026-08-04/debug.plan.md` (sole detailed owner of the two replan defects)
 - Approved bridge design WorkPlan: `docs/work/semantic_ingestion/bootstrap-v3-source-progress-bridge-2026-09-04/design.plan.md`
 - Active bridge implementation WorkPlan: `docs/work/semantic_ingestion/bootstrap-v3-source-progress-bridge-2026-09-04/implementation.plan.md`
-- Status: active candidate replacement after candidate `53b5363` review found
-  stale CI duration ownership for the corrected recovery module
+- Status: active candidate replacement after candidate `7174670` hosted gates
+  exposed stale pre-correction test and fixture assumptions
 - Coordinator: Codex main thread
 - Last updated: 2026-09-06
 - Superseded candidate: `48c6dc5ab3438684b6476b0919a17774c8bdc92b`
@@ -16,6 +16,7 @@
 - Superseded candidate: `223e0cba7d70dfe5ed4cad841a2eb30a531f22fd`
 - Superseded candidate: `21432be0de10e459f17ea768607ef66e0beb4c08`
 - Superseded candidate: `53b536388759c8a935c772e4edfebd888a7682e0`
+- Superseded candidate: `71746709ddd8e4da491b1b840052682297e0efe1`
 - Current tree state: bounded correction pending replacement freeze
 
 ## Objective
@@ -105,6 +106,17 @@ independent review evidence.
   of measured setup/call/teardown time. The corrected six-shard plan assigns
   that module alone at 601.629s and estimates the other shards at 583.932-
   583.933s, beneath the existing 15-minute workflow timeout.
+- Candidate `7174670` proved the corrected shard topology but is superseded.
+  Hosted full-suite execution exposed assertions that still expected the
+  retired generic replay-error wrapper, a scenario fixture whose planning
+  predicate was hardcoded instead of derived from its proposal, a coordinator
+  fixture sealed against an obsolete synthetic graph snapshot and generic CAS
+  exception, and recovery/root tests that claimed graph-reload evidence from
+  an intentionally graph-unactivated production host. The bounded correction
+  preserves exact replay errors, derives the fixture predicate, seals the real
+  current snapshot, injects the typed related-conflict signal, leaves the
+  coordinator-to-host refresh boundary explicit, and separates scenario graph
+  recovery proof from graph-unactivated production-root lease proof.
 
 ## Governing Decisions
 

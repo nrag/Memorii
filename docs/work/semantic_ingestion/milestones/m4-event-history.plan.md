@@ -142,6 +142,11 @@ corrected recovery module had no measured unit-shard duration and was assigned
 to an already loaded shard. Its 17 node timings are now recorded, isolating the
 601.629-second module within the existing 15-minute bound.
 
+Candidate `7174670` is superseded after hosted full-suite execution exposed
+stale test expectations for exact replay errors and fixture authority. The
+tests now preserve the reviewed error identity and coordinator/host refresh
+ownership rather than restoring retired wrappers or test-only runtime behavior.
+
 ## Delegation And Review Gate
 
 Use the root resume packet plus this file and the linked debug plan. One

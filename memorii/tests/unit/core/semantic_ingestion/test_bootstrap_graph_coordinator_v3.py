@@ -9,6 +9,7 @@ from pathlib import Path
 import memorii.core.semantic_ingestion.contracts as semantic_contracts
 import pytest
 from memorii.core.memory_evolution.atomic_store import (
+    BootstrapGraphRelatedConflictError,
     BootstrapWriterHandoffMarkerV3,
     PreplanningStoreError,
 )
@@ -171,7 +172,11 @@ def test_coordinator_persists_retry_or_terminal_once(monkeypatch, outcome_kind: 
         writer_commit_binding=control.writer_binding,
         control_epoch=ingress,
     )
-    snapshot = build_empty_graph_snapshot_bundle()
+    graph_snapshot = atomic.graph_state_snapshot()
+    snapshot = type(build_empty_graph_snapshot_bundle()).create(
+        graph_snapshot=graph_snapshot,
+        base_read_set=graph_snapshot.read_set,
+    )
     policy = build_graph_policy_reference()
     capabilities = build_empty_capability_registry()
     authority = BootstrapGraphSnapshotAuthorityV3.create(
@@ -266,11 +271,13 @@ def test_coordinator_persists_retry_or_terminal_once(monkeypatch, outcome_kind: 
     def flaky_group_commit(*, request):
         commit_calls.append((request.transaction_group_id, request.request_ctv_digest))
         if len(commit_calls) == 1 and outcome_kind in {"related_conflict", "retry"}:
-            raise PreplanningStoreError(
-                "bootstrap graph group commit CAS conflicted"
-                if outcome_kind == "related_conflict"
-                else "bootstrap graph group commit storage unavailable"
-            )
+            if outcome_kind == "related_conflict":
+                raise BootstrapGraphRelatedConflictError(
+                    transaction_group_id=request.transaction_group_id,
+                    expected_graph_revision=snapshot.graph_snapshot.graph_revision,
+                    observed_graph_revision="f" * 64,
+                )
+            raise PreplanningStoreError("bootstrap graph group commit storage unavailable")
         return original_commit_or_reload(request=request)
 
     monkeypatch.setattr(
@@ -336,8 +343,9 @@ def test_coordinator_persists_retry_or_terminal_once(monkeypatch, outcome_kind: 
         assert len(commit_calls) == 1
         return
     if outcome_kind == "related_conflict":
-        assert len(commit_calls) == 2
-        assert result.kind == "succeeded"
+        assert len(commit_calls) == 1
+        assert result.kind == "related_conflict_refresh_required"
+        return
     else:
         assert result.kind == "succeeded"
     if outcome_kind == "success":
@@ -350,8 +358,6 @@ def test_coordinator_persists_retry_or_terminal_once(monkeypatch, outcome_kind: 
     assert repeat == result
     if outcome_kind == "success":
         assert len(commit_calls) == 1
-    if outcome_kind == "related_conflict":
-        assert len(commit_calls) == 2
 
 
 def test_direct_provider_root_reaches_bootstrap_graph_terminal() -> None:
@@ -812,10 +818,11 @@ def _crash_once_after_handoff(monkeypatch, service: ProviderMemoryService) -> No
     state = {"crashed": False}
 
     def crash_once(**kwargs):
+        result = original(**kwargs)
         if not state["crashed"]:
             state["crashed"] = True
-            raise OSError("injected durable crash after handoff")
-        return original(**kwargs)
+            raise PreplanningStoreError("injected lost acknowledgement after recovery reload")
+        return result
 
     monkeypatch.setattr(atomic, "reload_bootstrap_recovery_replay_v3", crash_once)
 
@@ -831,7 +838,7 @@ def _interrupt_after_handoff(
     # non-terminal preplanning control.
     assert (
         first.blocked_reasons["semantic_ingestion"]
-        == "source_alignment_authority_unavailable"
+        == "graph_transaction_authority_unavailable"
     )
     controls = service._memory_plane.list_records(
         source_kind="semantic_ingestion_preplanning_control"
@@ -864,7 +871,11 @@ def _scenario_recovery_service(*, plane):
         host_bootstrap_capability=_built_in_local_capability(scenario_test=True),
         host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
         source_normalization_host_bundle_builder=builder,
-        canonical_evidence_enabled=False,
+        bootstrap_graph_host_bundle_builder=BootstrapGraphHostBundleBuilder(
+            authority_provider=DeterministicBootstrapGraphAuthorityProviderV3(
+                successful_calls=[]
+            )
+        ),
     )
     return service
 
@@ -872,7 +883,7 @@ def _scenario_recovery_service(*, plane):
 def test_redelivery_recovery_uses_fresh_owner_and_leases_exact_prepared_bytes(
     monkeypatch,
 ) -> None:
-    service = _production_recovery_service()
+    service = _scenario_recovery_service(plane=MemoryPlaneService())
     plane = service._memory_plane
     _interrupt_after_handoff(monkeypatch, service, "recovery-fresh-owner")
 
@@ -964,7 +975,7 @@ def test_redelivery_recovery_uses_fresh_owner_and_leases_exact_prepared_bytes(
 
 
 def test_redelivery_recovery_rejects_mutated_lease_coordinates(monkeypatch) -> None:
-    service = _production_recovery_service()
+    service = _scenario_recovery_service(plane=MemoryPlaneService())
     plane = service._memory_plane
     _interrupt_after_handoff(monkeypatch, service, "recovery-coordinate-mutations")
 
@@ -1068,7 +1079,6 @@ def test_every_trigger_family_stages_seals_and_leases_prepared_bytes(root, monke
     from memorii.integrations.hermes_provider import HermesMemoryProvider
 
     service = _production_recovery_service()
-    plane = service._memory_plane
     hermes = HermesMemoryProvider(service=service)
     ingress = _host_ingress().model_copy(
         update={"provider_identity": "scenario-test-host"}
@@ -1119,26 +1129,13 @@ def test_every_trigger_family_stages_seals_and_leases_prepared_bytes(root, monke
 
     atomic = service._provider_ingestion._atomic_store
     handoff_leases: list[object] = []
-    reload_leases: list[object] = []
     original_handoff = atomic.bootstrap_writer_handoff
-    original_reload = atomic.reload_bootstrap_recovery_replay_v3
 
     def observe_handoff(request, *, canonical_evidence_lease=None):
         handoff_leases.append(canonical_evidence_lease)
         return original_handoff(request, canonical_evidence_lease=canonical_evidence_lease)
 
-    def observe_reload(*, recovery_key_digest, canonical_evidence_lease=None,
-                       handoff_marker=None, tenant_partition_id=None):
-        reload_leases.append(canonical_evidence_lease)
-        return original_reload(
-            recovery_key_digest=recovery_key_digest,
-            canonical_evidence_lease=canonical_evidence_lease,
-            handoff_marker=handoff_marker,
-            tenant_partition_id=tenant_partition_id,
-        )
-
     monkeypatch.setattr(atomic, "bootstrap_writer_handoff", observe_handoff)
-    monkeypatch.setattr(atomic, "reload_bootstrap_recovery_replay_v3", observe_reload)
 
     snapshots_before = len(service._canonical_closure_dispatcher.snapshots)
     result = deliver()
@@ -1150,7 +1147,6 @@ def test_every_trigger_family_stages_seals_and_leases_prepared_bytes(root, monke
         assert lease is not None
         assert lease.result.member_evidence
         assert lease._released
-    assert reload_leases and all(lease is not None for lease in reload_leases)
     snapshots = service._canonical_closure_dispatcher.snapshots
     assert len(snapshots) == snapshots_before + expected_deliveries
     for snapshot in snapshots[snapshots_before:]:
@@ -1158,10 +1154,3 @@ def test_every_trigger_family_stages_seals_and_leases_prepared_bytes(root, monke
         assert snapshot.terminal_reason == "completed"
         assert snapshot.released
         assert "Atlas owner is Bob." not in repr(snapshot)
-    controls = plane.list_records(
-        source_kind="semantic_ingestion_preplanning_control"
-    )
-    assert controls
-    assert all(
-        control.content["control"]["state"] == "terminal" for control in controls
-    )

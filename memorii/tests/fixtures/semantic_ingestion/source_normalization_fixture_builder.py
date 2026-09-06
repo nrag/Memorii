@@ -633,6 +633,7 @@ def build_source_normalization_authority_bundle(
     capability_registry: CapabilityRegistrySnapshot,
     graph_dependent_execution_policy: GraphDependentExecutionPolicy,
     retry_policy_fingerprint: str,
+    planning_predicate_id: str,
     bootstrap_v3_runtime_authority: BootstrapV3RuntimeAuthority | None = None,
     bootstrap_analysis_routes: BootstrapAnalysisRouteBindingSet | None = None,
     arbitration_as_of: datetime = datetime(2026, 1, 1, tzinfo=UTC),
@@ -698,7 +699,7 @@ def build_source_normalization_authority_bundle(
         "bootstrap_planning_policy_authority": BootstrapPlanningPolicyAuthority(
             predicate_registry_fingerprint=_fixture_digest("predicate-registry", source.source_id),
             predicate_state_rule=PredicateStateRule(
-                predicate_id="owner_is", cardinality="single",
+                predicate_id=planning_predicate_id, cardinality="single",
                 conflict_behavior="compete_within_slot",
                 qualifier_partition_fields=(),
                 value_identity_policy_id="memorii.fixture.entity-value.v1",
@@ -710,7 +711,7 @@ def build_source_normalization_authority_bundle(
                 {
                     "predicate_registry_fingerprint": _fixture_digest("predicate-registry", source.source_id),
                     "predicate_state_rule": PredicateStateRule(
-                        predicate_id="owner_is", cardinality="single",
+                        predicate_id=planning_predicate_id, cardinality="single",
                         conflict_behavior="compete_within_slot",
                         qualifier_partition_fields=(),
                         value_identity_policy_id="memorii.fixture.entity-value.v1",
@@ -962,6 +963,12 @@ class DynamicSourceNormalizationAuthorityProvider:
                 capability_registry=registry,
                 graph_dependent_execution_policy=execution_policy,
                 retry_policy_fingerprint=self._retry_policy_fingerprint,
+                planning_predicate_id=(
+                    proposal.facts[0].predicate_id
+                    if proposal.facts
+                    and len({fact.predicate_id for fact in proposal.facts}) == 1
+                    else "owner_is"
+                ),
             )
             self._issued[key] = (bundle, DynamicSourceNormalizationProposalMaterials(request, proposal))
             for issued_request in v3.runtime_authority.proposal_requests:
