@@ -20,6 +20,6 @@
   "assignment_scope": "file",
   "schema_version": 1,
   "shard_count": 6,
-  "target_seconds": 600,
+  "target_seconds": 720,
   "timing_manifest": "unit-test-durations.json"
 }

@@ -6,8 +6,8 @@
 - Active linked debugging WorkPlan: `docs/work/semantic_ingestion/conflict-authority-proof-failures-2026-08-04/debug.plan.md` (sole detailed owner of the two replan defects)
 - Approved bridge design WorkPlan: `docs/work/semantic_ingestion/bootstrap-v3-source-progress-bridge-2026-09-04/design.plan.md`
 - Active bridge implementation WorkPlan: `docs/work/semantic_ingestion/bootstrap-v3-source-progress-bridge-2026-09-04/implementation.plan.md`
-- Status: active bounded correction after candidate `21432be` hosted/review
-  evidence exposed one architecture-boundary failure and one recovery fail-open
+- Status: active candidate replacement after candidate `53b5363` review found
+  stale CI duration ownership for the corrected recovery module
 - Coordinator: Codex main thread
 - Last updated: 2026-09-06
 - Superseded candidate: `48c6dc5ab3438684b6476b0919a17774c8bdc92b`
@@ -15,6 +15,7 @@
 - Superseded candidate: `04a7303c354527280a6490e2ebac0cac2b7a551e`
 - Superseded candidate: `223e0cba7d70dfe5ed4cad841a2eb30a531f22fd`
 - Superseded candidate: `21432be0de10e459f17ea768607ef66e0beb4c08`
+- Superseded candidate: `53b536388759c8a935c772e4edfebd888a7682e0`
 - Current tree state: bounded correction pending replacement freeze
 
 ## Objective
@@ -96,6 +97,14 @@ independent review evidence.
   normalization, lineage, or group effect. The complete affected recovery file
   passes 17 tests under warnings-as-errors, the exact hosted Benchmark Contract
   Tests command passes 302 tests, and configured Pyright is clean.
+- Candidate `53b5363` contains those product corrections and passed the exact
+  local recovery and benchmark-contract gates. It is superseded because the 17
+  recovery nodes had no measured entries in the unit duration inventory, so
+  file-balanced CI assigned the roughly 610-second module to an already loaded
+  shard. A fresh timing run passed all 17 tests in 609.56s and recorded 601.629s
+  of measured setup/call/teardown time. The corrected six-shard plan assigns
+  that module alone at 601.629s and estimates the other shards at 583.932-
+  583.933s, beneath the existing 15-minute workflow timeout.
 
 ## Governing Decisions
 
@@ -121,5 +130,6 @@ WorkPlan. Historical evidence remains under the milestone packets and archive.
 
 ## Exact Next Action
 
-Finish the affected gates, reconcile and pin the active packets, then freeze and push the shared M3.1/M4 candidate and obtain exact-SHA hosted execution and clean
-independent specification, correctness, and test review.
+Refresh the split manifest, freeze and push the shard-timing-corrected shared
+M3.1/M4 candidate, then obtain exact-SHA hosted execution and clean independent
+specification, correctness, and test review.

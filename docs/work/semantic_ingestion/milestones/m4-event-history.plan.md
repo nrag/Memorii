@@ -112,8 +112,8 @@ passing runs alone.
 
 ## Current Exact Next Action
 
-Finish the bounded fail-closed recovery gates, freeze the replacement, then run the exact-SHA hosted checks and
-whole-candidate reviews without adding scope. The first final-tree run passed
+Freeze the timing-corrected replacement, then run the exact-SHA hosted checks
+and whole-candidate reviews without adding scope. The first final-tree run passed
 414 tests and found only a stale architecture hash; after its correction the
 complete 415-case family passed under warnings-as-errors in 2142.04s.
 
@@ -136,6 +136,11 @@ at the composite conflict-listing boundary, and public recovery proof found
 that corrupt persisted progress could be mistaken for absence. The narrow
 replacement exposes the shared validators publicly and makes corrupt checkpoint
 recovery a typed noncommit while preserving the valid genesis path.
+
+Candidate `53b5363` is superseded only for verification operability: the
+corrected recovery module had no measured unit-shard duration and was assigned
+to an already loaded shard. Its 17 node timings are now recorded, isolating the
+601.629-second module within the existing 15-minute bound.
 
 ## Delegation And Review Gate
 

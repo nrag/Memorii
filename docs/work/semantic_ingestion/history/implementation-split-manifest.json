@@ -1,6 +1,6 @@
 {
   "format": "memorii.workplan-split-manifest.v2",
-  "bundle_sha256": "a3603a52a76f6e9755c734c522ea7facbb16a2e0f04d30d7b74dd7f3027b92e2",
+  "bundle_sha256": "02fc6f33e31d954cce8de99b185652ffd349b7939fcd6306d788ce3dbd80a53d",
   "candidate_identity": "docs/work/semantic_ingestion/history/implementation-split-review-identity.json",
   "canonical_path": "docs/work/semantic_ingestion/implementation.plan.md",
   "archive": {
@@ -75,19 +75,19 @@
     },
     {
       "path": "docs/work/semantic_ingestion/implementation.plan.md",
-      "sha256": "526b6a24894b42ebf3c71b5bf2d2034c066d1e300f62bc942416957da6d11822"
+      "sha256": "ef04ff47728ec7d98248dc04d8a82aa7c70e31720d3bd3968e2e2d3a4dd0effe"
     },
     {
       "path": "docs/work/semantic_ingestion/resume.md",
-      "sha256": "bb53eabb3cfed83243558e1ef2d98723b29ca4890c42fa34cd687e48f45becff"
+      "sha256": "a1c2cf7db180d403d1a1fdfc55088d15721d87a4f43bedad96de731229e51fa5"
     },
     {
       "path": "docs/work/semantic_ingestion/conflict-authority-proof-failures-2026-08-04/debug.plan.md",
-      "sha256": "1c22aa9034fb80089079bbfcf5f772c7c3979cce327af72d9c25cbe1a186f007"
+      "sha256": "92030b26763320161eccebd92ce118868dfcf7f0055bf0630a688be0b4101e72"
     },
     {
       "path": "docs/work/semantic_ingestion/m4-closure-2026-09-04/implementation.plan.md",
-      "sha256": "4f154de091249c7557f49e5a3515beab862964d7c179c52e9ffcf7fdd99f49df"
+      "sha256": "8ae5c7114236e7e9cd54c1ee0affb0fe09798be8d5d1b2a270e3f79d053180c9"
     },
     {
       "path": "docs/work/semantic_ingestion/history/implementation-through-2026-08-04.md",
@@ -111,11 +111,11 @@
     },
     {
       "path": "docs/work/semantic_ingestion/milestones/m3-semantic-pipeline.plan.md",
-      "sha256": "f3dba552ac09bdf0944c760761079f5107489e868032d0f482c302a8ddbe34b4"
+      "sha256": "b3a1ae0fe6f5be87ccaf526ebcec3522b14b84a8eb36cfbbb646acceb9891bad"
     },
     {
       "path": "docs/work/semantic_ingestion/milestones/m4-event-history.plan.md",
-      "sha256": "655a60df738b497e621fe6c1731c6323f03c12e10fbc7389118f6a449e716063"
+      "sha256": "c27909c664eaa9236ff94ab2e0c659239c07d2931d7c5f687bd5740034f26445"
     },
     {
       "path": "docs/work/semantic_ingestion/milestones/m5-deployment-acceptance.plan.md",
@@ -383,11 +383,11 @@
       "required_literals": [
         {
           "owner": "docs/work/semantic_ingestion/implementation.plan.md",
-          "literal": "Push the frozen shared M3.1/M4 candidate"
+          "literal": "Push the timing-corrected frozen shared M3.1/M4 candidate"
         },
         {
           "owner": "docs/work/semantic_ingestion/resume.md",
-          "literal": "freeze and push the shared M3.1/M4 candidate"
+          "literal": "freeze and push the shard-timing-corrected shared"
         }
       ],
       "archive_anchors": [

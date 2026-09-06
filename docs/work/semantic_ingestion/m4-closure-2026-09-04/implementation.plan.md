@@ -2,8 +2,8 @@
 
 - Work ID: semantic_ingestion_m3_1_m4_completion_2026_09_04
 - Work type: implementation
-- Status: active; candidates through `21432be` are superseded and the bounded
-  fail-closed recovery replacement is under final local verification
+- Status: active; candidates through `53b5363` are superseded and the bounded
+  CI duration-inventory correction is under final local verification
 - Coordinator: Codex main thread
 - Created: 2026-09-04
 - Last updated: 2026-09-06
@@ -517,6 +517,15 @@ bounded contract/repository/coordinator slice.
   passes 17 tests under warnings-as-errors in 610.06s; the exact hosted
   Benchmark Contract Tests command passes all 302 tests in 133.92s; and
   configured Pyright reports 0 errors and 0 warnings.
+- 2026-09-06: Candidate `53b5363` review found one `Not applicable /
+  changes_required / verification-operability` issue: the now 17-case recovery
+  module was absent from the duration inventory and therefore underweighted by
+  the file-balanced unit-shard planner. A fresh timing-plugin run passed all 17
+  cases in 609.56s and measured 601.629s across setup/call/teardown. Recording
+  each node and setting the planner target to 720s produces six complete,
+  once-only shards estimated at 601.629s and 583.932-583.933s; the slow module
+  is isolated and the established 15-minute timeout remains unchanged. Static
+  workflow and sharding contract tests pass 28/28.
 
 ## Decision Log
 
@@ -557,7 +566,7 @@ green. M5 activation and live agent-system certification remain out of scope.
 
 ## Exact Next Action
 
-Finish the full affected recovery and static gates, freeze and push one clean
+Refresh the split manifest, freeze and push one clean timing-corrected
 replacement candidate, and require exact-SHA hosted checks plus
 whole-candidate specification, correctness, and test reviews before clearing
 either milestone's closure arrays.

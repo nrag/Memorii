@@ -1415,8 +1415,8 @@ The two mutually exclusive scope alternatives requiring a user decision are:
 
 ## Current Exact Next Action
 
-Finish the fail-closed public recovery rerun, freeze the locally green bounded
-replacement, and review the shared candidate.
+Freeze the timing-corrected locally green replacement, run its exact-SHA hosted
+matrix, and review the shared candidate.
 The prior M3.1 four-root transaction,
 recovery, reopen, and append-only lineage matrix is locally green: 29 exact
 cases for each of four roots on memory and independent JSONL, with all eight

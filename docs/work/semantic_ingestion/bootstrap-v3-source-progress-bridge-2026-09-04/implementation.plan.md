@@ -3,7 +3,7 @@
 - Work ID: bootstrap_v3_source_progress_bridge_implementation_2026_09_04
 - Work type: implementation
 - Status: under-review; target-planner prerequisite and native bridge are
-  implemented, with shared-candidate review pending
+  implemented, with timing-corrected shared-candidate review pending
 - Coordinator: Codex main thread
 - Created: 2026-09-04
 - Last updated: 2026-09-06
@@ -247,7 +247,7 @@ third attempt.
 
 ## Exact Next Action
 
-Freeze this completed bridge with the shared M3.1/M4 candidate and obtain the
+Freeze this completed bridge with the timing-corrected shared M3.1/M4 candidate and obtain the
 required exact-SHA hosted checks and independent specification, correctness,
 and test review. Do not add another bridge or expand into M5 activation.
 

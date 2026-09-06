@@ -207,7 +207,7 @@ activation claims remain limited by externally owned authority. M0's rejected hi
 
 ## Next Action
 
-Push the frozen shared M3.1/M4 candidate, require hosted checks to execute its
+Push the timing-corrected frozen shared M3.1/M4 candidate, require hosted checks to execute its
 exact SHA, and run the whole-candidate reviews. Do not begin M5 or unrelated
 work during this closure.
 

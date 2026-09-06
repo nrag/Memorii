@@ -2,8 +2,8 @@
 
 - Work ID: semantic_conflict_authority_proof_failures
 - Work type: debugging
-- Status: active; candidates through `21432be` are superseded and the bounded
-  read-set, persisted-recovery, and owned-prefix corrections are locally green
+- Status: active; candidates through `53b5363` are superseded; the product
+  corrections are locally green and final shared-candidate evidence is pending
 - Coordinator: Codex main thread
 - Created: 2026-08-04
 - Last updated: 2026-09-06
@@ -738,9 +738,9 @@ M3 closure work may begin before the native contract and assembler slice passes.
 
 ## Exact Next Action
 
-Finish verification of the fail-closed public checkpoint-recovery correction,
-then return the sealed-read-set, persisted-recovery, same-attempt owned-prefix,
-and separate-interpreter corrections to the shared M3.1/M4 candidate freeze.
+Return the locally verified sealed-read-set, persisted-recovery, same-attempt
+owned-prefix, and separate-interpreter corrections to the timing-corrected
+shared M3.1/M4 candidate freeze.
 
 - 2026-09-06 candidate `223e0cba` review correction: the complete read-set
   check correctly rejected external semantic winners, but also rejected the
@@ -765,6 +765,11 @@ and separate-interpreter corrections to the shared M3.1/M4 candidate freeze.
   corruption returns `authority_unavailable`. The proof spies the production
   checkpoint reload and asserts no new admission, normalization, lineage, or
   group effect in memory and fresh JSONL.
+- 2026-09-06 candidate `53b5363` disposition: no new product defect was found;
+  the candidate is superseded only because the corrected 17-case recovery
+  module lacked measured CI duration ownership. Its fresh 609.56s timing run
+  is now recorded so the shared candidate can execute within the existing
+  bounded unit-shard topology.
 
 - Contracts checkpoint: added the closed persisted replan closure, final-result
   and successor-authority unions, policy/counter references, intermediate
