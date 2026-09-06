@@ -71,29 +71,46 @@ from tests.unit.core.semantic_ingestion.test_semantic_provider_composition impor
 )
 
 
-def _publish_live_progress(*, path: Path | None = None, coordinate: bool = True):
+class _StopAfterLineage(RuntimeError):
+    pass
+
+
+def _source_progress_proposal() -> ProviderSemanticProposal:
+    return ProviderSemanticProposal(
+        mentions=(
+            ProviderMention(
+                local_id="atlas", mention_quote="Atlas",
+                mention_context_quote="Atlas owner is Bob.",
+            ),
+            ProviderMention(
+                local_id="bob", mention_quote="Bob",
+                mention_context_quote="Atlas owner is Bob.",
+            ),
+        ),
+        facts=(
+            ProviderFact(
+                local_id="owner", predicate_id="owner_is",
+                subject_entity_ref="atlas",
+                object=ProviderEntityObject(entity_ref="bob"),
+                assertion_quote="Atlas owner is Bob.",
+                predicate_anchor_quote="owner", polarity="positive",
+                commitment="asserted",
+            ),
+        ),
+        abstained=False,
+    )
+
+
+def _publish_live_progress(
+    *, path: Path | None = None, coordinate: bool = True,
+    persist_durable_retry: bool = True,
+):
     """Publish plan/attempt/lineage through the real coordinator and stop at retry.
 
     The injected group-store failure happens only after the lineage checkpoint; it
     keeps the original lease current while avoiding a terminal publication.
     """
-    builder, _ = _v3_normalization_host_builder(
-        proposal=ProviderSemanticProposal(
-            mentions=(
-                ProviderMention(local_id="atlas", mention_quote="Atlas", mention_context_quote="Atlas owner is Bob."),
-                ProviderMention(local_id="bob", mention_quote="Bob", mention_context_quote="Atlas owner is Bob."),
-            ),
-            facts=(
-                ProviderFact(
-                    local_id="owner", predicate_id="owner_is",
-                    subject_entity_ref="atlas", object=ProviderEntityObject(entity_ref="bob"),
-                    assertion_quote="Atlas owner is Bob.", predicate_anchor_quote="owner",
-                    polarity="positive", commitment="asserted",
-                ),
-            ),
-            abstained=False,
-        )
-    )
+    builder, _ = _v3_normalization_host_builder(proposal=_source_progress_proposal())
     plane = MemoryPlaneService(
         record_store=None if path is None else JsonlMemoryPlaneStore(path)
     )
@@ -114,7 +131,9 @@ def _publish_live_progress(*, path: Path | None = None, coordinate: bool = True)
     atomic = service._semantic_atomic_store
 
     def stop_after_lineage(*, request):
-        raise PreplanningStoreError("bootstrap graph group commit storage unavailable")
+        if persist_durable_retry:
+            raise PreplanningStoreError("bootstrap graph group commit storage unavailable")
+        raise _StopAfterLineage
 
     # First publish source-normalization authority only.  The direct V3
     # coordinator below is the real persistence owner and avoids provider
@@ -158,9 +177,13 @@ def _publish_live_progress(*, path: Path | None = None, coordinate: bool = True)
     )
     assert execution is not None
     if coordinate:
-        execution.coordinator.coordinate(
-            request=execution.request, transition=execution.transition
-        )
+        try:
+            execution.coordinator.coordinate(
+                request=execution.request, transition=execution.transition
+            )
+        except _StopAfterLineage:
+            if persist_durable_retry:
+                raise
     epoch_record = plane.list_records(
         source_kind="semantic_ingestion_bootstrap_graph_v3_epoch"
     )[-1]
@@ -455,6 +478,89 @@ def test_recovery_rejects_persisted_cross_snapshot_plan_before_group_effect(
     assert not plane.list_records(
         source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
     )
+
+
+@pytest.mark.parametrize("backend_kind", ("memory", "jsonl"))
+def test_public_recovery_rejects_persisted_cross_snapshot_plan_without_reingestion(
+    tmp_path: Path, backend_kind: str, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = None if backend_kind == "memory" else tmp_path / "public-cross-snapshot-jsonl"
+    _service, plane, _atomic, _marker, _epoch, _request = _publish_live_progress(
+        path=path, persist_durable_retry=False,
+    )
+    _persist_corrupt_plan_checkpoint(
+        plane=plane, request=_latest_lineage_request(plane)
+    )
+    if path is not None:
+        plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path))
+
+    builder, lane_calls = _v3_normalization_host_builder(
+        proposal=_source_progress_proposal()
+    )
+    graph_effects: list[str] = []
+    acquire_errors: list[str] = []
+    recovery_service = ProviderMemoryService._from_scenario_test_host(
+        memory_plane=plane,
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=_built_in_local_capability(scenario_test=True),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        source_normalization_host_bundle_builder=builder,
+        bootstrap_graph_host_bundle_builder=BootstrapGraphHostBundleBuilder(
+            authority_provider=DeterministicBootstrapGraphAuthorityProviderV3(
+                successful_calls=graph_effects,
+                acquire_errors=acquire_errors,
+            )
+        ),
+    )
+    recovery_calls = 0
+    original_reload = (
+        AtomicStoreBootstrapGraphPlanRepositoryV3.reload_checkpoint_for_resume
+    )
+
+    def observed_reload(self, **kwargs):
+        nonlocal recovery_calls
+        recovery_calls += 1
+        return original_reload(self, **kwargs)
+
+    monkeypatch.setattr(
+        AtomicStoreBootstrapGraphPlanRepositoryV3,
+        "reload_checkpoint_for_resume",
+        observed_reload,
+    )
+    protected_kinds = (
+        "semantic_ingestion_source",
+        "semantic_ingestion_admission_index",
+        "semantic_ingestion_prepared_source",
+        "semantic_ingestion_source_normalization_recovery_index",
+        "semantic_ingestion_bootstrap_graph_v3_manifest",
+    )
+    before = {
+        kind: tuple(plane.list_records(source_kind=kind)) for kind in protected_kinds
+    }
+
+    result = recovery_service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.", operation_id="source-progress-store-proof",
+        task_id="task:source-progress", user_id="user:source-progress",
+        authenticated_host_ingress=_host_ingress(),
+    )
+
+    assert (
+        result.blocked_reasons["semantic_ingestion"]
+        == "graph_transaction_authority_unavailable"
+    )
+    assert recovery_calls == 1, acquire_errors
+    assert graph_effects == []
+    assert all(count == 0 for count in lane_calls.values())
+    assert {
+        kind: tuple(plane.list_records(source_kind=kind)) for kind in protected_kinds
+    } == before
+    for kind in (
+        "semantic_ingestion_bootstrap_graph_v3_group_commit_primary",
+        "semantic_ingestion_bootstrap_graph_v3_group_commit_fanout",
+        "semantic_ingestion_bootstrap_graph_v3_group_commit_effect",
+    ):
+        assert not plane.list_records(source_kind=kind)
 
 
 def test_resume_closure_returns_exact_persisted_members(live_progress) -> None:

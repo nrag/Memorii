@@ -44,12 +44,18 @@ MAXIMUM_RECEIPT_UTF8_BYTES = 8192
 CLARIFICATION_MAX_ATTEMPTS = 3
 INTEGRITY_ATTENTION_QUESTION = "Memory integrity incident requires operator action."
 
-_DIGEST = re.compile(r"[0-9a-f]{64}\Z")
+CONFLICT_DIGEST_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
+_DIGEST = CONFLICT_DIGEST_PATTERN
 _CURSOR_WIRE = re.compile(r"v[12]\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\Z")
 
 
-def _identifier(value: str) -> str:
+def validate_conflict_identifier(value: str) -> str:
+    """Validate an identifier shared by conflict-attention contracts."""
+
     return normalize_delivery_id(value)
+
+
+_identifier = validate_conflict_identifier
 
 
 def _bounded_text(value: str, *, label: str, maximum_bytes: int, allow_blank: bool = False) -> str:
@@ -64,13 +70,18 @@ def _bounded_text(value: str, *, label: str, maximum_bytes: int, allow_blank: bo
     return value
 
 
-def _utc(value: datetime, *, label: str) -> datetime:
+def validate_conflict_utc(value: datetime, *, label: str) -> datetime:
+    """Require a timezone-aware UTC coordinate."""
+
     offset = value.utcoffset()
     if value.tzinfo is None or offset is None:
         raise ValueError(f"{label} must be timezone-aware UTC")
     if offset.total_seconds() != 0:
         raise ValueError(f"{label} must be UTC")
     return value.astimezone(UTC)
+
+
+_utc = validate_conflict_utc
 
 
 def _contract_digest(domain: bytes, value: object) -> str:

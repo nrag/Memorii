@@ -1,6 +1,6 @@
 {
   "format": "memorii.workplan-split-manifest.v2",
-  "bundle_sha256": "93fcd25df9485c66b4764b4d03c7f4b9b81abbd1cf73a4d2f4697191d9a674c0",
+  "bundle_sha256": "a3603a52a76f6e9755c734c522ea7facbb16a2e0f04d30d7b74dd7f3027b92e2",
   "candidate_identity": "docs/work/semantic_ingestion/history/implementation-split-review-identity.json",
   "canonical_path": "docs/work/semantic_ingestion/implementation.plan.md",
   "archive": {
@@ -79,15 +79,15 @@
     },
     {
       "path": "docs/work/semantic_ingestion/resume.md",
-      "sha256": "9c81aa44925eac79100a5e9eeeb90df4aea69447ee38b97bccdc9acd36523d42"
+      "sha256": "bb53eabb3cfed83243558e1ef2d98723b29ca4890c42fa34cd687e48f45becff"
     },
     {
       "path": "docs/work/semantic_ingestion/conflict-authority-proof-failures-2026-08-04/debug.plan.md",
-      "sha256": "58e3c7a45c3b7c9e5aa0a7e3df6ac249bf8f8db9e1195ce2813c2dcf43033a36"
+      "sha256": "1c22aa9034fb80089079bbfcf5f772c7c3979cce327af72d9c25cbe1a186f007"
     },
     {
       "path": "docs/work/semantic_ingestion/m4-closure-2026-09-04/implementation.plan.md",
-      "sha256": "558e27e1b704570f2d880369160719db4a34aa30b955c3f1eb117b0064e67236"
+      "sha256": "4f154de091249c7557f49e5a3515beab862964d7c179c52e9ffcf7fdd99f49df"
     },
     {
       "path": "docs/work/semantic_ingestion/history/implementation-through-2026-08-04.md",
@@ -111,11 +111,11 @@
     },
     {
       "path": "docs/work/semantic_ingestion/milestones/m3-semantic-pipeline.plan.md",
-      "sha256": "bcf31fa56d94887bc525d2c2f18f1f43ecae3f84600e9b7dcd1e59573c04bc84"
+      "sha256": "f3dba552ac09bdf0944c760761079f5107489e868032d0f482c302a8ddbe34b4"
     },
     {
       "path": "docs/work/semantic_ingestion/milestones/m4-event-history.plan.md",
-      "sha256": "da782ae84b06e879821948823b99db57ce66d1d5166eefa0065226abf2a2e6ee"
+      "sha256": "655a60df738b497e621fe6c1731c6323f03c12e10fbc7389118f6a449e716063"
     },
     {
       "path": "docs/work/semantic_ingestion/milestones/m5-deployment-acceptance.plan.md",

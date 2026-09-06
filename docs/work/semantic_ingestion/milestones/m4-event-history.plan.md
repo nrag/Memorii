@@ -1,7 +1,7 @@
 # Event History, Replay, Trust, And Identity Milestone
 
 - Parent WorkPlan: `docs/work/semantic_ingestion/implementation.plan.md`
-- Status: active; candidates through `223e0cba` are superseded and the bounded
+- Status: active; candidates through `21432be` are superseded and the bounded
   read-set/owned-prefix correction is locally green pending one final freeze,
   hosted run, and independent review
 - Requirements: SIA-R10, SIA-R18
@@ -112,7 +112,7 @@ passing runs alone.
 
 ## Current Exact Next Action
 
-Freeze the bounded replacement, then run the exact-SHA hosted checks and
+Finish the bounded fail-closed recovery gates, freeze the replacement, then run the exact-SHA hosted checks and
 whole-candidate reviews without adding scope. The first final-tree run passed
 414 tests and found only a stale architecture hash; after its correction the
 complete 415-case family passed under warnings-as-errors in 2142.04s.
@@ -130,6 +130,12 @@ groups could conflict with the same attempt's own first effect. The corrected
 boundary replans every unfinished group when the sealed snapshot advances and
 accepts only the exact durable same-attempt revision prefix between consecutive
 groups. It still rejects every intervening semantic writer.
+
+Candidate `21432be` is superseded: hosted checks found a private-symbol import
+at the composite conflict-listing boundary, and public recovery proof found
+that corrupt persisted progress could be mistaken for absence. The narrow
+replacement exposes the shared validators publicly and makes corrupt checkpoint
+recovery a typed noncommit while preserving the valid genesis path.
 
 ## Delegation And Review Gate
 

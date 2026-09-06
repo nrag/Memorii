@@ -6,14 +6,15 @@
 - Active linked debugging WorkPlan: `docs/work/semantic_ingestion/conflict-authority-proof-failures-2026-08-04/debug.plan.md` (sole detailed owner of the two replan defects)
 - Approved bridge design WorkPlan: `docs/work/semantic_ingestion/bootstrap-v3-source-progress-bridge-2026-09-04/design.plan.md`
 - Active bridge implementation WorkPlan: `docs/work/semantic_ingestion/bootstrap-v3-source-progress-bridge-2026-09-04/implementation.plan.md`
-- Status: active bounded correction after candidate `223e0cba` review found a
-  multi-group owned-prefix defect and one persisted-recovery proof gap
+- Status: active bounded correction after candidate `21432be` hosted/review
+  evidence exposed one architecture-boundary failure and one recovery fail-open
 - Coordinator: Codex main thread
 - Last updated: 2026-09-06
 - Superseded candidate: `48c6dc5ab3438684b6476b0919a17774c8bdc92b`
 - Superseded candidate: `e13df701bf508955115637280125e25be2ca6916`
 - Superseded candidate: `04a7303c354527280a6490e2ebac0cac2b7a551e`
 - Superseded candidate: `223e0cba7d70dfe5ed4cad841a2eb30a531f22fd`
+- Superseded candidate: `21432be0de10e459f17ea768607ef66e0beb4c08`
 - Current tree state: bounded correction pending replacement freeze
 
 ## Objective
@@ -84,6 +85,17 @@ independent review evidence.
   `reused_unfinished` arms. A real persisted checkpoint with recomputed nested
   digests is rejected through production resume in memory and after fresh
   JSONL reopen, before any group effect.
+- Candidate `21432be` passed its bounded local gates but is superseded. Hosted
+  Benchmark Contract Tests found an M4 composite module importing private
+  conflict-attention symbols; those shared validators now have public names.
+  Final test review required the cross-snapshot checkpoint mutation to enter
+  through public recovery. That proof found and corrected a fail-open catch:
+  only typed checkpoint absence may start genesis planning, while corrupt
+  persisted progress returns graph-authority noncommit. The direct and public
+  corruption cases pass in memory and fresh JSONL with no second admission,
+  normalization, lineage, or group effect. The complete affected recovery file
+  passes 17 tests under warnings-as-errors, the exact hosted Benchmark Contract
+  Tests command passes 302 tests, and configured Pyright is clean.
 
 ## Governing Decisions
 
@@ -109,6 +121,5 @@ WorkPlan. Historical evidence remains under the milestone packets and archive.
 
 ## Exact Next Action
 
-Reconcile and pin the active packets, freeze and push the shared M3.1/M4 candidate,
-then obtain exact-SHA hosted execution and clean
+Finish the affected gates, reconcile and pin the active packets, then freeze and push the shared M3.1/M4 candidate and obtain exact-SHA hosted execution and clean
 independent specification, correctness, and test review.

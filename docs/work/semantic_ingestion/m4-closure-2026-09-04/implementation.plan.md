@@ -2,8 +2,8 @@
 
 - Work ID: semantic_ingestion_m3_1_m4_completion_2026_09_04
 - Work type: implementation
-- Status: active; candidates through `223e0cba` are superseded and the bounded
-  replacement is locally green pending freeze, hosted checks, and final review
+- Status: active; candidates through `21432be` are superseded and the bounded
+  fail-closed recovery replacement is under final local verification
 - Coordinator: Codex main thread
 - Created: 2026-09-04
 - Last updated: 2026-09-06
@@ -226,6 +226,8 @@ Confirmed findings at plan creation:
 | overbroad-stale-replay-catch | P2 | changes_required | failure behavior / integrity | linked debugging WorkPlan | corrected locally; final candidate review pending |
 | m3-candidate-identity-not-reproducible | Not applicable | changes_required | governance / evidence | dual closure operation | open |
 | m4-closure-evidence-incomplete | Not applicable | changes_required | verification / governance | dual closure operation | open |
+| m4-cross-module-private-import | Not applicable | changes_required | architecture / gate hygiene | dual closure operation | corrected locally; exact 302-case gate passes |
+| corrupt-checkpoint-treated-as-absence | P2 | changes_required | runtime behavior / persisted recovery | dual closure operation | corrected locally; direct/public memory and JSONL proof passes |
 
 Affected important scenarios for the P2 findings are clarification-winner
 recovery on an admitted provider delivery and fail-closed handling of persisted
@@ -499,6 +501,22 @@ bounded contract/repository/coordinator slice.
   631.57s, configured Pyright reports 0 errors and 0 warnings, and scoped Ruff,
   compilation, diff hygiene, and the canonical-evidence adversarial self-test
   pass on the same tree.
+- 2026-09-06: Hosted Benchmark Contract Tests for candidate `21432be` exposed
+  a cross-module private-symbol import in the M4 composite conflict listing.
+  The shared conflict validators now have public names and the exact hosted
+  302-case command passes locally. Final test review also exposed that the
+  persisted cross-snapshot corruption proof stopped at the repository API.
+  Extending it through public `ProviderMemoryService.sync_event` found a real
+  fail-open branch: a corrupt retained checkpoint was treated as absence and
+  allowed genesis replanning. The coordinator now treats only the typed
+  progress-unavailable condition as absence and returns typed
+  `authority_unavailable` for corrupt persisted state. Memory and fresh-JSONL
+  public recovery prove the production checkpoint call, zero second admission,
+  normalization, or lineage, and zero graph effects; the combined direct/public
+  discriminator passes all four cases. The complete affected recovery file
+  passes 17 tests under warnings-as-errors in 610.06s; the exact hosted
+  Benchmark Contract Tests command passes all 302 tests in 133.92s; and
+  configured Pyright reports 0 errors and 0 warnings.
 
 ## Decision Log
 
@@ -539,7 +557,7 @@ green. M5 activation and live agent-system certification remain out of scope.
 
 ## Exact Next Action
 
-Complete the bounded authority repin, freeze and push one clean replacement
-candidate, and require exact-SHA hosted checks plus
+Finish the full affected recovery and static gates, freeze and push one clean
+replacement candidate, and require exact-SHA hosted checks plus
 whole-candidate specification, correctness, and test reviews before clearing
 either milestone's closure arrays.

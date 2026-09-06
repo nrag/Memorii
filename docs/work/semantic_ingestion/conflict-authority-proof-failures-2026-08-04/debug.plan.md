@@ -2,7 +2,7 @@
 
 - Work ID: semantic_conflict_authority_proof_failures
 - Work type: debugging
-- Status: active; candidates through `223e0cba` are superseded and the bounded
+- Status: active; candidates through `21432be` are superseded and the bounded
   read-set, persisted-recovery, and owned-prefix corrections are locally green
 - Coordinator: Codex main thread
 - Created: 2026-08-04
@@ -738,9 +738,9 @@ M3 closure work may begin before the native contract and assembler slice passes.
 
 ## Exact Next Action
 
-Return the locally green sealed-read-set, persisted-recovery, same-attempt
-owned-prefix, and separate-interpreter corrections to the shared M3.1/M4
-candidate freeze, then obtain exact-SHA hosted and independent review closure.
+Finish verification of the fail-closed public checkpoint-recovery correction,
+then return the sealed-read-set, persisted-recovery, same-attempt owned-prefix,
+and separate-interpreter corrections to the shared M3.1/M4 candidate freeze.
 
 - 2026-09-06 candidate `223e0cba` review correction: the complete read-set
   check correctly rejected external semantic winners, but also rejected the
@@ -758,6 +758,13 @@ candidate freeze, then obtain exact-SHA hosted and independent review closure.
   is rewritten with a cross-snapshot token and recomputed nested plan, progress,
   member, request, and idempotency digests. Production resume rejects it before
   any group effect in memory and after a fresh JSONL reopen (`2 passed`).
+- 2026-09-06 candidate `21432be` public-recovery correction: public redelivery
+  showed that the coordinator collapsed corrupt retained progress into the same
+  branch as a genuinely absent checkpoint and restarted genesis planning. The
+  catch now distinguishes typed progress absence from all other store failures;
+  corruption returns `authority_unavailable`. The proof spies the production
+  checkpoint reload and asserts no new admission, normalization, lineage, or
+  group effect in memory and fresh JSONL.
 
 - Contracts checkpoint: added the closed persisted replan closure, final-result
   and successor-authority unions, policy/counter references, intermediate

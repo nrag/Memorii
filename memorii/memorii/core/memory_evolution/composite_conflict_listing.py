@@ -30,12 +30,12 @@ if TYPE_CHECKING:
     )
 
 from memorii.core.memory_evolution.conflict_attention import (
-    _DIGEST,
+    CONFLICT_DIGEST_PATTERN,
     ConflictAccessContext,
     ConflictAttentionPage,
     ConflictListRequest,
-    _identifier,
-    _utc,
+    validate_conflict_identifier,
+    validate_conflict_utc,
 )
 from memorii.core.memory_evolution.ingestion_contracts import (
     decode_typed_value,
@@ -91,7 +91,7 @@ def _canonical_identifiers(values: tuple[str, ...], *, label: str) -> tuple[str,
     if not values or values != tuple(sorted(set(values), key=lambda item: item.encode("utf-8"))):
         raise ValueError(f"{label} must be canonical")
     for value in values:
-        _identifier(value)
+        validate_conflict_identifier(value)
     return values
 
 
@@ -107,10 +107,10 @@ class CompositeConflictMemberKey(BaseModel):
 
     @model_validator(mode="after")
     def validate_member_key(self) -> CompositeConflictMemberKey:
-        _identifier(self.child_repository_id)
-        _identifier(self.conflict_id)
+        validate_conflict_identifier(self.child_repository_id)
+        validate_conflict_identifier(self.conflict_id)
         for value in (self.conflict_revision, self.conflict_record_digest, self.member_key_digest):
-            if _DIGEST.fullmatch(value) is None:
+            if CONFLICT_DIGEST_PATTERN.fullmatch(value) is None:
                 raise ValueError("composite member key digests are invalid")
         body = self.model_dump(mode="python", exclude={"member_key_digest"})
         if self.member_key_digest != _digest(_COMPOSITE_MEMBER_KEY_DOMAIN, body):
@@ -156,15 +156,15 @@ class CompositeConflictChildSnapshotBinding(BaseModel):
 
     @model_validator(mode="after")
     def validate_binding(self) -> CompositeConflictChildSnapshotBinding:
-        _identifier(self.child_repository_id)
-        _identifier(self.child_snapshot_id)
+        validate_conflict_identifier(self.child_repository_id)
+        validate_conflict_identifier(self.child_snapshot_id)
         for value in (
             self.child_snapshot_digest,
             self.child_authority_set_digest,
             self.binding_digest,
             *self.ordered_member_key_digests,
         ):
-            if _DIGEST.fullmatch(value) is None:
+            if CONFLICT_DIGEST_PATTERN.fullmatch(value) is None:
                 raise ValueError("composite child binding digests are invalid")
         body = self.model_dump(mode="python", exclude={"binding_digest"})
         if self.binding_digest != _digest(_COMPOSITE_CHILD_BINDING_DOMAIN, body):
@@ -206,7 +206,7 @@ class CompositeConflictListingMember(BaseModel):
 
     @model_validator(mode="after")
     def validate_member(self) -> CompositeConflictListingMember:
-        if _DIGEST.fullmatch(self.member_digest) is None:
+        if CONFLICT_DIGEST_PATTERN.fullmatch(self.member_digest) is None:
             raise ValueError("composite listing member digest is invalid")
         body = self.model_dump(mode="python", exclude={"member_digest"})
         if self.member_digest != _digest(_COMPOSITE_LISTING_MEMBER_DOMAIN, body):
@@ -234,14 +234,14 @@ class CompositeConflictListingSnapshot(BaseModel):
     @model_validator(mode="after")
     def validate_snapshot(self) -> CompositeConflictListingSnapshot:
         for value in (self.snapshot_id, self.tenant_id, self.principal_id):
-            _identifier(value)
+            validate_conflict_identifier(value)
         for value in (
             self.principal_binding_digest,
             self.authorization_snapshot_digest,
             self.scope_digest,
             self.snapshot_digest,
         ):
-            if _DIGEST.fullmatch(value) is None:
+            if CONFLICT_DIGEST_PATTERN.fullmatch(value) is None:
                 raise ValueError("composite snapshot digest is invalid")
         for label, scopes in (
             ("authorized", self.authorized_scope_ids),
@@ -274,8 +274,8 @@ class CompositeConflictListingSnapshot(BaseModel):
         )
         if tuple(key.member_key_digest for key in keys) != expected_order:
             raise ValueError("composite member order must follow child bindings")
-        _utc(self.created_at, label="created_at")
-        _utc(self.expires_at, label="expires_at")
+        validate_conflict_utc(self.created_at, label="created_at")
+        validate_conflict_utc(self.expires_at, label="expires_at")
         if self.expires_at <= self.created_at:
             raise ValueError("composite snapshot expiry must follow creation")
         body = self.model_dump(mode="python", exclude={"snapshot_digest"})
@@ -311,7 +311,7 @@ class CompositeConflictListingCursorClaims(BaseModel):
     @model_validator(mode="after")
     def validate_claims(self) -> CompositeConflictListingCursorClaims:
         for value in (self.tenant_id, self.principal_id, self.composite_snapshot_id, self.key_id):
-            _identifier(value)
+            validate_conflict_identifier(value)
         for value in (
             self.principal_binding_digest,
             self.authorization_snapshot_digest,
@@ -321,7 +321,7 @@ class CompositeConflictListingCursorClaims(BaseModel):
             self.integrity_child_binding_digest,
             self.last_member_key_digest,
         ):
-            if _DIGEST.fullmatch(value) is None:
+            if CONFLICT_DIGEST_PATTERN.fullmatch(value) is None:
                 raise ValueError("composite cursor digest is invalid")
         for label, scopes in (
             ("authorized", self.authorized_scope_ids),
@@ -330,8 +330,8 @@ class CompositeConflictListingCursorClaims(BaseModel):
             _canonical_identifiers(scopes, label=f"{label} scope ids")
         if not set(self.listing_scope_ids) <= set(self.authorized_scope_ids):
             raise ValueError("composite cursor listing scopes exceed authorization")
-        _utc(self.issued_at, label="issued_at")
-        _utc(self.expires_at, label="expires_at")
+        validate_conflict_utc(self.issued_at, label="issued_at")
+        validate_conflict_utc(self.expires_at, label="expires_at")
         if self.expires_at != self.issued_at + COMPOSITE_CURSOR_LIFETIME:
             raise ValueError("composite cursor expiry must be exactly 900 seconds")
         return self

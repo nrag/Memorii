@@ -1,7 +1,7 @@
 # Candidate-To-Terminal Semantic Pipeline Milestone
 
 - Parent WorkPlan: `docs/work/semantic_ingestion/implementation.plan.md`
-- Status: active; candidates `e13df701`, `04a7303`, and `223e0cba` are
+- Status: active; candidates `e13df701`, `04a7303`, `223e0cba`, and `21432be` are
   superseded, and the bounded replacement correction is locally green pending
   one final freeze, hosted run, and independent review
 - Requirements: SIA-R02, SIA-R04, SIA-R05, SIA-R06, SIA-R07, SIA-R09, SIA-R12
@@ -1415,7 +1415,8 @@ The two mutually exclusive scope alternatives requiring a user decision are:
 
 ## Current Exact Next Action
 
-Freeze the locally green bounded replacement and review the shared candidate.
+Finish the fail-closed public recovery rerun, freeze the locally green bounded
+replacement, and review the shared candidate.
 The prior M3.1 four-root transaction,
 recovery, reopen, and append-only lineage matrix is locally green: 29 exact
 cases for each of four roots on memory and independent JSONL, with all eight
@@ -1435,6 +1436,12 @@ replans every unfinished group when the replacement snapshot changes and
 admits later groups only through the exact durable revision chain produced by
 earlier groups of the same attempt. The two-interpreter canary and the
 unchanged-snapshot `reused_unfinished` discriminator both pass.
+
+Candidate `21432be` is superseded because hosted architecture enforcement found
+one M4 private-symbol import and final test review found that corrupt retained
+progress was proved only below the provider boundary. The public proof exposed
+and corrected genesis replanning after corrupt checkpoint recovery; only typed
+checkpoint absence may now enter genesis. No adjacent M3.1 scope is added.
 
 Because removal of unsupported selector outcome counters changed the manifest
 digest, the prior eight local receipts are historical rather than replacement-

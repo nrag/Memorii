@@ -9,6 +9,7 @@ from pydantic import TypeAdapter
 
 from memorii.core.memory_evolution.atomic_store import (
     BootstrapGraphRelatedConflictError,
+    BootstrapGraphSourceProgressRecoveryUnavailableError,
     PreplanningStoreError,
 )
 from memorii.core.memory_evolution.ingestion_contracts import encode_typed_value
@@ -163,8 +164,10 @@ class BootstrapGraphDependentCoordinatorV3:
                 operation_lease_binding=epoch.operation_lease_binding,
                 writer_commit_binding=epoch.writer_commit_binding,
             )
-        except PreplanningStoreError:
+        except BootstrapGraphSourceProgressRecoveryUnavailableError:
             checkpoint = None
+        except PreplanningStoreError:
+            return self._unavailable(request, "authority_unavailable")
         if checkpoint is not None:
             from memorii.core.semantic_ingestion.contracts import (
                 BootstrapGraphAttemptAuthorityV3,
