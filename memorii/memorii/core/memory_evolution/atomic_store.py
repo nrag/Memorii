@@ -11357,12 +11357,71 @@ class SemanticIngestionAtomicStore:
             prior_replay_state = self.semantic_replay_state()
             before_graph = prior_replay_state.graph_revision
             current_snapshot = self.graph_state_snapshot()
-            if (
+            sealed_snapshot_is_current = (
                 current_snapshot.graph_revision
-                != request.group_plan_member.graph_read_set.graph_revision
-                or current_snapshot.read_set
-                != request.group_plan_member.sealed_graph_read_set
-            ):
+                == request.group_plan_member.graph_read_set.graph_revision
+                and current_snapshot.read_set
+                == request.group_plan_member.sealed_graph_read_set
+            )
+            owned_prefix_revision = sealed_graph_revision
+            owned_prefix_is_current = False
+            if not sealed_snapshot_is_current:
+                # Later groups in one attempt retain the attempt's original
+                # read set. Accept only the exact durable revision chain made
+                # by earlier groups of that same attempt; any intervening
+                # semantic writer produces a different revision and conflicts.
+                prior_group_commits = []
+                for record in self._memory_plane.list_records(
+                    source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+                ):
+                    try:
+                        prior_request = _bootstrap_graph_v3_group_commit_request_from_record(
+                            record
+                        )
+                        prior_reload = _bootstrap_graph_v3_group_commit_reload_from_record(
+                            record, prior_request
+                        )
+                    except PreplanningStoreError:
+                        raise
+                    if (
+                        prior_request.source_operation_id == request.source_operation_id
+                        and prior_request.attempt.attempt_digest
+                        == request.attempt.attempt_digest
+                        and prior_request.transaction_group_id
+                        != request.transaction_group_id
+                    ):
+                        prior_group_commits.append(prior_reload.persisted_result)
+                prior_group_commits.sort(
+                    key=lambda item: item.core.publication_operation_generation
+                )
+                seen_generations: set[int] = set()
+                for prior_result in prior_group_commits:
+                    generation = prior_result.core.publication_operation_generation
+                    expected_after = (
+                        owned_prefix_revision
+                        if prior_result.core.disposition != "committed"
+                        else sha256(
+                            b"memorii.semantic-ingestion.bootstrap-graph-group-revision.v3\0"
+                            + owned_prefix_revision.encode()
+                            + prior_result.core.request_ctv_digest.encode()
+                        ).hexdigest()
+                    )
+                    if (
+                        generation in seen_generations
+                        or prior_result.result_digest not in control.group_result_digests
+                        or prior_result.core.graph_revision_before
+                        != owned_prefix_revision
+                        or prior_result.core.graph_revision_after != expected_after
+                    ):
+                        owned_prefix_revision = ""
+                        break
+                    seen_generations.add(generation)
+                    owned_prefix_revision = expected_after
+                owned_prefix_is_current = (
+                    bool(prior_group_commits)
+                    and owned_prefix_revision == current_snapshot.graph_revision
+                )
+            if not sealed_snapshot_is_current and not owned_prefix_is_current:
                 raise BootstrapGraphRelatedConflictError(
                     transaction_group_id=request.transaction_group_id,
                     expected_graph_revision=sealed_graph_revision,

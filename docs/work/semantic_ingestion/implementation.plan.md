@@ -200,7 +200,7 @@ branch review results are summarized here.
 
 ## Blockers And Limits
 
-There is no remaining local product-semantic blocker for M3.1/M4. Full closure
+There is no remaining known local product-semantic blocker for M3.1/M4. Full closure
 still requires an immutable committed candidate, exact-SHA hosted execution,
 and final independent specification, correctness, and test review. M5
 activation claims remain limited by externally owned authority. M0's rejected historical C2 baselines must not be consumed.

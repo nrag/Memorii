@@ -8,17 +8,17 @@ python3.12 -I docs/design/semantic_ingestion/traceability_golden_vectors/check_c
   --registry docs/design/semantic_ingestion/traceability_registry/registry-v1.json \
   --authority docs/design/semantic_ingestion/traceability_golden_vectors/ctv-binding-authority-v2.json \
   --validator docs/design/semantic_ingestion/traceability_golden_vectors/validate_ctv_binding_authority_v2.py \
-  --expected-design-sha256 41a9b2517cdf445c005e371ebba61c2f89f125b7128e848215464131b8ef8dc8 \
+  --expected-design-sha256 b469653e3ef92e9cc1bf45e797a2c7dff8eac4d9ee792ad94ada3a54bfbe05da \
   --expected-registry-sha256 70143b278e0fd72886362f4174c726c9ecf877b1e288d3dd2c196a78f385413e \
-  --expected-authority-sha256 ff1edfc62c4f19a720cdede7722f7f244bd72e9a053ec53c77a00ae7ee8addd3 \
+  --expected-authority-sha256 272617544ee6531f995f797f323b576bc4070282ff1dd2cd12e49cfb0c492f3b \
   --expected-validator-sha256 3066e6ffb015823283e57945863c22d4ecf32164c52ae8199eb1535c7798f145 \
   --expected-checker-sha256 e2c35870a99e587f34cbffc701f42587520ee015009cd51647367da56716c732
 ```
 
 The gate requires architecture SHA-256
-`41a9b2517cdf445c005e371ebba61c2f89f125b7128e848215464131b8ef8dc8`,
+`b469653e3ef92e9cc1bf45e797a2c7dff8eac4d9ee792ad94ada3a54bfbe05da`,
 authority SHA-256
-`ff1edfc62c4f19a720cdede7722f7f244bd72e9a053ec53c77a00ae7ee8addd3`,
+`272617544ee6531f995f797f323b576bc4070282ff1dd2cd12e49cfb0c492f3b`,
 validator SHA-256
 `3066e6ffb015823283e57945863c22d4ecf32164c52ae8199eb1535c7798f145`,
 hermetic gate SHA-256
@@ -36,12 +36,12 @@ python3.12 -I docs/design/semantic_ingestion/traceability_golden_vectors/check_l
   --matrix docs/design/semantic_ingestion/traceability_golden_vectors/cgs_verification_attack_matrix-v1.json \
   --fixture docs/design/semantic_ingestion/traceability_golden_vectors/lifecycle-root-signer-provenance-witness-v1.json \
   --validator docs/design/semantic_ingestion/traceability_golden_vectors/validate_lifecycle_root_signer_provenance_v1.py \
-  --expected-checker-sha256 33a33455b2f19630d7d7dbb8157e014a5febc841dba68771b8ca04e937538490 \
+  --expected-checker-sha256 59bebd19ab0040bf538697e45e0e5a77ae03eb5ce675160d22b813be575cbadf \
   --self-test
 ```
 
 The current semantic gate pins design SHA-256
-`41a9b2517cdf445c005e371ebba61c2f89f125b7128e848215464131b8ef8dc8`,
+`b469653e3ef92e9cc1bf45e797a2c7dff8eac4d9ee792ad94ada3a54bfbe05da`,
 matrix SHA-256
 `a3375bd0d8d01cf7a7c9d7d16d90945d792d932eca7161097f6ee5ba44d3f604`,
 witness SHA-256
@@ -49,7 +49,7 @@ witness SHA-256
 validator SHA-256
 `46bbda1afb6ccbec5a49ea668752c19a7b1354b94515a33365191cee01745edb`,
 and checker SHA-256
-`33a33455b2f19630d7d7dbb8157e014a5febc841dba68771b8ca04e937538490`.
+`59bebd19ab0040bf538697e45e0e5a77ae03eb5ce675160d22b813be575cbadf`.
 It must report exactly six accepted witnesses, 41 rejected witnesses, and two
 identical isolated replicas. The totals include two canonical accepted roots,
 four accepted inclusive-endpoint witnesses, four rejected outside-boundary
@@ -231,7 +231,7 @@ python3.12 -I docs/design/semantic_ingestion/traceability_golden_vectors/check_c
   --matrix docs/design/semantic_ingestion/traceability_golden_vectors/cgs_verification_attack_matrix-v1.json \
   --prototype docs/design/semantic_ingestion/traceability_golden_vectors/cgs_structural_manifest_prototype.py \
   --vector docs/design/semantic_ingestion/traceability_golden_vectors/cgs-structural-manifest-prototype-v1.json \
-  --expected-checker-sha256 62385c2b7762368f062ac81df1b803097c08147587b3480c72e2d7582cfec52c \
+  --expected-checker-sha256 d670812cd8ca60b5c8e652730692b5970494d0205540f2d353eefe7b832ddfae \
   --self-test
 ```
 
@@ -241,9 +241,9 @@ raw SHA-256 `a3375bd0d8d01cf7a7c9d7d16d90945d792d932eca7161097f6ee5ba44d3f604`,
 prototype SHA-256
 `45a8403c387c407617a3b580094177d111c8879a752eca2bff6d1786e1e61df6`,
 prototype-vector SHA-256
-`1695c7cec55f12b83c7c48741ad1b3259966858c40a522f5eb3629c1474bb58c`,
+`76c674016c0d45754b770b2d5d872a49ffb7150f0c5bca0455aa2a99777c14b5`,
 and CGS checker SHA-256
-`62385c2b7762368f062ac81df1b803097c08147587b3480c72e2d7582cfec52c`.
+`d670812cd8ca60b5c8e652730692b5970494d0205540f2d353eefe7b832ddfae`.
 
 Build an installable wheel and verify package-owned prompt contracts:
 

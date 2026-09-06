@@ -2,8 +2,8 @@
 
 - Work ID: semantic_ingestion_m3_1_m4_completion_2026_09_04
 - Work type: implementation
-- Status: active; candidate `04a7303` review remediation is locally green and
-  pending replacement freeze, hosted checks, and final independent review
+- Status: active; candidates through `223e0cba` are superseded and the bounded
+  replacement is locally green pending freeze, hosted checks, and final review
 - Coordinator: Codex main thread
 - Created: 2026-09-04
 - Last updated: 2026-09-06
@@ -474,6 +474,31 @@ bounded contract/repository/coordinator slice.
   scoped Ruff, compilation, and canonical-evidence adversarial self-test pass.
   The repinned candidate-lock SHA-256 is
   `6952929ab47bdc219e88434faeaef66605c7814e1fc6c0c63f0eb2fe78b11b10`.
+- 2026-09-06: Review of candidate `223e0cba` exposed one P2 multi-group
+  successor defect and one verification gap. Consecutive replacement groups
+  shared one sealed successor snapshot, so the first accepted group made the
+  second appear externally stale. The store now admits only the exact durable
+  revision chain of earlier groups in the same attempt, while the coordinator
+  replans every unfinished group whenever replacement compilation observes a
+  changed graph or ledger snapshot. An unchanged snapshot still preserves the
+  existing dependency-independent `reused_unfinished` arm. The physical JSONL
+  two-interpreter `reused_committed` canary passes (`1 passed` in 142.94s), and
+  the unchanged-snapshot `reused_unfinished` discriminator succeeds with all
+  three effects and retained arms.
+- 2026-09-06: The digest-recomputed cross-snapshot member proof now corrupts a
+  real retained lineage checkpoint, including its recomputed plan, progress,
+  member, request, and idempotency closure, then invokes the production resume
+  repository. Memory and a fresh JSONL reopen both reject with typed
+  `PreplanningStoreError` before any group-commit primary exists (`2 passed` in
+  106.49s).
+- 2026-09-06: Final-tree bounded verification passes the complete 15-case
+  source-progress persistence/recovery file in 507.24s and all eight
+  `reused_committed`/`reused_unfinished` public-root scenarios in 923.28s. The
+  exact 232-selector transaction manifest passes 11 tests, the repinned
+  CTV/workflow/replay-decision authority family passes all 309 tests in
+  631.57s, configured Pyright reports 0 errors and 0 warnings, and scoped Ruff,
+  compilation, diff hygiene, and the canonical-evidence adversarial self-test
+  pass on the same tree.
 
 ## Decision Log
 
@@ -514,7 +539,7 @@ green. M5 activation and live agent-system certification remain out of scope.
 
 ## Exact Next Action
 
-Complete the bounded `04a7303` review remediation and pin chain, freeze and
-push one clean replacement candidate, and require exact-SHA hosted checks plus
+Complete the bounded authority repin, freeze and push one clean replacement
+candidate, and require exact-SHA hosted checks plus
 whole-candidate specification, correctness, and test reviews before clearing
 either milestone's closure arrays.

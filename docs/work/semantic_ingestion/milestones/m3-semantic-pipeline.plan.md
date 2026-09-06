@@ -1,8 +1,9 @@
 # Candidate-To-Terminal Semantic Pipeline Milestone
 
 - Parent WorkPlan: `docs/work/semantic_ingestion/implementation.plan.md`
-- Status: active (candidate `e13df701` review correction is bounded to complete
-  sealed-read-set CAS authority and its discriminating concurrency proof)
+- Status: active; candidates `e13df701`, `04a7303`, and `223e0cba` are
+  superseded, and the bounded replacement correction is locally green pending
+  one final freeze, hosted run, and independent review
 - Requirements: SIA-R02, SIA-R04, SIA-R05, SIA-R06, SIA-R07, SIA-R09, SIA-R12
 - Historical authority: archive headings `M3 - Candidate-to-terminal semantic pipeline`, the M3 closure increments, `M3 Administrative Completion`, and `Post-completion hosted-CI remediation`
 
@@ -1414,18 +1415,26 @@ The two mutually exclusive scope alternatives requiring a user decision are:
 
 ## Current Exact Next Action
 
-Complete the bounded sealed-read-set correction and replacement local matrix,
-then freeze and review the shared candidate. The prior M3.1 four-root transaction,
+Freeze the locally green bounded replacement and review the shared candidate.
+The prior M3.1 four-root transaction,
 recovery, reopen, and append-only lineage matrix is locally green: 29 exact
 cases for each of four roots on memory and independent JSONL, with all eight
  receipts and their 232-selector union validated. No separate M3.1 feature work
  or scope expansion is authorized before candidate review.
 
-Candidate `e13df701` is also superseded: review proved its late-CAS preflight
+Candidates `e13df701` and `04a7303` are superseded: review proved their late-CAS preflight
 did not retain the complete typed sealed read set and its JSONL clarification
 proof did not run/reopen in separate interpreters. Correct only those existing
 contract boundaries, then finish the replacement freeze, hosted matrix, and
 whole-candidate review; no adjacent M3.1 behavior is authorized.
+
+Candidate `223e0cba` is superseded because its stronger store check exposed a
+multi-group successor defect: the first owned replacement effect advanced the
+sealed graph before the next replacement group. The bounded correction now
+replans every unfinished group when the replacement snapshot changes and
+admits later groups only through the exact durable revision chain produced by
+earlier groups of the same attempt. The two-interpreter canary and the
+unchanged-snapshot `reused_unfinished` discriminator both pass.
 
 Because removal of unsupported selector outcome counters changed the manifest
 digest, the prior eight local receipts are historical rather than replacement-

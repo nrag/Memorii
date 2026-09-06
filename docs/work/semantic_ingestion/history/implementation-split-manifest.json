@@ -1,6 +1,6 @@
 {
   "format": "memorii.workplan-split-manifest.v2",
-  "bundle_sha256": "ae33cdaff507b17d8169a289b5fddfdc72290770c9e4e544d344ca30a64a6302",
+  "bundle_sha256": "93fcd25df9485c66b4764b4d03c7f4b9b81abbd1cf73a4d2f4697191d9a674c0",
   "candidate_identity": "docs/work/semantic_ingestion/history/implementation-split-review-identity.json",
   "canonical_path": "docs/work/semantic_ingestion/implementation.plan.md",
   "archive": {
@@ -75,19 +75,19 @@
     },
     {
       "path": "docs/work/semantic_ingestion/implementation.plan.md",
-      "sha256": "91227dd5ea4759e0a48b1155feeec1c0541b4afca4e93fdecbc68de50e11c948"
+      "sha256": "526b6a24894b42ebf3c71b5bf2d2034c066d1e300f62bc942416957da6d11822"
     },
     {
       "path": "docs/work/semantic_ingestion/resume.md",
-      "sha256": "54a457771e90a05497a5b84f3c7b71671f5fe0524c4923f6f22c155f743a8782"
+      "sha256": "9c81aa44925eac79100a5e9eeeb90df4aea69447ee38b97bccdc9acd36523d42"
     },
     {
       "path": "docs/work/semantic_ingestion/conflict-authority-proof-failures-2026-08-04/debug.plan.md",
-      "sha256": "57b97956ef90e83d763083b52e911bbef54f3ff120e1b4198579d1776c6d4651"
+      "sha256": "58e3c7a45c3b7c9e5aa0a7e3df6ac249bf8f8db9e1195ce2813c2dcf43033a36"
     },
     {
       "path": "docs/work/semantic_ingestion/m4-closure-2026-09-04/implementation.plan.md",
-      "sha256": "e9696cdb7e7b7ff9e32e4be68d1721e5bf0359dc9d90e20f5a08e7f151f4096a"
+      "sha256": "558e27e1b704570f2d880369160719db4a34aa30b955c3f1eb117b0064e67236"
     },
     {
       "path": "docs/work/semantic_ingestion/history/implementation-through-2026-08-04.md",
@@ -111,11 +111,11 @@
     },
     {
       "path": "docs/work/semantic_ingestion/milestones/m3-semantic-pipeline.plan.md",
-      "sha256": "a6742a6dc1a84c3e3d44e812a677ba55d2fc29e3b0d35bc0bd48dd2f80060970"
+      "sha256": "bcf31fa56d94887bc525d2c2f18f1f43ecae3f84600e9b7dcd1e59573c04bc84"
     },
     {
       "path": "docs/work/semantic_ingestion/milestones/m4-event-history.plan.md",
-      "sha256": "888590cb0e1711064c6666dedca7a127c0533980ffe14b98882c025827f17a59"
+      "sha256": "da782ae84b06e879821948823b99db57ce66d1d5166eefa0065226abf2a2e6ee"
     },
     {
       "path": "docs/work/semantic_ingestion/milestones/m5-deployment-acceptance.plan.md",

@@ -21489,7 +21489,10 @@ plan member and an exact digest bijection in the attempt. The attempt is then
 atomically published and reloaded before lineage. Lineage is append-only: an
 initial entry is written for each group; retries append a successor naming the
 prior entry; committed entries and their authorizations are immutable; related
-conflict may replace only unfinished affected suffix groups. The sealed
+conflict may replace only unfinished affected groups. When the newly sealed
+graph or ledger snapshot differs, every unfinished group is affected; an
+unchanged snapshot may retain unfinished groups outside the dependency
+closure. The sealed
 `BootstrapGraphTerminalPublicationRequestV3` contains the handoff, final
 lineage projection, exact ordered group-result bijection, and every other typed
 terminal carrier, and is the only graph-bound input accepted by
@@ -21498,7 +21501,7 @@ calls are unreachable for a bootstrap V3 success.
 
 Every successor attempt carries one canonical `BootstrapGraphReplanPartitionV3`.
 Its final and unfinished sets are disjoint and partition all predecessor groups;
-`replanned_group_ids` is exactly the affected suffix subset of unfinished IDs.
+`replanned_group_ids` is exactly the affected subset of unfinished IDs.
 The successor authority tuple bijects with canonical group order. A
 `reused_committed` arm retains complete predecessor lineage entry, final result,
 plan member, and authorization byte-for-byte. A `reused_final` arm does the
@@ -26026,8 +26029,16 @@ checkpoint consumer reads a removed field or reconstructs a parallel vector.
 Immediately before every physical group CAS attempt, the store reloads the
 current complete `GraphReadSet` and compares it byte-for-byte with
 `sealed_graph_read_set`; it also compares the current graph revision with the
-token's graph revision. Any difference is a typed related conflict and the stale
-request is not reused. A write outside this read set cannot conflict with the
+token's graph revision. Absent the owned-prefix proof below, any difference is
+a typed related conflict and the stale request is not reused. A later group in
+the same attempt may instead name the
+exact durable revision chain produced by earlier groups of that attempt: each
+prior result belongs to the same attempt and source operation, is retained in
+the operation control, is unique by publication generation, and joins
+`graph_revision_before` to the deterministic committed or noncommitting
+successor. This owned-prefix exception admits only the attempt's own effects;
+an intervening semantic writer produces a different revision and remains a
+typed related conflict. A write outside this read set cannot conflict with the
 graph CAS's explicit record preconditions and proceeds without a retry.
 
 Preimage order is: operation-plan schema, operation, proposal, member vector,
@@ -29148,7 +29159,10 @@ groups. Both variants
 reuse sealed source alignment and all acknowledged provider/parser/NLI/semantic-
 analysis artifacts byte-for-byte; they reacquire only graph-dependent context,
 reconciliation, closure, and compilation for replanned groups. The first
-related conflict selects exactly one variant. At N+1 the policy returns
+related conflict selects exactly one variant. When replacement compilation
+observes a changed sealed graph or ledger snapshot, the replanned subset is the
+complete unfinished set; only an unchanged snapshot may retain dependency-
+independent unfinished groups. At N+1 the policy returns
 `related_conflict_retry_exhausted` without a third plan/attempt or repeated
 semantic analysis, retaining the complete predecessor final-result history.
 

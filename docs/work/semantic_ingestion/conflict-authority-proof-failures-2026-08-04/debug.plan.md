@@ -2,8 +2,8 @@
 
 - Work ID: semantic_conflict_authority_proof_failures
 - Work type: debugging
-- Status: active; candidate `e13df701` review exposed one bounded late-CAS
-  read-set defect and two proof gaps
+- Status: active; candidates through `223e0cba` are superseded and the bounded
+  read-set, persisted-recovery, and owned-prefix corrections are locally green
 - Coordinator: Codex main thread
 - Created: 2026-08-04
 - Last updated: 2026-09-06
@@ -738,9 +738,26 @@ M3 closure work may begin before the native contract and assembler slice passes.
 
 ## Exact Next Action
 
-Return the locally green sealed-read-set and separate-interpreter correction to
-the shared M3.1/M4 candidate freeze, then obtain exact-SHA hosted and independent
-review closure.
+Return the locally green sealed-read-set, persisted-recovery, same-attempt
+owned-prefix, and separate-interpreter corrections to the shared M3.1/M4
+candidate freeze, then obtain exact-SHA hosted and independent review closure.
+
+- 2026-09-06 candidate `223e0cba` review correction: the complete read-set
+  check correctly rejected external semantic winners, but also rejected the
+  second accepted replacement group after the first group in that same
+  successor attempt advanced the graph. The store now permits only an exact
+  durable revision chain made by earlier groups with the same source operation
+  and attempt digest, with unique generations and result digests retained by
+  the operation control. Any intervening writer changes that chain and remains
+  a typed related conflict. Replacement compilation now replans the complete
+  unfinished set when the sealed graph or ledger snapshot changes; the
+  unchanged-snapshot dependency case keeps `reused_unfinished`. The physical
+  JSONL two-interpreter canary passes with three effects, and the unchanged-
+  snapshot discriminator preserves its retained arms.
+- 2026-09-06 persisted-corruption proof correction: a real lineage checkpoint
+  is rewritten with a cross-snapshot token and recomputed nested plan, progress,
+  member, request, and idempotency digests. Production resume rejects it before
+  any group effect in memory and after a fresh JSONL reopen (`2 passed`).
 
 - Contracts checkpoint: added the closed persisted replan closure, final-result
   and successor-authority unions, policy/counter references, intermediate

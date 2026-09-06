@@ -15,12 +15,21 @@ from memorii.core.memory_evolution.atomic_store import (
     PreplanningStoreError,
     SemanticIngestionAtomicStore,
 )
+from memorii.core.memory_evolution.ingestion_contracts import (
+    decode_typed_value,
+    encode_typed_value,
+)
 from memorii.core.memory_evolution.writer_admission import (
     SemanticWriterAdmissionStore,
     bounded_preplanning_ownership_manifest,
 )
+from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
-from memorii.core.memory_plane.store import JsonlMemoryPlaneStore
+from memorii.core.memory_plane.store import (
+    InMemoryMemoryPlaneStore,
+    JsonlMemoryPlaneStore,
+    _PersistedBatch,
+)
 from memorii.core.provider.models import ProviderOperation
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.semantic_ingestion.bootstrap_graph_host import (
@@ -39,10 +48,13 @@ from memorii.core.semantic_ingestion.contracts import (
     BootstrapGraphPlanAtomicMemberV3,
     BootstrapGraphPlanAtomicWriteRequestV3,
     BootstrapGraphPlannedProgressV3,
+    BootstrapTransactionGroupPlanMemberV3,
+    BootstrapTransactionGroupPlanV3,
     ProviderEntityObject,
     ProviderFact,
     ProviderMention,
     ProviderSemanticProposal,
+    contract_digest,
     decode_bootstrap_graph_atomic_member_payload_v3,
     encode_bootstrap_graph_atomic_member_payload_v3,
 )
@@ -221,6 +233,161 @@ def _request_with_member_payloads(request, payloads: dict[str, bytes]):
     return updated
 
 
+def _cross_snapshot_plan_request(
+    request: BootstrapGraphPlanAtomicWriteRequestV3,
+) -> BootstrapGraphPlanAtomicWriteRequestV3:
+    """Recompute every digest around one semantically foreign read token."""
+    plan_member = next(item for item in request.members if item.member_id == "plan")
+    envelope = decode_typed_value(plan_member.canonical_payload)
+    assert isinstance(envelope, dict) and isinstance(envelope["payload"], dict)
+    plan = dict(envelope["payload"])
+    groups = [dict(item) for item in plan["group_members"]]
+    group = groups[0]
+    token = dict(group["graph_read_set"])
+    token["replay_state_digest"] = (
+        "0" * 64 if token["replay_state_digest"] != "0" * 64 else "f" * 64
+    )
+    group["graph_read_set"] = token
+    group["member_digest"] = contract_digest(
+        BootstrapTransactionGroupPlanMemberV3._digest_domain,
+        {key: value for key, value in group.items() if key != "member_digest"},
+    )
+    groups[0] = group
+    plan["group_members"] = groups
+    plan["plan_digest"] = contract_digest(
+        BootstrapTransactionGroupPlanV3._digest_domain,
+        {key: value for key, value in plan.items() if key != "plan_digest"},
+    )
+    envelope["payload"] = plan
+    plan_raw = encode_typed_value(envelope)
+
+    progress_member = next(
+        item for item in request.members if item.member_id == "source-progress"
+    )
+    progress_envelope = decode_typed_value(progress_member.canonical_payload)
+    assert (
+        isinstance(progress_envelope, dict)
+        and isinstance(progress_envelope["payload"], dict)
+    )
+    progress = dict(progress_envelope["payload"])
+    reference = dict(progress["plan_reference"])
+    reference["member_payload_digest"] = sha256(plan_raw).hexdigest()
+    reference["artifact_digest"] = plan["plan_digest"]
+    reference["reference_digest"] = contract_digest(
+        BootstrapGraphAtomicMemberReferenceV3._digest_domain,
+        {key: value for key, value in reference.items() if key != "reference_digest"},
+    )
+    progress["plan_reference"] = reference
+    progress["progress_digest"] = contract_digest(
+        BootstrapGraphPlannedProgressV3._digest_domain,
+        {key: value for key, value in progress.items() if key != "progress_digest"},
+    )
+    progress_envelope["payload"] = progress
+    return _request_with_member_payloads(
+        request,
+        {
+            "plan": plan_raw,
+            "source-progress": encode_typed_value(progress_envelope),
+        },
+    )
+
+
+def _persist_corrupt_plan_checkpoint(
+    *,
+    plane: MemoryPlaneService,
+    request: BootstrapGraphPlanAtomicWriteRequestV3,
+) -> None:
+    """Replace a real retained checkpoint with a digest-consistent bad plan."""
+    malformed = _cross_snapshot_plan_request(request)
+    old_plan = next(item for item in request.members if item.member_id == "plan")
+    new_plan = next(item for item in malformed.members if item.member_id == "plan")
+    old_progress = next(
+        item for item in request.members if item.member_id == "source-progress"
+    )
+    new_progress = next(
+        item for item in malformed.members if item.member_id == "source-progress"
+    )
+    old_index_id = "semantic_ingestion:bootstrap-graph-v3:idempotency:" + request.write_digest
+    new_index_id = "semantic_ingestion:bootstrap-graph-v3:idempotency:" + malformed.write_digest
+    manifest = next(
+        record
+        for record in plane.list_records(
+            source_kind="semantic_ingestion_bootstrap_graph_v3_manifest"
+        )
+        if record.content.get("request") == request.model_dump(mode="json")
+    )
+    namespace_and_generation = manifest.memory_id.removeprefix(
+        "semantic_ingestion:bootstrap-graph-v3:manifest:"
+    )
+    plan_record_id = (
+        "semantic_ingestion:bootstrap-graph-v3:member:"
+        + namespace_and_generation
+        + ":"
+        + sha256(b"plan").hexdigest()
+    )
+    progress_record_id = (
+        "semantic_ingestion:bootstrap-graph-v3:member:"
+        + namespace_and_generation
+        + ":"
+        + sha256(b"source-progress").hexdigest()
+    )
+    replacements: dict[str, CanonicalMemoryRecord] = {}
+    for record in plane.list_records():
+        if record.memory_id == manifest.memory_id:
+            replacements[record.memory_id] = record.model_copy(
+                update={"content": record.content | {"request": malformed.model_dump(mode="json")}}
+            )
+        elif (
+            record.memory_id == plan_record_id
+            and record.content.get("member") == old_plan.model_dump(mode="json")
+        ):
+            replacements[record.memory_id] = record.model_copy(
+                update={"content": record.content | {"member": new_plan.model_dump(mode="json")}}
+            )
+        elif (
+            record.memory_id == progress_record_id
+            and record.content.get("member") == old_progress.model_dump(mode="json")
+        ):
+            replacements[record.memory_id] = record.model_copy(
+                update={
+                    "content": record.content
+                    | {"member": new_progress.model_dump(mode="json")}
+                }
+            )
+        elif record.memory_id == old_index_id:
+            replacements[new_index_id] = record.model_copy(
+                update={
+                    "memory_id": new_index_id,
+                    "content": record.content
+                    | {"request_write_digest": malformed.write_digest},
+                }
+            )
+    assert len(replacements) == 4
+    backend = plane._records
+    records = {record.memory_id: record for record in plane.list_records()}
+    records.pop(old_index_id)
+    records.update(replacements)
+    if isinstance(backend, InMemoryMemoryPlaneStore):
+        with backend._lock:
+            backend._records = records
+        return
+    assert isinstance(backend, JsonlMemoryPlaneStore)
+    backend._replace_batches(
+        [
+            _PersistedBatch.create(
+                revision=1,
+                data_revision=int(
+                    any(
+                        record.visibility.value == "runtime_context"
+                        for record in records.values()
+                    )
+                ),
+                records=tuple(records.values()),
+            )
+        ]
+    )
+
+
 @pytest.fixture(scope="module")
 def live_progress():
     """Amortize the real plan/attempt/lineage publication across memory cases."""
@@ -255,6 +422,39 @@ def test_jsonl_reopen_returns_exact_progress_bytes(tmp_path: Path) -> None:
         now_provider=lambda: TEST_NOW,
     )
     assert _reload(reopened_atomic, marker, epoch, _request).model_dump(mode="json") == expected
+
+
+@pytest.mark.parametrize("backend_kind", ("memory", "jsonl"))
+def test_recovery_rejects_persisted_cross_snapshot_plan_before_group_effect(
+    tmp_path: Path, backend_kind: str,
+) -> None:
+    path = None if backend_kind == "memory" else tmp_path / "cross-snapshot-jsonl"
+    _service, plane, atomic, _marker, epoch, request = _publish_live_progress(path=path)
+    lineage_request = _latest_lineage_request(plane)
+    assert not plane.list_records(
+        source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+    )
+    _persist_corrupt_plan_checkpoint(plane=plane, request=lineage_request)
+    if path is not None:
+        plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path))
+        atomic = SemanticIngestionAtomicStore(
+            plane,
+            SemanticWriterAdmissionStore(
+                plane,
+                bounded_preplanning_ownership_manifest(),
+                now_provider=lambda: TEST_NOW,
+            ),
+            now_provider=lambda: TEST_NOW,
+        )
+
+    with pytest.raises(
+        PreplanningStoreError,
+        match="bootstrap graph progress member payload is corrupt",
+    ):
+        _reload_closure(atomic, epoch, request)
+    assert not plane.list_records(
+        source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+    )
 
 
 def test_resume_closure_returns_exact_persisted_members(live_progress) -> None:

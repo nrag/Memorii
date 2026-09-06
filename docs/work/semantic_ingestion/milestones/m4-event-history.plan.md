@@ -1,8 +1,9 @@
 # Event History, Replay, Trust, And Identity Milestone
 
 - Parent WorkPlan: `docs/work/semantic_ingestion/implementation.plan.md`
-- Status: active (candidate `e13df701` review correction is bounded to complete
-  sealed-read-set CAS authority and independent-process race/reopen proof)
+- Status: active; candidates through `223e0cba` are superseded and the bounded
+  read-set/owned-prefix correction is locally green pending one final freeze,
+  hosted run, and independent review
 - Requirements: SIA-R10, SIA-R18
 - Active linked debugging WorkPlan: `docs/work/semantic_ingestion/conflict-authority-proof-failures-2026-08-04/debug.plan.md`
 - Approved linked design: `docs/work/semantic_ingestion/semantic-conflict-introduction-authority-2026-08-04/design.plan.md`
@@ -63,8 +64,10 @@ new delivery/source admission instead of an append-only replacement on the
 original fence and that the coordinator caught a generic replay/integrity
 exception instead of a dedicated stale-winner signal. Both confirmed P2
 defects are corrected locally. Retained-attempt proof now covers exact
-predecessor/successor result closure, unrelated graph revision rebasing, and
-typed overlapping-write conflict behavior across memory and independent JSONL.
+predecessor/successor result closure, execution-domain writes outside the
+sealed read set, and typed semantic conflicts across memory and independent
+JSONL. Accepted semantic winners advance globally sealed graph/ledger
+partitions and therefore never use an unrelated-rebase path.
 
 Earlier frozen review remediation closed
 canonical supersession wire/retry, both submission-versus-projection orders,
@@ -109,7 +112,7 @@ passing runs alone.
 
 ## Current Exact Next Action
 
-Complete the bounded review correction, freeze the shared M3.1/M4 candidate, and run the exact-SHA hosted checks and
+Freeze the bounded replacement, then run the exact-SHA hosted checks and
 whole-candidate reviews without adding scope. The first final-tree run passed
 414 tests and found only a stale architecture hash; after its correction the
 complete 415-case family passed under warnings-as-errors in 2142.04s.
@@ -120,6 +123,13 @@ inside the original interpreter. The bounded correction retains and validates
 the full typed read set and runs the public winner/reopen proof in separate
 interpreters. Positive external
 activation remains an M5 obligation, not an M4 closure dependency.
+
+Candidates `04a7303` and `223e0cba` are also superseded. The first lacked the
+persisted read-set/token join; the second exposed that consecutive replacement
+groups could conflict with the same attempt's own first effect. The corrected
+boundary replans every unfinished group when the sealed snapshot advances and
+accepts only the exact durable same-attempt revision prefix between consecutive
+groups. It still rejects every intervening semantic writer.
 
 ## Delegation And Review Gate
 

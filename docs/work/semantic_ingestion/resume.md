@@ -6,13 +6,14 @@
 - Active linked debugging WorkPlan: `docs/work/semantic_ingestion/conflict-authority-proof-failures-2026-08-04/debug.plan.md` (sole detailed owner of the two replan defects)
 - Approved bridge design WorkPlan: `docs/work/semantic_ingestion/bootstrap-v3-source-progress-bridge-2026-09-04/design.plan.md`
 - Active bridge implementation WorkPlan: `docs/work/semantic_ingestion/bootstrap-v3-source-progress-bridge-2026-09-04/implementation.plan.md`
-- Status: active bounded correction after candidate `04a7303` review found a
-  missing persisted read-set/token join and one JSONL proof assertion
+- Status: active bounded correction after candidate `223e0cba` review found a
+  multi-group owned-prefix defect and one persisted-recovery proof gap
 - Coordinator: Codex main thread
 - Last updated: 2026-09-06
 - Superseded candidate: `48c6dc5ab3438684b6476b0919a17774c8bdc92b`
 - Superseded candidate: `e13df701bf508955115637280125e25be2ca6916`
 - Superseded candidate: `04a7303c354527280a6490e2ebac0cac2b7a551e`
+- Superseded candidate: `223e0cba7d70dfe5ed4cad841a2eb30a531f22fd`
 - Current tree state: bounded correction pending replacement freeze
 
 ## Objective
@@ -73,12 +74,24 @@ independent review evidence.
   tamper tests, all four normal roots, all eight outside-read-set root/backend
   cases, the memory/JSONL persisted-member rejection, and the canonical
   evidence adversarial self-test.
+- Candidate `223e0cba` review found that the first accepted replacement group
+  advanced the graph before the next group from the same successor attempt.
+  The bounded correction now replans every unfinished group when the sealed
+  graph/ledger snapshot changes and admits consecutive groups only when the
+  current revision is the exact durable chain of earlier groups from that same
+  attempt. The physical two-interpreter `reused_committed` canary passes, while
+  an unchanged-snapshot conflict still retains dependency-independent
+  `reused_unfinished` arms. A real persisted checkpoint with recomputed nested
+  digests is rejected through production resume in memory and after fresh
+  JSONL reopen, before any group effect.
 
 ## Governing Decisions
 
 - Preserve the original delivery identity and append plan/attempt lineage.
 - Commit V3 related-conflict resolution at the existing group-CAS boundary.
-- Reuse unaffected groups byte-for-byte and recompile only the stale subset.
+- Preserve completed groups byte-for-byte; replan every unfinished group after
+  a changed global snapshot, retaining independent unfinished groups only when
+  the replacement snapshot is unchanged.
 - Preserve historical candidate records as superseded audit evidence.
 - Freeze one final candidate and close both milestones against it.
 

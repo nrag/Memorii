@@ -654,27 +654,35 @@ class BootstrapGraphDependentCoordinatorV3:
     ) -> BootstrapGraphDependentCoordinatorResultV3:
         # A conflict reached from the normal group executor appends a persisted
         # bridge closure before its V3 successor is published.
-        if replan_closure_reference is None:
-            if sealed_resume is None:
-                try:
-                    sealed = self._plans.reload_resume_closure_for_original_fence(
-                        operation_fence_binding=epoch.operation_fence_binding,
-                        delivery_principal_binding_digest=request.delivery_principal_binding_digest,
-                        required_outcome_scopes=request.required_outcome_scopes,
-                        control_epoch=epoch,
-                        operation_lease_binding=epoch.operation_lease_binding,
-                        writer_commit_binding=epoch.writer_commit_binding,
-                    )
-                except (PreplanningStoreError, ValueError):
-                    return self._unavailable(request, "authority_unavailable")
-            else:
-                sealed = sealed_resume
-            if (
-                sealed.attempt.artifact != predecessor_attempt
-                or sealed.plan.artifact != predecessor_plan
-                or sealed.lineage.artifact != predecessor_lineage
-            ):
+        sealed = sealed_resume
+        if sealed is None:
+            try:
+                sealed = self._plans.reload_resume_closure_for_original_fence(
+                    operation_fence_binding=epoch.operation_fence_binding,
+                    delivery_principal_binding_digest=request.delivery_principal_binding_digest,
+                    required_outcome_scopes=request.required_outcome_scopes,
+                    control_epoch=epoch,
+                    operation_lease_binding=epoch.operation_lease_binding,
+                    writer_commit_binding=epoch.writer_commit_binding,
+                )
+            except (PreplanningStoreError, ValueError):
                 return self._unavailable(request, "authority_unavailable")
+        if (
+            sealed.attempt.artifact != predecessor_attempt
+            or sealed.plan.artifact != predecessor_plan
+            or sealed.lineage.artifact != predecessor_lineage
+        ):
+            return self._unavailable(request, "authority_unavailable")
+        compilation = self._compiler.compile(request=request, control_epoch=epoch)
+        if isinstance(compilation, BootstrapGraphV3ProducerUnavailable):
+            return self._retry(
+                request, epoch, predecessor_attempt, predecessor_plan,
+                predecessor_authorizations, predecessor_lineage, [],
+                tuple(item.group_id for item in request.source_dependency_groups),
+                compilation, current_generation,
+                reason="related_conflict",
+            )
+        if replan_closure_reference is None:
             sealed_final_ids = {
                 item.artifact.transaction_group_id
                 for item in sealed.canonical_final_group_results
@@ -685,35 +693,45 @@ class BootstrapGraphDependentCoordinatorV3:
             )
             if conflicted_group_id not in unfinished:
                 return self._unavailable(request, "authority_unavailable")
-            # Replan only the stale group and unfinished groups whose plans
-            # actually depend on it.  Canonical order is not dependency
-            # authority: replacing the entire later tuple would erase the
-            # required reused-unfinished partition for independent groups.
-            member_by_group = {
-                item.transaction_group_id: item
-                for item in predecessor_plan.group_members
-            }
-            affected = {conflicted_group_id}
-            changed = True
-            while changed:
-                changed = False
-                for group_id in unfinished:
-                    if group_id in affected:
-                        continue
-                    dependencies = {
-                        dependency_group_id
-                        for operation in member_by_group[group_id].operation_plans
-                        for dependency_group_id in operation.dependency_group_ids
-                        if dependency_group_id != group_id
-                    }
-                    if dependencies & affected:
-                        affected.add(group_id)
-                        changed = True
-            replanned_group_ids = tuple(
-                group_id
-                for group_id in predecessor_plan.canonical_group_order
-                if group_id in affected
+            snapshot_advanced = (
+                compilation.plan.graph_snapshot_digest
+                != predecessor_plan.graph_snapshot_digest
+                or compilation.plan.sealed_read_set_digest
+                != predecessor_plan.sealed_read_set_digest
             )
+            if snapshot_advanced:
+                # An accepted semantic winner advances the globally sealed
+                # graph and ledger partitions, so every unfinished group must
+                # be planned against the successor snapshot.
+                replanned_group_ids = unfinished
+            else:
+                # A typed conflict with an unchanged global snapshot can still
+                # preserve independent unfinished groups byte-for-byte.
+                member_by_group = {
+                    item.transaction_group_id: item
+                    for item in predecessor_plan.group_members
+                }
+                affected = {conflicted_group_id}
+                changed = True
+                while changed:
+                    changed = False
+                    for group_id in unfinished:
+                        if group_id in affected:
+                            continue
+                        dependencies = {
+                            dependency_group_id
+                            for operation in member_by_group[group_id].operation_plans
+                            for dependency_group_id in operation.dependency_group_ids
+                            if dependency_group_id != group_id
+                        }
+                        if dependencies & affected:
+                            affected.add(group_id)
+                            changed = True
+                replanned_group_ids = tuple(
+                    group_id
+                    for group_id in predecessor_plan.canonical_group_order
+                    if group_id in affected
+                )
             replan_closure_reference = (
                 BootstrapGraphArtifactAssemblerV3.build_replan_closure_reference(
                     predecessor_progress_member=sealed.progress.member,
@@ -739,15 +757,6 @@ class BootstrapGraphDependentCoordinatorV3:
             not in replan_closure_reference.replanned_transaction_group_ids
         ):
             return self._unavailable(request, "authority_unavailable")
-        compilation = self._compiler.compile(request=request, control_epoch=epoch)
-        if isinstance(compilation, BootstrapGraphV3ProducerUnavailable):
-            return self._retry(
-                request, epoch, predecessor_attempt, predecessor_plan,
-                predecessor_authorizations, predecessor_lineage, [],
-                tuple(item.group_id for item in request.source_dependency_groups),
-                compilation, current_generation,
-                reason="related_conflict",
-            )
         compilation = BootstrapGraphArtifactAssemblerV3.successor_compilation(
             replacement=compilation,
             predecessor=sealed.compilation.artifact,
