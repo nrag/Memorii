@@ -9990,12 +9990,29 @@ class BootstrapTransactionGroupPlanMemberV3(_BootstrapV3Contract):
 
     @model_validator(mode="after")
     def validate_member_vectors(self) -> BootstrapTransactionGroupPlanMemberV3:
+        partition_versions = {
+            item.partition_id: item.version
+            for item in self.sealed_graph_read_set.partition_versions
+        }
         if not 1 <= len(self.operation_plans) <= 256:
             raise ValueError("bootstrap graph plan member operation cardinality is invalid")
         if self.operation_ids != tuple(sorted(set(self.operation_ids))):
             raise ValueError("bootstrap graph plan member operation order is invalid")
         if self.required_reservation_digests != tuple(sorted(set(self.required_reservation_digests))):
             raise ValueError("bootstrap graph plan member reservation projection is invalid")
+        if (
+            partition_versions.get("canonical_graph")
+            != self.graph_read_set.replay_state_digest
+            or partition_versions.get("reference_ledger")
+            != self.graph_read_set.reference_ledger_digest
+            or self.reference_integrity_ledger_digest
+            != self.graph_read_set.reference_ledger_digest
+            or self.planning_state_before.base_snapshot_digest
+            != self.sealed_graph_snapshot_digest
+            or self.planning_state_after.base_snapshot_digest
+            != self.sealed_graph_snapshot_digest
+        ):
+            raise ValueError("bootstrap graph plan member read set is inconsistent")
         state = self.planning_state_before
         for operation_plan in self.operation_plans:
             result = operation_plan.planning_result

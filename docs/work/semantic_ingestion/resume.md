@@ -6,12 +6,13 @@
 - Active linked debugging WorkPlan: `docs/work/semantic_ingestion/conflict-authority-proof-failures-2026-08-04/debug.plan.md` (sole detailed owner of the two replan defects)
 - Approved bridge design WorkPlan: `docs/work/semantic_ingestion/bootstrap-v3-source-progress-bridge-2026-09-04/design.plan.md`
 - Active bridge implementation WorkPlan: `docs/work/semantic_ingestion/bootstrap-v3-source-progress-bridge-2026-09-04/implementation.plan.md`
-- Status: active bounded correction after candidate `e13df701` review found a
-  missing complete sealed-read-set CAS authority and two proof gaps
+- Status: active bounded correction after candidate `04a7303` review found a
+  missing persisted read-set/token join and one JSONL proof assertion
 - Coordinator: Codex main thread
 - Last updated: 2026-09-06
 - Superseded candidate: `48c6dc5ab3438684b6476b0919a17774c8bdc92b`
 - Superseded candidate: `e13df701bf508955115637280125e25be2ca6916`
+- Superseded candidate: `04a7303c354527280a6490e2ebac0cac2b7a551e`
 - Current tree state: bounded correction pending replacement freeze
 
 ## Objective
@@ -32,16 +33,16 @@ independent review evidence.
 - Native V3 progress publication, exact reload, and bounded group-CAS
   related-conflict successor are implemented. The direct two-ingestion race
   retains the original fence and creates the successor only for the dedicated
-  typed related-conflict signal. The related-conflict pair passes in 127.84s;
-  an identical two-ingestion race separately proves two CAS attempts and no
-  false successor after an unrelated/global revision change.
+  typed related-conflict signal. Every accepted semantic winner advances a
+  globally sealed partition and therefore takes that successor path; an
+  execution-domain write outside the read set takes one CAS without retry.
 - M3.1 now has eight validated exact-selector receipts: 29 cases for each of
   direct, factory, filesystem, and Hermes roots on memory and independent JSONL
   backends (232 selected cases total). Progress/recovery is 18/18, the selector
   contract is 11/11, and the complete acceptance file is 200/200 under
   warnings-as-errors.
-- Clean candidate freeze, exact-SHA hosted execution, and final independent
-  closure review remain pending after the active M4 rerun.
+- Replacement candidate freeze, exact-SHA hosted execution, and final
+  independent closure review remain pending after the active bounded rerun.
 - Review of `48c6dc5` found four bounded closure defects. The replacement tree
   now preserves exact replay-error identity, performs fresh target-aware
   preflight before one unrelated late-CAS retry, proves the real public
@@ -57,14 +58,21 @@ independent review evidence.
 - The selector metadata correction changed the manifest digest, so the prior
   eight local receipts are historical. Exact-SHA hosted CI must regenerate and
   aggregate all eight replacement root/backend receipts before closure.
-- Candidate `e13df701` review correction is locally green: the physical-CAS
+- Candidate `04a7303` review correction is locally green: the physical-CAS
   disjoint accepted winner takes one typed successor in memory and independent
-  JSONL; the public clarification race executes/reopens across two
+  JSONL, with both backends asserting disjoint materialized record intents;
+  the persisted member now joins the full read set to its token and ledger
+  fields and rejects a digest-recomputed cross-snapshot token. The public
+  clarification race executes/reopens across two
   interpreters with byte-identical complete authority; acceptance is 200/200,
   projection/history plus integration is 97/97, progress/recovery is 18/18,
   four normal roots are 4/4, and configured Pyright/Ruff/compile/canonical-
   evidence checks pass. Candidate-lock SHA-256 is
-  `dcf7f2ecf5456bd6eca4d998d7d5cfb9db8d3887bdd7efec364360f45bd5b96c`.
+  `6952929ab47bdc219e88434faeaef66605c7814e1fc6c0c63f0eb2fe78b11b10`.
+- The stable post-review authority rerun passes all 309 CTV/workflow/replay
+  tamper tests, all four normal roots, all eight outside-read-set root/backend
+  cases, the memory/JSONL persisted-member rejection, and the canonical
+  evidence adversarial self-test.
 
 ## Governing Decisions
 

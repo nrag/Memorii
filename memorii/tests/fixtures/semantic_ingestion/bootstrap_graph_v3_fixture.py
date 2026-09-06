@@ -30,6 +30,7 @@ from memorii.core.memory_evolution.graph_planning import (
     canonical_planning_payload_from_record,
 )
 from memorii.core.memory_evolution.graph_records import (
+    GraphPartitionVersion,
     GraphReadSet,
     GraphRecordKind,
     GraphStateSnapshot,
@@ -98,8 +99,19 @@ def digest(value: str) -> str:
 
 def build_empty_graph_snapshot_bundle() -> GraphSemanticSnapshotBundleV3:
     """Smallest canonical graph authority; all values use public contracts."""
+    replay_state_digest = digest("fixture-empty-replay-state")
+    reference_ledger_digest = digest("fixture-empty-reference-ledger")
     read_set = GraphReadSet.create(
-        record_keys=(), partition_versions=(), manifest_fingerprints=(),
+        record_keys=(),
+        partition_versions=(
+            GraphPartitionVersion(
+                partition_id="canonical_graph", version=replay_state_digest,
+            ),
+            GraphPartitionVersion(
+                partition_id="reference_ledger", version=reference_ledger_digest,
+            ),
+        ),
+        manifest_fingerprints=(),
     )
     snapshot_values = {
         "snapshot_token": "bootstrap-graph-v3-fixture",
@@ -250,8 +262,14 @@ def build_minimal_bootstrap_graph_plan_compilation_v3(
     )
     graph_read_set = GraphReadSetToken.create(
         graph_revision=snapshot.graph_snapshot.graph_revision,
-        replay_state_digest=digest("fixture-empty-replay-state"),
-        reference_ledger_digest=digest("fixture-empty-reference-ledger"),
+        replay_state_digest=dict(
+            (item.partition_id, item.version)
+            for item in snapshot.base_read_set.partition_versions
+        )["canonical_graph"],
+        reference_ledger_digest=dict(
+            (item.partition_id, item.version)
+            for item in snapshot.base_read_set.partition_versions
+        )["reference_ledger"],
     )
     reductions: list[BootstrapGraphOperationReductionV3] = []
     members = []

@@ -151,7 +151,7 @@
         },
         "memorii.core.semantic_ingestion.contracts.encode_semantic_contract": {
           "path": "memorii/memorii/core/semantic_ingestion/contracts.py",
-          "sha256": "bdb8859e7cd20bc899b0cb8fb8cdf0103d889b2fb0c0d329f212d46c98246861"
+          "sha256": "2139897d7091d8d519ca60a77be0d04aaf86d20f82741f2426fa47b31ececd9a"
         }
       },
       "caller_proof": {
@@ -376,10 +376,10 @@
       "implementation_blocker": null,
       "locally_verified_commands": [
         "PYTHONPATH=memorii .venv/bin/python -m pytest -q 'memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_scenario_replay.py::test_graph_scenario_replays_without_effects_in_memory[related_conflict-direct]' 'memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_scenario_replay.py::test_graph_scenario_replays_without_effects_in_memory[source_progress_related_conflict-direct]' -p no:cacheprovider (exit 0; 2 passed in 127.84s on 2026-09-05; the exact typed group-CAS related-conflict and source-progress successor paths retain the original fence without a second source admission)",
-        "PYTHONPATH=memorii .venv/bin/python -m pytest -q memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_root_composition.py::test_identical_two_ingestion_group_cas_race_rebases_without_replan -p no:cacheprovider (exit 0; 1 passed in 51.91s on 2026-09-05; byte-identical concurrent writes perform two CAS attempts and six ordinary progress checkpoints without a false successor)"
+        "PYTHONPATH=memorii .venv/bin/python -m pytest -q memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_root_composition.py::test_disjoint_accepted_group_cas_winner_forces_typed_successor -p no:cacheprovider (exit 0; 1 passed in 86.74s on 2026-09-06; disjoint materialized targets still advance the globally sealed graph/ledger partitions and force one typed successor)"
       ],
       "absence_contract": "An unavailable or invalid original-fence closure returns typed V3 noncommit and publishes no successor plan, attempt, lineage, admission, or delivery. Generic SemanticConflictProjectionStaleWinnerError remains non-V3 and cannot trigger a V3 successor.",
-      "required_proof": "Prove the normal clarification admission/commit lifecycle separately from the group-CAS successor. At group CAS, inject only the exact typed related-conflict emitted for a committed overlapping change and prove A's original-fence closure reload, one successor sequence, byte-identical independent-process JSONL reopen, and zero source readmission or renormalization. Also prove that an identical or unrelated concurrent graph revision rebases without a false successor.",
+      "required_proof": "Prove the normal clarification admission/commit lifecycle separately from the group-CAS successor. At the physical group CAS, allow an accepted semantic winner with disjoint materialized record intents to advance the globally sealed graph/ledger partitions, then prove A's original-fence closure reload, one successor sequence, byte-identical independent-process JSONL reopen, and zero source readmission or renormalization. Separately prove that an execution-domain write outside the sealed graph read set performs one CAS without a conflict or retry.",
       "post_implementation_gates": [
         "native-member validation before reload/write",
         "exact original-request/fence/principal/scopes/epoch/lease/writer propagation",

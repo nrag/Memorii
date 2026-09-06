@@ -16,12 +16,12 @@ from pathlib import Path
 from typing import Any
 
 EXPECTED = {
-    "design": "5727af6bb79ce45a5c9180dbbb8525044ea62ce5d4dd0f5210ea5a2655723653",
+    "design": "41a9b2517cdf445c005e371ebba61c2f89f125b7128e848215464131b8ef8dc8",
     "registry": "70143b278e0fd72886362f4174c726c9ecf877b1e288d3dd2c196a78f385413e",
     "ledger": "085921e6c4e995f0d6259c9f6f6eabeec3f1455bba344105ef0e16d24eb81671",
     "matrix": "a3375bd0d8d01cf7a7c9d7d16d90945d792d932eca7161097f6ee5ba44d3f604",
     "prototype": "45a8403c387c407617a3b580094177d111c8879a752eca2bff6d1786e1e61df6",
-    "vector": "ad83a61da683c935c3b4b581893daafa60dbf72c565c7272fa4a06f0e928fde6",
+    "vector": "1695c7cec55f12b83c7c48741ad1b3259966858c40a522f5eb3629c1474bb58c",
 }
 ISOLATION_DIAGNOSTIC = "CGS structural checker requires isolated Python (-I)"
 BODY_BINDING = {

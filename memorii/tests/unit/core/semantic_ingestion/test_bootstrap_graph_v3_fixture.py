@@ -1,9 +1,19 @@
+import json
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
+from memorii.core.memory_evolution.graph_planning import GraphPlanningState
+from memorii.core.memory_evolution.transaction_coordinator import GraphReadSetToken
+from memorii.core.memory_plane import JsonlMemoryPlaneStore, MemoryPlaneService
+from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.semantic_ingestion.contracts import (
+    BootstrapTransactionGroupOperationPlanV3,
+    BootstrapTransactionGroupPlanMemberV3,
     GraphDependentExecutionPolicyReferenceV3,
+    contract_digest,
 )
+from memorii.domain.enums import CommitStatus, MemoryDomain
 from tests.fixtures.semantic_ingestion.bootstrap_graph_v3_fixture import (
     DeterministicBootstrapGraphPlanCompilerV3,
     build_empty_capability_registry,
@@ -94,6 +104,97 @@ def test_build_minimal_bootstrap_graph_plan_compilation_v3_rejects_cross_request
             policy=foreign_policy,
             capability_registry=capability_registry,
             operation_inputs=(),
+        )
+
+
+def test_group_member_rejects_digest_recomputed_cross_snapshot_read_token(
+    tmp_path,
+) -> None:
+    snapshot = build_empty_graph_snapshot_bundle()
+    state = GraphPlanningState.create(
+        base_snapshot_digest=snapshot.snapshot_digest,
+        records=(),
+        codec_manifest_fingerprint=(
+            snapshot.graph_snapshot.codec_manifest_fingerprint
+        ),
+        applied_planned_delta_digests=(),
+    )
+    operation = BootstrapTransactionGroupOperationPlanV3.create(
+        operation_id=digest("operation"),
+        operation_execution_id=digest("operation-execution"),
+        proposal_digest=digest("proposal"),
+        member_digests=(digest("member"),),
+        segment_ids=(digest("segment"),),
+        dependency_group_ids=(digest("group"),),
+        planning_result=None,
+    )
+    versions = {
+        item.partition_id: item.version
+        for item in snapshot.base_read_set.partition_versions
+    }
+    valid_token = GraphReadSetToken.create(
+        graph_revision=snapshot.graph_snapshot.graph_revision,
+        replay_state_digest=versions["canonical_graph"],
+        reference_ledger_digest=versions["reference_ledger"],
+    )
+    valid = BootstrapTransactionGroupPlanMemberV3.create(
+        transaction_group_id=digest("group"),
+        source_dependency_group_digest=digest("group"),
+        sealed_graph_snapshot_digest=snapshot.snapshot_digest,
+        graph_read_set=valid_token,
+        sealed_graph_read_set=snapshot.base_read_set,
+        reference_integrity_ledger_digest=versions["reference_ledger"],
+        planning_state_before=state,
+        operation_plans=(operation,),
+        planning_state_after=state,
+        required_reservation_digests=(),
+    )
+    substituted = GraphReadSetToken.create(
+        graph_revision=snapshot.graph_snapshot.graph_revision,
+        replay_state_digest=digest("foreign-replay-state"),
+        reference_ledger_digest=versions["reference_ledger"],
+    )
+    digest_body = {
+        name: getattr(valid, name)
+        for name in type(valid).model_fields
+        if name != "member_digest"
+    }
+    digest_body["graph_read_set"] = substituted
+    malformed = valid.model_dump(mode="json")
+    malformed["graph_read_set"] = substituted.model_dump(mode="json")
+    malformed["member_digest"] = contract_digest(
+        BootstrapTransactionGroupPlanMemberV3._digest_domain, digest_body,
+    )
+
+    for path in (None, tmp_path / "malformed-read-set-jsonl"):
+        plane = MemoryPlaneService(
+            record_store=(
+                None
+                if path is None
+                else JsonlMemoryPlaneStore(path)
+            )
+        )
+        plane.upsert_record(CanonicalMemoryRecord(
+            memory_id="malformed-read-set",
+            domain=MemoryDomain.EXECUTION,
+            text="",
+            content={"member": malformed},
+            status=CommitStatus.COMMITTED,
+            source_kind="bootstrap_graph_malformed_read_set_fixture",
+            timestamp=datetime(2026, 1, 1, tzinfo=UTC),
+        ))
+        if path is not None:
+            plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path))
+        persisted = plane.get_record("malformed-read-set")
+        assert persisted is not None
+        with pytest.raises(
+            ValueError, match="bootstrap graph plan member read set is inconsistent"
+        ):
+            BootstrapTransactionGroupPlanMemberV3.model_validate_json(
+                json.dumps(persisted.content["member"])
+            )
+        assert not plane.list_records(
+            source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_effect"
         )
 
 

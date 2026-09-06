@@ -11357,7 +11357,12 @@ class SemanticIngestionAtomicStore:
             prior_replay_state = self.semantic_replay_state()
             before_graph = prior_replay_state.graph_revision
             current_snapshot = self.graph_state_snapshot()
-            if current_snapshot.read_set != request.group_plan_member.sealed_graph_read_set:
+            if (
+                current_snapshot.graph_revision
+                != request.group_plan_member.graph_read_set.graph_revision
+                or current_snapshot.read_set
+                != request.group_plan_member.sealed_graph_read_set
+            ):
                 raise BootstrapGraphRelatedConflictError(
                     transaction_group_id=request.transaction_group_id,
                     expected_graph_revision=sealed_graph_revision,

@@ -150,14 +150,10 @@ def _compile(
         codec_manifest_fingerprint=snapshot.graph_snapshot.codec_manifest_fingerprint,
         applied_planned_delta_digests=(),
     )
-    replay_state = _digest((request.normalization_replay.replay_digest, "replay"))
-    reference_ledger = _digest((request.normalization_replay.replay_digest, "ledger"))
-    # The token is a group-local proof; each plan member also retains the
-    # complete canonical GraphReadSet needed for store-side CAS revalidation.
-    read_token = GraphReadSetToken.create(
-        graph_revision=snapshot.graph_snapshot.graph_revision,
-        replay_state_digest=replay_state, reference_ledger_digest=reference_ledger,
-    )
+    # Retain both projections from the same sealed store snapshot.  Deriving
+    # either token partition from normalization would create two authorities
+    # for the graph state persisted by the plan member.
+    read_token = sealed_snapshot.read_set
     reductions: list[BootstrapGraphOperationReductionV3] = []
     members = []
     for group in groups:
@@ -240,7 +236,9 @@ def _compile(
             transaction_group_id=group.group_id, source_dependency_group_digest=group.group_id,
             sealed_graph_snapshot_digest=sealed_snapshot.snapshot_digest, graph_read_set=read_token,
             sealed_graph_read_set=snapshot.base_read_set,
-            reference_integrity_ledger_digest=read_token.reference_ledger_digest,
+            reference_integrity_ledger_digest=(
+                sealed_snapshot.reference_integrity.ledger_digest
+            ),
             planning_state_before=state, operation_plans=tuple(plans), planning_state_after=state,
             required_reservation_digests=(),
         ))

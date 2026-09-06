@@ -2,8 +2,8 @@
 
 - Work ID: semantic_ingestion_m3_1_m4_completion_2026_09_04
 - Work type: implementation
-- Status: active; candidate `e13df701` review found one bounded sealed-read-set
-  runtime defect and two discriminating-proof gaps
+- Status: active; candidate `04a7303` review remediation is locally green and
+  pending replacement freeze, hosted checks, and final independent review
 - Coordinator: Codex main thread
 - Created: 2026-09-04
 - Last updated: 2026-09-06
@@ -111,7 +111,7 @@ Excluded:
 
 | Order | Operation | Work type and owner | Exit evidence | Dependency | Status |
 | --- | --- | --- | --- | --- | --- |
-| 1 | Replan failure-family correction | Existing linked debugging WorkPlan | Before/after discriminator; original delivery retained; one admission; exact subgroup reuse; dedicated stale signal; sibling failures remain closed | none | complete locally; retained-attempt, typed related-conflict, and fail-closed sibling proof pass; identical concurrent writes separately prove no false successor |
+| 1 | Replan failure-family correction | Existing linked debugging WorkPlan | Before/after discriminator; original delivery retained; one admission; exact subgroup reuse; dedicated stale signal; sibling failures remain closed | none | complete locally; retained-attempt, typed related-conflict, fail-closed sibling, disjoint accepted-winner successor, and outside-read-set execution-write proofs pass |
 | 2 | Conflict-attention composition reconciliation | This implementation WorkPlan | Existing provider/factory/filesystem/cache/composite/Hermes paths pass after the replan correction; opt-in and cursor/rotation behavior stay closed | operation 1 | complete locally; included in the final 415-case M4 family |
 | 3 | Replay and history closure | This implementation WorkPlan | Genesis/checkpoint byte equivalence for every active schema; permutations, duplicates, corruption, late arrival, trust decay, rekey/merge/split, and migration races pass in memory and real JSONL reopen | operation 2 | complete locally; final 415-case family passed under `-W error` in 2142.04s |
 | 4 | Shared M3.1 regression closure | This implementation WorkPlan | Four production roots pass accepted effect, exact retry, restart, lease reclaim, lost acknowledgement, lineage, and independent reopen against the final tree | operation 3 | prior full local matrix complete; replacement selector contract and affected roots are green, and exact hosted receipts must be regenerated for the replacement manifest |
@@ -333,9 +333,8 @@ bounded contract/repository/coordinator slice.
 - 2026-09-05: The final retained-attempt correction now binds replan final
   results to the actual group-result generations, reloads construction through
   `result_digest`, merges exact predecessor and successor results, preserves
-  successor commits across a later conflict, and validates target-level CAS
-  preconditions so unrelated graph revisions rebase without weakening
-  overlapping-write conflicts.
+  successor commits across a later conflict, and validates the complete sealed
+  graph read set before every physical group CAS.
 - 2026-09-05: The exact M3.1 selector matrix passed 29 cases for each of direct,
   factory, filesystem, and Hermes roots on both memory and independent JSONL
   backends. All eight receipts bind manifest
@@ -350,12 +349,11 @@ bounded contract/repository/coordinator slice.
   declarations on changed M3/M4 surfaces. Minimal type-only corrections now
   pass with 0 errors and 0 warnings. The final M4 family then passed 415 tests
   under `-W error` in 2142.04s.
-- 2026-09-05: Target-level CAS invalidated an old race assumption: two
-  byte-identical concurrent ingestions are idempotent and must not create a
-  successor merely because the global graph revision changed. The corrected
-  test passes in 50.83s with two CAS attempts and six ordinary progress checkpoints;
-  the distinct typed related-conflict pair passes 2 tests in 127.84s and
-  remains the successor/replan discriminator.
+- 2026-09-05: An intermediate target-level CAS experiment treated a
+  byte-identical concurrent ingestion as reusable after the global graph
+  revision changed. Whole-candidate review superseded that experiment: the
+  complete graph and reference-ledger partitions are globally sealed, so any
+  accepted semantic winner requires the typed successor path.
 - 2026-09-05: The canonical-evidence binding map, changed-fixture manifest,
   comparison schedule authority, and candidate lock were repinned as one
   digest chain. The fail-closed lock resolver and canonical-evidence adversarial
@@ -369,9 +367,8 @@ bounded contract/repository/coordinator slice.
   not measure. The candidate is superseded and its hosted cancellation is not
   closure evidence.
 - 2026-09-05: The bounded corrections now preserve the exact
-  `SemanticEventReplayError`, reload the exact primary or rerun the complete
-  target-aware preflight before one unrelated-CAS retry, and retain the typed
-  related-conflict outcome for an overlapping winner. The public
+  `SemanticEventReplayError`, reload the exact primary, and retain the typed
+  related-conflict outcome for every accepted semantic winner. The public
   `memorii_resolve_conflict` race passes for memory and independently reopened
   JSONL with one admission, no renormalization, the original fence, and the
   exact typed successor lineage (`2 passed in 232.77s`). Selector outcome
@@ -394,10 +391,10 @@ bounded contract/repository/coordinator slice.
   This reruns the exact 87-case projection owner plus the 10 process/replay
   integration cases after the replay-error and late-CAS corrections.
 - 2026-09-06: The affected public-root concurrency and failure-identity
-  discriminator passes all 11 parameterized cases (`33 deselected`) under
-  warnings-as-errors in 459.06s. It covers identical-write rebase without a
-  false successor, exact replay-error propagation, unrelated-write retry, and
-  the typed related-conflict successor.
+  discriminator passed all 11 parameterized cases (`33 deselected`) under
+  warnings-as-errors in 459.06s at the superseded target-level-CAS revision.
+  Exact replay-error propagation remains valid; its accepted semantic-winner
+  rebase cases are superseded by the complete sealed-read-set correction.
 - 2026-09-06: Removing unsupported selector outcome metadata intentionally
   changed the selector manifest digest. The earlier eight local receipts remain
   truthful historical execution evidence but cannot validate the replacement
@@ -441,6 +438,24 @@ bounded contract/repository/coordinator slice.
   outside-read-set execution record neither changes the read set nor conflicts
   with explicit graph CAS preconditions. Discriminating local reruns are in
   progress before the replacement full matrix.
+- 2026-09-06: Review of candidate `04a7303` found that its newly retained full
+  read set was not yet joined to the legacy token and ledger fields. The
+  bounded correction now derives the token from the same sealed store snapshot,
+  validates its replay/ledger partitions in the persisted member, and checks
+  its graph revision at the pre-effect store boundary. The same review required
+  the independent JSONL race to expose and assert its disjoint materialized
+  record-intent sets; that assertion is now part of the runner output. The
+  digest-recomputed cross-snapshot token rejection passes in the focused
+  contract file (`4 passed` total), the physical-CAS discriminator passes in
+  memory (`1 passed` in 86.74s), and the separate-process JSONL proof passes
+  (`1 passed` in 171.45s).
+- 2026-09-06: The fully repinned authority chain is green on the stable tree:
+  CTV/workflow/replay-decision tamper coverage passes all 309 tests in 655.39s;
+  all four normal production roots pass in 199.33s; the eight root/backend
+  outside-read-set execution-write cases pass in 371.10s; and the canonical
+  evidence adversarial self-test passes. The persisted-member rejection test
+  exercises both memory and an independent JSONL reopen before asserting that
+  no group effect exists.
 - 2026-09-06: The corrected physical-CAS discriminator passes in memory and
   independent JSONL: the competing accepted source writes disjoint record
   intents, changes the sealed graph/ledger partitions, and forces exactly one
@@ -458,7 +473,7 @@ bounded contract/repository/coordinator slice.
   artifact assembler `6 passed`; configured Pyright reports 0 errors/warnings;
   scoped Ruff, compilation, and canonical-evidence adversarial self-test pass.
   The repinned candidate-lock SHA-256 is
-  `dcf7f2ecf5456bd6eca4d998d7d5cfb9db8d3887bdd7efec364360f45bd5b96c`.
+  `6952929ab47bdc219e88434faeaef66605c7814e1fc6c0c63f0eb2fe78b11b10`.
 
 ## Decision Log
 
@@ -487,19 +502,19 @@ green. M5 activation and live agent-system certification remain out of scope.
 - The separately bounded built-in target-materialization operation corrected
   the race harness, not the production coordinator: B is scheduled separately
   and held at the same actual group-CAS hook before it is released to commit.
-  That identical-write vector correctly rebases without a related-conflict
-  successor: it passed on 2026-09-05 with 2 CAS attempts, 2 admissions, 2
-  accepted graph effects, and 6 typed progress checkpoints.
+  The superseded target-level experiment rebased that winner. The approved
+  complete-read-set rule instead treats every accepted semantic winner as
+  related because it advances the globally sealed graph/ledger partitions.
 - The typed related-conflict fixture now injects the real related-conflict
   signal at the group-CAS owner rather than a generic storage exception. Its
   adjacent focused direct pair passes 2 tests in 127.84s and proves the
-  successor path separately from the identical-write rebase case.
+  successor path separately from the outside-read-set execution-write case.
 - The complete cross-root/backend selector matrix remains Operation 4 evidence;
   no final M3.1/M4 completion claim is made from these focused results alone.
 
 ## Exact Next Action
 
-Reconcile/pin all active packets, freeze and
+Complete the bounded `04a7303` review remediation and pin chain, freeze and
 push one clean replacement candidate, and require exact-SHA hosted checks plus
 whole-candidate specification, correctness, and test reviews before clearing
 either milestone's closure arrays.

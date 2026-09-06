@@ -25992,9 +25992,14 @@ There are 1--256 `operation_plans`, ordered by canonical `operation_id`, with
 unique operation/proposal IDs; every member/segment/dependency/reservation
 vector is sorted, unique, non-empty where the source dependency group requires
 it, and bounded at 4096 entries. `graph_read_set`, `sealed_graph_read_set`, and
-ledger digest come from the one outer sealed snapshot. The group-local token and
-the complete record-key, partition-version, and manifest-fingerprint vectors
-are authenticated by the member digest. Initial and replacement members carry
+ledger digest come from the one outer sealed snapshot. The token's replay-state
+and reference-ledger digests equal the corresponding `canonical_graph` and
+`reference_ledger` partition versions in `sealed_graph_read_set`, and its
+reference-ledger digest equals `reference_integrity_ledger_digest`. The
+before/after planning states retain the same `sealed_graph_snapshot_digest` as
+their base snapshot. The
+group-local token and the complete record-key, partition-version, and
+manifest-fingerprint vectors are authenticated by the member digest. Initial and replacement members carry
 the read set of their producing snapshot; byte-retained successor members keep
 their predecessor read-set bytes. `planning_state_before` is the state entering this
 group; folding every non-null planning result in operation order yields exactly
@@ -26020,9 +26025,10 @@ checkpoint consumer reads a removed field or reconstructs a parallel vector.
 
 Immediately before every physical group CAS attempt, the store reloads the
 current complete `GraphReadSet` and compares it byte-for-byte with
-`sealed_graph_read_set`. Any difference is a typed related conflict and the
-stale request is not reused. A write outside this read set cannot conflict with
-the graph CAS's explicit record preconditions and proceeds without a retry.
+`sealed_graph_read_set`; it also compares the current graph revision with the
+token's graph revision. Any difference is a typed related conflict and the stale
+request is not reused. A write outside this read set cannot conflict with the
+graph CAS's explicit record preconditions and proceeds without a retry.
 
 Preimage order is: operation-plan schema, operation, proposal, member vector,
 segment vector, dependency-group vector, complete planning result/null, digest;

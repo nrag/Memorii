@@ -26,8 +26,10 @@ from memorii.core.semantic_ingestion.bootstrap_graph_repository import (
     AtomicStoreBootstrapGraphControlEpochRepositoryV3,
 )
 from memorii.core.semantic_ingestion.contracts import (
+    BootstrapGraphGroupCommitRequestV3,
     BootstrapGraphPlanAtomicWriteRequestV3,
     decode_bootstrap_graph_atomic_member_payload_v3,
+    decode_semantic_contract,
 )
 from memorii.domain.enums import CommitStatus, MemoryDomain
 from memorii.integrations.hermes_provider import HermesMemoryProvider
@@ -475,6 +477,7 @@ def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str
     ))
     if behavior == "real_related_conflict" and phase == "first":
         real_conditional_write = memory_plane.conditionally_write_records
+        initial_record_keys: dict[str, set[tuple[str, str]]] = {}
 
         def scheduled_conditional_write(
             records, *, preconditions, authorization, **kwargs,
@@ -485,6 +488,16 @@ def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str
                 == "semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
             ), None)
             if group_primary is not None:
+                request = decode_semantic_contract(
+                    bytes.fromhex(group_primary.content["request_hex"]),
+                    BootstrapGraphGroupCommitRequestV3,
+                )
+                if request.attempt.attempt_index == 0:
+                    initial_record_keys[request.source_operation_id] = {
+                        (intent.record_kind, intent.record_id)
+                        for item in request.ordered_operation_inputs
+                        for intent in item.reduction.effect_materialization.record_intents
+                    }
                 cas_attempts.append(group_primary.memory_id)
                 pause_first_group(group_primary.memory_id)
             return real_conditional_write(
@@ -574,6 +587,12 @@ def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str
                 "competing ingestion did not commit: "
                 f"{winner.blocked_reasons['semantic_ingestion']}"
             )
+        if set(initial_record_keys) != {operation_id, f"{operation_id}-winner"}:
+            raise AssertionError("initial group record intents were not captured")
+        if not initial_record_keys[operation_id] or not initial_record_keys[
+            operation_id
+        ].isdisjoint(initial_record_keys[f"{operation_id}-winner"]):
+            raise AssertionError("competing group record intents are not disjoint")
     else:
         result = service.sync_event(
             operation=ProviderOperation.CHAT_USER_TURN,
@@ -648,6 +667,14 @@ def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str
             else prior_terminal_result.blocked_reasons["semantic_ingestion"]
         ),
         "successor_evidence": successor_evidence,
+        "initial_record_keys": (
+            {
+                key: sorted([list(item) for item in values])
+                for key, values in initial_record_keys.items()
+            }
+            if behavior == "real_related_conflict" and phase == "first"
+            else {}
+        ),
         "source_progress_evidence": _persisted_progress_evidence(service),
         "admission_count": len(service._memory_plane.list_records(
             source_kind="semantic_ingestion_admission_index"

@@ -115,6 +115,14 @@ def _assert_race_outputs(
         assert first["cas_attempts"] == 3
         assert first["graph_effects"] == 2
         assert first["admission_count"] == 2
+        initial_record_keys = first["initial_record_keys"]
+        assert len(initial_record_keys) == 2
+        first_keys, second_keys = (
+            {tuple(item) for item in values}
+            for values in initial_record_keys.values()
+        )
+        assert first_keys
+        assert first_keys.isdisjoint(second_keys)
         evidence = first["successor_evidence"]
         successor = next(
             item for item in evidence["attempts"]

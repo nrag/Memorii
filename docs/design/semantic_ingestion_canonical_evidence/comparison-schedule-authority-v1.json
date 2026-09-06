@@ -1,6 +1,6 @@
 {
   "schema": "memorii.semantic-ingestion.canonical-evidence.comparison-schedule-authority.v2",
-  "fixture_hash": "1ca5273ac89201c0f908f8471369e87e9deddbf15fda439368d95e3a6365e9f0",
+  "fixture_hash": "d91c604f3b9e9685486df12f93f91ad218d55d26978ab10de1638b4a5f6cecd2",
   "tool_identity": "216ef538a3c08e37deb97de1dc911b02b4fe7def23dae8eb26cef5739d4e8492",
   "workload_identity": "da8b50a684fd42d379fda1c6140abd3305dcd5823426cc0798c0d5c6e2a6273f",
   "environment_identity": "canonical-evidence-design-vector-environment-v1",
