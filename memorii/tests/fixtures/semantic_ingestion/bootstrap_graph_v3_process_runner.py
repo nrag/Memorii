@@ -7,7 +7,7 @@ import hashlib
 import json
 import signal
 import sys
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timedelta
 from pathlib import Path
 from threading import Event
@@ -16,7 +16,7 @@ from memorii.core.memory_evolution.atomic_store import PreplanningStoreError
 from memorii.core.memory_evolution.writer_admission import SemanticWriterAdmissionError
 from memorii.core.memory_plane import JsonlMemoryPlaneStore, MemoryPlaneService
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
-from memorii.core.provider.models import ProviderOperation
+from memorii.core.provider.models import ProviderOperation, ProviderSyncResult
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.semantic_ingestion.bootstrap_graph_host import (
     BootstrapGraphHostBundle,
@@ -53,6 +53,16 @@ from tests.unit.core.semantic_ingestion.test_semantic_provider_composition impor
     _host_ingress,
     _v3_normalization_host_builder,
 )
+
+RACE_COORDINATION_TIMEOUT_SECONDS = 600
+RACE_WINNER_COMPLETION_TIMEOUT_SECONDS = 600
+RACE_FIRST_HOLD_TIMEOUT_SECONDS = 1260
+RACE_DIAGNOSTIC_TIMEOUT_SECONDS = 60
+RACE_FINAL_COMPLETION_TIMEOUT_SECONDS = 600
+DEFAULT_ELEMENT_TIMEOUT_SECONDS = 180
+# A may need one full window to reach CAS, one for B to reach it, one for B to
+# commit before A is released, and a final window for A to observe the conflict.
+RELATED_CONFLICT_ELEMENT_TIMEOUT_SECONDS = 2460
 
 
 def _rewrite_jsonl_fixture(
@@ -336,12 +346,12 @@ def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str
     def pause_first_group(_group_id: str) -> str | None:
         if not paused.is_set():
             paused.set()
-            if not release_first.wait(timeout=300):
+            if not release_first.wait(timeout=RACE_FIRST_HOLD_TIMEOUT_SECONDS):
                 raise AssertionError("test did not release A")
             return "first"
         if not second_ready.is_set():
             second_ready.set()
-            if not release_second.wait(timeout=300):
+            if not release_second.wait(timeout=RACE_COORDINATION_TIMEOUT_SECONDS):
                 raise AssertionError("test did not release B")
             return "second"
         return None
@@ -439,9 +449,24 @@ def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str
             ),
             promotion_enabled=not (behavior == "rollback" and phase == "reopen"),
         )
+    competing_memory_plane = None
     if behavior == "real_related_conflict" and root == "filesystem":
         service = build_filesystem_provider(
             storage_root / "provider", memory_plane=memory_plane, **common
+        )
+        competing_memory_plane = MemoryPlaneService(
+            record_store=JsonlMemoryPlaneStore(storage_root / "memory-plane")
+        )
+        competing_normalization, _ = _v3_normalization_host_builder(
+            proposal=proposal
+        )
+        competing_service = build_filesystem_provider(
+            storage_root / "provider",
+            memory_plane=competing_memory_plane,
+            **(
+                common
+                | {"source_normalization_host_bundle_builder": competing_normalization}
+            ),
         )
     elif behavior == "real_related_conflict" and root == "factory":
         service = build_provider_memory_service_from_env(
@@ -463,8 +488,17 @@ def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str
         service = ProviderMemoryService._from_scenario_test_host(
             memory_plane=memory_plane, **common
         )
+    if not (behavior == "real_related_conflict" and root == "filesystem"):
+        competing_service = service
     service_holder.append(service)
     if behavior == "real_related_conflict":
+        # Independent stores/processes do not share this process-local guard.
+        # Disable it so the JSONL store CAS, rather than the harness mutex,
+        # orders the two writers at the physical boundary under proof.
+        service._semantic_atomic_store._semantic_integrity_linearization = None
+        competing_service._semantic_atomic_store._semantic_integrity_linearization = (
+            None
+        )
         graph_bundle = (
             service._provider_ingestion._semantic_runtime.bootstrap_graph_host_bundle
         )
@@ -476,38 +510,44 @@ def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str
         source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
     ))
     if behavior == "real_related_conflict" and phase == "first":
-        real_conditional_write = memory_plane.conditionally_write_records
         initial_record_keys: dict[str, set[tuple[str, str]]] = {}
 
-        def scheduled_conditional_write(
-            records, *, preconditions, authorization, **kwargs,
-        ):
-            group_primary = next((
-                record for record in records
-                if record.source_kind
-                == "semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
-            ), None)
-            if group_primary is not None:
-                request = decode_semantic_contract(
-                    bytes.fromhex(group_primary.content["request_hex"]),
-                    BootstrapGraphGroupCommitRequestV3,
-                )
-                if request.attempt.attempt_index == 0:
-                    initial_record_keys[request.source_operation_id] = {
-                        (intent.record_kind, intent.record_id)
-                        for item in request.ordered_operation_inputs
-                        for intent in item.reduction.effect_materialization.record_intents
-                    }
-                cas_attempts.append(group_primary.memory_id)
-                pause_first_group(group_primary.memory_id)
-            return real_conditional_write(
-                records,
-                preconditions=preconditions,
-                authorization=authorization,
-                **kwargs,
-            )
+        def install_scheduled_write(plane: MemoryPlaneService) -> None:
+            real_conditional_write = plane.conditionally_write_records
 
-        memory_plane.conditionally_write_records = scheduled_conditional_write
+            def scheduled_conditional_write(
+                records, *, preconditions, authorization, **kwargs,
+            ):
+                group_primary = next((
+                    record for record in records
+                    if record.source_kind
+                    == "semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+                ), None)
+                if group_primary is not None:
+                    request = decode_semantic_contract(
+                        bytes.fromhex(group_primary.content["request_hex"]),
+                        BootstrapGraphGroupCommitRequestV3,
+                    )
+                    if request.attempt.attempt_index == 0:
+                        initial_record_keys[request.source_operation_id] = {
+                            (intent.record_kind, intent.record_id)
+                            for item in request.ordered_operation_inputs
+                            for intent in item.reduction.effect_materialization.record_intents
+                        }
+                    cas_attempts.append(group_primary.memory_id)
+                    pause_first_group(group_primary.memory_id)
+                return real_conditional_write(
+                    records,
+                    preconditions=preconditions,
+                    authorization=authorization,
+                    **kwargs,
+                )
+
+            plane.conditionally_write_records = scheduled_conditional_write
+
+        install_scheduled_write(memory_plane)
+        if competing_memory_plane is not None:
+            install_scheduled_write(competing_memory_plane)
     if behavior == "lost_ack" and phase == "first":
         atomic = service._semantic_atomic_store
         persist_terminal = atomic.persist_bootstrap_graph_terminal_v3
@@ -562,10 +602,10 @@ def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str
                 authenticated_host_ingress=ingress,
             )
             try:
-                if not paused.wait(timeout=300):
+                if not paused.wait(timeout=RACE_COORDINATION_TIMEOUT_SECONDS):
                     raise AssertionError("A did not reach group CAS")
                 competing = executor.submit(
-                    service.sync_event,
+                    competing_service.sync_event,
                     operation=ProviderOperation.CHAT_USER_TURN,
                     content="Atlas owner is Bob.",
                     operation_id=f"{operation_id}-winner",
@@ -573,12 +613,41 @@ def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str
                     user_id="user:bob",
                     authenticated_host_ingress=ingress,
                 )
-                if not second_ready.wait(timeout=300):
-                    raise AssertionError("B did not reach group CAS")
+                if not second_ready.wait(timeout=RACE_COORDINATION_TIMEOUT_SECONDS):
+                    release_second.set()
+                    release_first.set()
+
+                    def _future_diagnostic(
+                        future: Future[ProviderSyncResult],
+                    ) -> dict[str, object]:
+                        try:
+                            value = future.result(
+                                timeout=RACE_DIAGNOSTIC_TIMEOUT_SECONDS
+                            )
+                        except Exception as exc:
+                            return {
+                                "outcome": "raised",
+                                "error": f"{type(exc).__name__}: {exc}",
+                            }
+                        return {
+                            "outcome": "returned",
+                            "semantic_ingestion": value.blocked_reasons.get(
+                                "semantic_ingestion"
+                            ),
+                        }
+
+                    raise AssertionError(
+                        "B did not reach group CAS; "
+                        f"A={_future_diagnostic(pending)!r}; "
+                        f"B={_future_diagnostic(competing)!r}; "
+                        f"cas_attempt_count={len(cas_attempts)}"
+                    )
                 release_second.set()
-                winner = competing.result(timeout=300)
+                winner = competing.result(
+                    timeout=RACE_WINNER_COMPLETION_TIMEOUT_SECONDS
+                )
                 release_first.set()
-                result = pending.result(timeout=300)
+                result = pending.result(timeout=RACE_FINAL_COMPLETION_TIMEOUT_SECONDS)
             finally:
                 release_second.set()
                 release_first.set()
@@ -682,9 +751,6 @@ def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str
     }
 
 
-ELEMENT_TIMEOUT_SECONDS = 180
-
-
 def run_batch(manifest_path: Path) -> None:
     """Run manifest elements sequentially in this one interpreter.
 
@@ -696,16 +762,37 @@ def run_batch(manifest_path: Path) -> None:
     fail-fast.
     """
 
+    if RACE_FIRST_HOLD_TIMEOUT_SECONDS < (
+        RACE_COORDINATION_TIMEOUT_SECONDS
+        + RACE_WINNER_COMPLETION_TIMEOUT_SECONDS
+        + RACE_DIAGNOSTIC_TIMEOUT_SECONDS
+    ):
+        raise AssertionError("A hold cannot cover B reach and winner completion")
+    if RELATED_CONFLICT_ELEMENT_TIMEOUT_SECONDS < (
+        RACE_COORDINATION_TIMEOUT_SECONDS
+        + RACE_FIRST_HOLD_TIMEOUT_SECONDS
+        + RACE_FINAL_COMPLETION_TIMEOUT_SECONDS
+    ):
+        raise AssertionError("related-conflict alarm can preempt its inner guards")
+
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     elements = manifest["elements"]
 
+    element_timeout_seconds = DEFAULT_ELEMENT_TIMEOUT_SECONDS
+
     def _element_expired(signum: int, frame: object) -> None:
-        raise TimeoutError(f"batch element exceeded {ELEMENT_TIMEOUT_SECONDS}s")
+        raise TimeoutError(f"batch element exceeded {element_timeout_seconds}s")
 
     previous_handler = signal.signal(signal.SIGALRM, _element_expired)
     try:
         for index, element in enumerate(elements):
-            signal.alarm(ELEMENT_TIMEOUT_SECONDS)
+            element_timeout_seconds = (
+                RELATED_CONFLICT_ELEMENT_TIMEOUT_SECONDS
+                if element["scenario"] == "source_progress_related_conflict"
+                and element["phase"] == "first"
+                else DEFAULT_ELEMENT_TIMEOUT_SECONDS
+            )
+            signal.alarm(element_timeout_seconds)
             try:
                 result = run(
                     storage_root=Path(element["storage_root"]),

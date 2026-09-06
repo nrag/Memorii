@@ -207,9 +207,9 @@ activation claims remain limited by externally owned authority. M0's rejected hi
 
 ## Next Action
 
-Push the timing-corrected frozen shared M3.1/M4 candidate, require hosted checks to execute its
-exact SHA, and run the whole-candidate reviews. Do not begin M5 or unrelated
-work during this closure.
+Freeze and push the bounded production-entrypoint ledger and JSONL physical-CAS
+harness correction, require hosted checks to execute its exact SHA, and run the
+whole-candidate reviews. Do not begin M5 or unrelated work during this closure.
 
 ## 2026-08-10 Bootstrap V3 Atomic Slice
 

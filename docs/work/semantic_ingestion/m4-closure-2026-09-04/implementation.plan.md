@@ -538,6 +538,19 @@ bounded contract/repository/coordinator slice.
   The scenario runner passes 11/11, the exposed coordinator family passes 6/6,
   the exact 34-case terminal shard passes, and the five changed terminal
   discriminators pass.
+- 2026-09-06: Candidate `966cd15` cleared 44 hosted jobs, but its filesystem
+  independent-process graph shard failed twice at the same 180-second outer
+  alarm before the harness's declared 300-second CAS coordination window.
+  Enhanced diagnostics then proved both writers returned `source_only` with
+  two CAS attempts only after the controller released A. The harness had kept
+  the process-local semantic-integrity mutex that real independent processes
+  do not share. The bounded correction now constructs two filesystem provider
+  services over one JSONL store, disables that process-local guard on both,
+  leaves the JSONL conditional write as the physical ordering authority, and
+  uses internally coherent per-race and 4200-second shard watchdogs. The exact
+  formerly failing selector passes in 108.87s. Final correctness review also
+  found four stale source hashes in the v14 production-entrypoint ledger; the
+  generated ledger is refreshed and its five mutation checks pass.
 
 ## Decision Log
 
@@ -557,9 +570,10 @@ bounded contract/repository/coordinator slice.
 
 ## Blockers And Limits
 
-No external or scope blocker. Hosted CI requires the eventual final
-candidate to be committed and pushed after all local gates and reviews are
-green. M5 activation and live agent-system certification remain out of scope.
+No external or scope blocker. The bounded evidence/harness correction must be
+frozen and pass exact-SHA hosted CI, including all eight graph receipts and
+their aggregate. M5 activation and live agent-system certification remain out
+of scope.
 
 ## Latest Bridge Evidence
 
@@ -578,7 +592,7 @@ green. M5 activation and live agent-system certification remain out of scope.
 
 ## Exact Next Action
 
-Refresh the split manifest, freeze and push one clean timing-corrected
-replacement candidate, and require exact-SHA hosted checks plus
-whole-candidate specification, correctness, and test reviews before clearing
-either milestone's closure arrays.
+Freeze and push the bounded ledger and JSONL physical-CAS harness correction,
+then require exact-SHA hosted checks plus whole-candidate specification,
+correctness, and test reviews before clearing either milestone's closure
+arrays.

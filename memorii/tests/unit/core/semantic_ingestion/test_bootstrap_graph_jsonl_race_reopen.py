@@ -15,6 +15,7 @@ from tests.unit.core.semantic_ingestion.bootstrap_graph_production_roots_support
 
 REPO_ROOT = Path(__file__).parents[5]
 ROOTS = ("direct", "factory", "filesystem", "hermes")
+BATCH_TIMEOUT_SECONDS = 4200
 
 
 @pytest.fixture(scope="module")
@@ -71,7 +72,7 @@ def race_reopen_outputs(
         cwd=REPO_ROOT,
         env=environment,
         check=True,
-        timeout=180 * len(elements),
+        timeout=BATCH_TIMEOUT_SECONDS,
     )
     return {
         (element["scenario"], element["root"], element["phase"]): json.loads(

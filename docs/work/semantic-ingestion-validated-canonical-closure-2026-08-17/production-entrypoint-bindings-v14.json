@@ -209,14 +209,14 @@
   ],
   "schema": "memorii.production-entrypoint-bindings.v14",
   "source_hashes": {
-    "memorii/memorii/core/filesystem_storage/bundle.py": "91c7676ede308ad1f33d27504a7cf328f0a6ed55194b6aeab701503207fa989d",
-    "memorii/memorii/core/provider/factory.py": "1987d2d6b78e52ef46ab4294394f3d6421dbe6bcbd54fd8cb0c8f9d5842b605d",
-    "memorii/memorii/core/provider/service.py": "163acdff07307ee6c31a93cd84a5ba616094f2b51003e12a39baa3f859ba7664",
+    "memorii/memorii/core/filesystem_storage/bundle.py": "0f16ad0ec356d9879277041c92c2c1f683ec1d9b80ac9986088d9d5b9bde5ae7",
+    "memorii/memorii/core/provider/factory.py": "52668e699e2208aa3a7503a910a6a4ad4f42dde8a181b697afc0510e8e1ee0d2",
+    "memorii/memorii/core/provider/service.py": "158de9fd81860d7cc4ec55fa97fd4dd90a1f5d780f4155d80d69b9416abf2966",
     "memorii/memorii/core/semantic_ingestion/capability.py": "7784fc40f48c5603a63da5c2f537f926ada576edaafd8bafb1bcd7984753b908",
     "memorii/memorii/core/semantic_ingestion/production_authority.py": "394cb372058b398d2a1e56e5cf7ce356905335a9aa85bf4df95c8e5b4fd39805",
     "memorii/memorii/core/semantic_ingestion/production_capture.py": "ba4ac049e526d96dc561a564e3c11ca15f2a4f1c1f922d4607594bea9d751338",
     "memorii/memorii/integrations/hermes_provider.py": "36f72ec99822bf7d6ca49f3ec25a4addc472f722b6b3a43d18598e1218565648",
-    "memorii/tests/unit/core/semantic_ingestion/test_semantic_provider_composition.py": "d86ba3dca010e20d5927fa2ad894129f86085eded75234bb50b6fe3061fd8ce4"
+    "memorii/tests/unit/core/semantic_ingestion/test_semantic_provider_composition.py": "fa89fb53d6823a431acad60fd7e2532c7951fdc287cbf6bc4aee7f3388d2daf4"
   },
   "supersedes": "production-entrypoint-bindings-v13.json"
 }

@@ -117,6 +117,16 @@ independent review evidence.
   current snapshot, injects the typed related-conflict signal, leaves the
   coordinator-to-host refresh boundary explicit, and separates scenario graph
   recovery proof from graph-unactivated production-root lease proof.
+- Candidate `966cd15` is superseded. Its exact-SHA hosted run passed 44 jobs,
+  but the filesystem independent-process graph shard twice hit a 180-second
+  element alarm that preempted its longer physical-CAS coordination. Local
+  diagnostics proved a process-local mutex serialized the two simulated
+  writers; both returned `source_only` with two CAS attempts after release.
+  The bounded correction uses two filesystem services over one JSONL store,
+  disables only the non-shared process-local guard, retains JSONL CAS as the
+  ordering authority, and passes the formerly failing selector in 108.87s.
+  The v14 production-entrypoint ledger's four stale source hashes are also
+  regenerated and its five mutation checks pass.
 
 ## Governing Decisions
 
@@ -142,6 +152,6 @@ WorkPlan. Historical evidence remains under the milestone packets and archive.
 
 ## Exact Next Action
 
-Refresh the split manifest, freeze and push the shard-timing-corrected shared
-M3.1/M4 candidate, then obtain exact-SHA hosted execution and clean independent
-specification, correctness, and test review.
+Freeze and push the bounded ledger and physical-CAS harness correction, then
+obtain exact-SHA hosted execution and clean independent specification,
+correctness, and test review.
