@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import inspect
+import json
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
 
@@ -27,10 +28,12 @@ from memorii.core.semantic_ingestion.bootstrap_graph_host import (
 )
 from memorii.core.semantic_ingestion.contracts import (
     BootstrapGraphGroupCommitReloadV3,
+    BootstrapGraphPlanAtomicWriteRequestV3,
     ProviderEntityObject,
     ProviderFact,
     ProviderMention,
     ProviderSemanticProposal,
+    decode_bootstrap_graph_atomic_member_payload_v3,
     decode_semantic_contract,
 )
 from memorii.core.semantic_ingestion.event_replay import SemanticEventReplayError
@@ -123,10 +126,10 @@ def test_all_normal_roots_install_builtin_graph_host_without_injection(
     assert not hasattr(runtime.bootstrap_graph_host_bundle, "authority_provider")
 
 
-def test_identical_two_ingestion_group_cas_race_rebases_without_replan(
+def test_disjoint_accepted_group_cas_winner_forces_typed_successor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """An identical concurrent write does not create a false related conflict."""
+    """A disjoint accepted winner still invalidates the sealed graph partition."""
     race_timeout_seconds = 120
     plane = MemoryPlaneService()
     paused = Event()
@@ -135,6 +138,7 @@ def test_identical_two_ingestion_group_cas_race_rebases_without_replan(
     release_second = Event()
     calls: list[str] = []
     conditional_attempts: list[str] = []
+    captured_requests = []
 
     real_conditional_write = plane.conditionally_write_records
 
@@ -206,6 +210,19 @@ def test_identical_two_ingestion_group_cas_race_rebases_without_replan(
     # it here so both writers can pass preflight before the backend CAS orders
     # them, which is the race this test owns.
     service._semantic_atomic_store._semantic_integrity_linearization = None
+    real_group_commit = (
+        service._semantic_atomic_store.commit_or_reload_bootstrap_graph_group_v3
+    )
+
+    def capture_group_commit(*, request):
+        captured_requests.append(request)
+        return real_group_commit(request=request)
+
+    monkeypatch.setattr(
+        service._semantic_atomic_store,
+        "commit_or_reload_bootstrap_graph_group_v3",
+        capture_group_commit,
+    )
     ingress = _host_ingress()
     with ThreadPoolExecutor(max_workers=2) as executor:
         first = executor.submit(
@@ -240,6 +257,35 @@ def test_identical_two_ingestion_group_cas_race_rebases_without_replan(
     assert second_result.blocked_reasons["semantic_ingestion"] == "source_only"
     assert len(conditional_attempts) == 3
     assert len(calls) == 2
+    initial_requests = {
+        request.source_operation_id: request
+        for request in captured_requests
+        if request.attempt.attempt_index == 0
+    }
+    assert set(initial_requests) == {
+        "real-group-cas-race-a",
+        "real-group-cas-race-b",
+    }
+    initial_record_keys = {
+        operation_id: {
+            (intent.record_kind, intent.record_id)
+            for item in request.ordered_operation_inputs
+            for intent in item.reduction.effect_materialization.record_intents
+        }
+        for operation_id, request in initial_requests.items()
+    }
+    assert initial_record_keys["real-group-cas-race-a"]
+    assert initial_record_keys["real-group-cas-race-a"].isdisjoint(
+        initial_record_keys["real-group-cas-race-b"]
+    )
+    successors = [
+        request
+        for request in captured_requests
+        if request.source_operation_id == "real-group-cas-race-a"
+        and request.attempt.attempt_index == 1
+    ]
+    assert len(successors) == 1
+    assert successors[0].attempt.trigger == "related_version_conflict"
     admissions = plane.list_records(source_kind="semantic_ingestion_admission_index")
     assert len(admissions) == 2
     group_commits = plane.list_records(
@@ -265,7 +311,31 @@ def test_identical_two_ingestion_group_cas_race_rebases_without_replan(
             for member in record.content.get("request", {}).get("members", ())
         )
     ]
-    assert len(progress_checkpoints) == 6
+    assert len(progress_checkpoints) == 9
+    progress_by_operation: dict[str, list[dict[str, object]]] = {}
+    for record in progress_checkpoints:
+        request = BootstrapGraphPlanAtomicWriteRequestV3.model_validate_json(
+            json.dumps(record.content["request"])
+        )
+        member = next(
+            item for item in request.members if item.member_id == "source-progress"
+        )
+        progress = decode_bootstrap_graph_atomic_member_payload_v3(
+            kind=member.kind, raw=member.canonical_payload
+        )
+        progress_by_operation.setdefault(progress["operation_id"], []).append(progress)
+    assert len(progress_by_operation["real-group-cas-race-a"]) == 6
+    assert len(progress_by_operation["real-group-cas-race-b"]) == 3
+    assert all(
+        item["predecessor_progress_reference"] is None
+        and item["replan_closure_reference"] is None
+        for item in progress_by_operation["real-group-cas-race-a"][:3]
+    )
+    assert all(
+        item["predecessor_progress_reference"] is not None
+        and item["replan_closure_reference"] is not None
+        for item in progress_by_operation["real-group-cas-race-a"][3:]
+    )
 
 
 def test_normal_root_signatures_do_not_expose_graph_authority_injection() -> None:

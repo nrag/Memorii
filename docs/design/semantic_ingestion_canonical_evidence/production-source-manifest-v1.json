@@ -36,7 +36,7 @@
     },
     {
       "path": "memorii/memorii/core/semantic_ingestion/contracts.py",
-      "sha256": "c86451330398f3649243dd928a31cc6f7ba01985b9387a146315c8a6f681cfcb"
+      "sha256": "bdb8859e7cd20bc899b0cb8fb8cdf0103d889b2fb0c0d329f212d46c98246861"
     }
   ],
   "source_frames": [
@@ -98,7 +98,7 @@
     {
       "symbol": "memorii.core.semantic_ingestion.contracts.encode_semantic_contract",
       "path": "memorii/memorii/core/semantic_ingestion/contracts.py",
-      "sha256": "c86451330398f3649243dd928a31cc6f7ba01985b9387a146315c8a6f681cfcb"
+      "sha256": "bdb8859e7cd20bc899b0cb8fb8cdf0103d889b2fb0c0d329f212d46c98246861"
     }
   ],
   "capture_ready_transition": {

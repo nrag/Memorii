@@ -1,8 +1,8 @@
 # Candidate-To-Terminal Semantic Pipeline Milestone
 
 - Parent WorkPlan: `docs/work/semantic_ingestion/implementation.plan.md`
-- Status: under-review (replacement correction and local M3.1 evidence green;
-  coordinated immutable candidate, hosted checks, and final review pending)
+- Status: active (candidate `e13df701` review correction is bounded to complete
+  sealed-read-set CAS authority and its discriminating concurrency proof)
 - Requirements: SIA-R02, SIA-R04, SIA-R05, SIA-R06, SIA-R07, SIA-R09, SIA-R12
 - Historical authority: archive headings `M3 - Candidate-to-terminal semantic pipeline`, the M3 closure increments, `M3 Administrative Completion`, and `Post-completion hosted-CI remediation`
 
@@ -1414,18 +1414,18 @@ The two mutually exclusive scope alternatives requiring a user decision are:
 
 ## Current Exact Next Action
 
-Follow the coordinated completion operation through the active final M4 rerun,
-then freeze and review the shared candidate. The M3.1 four-root transaction,
+Complete the bounded sealed-read-set correction and replacement local matrix,
+then freeze and review the shared candidate. The prior M3.1 four-root transaction,
 recovery, reopen, and append-only lineage matrix is locally green: 29 exact
 cases for each of four roots on memory and independent JSONL, with all eight
  receipts and their 232-selector union validated. No separate M3.1 feature work
  or scope expansion is authorized before candidate review.
 
-The superseded `48c6dc5` review correction preserves exact replay-error
-identity, reruns target-aware preflight on late CAS conflict, and adds the real
-public accepted-clarification race in memory and independently reopened JSONL.
-Finish the replacement freeze, hosted matrix, and whole-candidate review; no
-new M3.1 behavior is pending.
+Candidate `e13df701` is also superseded: review proved its late-CAS preflight
+did not retain the complete typed sealed read set and its JSONL clarification
+proof did not run/reopen in separate interpreters. Correct only those existing
+contract boundaries, then finish the replacement freeze, hosted matrix, and
+whole-candidate review; no adjacent M3.1 behavior is authorized.
 
 Because removal of unsupported selector outcome counters changed the manifest
 digest, the prior eight local receipts are historical rather than replacement-

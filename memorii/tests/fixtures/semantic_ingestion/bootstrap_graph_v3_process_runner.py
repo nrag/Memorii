@@ -8,7 +8,7 @@ import json
 import signal
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from threading import Event
 
@@ -31,6 +31,7 @@ from memorii.core.semantic_ingestion.contracts import (
 )
 from memorii.domain.enums import CommitStatus, MemoryDomain
 from memorii.integrations.hermes_provider import HermesMemoryProvider
+from pydantic import BaseModel
 from tests.fixtures.semantic_ingestion.bootstrap_graph_v3_fixture import (
     DeterministicBootstrapGraphAuthorityProviderV3,
 )
@@ -110,12 +111,18 @@ def _member_payload(member: dict) -> dict:
 
 
 def _json_safe(value: object) -> object:
+    if isinstance(value, BaseModel):
+        return _json_safe(value.model_dump(mode="python"))
     if isinstance(value, bytes):
         return value.hex()
     if isinstance(value, dict):
         return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (set, frozenset)):
+        return sorted(_json_safe(item) for item in value)
     if isinstance(value, (list, tuple)):
         return [_json_safe(item) for item in value]
+    if isinstance(value, datetime):
+        return value.isoformat()
     return value
 
 
@@ -205,10 +212,13 @@ def _persisted_successor_evidence(service: object) -> dict[str, object]:
     return safe
 
 
-def _persisted_progress_evidence(service: object) -> list[dict[str, str]]:
-    """Return only decoded, sealed native progress references and digests."""
+def _persisted_progress_evidence(
+    service: object, *, operation_id: str | None = None,
+) -> list[dict[str, object]]:
+    """Return the complete decoded progress closure plus its persisted bytes."""
     evidence = []
-    for record in service._memory_plane.list_records(
+    plane = getattr(service, "_memory_plane", service)
+    for record in plane.list_records(
         source_kind="semantic_ingestion_bootstrap_graph_v3_manifest"
     ):
         if "request" not in record.content:
@@ -225,11 +235,35 @@ def _persisted_progress_evidence(service: object) -> list[dict[str, str]]:
         progress = decode_bootstrap_graph_atomic_member_payload_v3(
             kind=member.kind, raw=member.canonical_payload,
         )
-        evidence.append({
-            "kind": progress["kind"],
-            "progress_digest": progress["progress_digest"],
+        if operation_id is not None and progress["operation_id"] != operation_id:
+            continue
+        raw = member.canonical_payload
+        persisted_bytes = raw if isinstance(raw, bytes) else raw.encode("utf-8")
+        complete = _json_safe(progress)
+        assert isinstance(complete, dict)
+        fence = request.operation_fence_binding
+        admission = plane.get_record(
+            f"semantic_ingestion:admission:{fence.delivery_key_digest}"
+        )
+        if admission is None:
+            raise AssertionError("progress admission authority is absent")
+        evidence.append(complete | {
+            "canonical_payload_sha256": hashlib.sha256(persisted_bytes).hexdigest(),
             "plan_member_payload_digest": progress["plan_reference"]["member_payload_digest"],
             "replay_member_payload_digest": progress["replay_bundle_reference"]["member_payload_digest"],
+            "checkpoint_write_digest": request.write_digest,
+            "checkpoint_authority": _json_safe({
+                "predecessor_generation": request.predecessor_generation,
+                "operation_fence_binding": fence,
+                "operation_lease_binding": request.operation_lease_binding,
+                "writer_commit_binding": request.writer_commit_binding,
+                "delivery_principal_binding_digest": (
+                    fence.delivery_principal_binding_digest
+                ),
+                "required_scope_set_digest": admission.content.get(
+                    "required_scope_set_digest"
+                ),
+            }),
         })
     return evidence
 
@@ -440,15 +474,27 @@ def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str
         source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
     ))
     if behavior == "real_related_conflict" and phase == "first":
-        atomic = service._semantic_atomic_store
-        real_group_commit = atomic.commit_or_reload_bootstrap_graph_group_v3
+        real_conditional_write = memory_plane.conditionally_write_records
 
-        def scheduled_group_commit(*, request):
-            cas_attempts.append(request.transaction_group_id)
-            pause_first_group(request.transaction_group_id)
-            return real_group_commit(request=request)
+        def scheduled_conditional_write(
+            records, *, preconditions, authorization, **kwargs,
+        ):
+            group_primary = next((
+                record for record in records
+                if record.source_kind
+                == "semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+            ), None)
+            if group_primary is not None:
+                cas_attempts.append(group_primary.memory_id)
+                pause_first_group(group_primary.memory_id)
+            return real_conditional_write(
+                records,
+                preconditions=preconditions,
+                authorization=authorization,
+                **kwargs,
+            )
 
-        atomic.commit_or_reload_bootstrap_graph_group_v3 = scheduled_group_commit
+        memory_plane.conditionally_write_records = scheduled_conditional_write
     if behavior == "lost_ack" and phase == "first":
         atomic = service._semantic_atomic_store
         persist_terminal = atomic.persist_bootstrap_graph_terminal_v3
@@ -570,7 +616,10 @@ def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str
         )
     successor_evidence = (
         _persisted_successor_evidence(service)
-        if behavior in {"reused_committed", "reused_final", "reused_unfinished"}
+        if behavior in {
+            "reused_committed", "reused_final", "reused_unfinished",
+            "real_related_conflict",
+        }
         else {}
     )
     return {

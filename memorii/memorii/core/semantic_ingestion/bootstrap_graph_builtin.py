@@ -152,8 +152,8 @@ def _compile(
     )
     replay_state = _digest((request.normalization_replay.replay_digest, "replay"))
     reference_ledger = _digest((request.normalization_replay.replay_digest, "ledger"))
-    # The token is a group-local proof; reductions and the atomic request retain
-    # the canonical GraphReadSet digest from the store snapshot.
+    # The token is a group-local proof; each plan member also retains the
+    # complete canonical GraphReadSet needed for store-side CAS revalidation.
     read_token = GraphReadSetToken.create(
         graph_revision=snapshot.graph_snapshot.graph_revision,
         replay_state_digest=replay_state, reference_ledger_digest=reference_ledger,
@@ -239,6 +239,7 @@ def _compile(
         members.append(BootstrapTransactionGroupPlanMemberV3.create(
             transaction_group_id=group.group_id, source_dependency_group_digest=group.group_id,
             sealed_graph_snapshot_digest=sealed_snapshot.snapshot_digest, graph_read_set=read_token,
+            sealed_graph_read_set=snapshot.base_read_set,
             reference_integrity_ledger_digest=read_token.reference_ledger_digest,
             planning_state_before=state, operation_plans=tuple(plans), planning_state_after=state,
             required_reservation_digests=(),

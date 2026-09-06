@@ -25979,6 +25979,7 @@ class BootstrapTransactionGroupPlanMemberV3(BaseModel):
     source_dependency_group_digest: str
     sealed_graph_snapshot_digest: str
     graph_read_set: GraphReadSetToken
+    sealed_graph_read_set: GraphReadSet
     reference_integrity_ledger_digest: str
     planning_state_before: GraphPlanningState
     operation_plans: tuple[BootstrapTransactionGroupOperationPlanV3, ...]
@@ -25990,8 +25991,12 @@ class BootstrapTransactionGroupPlanMemberV3(BaseModel):
 There are 1--256 `operation_plans`, ordered by canonical `operation_id`, with
 unique operation/proposal IDs; every member/segment/dependency/reservation
 vector is sorted, unique, non-empty where the source dependency group requires
-it, and bounded at 4096 entries. `graph_read_set` and ledger digest come from the
-one outer sealed snapshot. `planning_state_before` is the state entering this
+it, and bounded at 4096 entries. `graph_read_set`, `sealed_graph_read_set`, and
+ledger digest come from the one outer sealed snapshot. The group-local token and
+the complete record-key, partition-version, and manifest-fingerprint vectors
+are authenticated by the member digest. Initial and replacement members carry
+the read set of their producing snapshot; byte-retained successor members keep
+their predecessor read-set bytes. `planning_state_before` is the state entering this
 group; folding every non-null planning result in operation order yields exactly
 `planning_state_after` with the v47 base/sequence rules. Null planning results
 leave state unchanged. `required_reservation_digests` is the exact sorted union
@@ -26012,6 +26017,12 @@ the ordered typed materialization inputs into the request. Manifest pre-
 execution identity references the member and evidence; post-execution manifest,
 retry, final evidence, source, and terminal use only the group reload. No
 checkpoint consumer reads a removed field or reconstructs a parallel vector.
+
+Immediately before every physical group CAS attempt, the store reloads the
+current complete `GraphReadSet` and compares it byte-for-byte with
+`sealed_graph_read_set`. Any difference is a typed related conflict and the
+stale request is not reused. A write outside this read set cannot conflict with
+the graph CAS's explicit record preconditions and proceeds without a retry.
 
 Preimage order is: operation-plan schema, operation, proposal, member vector,
 segment vector, dependency-group vector, complete planning result/null, digest;

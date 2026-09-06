@@ -2,9 +2,8 @@
 
 - Work ID: semantic_ingestion_m3_1_m4_completion_2026_09_04
 - Work type: implementation
-- Status: under-review; final-candidate corrections and replacement local
-  affected gates are green, while candidate freeze, hosted checks, and final
-  independent review remain
+- Status: active; candidate `e13df701` review found one bounded sealed-read-set
+  runtime defect and two discriminating-proof gaps
 - Coordinator: Codex main thread
 - Created: 2026-09-04
 - Last updated: 2026-09-06
@@ -425,6 +424,41 @@ bounded contract/repository/coordinator slice.
   preserved as migration evidence and is deliberately excluded from candidate
   validation; the replacement identity is the clean immutable Git commit that
   follows this final packet state, not a rewrite of the historical identity.
+- 2026-09-06: Whole-candidate review rejected candidate `e13df701` because the
+  group-CAS authority retained only a digest of the complete `GraphReadSet` and
+  could therefore reuse a stale request after a disjoint accepted semantic
+  winner changed a sealed partition. Test review also required the public
+  clarification race to execute and reopen in separate interpreters with its
+  complete typed progress bytes, and required the late-CAS discriminator to
+  pause at the physical conditional write. The earlier request for an
+  accepted "unrelated retry" was withdrawn: every accepted semantic winner
+  changes the globally sealed graph/ledger partitions and is related.
+- 2026-09-06: The bounded correction now retains the complete typed
+  `GraphReadSet` in every authenticated group-plan member, binds it to the
+  enclosing plan digest, and compares the exact record-key, partition-version,
+  and manifest vectors immediately before every physical group write attempt.
+  Any change raises the existing typed related-conflict signal; an
+  outside-read-set execution record neither changes the read set nor conflicts
+  with explicit graph CAS preconditions. Discriminating local reruns are in
+  progress before the replacement full matrix.
+- 2026-09-06: The corrected physical-CAS discriminator passes in memory and
+  independent JSONL: the competing accepted source writes disjoint record
+  intents, changes the sealed graph/ledger partitions, and forces exactly one
+  typed successor while preserving one effect per delivery (`1 passed` in
+  83.19s and `1 passed, 116 deselected` in 182.27s). The external execution-
+  record family remains correctly nonconflicting (`8 passed` in 391.83s).
+- 2026-09-06: The public clarification winner now executes in one child
+  interpreter and reopens in a second. Its complete typed progress payloads
+  and checkpoint authority (source, request, principal, scope, epoch, lease,
+  writer, predecessor, and raw-payload digest) compare exactly; memory also
+  passes. The complete progress/recovery family passes 18 tests in 451.76s.
+- 2026-09-06: Replacement broad local evidence is green: public acceptance
+  `200 passed` in 770.83s; projection/history plus process/replay integration
+  `97 passed` in 929.12s; all four normal roots `4 passed` in 222.23s;
+  artifact assembler `6 passed`; configured Pyright reports 0 errors/warnings;
+  scoped Ruff, compilation, and canonical-evidence adversarial self-test pass.
+  The repinned candidate-lock SHA-256 is
+  `dcf7f2ecf5456bd6eca4d998d7d5cfb9db8d3887bdd7efec364360f45bd5b96c`.
 
 ## Decision Log
 
@@ -444,7 +478,7 @@ bounded contract/repository/coordinator slice.
 
 ## Blockers And Limits
 
-No current local implementation blocker. Hosted CI requires the eventual final
+No external or scope blocker. Hosted CI requires the eventual final
 candidate to be committed and pushed after all local gates and reviews are
 green. M5 activation and live agent-system certification remain out of scope.
 
@@ -465,7 +499,7 @@ green. M5 activation and live agent-system certification remain out of scope.
 
 ## Exact Next Action
 
-Finish the replacement local gate run, reconcile and pin all active packets,
-freeze and push one clean replacement candidate, then require exact-SHA hosted
-checks and whole-candidate specification, correctness, and test reviews before
-clearing either milestone's closure arrays.
+Reconcile/pin all active packets, freeze and
+push one clean replacement candidate, and require exact-SHA hosted checks plus
+whole-candidate specification, correctness, and test reviews before clearing
+either milestone's closure arrays.

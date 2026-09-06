@@ -6,12 +6,12 @@
 - Active linked debugging WorkPlan: `docs/work/semantic_ingestion/conflict-authority-proof-failures-2026-08-04/debug.plan.md` (sole detailed owner of the two replan defects)
 - Approved bridge design WorkPlan: `docs/work/semantic_ingestion/bootstrap-v3-source-progress-bridge-2026-09-04/design.plan.md`
 - Active bridge implementation WorkPlan: `docs/work/semantic_ingestion/bootstrap-v3-source-progress-bridge-2026-09-04/implementation.plan.md`
-- Status: final-candidate corrections and replacement local affected gates are
-  green; immutable candidate, hosted checks, and independent review closure
-  remain
+- Status: active bounded correction after candidate `e13df701` review found a
+  missing complete sealed-read-set CAS authority and two proof gaps
 - Coordinator: Codex main thread
 - Last updated: 2026-09-06
 - Superseded candidate: `48c6dc5ab3438684b6476b0919a17774c8bdc92b`
+- Superseded candidate: `e13df701bf508955115637280125e25be2ca6916`
 - Current tree state: bounded correction pending replacement freeze
 
 ## Objective
@@ -57,6 +57,14 @@ independent review evidence.
 - The selector metadata correction changed the manifest digest, so the prior
   eight local receipts are historical. Exact-SHA hosted CI must regenerate and
   aggregate all eight replacement root/backend receipts before closure.
+- Candidate `e13df701` review correction is locally green: the physical-CAS
+  disjoint accepted winner takes one typed successor in memory and independent
+  JSONL; the public clarification race executes/reopens across two
+  interpreters with byte-identical complete authority; acceptance is 200/200,
+  projection/history plus integration is 97/97, progress/recovery is 18/18,
+  four normal roots are 4/4, and configured Pyright/Ruff/compile/canonical-
+  evidence checks pass. Candidate-lock SHA-256 is
+  `dcf7f2ecf5456bd6eca4d998d7d5cfb9db8d3887bdd7efec364360f45bd5b96c`.
 
 ## Governing Decisions
 
@@ -80,6 +88,6 @@ WorkPlan. Historical evidence remains under the milestone packets and archive.
 
 ## Exact Next Action
 
-Finish the replacement local gates, reconcile and pin the active packets,
-freeze and push the shared M3.1/M4 candidate, then obtain exact-SHA hosted
-execution and clean independent specification, correctness, and test review.
+Reconcile and pin the active packets, freeze and push the shared M3.1/M4 candidate,
+then obtain exact-SHA hosted execution and clean
+independent specification, correctness, and test review.

@@ -115,6 +115,14 @@ def _assert_race_outputs(
         assert first["cas_attempts"] == 3
         assert first["graph_effects"] == 2
         assert first["admission_count"] == 2
+        evidence = first["successor_evidence"]
+        successor = next(
+            item for item in evidence["attempts"]
+            if item["attempt_index"] == 1
+        )
+        assert successor["trigger"] == "related_version_conflict"
+        assert evidence["lineages"]
+        assert reopened["successor_evidence"] == evidence
     elif behavior == "exhausted_conflict":
         assert first["semantic_ingestion"] == "source_only"
         assert first["exhausted_conflict_calls"] == 2

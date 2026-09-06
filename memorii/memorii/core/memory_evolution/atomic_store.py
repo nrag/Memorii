@@ -11356,47 +11356,13 @@ class SemanticIngestionAtomicStore:
             )
             prior_replay_state = self.semantic_replay_state()
             before_graph = prior_replay_state.graph_revision
-            if before_graph != sealed_graph_revision:
-                current_records = {
-                    (record.record_kind, record.record_id): record
-                    for record in prior_replay_state.materialized_records
-                }
-                resolved_targets_still_match = all(
-                    (current := current_records.get(
-                        (target.record_kind, target.record_id)
-                    )) is not None
-                    and current.record_digest == target.record_digest
-                    for item in request.ordered_operation_inputs
-                    for target in (
-                        item.reduction.native_compilation.resolved_graph_targets
-                    )
+            current_snapshot = self.graph_state_snapshot()
+            if current_snapshot.read_set != request.group_plan_member.sealed_graph_read_set:
+                raise BootstrapGraphRelatedConflictError(
+                    transaction_group_id=request.transaction_group_id,
+                    expected_graph_revision=sealed_graph_revision,
+                    observed_graph_revision=current_snapshot.graph_revision,
                 )
-                intent_preconditions_still_match = all(
-                    (
-                        current_records.get((intent.record_kind, intent.record_id))
-                        is None
-                        if intent.mutation_kind == "create"
-                        else (
-                            intent.expected_prior_record_digest is not None
-                            and (current := current_records.get(
-                                (intent.record_kind, intent.record_id)
-                            )) is not None
-                            and current.record_digest
-                            == intent.expected_prior_record_digest
-                        )
-                    )
-                    for item in request.ordered_operation_inputs
-                    for intent in item.reduction.effect_materialization.record_intents
-                )
-                if not (
-                    resolved_targets_still_match
-                    and intent_preconditions_still_match
-                ):
-                    raise BootstrapGraphRelatedConflictError(
-                        transaction_group_id=request.transaction_group_id,
-                        expected_graph_revision=sealed_graph_revision,
-                        observed_graph_revision=before_graph,
-                    )
             before_observation = control.observation_revision
             accepted = any(
                 item.reduction.native_terminal.status == "accepted"
@@ -11721,10 +11687,10 @@ class SemanticIngestionAtomicStore:
                     raise PreplanningStoreError(
                         "bootstrap graph group commit CAS conflicted"
                     ) from exc
-                # Re-enter the complete target/read-set preflight on fresh
-                # replay state. An overlapping winner becomes the existing
-                # typed related-conflict signal; an unrelated revision is
-                # safely rebuilt and retried once.
+                # Re-enter the complete sealed-read-set preflight on fresh
+                # graph authority. Any accepted semantic winner changes a
+                # sealed partition and becomes the typed related conflict;
+                # only a CAS loss with byte-identical graph authority retries.
                 return write(retried_after_cas_conflict=True)
             return reload
 

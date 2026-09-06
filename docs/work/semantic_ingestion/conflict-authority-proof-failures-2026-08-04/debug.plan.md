@@ -2,8 +2,8 @@
 
 - Work ID: semantic_conflict_authority_proof_failures
 - Work type: debugging
-- Status: under-review; final-candidate corrections and local affected families
-  are green
+- Status: active; candidate `e13df701` review exposed one bounded late-CAS
+  read-set defect and two proof gaps
 - Coordinator: Codex main thread
 - Created: 2026-08-04
 - Last updated: 2026-09-06
@@ -738,9 +738,9 @@ M3 closure work may begin before the native contract and assembler slice passes.
 
 ## Exact Next Action
 
-Finish the replacement local gate run, freeze and push the shared M3.1/M4
-candidate, and obtain exact-SHA hosted checks plus independent specification,
-correctness, and test review before recording this debugging operation complete.
+Return the locally green sealed-read-set and separate-interpreter correction to
+the shared M3.1/M4 candidate freeze, then obtain exact-SHA hosted and independent
+review closure.
 
 - Contracts checkpoint: added the closed persisted replan closure, final-result
   and successor-authority unions, policy/counter references, intermediate

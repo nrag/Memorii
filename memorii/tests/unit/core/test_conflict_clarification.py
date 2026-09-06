@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import subprocess
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -863,12 +865,11 @@ def _sync_and_bind_user_source(
     verifier.bind(service)
 
 
-@pytest.mark.parametrize("backend", ("memory", "jsonl"))
-def test_public_accepted_clarification_stales_planned_v3_source_on_original_fence(
+def _exercise_public_accepted_clarification_race(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     backend: str,
-) -> None:
+) -> dict[str, object]:
     """A real clarification winner forces one typed V3 successor, not reingestion."""
     race_timeout_seconds = 300
     import importlib as _importlib
@@ -1157,6 +1158,78 @@ def test_public_accepted_clarification_stales_planned_v3_source_on_original_fenc
     assert all(item["predecessor_progress_reference"] is None for item in progress[:3])
     assert all(item["predecessor_progress_reference"] is not None for item in progress[3:])
     assert all(item["replan_closure_reference"] is not None for item in progress[3:])
+    from tests.fixtures.semantic_ingestion.bootstrap_graph_v3_process_runner import (
+        _persisted_progress_evidence,
+    )
+
+    complete_progress = _persisted_progress_evidence(
+        evidence_plane, operation_id="clarification-race-source"
+    )
+    assert len(complete_progress) == 6
+    return {"progress": complete_progress}
+
+
+def test_public_accepted_clarification_stales_planned_v3_source_on_original_fence_memory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _exercise_public_accepted_clarification_race(tmp_path, monkeypatch, "memory")
+
+
+def test_public_accepted_clarification_race_reopens_byte_identically_in_fresh_process(
+    tmp_path: Path,
+) -> None:
+    storage_root = tmp_path / "clarification-process"
+    environment = dict(os.environ)
+    environment["PYTHONPATH"] = "memorii"
+    outputs = []
+    for phase in ("first", "reopen"):
+        output = tmp_path / f"clarification-{phase}.json"
+        subprocess.run(
+            (
+                sys.executable,
+                "-m",
+                "tests.fixtures.semantic_ingestion.clarification_race_process_runner",
+                str(storage_root),
+                phase,
+                str(output),
+            ),
+            cwd=Path(__file__).resolve().parents[4],
+            env=environment,
+            check=True,
+            timeout=600,
+        )
+        outputs.append(json.loads(output.read_text(encoding="utf-8")))
+    first, reopened = outputs
+    assert reopened == first
+    progress = first["progress"]
+    assert len(progress) == 6
+    assert len({item["operation_fence_binding_digest"] for item in progress}) == 1
+    assert len({item["request_digest"] for item in progress}) == 1
+    assert len({item["control_epoch_digest"] for item in progress}) == 1
+    assert len({item["operation_lease_binding_digest"] for item in progress}) == 1
+    assert len({item["writer_commit_binding_digest"] for item in progress}) == 1
+    assert len({item["source_id"] for item in progress}) == 1
+    assert len({item["source_digest"] for item in progress}) == 1
+    assert len({item["preparation_fingerprint"] for item in progress}) == 1
+    assert len({
+        item["checkpoint_authority"]["delivery_principal_binding_digest"]
+        for item in progress
+    }) == 1
+    assert len({
+        item["checkpoint_authority"]["required_scope_set_digest"]
+        for item in progress
+    }) == 1
+    assert all(item["predecessor_progress_reference"] is None for item in progress[:3])
+    assert all(item["predecessor_progress_reference"] is not None for item in progress[3:])
+    assert all(item["replan_closure_reference"] is not None for item in progress[3:])
+    assert all(
+        item["predecessor_progress_reference"]["artifact_digest"]
+        == progress[2]["progress_digest"]
+        and item["predecessor_progress_reference"]["member_payload_digest"]
+        == progress[2]["canonical_payload_sha256"]
+        for item in progress[3:]
+    )
 
 
 def test_failed_receipt_writes_nothing_corrected_retry_commits_and_exact_retry_skips_verifiers(tmp_path: Path) -> None:

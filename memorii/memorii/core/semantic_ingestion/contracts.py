@@ -9974,6 +9974,7 @@ class BootstrapTransactionGroupPlanMemberV3(_BootstrapV3Contract):
     source_dependency_group_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     sealed_graph_snapshot_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     graph_read_set: GraphReadSetToken
+    sealed_graph_read_set: GraphReadSet
     reference_integrity_ledger_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     planning_state_before: GraphPlanningState
     operation_plans: tuple[BootstrapTransactionGroupOperationPlanV3, ...]

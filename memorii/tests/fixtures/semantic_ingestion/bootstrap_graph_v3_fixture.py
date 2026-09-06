@@ -397,6 +397,7 @@ def build_minimal_bootstrap_graph_plan_compilation_v3(
             source_dependency_group_digest=group.group_id,
             sealed_graph_snapshot_digest=snapshot.snapshot_digest,
             graph_read_set=graph_read_set,
+            sealed_graph_read_set=snapshot.base_read_set,
             reference_integrity_ledger_digest=graph_read_set.reference_ledger_digest,
             planning_state_before=planning_state,
             operation_plans=tuple(operation_plans),

@@ -2,7 +2,7 @@
   "schema": "memorii.semantic-ingestion.canonical-evidence.candidate-lock.v9",
   "immutable_path": "docs/design/semantic_ingestion_canonical_evidence/candidate-lock-v1.json",
   "algorithm": "sha256",
-  "supersedes": "e84f4bd801d6f44d34f7c300adae4d83bedcb36df7154d2a19f02b4696347d95",
+  "supersedes": "95729d40afe69f0e58a1ebc97d53445e7c8ed3c95437c8109f34db4542e4c422",
   "scope": "frozen design and every runner/validator/pre-import consumed authority, concrete pre-capture schedule, post-capture result-binding schema, terminal durable-effect receipt contract, execution lock, and result-lock schema; excludes this lock and WorkPlans",
   "artifacts": {
     "design": {
@@ -15,7 +15,7 @@
     },
     "binding_map": {
       "path": "docs/design/semantic_ingestion_canonical_evidence/production-entrypoint-bindings-v1.json",
-      "sha256": "101c52ad9a7ebcf94810f7ca3865c228651a030561a18ea4903bd280dda770b2"
+      "sha256": "f1ff363e3def1baf52990998bfc1b46cfd3be7cface85f1f10f6cd38d1f35d00"
     },
     "performance_schema": {
       "path": "docs/design/semantic_ingestion_canonical_evidence/performance-run-schema-v1.json",
@@ -27,11 +27,11 @@
     },
     "fixture_manifest": {
       "path": "docs/design/semantic_ingestion_canonical_evidence/standard-fixture-manifest-v1.json",
-      "sha256": "6feca978bcae112ab7065333b217a971ce8a35a20396cdfb0c12532c3a8d715e"
+      "sha256": "1ca5273ac89201c0f908f8471369e87e9deddbf15fda439368d95e3a6365e9f0"
     },
     "production_sources": {
       "path": "docs/design/semantic_ingestion_canonical_evidence/production-source-manifest-v1.json",
-      "sha256": "6a4ddec0de8ba8873ded9c573cb88678ab793f07375e6d28296c44eb5e3be05b"
+      "sha256": "1b4980457fab06f196c1a28c76e78e01db335870878cebb56d87f9d6dd7d1c28"
     },
     "event_schema": {
       "path": "docs/design/semantic_ingestion_canonical_evidence/event-schema-v1.json",
@@ -79,7 +79,7 @@
     },
     "comparison_schedule_authority": {
       "path": "docs/design/semantic_ingestion_canonical_evidence/comparison-schedule-authority-v1.json",
-      "sha256": "823a6512788bc975f0f519d0e65a8c4306dc682ff0cced568bdc4b2b7784246f"
+      "sha256": "9f8b6db0a33ae0eeb1f7db287e8e969fb9dda64009f274108dc818a59db4e93d"
     },
     "comparison_result_binding_schema": {
       "path": "docs/design/semantic_ingestion_canonical_evidence/comparison-result-binding-schema-v1.json",
