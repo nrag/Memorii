@@ -22,7 +22,7 @@ local = [
   "numpy>=1.26,<2",
   "stanza==1.14.0",
   "spacy==3.8.14",
-  "torch==2.2.2",
+  "torch==2.13.0",
   "spacy-curated-transformers==0.3.1",
   "curated-transformers==0.1.1",
   "curated-tokenizers==0.0.9",
