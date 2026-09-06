@@ -29135,6 +29135,146 @@ related conflict selects exactly one variant. At N+1 the policy returns
 `related_conflict_retry_exhausted` without a third plan/attempt or repeated
 semantic analysis, retaining the complete predecessor final-result history.
 
+###### 4.8.3.4 Bootstrap V3 source-progress bridge
+
+Bootstrap V3 is the sole owner of graph plan, attempt, lineage, result, and
+atomic-generation authority. The bridge adds one native V3 progress member to
+the plan, attempt, and lineage checkpoints; it neither persists the generic
+`SourceIngestionProgress` union nor changes generic source-progress, replay,
+or result schemas. The current generic implementation checkpoint is superseded
+for this path and must be reverted before bridge implementation. It may not be
+used as an adapter, fallback, or compatibility reader.
+
+The member payload is one strict frozen `BootstrapGraphSourceProgressV3` with
+`kind` `plan_published`, `attempt_published`, or `planned`. Its common ordered
+fields are `schema_version=3`, `kind`, `source_id`, `source_digest`,
+`preparation_fingerprint`, `operation_id`, `request_digest`,
+`normalization_replay_digest`, `normalization_result_digest`,
+`control_epoch_digest`, `operation_fence_binding_digest`,
+`operation_lease_binding_digest`, `writer_commit_binding_digest`,
+`plan_reference`, `replay_bundle_reference`, `observed_counters_reference`,
+`predecessor_progress_reference`, `replan_closure_reference`, and
+`progress_digest`. Every field except `progress_digest` is in the variant's
+digest preimage. There are no common manifest, attempt, lineage, or authority
+references; they occur only where already published.
+
+`BootstrapGraphAtomicMemberReferenceV3` is the only bridge reference type.
+Its strict ordered fields are `repository_id`, `artifact_digest`, `generation`,
+`member_id`, `member_kind`, `member_payload_digest`, `payload_type`, and
+`reference_digest`; its digest domain is
+`memorii.semantic-ingestion.bootstrap-graph-atomic-member-reference.v3` over
+all preceding fields. Its only legal `(repository_id, member_id, member_kind,
+payload_type)` combinations are:
+
+| Repository ID | Member ID | Member kind | Payload type | Generation scope |
+| --- | --- | --- | --- | --- |
+| `semantic_ingestion.bootstrap_graph_plan.v3` | `plan` | `bootstrap_transaction_group_plan` | `BootstrapTransactionGroupPlanV3` | current plan, attempt, or lineage generation |
+| `semantic_ingestion.bootstrap_graph_replay_bundle.v3` | `replay-bundle` | `bootstrap_graph_replay_bundle` | `BootstrapGraphReplayBundleV3` | current plan, attempt, or lineage generation |
+| `semantic_ingestion.bootstrap_graph_observed_counters.v3` | `observed-counters` | `bootstrap_graph_observed_counters` | `BootstrapGraphObservedCountersV3` | current generation only |
+| `semantic_ingestion.bootstrap_graph_attempt.v3` | `attempt` | `bootstrap_graph_dependent_attempt` | `BootstrapGraphDependentAttemptV3` | current attempt or lineage generation |
+| `semantic_ingestion.bootstrap_graph_authority.v3` | `successor-authority` | `bootstrap_graph_successor_attempt_authority` | `BootstrapGraphAttemptAuthorityV3` | current attempt or lineage generation |
+| `semantic_ingestion.bootstrap_source_plan_lineage.v3` | `lineage` | `bootstrap_source_plan_lineage` | `BootstrapSourcePlanLineageV3` | current lineage generation |
+| `semantic_ingestion.bootstrap_graph_execution_manifest.v3` | `execution-manifest` | `ingestion_execution_manifest` | `IngestionExecutionManifest` | current lineage generation only, when already sealed |
+| `semantic_ingestion.bootstrap_graph_progress.v3` | `source-progress` | `bootstrap_graph_source_progress` | `BootstrapGraphSourceProgressV3` | immediately preceding sealed progress generation only |
+| `semantic_ingestion.bootstrap_group_result.v3` | `group-result:<group-id>` | `transaction_group_result` | `BootstrapNativeGroupCommitTerminalConstructionV3` | sealed predecessor generation only |
+
+The reference validator loads exactly the named member record, decodes it under
+its literal codec, checks the payload type and typed artifact digest, and
+recomputes payload and reference digests. A scalar digest, foreign repository,
+different generation, relabelled codec, duplicate key, or reconstructed object
+rejects. `BootstrapGraphReplanClosureReferenceV3` is strict/frozen with the
+predecessor planned-progress reference, predecessor lineage reference, canonical
+final-result references, canonical unfinished/replanned IDs, and closure digest;
+it is null initially and mandatory only for a replan plan image.
+
+`BootstrapGraphObservedCountersV3` is a real native artifact, never an alias
+for `graph_snapshot_digest`. Its ordered fields are `request_digest`,
+`control_epoch_digest`, `operation_fence_binding_digest`,
+`execution_policy_reference_digest`, `publication_generation`,
+`observed_operations`, `observed_groups`, `observed_fixed_point_rounds`,
+`observed_snapshot_records`, `observed_snapshot_partitions`,
+`observed_related_conflicts`, `observed_attempts`,
+`observed_read_set_extensions`, `observed_reservations`,
+`observed_lineage_entries`, `observed_replay_artifacts`,
+`observed_replay_bundle_bytes`, `observed_decode_depth`, and `counters_digest`.
+It is constructed from the sealed compilation inputs, plan, previous bridge
+progress when any, and actual current-generation artifacts before each
+publication. It uses the same selected V3 policy reference as the plan/attempt;
+each nonnegative count is at least the predecessor count, and the publication
+generation is exactly the enclosing generation. The plan image observes zero
+attempts/lineage entries and has no authorization count; the attempt image
+observes its one persisted attempt and actual authorization/reservation count;
+the planned image observes its retained lineage-entry count. A producer unable
+to derive a count from sealed input returns unavailable before publication;
+snapshot digest is never a counter, and a counter decrease or policy/fence/epoch
+mismatch fails closed.
+
+The legal current-generation closures are exact:
+
+| Checkpoint / progress | Mandatory current members | Forbidden future members | Progress-specific fields |
+| --- | --- | --- | --- |
+| plan / `plan_published` | `source-progress`, `plan`, `replay-bundle`, `observed-counters`, attempt-inputs, pre-execution evidence | authority, authorization, attempt, lineage, execution-manifest | plan/replay/counters refs; initial null predecessor/closure or sealed predecessor closure for replan |
+| attempt / `attempt_published` | `source-progress`, retained plan/replay members, `observed-counters`, authorization set, `successor-authority`, `attempt` | lineage, execution-manifest | exact plan/replay refs from plan image; current authority and attempt refs; same predecessor/closure |
+| lineage / `planned` | `source-progress`, retained plan/replay/authority/attempt members, `observed-counters`, complete lineage entries | none; manifest only if sealed before this checkpoint | byte-equal refs from attempt image; lineage ref; optional current manifest ref |
+
+`attempt_published` therefore begins successor authority only after successful
+authorization. `plan_published` never names authority or execution manifest.
+`planned.execution_manifest_reference` is null when the existing assembler has
+not sealed a manifest before lineage publication; it may be non-null only when
+that exact manifest is already a member of the same lineage generation. No
+state requires a future artifact. The replay bundle is explicitly produced from
+the sealed normalization recovery closure before compilation and retained in all
+three generations. Each `source-progress` member is unique and member IDs are
+lexicographically ordered; no group, retry, final-evidence, or terminal
+checkpoint carries bridge progress.
+
+For a replan, plan publication reloads the predecessor `planned` progress by
+the original fence and retains its plan/replay/counter provenance plus one
+closure reference. Attempt publication adds exactly the successor authority and
+attempt generated after authorization. Planned publication adds exactly the
+lineage generated after the attempt. Across these states the plan and replay
+references are byte-identical; the predecessor closure is byte-identical; the
+attempt image's authority/attempt references are byte-identical in planned; and
+each counters member is new, current-generation scoped, policy-equal, and
+componentwise monotone. Final/reused group references are predecessor-only;
+replacement groups alone receive new compilation/authorization. This proves no
+state reaches forward to an artifact unavailable at its publication boundary.
+
+Digest order is acyclic: construct available leaf plan/replay/counter artifacts;
+then plan progress and its member/write. After authorization construct authority
+and attempt, then current counters, attempt progress/member/write. After lineage
+construction construct current counters and, only if already available, manifest,
+then planned progress/member/write. A predecessor progress reference is already
+sealed. No bridge preimage includes its enclosing member, write, reload, or
+receipt digest. The native atomic-store validator enforces this grammar before
+visibility and on every reload.
+
+Found-first recovery checks V3 write idempotency then reloads and validates the
+exact members. Equal requests return identical decoded bytes after lost
+acknowledgement/restart; conflicting same-predecessor requests fail CAS; a
+reclaimed lease reloads a bridge-valid original-fence predecessor before its one
+legal successor. Pre-bridge generations are historical/read-only, cannot be
+replanned or silently upgraded, and return typed recovery-unavailable. Rollback
+disables new bridge/replan publication while retaining read-only decode of all
+generations. A clarification answer is admitted through the ordinary ingestion
+path. Its winning semantic/conflict-resolution transaction advances the shared
+graph authority. An older Bootstrap V3 operation prepared against the
+predecessor revision then detects that change at its real group-CAS, reloads
+the exact original-fence closure, and appends one successor plan -> attempt ->
+lineage sequence. That successor retains the predecessor bytes and creates
+replacement authority only for the conflicted group; it does not normalize a
+new event, re-admit a source, or re-enter the provider pipeline.
+`SemanticConflictProjectionStaleWinnerError` remains a generic event-batch
+preflight error on the non-V3 path, and is never a V3 recovery trigger.
+
+The generic-wrapper alternative is rejected: it creates duplicate generation,
+CAS, idempotency, and recovery authority. Recovery derivation is rejected:
+missing bytes cannot be distinguished from acknowledgement loss. Required proof
+uses real `sync_event`, V3 assembler/coordinator/store, memory and JSONL reopen,
+transaction-boundary process evidence, races, lost acknowledgement, reclaimed
+lease, rollback/pre-bridge recovery, exact byte comparisons, and all reference,
+member, counter, timing, and lifecycle mutations.
+
 Allowed initial predecessors are admission -> `pre_planning`; `pre_planning` ->
 `plan_published`; `plan_published` -> `attempt_published`; and
 `attempt_published` -> `planned`. The only additional predecessor is an
@@ -29150,7 +29290,15 @@ the progress discriminator.
 Lost acknowledgement and reopen always reload the exact generation by fence,
 validate the variant's complete closure, predecessor preservation, and policy
 joins, then resume its one allowed successor or return the already durable
-result. A stale owner first
+result. A clarification answer is ordinary admitted ingestion. Its winning
+semantic and conflict-resolution transaction can make an older V3 group commit
+stale. The losing V3 coordinator detects that revision change at its group-CAS,
+reloads the exact sealed closure on the original fence, and appends the one
+successor for the conflicted group; it does not re-admit, normalize a new
+`ProviderEvent`, or re-enter the provider pipeline.
+`SemanticConflictProjectionStaleWinnerError` remains the generic event-batch
+preflight failure on its non-V3 path and is never translated into a Bootstrap
+V3 replan. A stale owner first
 proves the current lease/epoch, reloads the exact variant before a read or
 write, and either resumes with a new current lease or returns the existing
 non-disclosing unavailable outcome. It cannot regenerate a missing same-
@@ -29163,22 +29311,16 @@ fully committed. Rollback disables new replacement-plan promotion, reloads and
 replays the retained predecessor/final-result closure, and never removes or
 rewrites a final result or lineage entry.
 
-The following existing replay-authoritative contracts are extended with exactly
-`execution_policy: GraphDependentExecutionPolicyReference` and
-`observed_counters: GraphDependentObservedCounters`, and their existing digest
-preimages are extended by those two fields in declaration order:
-`GraphDependentValidationAttempt`, `TransactionGroupPlanLineageEntry`,
-`SourceTransactionPlanLineage`, every four `SourceIngestionProgress` variants,
-`ReplayArtifactBundle`, `IngestionExecutionManifest`,
-`GraphBoundSourceIngestionResult`, and each graph-bound
-`TransactionGroupExecutionResult`. The policy reference's artifact digest must
-appear in the bundle's required artifact digests; the same policy/counters pair
-must equal across attempt, matching lineage entry, progress image, manifest,
-group result, and source result. The `plan_published` and
-`attempt_published` images make the pair durable before lineage exists. A
-policy/counter mismatch, absent policy artifact, duplicate policy artifact, or
-live-policy lookup is a replay-integrity failure before any plan read, CAS, or
-result disclosure.
+For this release, the preceding generic policy/counter extension is superseded
+by the Bootstrap V3 bridge. The generic `SourceIngestionProgress`,
+`ReplayArtifactBundle`, `IngestionExecutionManifest`, graph-bound result, and
+lineage wire schemas and their existing digest domains remain unchanged. Native
+V3 progress owns its V3 policy and `BootstrapGraphObservedCountersV3` closure
+under Section 4.8.3.4. The current generic contract/store/replay implementation
+delta that added the generic checkpoint is not an accepted implementation of
+this bridge and must be reverted before native V3 implementation begins. It is
+neither a compatibility reader nor a recovery fallback. A generic policy/counter
+schema revision requires a separate approved design operation.
 
 `PreGraphSourceIngestionResult.failure_reason` is non-null exactly when
 `final_status="failed"`; `lease_recovery_exhausted` is the exact reason for the

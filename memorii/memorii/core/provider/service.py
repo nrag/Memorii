@@ -1499,9 +1499,9 @@ class ProviderMemoryService:
         cached = self._composite_attention_repository_instance
         if cached is not None and cached._ledger is ledger:
             return cached
-        built = CompositeConflictListingRepository(
-            ledger, now_provider=self._now_provider
-        )
+        # The ledger owns cursor-key time. A provider's general-purpose clock
+        # must not replace it for composite listing composition.
+        built = CompositeConflictListingRepository(ledger)
         self._composite_attention_repository_instance = built
         return built
 

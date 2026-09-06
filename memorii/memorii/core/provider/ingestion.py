@@ -21,13 +21,13 @@ from memorii.core.memory_evolution.atomic_store import (
 )
 from memorii.core.memory_evolution.bootstrap_profile import (
     BootstrapAdmissionPin,
+    BootstrapAuthenticatedLanguageEvidence,
     VerifiedBootstrapProfile,
 )
 from memorii.core.memory_evolution.ingestion_contracts import (
     AuthenticatedIngressContext,
     DeliveryIdentity,
     OperationFenceBinding,
-    derive_conflict_replan_delivery_id,
 )
 from memorii.core.memory_evolution.models import SourceObservation
 from memorii.core.memory_evolution.record_projection import source_observation_from_record
@@ -92,7 +92,6 @@ from memorii.core.semantic_ingestion.contracts import (
     contract_digest,
     encode_semantic_contract_result,
 )
-from memorii.core.semantic_ingestion.event_replay import SemanticEventReplayError
 from memorii.core.semantic_ingestion.persistence import (
     SemanticAuthorizationReadSetError,
     SemanticIngestionLeaseSession,
@@ -361,40 +360,21 @@ class ProviderIngestionCoordinator:
         result: ProviderSyncResult,
         pipeline_event: ProviderEvent,
         *,
-        authenticated_ingress: AuthenticatedIngressContext | None,
+        authenticated_ingress: AuthenticatedIngressContext,
         canonical_evidence_arena: CanonicalEvidenceArena,
     ) -> tuple[ProviderSyncResult, None, None]:
         """Run the governed semantic-source pipeline for one delivery.
 
-        When a committed semantic-conflict clarification invalidates the
-        prepared projection's graph fence, the publication replans exactly
-        once from a fresh internal conflict-replan delivery coordinate so the
-        terminal is recompiled against the current graph.  The replan delivery
-        is derived, never host-supplied, and every non-stale failure keeps
-        its existing terminal handling.
+        Bootstrap V3 related-conflict recovery remains inside the graph
+        coordinator's group-CAS boundary. This provider path admits one source
+        and never translates generic event-batch replay failures into V3 work.
         """
-        replanned = False
         replan_arenas = ExitStack()
         try:
-            while True:
-                delivery_event = (
-                    pipeline_event
-                    if not replanned
-                    else pipeline_event.model_copy(
-                        update={
-                            "event_id": derive_conflict_replan_delivery_id(
-                                pipeline_event.event_id
-                            )
-                        }
-                    )
-                )
-                # A canonical evidence arena binds exactly one validation
-                # scope; the replan attempt is a distinct delivery and must
-                # own a fresh arena from the provider's factory.
-                if replanned and self._canonical_evidence_arena_factory is not None:
-                    canonical_evidence_arena = replan_arenas.enter_context(
-                        self._canonical_evidence_arena_factory()
-                    )
+            # This is intentionally a single provider pass. V3 group-CAS
+            # recovery never loops back into normalization or admission.
+            if True:
+                delivery_event = pipeline_event
                 try:
                     request = ProviderEventNormalizer(authenticated_ingress).normalize(delivery_event)
                 except ValueError as exc:
@@ -516,7 +496,7 @@ class ProviderIngestionCoordinator:
                     outcome_kind: str = outcome,
                     outcome_reason: str | None = reason,
                     matched_case_id: str | None = matched_case_id,
-                    bootstrap_language_evidence: object = request.bootstrap_language_evidence,
+                    bootstrap_language_evidence: BootstrapAuthenticatedLanguageEvidence | None = request.bootstrap_language_evidence,
                 ) -> PreparedSourceAdmission:
                     return self._admission_service.prepare_atomic(
                         source=source,
@@ -656,15 +636,6 @@ class ProviderIngestionCoordinator:
                             terminal,
                             authorization_guard=authorization_guard,
                         )
-                    except SemanticEventReplayError:
-                        # A committed conflict clarification won the memory plane and
-                        # invalidated this terminal's compiled graph fence.  Replan
-                        # once from a fresh internal delivery coordinate against the
-                        # current graph; a second staleness propagates fail-closed.
-                        if replanned:
-                            raise
-                        replanned = True
-                        continue
                     except (OSError, SemanticAuthorizationReadSetError):
                         return (
                             result.model_copy(update={
@@ -696,6 +667,7 @@ class ProviderIngestionCoordinator:
 
         finally:
             replan_arenas.close()
+
     def reconcile(self) -> list[ProviderEvolutionOutcome]:
         """Complete retained found publications from retained durable records.
 

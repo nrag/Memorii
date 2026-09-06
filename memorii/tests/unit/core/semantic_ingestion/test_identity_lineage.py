@@ -11,7 +11,6 @@ import pytest
 from memorii.core.memory_evolution.identity_lineage import (
     IdentityLineageError,
     derive_claim_reverse_reference_closure,
-    derive_total_reverse_reference_closure,
     identity_lineage_audit_view,
     replay_identity_lineage,
 )
@@ -29,10 +28,7 @@ from memorii.core.memory_evolution.semantic_state import (
     LineageReverseReference,
 )
 from memorii.core.semantic_ingestion.contracts import (
-    AcceptedTemporalEvidence,
     IdentityLineageRecord,
-    OperationTemporalAttachmentBinding,
-    OperationTemporalDecisionBinding,
     SemanticGraphDelta,
     contract_digest,
 )
@@ -52,7 +48,12 @@ from memorii.core.semantic_ingestion.event_replay import (
     replay_semantic_event_batches,
 )
 from pydantic import ValidationError
-from semantic_terminal_test_support import NOW, accepted_terminal
+from tests.fixtures.semantic_ingestion.event_replay_fixture import (
+    append_identity_lineage_batch,
+    build_identity_lineage_delta,
+    build_identity_rekey_record,
+)
+from tests.fixtures.semantic_ingestion.semantic_terminal_fixture import NOW, accepted_terminal
 
 REPOSITORY_ID = "identity-lineage"
 ALICE_V1 = LineageEntityIdentity(
@@ -196,109 +197,25 @@ def _lineage_record(
     predecessor: LineageEntityIdentity = ALICE_V1,
     successor: LineageEntityIdentity = ALICE_V2,
 ):
-    claim = claim_terminal.accepted_carriers[0]
-    source_binding = claim.temporal_decision_binding
-    attachment = OperationTemporalAttachmentBinding.create(
+    return build_identity_rekey_record(
+        claim_terminal=claim_terminal,
+        state=state,
+        predecessor=predecessor,
+        successor=successor,
         operation_id=operation_id,
-        temporal_role="transition",
-        stable_attachment_consensus_digest=(
-            source_binding.temporal_attachment.stable_attachment_consensus_digest
-        ),
-        candidate_ids=source_binding.temporal_attachment.candidate_ids,
-        candidate_spans=source_binding.temporal_attachment.candidate_spans,
-    )
-    binding = OperationTemporalDecisionBinding.create(
-        operation_id=operation_id,
-        temporal_role="transition",
-        scope_assessment_digest=source_binding.scope_assessment_digest,
-        semantic_assessment_digest=source_binding.semantic_assessment_digest,
-        temporal_attachment=attachment,
-        reference_evidence=source_binding.reference_evidence,
-        decision_closure=source_binding.decision_closure,
-    )
-    recorded_at = NOW + timedelta(minutes=1)
-    closure = derive_total_reverse_reference_closure(
-        materialized_records=state.materialized_records,
-        predecessors=(predecessor,),
-        recorded_before=recorded_at,
-    )
-    transition = CompiledIdentityLineageTransition.create(
-        operation_id=operation_id,
-        operation="rekey",
-        predecessors=(predecessor,),
-        successors=(successor,),
-        graph_revision_before=state.graph_revision,
-        recorded_at=recorded_at,
-        lineage_snapshot_before_digest=replay_identity_lineage(state).snapshot_digest,
-        source_evidence=(_evidence(),),
-        reverse_reference_closure=closure,
-        reference_dispositions=_dispositions(
-            closure,
-            successor=successor,
-            operation="rekey",
-        ),
-    )
-    temporal_evidence = AcceptedTemporalEvidence(
-        reference_evidence=binding.reference_evidence,
-        decision_closure=binding.decision_closure,
-    )
-    body = {
-        "record_kind": "identity_lineage",
-        "identity_lineage_id": f"identity-lineage:{operation_id}",
-        "operation_id": operation_id,
-        "valid_interval": temporal_evidence.valid_interval,
-        "temporal_evidence": temporal_evidence,
-        "temporal_decision_binding": binding,
-        "record_version": 1,
-        "codec_fingerprint": claim.codec_fingerprint,
-        "statement_digest": transition.transition_digest,
-        "transition": transition,
-    }
-    return IdentityLineageRecord.model_validate(
-        body
-        | {
-            "record_digest": contract_digest(
-                b"memorii.semantic-ingestion.temporal-carrier.v1",
-                body,
-            )
-        }
+        recorded_at=NOW + timedelta(minutes=1),
     )
 
 
 def _append_lineage(record, *, registry, state, graph_revision_after: str = "graph:2"):
-    delta_body = {
-        "kind": "semantic_graph_delta",
-        "operation_id": record.operation_id,
-        "carriers": (record,),
-        "terminal_binding_sets": (),
-    }
-    delta = SemanticGraphDelta(
-        **delta_body,
-        delta_digest=contract_digest(
-            b"memorii.semantic-ingestion.graph-delta.v1",
-            delta_body,
-        ),
-    )
-    batch = build_semantic_memory_event_batch(
-        graph_delta=delta,
-        prior_state=state,
+    return append_identity_lineage_batch(
+        record=record,
+        registry=registry,
+        state=state,
         repository_id=REPOSITORY_ID,
-        source_id="source:identity",
-        transaction_group_id="group:identity",
-        operation_fence_id="fence:identity",
-        writer_epoch=1,
-        graph_revision_before=state.graph_revision,
         graph_revision_after=graph_revision_after,
         timestamp=NOW + timedelta(minutes=1),
-        registry=registry,
     )
-    replayed = replay_semantic_event_batches(
-        repository_id=REPOSITORY_ID,
-        batches=(batch,),
-        registry=registry,
-        initial_state=state,
-    )
-    return batch, replayed
 
 
 def _record_with_transition(
@@ -320,20 +237,8 @@ def _record_with_transition(
 
 
 def _batch_for_lineage(record, *, registry, state):
-    delta_body = {
-        "kind": "semantic_graph_delta",
-        "operation_id": record.operation_id,
-        "carriers": (record,),
-        "terminal_binding_sets": (),
-    }
-    delta = SemanticGraphDelta(
-        **delta_body,
-        delta_digest=contract_digest(
-            b"memorii.semantic-ingestion.graph-delta.v1", delta_body
-        ),
-    )
     return build_semantic_memory_event_batch(
-        graph_delta=delta,
+        graph_delta=build_identity_lineage_delta(record),
         prior_state=state,
         repository_id=REPOSITORY_ID,
         source_id="source:identity",

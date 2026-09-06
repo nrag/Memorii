@@ -1,0 +1,20 @@
+{
+  "schema": "memorii.debugging.scoped-candidate-manifest.v2",
+  "base_revision": "821b0bc7fd47ca0c55a18ccebb4b1628fa13689b",
+  "scoped_diff_sha256": "b1f487559a5e8222ace6f7d1f8aae1629edfb4ef58ec01d2a7f15c97bc987700",
+  "files": {
+    "memorii/memorii/core/memory_evolution/conflict_attention.py": "d650431cbf2c4e8983848a421052e94cc992fd7c276e835f730f84646c8805cf",
+    "memorii/memorii/core/memory_evolution/conflict_attention_repository.py": "161c2173b2f44b14b4646931da712f935924780191b7db75386deffc9bcc158a",
+    "memorii/memorii/core/memory_evolution/composite_conflict_listing.py": "db21f188efd28a306951e9b148cc34c0d3bce7441e04b4671287edd0c0659d92",
+    "memorii/memorii/core/provider/service.py": "158de9fd81860d7cc4ec55fa97fd4dd90a1f5d780f4155d80d69b9416abf2966",
+    "memorii/tests/unit/core/test_composite_conflict_listing_repository.py": "750d06fa6c69248dd5413741cd2f155b42fb64dddff6b019c9d3bca5071fa391",
+    "memorii/tests/unit/core/test_conflict_attention_provider_service.py": "4b1e3d9f0f2daa8cbc3923fe25698015cab4d9b2809e25e35c683519f1201f07"
+  },
+  "shared_binding": {
+    "path": "docs/design/semantic_ingestion_canonical_evidence/production-entrypoint-bindings-v1.json",
+    "json_selector": ".production_entrypoint_bindings[] | select(.requirement == \"composite_conflict_cursor_clock\")",
+    "canonical_entry_sha256": "ff796d70cd20afa756b0a35f4454be981ba25a91c936cf96e0a8672971efd9d7"
+  },
+  "scope": "composite cursor clock ownership, public v2 admission, atomic conditional signing-key preflight, zero-write issuance failure, and fail-closed corrupt-ledger handling only",
+  "tree_state": "coordinated dirty tree scoped by this manifest"
+}

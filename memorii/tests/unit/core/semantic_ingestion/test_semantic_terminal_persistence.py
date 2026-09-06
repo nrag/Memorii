@@ -175,14 +175,14 @@ from memorii.core.semantic_ingestion.event_replay import (
 from memorii.core.semantic_ingestion.persistence import SemanticTerminalPersistenceService
 from memorii.integrations.hermes_provider import HermesMemoryProvider
 from planning_serialized_oracle import materialize_serialized
-from semantic_terminal_test_support import (
+from tests.fixtures.semantic_ingestion.semantic_terminal_fixture import (
     SOURCE_DIGEST,
     SOURCE_ID,
     accepted_terminal,
     handoff,
     install_test_semantic_conflict_authority_resolver,
 )
-from semantic_terminal_test_support import (
+from tests.fixtures.semantic_ingestion.semantic_terminal_fixture import (
     TestSemanticConflictAuthorityResolver as _TestSemanticConflictAuthorityResolver,
 )
 

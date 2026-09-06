@@ -14,7 +14,10 @@ from datetime import UTC, datetime
 from hashlib import sha256
 from typing import Literal
 
-from memorii.core.memory_evolution.atomic_store import PreplanningStoreError
+from memorii.core.memory_evolution.atomic_store import (
+    BootstrapGraphRelatedConflictError,
+    PreplanningStoreError,
+)
 from memorii.core.memory_evolution.graph_effect_contracts import (
     CanonicalSourceTerminalOutcomeCore,
     CanonicalSourceTerminalOutcomeRecord,
@@ -441,12 +444,53 @@ def build_minimal_bootstrap_graph_plan_compilation_v3(
         operation_fence_binding_digest=epoch.operation_fence_binding.binding_digest,
         writer_commit_binding_digest=epoch.writer_commit_binding.binding_digest, control_epoch_digest=epoch.epoch_digest,
     )
+    reductions_by_group: dict[str, list[BootstrapGraphOperationReductionV3]] = {}
+    for reduction in reductions:
+        reductions_by_group.setdefault(reduction.transaction_group_id, []).append(reduction)
+    manifest_group_inputs = tuple(
+        BootstrapGraphExecutionManifestGroupInputV3.create(
+            transaction_group_id=member.transaction_group_id,
+            group_plan_member=member,
+            compilation_request_digest=request.request_digest,
+            compilation_artifact_digest=contract_digest(
+                b"memorii.tests.bootstrap-graph-v3.compilation-artifact",
+                tuple(item.native_compilation.compilation_digest for item in sorted(
+                    reductions_by_group[member.transaction_group_id],
+                    key=lambda item: item.operation_id,
+                )),
+            ),
+            independence_certificate_digest=contract_digest(
+                b"memorii.tests.bootstrap-graph-v3.independence-certificate",
+                tuple(item.native_artifact_closure.closure_digest for item in sorted(
+                    reductions_by_group[member.transaction_group_id],
+                    key=lambda item: item.operation_id,
+                )),
+            ),
+            ordered_operation_ids=member.operation_ids,
+            proposed_delta_digest=contract_digest(
+                b"memorii.tests.bootstrap-graph-v3.proposed-delta",
+                tuple(item.effect_materialization.materialization_digest for item in sorted(
+                    reductions_by_group[member.transaction_group_id],
+                    key=lambda item: item.operation_id,
+                )),
+            ),
+            event_batch_digest=contract_digest(
+                b"memorii.tests.bootstrap-graph-v3.event-batch",
+                tuple(item.native_terminal.terminal_digest for item in sorted(
+                    reductions_by_group[member.transaction_group_id],
+                    key=lambda item: item.operation_id,
+                )),
+            ),
+        )
+        for member in plan.group_members
+    )
     return _FixturePlanCompilationV3(native=BootstrapGraphPlanCompilationV3.create(
         request_digest=request.request_digest,
         normalization_replay_digest=request.normalization_replay.replay_digest,
         control_epoch_digest=epoch.epoch_digest,
         transaction_group_plan=plan,
         operation_reductions=tuple(reductions),
+        manifest_group_inputs=manifest_group_inputs,
         attempt_construction_inputs=inputs,
         pre_execution_evidence=evidence,
     ))
@@ -979,12 +1023,16 @@ class DeterministicBootstrapGraphAuthorityProviderV3:
     conflict_calls: list[str] | None = None
     partial_conflict_calls: list[str] | None = None
     exhausted_conflict_calls: list[str] | None = None
+    related_conflict_calls: list[str] | None = None
+    related_conflict_after_successful_commits: int = 0
     cas_attempts: list[str] | None = None
     before_compare_and_swap: Callable[[str], None] | None = None
     current_scope_digest: Callable[[], str] | None = None
     before_epoch_created: Callable[[object], None] | None = None
     after_epoch_created: Callable[[object, object, object], object] | None = None
     acquire_errors: list[str] | None = None
+    _related_conflict_emitted: bool = False
+    _successful_group_commits: int = 0
 
     def acquire(
         self, *, request: BootstrapGraphAuthorityRequestV3, atomic_store: object,
@@ -1161,8 +1209,8 @@ class DeterministicBootstrapGraphAuthorityProviderV3:
                 group_commits = UnavailableGroupCommitRepository()
             else:
                 max_conflict_failures = (
-                    2 if self.conflict_calls is not None
-                    else 4 if self.partial_conflict_calls is not None
+                    1 if self.conflict_calls is not None
+                    else 1 if self.partial_conflict_calls is not None
                     else 2 if self.exhausted_conflict_calls is not None
                     else 0
                 )
@@ -1183,8 +1231,28 @@ class DeterministicBootstrapGraphAuthorityProviderV3:
                         type(inner_self)._run_before_compare_and_swap(
                             request=request
                         )
-                        reload = inner_self._repository.commit_or_reload(request=request)
+                        if (
+                            self.related_conflict_calls is not None
+                            and not self._related_conflict_emitted
+                            and self._successful_group_commits
+                            >= self.related_conflict_after_successful_commits
+                        ):
+                            self.related_conflict_calls.append(
+                                request.transaction_group_id
+                            )
+                            self._related_conflict_emitted = True
+                            raise BootstrapGraphRelatedConflictError(
+                                transaction_group_id=request.transaction_group_id,
+                                expected_graph_revision=(
+                                    request.group_plan_member.graph_read_set.graph_revision
+                                ),
+                                observed_graph_revision="f" * 64,
+                            )
+                        reload = inner_self._repository.commit_or_reload(
+                            request=request
+                        )
                         self.successful_calls.append(request.transaction_group_id)
+                        self._successful_group_commits += 1
                         return reload
 
                 recording_group_commits = RecordingGroupCommitRepository(
@@ -1192,7 +1260,14 @@ class DeterministicBootstrapGraphAuthorityProviderV3:
                 )
 
                 class ConflictInjectingGroupCommitRepository:
-                    failures = {"remaining": max_conflict_failures}
+                    already_injected = max(
+                        len(self.conflict_calls or ()),
+                        len(self.partial_conflict_calls or ()),
+                        len(self.exhausted_conflict_calls or ()),
+                    )
+                    failures = {
+                        "remaining": max(0, max_conflict_failures - already_injected)
+                    }
                     passed_first = False
 
                     def _record_conflict(inner_self, *, request, conflict_calls: list[str]):
@@ -1221,23 +1296,35 @@ class DeterministicBootstrapGraphAuthorityProviderV3:
                                 inner_self._record_conflict(
                                     request=request, conflict_calls=self.conflict_calls,
                                 )
-                                raise PreplanningStoreError(
-                                    "injected graph group commit conflict"
+                                raise BootstrapGraphRelatedConflictError(
+                                    transaction_group_id=request.transaction_group_id,
+                                    expected_graph_revision=(
+                                        request.group_plan_member.graph_read_set.graph_revision
+                                    ),
+                                    observed_graph_revision="f" * 64,
                                 )
                             if self.partial_conflict_calls is not None:
                                 inner_self._record_conflict(
                                     request=request, conflict_calls=self.partial_conflict_calls,
                                 )
-                                raise PreplanningStoreError(
-                                    "injected graph group commit partial conflict"
+                                raise BootstrapGraphRelatedConflictError(
+                                    transaction_group_id=request.transaction_group_id,
+                                    expected_graph_revision=(
+                                        request.group_plan_member.graph_read_set.graph_revision
+                                    ),
+                                    observed_graph_revision="f" * 64,
                                 )
                             if self.exhausted_conflict_calls is not None:
                                 inner_self._record_conflict(
                                     request=request,
                                     conflict_calls=self.exhausted_conflict_calls,
                                 )
-                                raise PreplanningStoreError(
-                                    "injected graph group commit conflict"
+                                raise BootstrapGraphRelatedConflictError(
+                                    transaction_group_id=request.transaction_group_id,
+                                    expected_graph_revision=(
+                                        request.group_plan_member.graph_read_set.graph_revision
+                                    ),
+                                    observed_graph_revision="f" * 64,
                                 )
                         if self.cas_attempts is not None:
                             self.cas_attempts.append(request.transaction_group_id)

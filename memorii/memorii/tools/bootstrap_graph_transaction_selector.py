@@ -15,11 +15,11 @@ ROOTS = ("direct", "factory", "filesystem", "hermes")
 BACKENDS = ("memory", "jsonl_independent_process")
 REQUIRED_COVERAGE = {
     "GTC-R09": ("unrelated_conflict",),
-    "GTC-R14": ("initial_attempt", "mixed_version", "reopen"),
-    "GTC-R15": ("epoch_zero", "lease_renewed", "lease_reclaimed", "writer_changed", "writer_unavailable", "pre_cas_scope_revoked"),
-    "GTC-R16": ("initial_attempt", "successor_attempt", "reused_committed", "reused_final", "reused_unfinished", "replacement", "related_conflict"),
+    "GTC-R14": ("initial_attempt", "mixed_version", "reopen", "source_progress_initial"),
+    "GTC-R15": ("epoch_zero", "lease_renewed", "lease_reclaimed", "writer_changed", "writer_unavailable", "pre_cas_scope_revoked", "source_progress_reclaimed_lease"),
+    "GTC-R16": ("initial_attempt", "successor_attempt", "reused_committed", "reused_final", "reused_unfinished", "replacement", "related_conflict", "source_progress_related_conflict"),
     "GTC-R17": ("successor_attempt", "reused_committed", "reused_final", "reused_unfinished", "replacement", "partial_commit"),
-    "GTC-R18": ("durable_retry", "partial_commit", "lost_ack", "reopen", "related_conflict"),
+    "GTC-R18": ("durable_retry", "partial_commit", "lost_ack", "reopen", "related_conflict", "source_progress_lost_ack"),
     "GTC-R19": ("success_finalization", "finalized_failure", "terminal_locator", "lost_ack", "reopen"),
     "GTC-R20": ("coordinator_removed", "authority_omitted", "writer_changed", "writer_unavailable", "mixed_version", "rollback"),
     "GTC-R21": ("pre_cas_scope_revoked", "initial_attempt", "successor_attempt", "lost_ack", "reopen"),
@@ -70,10 +70,10 @@ def build_manifest() -> dict[str, object]:
                     if backend == "memory"
                     else "test_bootstrap_graph_jsonl_race_reopen.py"
                 )
+                selector_id = f"{scenario}-{root}"
                 selector = (
                     "tests/unit/core/semantic_ingestion/"
-                    f"{test_module}::{test_name}"
-                    f"[{scenario}-{root}]"
+                    f"{test_module}::{test_name}[{selector_id}]"
                 )
                 durable, calls, cas, event, graph = _oracle(scenario)
                 body = {
@@ -138,7 +138,7 @@ def validate_manifest(manifest: dict[str, object]) -> None:
         raise ValueError("bootstrap graph selector rows are not a list")
     selectors = [row["pytest_selector"] for row in rows]
     keys = [(row["scenario"], row["root"], row["backend"]) for row in rows]
-    if len(rows) != 200 or len(set(selectors)) != 200 or len(set(keys)) != 200:
+    if len(rows) != 232 or len(set(selectors)) != 232 or len(set(keys)) != 232:
         raise ValueError("bootstrap graph selector row collection is incomplete or duplicated")
     projected = {
         (requirement, row["scenario"], row["root"], row["backend"])
@@ -149,8 +149,8 @@ def validate_manifest(manifest: dict[str, object]) -> None:
         for requirement, scenarios in REQUIRED_COVERAGE.items()
         for scenario in scenarios for root in ROOTS for backend in BACKENDS
     }
-    if projected != required or len(required) != 352:
-        raise ValueError("bootstrap graph selector does not cover the exact 352 tuples")
+    if projected != required or len(required) != 384:
+        raise ValueError("bootstrap graph selector does not cover the exact 384 tuples")
 
 
 def shard_selectors(manifest: dict[str, object], *, root: str, backend: str) -> list[str]:
@@ -164,7 +164,7 @@ def shard_selectors(manifest: dict[str, object], *, root: str, backend: str) -> 
         for row in rows
         if row["root"] == root and row["backend"] == backend
     ]
-    if len(selectors) != 25 or len(set(selectors)) != 25:
+    if len(selectors) != 29 or len(set(selectors)) != 29:
         raise ValueError("bootstrap graph selector shard is incomplete or duplicated")
     return selectors
 
@@ -214,7 +214,7 @@ def validate_receipts(manifest: dict[str, object], receipt_dir: Path) -> None:
             raise ValueError("bootstrap graph receipt producer is duplicated or stale")
         shards.add(shard)
         expected = shard_selectors(manifest, root=shard[0], backend=shard[1])
-        if receipt["selectors"] != expected or receipt["selector_count"] != 25:
+        if receipt["selectors"] != expected or receipt["selector_count"] != 29:
             raise ValueError("bootstrap graph receipt selectors are substituted")
         if int(receipt["elapsed_milliseconds"]) > int(receipt["runtime_budget_seconds"]) * 1000:
             raise ValueError("bootstrap graph receipt exceeded its runtime budget")

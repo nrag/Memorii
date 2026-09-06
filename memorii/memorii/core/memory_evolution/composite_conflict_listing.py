@@ -15,10 +15,10 @@ import binascii
 import hashlib
 import hmac
 import json
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from hashlib import sha256
-from secrets import token_hex
 from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -574,10 +574,12 @@ class CompositeConflictListingRepository:
         self,
         ledger: FileConflictAttentionRepository,
         *,
-        now_provider: object = None,
+        now_provider: Callable[[], datetime] | None = None,
     ) -> None:
         self._ledger = ledger
-        self._now = now_provider or (lambda: datetime.now(UTC))
+        # A default composite is one logical listing with its child ledger, so
+        # key selection and v2 cursor issuance must observe the same clock.
+        self._now = now_provider or ledger.cursor_clock
 
     def list_conflicts(
         self,
@@ -590,35 +592,22 @@ class CompositeConflictListingRepository:
 
         if request.cursor is None:
             scopes = request.scope_ids or access.authorized_scope_ids
-            (
-                semantic_binding,
-                integrity_binding,
-                semantic_keys,
-                integrity_keys,
-                _items,
-            ) = self._ledger.create_composite_child_bindings(access, scopes=scopes)
-            try:
-                snapshot = assemble_composite_snapshot(
-                    snapshot_id=token_hex(16),
-                    access=access,
-                    semantic_binding=semantic_binding,
-                    integrity_binding=integrity_binding,
-                    ordered_semantic_keys=semantic_keys,
-                    ordered_integrity_keys=integrity_keys,
-                    created_at=self._now(),
-                    listing_scope_ids=tuple(scopes),
-                )
-            except CompositeConflictListingError as exc:
-                raise ConflictAttentionReadError(exc.reason) from None
-            self._ledger.retain_composite_snapshot(snapshot)
+            snapshot, next_cursor = self._ledger.prepare_composite_listing(
+                access,
+                scopes=scopes,
+                page_size=request.page_size,
+                now_provider=self._now,
+            )
             start = 0
         else:
+            now = self._now()
+            next_cursor = None
             try:
                 claims = decode_composite_cursor(
                     request.cursor,
                     keys=self._ledger.cursor_keys(),
                     access=access,
-                    now=self._now(),
+                    now=now,
                 )
             except CompositeConflictListingError as exc:
                 raise ConflictAttentionReadError(exc.reason) from None
@@ -632,20 +621,27 @@ class CompositeConflictListingRepository:
                     claims.composite_snapshot_id
                 )
                 validate_composite_continuation(
-                    claims=claims, snapshot=snapshot, now=self._now()
+                    claims=claims, snapshot=snapshot, now=now
                 )
             except (CompositeConflictListingError, ConflictAttentionReadError):
                 raise ConflictAttentionReadError("invalid_conflict_cursor") from None
             start = self._continuation_start(snapshot, claims)
         items = self._ledger.composite_snapshot_items(snapshot)
         selected = items[start : start + request.page_size]
-        next_cursor = None
-        if start + len(selected) < len(items):
+        if request.cursor is not None:
+            now = self._now()
+            try:
+                validate_composite_continuation(
+                    claims=claims, snapshot=snapshot, now=now
+                )
+            except CompositeConflictListingError:
+                raise ConflictAttentionReadError("invalid_conflict_cursor") from None
+        if request.cursor is not None and start + len(selected) < len(items):
             last = snapshot.members[start + len(selected) - 1]
             try:
                 next_cursor = encode_composite_cursor(
-                    _cursor_claims(snapshot, last),
-                    key=self._ledger.cursor_signing_key(),
+                    composite_cursor_claims(snapshot, last) | {"issued_at": now},
+                    key=self._ledger.cursor_signing_key(now=now),
                 )
             except CompositeConflictListingError as exc:
                 raise ConflictAttentionReadError(exc.reason) from None
@@ -675,7 +671,7 @@ class CompositeConflictListingRepository:
         return matches[0] + 1
 
 
-def _cursor_claims(
+def composite_cursor_claims(
     snapshot: CompositeConflictListingSnapshot,
     last: CompositeConflictListingMember,
 ) -> dict[str, object]:
@@ -717,6 +713,7 @@ __all__ = [
     "CompositeConflictMemberKey",
     "CompositeMemberRoute",
     "assemble_composite_snapshot",
+    "composite_cursor_claims",
     "composite_snapshot_digest",
     "decode_composite_cursor",
     "encode_composite_cursor",

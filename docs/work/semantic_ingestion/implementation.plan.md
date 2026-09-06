@@ -5,7 +5,7 @@
 - Status: active
 - Coordinator: Codex main thread
 - Created: 2026-07-27
-- Last updated: 2026-08-09
+- Last updated: 2026-09-05
 - Parent WorkPlan: None
 - Related WorkPlans: `docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md`; `docs/work/semantic_ingestion/conflict-authority-proof-failures-2026-08-04/debug.plan.md`; `docs/work/semantic_ingestion/testing.plan.md`; `docs/work/semantic_ingestion/terminal-persistence-performance-2026-08-09/testing.plan.md`; `docs/work/semantic_ingestion/scenario-v1-runtime-closure-2026-08-09/design.plan.md`; milestone-linked design, testing, and debugging plans
 - Canonical inputs: `docs/design/semantic_ingestion_architecture.md`; `docs/design/event_model.md`; `docs/design/conflict_attention.md`; `docs/design/equal_version_replay_decision-v1.json`
@@ -13,7 +13,10 @@
 - Current resume packet: `docs/work/semantic_ingestion/resume.md`
 - Preserved historical WorkPlan: `docs/work/semantic_ingestion/history/implementation-through-2026-08-04.md`
 - Migration manifest: `docs/work/semantic_ingestion/history/implementation-split-manifest.json`
-- Current coordination candidate identity: `docs/work/semantic_ingestion/history/m3-lineage-remediation-candidate-identity.json`
+- Current completion operation: `docs/work/semantic_ingestion/m4-closure-2026-09-04/implementation.plan.md`
+- Current coordination candidate identity: the immutable Git commit produced by
+  the coordinated M3.1/M4 freeze; the historical dirty-tree identity is not a
+  final-candidate authority
 
 ## Objective
 
@@ -87,24 +90,26 @@ The index and milestone packets own current navigation and status.
   authority is not approved for consumption.
 - M1: complete.
 - M2: complete.
-- M3: graph-dependent production closure is implemented; M3.1 final closure
-  recorded 2026-09-04 at HEAD `bd1ebf0` with the v81 disposition and empty
-  remaining arrays.  No product-code action is pending unless a confirmed
-  P1/P2 or contract-conformance defect is found.
-- M4: unblocked as of the M3.1 closure.  Core conflict authority passes its
-  exact reproducer; the completion operation is
+- M3: graph-dependent production behavior is implemented and its reopened
+  local four-root/two-backend matrix is green. Immutable shared-candidate,
+  hosted, and independent-review closure remains.
+- M4: active. The two confirmed P2 replan defects are corrected locally. After
+  correcting the only stale bound-document hash from the first run, the full
+  415-case family passes under warnings-as-errors. The coordinated
+  completion operation is
   `docs/work/semantic_ingestion/m4-closure-2026-09-04/implementation.plan.md`
-  (clarification-winner replan via the linked debug, then composition and
-  milestone closure).
+  (linked debug correction, composition reconciliation, replay/history,
+  shared M3.1 regression, then one dual closure revision).
 - M5: pending.
 
-Current Git HEAD is `4691c03` with a dirty working tree. The M3 remediation
-removed fabricated terminal lineage/manifest state and restored the preexisting
-terminal wire. The approved graph-plan repository now exists as an atomic-store
-read/publication boundary. The graph-dependent coordinator still has no sealed
-graph snapshot, expansion, planning artifact, or authorization from which it
-could truthfully construct a complete plan; legacy paths therefore continue to
-omit a plan rather than fabricate lineage.
+The earlier M3.1 empty final approval arrays are historical evidence, not a
+current closure claim; both milestone arrays must be regenerated at the shared
+final candidate.
+
+The reviewed pre-plan tree was clean at
+`821b0bc7fd47ca0c55a18ccebb4b1628fa13689b`. The WorkPlan edits make the tree
+intentionally dirty until the next candidate is built. Earlier v81/v82 records
+remain historical evidence only and cannot be reused for final closure.
 
 ## Assumptions And Open Questions
 
@@ -120,8 +125,8 @@ activation artifacts remain governed by their registered SIA-ED gates.
 | M0 | SIA-R03, SIA-R13, SIA-R22 | blocked | `docs/work/semantic_ingestion/milestones/m0-proof-compatibility.plan.md` | Layer1 and external trust authority |
 | M1 | SIA-R01, SIA-R04, SIA-R08, SIA-R12, SIA-R19, SIA-R22, SIA-R23 | complete | `docs/work/semantic_ingestion/milestones/m1-source-admission.plan.md` | M0 compatibility foundation |
 | M2 | SIA-R10, SIA-R11, SIA-R20, SIA-R21 | complete | `docs/work/semantic_ingestion/milestones/m2-writer-atomicity.plan.md` | M1 admitted source |
-| M3 | SIA-R02, SIA-R04 through SIA-R07, SIA-R09, SIA-R12 | complete | `docs/work/semantic_ingestion/milestones/m3-semantic-pipeline.plan.md` | M3.1 closure recorded 2026-09-04 |
-| M4 | SIA-R10, SIA-R18 | active | `docs/work/semantic_ingestion/milestones/m4-event-history.plan.md` | unblocked by M3 closure; completion operation `m4-closure-2026-09-04` |
+| M3 | SIA-R02, SIA-R04 through SIA-R07, SIA-R09, SIA-R12 | active | `docs/work/semantic_ingestion/milestones/m3-semantic-pipeline.plan.md` | implementation retained; coordinated evidence closure after M4 corrections |
+| M4 | SIA-R10, SIA-R18 | active | `docs/work/semantic_ingestion/milestones/m4-event-history.plan.md` | linked debug correction, replay/history, then dual closure |
 | M5 | SIA-R03, SIA-R08, SIA-R13 through SIA-R17, SIA-R19 | pending | `docs/work/semantic_ingestion/milestones/m5-deployment-acceptance.plan.md` | M4 and external activation authority |
 
 ## Requirement Coverage Ledger
@@ -195,45 +200,16 @@ branch review results are summarized here.
 
 ## Blockers And Limits
 
-M4 cannot complete until the reopened M3 lineage correction and linked
-semantic-conflict debugging operation close and pass frozen review. M5 claims
-remain limited by externally owned authority and exact revision-bound evidence.
-M0's rejected historical C2 baselines must not be consumed.
-
-The approved `TransactionSemanticGroupPlanRepository` is implemented as an
-atomic-store read/publication boundary. The legacy pipeline still cannot supply
-the sealed source alignment, graph snapshot bundle and read-set extensions,
-graph-dependent reconciliation/closure, planning artifacts, compiler output,
-or authorization inputs. This is an explicit non-fabrication limit on legacy
-lineage wiring, not an absence of the canonical plan repository.
-
-The user must choose one scoped path before M3 can make another production
-change:
-
-1. Expand M3 into separately bounded Step 5--8 implementation milestones that
-   deliver the missing source-alignment producer, snapshot/read-set repository
-   interfaces, graph expansion/reconciliation/closure, planning-artifact
-   repository and pure compiler, graph CAS/retry owner, and append-only
-   attempt/lineage/result persistence with the design's restart matrix.
-2. Move graph-dependent coordinator acceptance to a later milestone through a
-   linked design review that revises the M3 completion contract. M3 would retain
-   its current non-fabricating terminal behavior and make no claim that its
-   accepted terminal is graph-plan-authorized.
-
-Production still lacks the approved prepared-source implementation: the
-admitted-record producer, source-owned atomic publication/read boundary, and
-composition-root dependency that map retained text, projection segments,
-governance carriers, routes, and admission identities. The approved V1 design
-now names those contracts; implementing them is the next bounded operation.
+There is no remaining local product-semantic blocker for M3.1/M4. Full closure
+still requires an immutable committed candidate, exact-SHA hosted execution,
+and final independent specification, correctness, and test review. M5
+activation claims remain limited by externally owned authority. M0's rejected historical C2 baselines must not be consumed.
 
 ## Next Action
 
-Execute the M4 completion operation at
-`docs/work/semantic_ingestion/m4-closure-2026-09-04/implementation.plan.md`:
-resume the linked semantic-conflict debug at production-owned
-clarification-winner replan (append-only plan lineage), then the
-provider/factory/cache/Hermes conflict-attention composition slice, then M4
-milestone closure review.
+Push the frozen shared M3.1/M4 candidate, require hosted checks to execute its
+exact SHA, and run the whole-candidate reviews. Do not begin M5 or unrelated
+work during this closure.
 
 ## 2026-08-10 Bootstrap V3 Atomic Slice
 

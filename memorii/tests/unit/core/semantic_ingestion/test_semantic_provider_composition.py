@@ -125,7 +125,10 @@ from memorii.core.semantic_ingestion.source_preparation import (
     TextPreparationService,
 )
 from memorii.integrations.hermes_provider import HermesMemoryProvider
-from semantic_terminal_test_support import accepted_terminal
+from tests.fixtures.semantic_ingestion.clean_room_request_fixture import (
+    build_prepared_independent_source_analysis,
+    build_prepared_source_authority,
+)
 from tests.fixtures.semantic_ingestion.host_bootstrap_authority import (
     DeterministicTestHostBootstrapMaterialVerifier,
     build_test_host_verified_bootstrap_release_evidence,
@@ -134,12 +137,9 @@ from tests.fixtures.semantic_ingestion.host_bootstrap_authority import (
 from tests.fixtures.semantic_ingestion.scenario_fixture_authority import (
     build_scenario_test_host_capability,
 )
+from tests.fixtures.semantic_ingestion.semantic_terminal_fixture import accepted_terminal
 from tests.fixtures.semantic_ingestion.source_normalization_fixture_builder import (
     DynamicSourceNormalizationAuthorityProvider,
-)
-from tests.unit.core.semantic_ingestion.clean_room_request_test_support import (
-    build_prepared_independent_source_analysis,
-    build_prepared_source_authority,
 )
 
 TEST_NOW = datetime(2026, 3, 1, tzinfo=UTC)
@@ -866,11 +866,15 @@ class _SingleTextQuoteAuthority:
             raise ValueError("fixture quote is not exact")
 
 
-def _v3_normalization_host_builder(*, proposal: ProviderSemanticProposal | None = None) -> tuple[SourceNormalizationHostBundleBuilder, dict[str, int]]:
+def _v3_normalization_host_builder(
+    *,
+    proposal: ProviderSemanticProposal | None = None,
+) -> tuple[SourceNormalizationHostBundleBuilder, dict[str, int]]:
     """Build a complete V3-only host bundle for the ordinary provider root."""
     proposal_value = proposal or ProviderSemanticProposal(abstained=True)
     quotes = _UnusedNormalizationQuoteAuthority() if proposal is None else _SingleTextQuoteAuthority()
     calls = {"proposal": 0, "stanza": 0, "spacy": 0, "predicate": 0, "temporal": 0}
+
     authority_provider = DynamicSourceNormalizationAuthorityProvider(
         proposal_factory=lambda _source, _request: proposal_value,
         retry_policy_fingerprint="a" * 64,
@@ -1420,7 +1424,7 @@ class _FilesystemIntegrityCapability(_TestHostBootstrapCapability):
         self, *, memory_plane, now_provider, bootstrap_profile
     ):
         del now_provider
-        from semantic_terminal_test_support import (
+        from tests.fixtures.semantic_ingestion.semantic_terminal_fixture import (
             TestSemanticConflictAuthorityResolver,
         )
 

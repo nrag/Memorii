@@ -1,0 +1,49 @@
+{
+  "schema": "memorii.debugging.scoped-candidate-manifest.v1",
+  "base_revision": "821b0bc7fd47ca0c55a18ccebb4b1628fa13689b",
+  "scoped_diff_sha256": "ffd409fe541a0609806ec40e8140cb497cb930aa2628c81ca28745243097b250",
+  "tree_state": "coordinated_dirty_tree_scoped_by_manifest",
+  "files": [
+    {
+      "path": "memorii/memorii/core/semantic_ingestion/bootstrap_graph_builtin.py",
+      "sha256": "7bcfc9df2687e3553477247d2e2202ab0fbd2fcd9d63050ccc4f5da24e0788d8"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/bootstrap_graph_planning.py",
+      "sha256": "aae81b4fd927a96d7ffa63355752ecba40a145c52bc47f4dbcd73cb0f2c747f6"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/atomic_store.py",
+      "sha256": "6d85d610ceceb5928a31fe941cb24c933fbc2406a73aa396a518ccd5644b300f"
+    },
+    {
+      "path": "memorii/memorii/core/semantic_ingestion/contracts.py",
+      "sha256": "19fc93a12637d7ceb51b30a573514c532ed0411a0f29276b922fa989efe58e58"
+    },
+    {
+      "path": "memorii/memorii/core/semantic_ingestion/bootstrap_graph_artifact_assembler.py",
+      "sha256": "cc83a805367f1e6603b951c612ed03f7e75f4010bbd1fa7ee9d243bb04ae2111"
+    },
+    {
+      "path": "memorii/memorii/core/semantic_ingestion/bootstrap_graph_coordinator.py",
+      "sha256": "17f09d6de6743d14162d0262c81a0adda560b96317936638e6007c3b79ceb2a0"
+    },
+    {
+      "path": "memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_root_composition.py",
+      "sha256": "158ffe765f0c0b78c967082da3b2df746e4f375815ad3d63268d2383e004d780"
+    },
+    {
+      "path": "memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_atomic_member_native_codec.py",
+      "sha256": "102abb1a0338f1dec9beb4f871e961506d67c5643253fb2c57c59044e1042640"
+    },
+    {
+      "path": "memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_post_effect_recovery.py",
+      "sha256": "a21211b1d089fae4c902263f64e6a6f176300584ca3424a4f53405d03425410e"
+    }
+  ],
+  "production_entrypoint_binding": {
+    "path": "docs/design/semantic_ingestion_canonical_evidence/production-entrypoint-bindings-v1.json",
+    "requirement": "accepted_fact_group_commit",
+    "sha256": "c6b1899b85fa41ed7b167f647e22fedd6ccc6002429dba17ad9daa0d636f5f97"
+  }
+}

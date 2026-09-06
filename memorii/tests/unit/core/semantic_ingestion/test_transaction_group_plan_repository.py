@@ -35,9 +35,9 @@ from memorii.core.semantic_ingestion.transaction_group_plan_repository import (
     AtomicStoreTransactionSemanticGroupPlanRepository,
 )
 from memorii.domain.enums import SourceModality
-from semantic_terminal_test_support import accepted_terminal
 from test_semantic_generation_transactions import _setup, _terminal_for_operation
 from test_source_group_plan_contracts import _plan
+from tests.fixtures.semantic_ingestion.semantic_terminal_fixture import accepted_terminal
 
 
 @dataclass(frozen=True)

@@ -48,8 +48,8 @@ from memorii.core.semantic_ingestion.contracts import (
 )
 from memorii.core.semantic_ingestion.persistence import SemanticTerminalPersistenceService
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
-from semantic_terminal_test_support import accepted_terminal
 from test_semantic_atomic_store import _handoff
+from tests.fixtures.semantic_ingestion.semantic_terminal_fixture import accepted_terminal
 
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
 

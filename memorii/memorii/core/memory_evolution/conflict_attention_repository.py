@@ -23,9 +23,13 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from memorii.core.memory_evolution.composite_conflict_listing import (
     CompositeChildKind,
     CompositeConflictChildSnapshotBinding,
+    CompositeConflictListingError,
     CompositeConflictListingSnapshot,
     CompositeConflictMemberKey,
+    assemble_composite_snapshot,
+    composite_cursor_claims,
     composite_snapshot_digest,
+    encode_composite_cursor,
 )
 from memorii.core.memory_evolution.conflict_attention import (
     INTEGRITY_ATTENTION_QUESTION,
@@ -256,7 +260,12 @@ class _ClarificationGenerationEntry(BaseModel):
         return self
 
 
-_LedgerEntry: TypeAlias = _ConflictLedgerEntry | _SnapshotLedgerEntry | _ClarificationGenerationEntry
+_LedgerEntry: TypeAlias = (
+    _ConflictLedgerEntry
+    | _SnapshotLedgerEntry
+    | _CompositeSnapshotLedgerEntry
+    | _ClarificationGenerationEntry
+)
 
 
 class FileConflictAttentionRepository:
@@ -868,6 +877,134 @@ class FileConflictAttentionRepository:
             tuple(semantic_members) + tuple(integrity_members),
         )
 
+    def prepare_composite_listing(
+        self,
+        access: ConflictAccessContext,
+        *,
+        scopes: tuple[str, ...],
+        page_size: int,
+        now_provider: Callable[[], datetime],
+    ) -> tuple[CompositeConflictListingSnapshot, str | None]:
+        """Atomically retain one fresh composite listing and its first cursor."""
+
+        self._authorize_new_scope(access, scopes)
+        try:
+            with self._path.open("r+", encoding="utf-8") as handle:
+                fcntl.flock(handle, fcntl.LOCK_EX)
+                records = self._decode_ledger_lines(tuple(handle))
+                state = self._replay(records)
+                watermark = len(records)
+                ordered = self._open_members(records, scopes=scopes)
+                issued_at = now_provider()
+                signing_key = (
+                    self.cursor_signing_key(now=issued_at)
+                    if len(ordered) > page_size
+                    else None
+                )
+                by_kind = (
+                    (
+                        CompositeChildKind.SEMANTIC,
+                        [
+                            item
+                            for item in ordered
+                            if item.kind is not ConflictKind.STORAGE_INTEGRITY
+                        ],
+                    ),
+                    (
+                        CompositeChildKind.INTEGRITY,
+                        [
+                            item
+                            for item in ordered
+                            if item.kind is ConflictKind.STORAGE_INTEGRITY
+                        ],
+                    ),
+                )
+                bindings: list[CompositeConflictChildSnapshotBinding] = []
+                all_keys: list[tuple[CompositeConflictMemberKey, ...]] = []
+                entries: list[_SnapshotLedgerEntry] = []
+                for child_kind, members in by_kind:
+                    repository_id = _digest(
+                        _CHILD_REPOSITORY_ID_DOMAIN,
+                        {
+                            "repository_id": self._repository_id,
+                            "child_kind": str(child_kind),
+                        },
+                    )
+                    keys = tuple(
+                        CompositeConflictMemberKey.create(
+                            child_kind=child_kind,
+                            child_repository_id=repository_id,
+                            conflict_id=item.conflict_id,
+                            conflict_revision=item.conflict_revision,
+                            conflict_record_digest=state.introductions[
+                                item.conflict_id
+                            ].entry_digest,
+                        )
+                        for item in members
+                    )
+                    child_snapshot = self._create_snapshot(
+                        access,
+                        scopes=scopes,
+                        members=members,
+                        watermark=watermark,
+                        created_at=issued_at,
+                    )
+                    entries.append(_SnapshotLedgerEntry(snapshot=child_snapshot))
+                    bindings.append(
+                        CompositeConflictChildSnapshotBinding.create(
+                            child_kind=child_kind,
+                            child_repository_id=repository_id,
+                            child_snapshot_id=child_snapshot.snapshot_id,
+                            child_snapshot_digest=child_snapshot.snapshot_digest,
+                            child_watermark=watermark,
+                            child_authority_set_digest=_digest(
+                                _CHILD_AUTHORITY_SET_DOMAIN,
+                                {
+                                    "ordered_member_key_digests": [
+                                        key.member_key_digest for key in keys
+                                    ]
+                                },
+                            ),
+                            ordered_member_key_digests=tuple(
+                                key.member_key_digest for key in keys
+                            ),
+                        )
+                    )
+                    all_keys.append(keys)
+                snapshot = assemble_composite_snapshot(
+                    snapshot_id=token_hex(16),
+                    access=access,
+                    semantic_binding=bindings[0],
+                    integrity_binding=bindings[1],
+                    ordered_semantic_keys=all_keys[0],
+                    ordered_integrity_keys=all_keys[1],
+                    created_at=issued_at,
+                    listing_scope_ids=scopes,
+                )
+                next_cursor = None
+                if signing_key is not None:
+                    next_cursor = encode_composite_cursor(
+                        composite_cursor_claims(
+                            snapshot, snapshot.members[page_size - 1]
+                        )
+                        | {"issued_at": issued_at},
+                        key=signing_key,
+                    )
+                for entry in entries:
+                    self._append_locked(handle, entry)
+                self._append_locked(
+                    handle, _CompositeSnapshotLedgerEntry(snapshot=snapshot)
+                )
+                handle.flush()
+                os.fsync(handle.fileno())
+        except ConflictAttentionReadError:
+            raise
+        except CompositeConflictListingError as exc:
+            raise ConflictAttentionReadError(exc.reason) from None
+        except (OSError, TypeError, ValueError):
+            raise ConflictAttentionReadError("conflict_attention_corrupt") from None
+        return snapshot, next_cursor
+
     def retain_composite_snapshot(
         self, snapshot: CompositeConflictListingSnapshot
     ) -> None:
@@ -904,8 +1041,16 @@ class FileConflictAttentionRepository:
             items.append(attention)
         return tuple(items)
 
-    def cursor_signing_key(self) -> ConflictCursorKey:
+    def cursor_signing_key(self, *, now: datetime | None = None) -> ConflictCursorKey:
+        signing_now = self._now() if now is None else now
+        if not self._key_may_sign(self._active, signing_now):
+            raise ConflictAttentionReadError("conflict_cursor_key_unavailable")
         return self._active
+
+    def cursor_clock(self) -> datetime:
+        """Return the clock that governs this ledger's cursor key windows."""
+
+        return self._now()
 
     def cursor_keys(self) -> dict[tuple[str, int], ConflictCursorKey]:
         return dict(self._keys)
@@ -922,8 +1067,9 @@ class FileConflictAttentionRepository:
         scopes: tuple[str, ...],
         members: list[ConflictAttention],
         watermark: int,
+        created_at: datetime | None = None,
     ) -> ConflictListingSnapshot:
-        created_at = self._now()
+        snapshot_time = self._now() if created_at is None else created_at
         provisional = ConflictListingSnapshot(
             snapshot_id=token_hex(16),
             tenant_id=access.tenant_id,
@@ -935,8 +1081,8 @@ class FileConflictAttentionRepository:
             scope_digest=access.scope_digest,
             conflict_ledger_watermark=watermark,
             canonical_member_ids=tuple(item.conflict_id for item in members),
-            created_at=created_at,
-            expires_at=created_at + _CURSOR_LIFETIME,
+            created_at=snapshot_time,
+            expires_at=snapshot_time + _CURSOR_LIFETIME,
             snapshot_digest="0" * 64,
         )
         return ConflictListingSnapshot(

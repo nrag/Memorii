@@ -66,6 +66,13 @@ GRAPH_SCENARIO_BEHAVIOR = {
     "rollback": "rollback",
     "coordinator_removed": "coordinator_removed",
     "authority_omitted": "authority_omitted",
+    # These rows retain the native V3 progress closure as the observable.
+    # They deliberately reuse the production boundary behaviors rather than
+    # introduce a scenario-only implementation path.
+    "source_progress_initial": "normal_success",
+    "source_progress_related_conflict": "real_related_conflict",
+    "source_progress_lost_ack": "lost_ack",
+    "source_progress_reclaimed_lease": "lease_reclaimed",
 }
 
 
@@ -146,23 +153,24 @@ def graph_host_bundle_builders() -> tuple[object, BootstrapGraphHostBundleBuilde
 
 
 def graph_fact_proposal(group_count: int = 1) -> ProviderSemanticProposal:
+    assertion = "Atlas owner is Bob."
     facts = (
         ProviderFact(
             local_id="owner", predicate_id="owner_is", subject_entity_ref="atlas",
             object=ProviderEntityObject(entity_ref="bob"),
-            assertion_quote="Atlas owner is Bob.", predicate_anchor_quote="owner",
+            assertion_quote=assertion, predicate_anchor_quote="owner",
             polarity="positive", commitment="asserted",
         ),
         ProviderFact(
-            local_id="owned-by", predicate_id="owned_by", subject_entity_ref="bob",
+            local_id="owned-by", predicate_id="owner_is", subject_entity_ref="bob",
             object=ProviderEntityObject(entity_ref="atlas"),
-            assertion_quote="Atlas owner is Bob.", predicate_anchor_quote="Bob",
+            assertion_quote=assertion, predicate_anchor_quote="Bob",
             polarity="positive", commitment="asserted",
         ),
         ProviderFact(
-            local_id="managed-by", predicate_id="managed_by", subject_entity_ref="atlas",
+            local_id="managed-by", predicate_id="owner_is", subject_entity_ref="atlas",
             object=ProviderEntityObject(entity_ref="bob"),
-            assertion_quote="Atlas owner is Bob.", predicate_anchor_quote="owner",
+            assertion_quote=assertion, predicate_anchor_quote="owner",
             polarity="positive", commitment="asserted",
         ),
     )
@@ -170,15 +178,13 @@ def graph_fact_proposal(group_count: int = 1) -> ProviderSemanticProposal:
         mentions=(
             ProviderMention(
                 local_id="atlas", mention_quote="Atlas",
-                mention_context_quote="Atlas owner is Bob.",
+                mention_context_quote=assertion,
             ),
             ProviderMention(
                 local_id="bob", mention_quote="Bob",
-                mention_context_quote="Atlas owner is Bob.",
+                mention_context_quote=assertion,
             ),
         ),
         facts=facts[:group_count],
         abstained=False,
     )
-
-

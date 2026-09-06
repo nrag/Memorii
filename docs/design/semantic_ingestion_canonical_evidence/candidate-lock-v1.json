@@ -15,7 +15,7 @@
     },
     "binding_map": {
       "path": "docs/design/semantic_ingestion_canonical_evidence/production-entrypoint-bindings-v1.json",
-      "sha256": "a6fcea628b15908fa9f7f1fc5929f646c4550442a482168bf6b1588560ec0b78"
+      "sha256": "2bd1b7ba27cac9424a21d0a3315df11791ee757cd8206567b49d868ca48f3aec"
     },
     "performance_schema": {
       "path": "docs/design/semantic_ingestion_canonical_evidence/performance-run-schema-v1.json",
@@ -27,7 +27,7 @@
     },
     "fixture_manifest": {
       "path": "docs/design/semantic_ingestion_canonical_evidence/standard-fixture-manifest-v1.json",
-      "sha256": "912a4548ff25a7c5f36be386828d75ac15f2bb12c8e531bdb38b5e5e87bc97c7"
+      "sha256": "6feca978bcae112ab7065333b217a971ce8a35a20396cdfb0c12532c3a8d715e"
     },
     "production_sources": {
       "path": "docs/design/semantic_ingestion_canonical_evidence/production-source-manifest-v1.json",
@@ -79,7 +79,7 @@
     },
     "comparison_schedule_authority": {
       "path": "docs/design/semantic_ingestion_canonical_evidence/comparison-schedule-authority-v1.json",
-      "sha256": "2d91fbc5cf0388b09adb814dc62aa4c8753d3fb589b3c34a1df31067d127a23c"
+      "sha256": "823a6512788bc975f0f519d0e65a8c4306dc682ff0cced568bdc4b2b7784246f"
     },
     "comparison_result_binding_schema": {
       "path": "docs/design/semantic_ingestion_canonical_evidence/comparison-result-binding-schema-v1.json",

@@ -33,7 +33,7 @@ from memorii.core.semantic_ingestion.contracts import (
     contract_digest,
 )
 from pydantic import BaseModel
-from semantic_terminal_test_support import accepted_terminal
+from tests.fixtures.semantic_ingestion.semantic_terminal_fixture import accepted_terminal
 
 NOW = datetime(2026, 8, 3, tzinfo=UTC)
 
@@ -268,12 +268,15 @@ def next_canonical_graph_record_versions(
     }
     advanced = []
     for record in records:
-        values = record.model_dump(mode="python", exclude={"record_digest"})
+        # Record factories serialize their provisional model before validating.
+        # Keep nested members typed here so that serializer sees the exact
+        # already-validated contract objects rather than dumped dictionaries.
+        values = dict(record.__dict__)
+        values.pop("record_digest")
         values["record_version"] = record.record_version + 1
         if isinstance(record, IdentityLineageRecord):
-            transition_values = record.transition.model_dump(
-                mode="python", exclude={"transition_digest"}
-            )
+            transition_values = dict(record.transition.__dict__)
+            transition_values.pop("transition_digest")
             transition_values["graph_revision_before"] = graph_revision_before
             transition_values["lineage_snapshot_before_digest"] = (
                 record.transition.lineage_snapshot_after_digest
@@ -286,13 +289,16 @@ def next_canonical_graph_record_versions(
             # creates a new stable record rather than versioning the old one.
             values["record_version"] = 1
         if record.record_kind in temporal_kinds:
+            digest_values = type(record).model_construct(
+                **values, record_digest="0" * 64
+            ).model_dump(mode="python", exclude={"record_digest"})
             advanced.append(
                 type(record).model_validate(
                     values
                     | {
                         "record_digest": contract_digest(
                             b"memorii.semantic-ingestion.temporal-carrier.v1",
-                            values,
+                            digest_values,
                         )
                     }
                 )

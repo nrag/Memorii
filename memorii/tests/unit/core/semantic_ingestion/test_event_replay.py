@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import hmac
 import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
@@ -90,8 +89,14 @@ from memorii.domain.enums import (
     MemoryDomain,
     MemoryRecordVisibility,
 )
-from pydantic import ValidationError
-from semantic_terminal_test_support import NOW, accepted_terminal
+from pydantic import BaseModel, ValidationError
+from tests.fixtures.semantic_ingestion.event_replay_fixture import (
+    CheckpointKeyMaterial,
+    DeterministicCheckpointSignatureAuthority,
+    ExactProjectionHistoryVerifier,
+    projection_history_bindings,
+)
+from tests.fixtures.semantic_ingestion.semantic_terminal_fixture import NOW, accepted_terminal
 
 
 def _real_claim_replay(
@@ -441,81 +446,6 @@ def test_atemporal_claims_arbitrate_in_one_atemporal_atom() -> None:
 
 def _digest(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
-
-
-class _TestCheckpointKeyMaterial:
-    def __init__(self, *, key_id: str, secret: bytes) -> None:
-        self.key_id = key_id
-        self.secret = secret
-
-    @property
-    def public_key_fingerprint(self) -> str:
-        return hashlib.sha256(self.secret).hexdigest()
-
-
-class _TestCheckpointSignatureAuthority:
-    def __init__(self, material: _TestCheckpointKeyMaterial) -> None:
-        self._material = material
-
-    @property
-    def key_id(self) -> str:
-        return self._material.key_id
-
-    @property
-    def public_key_fingerprint(self) -> str:
-        return self._material.public_key_fingerprint
-
-    def sign_checkpoint_digest(self, checkpoint_digest: str) -> str:
-        return hmac.new(
-            self._material.secret,
-            b"memorii.semantic-replay-checkpoint-signature.v1\0" + checkpoint_digest.encode("ascii"),
-            hashlib.sha256,
-        ).hexdigest()
-
-    def verify_checkpoint_signature(
-        self,
-        checkpoint_digest: str,
-        signature: str,
-    ) -> bool:
-        return hmac.compare_digest(
-            self.sign_checkpoint_digest(checkpoint_digest),
-            signature,
-        )
-
-
-def _projection_bindings(
-    repository_id: str,
-) -> tuple[ProjectionHistoryReplayBinding, ...]:
-    return tuple(
-        ProjectionHistoryReplayBinding.create(
-            projection_kind=kind,
-            repository_id=repository_id,
-            history_prefix_digest=_digest(f"{kind}-history-prefix"),
-            active_pointer_digest=_digest(f"{kind}-active-pointer"),
-            generation_digest=_digest(f"{kind}-generation"),
-        )
-        for kind in ("temporal", "trust")
-    )
-
-
-class _ExactProjectionHistoryVerifier:
-    def __init__(
-        self,
-        *,
-        bindings: tuple[ProjectionHistoryReplayBinding, ...],
-        graph_revision: str,
-    ) -> None:
-        self._bindings = bindings
-        self._graph_revision = graph_revision
-
-    def validate_checkpoint_bindings(
-        self,
-        bindings: tuple[ProjectionHistoryReplayBinding, ...],
-        *,
-        graph_revision: str,
-    ) -> None:
-        if bindings != self._bindings or graph_revision != self._graph_revision:
-            raise ValueError("projection checkpoint authority diverged")
 
 
 def _snapshot(*, coordinate: int = 10, retained_byte_one: str | None = None) -> ConflictRepositoryIntegritySnapshot:
@@ -1872,8 +1802,8 @@ def test_signed_checkpoint_tail_equals_genesis_and_rejects_policy_rollback() -> 
         before="revision-1",
         after="revision-2",
     )
-    material = _TestCheckpointKeyMaterial(key_id="checkpoint-key", secret=b"k" * 32)
-    signature_authority = _TestCheckpointSignatureAuthority(material)
+    material = CheckpointKeyMaterial(key_id="checkpoint-key", secret=b"k" * 32)
+    signature_authority = DeterministicCheckpointSignatureAuthority(material)
     key = ReplayCheckpointSigningKey.create(
         key_id=material.key_id,
         issuer_id="operator",
@@ -1898,7 +1828,7 @@ def test_signed_checkpoint_tail_equals_genesis_and_rejects_policy_rollback() -> 
         signature_authority_provider=lambda _: signature_authority,
         signing_key_id=material.key_id,
     )
-    projection_bindings = _projection_bindings("repository")
+    projection_bindings = projection_history_bindings("repository")
     bundle = create_replay_checkpoint(
         state=first_state,
         watermark_batch=first,
@@ -1912,7 +1842,7 @@ def test_signed_checkpoint_tail_equals_genesis_and_rejects_policy_rollback() -> 
         match="projection history verifier is required",
     ):
         validate_replay_checkpoint(bundle, authority=authority)
-    checkpoint_verifier = _ExactProjectionHistoryVerifier(
+    checkpoint_verifier = ExactProjectionHistoryVerifier(
         bindings=projection_bindings,
         graph_revision=first_state.graph_revision,
     )
@@ -2004,11 +1934,74 @@ def test_signed_checkpoint_tail_equals_genesis_and_rejects_policy_rollback() -> 
                 signature_authority_provider=lambda _: signature_authority,
                 signing_key_id=material.key_id,
             ),
-            projection_history_verifier=_ExactProjectionHistoryVerifier(
+            projection_history_verifier=ExactProjectionHistoryVerifier(
                 bindings=projection_bindings,
                 graph_revision=first_state.graph_revision,
             ),
         )
+
+
+def _nested_model_types(value: object, path: str = "") -> dict[str, type[BaseModel]]:
+    if isinstance(value, BaseModel):
+        nested = {path: type(value)} if path else {}
+        for field_name in type(value).model_fields:
+            nested.update(
+                _nested_model_types(
+                    getattr(value, field_name),
+                    f"{path}.{field_name}" if path else field_name,
+                )
+            )
+        return nested
+    if isinstance(value, (tuple, list)):
+        nested = {}
+        for index, item in enumerate(value):
+            nested.update(_nested_model_types(item, f"{path}[{index}]"))
+        return nested
+    return {}
+
+
+def test_next_canonical_graph_record_versions_preserves_typed_nested_contracts() -> None:
+    records = all_canonical_graph_records(repository_id="repository")
+    advanced = next_canonical_graph_record_versions(
+        records,
+        graph_revision_before="revision-all-kinds",
+    )
+
+    assert len(records) == len(advanced) == 12
+    for original, current in zip(records, advanced, strict=True):
+        assert type(current) is type(original)
+        assert _nested_model_types(current) == _nested_model_types(original)
+
+        original_values = original.model_dump(mode="python")
+        current_values = current.model_dump(mode="python")
+        original_values.pop("record_digest")
+        current_values.pop("record_digest")
+        original_values.pop("record_version")
+        current_values.pop("record_version")
+        if original.record_kind == "identity_lineage":
+            for values in (original_values, current_values):
+                values.pop("identity_lineage_id")
+                values.pop("statement_digest")
+                transition = values["transition"]
+                for field_name in (
+                    "transition_digest",
+                    "graph_revision_before",
+                    "lineage_snapshot_before_digest",
+                ):
+                    transition.pop(field_name)
+            assert current.record_version == 1
+            assert current.transition.graph_revision_before == "revision-all-kinds"
+            assert (
+                current.transition.lineage_snapshot_before_digest
+                == original.transition.lineage_snapshot_after_digest
+            )
+        else:
+            assert current.record_version == original.record_version + 1
+        assert current_values == original_values
+
+        round_tripped = type(current).model_validate(current.model_dump(mode="python"))
+        assert round_tripped == current
+        assert round_tripped.record_digest == current.record_digest
 
 
 def test_all_graph_record_kinds_survive_signed_checkpoint_tail_and_genesis_replay() -> None:
@@ -2105,10 +2098,10 @@ def test_all_graph_record_kinds_survive_signed_checkpoint_tail_and_genesis_repla
         fence="tail-update-fence",
         registry=registry,
     )
-    material = _TestCheckpointKeyMaterial(
+    material = CheckpointKeyMaterial(
         key_id="all-kinds-checkpoint-key", secret=b"a" * 32
     )
-    signature_authority = _TestCheckpointSignatureAuthority(material)
+    signature_authority = DeterministicCheckpointSignatureAuthority(material)
     key = ReplayCheckpointSigningKey.create(
         key_id=material.key_id,
         issuer_id="operator",
@@ -2133,7 +2126,7 @@ def test_all_graph_record_kinds_survive_signed_checkpoint_tail_and_genesis_repla
         signature_authority_provider=lambda _: signature_authority,
         signing_key_id=material.key_id,
     )
-    bindings = _projection_bindings("repository")
+    bindings = projection_history_bindings("repository")
     bundle = create_replay_checkpoint(
         state=first_state,
         watermark_batch=first,
@@ -2146,7 +2139,7 @@ def test_all_graph_record_kinds_survive_signed_checkpoint_tail_and_genesis_repla
         bundle,
         tail_batches=(second,),
         authority=authority,
-        projection_history_verifier=_ExactProjectionHistoryVerifier(
+        projection_history_verifier=ExactProjectionHistoryVerifier(
             bindings=bindings,
             graph_revision=first_state.graph_revision,
         ),
@@ -2240,8 +2233,8 @@ def test_checkpoint_mutation_families_never_expose_state(mutation: str) -> None:
         after="revision-1",
     )
     state = replay_semantic_event_batches(repository_id="repository", batches=(first,), registry=registry)
-    material = _TestCheckpointKeyMaterial(key_id="checkpoint-key", secret=b"k" * 32)
-    signature_authority = _TestCheckpointSignatureAuthority(material)
+    material = CheckpointKeyMaterial(key_id="checkpoint-key", secret=b"k" * 32)
+    signature_authority = DeterministicCheckpointSignatureAuthority(material)
     clock = [NOW]
     key = ReplayCheckpointSigningKey.create(
         key_id=material.key_id,
@@ -2275,7 +2268,7 @@ def test_checkpoint_mutation_families_never_expose_state(mutation: str) -> None:
         writer_epoch=1,
         authority=authority,
         created_at=NOW,
-        projection_history_bindings=_projection_bindings("repository"),
+        projection_history_bindings=projection_history_bindings("repository"),
     )
     mutated_bundle = bundle
     mutated_authority = authority
@@ -2377,7 +2370,7 @@ def test_checkpoint_mutation_families_never_expose_state(mutation: str) -> None:
         exposed = validate_replay_checkpoint(
             mutated_bundle,
             authority=mutated_authority,
-            projection_history_verifier=_ExactProjectionHistoryVerifier(
+            projection_history_verifier=ExactProjectionHistoryVerifier(
                 bindings=bundle.checkpoint.projection_history_bindings,
                 graph_revision=state.graph_revision,
             ),
@@ -2446,7 +2439,7 @@ def _semantic_conflict_replay_binding(
 
     if not records:
         return SemanticConflictReplayBinding.genesis("semantic_ingestion")
-    from semantic_terminal_test_support import handoff
+    from tests.fixtures.semantic_ingestion.semantic_terminal_fixture import handoff
     from tests.unit.core.semantic_ingestion.test_semantic_terminal_persistence import (
         AUTHORIZATION,
         _activate,
@@ -2539,8 +2532,8 @@ def test_semantic_conflict_derivation_and_replay_matrix_is_byte_exact(tmp_path: 
         repository_id="semantic_ingestion",
     )
     state = replay_semantic_event_batches(repository_id="semantic_ingestion", batches=(batch,), registry=registry)
-    material = _TestCheckpointKeyMaterial(key_id="conflict-binding-key", secret=b"c" * 32)
-    signature_authority = _TestCheckpointSignatureAuthority(material)
+    material = CheckpointKeyMaterial(key_id="conflict-binding-key", secret=b"c" * 32)
+    signature_authority = DeterministicCheckpointSignatureAuthority(material)
     key = ReplayCheckpointSigningKey.create(
         key_id=material.key_id,
         issuer_id="operator",
@@ -2565,7 +2558,7 @@ def test_semantic_conflict_derivation_and_replay_matrix_is_byte_exact(tmp_path: 
         signature_authority_provider=lambda _: signature_authority,
         signing_key_id=material.key_id,
     )
-    projection_bindings = _projection_bindings("semantic_ingestion")
+    projection_bindings = projection_history_bindings("semantic_ingestion")
     # One real durable terminal publication/reopen proves the store boundary.
     # The remaining entries are deliberately only replay/checkpoint inputs;
     # they must not multiply the multi-minute terminal setup per ordering.
@@ -2586,7 +2579,7 @@ def test_semantic_conflict_derivation_and_replay_matrix_is_byte_exact(tmp_path: 
             bundle,
             tail_batches=(),
             authority=authority,
-            projection_history_verifier=_ExactProjectionHistoryVerifier(
+            projection_history_verifier=ExactProjectionHistoryVerifier(
                 bindings=projection_bindings,
                 graph_revision=state.graph_revision,
             ),
@@ -2621,8 +2614,8 @@ def test_semantic_conflict_replay_binding_rejects_every_prefix_and_pointer_mutat
         repository_id="semantic_ingestion",
     )
     state = replay_semantic_event_batches(repository_id="semantic_ingestion", batches=(batch,), registry=registry)
-    material = _TestCheckpointKeyMaterial(key_id="conflict-mutation-key", secret=b"m" * 32)
-    signature_authority = _TestCheckpointSignatureAuthority(material)
+    material = CheckpointKeyMaterial(key_id="conflict-mutation-key", secret=b"m" * 32)
+    signature_authority = DeterministicCheckpointSignatureAuthority(material)
     key = ReplayCheckpointSigningKey.create(
         key_id=material.key_id,
         issuer_id="operator",
@@ -2647,7 +2640,7 @@ def test_semantic_conflict_replay_binding_rejects_every_prefix_and_pointer_mutat
         signature_authority_provider=lambda _: signature_authority,
         signing_key_id=material.key_id,
     )
-    bindings = _projection_bindings("semantic_ingestion")
+    bindings = projection_history_bindings("semantic_ingestion")
     bundle = create_replay_checkpoint(
         state=state,
         watermark_batch=batch,
@@ -2667,7 +2660,7 @@ def test_semantic_conflict_replay_binding_rejects_every_prefix_and_pointer_mutat
             exposed = validate_replay_checkpoint(
                 bundle.model_copy(update={"checkpoint": checkpoint}),
                 authority=authority,
-                projection_history_verifier=_ExactProjectionHistoryVerifier(
+                projection_history_verifier=ExactProjectionHistoryVerifier(
                     bindings=bindings,
                     graph_revision=state.graph_revision,
                 ),

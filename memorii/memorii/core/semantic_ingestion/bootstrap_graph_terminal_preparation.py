@@ -69,6 +69,7 @@ def build_bootstrap_graph_execution_stage_outcomes(
     final_attempt: BootstrapGraphDependentAttemptV3,
     complete_lineage: BootstrapSourcePlanLineageV3,
     group_constructions: tuple[BootstrapNativeGroupCommitTerminalConstructionV3, ...],
+    finalized_failure_group_id: str | None = None,
 ) -> tuple[
     tuple[IngestionStageOutcome, ...],
     tuple[tuple[str, tuple[IngestionStageOutcome, ...]], ...],
@@ -97,8 +98,18 @@ def build_bootstrap_graph_execution_stage_outcomes(
         raise ValueError("bootstrap graph execution stage inputs are substituted")
 
     dispositions = {item.transaction_group_id: item.disposition for item in group_constructions}
-    group_ids = tuple(sorted(dispositions))
-    if not group_ids or len(dispositions) != len(group_constructions):
+    group_ids = tuple(
+        group_id for group_id, _entry_digest in complete_lineage.latest_entry_by_group
+    )
+    if (
+        not group_ids
+        or len(dispositions) != len(group_constructions)
+        or not set(dispositions).issubset(group_ids)
+        or (
+            finalized_failure_group_id is not None
+            and finalized_failure_group_id not in group_ids
+        )
+    ):
         raise ValueError("bootstrap graph execution stage groups are invalid")
 
     routes = host_authority.segment_language_routes.routes
@@ -123,15 +134,17 @@ def build_bootstrap_graph_execution_stage_outcomes(
     # summary persistence remain explicitly blocked. Noncommitting groups are durable
     # evidence, while committed groups retain their persistence terminal.
     for group_id in group_ids:
-        disposition = dispositions[group_id]
+        disposition = dispositions.get(group_id)
         for spec in CANONICAL_INGESTION_EXECUTION_GRAPH.stages:
             if "transaction_group" not in spec.allowed_scopes:
                 continue
             instance = IngestionStageInstanceRef(
                 stage=spec.stage, scope="transaction_group", transaction_group_id=group_id
             )
-            if disposition == "failed":
+            if group_id == finalized_failure_group_id:
                 target_status[instance] = "failed" if spec.stage == "graph_compilation" else "not_started"
+            elif disposition is None:
+                target_status[instance] = "not_started"
             elif disposition == "committed" and spec.stage == "transaction_group_persistence":
                 target_status[instance] = "committed"
             elif disposition == "committed":
@@ -239,6 +252,7 @@ class BootstrapGraphTerminalPreparationPortV3(Protocol):
         complete_lineage: BootstrapSourcePlanLineageV3,
         group_constructions: tuple[BootstrapNativeGroupCommitTerminalConstructionV3, ...],
         host_authority: BootstrapGraphTerminalHostAuthorityV3,
+        finalized_failure_group_id: str | None = None,
     ) -> BootstrapGraphTerminalPreparationV3: ...
 
 
@@ -294,6 +308,7 @@ class DeterministicBootstrapGraphTerminalPreparationV3:
         complete_lineage: BootstrapSourcePlanLineageV3,
         group_constructions: tuple[BootstrapNativeGroupCommitTerminalConstructionV3, ...],
         host_authority: BootstrapGraphTerminalHostAuthorityV3,
+        finalized_failure_group_id: str | None = None,
     ) -> BootstrapGraphTerminalPreparationV3:
         final_plan = final_compilation.plan
         source_outcomes, transaction_group_outcomes, causal_blockers = (
@@ -304,6 +319,7 @@ class DeterministicBootstrapGraphTerminalPreparationV3:
                 final_attempt=final_attempt,
                 complete_lineage=complete_lineage,
                 group_constructions=group_constructions,
+                finalized_failure_group_id=finalized_failure_group_id,
             )
         )
         causal_blockers = _canonical_stage_instances(
@@ -364,8 +380,13 @@ class DeterministicBootstrapGraphTerminalPreparationV3:
         constructions = self._ordered_constructions(
             plan=final_plan, construction=manifest_construction,
             group_constructions=group_constructions,
+            finalized_failure_group_id=finalized_failure_group_id,
         )
-        status = self._source_status(constructions)
+        status = (
+            "failed"
+            if finalized_failure_group_id is not None
+            else self._source_status(constructions)
+        )
         operation_ids = tuple(sorted({
             operation_id
             for member in final_plan.group_members
@@ -484,10 +505,23 @@ class DeterministicBootstrapGraphTerminalPreparationV3:
         *, plan: BootstrapTransactionGroupPlanV3,
         construction: BootstrapGraphExecutionManifestConstructionV3,
         group_constructions: tuple[BootstrapNativeGroupCommitTerminalConstructionV3, ...],
+        finalized_failure_group_id: str | None = None,
     ) -> tuple[BootstrapNativeGroupCommitTerminalConstructionV3, ...]:
+        result_group_ids = tuple(
+            item.transaction_group_id for item in group_constructions
+        )
+        expected_group_ids = (
+            plan.canonical_group_order
+            if finalized_failure_group_id is None
+            else plan.canonical_group_order[
+                : plan.canonical_group_order.index(finalized_failure_group_id)
+            ]
+        )
         if (
-            not group_constructions
-            or tuple(item.transaction_group_id for item in group_constructions) != plan.canonical_group_order
+            finalized_failure_group_id is not None
+            and finalized_failure_group_id not in plan.canonical_group_order
+        ) or (
+            result_group_ids != expected_group_ids
             or tuple(item.group_commit_reload.reload_digest for item in group_constructions)
             != construction.ordered_group_commit_reload_digests
         ):

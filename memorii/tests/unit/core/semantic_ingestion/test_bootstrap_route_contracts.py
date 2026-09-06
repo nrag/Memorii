@@ -17,7 +17,7 @@ from memorii.core.semantic_ingestion.contracts import (
     SourceSpanReference,
     contract_digest,
 )
-from tests.unit.core.semantic_ingestion.clean_room_request_test_support import build_prepared_source_authority
+from tests.fixtures.semantic_ingestion.clean_room_request_fixture import build_prepared_source_authority
 
 
 def _hex(label: str) -> str:

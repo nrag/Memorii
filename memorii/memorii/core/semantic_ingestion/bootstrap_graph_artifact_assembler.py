@@ -11,19 +11,26 @@ from hashlib import sha256
 from memorii.core.memory_evolution.ingestion_contracts import encode_typed_value
 from memorii.core.semantic_ingestion.contracts import (
     BootstrapFinalGroupResultReferenceV3,
+    BootstrapGraphAtomicMemberReferenceV3,
     BootstrapGraphAttemptConstructionInputsV3,
+    BootstrapGraphAttemptPublishedProgressV3,
     BootstrapGraphDependentAttemptV3,
     BootstrapGraphDurableRetryProgressV3,
     BootstrapGraphFinalStageEvidenceV3,
     BootstrapGraphGroupCasRequestV3,
     BootstrapGraphGroupCommitReloadV3,
+    BootstrapGraphObservedCountersV3,
     BootstrapGraphPlanAtomicWriteRequestV3,
     BootstrapGraphPlanAuthorizationSetV3,
     BootstrapGraphPlanCompilationV3,
+    BootstrapGraphPlannedProgressV3,
+    BootstrapGraphPlanPublishedProgressV3,
     BootstrapGraphPreExecutionManifestCoreV3,
     BootstrapGraphPreExecutionManifestIdentityClosureV3,
     BootstrapGraphPreExecutionManifestIdentityV3,
+    BootstrapGraphReplanClosureReferenceV3,
     BootstrapGraphReplanPartitionV3,
+    BootstrapGraphReplayBundleV3,
     BootstrapGraphTerminalHandoffCoreV3,
     BootstrapGraphTerminalPersistenceHandoffV3,
     BootstrapGraphTerminalPublicationIntentV3,
@@ -41,6 +48,7 @@ from memorii.core.semantic_ingestion.contracts import (
     BootstrapSourcePlanLineageV3,
     BootstrapSuccessorAttemptAuthorityV3,
     BootstrapTransactionGroupPlanMemberV3,
+    BootstrapTransactionGroupPlanV3,
     contract_digest,
     encode_bootstrap_graph_atomic_member_payload_v3,
 )
@@ -48,6 +56,118 @@ from memorii.core.semantic_ingestion.contracts import (
 
 class BootstrapGraphArtifactAssemblerV3:
     """Build only closed artifacts; it neither reads nor writes repositories."""
+
+    @staticmethod
+    def _retained_compilation(
+        compilation: object,
+    ) -> BootstrapGraphPlanCompilationV3:
+        """Strip the runtime compiler facade before persisting native bytes."""
+        native = getattr(compilation, "native", compilation)
+        if not isinstance(native, BootstrapGraphPlanCompilationV3):
+            raise ValueError("bootstrap graph compilation is not a native artifact")
+        return native
+
+    @staticmethod
+    def successor_compilation(
+        *, replacement: object, predecessor: BootstrapGraphPlanCompilationV3,
+        replanned_group_ids: tuple[str, ...],
+    ) -> BootstrapGraphPlanCompilationV3:
+        """Retain predecessor compiler bytes for every unreplanned group."""
+        fresh = BootstrapGraphArtifactAssemblerV3._retained_compilation(replacement)
+        replanned = set(replanned_group_ids)
+        predecessor_members = {
+            item.transaction_group_id: item
+            for item in predecessor.transaction_group_plan.group_members
+        }
+        members = tuple(
+            item
+            if item.transaction_group_id in replanned
+            else predecessor_members[item.transaction_group_id]
+            for item in fresh.transaction_group_plan.group_members
+        )
+        plan = BootstrapTransactionGroupPlanV3.create(
+            request_digest=fresh.transaction_group_plan.request_digest,
+            normalization_replay_digest=(
+                fresh.transaction_group_plan.normalization_replay_digest
+            ),
+            source_alignment_digest=fresh.transaction_group_plan.source_alignment_digest,
+            graph_snapshot_digest=fresh.transaction_group_plan.graph_snapshot_digest,
+            sealed_read_set_digest=fresh.transaction_group_plan.sealed_read_set_digest,
+            fixed_point_rounds=fresh.transaction_group_plan.fixed_point_rounds,
+            group_members=members,
+            canonical_group_order=tuple(item.transaction_group_id for item in members),
+            execution_policy_reference_digest=(
+                fresh.transaction_group_plan.execution_policy_reference_digest
+            ),
+            operation_lease_binding_digest=(
+                fresh.transaction_group_plan.operation_lease_binding_digest
+            ),
+            operation_fence_binding_digest=(
+                fresh.transaction_group_plan.operation_fence_binding_digest
+            ),
+            writer_commit_binding_digest=(
+                fresh.transaction_group_plan.writer_commit_binding_digest
+            ),
+            control_epoch_digest=fresh.transaction_group_plan.control_epoch_digest,
+        )
+        predecessor_reductions = {
+            (item.transaction_group_id, item.operation_id): item
+            for item in predecessor.operation_reductions
+        }
+        reductions = tuple(
+            item
+            if item.transaction_group_id in replanned
+            else predecessor_reductions[(item.transaction_group_id, item.operation_id)]
+            for item in fresh.operation_reductions
+        )
+        predecessor_inputs = {
+            item.transaction_group_id: item
+            for item in predecessor.manifest_group_inputs
+        }
+        manifest_inputs = tuple(
+            item
+            if item.transaction_group_id in replanned
+            else predecessor_inputs[item.transaction_group_id]
+            for item in fresh.manifest_group_inputs
+        )
+        predecessor_evidence = {
+            item.transaction_group_id: item
+            for item in predecessor.pre_execution_evidence
+        }
+        evidence = tuple(
+            item
+            if item.transaction_group_id in replanned
+            else predecessor_evidence[item.transaction_group_id]
+            for item in fresh.pre_execution_evidence
+        )
+        fresh_inputs = fresh.attempt_construction_inputs
+        attempt_inputs = BootstrapGraphAttemptConstructionInputsV3.create(
+            request_digest=fresh_inputs.request_digest,
+            normalization_replay_digest=fresh_inputs.normalization_replay_digest,
+            normalization_result_digest=fresh_inputs.normalization_result_digest,
+            source_alignment_digest=fresh_inputs.source_alignment_digest,
+            graph_snapshot_digest=fresh_inputs.graph_snapshot_digest,
+            sealed_read_set_digest=fresh_inputs.sealed_read_set_digest,
+            reconciliation_digest=fresh_inputs.reconciliation_digest,
+            reference_closure_digest=fresh_inputs.reference_closure_digest,
+            execution_policy_reference_digest=(
+                fresh_inputs.execution_policy_reference_digest
+            ),
+            control_epoch_digest=fresh_inputs.control_epoch_digest,
+            ordered_pre_execution_evidence_digests=tuple(
+                item.evidence_digest for item in evidence
+            ),
+        )
+        return BootstrapGraphPlanCompilationV3.create(
+            request_digest=fresh.request_digest,
+            normalization_replay_digest=fresh.normalization_replay_digest,
+            control_epoch_digest=fresh.control_epoch_digest,
+            transaction_group_plan=plan,
+            operation_reductions=reductions,
+            manifest_group_inputs=manifest_inputs,
+            pre_execution_evidence=evidence,
+            attempt_construction_inputs=attempt_inputs,
+        )
 
     @staticmethod
     def _authorizations_match_plan(
@@ -89,6 +209,61 @@ class BootstrapGraphArtifactAssemblerV3:
             == plan.writer_commit_binding_digest
             for authorization, member in zip(values, members, strict=True)
         )
+
+    @staticmethod
+    def _successor_authorizations_match_plan(
+        *, authorizations: BootstrapGraphPlanAuthorizationSetV3,
+        plan: object, authority: BootstrapSuccessorAttemptAuthorityV3,
+        request_digest: str, control_epoch_digest: str,
+    ) -> bool:
+        members = tuple(plan.group_members)
+        values = authorizations.authorizations
+        group_authorities = authority.group_member_authorities
+        if (
+            authorizations.request_digest != request_digest
+            or authorizations.plan_digest != plan.plan_digest
+            or authorizations.control_epoch_digest != control_epoch_digest
+            or tuple(item.transaction_group_id for item in values)
+            != tuple(member.transaction_group_id for member in members)
+            or tuple(item.transaction_group_id for item in group_authorities)
+            != tuple(member.transaction_group_id for member in members)
+        ):
+            return False
+        for authorization, member, group_authority in zip(
+            values, members, group_authorities, strict=True
+        ):
+            expected = (
+                group_authority.replacement_planning_authorization
+                if group_authority.kind == "replacement"
+                else group_authority.planning_authorization
+                if group_authority.kind == "reused_final"
+                else group_authority.predecessor_planning_authorization
+            )
+            if (
+                expected is None
+                or authorization != expected
+                or authorization.group_plan_member_digest != member.member_digest
+                or authorization.operation_ids != member.operation_ids
+                or authorization.operation_plan_digests
+                != tuple(item.operation_plan_digest for item in member.operation_plans)
+                or authorization.graph_read_set_digest
+                != member.graph_read_set.read_set_digest
+                or authorization.operation_lease_binding_digest
+                != plan.operation_lease_binding_digest
+                or authorization.operation_fence_binding_digest
+                != plan.operation_fence_binding_digest
+                or authorization.writer_commit_binding_digest
+                != plan.writer_commit_binding_digest
+                or (
+                    group_authority.kind == "replacement"
+                    and (
+                        authorization.request_digest != request_digest
+                        or authorization.control_epoch_digest != control_epoch_digest
+                    )
+                )
+            ):
+                return False
+        return True
 
     @staticmethod
     def build_pre_execution_identity_closure(
@@ -144,7 +319,6 @@ class BootstrapGraphArtifactAssemblerV3:
             if preserved is not None:
                 if (
                     preserved.core.transaction_group_id != group_id
-                    or preserved.core.request_digest != attempt.request_digest
                     or preserved.core.normalization_replay_digest
                     != attempt.normalization_replay_digest
                     or preserved.core.execution_graph_fingerprint
@@ -165,15 +339,23 @@ class BootstrapGraphArtifactAssemblerV3:
                 or entry.group_plan_member_digest != member.member_digest
                 or group_input.group_plan_member != member
                 or group_evidence.request_digest != attempt.request_digest
-                or group_evidence.normalization_replay_digest != attempt.normalization_replay_digest
+                or group_evidence.normalization_replay_digest
+                != attempt.normalization_replay_digest
                 or group_evidence.group_plan_member_digest != member.member_digest
-                or group_evidence.graph_snapshot_digest != attempt.graph_snapshot_digest
-                or group_evidence.sealed_read_set_digest != attempt.sealed_read_set_digest
-                or group_evidence.reconciliation_digest != attempt.reconciliation_digest
-                or group_evidence.reference_closure_digest != attempt.reference_closure_digest
-                or group_evidence.control_epoch_digest != attempt.control_epoch_digest
+                or group_evidence.graph_snapshot_digest
+                != attempt.graph_snapshot_digest
+                or group_evidence.sealed_read_set_digest
+                != attempt.sealed_read_set_digest
+                or group_evidence.reconciliation_digest
+                != attempt.reconciliation_digest
+                or group_evidence.reference_closure_digest
+                != attempt.reference_closure_digest
+                or group_evidence.control_epoch_digest
+                != attempt.control_epoch_digest
             ):
-                raise ValueError("bootstrap graph pre-execution group closure is substituted")
+                raise ValueError(
+                    "bootstrap graph pre-execution group closure is substituted"
+                )
             core = BootstrapGraphPreExecutionManifestCoreV3.create(
                 request_digest=attempt.request_digest,
                 normalization_replay_digest=attempt.normalization_replay_digest,
@@ -225,10 +407,39 @@ class BootstrapGraphArtifactAssemblerV3:
                                    lineage: BootstrapSourcePlanLineageV3,
                                    ordered_group_commit_reload_digests: tuple[str, ...],
                                    source_outcomes: tuple[object, ...], graph_validation_attempts: tuple[object, ...],
-                                   causal_blockers: tuple[object, ...], proof_digests: tuple[str, ...]) -> BootstrapGraphFinalStageEvidenceV3:
+                                   causal_blockers: tuple[object, ...], proof_digests: tuple[str, ...],
+                                   finalized_failure_group_id: str | None = None) -> BootstrapGraphFinalStageEvidenceV3:
         group_ids = tuple(member.transaction_group_id for member in plan.group_members)
-        if request_digest != attempt.request_digest or normalization_replay_digest != attempt.normalization_replay_digest or plan.plan_digest != attempt.transaction_group_plan_digest or lineage.lineage_digest is None or len(group_ids) != len(ordered_group_commit_reload_digests):
-            raise ValueError("bootstrap graph final stage evidence inputs are substituted")
+        complete_reload_set = len(group_ids) == len(ordered_group_commit_reload_digests)
+        failed_suffix = (
+            finalized_failure_group_id in group_ids
+            and len(ordered_group_commit_reload_digests)
+            == group_ids.index(finalized_failure_group_id)
+        ) if finalized_failure_group_id is not None else False
+        request_matches = request_digest == attempt.request_digest
+        normalization_matches = (
+            normalization_replay_digest == attempt.normalization_replay_digest
+        )
+        plan_matches = plan.plan_digest == attempt.transaction_group_plan_digest
+        lineage_is_complete = lineage.lineage_digest is not None
+        if not (
+            request_matches
+            and normalization_matches
+            and plan_matches
+            and lineage_is_complete
+            and (complete_reload_set or failed_suffix)
+        ):
+            raise ValueError(
+                "bootstrap graph final stage evidence inputs are substituted: "
+                f"request_matches={request_matches}, "
+                f"normalization_matches={normalization_matches}, "
+                f"plan_matches={plan_matches}, "
+                f"lineage_is_complete={lineage_is_complete}, "
+                f"group_count={len(group_ids)}, "
+                f"reload_count={len(ordered_group_commit_reload_digests)}, "
+                f"finalized_failure_group_id={finalized_failure_group_id!r}, "
+                f"failure_index={group_ids.index(finalized_failure_group_id) if finalized_failure_group_id in group_ids else None}"
+            )
         return BootstrapGraphFinalStageEvidenceV3.create(request_digest=request_digest, normalization_replay_digest=normalization_replay_digest, attempt_digest=attempt.attempt_digest, transaction_group_plan_digest=plan.plan_digest, source_plan_lineage_digest=lineage.lineage_digest, ordered_transaction_group_ids=group_ids, ordered_group_commit_reload_digests=ordered_group_commit_reload_digests, source_outcomes=source_outcomes, graph_validation_attempts=graph_validation_attempts, causal_blockers=causal_blockers, terminal_before_planning_proof_digests=proof_digests, control_epoch_digest=attempt.control_epoch_digest)
 
     @classmethod
@@ -303,6 +514,167 @@ class BootstrapGraphArtifactAssemblerV3:
             payload_digest=sha256(payload).hexdigest(),
         )
 
+    @staticmethod
+    def _member_reference(*, repository_id: str, member: object, artifact: object,
+                          payload_type: str, generation: int) -> BootstrapGraphAtomicMemberReferenceV3:
+        return BootstrapGraphAtomicMemberReferenceV3.create(
+            repository_id=repository_id, artifact_digest=getattr(artifact, {
+                "BootstrapTransactionGroupPlanV3": "plan_digest",
+                "BootstrapGraphReplayBundleV3": "replay_bundle_digest",
+                "BootstrapGraphObservedCountersV3": "counters_digest",
+                "BootstrapGraphDependentAttemptV3": "attempt_digest",
+                "BootstrapSourcePlanLineageV3": "lineage_digest",
+                "BootstrapGraphPreExecutionManifestIdentityClosureV3": "closure_digest",
+                "BootstrapNativeGroupCommitTerminalConstructionV3": "result_digest",
+                "BootstrapGraphSourceProgressV3": "progress_digest",
+            }.get(payload_type, "authority_digest")),
+            generation=generation, member_id=member.member_id, member_kind=member.kind,
+            member_payload_digest=member.payload_digest, payload_type=payload_type,
+        )
+
+    @classmethod
+    def build_replan_closure_reference(
+        cls,
+        *,
+        predecessor_progress_member: object,
+        predecessor_progress: BootstrapGraphPlannedProgressV3,
+        predecessor_lineage_member: object,
+        predecessor_lineage: BootstrapSourcePlanLineageV3,
+        predecessor_generation: int,
+        final_result_members: tuple[
+            tuple[int, object, BootstrapNativeGroupCommitTerminalConstructionV3], ...
+        ],
+        unfinished_transaction_group_ids: tuple[str, ...],
+        replanned_transaction_group_ids: tuple[str, ...],
+    ) -> BootstrapGraphReplanClosureReferenceV3:
+        """Bind only already-sealed predecessor bytes for a related replan."""
+        predecessor_progress_reference = cls._member_reference(
+            repository_id="semantic_ingestion.bootstrap_graph_progress.v3",
+            member=predecessor_progress_member, artifact=predecessor_progress,
+            payload_type="BootstrapGraphSourceProgressV3", generation=predecessor_generation,
+        )
+        predecessor_lineage_reference = cls._member_reference(
+            repository_id="semantic_ingestion.bootstrap_source_plan_lineage.v3",
+            member=predecessor_lineage_member, artifact=predecessor_lineage,
+            payload_type="BootstrapSourcePlanLineageV3", generation=predecessor_generation,
+        )
+        final_references = tuple(sorted((
+            cls._member_reference(
+                repository_id="semantic_ingestion.bootstrap_group_result.v3",
+                member=member, artifact=result,
+                payload_type="BootstrapNativeGroupCommitTerminalConstructionV3",
+                generation=generation,
+            )
+            for generation, member, result in final_result_members
+        ), key=lambda reference: reference.member_id))
+        return BootstrapGraphReplanClosureReferenceV3.create(
+            predecessor_planned_progress_reference=predecessor_progress_reference,
+            predecessor_lineage_reference=predecessor_lineage_reference,
+            canonical_final_result_references=final_references,
+            unfinished_transaction_group_ids=unfinished_transaction_group_ids,
+            replanned_transaction_group_ids=replanned_transaction_group_ids,
+        )
+
+    @staticmethod
+    def _replay_bundle(inputs: BootstrapGraphAttemptConstructionInputsV3) -> BootstrapGraphReplayBundleV3:
+        return BootstrapGraphReplayBundleV3.create(
+            request_digest=inputs.request_digest,
+            normalization_replay_digest=inputs.normalization_replay_digest,
+            normalization_result_digest=inputs.normalization_result_digest,
+            source_alignment_digest=inputs.source_alignment_digest,
+        )
+
+    @staticmethod
+    def _observed_counters(*, inputs: BootstrapGraphAttemptConstructionInputsV3,
+                           operation_fence_binding: object, publication_generation: int,
+                           plan: object, attempts: int, reservations: int,
+                           lineage_entries: int,
+                           predecessor: BootstrapGraphObservedCountersV3 | None = None,
+                           related_conflict: bool = False) -> BootstrapGraphObservedCountersV3:
+        values = dict(
+            request_digest=inputs.request_digest, control_epoch_digest=inputs.control_epoch_digest,
+            operation_fence_binding_digest=operation_fence_binding.binding_digest,
+            execution_policy_reference_digest=inputs.execution_policy_reference_digest,
+            publication_generation=publication_generation,
+            observed_operations=sum(len(item.operation_plans) for item in plan.group_members),
+            observed_groups=len(plan.group_members), observed_fixed_point_rounds=0,
+            observed_snapshot_records=0, observed_snapshot_partitions=0,
+            observed_related_conflicts=1 if related_conflict else 0, observed_attempts=attempts,
+            observed_read_set_extensions=0, observed_reservations=reservations,
+            observed_lineage_entries=lineage_entries, observed_replay_artifacts=1,
+            observed_replay_bundle_bytes=len(encode_typed_value({
+                "request_digest": inputs.request_digest,
+                "normalization_replay_digest": inputs.normalization_replay_digest,
+                "normalization_result_digest": inputs.normalization_result_digest,
+                "source_alignment_digest": inputs.source_alignment_digest,
+            })), observed_decode_depth=0,
+        )
+        if predecessor is not None:
+            if (
+                predecessor.operation_fence_binding_digest
+                != operation_fence_binding.binding_digest
+                or (
+                    not related_conflict
+                    and (
+                        predecessor.request_digest != inputs.request_digest
+                        or predecessor.control_epoch_digest != inputs.control_epoch_digest
+                        or predecessor.execution_policy_reference_digest
+                        != inputs.execution_policy_reference_digest
+                    )
+                )
+            ):
+                raise ValueError("bootstrap graph predecessor counters are substituted")
+            for name in BootstrapGraphObservedCountersV3.model_fields:
+                if name.startswith("observed_"):
+                    values[name] = max(values[name], getattr(predecessor, name))
+            if related_conflict:
+                values["observed_related_conflicts"] = predecessor.observed_related_conflicts + 1
+        return BootstrapGraphObservedCountersV3.create(**values)
+
+    @classmethod
+    def _progress_member(cls, *, kind: str, source_id: str, source_digest: str,
+                         preparation_fingerprint: str, operation_id: str,
+                         inputs: BootstrapGraphAttemptConstructionInputsV3,
+                         operation_lease_binding: object, operation_fence_binding: object,
+                         writer_commit_binding: object, plan_reference: object,
+                         replay_reference: object, counters_reference: object,
+                         authority_reference: object | None = None,
+                         attempt_reference: object | None = None,
+                         lineage_reference: object | None = None,
+                         pre_execution_identity_closure_reference: object | None = None,
+                         predecessor_progress_reference: object | None = None,
+                         replan_closure_reference: object | None = None) -> object:
+        values = dict(
+            source_id=source_id, source_digest=source_digest,
+            preparation_fingerprint=preparation_fingerprint, operation_id=operation_id,
+            request_digest=inputs.request_digest,
+            normalization_replay_digest=inputs.normalization_replay_digest,
+            normalization_result_digest=inputs.normalization_result_digest,
+            control_epoch_digest=inputs.control_epoch_digest,
+            operation_fence_binding_digest=operation_fence_binding.binding_digest,
+            operation_lease_binding_digest=operation_lease_binding.binding_digest,
+            writer_commit_binding_digest=writer_commit_binding.binding_digest,
+            plan_reference=plan_reference, replay_bundle_reference=replay_reference,
+            observed_counters_reference=counters_reference,
+            predecessor_progress_reference=predecessor_progress_reference,
+            replan_closure_reference=replan_closure_reference,
+        )
+        if kind == "plan_published":
+            progress = BootstrapGraphPlanPublishedProgressV3.create(**values)
+        elif kind == "attempt_published":
+            progress = BootstrapGraphAttemptPublishedProgressV3.create(
+                **values, authority_reference=authority_reference, attempt_reference=attempt_reference,
+            )
+        else:
+            progress = BootstrapGraphPlannedProgressV3.create(
+                **values, authority_reference=authority_reference, attempt_reference=attempt_reference,
+                lineage_reference=lineage_reference,
+                pre_execution_identity_closure_reference=(
+                    pre_execution_identity_closure_reference
+                ),
+            )
+        return cls.atomic_member(member_id="source-progress", kind="bootstrap_graph_source_progress", artifact=progress)
+
     @classmethod
     def build_initial_checkpoint(
         cls, *, compilation: BootstrapGraphPlanCompilationV3,
@@ -337,28 +709,60 @@ class BootstrapGraphArtifactAssemblerV3:
         cls, *, compilation: BootstrapGraphPlanCompilationV3,
         operation_lease_binding: object, operation_fence_binding: object,
         writer_commit_binding: object, predecessor_generation: object,
+        preparation_fingerprint: str,
+        predecessor_progress_reference: object | None = None,
+        replan_closure_reference: object | None = None,
+        predecessor_observed_counters: BootstrapGraphObservedCountersV3 | None = None,
     ) -> BootstrapGraphPlanAtomicWriteRequestV3:
         """Publish only the plan and pre-attempt inputs before authorization."""
-        inputs = compilation.attempt_construction_inputs
+        retained_compilation = cls._retained_compilation(compilation)
+        inputs = retained_compilation.attempt_construction_inputs
         if (
-            inputs.request_digest != compilation.request_digest
-            or inputs.normalization_replay_digest != compilation.normalization_replay_digest
-            or inputs.control_epoch_digest != compilation.control_epoch_digest
-            or inputs.sealed_read_set_digest != compilation.plan.sealed_read_set_digest
+            inputs.request_digest != retained_compilation.request_digest
+            or inputs.normalization_replay_digest != retained_compilation.normalization_replay_digest
+            or inputs.control_epoch_digest != retained_compilation.control_epoch_digest
+            or inputs.sealed_read_set_digest != retained_compilation.transaction_group_plan.sealed_read_set_digest
         ):
             raise ValueError("bootstrap graph plan checkpoint inputs are substituted")
+        publication_generation = predecessor_generation.operation_generation + 1
+        replay_bundle = cls._replay_bundle(inputs)
+        counters = cls._observed_counters(
+            inputs=inputs, operation_fence_binding=operation_fence_binding,
+            publication_generation=publication_generation, plan=retained_compilation.transaction_group_plan,
+            attempts=0, reservations=0, lineage_entries=0,
+            predecessor=predecessor_observed_counters,
+            related_conflict=replan_closure_reference is not None,
+        )
+        plan_member = cls.atomic_member(member_id="plan", kind="bootstrap_transaction_group_plan", artifact=retained_compilation.transaction_group_plan)
+        replay_member = cls.atomic_member(member_id="replay-bundle", kind="bootstrap_graph_replay_bundle", artifact=replay_bundle)
+        counters_member = cls.atomic_member(member_id="observed-counters", kind="bootstrap_graph_observed_counters", artifact=counters)
+        progress_member = cls._progress_member(
+            kind="plan_published", source_id=operation_fence_binding.source_id,
+            source_digest=operation_fence_binding.source_digest,
+            preparation_fingerprint=preparation_fingerprint,
+            operation_id=operation_fence_binding.operation_id, inputs=inputs,
+            operation_lease_binding=operation_lease_binding,
+            operation_fence_binding=operation_fence_binding,
+            writer_commit_binding=writer_commit_binding,
+            plan_reference=cls._member_reference(repository_id="semantic_ingestion.bootstrap_graph_plan.v3", member=plan_member, artifact=retained_compilation.transaction_group_plan, payload_type="BootstrapTransactionGroupPlanV3", generation=publication_generation),
+            replay_reference=cls._member_reference(repository_id="semantic_ingestion.bootstrap_graph_replay_bundle.v3", member=replay_member, artifact=replay_bundle, payload_type="BootstrapGraphReplayBundleV3", generation=publication_generation),
+            counters_reference=cls._member_reference(repository_id="semantic_ingestion.bootstrap_graph_observed_counters.v3", member=counters_member, artifact=counters, payload_type="BootstrapGraphObservedCountersV3", generation=publication_generation),
+            predecessor_progress_reference=predecessor_progress_reference,
+            replan_closure_reference=replan_closure_reference,
+        )
         members = tuple(sorted((
             cls.atomic_member(member_id="attempt-inputs", kind="bootstrap_graph_snapshot_authority", artifact=inputs),
-            *(cls.atomic_member(member_id=f"pre-execution-evidence:{item.transaction_group_id}", kind="bootstrap_graph_pre_execution_group_evidence", artifact=item) for item in compilation.pre_execution_evidence),
-            cls.atomic_member(member_id="plan", kind="bootstrap_transaction_group_plan", artifact=compilation.plan),
+            cls.atomic_member(member_id="compilation", kind="group_compilation_artifact", artifact=retained_compilation),
+            *(cls.atomic_member(member_id=f"pre-execution-evidence:{item.transaction_group_id}", kind="bootstrap_graph_pre_execution_group_evidence", artifact=item) for item in retained_compilation.pre_execution_evidence),
+            plan_member, replay_member, counters_member, progress_member,
         ), key=lambda item: item.member_id))
         return BootstrapGraphPlanAtomicWriteRequestV3.create(
-            kind="bootstrap_graph_plan_checkpoint", request_digest=compilation.request_digest,
-            normalization_replay_digest=compilation.normalization_replay_digest,
+            kind="bootstrap_graph_plan_checkpoint", request_digest=retained_compilation.request_digest,
+            normalization_replay_digest=retained_compilation.normalization_replay_digest,
             normalization_result_digest=inputs.normalization_result_digest,
             predecessor_generation=predecessor_generation,
             operation_lease_binding=operation_lease_binding, operation_fence_binding=operation_fence_binding,
-            writer_commit_binding=writer_commit_binding, control_epoch_digest=compilation.control_epoch_digest,
+            writer_commit_binding=writer_commit_binding, control_epoch_digest=retained_compilation.control_epoch_digest,
             members=members, required_member_digests=tuple(sorted(item.member_digest for item in members)),
         )
 
@@ -550,7 +954,7 @@ class BootstrapGraphArtifactAssemblerV3:
                     predecessor_final_result=result_reference,
                     predecessor_group_plan_member=predecessor_members[group_id],
                     terminal_disposition=result.disposition,
-                    planning_authorization=authorizations[group_id],
+                    planning_authorization=predecessor_auths[group_id],
                 ))
         return BootstrapSuccessorAttemptAuthorityV3.create(
             kind="successor",
@@ -572,6 +976,7 @@ class BootstrapGraphArtifactAssemblerV3:
         operation_lease_binding_digest: str,
         operation_fence_binding_digest: str,
         writer_commit_binding_digest: str,
+        observed_counters_digest: str,
     ) -> BootstrapGraphDependentAttemptV3:
         if (
             authority.predecessor_attempt_digest != predecessor_attempt.attempt_digest
@@ -603,30 +1008,69 @@ class BootstrapGraphArtifactAssemblerV3:
             operation_fence_binding_digest=operation_fence_binding_digest,
             writer_commit_binding_digest=writer_commit_binding_digest,
             control_epoch_digest=inputs.control_epoch_digest,
-            observed_counters_digest=inputs.graph_snapshot_digest,
+            observed_counters_digest=observed_counters_digest,
             status="eligible",
         )
 
     @classmethod
     def build_attempt_checkpoint(
         cls, *, attempt: BootstrapGraphDependentAttemptV3, inputs: BootstrapGraphAttemptConstructionInputsV3,
+        compilation: BootstrapGraphPlanCompilationV3,
         authority: BootstrapInitialAttemptAuthorityV3, plan: object, authorizations: BootstrapGraphPlanAuthorizationSetV3,
         operation_lease_binding: object, operation_fence_binding: object, writer_commit_binding: object,
-        predecessor_generation: object,
+        predecessor_generation: object, preparation_fingerprint: str,
+        predecessor_progress_reference: object | None = None,
+        replan_closure_reference: object | None = None,
+        predecessor_observed_counters: BootstrapGraphObservedCountersV3 | None = None,
     ) -> BootstrapGraphPlanAtomicWriteRequestV3:
-        if (
-            attempt.attempt_authority != authority
-            or attempt.transaction_group_plan_digest != plan.plan_digest
-            or not cls._authorizations_match_plan(
+        retained_compilation = cls._retained_compilation(compilation)
+        if attempt.attempt_authority != authority:
+            raise ValueError("bootstrap graph attempt checkpoint authority is substituted")
+        if attempt.transaction_group_plan_digest != plan.plan_digest:
+            raise ValueError("bootstrap graph attempt checkpoint plan is substituted")
+        authorizations_match = (
+            cls._successor_authorizations_match_plan(
+                authorizations=authorizations,
+                plan=plan,
+                authority=authority,
+                request_digest=attempt.request_digest,
+                control_epoch_digest=attempt.control_epoch_digest,
+            )
+            if isinstance(authority, BootstrapSuccessorAttemptAuthorityV3)
+            else cls._authorizations_match_plan(
                 authorizations=authorizations,
                 plan=plan,
                 request_digest=attempt.request_digest,
                 control_epoch_digest=attempt.control_epoch_digest,
             )
+        )
+        if not authorizations_match:
+            raise ValueError("bootstrap graph attempt checkpoint authorizations are substituted")
+        generation = predecessor_generation.operation_generation + 1
+        replay = cls._replay_bundle(inputs)
+        counters = cls._observed_counters(inputs=inputs, operation_fence_binding=operation_fence_binding, publication_generation=generation, plan=plan, attempts=attempt.attempt_index + 1, reservations=len(authorizations.authorizations), lineage_entries=0, predecessor=predecessor_observed_counters)
+        authority_member = cls.atomic_member(member_id="successor-authority", kind="bootstrap_graph_successor_attempt_authority", artifact=authority)
+        attempt_member = cls.atomic_member(member_id="attempt", kind="bootstrap_graph_dependent_attempt", artifact=attempt)
+        plan_member = cls.atomic_member(member_id="plan", kind="bootstrap_transaction_group_plan", artifact=plan)
+        replay_member = cls.atomic_member(member_id="replay-bundle", kind="bootstrap_graph_replay_bundle", artifact=replay)
+        counters_member = cls.atomic_member(member_id="observed-counters", kind="bootstrap_graph_observed_counters", artifact=counters)
+        progress_member = cls._progress_member(kind="attempt_published", source_id=operation_fence_binding.source_id, source_digest=operation_fence_binding.source_digest, preparation_fingerprint=preparation_fingerprint, operation_id=operation_fence_binding.operation_id, inputs=inputs, operation_lease_binding=operation_lease_binding, operation_fence_binding=operation_fence_binding, writer_commit_binding=writer_commit_binding, plan_reference=cls._member_reference(repository_id="semantic_ingestion.bootstrap_graph_plan.v3", member=plan_member, artifact=plan, payload_type="BootstrapTransactionGroupPlanV3", generation=generation), replay_reference=cls._member_reference(repository_id="semantic_ingestion.bootstrap_graph_replay_bundle.v3", member=replay_member, artifact=replay, payload_type="BootstrapGraphReplayBundleV3", generation=generation), counters_reference=cls._member_reference(repository_id="semantic_ingestion.bootstrap_graph_observed_counters.v3", member=counters_member, artifact=counters, payload_type="BootstrapGraphObservedCountersV3", generation=generation), authority_reference=cls._member_reference(repository_id="semantic_ingestion.bootstrap_graph_authority.v3", member=authority_member, artifact=authority, payload_type="BootstrapGraphAttemptAuthorityV3", generation=generation), attempt_reference=cls._member_reference(repository_id="semantic_ingestion.bootstrap_graph_attempt.v3", member=attempt_member, artifact=attempt, payload_type="BootstrapGraphDependentAttemptV3", generation=generation), predecessor_progress_reference=predecessor_progress_reference, replan_closure_reference=replan_closure_reference)
+        if (
+            retained_compilation.attempt_construction_inputs != inputs
+            or retained_compilation.transaction_group_plan != plan
         ):
-            raise ValueError("bootstrap graph attempt checkpoint inputs are substituted")
-        artifacts = (("authority", "bootstrap_graph_dependent_attempt", authority), ("attempt", "bootstrap_graph_dependent_attempt", attempt), ("inputs", "bootstrap_graph_snapshot_authority", inputs), ("plan", "bootstrap_transaction_group_plan", plan))
+            raise ValueError("bootstrap graph retained compilation is substituted")
+        artifacts = (
+            ("attempt-inputs", "bootstrap_graph_snapshot_authority", inputs),
+            ("compilation", "group_compilation_artifact", retained_compilation),
+        )
         members = tuple(sorted((cls.atomic_member(member_id=item[0], kind=item[1], artifact=item[2]) for item in artifacts), key=lambda item: item.member_id))
+        members = tuple(sorted((
+            *members,
+            *(cls.atomic_member(member_id=f"authorization:{item.transaction_group_id}", kind="bootstrap_group_planning_authorization", artifact=item) for item in authorizations.authorizations),
+            authority_member, attempt_member, plan_member, replay_member,
+            counters_member, progress_member,
+        ), key=lambda item: item.member_id))
         return BootstrapGraphPlanAtomicWriteRequestV3.create(
             kind="bootstrap_graph_attempt_checkpoint", request_digest=attempt.request_digest, normalization_replay_digest=attempt.normalization_replay_digest,
             normalization_result_digest=attempt.normalization_result_digest, predecessor_generation=predecessor_generation,
@@ -683,7 +1127,7 @@ class BootstrapGraphArtifactAssemblerV3:
         successor_execution_ids = {
             item.transaction_group_id
             for item in attempt.attempt_authority.group_member_authorities
-            if item.kind in {"replacement", "reused_unfinished"}
+            if item.kind == "replacement"
         }
         if (
             attempt.attempt_authority.kind != "successor"
@@ -760,15 +1204,51 @@ class BootstrapGraphArtifactAssemblerV3:
     def build_authorized_lineage_checkpoint(
         cls, *, attempt: BootstrapGraphDependentAttemptV3,
         authorizations: BootstrapGraphPlanAuthorizationSetV3,
-        lineage: tuple[BootstrapSourcePlanLineageEntryV3, ...],
+        lineage: tuple[BootstrapSourcePlanLineageEntryV3, ...], plan: object,
+        compilation: BootstrapGraphPlanCompilationV3,
+        inputs: BootstrapGraphAttemptConstructionInputsV3, preparation_fingerprint: str,
+        pre_execution_identity_closure: BootstrapGraphPreExecutionManifestIdentityClosureV3,
         operation_lease_binding: object, operation_fence_binding: object,
         writer_commit_binding: object, predecessor_generation: object,
+        predecessor_progress_reference: object | None = None,
+        replan_closure_reference: object | None = None,
+        predecessor_observed_counters: BootstrapGraphObservedCountersV3 | None = None,
     ) -> BootstrapGraphPlanAtomicWriteRequestV3:
         if authorizations.plan_digest != attempt.transaction_group_plan_digest or authorizations.control_epoch_digest != attempt.control_epoch_digest:
             raise ValueError("bootstrap graph authorization checkpoint inputs are substituted")
+        generation = predecessor_generation.operation_generation + 1
+        full_lineage = BootstrapSourcePlanLineageV3.create(request_digest=attempt.request_digest, normalization_replay_digest=attempt.normalization_replay_digest, normalization_result_digest=attempt.normalization_result_digest, control_epoch_digest=attempt.control_epoch_digest, entries=lineage, latest_entry_by_group=tuple(sorted({item.transaction_group_id: item.entry_digest for item in lineage}.items())))
+        replay = cls._replay_bundle(inputs)
+        counters = cls._observed_counters(inputs=inputs, operation_fence_binding=operation_fence_binding, publication_generation=generation, plan=plan, attempts=attempt.attempt_index + 1, reservations=len(authorizations.authorizations), lineage_entries=len(lineage), predecessor=predecessor_observed_counters)
+        plan_member = cls.atomic_member(member_id="plan", kind="bootstrap_transaction_group_plan", artifact=plan)
+        replay_member = cls.atomic_member(member_id="replay-bundle", kind="bootstrap_graph_replay_bundle", artifact=replay)
+        counters_member = cls.atomic_member(member_id="observed-counters", kind="bootstrap_graph_observed_counters", artifact=counters)
+        authority_member = cls.atomic_member(member_id="successor-authority", kind="bootstrap_graph_successor_attempt_authority", artifact=attempt.attempt_authority)
+        attempt_member = cls.atomic_member(member_id="attempt", kind="bootstrap_graph_dependent_attempt", artifact=attempt)
+        lineage_member = cls.atomic_member(member_id="lineage", kind="bootstrap_source_plan_lineage", artifact=full_lineage)
+        retained_compilation = cls._retained_compilation(compilation)
+        if (
+            retained_compilation.attempt_construction_inputs != inputs
+            or retained_compilation.transaction_group_plan != plan
+            or pre_execution_identity_closure.request_digest != attempt.request_digest
+            or pre_execution_identity_closure.normalization_replay_digest
+            != attempt.normalization_replay_digest
+            or tuple(item.core.transaction_group_id for item in pre_execution_identity_closure.identities)
+            != plan.canonical_group_order
+        ):
+            raise ValueError("bootstrap graph retained compilation is substituted")
+        inputs_member = cls.atomic_member(member_id="attempt-inputs", kind="bootstrap_graph_snapshot_authority", artifact=inputs)
+        compilation_member = cls.atomic_member(member_id="compilation", kind="group_compilation_artifact", artifact=retained_compilation)
+        pre_execution_member = cls.atomic_member(
+            member_id="pre-execution-identity-closure",
+            kind="bootstrap_graph_pre_execution_identity_closure",
+            artifact=pre_execution_identity_closure,
+        )
+        progress_member = cls._progress_member(kind="planned", source_id=operation_fence_binding.source_id, source_digest=operation_fence_binding.source_digest, preparation_fingerprint=preparation_fingerprint, operation_id=operation_fence_binding.operation_id, inputs=inputs, operation_lease_binding=operation_lease_binding, operation_fence_binding=operation_fence_binding, writer_commit_binding=writer_commit_binding, plan_reference=cls._member_reference(repository_id="semantic_ingestion.bootstrap_graph_plan.v3", member=plan_member, artifact=plan, payload_type="BootstrapTransactionGroupPlanV3", generation=generation), replay_reference=cls._member_reference(repository_id="semantic_ingestion.bootstrap_graph_replay_bundle.v3", member=replay_member, artifact=replay, payload_type="BootstrapGraphReplayBundleV3", generation=generation), counters_reference=cls._member_reference(repository_id="semantic_ingestion.bootstrap_graph_observed_counters.v3", member=counters_member, artifact=counters, payload_type="BootstrapGraphObservedCountersV3", generation=generation), authority_reference=cls._member_reference(repository_id="semantic_ingestion.bootstrap_graph_authority.v3", member=authority_member, artifact=attempt.attempt_authority, payload_type="BootstrapGraphAttemptAuthorityV3", generation=generation), attempt_reference=cls._member_reference(repository_id="semantic_ingestion.bootstrap_graph_attempt.v3", member=attempt_member, artifact=attempt, payload_type="BootstrapGraphDependentAttemptV3", generation=generation), lineage_reference=cls._member_reference(repository_id="semantic_ingestion.bootstrap_source_plan_lineage.v3", member=lineage_member, artifact=full_lineage, payload_type="BootstrapSourcePlanLineageV3", generation=generation), pre_execution_identity_closure_reference=cls._member_reference(repository_id="semantic_ingestion.bootstrap_graph_pre_execution_identity_closure.v3", member=pre_execution_member, artifact=pre_execution_identity_closure, payload_type="BootstrapGraphPreExecutionManifestIdentityClosureV3", generation=generation), predecessor_progress_reference=predecessor_progress_reference, replan_closure_reference=replan_closure_reference)
         members = tuple(sorted((
             *(cls.atomic_member(member_id=f"authorization:{item.transaction_group_id}", kind="bootstrap_group_planning_authorization", artifact=item) for item in authorizations.authorizations),
             *(cls.atomic_member(member_id=f"lineage:{item.lineage_ordinal:08d}:{item.transaction_group_id}", kind="bootstrap_source_plan_lineage_entry", artifact=item) for item in lineage),
+            inputs_member, compilation_member, pre_execution_member, plan_member, replay_member, counters_member, authority_member, attempt_member, lineage_member, progress_member,
         ), key=lambda item: item.member_id))
         return BootstrapGraphPlanAtomicWriteRequestV3.create(
             kind="bootstrap_graph_lineage_checkpoint", request_digest=attempt.request_digest,
@@ -802,19 +1282,43 @@ class BootstrapGraphArtifactAssemblerV3:
         lineage_entries = {
             item.entry_digest: item for item in complete_lineage.entries
         }
-        constructions_match_lineage = all(
-            (
-                entry := lineage_entries.get(
-                    item.source_plan_lineage_entry.entry_digest
+        def construction_matches_lineage(
+            item: BootstrapNativeGroupCommitTerminalConstructionV3,
+        ) -> bool:
+            entry = lineage_entries.get(item.source_plan_lineage_entry.entry_digest)
+            if entry is None or entry != item.source_plan_lineage_entry:
+                return False
+            if entry.attempt_digest == item.attempt.attempt_digest:
+                return True
+            authority = next((
+                value
+                for value in getattr(
+                    item.attempt.attempt_authority,
+                    "group_member_authorities",
+                    (),
                 )
+                if value.transaction_group_id == item.transaction_group_id
+            ), None)
+            return bool(
+                authority is not None
+                and authority.kind == "reused_unfinished"
+                and authority.predecessor_lineage_entry.entry_digest
+                == entry.entry_digest
+                and authority.predecessor_group_plan_member
+                == item.group_plan_member
+                and authority.predecessor_planning_authorization
+                == item.planning_authorization
             )
-            is not None
-            and entry == item.source_plan_lineage_entry
-            and entry.attempt_digest == item.attempt.attempt_digest
+
+        constructions_match_lineage = all(
+            construction_matches_lineage(item)
             for item in ordered_group_result_constructions
         )
         if (
-            not ordered_group_result_constructions
+            (
+                not ordered_group_result_constructions
+                and canonical_source_result_input.source_status != "failed"
+            )
             or final_attempt.request_digest != handoff_core.request_digest
             or final_attempt.transaction_group_plan_digest != handoff_core.transaction_group_plan_digest
             or final_attempt.control_epoch_digest != handoff_core.control_epoch_digest
@@ -849,10 +1353,28 @@ class BootstrapGraphArtifactAssemblerV3:
         lineage: BootstrapSourcePlanLineageEntryV3,
         member: BootstrapTransactionGroupPlanMemberV3,
         authorization: BootstrapGroupPlanningAuthorizationV3,
+        group_commit_request: object,
         group_commit_reload: BootstrapGraphGroupCommitReloadV3,
         operation_fence_binding: object,
         control_epoch: object,
     ) -> BootstrapNativeGroupCommitTerminalConstructionV3:
+        from memorii.core.semantic_ingestion.contracts import (
+            validate_bootstrap_native_group_commit_terminal_request_v3,
+        )
+
+        authority = next((
+            item for item in getattr(
+                attempt.attempt_authority, "group_member_authorities", ()
+            )
+            if item.transaction_group_id == member.transaction_group_id
+        ), None)
+        retained_unfinished = (
+            authority is not None
+            and authority.kind == "reused_unfinished"
+            and authority.predecessor_group_plan_member == member
+            and authority.predecessor_planning_authorization == authorization
+            and authority.predecessor_lineage_entry.entry_digest == lineage.entry_digest
+        )
         if (
             attempt.request_digest != request_digest
             or attempt.normalization_replay_digest != normalization_replay_digest
@@ -861,17 +1383,31 @@ class BootstrapGraphArtifactAssemblerV3:
             or authorization.transaction_group_id != member.transaction_group_id
             or group_commit_reload.operation_ids != member.operation_ids
             or authorization.operation_ids != member.operation_ids
-            or lineage.attempt_digest != attempt.attempt_digest
+            or (
+                lineage.attempt_digest != attempt.attempt_digest
+                and not retained_unfinished
+            )
+            or group_commit_request.attempt != attempt
+            or group_commit_request.group_plan_member != member
+            or group_commit_request.planning_authorization != authorization
+            or group_commit_request.source_plan_lineage_entry != lineage
+            or group_commit_reload.request_ctv_digest
+            != group_commit_request.request_ctv_digest
             or operation_fence_binding.binding_digest != attempt.operation_fence_binding_digest
             or control_epoch.epoch_digest != attempt.control_epoch_digest
         ):
             raise ValueError("bootstrap graph result construction inputs are substituted")
-        return BootstrapNativeGroupCommitTerminalConstructionV3.create(
+        construction = BootstrapNativeGroupCommitTerminalConstructionV3.create(
             request_digest=request_digest, normalization_replay_digest=normalization_replay_digest,
             attempt=attempt, source_plan_lineage_entry=lineage, group_plan_member=member,
-            planning_authorization=authorization, group_commit_reload=group_commit_reload,
+            planning_authorization=authorization,
+            group_commit_reload=group_commit_reload,
             operation_fence_binding=operation_fence_binding, control_epoch=control_epoch,
         )
+        validate_bootstrap_native_group_commit_terminal_request_v3(
+            construction, group_commit_request
+        )
+        return construction
 
     @staticmethod
     def group_commit_request(

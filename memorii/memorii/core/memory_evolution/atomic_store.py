@@ -9,9 +9,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from secrets import token_hex
-from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol, TypedDict, Unpack
+from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol, TypedDict, Unpack, cast
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
 from memorii.core.memory_evolution.admission import (
     PreparedSourceAdmission,
@@ -154,6 +154,7 @@ if TYPE_CHECKING:
         BootstrapGraphPlanAtomicReloadV3,
         BootstrapGraphPlanAtomicWriteIdentityV3,
         BootstrapGraphPlanAtomicWriteRequestV3,
+        BootstrapGraphSourceProgressV3,
         BootstrapGraphTerminalControlV3,
         BootstrapGraphTerminalPersistenceHandoffV3,
         BootstrapGraphTerminalPublicationRequestV3,
@@ -199,10 +200,79 @@ class PreplanningStoreError(ValueError):
     pass
 
 
+class BootstrapGraphSourceProgressRecoveryUnavailableError(PreplanningStoreError):
+    """A V3 generation is readable but has no bridge progress to resume."""
+
+    pass
+
+
+@dataclass(frozen=True)
+class BootstrapGraphRecoveredAtomicMemberV3:
+    """One exact decoded member retained by a sealed Bootstrap-V3 generation.
+
+    This is an internal recovery carrier, not a persisted contract.  Keeping
+    the original member and bytes beside its decoded artifact prevents a
+    resume caller from silently rebuilding an equivalent-looking closure.
+    """
+
+    generation: int
+    member: object
+    raw: bytes
+    artifact: object
+
+
+@dataclass(frozen=True)
+class BootstrapGraphResumeClosureV3:
+    """The sealed predecessor closure consumed by related-conflict resume."""
+
+    progress: BootstrapGraphRecoveredAtomicMemberV3
+    plan: BootstrapGraphRecoveredAtomicMemberV3
+    replay_bundle: BootstrapGraphRecoveredAtomicMemberV3
+    observed_counters: BootstrapGraphRecoveredAtomicMemberV3
+    attempt_inputs: BootstrapGraphRecoveredAtomicMemberV3
+    compilation: BootstrapGraphRecoveredAtomicMemberV3
+    authority: BootstrapGraphRecoveredAtomicMemberV3
+    attempt: BootstrapGraphRecoveredAtomicMemberV3
+    authorizations: tuple[BootstrapGraphRecoveredAtomicMemberV3, ...]
+    lineage: BootstrapGraphRecoveredAtomicMemberV3
+    pre_execution_identity_closure: BootstrapGraphRecoveredAtomicMemberV3
+    pre_execution_evidence: tuple[BootstrapGraphRecoveredAtomicMemberV3, ...]
+    canonical_final_group_results: tuple[BootstrapGraphRecoveredAtomicMemberV3, ...]
+
+
+@dataclass(frozen=True)
+class BootstrapGraphCheckpointRecoveryV3:
+    """Exact persisted V3 checkpoint selected for one legal resume step.
+
+    This internal carrier deliberately retains the original atomic request and
+    source-progress member bytes.  It is not a new persisted schema and gives
+    callers no authority to synthesize a plan, attempt, or lineage checkpoint.
+    """
+
+    request: object
+    progress: BootstrapGraphRecoveredAtomicMemberV3
+    completed_group_results: tuple[BootstrapGraphRecoveredAtomicMemberV3, ...]
+
+
 class PreplanningOperationMismatchError(PreplanningStoreError):
     """The operation id is retained for a different exact request."""
 
     pass
+
+
+class BootstrapGraphRelatedConflictError(PreplanningStoreError):
+    """A V3 group CAS observed a stale semantic graph revision.
+
+    This is deliberately owned by the V3 atomic boundary.  Callers receive
+    revision coordinates, never a replay diagnostic string, and may only use
+    it to append the bounded related-conflict successor.
+    """
+
+    def __init__(self, *, transaction_group_id: str, expected_graph_revision: str, observed_graph_revision: str) -> None:
+        self.transaction_group_id = transaction_group_id
+        self.expected_graph_revision = expected_graph_revision
+        self.observed_graph_revision = observed_graph_revision
+        super().__init__("bootstrap graph related conflict")
 
 
 class _BootstrapAuthorityUnavailableAtCommit(PreplanningStoreError):
@@ -8975,6 +9045,64 @@ class SemanticIngestionAtomicStore:
                 )
             return _bootstrap_graph_v3_epoch_unavailable(request, "stale_epoch")
 
+    def _validate_bootstrap_graph_group_result_members_v3(
+        self, members: tuple[BootstrapGraphPlanAtomicMemberV3, ...]
+    ) -> None:
+        from memorii.core.semantic_ingestion.contracts import (
+            BootstrapNativeGroupCommitTerminalConstructionV3,
+            decode_bootstrap_graph_atomic_member_payload_v3,
+            decode_semantic_contract,
+            validate_bootstrap_native_group_commit_terminal_request_v3,
+        )
+
+        for member in members:
+            if getattr(member, "kind", None) != "transaction_group_result":
+                continue
+            try:
+                decoded = decode_typed_value(member.canonical_payload)
+                payload = (
+                    decode_bootstrap_graph_atomic_member_payload_v3(
+                        kind=member.kind, raw=member.canonical_payload
+                    )
+                    if isinstance(decoded, dict)
+                    and set(decoded) == {"schema", "codec_key", "payload"}
+                    else decode_semantic_contract(
+                        member.canonical_payload,
+                        BootstrapNativeGroupCommitTerminalConstructionV3,
+                    )
+                )
+                construction = (
+                    BootstrapNativeGroupCommitTerminalConstructionV3.model_validate(
+                        payload,
+                        strict=False,
+                    )
+                )
+                reload = construction.group_commit_reload
+                primary_id = _bootstrap_graph_v3_group_commit_primary_id(
+                    reload.source_operation_id,
+                    reload.transaction_group_id,
+                    reload.operation_ids,
+                    reload.request_ctv_digest,
+                )
+                record = self._memory_plane.get_record(primary_id)
+                if record is None:
+                    raise ValueError("group commit primary is absent")
+                group_request = _bootstrap_graph_v3_group_commit_request_from_record(
+                    record
+                )
+                repository_reload = _bootstrap_graph_v3_group_commit_reload_from_record(
+                    record, group_request
+                )
+                validate_bootstrap_native_group_commit_terminal_request_v3(
+                    construction, group_request
+                )
+                if repository_reload != reload:
+                    raise ValueError("group commit reload is substituted")
+            except (TypeError, ValueError, PreplanningStoreError) as exc:
+                raise PreplanningStoreError(
+                    "bootstrap graph transaction result is not repository-owned"
+                ) from exc
+
     def checkpoint_bootstrap_graph_transaction_v3(
         self,
         *,
@@ -9008,6 +9136,11 @@ class SemanticIngestionAtomicStore:
             validate_bootstrap_graph_plan_atomic_members_v3(request.members)
         except ValueError as exc:
             raise PreplanningStoreError("bootstrap graph checkpoint member is not native") from exc
+        self._validate_bootstrap_graph_group_result_members_v3(request.members)
+        progress = self._validate_bootstrap_graph_source_progress_v3(request=request)
+        self._validate_bootstrap_graph_source_progress_transition_v3(
+            request=request, progress=progress
+        )
         linearization = self._semantic_integrity_linearization
         if linearization is None:
             return self._checkpoint_bootstrap_graph_transaction_v3_linearized(
@@ -9064,6 +9197,430 @@ class SemanticIngestionAtomicStore:
             latest_atomic_write_digest=control.last_request_digest,
             control_epoch_digest=control_epoch.epoch_digest,
         )
+
+    def _validate_bootstrap_graph_source_progress_v3(
+        self, *, request: BootstrapGraphPlanAtomicWriteRequestV3
+    ) -> BootstrapGraphSourceProgressV3 | None:
+        """Validate the bridge closure before it can become a V3 generation.
+
+        Older V3 generations deliberately have no progress member.  They remain
+        readable through the ordinary checkpoint path, but the dedicated bridge
+        reload below refuses to treat them as resumable state.
+        """
+        from memorii.core.semantic_ingestion.contracts import (
+            BootstrapGraphAttemptAuthorityV3,
+            BootstrapGraphAttemptConstructionInputsV3,
+            BootstrapGraphAttemptPublishedProgressV3,
+            BootstrapGraphDependentAttemptV3,
+            BootstrapGraphObservedCountersV3,
+            BootstrapGraphPlanAtomicWriteRequestV3,
+            BootstrapGraphPlanCompilationV3,
+            BootstrapGraphPlannedProgressV3,
+            BootstrapGraphPlanPublishedProgressV3,
+            BootstrapGraphPreExecutionManifestIdentityClosureV3,
+            BootstrapGraphReplayBundleV3,
+            BootstrapSourcePlanLineageV3,
+            BootstrapTransactionGroupPlanV3,
+            decode_bootstrap_graph_atomic_member_payload_v3,
+        )
+        authority_adapter = TypeAdapter(BootstrapGraphAttemptAuthorityV3)
+
+        progress_members = tuple(
+            member for member in request.members
+            if member.kind == "bootstrap_graph_source_progress"
+        )
+        if not progress_members:
+            return None
+        if len(progress_members) != 1 or progress_members[0].member_id != "source-progress":
+            raise PreplanningStoreError("bootstrap graph progress member cardinality is invalid")
+        expected_kind = {
+            "bootstrap_graph_plan_checkpoint": "plan_published",
+            "bootstrap_graph_attempt_checkpoint": "attempt_published",
+            "bootstrap_graph_lineage_checkpoint": "planned",
+        }.get(request.kind)
+        if expected_kind is None:
+            raise PreplanningStoreError("bootstrap graph progress is not legal for this checkpoint")
+        try:
+            raw_progress = decode_bootstrap_graph_atomic_member_payload_v3(
+                kind="bootstrap_graph_source_progress",
+                raw=progress_members[0].canonical_payload,
+            )
+            progress_types = {
+                "plan_published": BootstrapGraphPlanPublishedProgressV3,
+                "attempt_published": BootstrapGraphAttemptPublishedProgressV3,
+                "planned": BootstrapGraphPlannedProgressV3,
+            }
+            progress = progress_types[expected_kind].model_validate(raw_progress)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PreplanningStoreError("bootstrap graph progress payload is invalid") from exc
+        if progress.kind != expected_kind:
+            raise PreplanningStoreError("bootstrap graph progress discriminator is invalid")
+        if (
+            progress.source_id != request.operation_fence_binding.source_id
+            or progress.source_digest != request.operation_fence_binding.source_digest
+            or progress.operation_id != request.operation_fence_binding.operation_id
+            or progress.request_digest != request.request_digest
+            or progress.normalization_replay_digest != request.normalization_replay_digest
+            or progress.normalization_result_digest != request.normalization_result_digest
+            or progress.control_epoch_digest != request.control_epoch_digest
+            or progress.operation_fence_binding_digest != request.operation_fence_binding.binding_digest
+            or progress.operation_lease_binding_digest != request.operation_lease_binding.binding_digest
+            or progress.writer_commit_binding_digest != request.writer_commit_binding.binding_digest
+        ):
+            raise PreplanningStoreError("bootstrap graph progress identity is substituted")
+
+        by_id = {member.member_id: member for member in request.members}
+        if len(by_id) != len(request.members):
+            raise PreplanningStoreError("bootstrap graph progress member ids are duplicated")
+        expected_references = (
+            (progress.plan_reference, "plan", "bootstrap_transaction_group_plan", BootstrapTransactionGroupPlanV3, "plan_digest"),
+            (progress.replay_bundle_reference, "replay-bundle", "bootstrap_graph_replay_bundle", BootstrapGraphReplayBundleV3, "replay_bundle_digest"),
+            (progress.observed_counters_reference, "observed-counters", "bootstrap_graph_observed_counters", BootstrapGraphObservedCountersV3, "counters_digest"),
+        )
+        if isinstance(progress, (BootstrapGraphAttemptPublishedProgressV3, BootstrapGraphPlannedProgressV3)):
+            expected_references += (
+                (progress.authority_reference, "successor-authority", "bootstrap_graph_successor_attempt_authority", authority_adapter, "authority_digest"),
+                (progress.attempt_reference, "attempt", "bootstrap_graph_dependent_attempt", BootstrapGraphDependentAttemptV3, "attempt_digest"),
+            )
+        if isinstance(progress, BootstrapGraphPlannedProgressV3):
+            expected_references += (
+                (progress.lineage_reference, "lineage", "bootstrap_source_plan_lineage", BootstrapSourcePlanLineageV3, "lineage_digest"),
+                (progress.pre_execution_identity_closure_reference, "pre-execution-identity-closure", "bootstrap_graph_pre_execution_identity_closure", BootstrapGraphPreExecutionManifestIdentityClosureV3, "closure_digest"),
+            )
+        for reference, member_id, member_kind, model_type, digest_field in expected_references:
+            member = by_id.get(member_id)
+            if (
+                member is None
+                or member.kind != member_kind
+                or reference.member_id != member_id
+                or reference.member_kind != member_kind
+                or reference.generation != request.publication_operation_generation
+                or reference.member_payload_digest != member.payload_digest
+            ):
+                raise PreplanningStoreError("bootstrap graph progress reference is substituted")
+            try:
+                decoded = decode_bootstrap_graph_atomic_member_payload_v3(
+                    kind=member.kind, raw=member.canonical_payload,
+                )
+                artifact = (
+                    model_type.validate_python(decoded, strict=False)
+                    if isinstance(model_type, TypeAdapter)
+                    else model_type.model_validate(decoded, strict=False)
+                )
+            except (TypeError, ValueError) as exc:
+                raise PreplanningStoreError("bootstrap graph progress member payload is corrupt") from exc
+            if reference.artifact_digest != getattr(artifact, digest_field):
+                raise PreplanningStoreError("bootstrap graph progress artifact digest is substituted")
+        counters = BootstrapGraphObservedCountersV3.model_validate(
+            decode_bootstrap_graph_atomic_member_payload_v3(
+                kind="bootstrap_graph_observed_counters",
+                raw=by_id["observed-counters"].canonical_payload,
+            )
+        )
+        if (
+            counters.request_digest != request.request_digest
+            or counters.control_epoch_digest != request.control_epoch_digest
+            or counters.operation_fence_binding_digest != request.operation_fence_binding.binding_digest
+            or counters.publication_generation != request.publication_operation_generation
+        ):
+            raise PreplanningStoreError("bootstrap graph observed counters are substituted")
+        inputs_member = by_id.get("attempt-inputs")
+        compilation_member = by_id.get("compilation")
+        if inputs_member is None or compilation_member is None:
+            raise PreplanningStoreError("bootstrap graph observed counters are unavailable")
+        inputs = BootstrapGraphAttemptConstructionInputsV3.model_validate(
+            decode_bootstrap_graph_atomic_member_payload_v3(kind=inputs_member.kind, raw=inputs_member.canonical_payload)
+        )
+        if counters.execution_policy_reference_digest != inputs.execution_policy_reference_digest:
+            raise PreplanningStoreError("bootstrap graph observed counters policy is substituted")
+        compilation = BootstrapGraphPlanCompilationV3.model_validate(
+            decode_bootstrap_graph_atomic_member_payload_v3(
+                kind=compilation_member.kind,
+                raw=compilation_member.canonical_payload,
+            ), strict=False
+        )
+        if compilation.attempt_construction_inputs != inputs:
+            raise PreplanningStoreError("bootstrap graph retained compilation is substituted")
+        authorizations = sum(item.kind == "bootstrap_group_planning_authorization" for item in request.members)
+        predecessor_lineage_entries = 0
+        if (
+            expected_kind == "attempt_published"
+            and progress.replan_closure_reference is not None
+        ):
+            predecessor_reference = (
+                progress.replan_closure_reference
+                .predecessor_planned_progress_reference
+            )
+            control = _control_from_record(
+                self._required_control_record(request.operation_fence_binding)
+            )
+            predecessor_manifest = self._memory_plane.get_record(
+                _bootstrap_graph_v3_manifest_id(
+                    _control_namespace(control), predecessor_reference.generation
+                )
+            )
+            if predecessor_manifest is None:
+                raise PreplanningStoreError("bootstrap graph replan counters predecessor is unavailable")
+            try:
+                predecessor_request = BootstrapGraphPlanAtomicWriteRequestV3.model_validate_json(
+                    json.dumps(predecessor_manifest.content["request"])
+                )
+                predecessor_member = next(
+                    member for member in predecessor_request.members
+                    if member.member_id == "observed-counters"
+                )
+                predecessor_counters = BootstrapGraphObservedCountersV3.model_validate(
+                    decode_bootstrap_graph_atomic_member_payload_v3(
+                        kind=predecessor_member.kind,
+                        raw=predecessor_member.canonical_payload,
+                    )
+                )
+            except (KeyError, StopIteration, TypeError, ValueError) as exc:
+                raise PreplanningStoreError("bootstrap graph replan counters predecessor is corrupt") from exc
+            predecessor_lineage_entries = predecessor_counters.observed_lineage_entries
+        if expected_kind == "plan_published":
+            valid_stage = (
+                counters.observed_attempts == counters.observed_lineage_entries
+                == counters.observed_reservations == 0
+                if progress.replan_closure_reference is None
+                else True
+            )
+        else:
+            attempt = BootstrapGraphDependentAttemptV3.model_validate(decode_bootstrap_graph_atomic_member_payload_v3(kind=by_id["attempt"].kind, raw=by_id["attempt"].canonical_payload))
+            valid_stage = counters.observed_attempts == attempt.attempt_index + 1 and counters.observed_reservations == authorizations
+            if expected_kind == "attempt_published":
+                valid_stage = valid_stage and counters.observed_lineage_entries == (
+                    predecessor_lineage_entries
+                    if progress.replan_closure_reference is not None
+                    else 0
+                )
+            else:
+                lineage = BootstrapSourcePlanLineageV3.model_validate(decode_bootstrap_graph_atomic_member_payload_v3(kind=by_id["lineage"].kind, raw=by_id["lineage"].canonical_payload))
+                valid_stage = valid_stage and counters.observed_lineage_entries == len(lineage.entries)
+        if not valid_stage:
+            raise PreplanningStoreError("bootstrap graph observed counters stage is invalid")
+        forbidden = {
+            "plan_published": {"successor-authority", "attempt", "lineage", "execution-manifest"},
+            "attempt_published": {"lineage", "execution-manifest"},
+            "planned": set(),
+        }[expected_kind]
+        if forbidden.intersection(by_id):
+            raise PreplanningStoreError("bootstrap graph progress reaches a future artifact")
+        closure = progress.replan_closure_reference
+        if closure is not None:
+            predecessor_reference = progress.predecessor_progress_reference
+            if (
+                expected_kind != "plan_published"
+                and predecessor_reference is None
+            ):
+                raise PreplanningStoreError("bootstrap graph replan progress is incomplete")
+            if (
+                closure.predecessor_planned_progress_reference != predecessor_reference
+                or closure.predecessor_planned_progress_reference.generation
+                >= request.publication_operation_generation
+                or closure.predecessor_lineage_reference.generation
+                != closure.predecessor_planned_progress_reference.generation
+                or any(
+                    reference.generation
+                    <= closure.predecessor_planned_progress_reference.generation
+                    or reference.generation
+                    >= request.publication_operation_generation
+                    for reference in closure.canonical_final_result_references
+                )
+            ):
+                raise PreplanningStoreError("bootstrap graph replan closure is substituted")
+        return progress
+
+    def _validate_bootstrap_graph_source_progress_transition_v3(
+        self, *, request: BootstrapGraphPlanAtomicWriteRequestV3,
+        progress: BootstrapGraphSourceProgressV3 | None,
+    ) -> None:
+        """Validate immediate progress steps and sealed replan predecessors."""
+        if progress is None:
+            return
+        predecessor_digest = request.predecessor_generation.latest_atomic_write_digest
+        predecessor_progress = None
+        predecessor = None
+        # The first bridge plan may follow a non-bridge normalization
+        # generation, but it must still inspect that immediate predecessor.
+        # Skipping this load admitted a second closure-free initial plan after
+        # an interrupted native checkpoint.
+        initial_bridge_plan = (
+            progress.kind == "plan_published"
+            and progress.replan_closure_reference is None
+        )
+        if predecessor_digest is not None:
+            index = self._memory_plane.get_record(
+                _bootstrap_graph_v3_idempotency_id(predecessor_digest)
+            )
+            manifest_id = None if index is None else index.content.get("manifest_id")
+            manifest = None if not isinstance(manifest_id, str) else self._memory_plane.get_record(manifest_id)
+            if manifest is None:
+                # The only legal non-V3 predecessor is the source
+                # normalization generation immediately before the first bridge
+                # plan. Any later bridge step must name a retained V3 manifest.
+                if not initial_bridge_plan:
+                    raise PreplanningStoreError(
+                        "bootstrap graph progress predecessor is unavailable"
+                    )
+            else:
+                from memorii.core.semantic_ingestion.contracts import BootstrapGraphPlanAtomicWriteRequestV3
+                try:
+                    predecessor = BootstrapGraphPlanAtomicWriteRequestV3.model_validate_json(
+                        json.dumps(manifest.content["request"])
+                    )
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise PreplanningStoreError("bootstrap graph progress predecessor is corrupt") from exc
+                predecessor_progress = self._validate_bootstrap_graph_source_progress_v3(
+                    request=predecessor
+                )
+        expected_predecessor = {
+            "plan_published": None,
+            "attempt_published": "plan_published",
+            "planned": "attempt_published",
+        }[progress.kind]
+        closure = progress.replan_closure_reference
+        replan_plan = progress.kind == "plan_published" and closure is not None
+        counter_predecessor = predecessor
+        if replan_plan:
+            if closure is None:
+                raise PreplanningStoreError("bootstrap graph replan closure is unavailable")
+            # Group-result and durable-retry generations may have advanced the
+            # CAS head after the last sealed planned progress.  They are not
+            # bridge lifecycle predecessors.  Resolve the exact planned member
+            # named by the closure, while retaining the actual head as the
+            # atomic request predecessor.
+            control = _control_from_record(
+                self._required_control_record(request.operation_fence_binding)
+            )
+            namespace = _control_namespace(control)
+            reference = closure.predecessor_planned_progress_reference
+            if reference.generation >= request.publication_operation_generation:
+                raise PreplanningStoreError("bootstrap graph replan closure is substituted")
+            manifest = self._memory_plane.get_record(
+                _bootstrap_graph_v3_manifest_id(namespace, reference.generation)
+            )
+            if manifest is None:
+                raise PreplanningStoreError("bootstrap graph replan predecessor is unavailable")
+            try:
+                sealed_predecessor = BootstrapGraphPlanAtomicWriteRequestV3.model_validate_json(
+                    json.dumps(manifest.content["request"])
+                )
+            except (KeyError, TypeError, ValueError) as exc:
+                raise PreplanningStoreError("bootstrap graph replan predecessor is corrupt") from exc
+            predecessor_progress = self._validate_bootstrap_graph_source_progress_v3(
+                request=sealed_predecessor
+            )
+            member = next(
+                (item for item in sealed_predecessor.members
+                 if item.member_id == reference.member_id),
+                None,
+            )
+            lineage_member = next(
+                (item for item in sealed_predecessor.members
+                 if item.member_id == "lineage"),
+                None,
+            )
+            if (
+                predecessor_progress is None
+                or predecessor_progress.kind != "planned"
+                or member is None
+                or member.kind != reference.member_kind
+                or member.payload_digest != reference.member_payload_digest
+                or predecessor_progress.progress_digest != reference.artifact_digest
+                or predecessor_progress.lineage_reference
+                != closure.predecessor_lineage_reference
+                or lineage_member is None
+                or lineage_member.member_id
+                != closure.predecessor_lineage_reference.member_id
+                or lineage_member.kind
+                != closure.predecessor_lineage_reference.member_kind
+                or lineage_member.payload_digest
+                != closure.predecessor_lineage_reference.member_payload_digest
+            ):
+                raise PreplanningStoreError("bootstrap graph replan predecessor is substituted")
+            # A newer in-flight bridge checkpoint indicates another owner has
+            # already started this successor.  Ordinary retry/group checkpoints
+            # are allowed and remain the CAS predecessor.
+            for generation in range(reference.generation + 1, request.publication_operation_generation):
+                candidate_manifest = self._memory_plane.get_record(
+                    _bootstrap_graph_v3_manifest_id(namespace, generation)
+                )
+                if candidate_manifest is None:
+                    continue
+                try:
+                    candidate = BootstrapGraphPlanAtomicWriteRequestV3.model_validate_json(
+                        json.dumps(candidate_manifest.content["request"])
+                    )
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise PreplanningStoreError("bootstrap graph replan history is corrupt") from exc
+                candidate_progress = self._validate_bootstrap_graph_source_progress_v3(
+                    request=candidate
+                )
+                if candidate_progress is not None and candidate_progress.kind in {
+                    "plan_published", "attempt_published",
+                }:
+                    raise PreplanningStoreError("bootstrap graph replan successor is in flight")
+            expected_predecessor = "planned"
+            counter_predecessor = sealed_predecessor
+        if (
+            (expected_predecessor is None and predecessor_progress is not None)
+            or (expected_predecessor is not None and (
+                predecessor_progress is None
+                or predecessor_progress.kind != expected_predecessor
+            ))
+        ):
+            raise PreplanningStoreError("bootstrap graph progress transition is illegal")
+        if initial_bridge_plan and predecessor_progress is not None:
+            raise PreplanningStoreError("bootstrap graph initial progress predecessor is not non-bridge")
+        # The closure remains anchored to the last sealed ``planned``
+        # generation while the successor advances plan -> attempt -> lineage.
+        # The immediate predecessor carries that exact anchor; it is not the
+        # closure target itself.
+        if (
+            closure is not None
+            and not replan_plan
+            and (
+                predecessor_progress is None
+                or predecessor_progress.replan_closure_reference != closure
+            )
+        ):
+            raise PreplanningStoreError("bootstrap graph replan predecessor is substituted")
+        if predecessor_progress is not None and counter_predecessor is not None:
+            from memorii.core.semantic_ingestion.contracts import (
+                BootstrapGraphObservedCountersV3,
+                decode_bootstrap_graph_atomic_member_payload_v3,
+            )
+            current_member = next(
+                item for item in request.members
+                if item.member_id == "observed-counters"
+            )
+            prior_member = next(
+                item for item in counter_predecessor.members
+                if item.member_id == "observed-counters"
+            )
+            current = BootstrapGraphObservedCountersV3.model_validate(
+                decode_bootstrap_graph_atomic_member_payload_v3(
+                    kind=current_member.kind, raw=current_member.canonical_payload,
+                )
+            )
+            prior = BootstrapGraphObservedCountersV3.model_validate(
+                decode_bootstrap_graph_atomic_member_payload_v3(
+                    kind=prior_member.kind, raw=prior_member.canonical_payload,
+                )
+            )
+            counter_fields = tuple(
+                name for name in current.__class__.model_fields
+                if name.startswith("observed_")
+            )
+            if (
+                current.execution_policy_reference_digest
+                != prior.execution_policy_reference_digest
+                or current.operation_fence_binding_digest
+                != prior.operation_fence_binding_digest
+                or any(getattr(current, name) < getattr(prior, name) for name in counter_fields)
+            ):
+                raise PreplanningStoreError("bootstrap graph observed counters decrease")
     def _checkpoint_bootstrap_graph_transaction_v3_linearized(
         self,
         *,
@@ -9084,6 +9641,11 @@ class SemanticIngestionAtomicStore:
             validate_bootstrap_graph_plan_atomic_members_v3(request.members)
         except ValueError as exc:
             raise PreplanningStoreError("bootstrap graph reload member is not native") from exc
+        self._validate_bootstrap_graph_group_result_members_v3(request.members)
+        progress = self._validate_bootstrap_graph_source_progress_v3(request=request)
+        self._validate_bootstrap_graph_source_progress_transition_v3(
+            request=request, progress=progress
+        )
         self._validate_bootstrap_graph_v3_current_authority(
             request=request,
             delivery_principal_binding_digest=delivery_principal_binding_digest,
@@ -9161,6 +9723,28 @@ class SemanticIngestionAtomicStore:
             if request.kind == "bootstrap_graph_retry_checkpoint"
             else None
         )
+        retry_locator_preconditions: tuple[object, ...] = ()
+        if retry_index is not None and retry_recovery is not None:
+            prior_retry_index = self._memory_plane.get_record(retry_index.memory_id)
+            prior_retry_recovery = self._memory_plane.get_record(retry_recovery.memory_id)
+            retry_locator_preconditions = (
+                (
+                    RecordAbsentPrecondition(memory_id=retry_index.memory_id)
+                    if prior_retry_index is None
+                    else RecordDigestPrecondition(
+                        memory_id=prior_retry_index.memory_id,
+                        expected_digest=record_digest(prior_retry_index),
+                    )
+                ),
+                (
+                    RecordAbsentPrecondition(memory_id=retry_recovery.memory_id)
+                    if prior_retry_recovery is None
+                    else RecordDigestPrecondition(
+                        memory_id=prior_retry_recovery.memory_id,
+                        expected_digest=record_digest(prior_retry_recovery),
+                    )
+                ),
+            )
         writer_record = self._writers.require_current(request.writer_commit_binding)
         authorization = self._writers._authorize_atomic(
             request.writer_commit_binding,
@@ -9189,7 +9773,8 @@ class SemanticIngestionAtomicStore:
                             ownership_epoch=request.operation_lease_binding.ownership_epoch,
                         ),
                     ),
-                    *(RecordAbsentPrecondition(memory_id=item.memory_id) for item in (*members, manifest, index, *((retry_index,) if retry_index is not None else ()), *((retry_recovery,) if retry_recovery is not None else ()))),
+                    *(RecordAbsentPrecondition(memory_id=item.memory_id) for item in (*members, manifest, index)),
+                    *retry_locator_preconditions,
                 ),
                 authorization=authorization,
             )
@@ -9290,6 +9875,572 @@ class SemanticIngestionAtomicStore:
             delivery_principal_binding_digest=delivery_principal_binding_digest,
             required_outcome_scopes=required_outcome_scopes,
             control_epoch=control_epoch,
+        )
+
+    def reload_bootstrap_graph_progress_for_original_fence_v3(
+        self,
+        *,
+        operation_fence_binding: OperationFenceBinding,
+        delivery_principal_binding_digest: str,
+        required_outcome_scopes: RequiredOutcomeScopeSet,
+        control_epoch: BootstrapGraphControlEpochV3,
+        operation_lease_binding: OperationLeaseBinding,
+        writer_commit_binding: SemanticWriterCommitBinding,
+    ) -> BootstrapGraphSourceProgressV3:
+        """Return the exact durable bridge payload for one original fence.
+
+        This is intentionally not a synthesis API.  A reclaimed lease can read
+        a predecessor written by its old lease, but it must prove current
+        caller authority before the stored member bytes are decoded.
+        """
+        from memorii.core.semantic_ingestion.contracts import (
+            BootstrapGraphAttemptPublishedProgressV3,
+            BootstrapGraphPlanAtomicWriteRequestV3,
+            BootstrapGraphPlannedProgressV3,
+            BootstrapGraphPlanPublishedProgressV3,
+            decode_bootstrap_graph_atomic_member_payload_v3,
+        )
+
+        if (
+            control_epoch.operation_fence_binding != operation_fence_binding
+            or control_epoch.operation_lease_binding != operation_lease_binding
+            or control_epoch.writer_commit_binding != writer_commit_binding
+            or control_epoch.delivery_principal_binding_digest
+            != delivery_principal_binding_digest
+            or control_epoch.required_scope_set_digest
+            != required_outcome_scopes.required_scope_set_digest
+        ):
+            raise PreplanningStoreError("bootstrap graph progress recovery authority is substituted")
+        self._writers.require_current(writer_commit_binding)
+        control = _control_from_record(self._required_control_record(operation_fence_binding))
+        if (
+            control.lease is None
+            or self.lease_binding(control) != operation_lease_binding
+            or operation_lease_binding.lease_expires_at <= self._now()
+            or control.last_request_digest is None
+        ):
+            raise BootstrapGraphSourceProgressRecoveryUnavailableError(
+                "bootstrap graph progress recovery is unavailable"
+            )
+        head = self._memory_plane.get_record(
+            _bootstrap_graph_v3_epoch_head_id(control_epoch.request_core_digest)
+        )
+        if head is None or head.content.get("epoch_digest") != control_epoch.epoch_digest:
+            raise PreplanningStoreError("bootstrap graph progress recovery epoch is stale")
+        persisted = None
+        progress = None
+        # Later group/result checkpoints do not carry progress.  Walk the
+        # sealed, namespace-local manifests newest-first, returning the first
+        # bridge-valid predecessor instead of reconstructing one from results.
+        for generation in range(control.generation, 0, -1):
+            manifest = self._memory_plane.get_record(
+                _bootstrap_graph_v3_manifest_id(_control_namespace(control), generation)
+            )
+            if manifest is None or manifest.source_kind != "semantic_ingestion_bootstrap_graph_v3_manifest":
+                continue
+            try:
+                candidate = BootstrapGraphPlanAtomicWriteRequestV3.model_validate_json(
+                    json.dumps(manifest.content["request"])
+                )
+            except (KeyError, TypeError, ValueError) as exc:
+                raise PreplanningStoreError("bootstrap graph progress manifest is corrupt") from exc
+            if (
+                candidate.operation_fence_binding != operation_fence_binding
+                or candidate.publication_operation_generation != generation
+            ):
+                raise PreplanningStoreError("bootstrap graph progress manifest is substituted")
+            index = self._memory_plane.get_record(
+                _bootstrap_graph_v3_idempotency_id(candidate.write_digest)
+            )
+            if (
+                index is None
+                or index.source_kind != "semantic_ingestion_bootstrap_graph_v3_idempotency"
+                or index.content.get("request_write_digest") != candidate.write_digest
+                or index.content.get("manifest_id") != manifest.memory_id
+            ):
+                raise PreplanningStoreError("bootstrap graph progress idempotency closure is corrupt")
+            candidate_progress = self._validate_bootstrap_graph_source_progress_v3(request=candidate)
+            if candidate_progress is not None:
+                persisted, progress = candidate, candidate_progress
+                break
+        if persisted is None or progress is None:
+            raise BootstrapGraphSourceProgressRecoveryUnavailableError(
+                "bootstrap graph generation predates source progress"
+            )
+        for member in persisted.members:
+            record = self._memory_plane.get_record(
+                _bootstrap_graph_v3_member_id(
+                    _control_namespace(control), persisted.publication_operation_generation,
+                    member.member_id,
+                )
+            )
+            if (
+                record is None
+                or record.source_kind != "semantic_ingestion_bootstrap_graph_v3_member"
+                or record.content.get("member") != member.model_dump(mode="json")
+            ):
+                raise PreplanningStoreError("bootstrap graph progress member closure is incomplete")
+        # Decode from the persisted member a second time, rather than returning
+        # a caller-owned reconstruction of the same logical progress object.
+        progress_member = next(
+            member for member in persisted.members
+            if member.kind == "bootstrap_graph_source_progress"
+        )
+        decoded = decode_bootstrap_graph_atomic_member_payload_v3(
+            kind="bootstrap_graph_source_progress", raw=progress_member.canonical_payload
+        )
+        progress_type = {
+            "plan_published": BootstrapGraphPlanPublishedProgressV3,
+            "attempt_published": BootstrapGraphAttemptPublishedProgressV3,
+            "planned": BootstrapGraphPlannedProgressV3,
+        }[progress.kind]
+        return progress_type.model_validate(decoded, strict=False)
+
+    def reload_bootstrap_graph_checkpoint_for_resume_v3(
+        self,
+        *,
+        operation_fence_binding: OperationFenceBinding,
+        delivery_principal_binding_digest: str,
+        required_outcome_scopes: RequiredOutcomeScopeSet,
+        control_epoch: BootstrapGraphControlEpochV3,
+        operation_lease_binding: OperationLeaseBinding,
+        writer_commit_binding: SemanticWriterCommitBinding,
+    ) -> BootstrapGraphCheckpointRecoveryV3:
+        """Return one exact persisted bridge checkpoint, never a reconstruction."""
+        progress = self.reload_bootstrap_graph_progress_for_original_fence_v3(
+            operation_fence_binding=operation_fence_binding,
+            delivery_principal_binding_digest=delivery_principal_binding_digest,
+            required_outcome_scopes=required_outcome_scopes,
+            control_epoch=control_epoch,
+            operation_lease_binding=operation_lease_binding,
+            writer_commit_binding=writer_commit_binding,
+        )
+        from memorii.core.semantic_ingestion.contracts import (
+            BootstrapGraphPlanAtomicWriteRequestV3,
+        )
+
+        control = _control_from_record(
+            self._required_control_record(operation_fence_binding)
+        )
+        reference = progress.plan_reference
+        manifest = self._memory_plane.get_record(
+            _bootstrap_graph_v3_manifest_id(
+                _control_namespace(control), reference.generation
+            )
+        )
+        if manifest is None:
+            raise PreplanningStoreError("bootstrap graph checkpoint recovery is unavailable")
+        try:
+            request = BootstrapGraphPlanAtomicWriteRequestV3.model_validate_json(
+                json.dumps(manifest.content["request"])
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PreplanningStoreError("bootstrap graph checkpoint recovery is corrupt") from exc
+        member = next(
+            (item for item in request.members
+             if item.member_id == "source-progress"
+             and item.kind == "bootstrap_graph_source_progress"),
+            None,
+        )
+        if (
+            member is None
+            or request.publication_operation_generation != reference.generation
+        ):
+            raise PreplanningStoreError("bootstrap graph checkpoint recovery is substituted")
+        record = self._memory_plane.get_record(
+            _bootstrap_graph_v3_member_id(
+                _control_namespace(control), reference.generation, member.member_id
+            )
+        )
+        if (
+            record is None
+            or record.content.get("member") != member.model_dump(mode="json")
+        ):
+            raise PreplanningStoreError("bootstrap graph checkpoint recovery member is unavailable")
+        try:
+            recovered_progress = self._validate_bootstrap_graph_source_progress_v3(
+                request=request
+            )
+        except PreplanningStoreError:
+            raise
+        if recovered_progress != progress:
+            raise PreplanningStoreError("bootstrap graph checkpoint recovery is substituted")
+        return BootstrapGraphCheckpointRecoveryV3(
+            request=request,
+            progress=BootstrapGraphRecoveredAtomicMemberV3(
+                generation=reference.generation,
+                member=member,
+                raw=member.canonical_payload,
+                artifact=progress,
+            ),
+            completed_group_results=self._reload_bootstrap_graph_completed_group_results_v3(
+                control=control,
+                first_generation=reference.generation + 1,
+                last_generation=control.generation,
+            ),
+        )
+
+    def _reload_bootstrap_graph_completed_group_results_v3(
+        self, *, control: PreplanningOperationControl, first_generation: int,
+        last_generation: int,
+    ) -> tuple[BootstrapGraphRecoveredAtomicMemberV3, ...]:
+        """Load only exact persisted terminal group members after a checkpoint."""
+        from memorii.core.semantic_ingestion.contracts import (
+            BootstrapGraphPlanAtomicWriteRequestV3,
+            BootstrapNativeGroupCommitTerminalConstructionV3,
+            decode_bootstrap_graph_atomic_member_payload_v3,
+        )
+
+        found: dict[str, BootstrapGraphRecoveredAtomicMemberV3] = {}
+        namespace = _control_namespace(control)
+        for generation in range(first_generation, last_generation + 1):
+            manifest = self._memory_plane.get_record(
+                _bootstrap_graph_v3_manifest_id(namespace, generation)
+            )
+            if manifest is None:
+                continue
+            try:
+                request = BootstrapGraphPlanAtomicWriteRequestV3.model_validate_json(
+                    json.dumps(manifest.content["request"])
+                )
+            except (KeyError, TypeError, ValueError) as exc:
+                raise PreplanningStoreError("bootstrap graph recovery history is corrupt") from exc
+            for member in request.members:
+                if member.kind != "transaction_group_result":
+                    continue
+                try:
+                    artifact = BootstrapNativeGroupCommitTerminalConstructionV3.model_validate(
+                        decode_bootstrap_graph_atomic_member_payload_v3(
+                            kind=member.kind, raw=member.canonical_payload
+                        )
+                    )
+                    self._validate_bootstrap_graph_group_result_members_v3((member,))
+                except (TypeError, ValueError) as exc:
+                    raise PreplanningStoreError("bootstrap graph recovery group result is corrupt") from exc
+                record = self._memory_plane.get_record(
+                    _bootstrap_graph_v3_member_id(namespace, generation, member.member_id)
+                )
+                if record is None or record.content.get("member") != member.model_dump(mode="json"):
+                    raise PreplanningStoreError("bootstrap graph recovery group result is unavailable")
+                recovered = BootstrapGraphRecoveredAtomicMemberV3(
+                    generation=generation, member=member, raw=member.canonical_payload,
+                    artifact=artifact,
+                )
+                existing = found.get(artifact.transaction_group_id)
+                if existing is not None:
+                    # Retry checkpoints retain the same terminal result member.
+                    # It is safe only when the literal persisted member bytes are
+                    # identical; a second logical result is a substituted history.
+                    if existing.raw != recovered.raw:
+                        raise PreplanningStoreError(
+                            "bootstrap graph recovery group result is substituted"
+                        )
+                    continue
+                found[artifact.transaction_group_id] = recovered
+        return tuple(found[group_id] for group_id in sorted(found))
+
+    def reload_bootstrap_graph_resume_closure_for_original_fence_v3(
+        self,
+        *,
+        operation_fence_binding: OperationFenceBinding,
+        delivery_principal_binding_digest: str,
+        required_outcome_scopes: RequiredOutcomeScopeSet,
+        control_epoch: BootstrapGraphControlEpochV3,
+        operation_lease_binding: OperationLeaseBinding,
+        writer_commit_binding: SemanticWriterCommitBinding,
+    ) -> BootstrapGraphResumeClosureV3:
+        """Reload the newest sealed *planned* bridge closure without synthesis.
+
+        The existing progress-only API deliberately remains available to its
+        current callers.  Resume needs more: every artifact is decoded from its
+        named persisted member after validating the member record, literal
+        codec, typed artifact digest, and native reference.  No caller object
+        is accepted as a substitute for a retained byte sequence.
+        """
+        from memorii.core.semantic_ingestion.contracts import (
+            BootstrapGraphAtomicMemberReferenceV3,
+            BootstrapGraphAttemptAuthorityV3,
+            BootstrapGraphAttemptConstructionInputsV3,
+            BootstrapGraphDependentAttemptV3,
+            BootstrapGraphObservedCountersV3,
+            BootstrapGraphPlanAtomicMemberV3,
+            BootstrapGraphPlanAtomicWriteRequestV3,
+            BootstrapGraphPlanCompilationV3,
+            BootstrapGraphPlannedProgressV3,
+            BootstrapGraphPreExecutionGroupEvidenceV3,
+            BootstrapGraphPreExecutionManifestIdentityClosureV3,
+            BootstrapGraphReplayBundleV3,
+            BootstrapGroupPlanningAuthorizationV3,
+            BootstrapNativeGroupCommitTerminalConstructionV3,
+            BootstrapSourcePlanLineageV3,
+            BootstrapTransactionGroupPlanV3,
+            decode_bootstrap_graph_atomic_member_payload_v3,
+        )
+        authority_adapter = TypeAdapter(BootstrapGraphAttemptAuthorityV3)
+
+        if (
+            control_epoch.operation_fence_binding != operation_fence_binding
+            or control_epoch.operation_lease_binding != operation_lease_binding
+            or control_epoch.writer_commit_binding != writer_commit_binding
+            or control_epoch.delivery_principal_binding_digest != delivery_principal_binding_digest
+            or control_epoch.required_scope_set_digest != required_outcome_scopes.required_scope_set_digest
+        ):
+            raise PreplanningStoreError("bootstrap graph resume recovery authority is substituted")
+        self._writers.require_current(writer_commit_binding)
+        control = _control_from_record(self._required_control_record(operation_fence_binding))
+        if (
+            control.lease is None
+            or self.lease_binding(control) != operation_lease_binding
+            or operation_lease_binding.lease_expires_at <= self._now()
+            or control.last_request_digest is None
+        ):
+            raise BootstrapGraphSourceProgressRecoveryUnavailableError(
+                "bootstrap graph resume recovery is unavailable"
+            )
+        head = self._memory_plane.get_record(
+            _bootstrap_graph_v3_epoch_head_id(control_epoch.request_core_digest)
+        )
+        if head is None or head.content.get("epoch_digest") != control_epoch.epoch_digest:
+            raise PreplanningStoreError("bootstrap graph resume recovery epoch is stale")
+
+        namespace = _control_namespace(control)
+
+        def load_request(generation: int) -> BootstrapGraphPlanAtomicWriteRequestV3:
+            manifest = self._memory_plane.get_record(
+                _bootstrap_graph_v3_manifest_id(namespace, generation)
+            )
+            if (
+                manifest is None
+                or manifest.source_kind != "semantic_ingestion_bootstrap_graph_v3_manifest"
+            ):
+                raise PreplanningStoreError("bootstrap graph resume generation is unavailable")
+            try:
+                request = BootstrapGraphPlanAtomicWriteRequestV3.model_validate_json(
+                    json.dumps(manifest.content["request"])
+                )
+            except (KeyError, TypeError, ValueError) as exc:
+                raise PreplanningStoreError("bootstrap graph resume manifest is corrupt") from exc
+            if (
+                request.operation_fence_binding != operation_fence_binding
+                or request.publication_operation_generation != generation
+            ):
+                raise PreplanningStoreError("bootstrap graph resume manifest is substituted")
+            index = self._memory_plane.get_record(
+                _bootstrap_graph_v3_idempotency_id(request.write_digest)
+            )
+            if (
+                index is None
+                or index.source_kind != "semantic_ingestion_bootstrap_graph_v3_idempotency"
+                or index.content.get("request_write_digest") != request.write_digest
+                or index.content.get("manifest_id") != manifest.memory_id
+            ):
+                raise PreplanningStoreError("bootstrap graph resume idempotency closure is corrupt")
+            return request
+
+        def retained_member(
+            request: BootstrapGraphPlanAtomicWriteRequestV3,
+            member_id: str,
+            expected_kind: str,
+            model_type: type | TypeAdapter[Any],
+        ) -> BootstrapGraphRecoveredAtomicMemberV3:
+            member = next((item for item in request.members if item.member_id == member_id), None)
+            if member is None or member.kind != expected_kind:
+                raise PreplanningStoreError("bootstrap graph resume member is unavailable")
+            record = self._memory_plane.get_record(
+                _bootstrap_graph_v3_member_id(
+                    namespace, request.publication_operation_generation, member.member_id
+                )
+            )
+            if (
+                record is None
+                or record.source_kind != "semantic_ingestion_bootstrap_graph_v3_member"
+                or record.content.get("member") != member.model_dump(mode="json")
+                or sha256(member.canonical_payload).hexdigest() != member.payload_digest
+            ):
+                raise PreplanningStoreError("bootstrap graph resume member record is substituted")
+            try:
+                decoded = decode_bootstrap_graph_atomic_member_payload_v3(
+                    kind=member.kind, raw=member.canonical_payload
+                )
+                artifact = (
+                    model_type.validate_python(decoded, strict=False)
+                    if isinstance(model_type, TypeAdapter)
+                    else model_type.model_validate(decoded, strict=False)
+                )
+            except (TypeError, ValueError) as exc:
+                raise PreplanningStoreError("bootstrap graph resume member payload is corrupt") from exc
+            return BootstrapGraphRecoveredAtomicMemberV3(
+                generation=request.publication_operation_generation,
+                member=member,
+                raw=member.canonical_payload,
+                artifact=artifact,
+            )
+
+        selected_request = None
+        selected_progress = None
+        for generation in range(control.generation, 0, -1):
+            manifest = self._memory_plane.get_record(_bootstrap_graph_v3_manifest_id(namespace, generation))
+            if manifest is None:
+                continue
+            candidate = load_request(generation)
+            progress = self._validate_bootstrap_graph_source_progress_v3(request=candidate)
+            if isinstance(progress, BootstrapGraphPlannedProgressV3):
+                selected_request, selected_progress = candidate, progress
+                break
+        if selected_request is None or selected_progress is None:
+            raise BootstrapGraphSourceProgressRecoveryUnavailableError(
+                "bootstrap graph generation predates planned source progress"
+            )
+
+        def referenced(
+            reference: BootstrapGraphAtomicMemberReferenceV3,
+            model_type: type | TypeAdapter[Any],
+            digest_field: str,
+        ) -> BootstrapGraphRecoveredAtomicMemberV3:
+            target = load_request(reference.generation)
+            recovered = retained_member(target, reference.member_id, reference.member_kind, model_type)
+            member = recovered.member
+            if not isinstance(member, BootstrapGraphPlanAtomicMemberV3):
+                raise PreplanningStoreError("bootstrap graph resume member has an invalid type")
+            if (
+                reference.generation != recovered.generation
+                or reference.member_payload_digest != member.payload_digest
+                or reference.artifact_digest != getattr(recovered.artifact, digest_field)
+            ):
+                raise PreplanningStoreError("bootstrap graph resume reference is substituted")
+            # Pydantic validation of the reference recomputes its digest and
+            # enforces the legal repository/member/payload tuple.
+            BootstrapGraphAtomicMemberReferenceV3.model_validate(
+                reference.model_dump(mode="python")
+            )
+            return recovered
+
+        progress_member = retained_member(
+            selected_request, "source-progress", "bootstrap_graph_source_progress",
+            BootstrapGraphPlannedProgressV3,
+        )
+        if progress_member.artifact != selected_progress:
+            raise PreplanningStoreError("bootstrap graph resume progress is substituted")
+        plan = referenced(selected_progress.plan_reference, BootstrapTransactionGroupPlanV3, "plan_digest")
+        replay = referenced(selected_progress.replay_bundle_reference, BootstrapGraphReplayBundleV3, "replay_bundle_digest")
+        counters = referenced(selected_progress.observed_counters_reference, BootstrapGraphObservedCountersV3, "counters_digest")
+        authority = referenced(selected_progress.authority_reference, authority_adapter, "authority_digest")
+        attempt = referenced(selected_progress.attempt_reference, BootstrapGraphDependentAttemptV3, "attempt_digest")
+        lineage = referenced(selected_progress.lineage_reference, BootstrapSourcePlanLineageV3, "lineage_digest")
+        pre_execution_identity_closure = referenced(
+            selected_progress.pre_execution_identity_closure_reference,
+            BootstrapGraphPreExecutionManifestIdentityClosureV3,
+            "closure_digest",
+        )
+        inputs = retained_member(
+            selected_request, "attempt-inputs", "bootstrap_graph_snapshot_authority",
+            BootstrapGraphAttemptConstructionInputsV3,
+        )
+        compilation = retained_member(
+            selected_request, "compilation", "group_compilation_artifact",
+            BootstrapGraphPlanCompilationV3,
+        )
+        authorizations = tuple(
+            retained_member(selected_request, member.member_id, "bootstrap_group_planning_authorization", BootstrapGroupPlanningAuthorizationV3)
+            for member in selected_request.members
+            if member.member_id.startswith("authorization:")
+        )
+        # Lineage retains the plan artifact but deliberately does not duplicate
+        # the pre-execution evidence.  Follow only its sealed predecessor chain
+        # to the matching plan checkpoint; never synthesize evidence from the
+        # plan or scan unrelated generations.
+        pre_execution_request = selected_request
+        while pre_execution_request.kind != "bootstrap_graph_plan_checkpoint":
+            predecessor_generation = (
+                pre_execution_request.predecessor_generation.operation_generation
+            )
+            if predecessor_generation < 1:
+                raise PreplanningStoreError(
+                    "bootstrap graph resume pre-execution closure is unavailable"
+                )
+            pre_execution_request = load_request(predecessor_generation)
+        pre_execution = tuple(
+            retained_member(
+                pre_execution_request,
+                member.member_id,
+                "bootstrap_graph_pre_execution_group_evidence",
+                BootstrapGraphPreExecutionGroupEvidenceV3,
+            )
+            for member in pre_execution_request.members
+            if member.member_id.startswith("pre-execution-evidence:")
+        )
+        authorization_artifacts = tuple(
+            cast(BootstrapGroupPlanningAuthorizationV3, item.artifact)
+            for item in authorizations
+        )
+        plan_artifact = cast(BootstrapTransactionGroupPlanV3, plan.artifact)
+        inputs_artifact = cast(BootstrapGraphAttemptConstructionInputsV3, inputs.artifact)
+        replay_artifact = cast(BootstrapGraphReplayBundleV3, replay.artifact)
+        if not authorizations or tuple(item.transaction_group_id for item in authorization_artifacts) != tuple(sorted(item.transaction_group_id for item in authorization_artifacts)):
+            raise PreplanningStoreError("bootstrap graph resume authorization partition is invalid")
+        if tuple(item.transaction_group_id for item in authorization_artifacts) != tuple(item.transaction_group_id for item in plan_artifact.group_members):
+            raise PreplanningStoreError("bootstrap graph resume authorization closure is substituted")
+        if inputs_artifact.request_digest != selected_progress.request_digest or replay_artifact.request_digest != selected_progress.request_digest:
+            raise PreplanningStoreError("bootstrap graph resume replay closure is substituted")
+
+        final_results: tuple[BootstrapGraphRecoveredAtomicMemberV3, ...] = ()
+        closure = selected_progress.replan_closure_reference
+        if closure is None:
+            final_results = self._reload_bootstrap_graph_completed_group_results_v3(
+                control=control,
+                first_generation=progress_member.generation + 1,
+                last_generation=control.generation,
+            )
+        else:
+            predecessor_final_results = tuple(
+                referenced(
+                    reference,
+                    BootstrapNativeGroupCommitTerminalConstructionV3,
+                    "result_digest",
+                )
+                for reference in closure.canonical_final_result_references
+            )
+            if tuple(cast(BootstrapNativeGroupCommitTerminalConstructionV3, item.artifact).transaction_group_id for item in predecessor_final_results) != tuple(
+                reference.member_id.removeprefix("group-result:")
+                for reference in closure.canonical_final_result_references
+            ):
+                raise PreplanningStoreError("bootstrap graph resume final result partition is substituted")
+            current_attempt_results = (
+                self._reload_bootstrap_graph_completed_group_results_v3(
+                    control=control,
+                    first_generation=progress_member.generation + 1,
+                    last_generation=control.generation,
+                )
+            )
+            final_by_group = {
+                cast(
+                    BootstrapNativeGroupCommitTerminalConstructionV3,
+                    item.artifact,
+                ).transaction_group_id: item
+                for item in predecessor_final_results
+            }
+            for item in current_attempt_results:
+                group_id = cast(
+                    BootstrapNativeGroupCommitTerminalConstructionV3,
+                    item.artifact,
+                ).transaction_group_id
+                existing = final_by_group.get(group_id)
+                if existing is not None and existing.raw != item.raw:
+                    raise PreplanningStoreError(
+                        "bootstrap graph resume final result is substituted"
+                    )
+                final_by_group[group_id] = item
+            final_results = tuple(
+                final_by_group[group_id] for group_id in sorted(final_by_group)
+            )
+        return BootstrapGraphResumeClosureV3(
+            progress=progress_member, plan=plan, replay_bundle=replay,
+            observed_counters=counters, attempt_inputs=inputs,
+            compilation=compilation, authority=authority,
+            attempt=attempt, authorizations=authorizations, lineage=lineage,
+            pre_execution_identity_closure=pre_execution_identity_closure,
+            pre_execution_evidence=pre_execution,
+            canonical_final_group_results=final_results,
         )
 
     def reload_bootstrap_graph_retry_by_recovery_v3(
@@ -9647,6 +10798,7 @@ class SemanticIngestionAtomicStore:
         members = _bootstrap_graph_v3_terminal_members(
             request=request, payloads=payloads, member_type=member_type, encoder=encoder,
         )
+        self._validate_bootstrap_graph_group_result_members_v3(members)
         generation = control.generation + 1
         member_records = tuple(
             _bootstrap_graph_v3_member_record(
@@ -9875,6 +11027,14 @@ class SemanticIngestionAtomicStore:
         member_ids = tuple(member.member_id for member in members)
         member_digests = tuple(member.member_digest for member in members)
         kinds = tuple(member.kind for member in members)
+        expected_kind_set = set(expected_kinds)
+        actual_kind_set = set(kinds)
+        failed_without_group_result = (
+            reload.canonical_source_result.canonical_source_result.final_status
+            == "failed"
+            and actual_kind_set
+            == expected_kind_set - {"transaction_group_result"}
+        )
         if (
             index.content.get("locator_digest") != locator_digest
             or index.content.get("handoff_digest") != reload.handoff_digest
@@ -9907,7 +11067,10 @@ class SemanticIngestionAtomicStore:
             or not members
             or len(member_ids) != len(set(member_ids))
             or identity.required_member_digests != member_digests
-            or set(kinds) != set(expected_kinds)
+            or (
+                actual_kind_set != expected_kind_set
+                and not failed_without_group_result
+            )
             or tuple(sorted(kinds, key=kind_order.__getitem__)) != kinds
             or any(kinds.count(kind) != 1 for kind in (
                 "bootstrap_graph_coordinator_request",
@@ -9961,6 +11124,7 @@ class SemanticIngestionAtomicStore:
                 or record.content.get("member") != member_value
             ):
                 raise PreplanningStoreError("bootstrap graph terminal member closure is incomplete")
+        self._validate_bootstrap_graph_group_result_members_v3(members)
         return reload
 
     def _reload_bootstrap_graph_transaction_v3(
@@ -9983,6 +11147,11 @@ class SemanticIngestionAtomicStore:
             validate_bootstrap_graph_plan_atomic_members_v3(request.members)
         except ValueError as exc:
             raise PreplanningStoreError("bootstrap graph reload member is not native") from exc
+        self._validate_bootstrap_graph_group_result_members_v3(request.members)
+        progress = self._validate_bootstrap_graph_source_progress_v3(request=request)
+        self._validate_bootstrap_graph_source_progress_transition_v3(
+            request=request, progress=progress
+        )
         self._validate_bootstrap_graph_v3_current_authority(
             request=request,
             delivery_principal_binding_digest=delivery_principal_binding_digest,
@@ -10133,11 +11302,22 @@ class SemanticIngestionAtomicStore:
         if not isinstance(request, BootstrapGraphGroupCommitRequestV3):
             raise PreplanningStoreError("bootstrap graph group commit has an invalid type")
         request = BootstrapGraphGroupCommitRequestV3.model_validate(request.model_dump(mode="python"))
+        group_authority = next((
+            item for item in getattr(
+                request.attempt.attempt_authority, "group_member_authorities", ()
+            )
+            if item.transaction_group_id == request.transaction_group_id
+        ), None)
         for item in request.ordered_operation_inputs:
             validate_bootstrap_native_operation_reduction_v3(
                 item.reduction,
-                sealed_snapshot_digest=request.attempt.graph_snapshot_digest,
-                effective_read_set_digest=request.attempt.sealed_read_set_digest,
+                sealed_snapshot_digest=request.group_plan_member.sealed_graph_snapshot_digest,
+                effective_read_set_digest=(
+                    item.reduction.effective_read_set_digest
+                    if group_authority is not None
+                    and group_authority.kind == "reused_unfinished"
+                    else request.attempt.sealed_read_set_digest
+                ),
             )
         self._validate_bootstrap_graph_v3_current_authority(
             request=request,
@@ -10162,7 +11342,56 @@ class SemanticIngestionAtomicStore:
                 or request.expected_generation.control_epoch_digest != request.control_epoch.epoch_digest
             ):
                 raise PreplanningStoreError("bootstrap graph group commit generation is stale")
-            before_graph = control.graph_revision
+            # Graph authority is shared across admitted sources.  The sealed
+            # group plan carries the snapshot revision that was actually read;
+            # a source-local operation control may legitimately lag after a
+            # competing ingestion commits.
+            sealed_graph_revision = (
+                request.group_plan_member.graph_read_set.graph_revision
+            )
+            prior_replay_state = self.semantic_replay_state()
+            before_graph = prior_replay_state.graph_revision
+            if before_graph != sealed_graph_revision:
+                current_records = {
+                    (record.record_kind, record.record_id): record
+                    for record in prior_replay_state.materialized_records
+                }
+                resolved_targets_still_match = all(
+                    (current := current_records.get(
+                        (target.record_kind, target.record_id)
+                    )) is not None
+                    and current.record_digest == target.record_digest
+                    for item in request.ordered_operation_inputs
+                    for target in (
+                        item.reduction.native_compilation.resolved_graph_targets
+                    )
+                )
+                intent_preconditions_still_match = all(
+                    (
+                        current_records.get((intent.record_kind, intent.record_id))
+                        is None
+                        if intent.mutation_kind == "create"
+                        else (
+                            intent.expected_prior_record_digest is not None
+                            and (current := current_records.get(
+                                (intent.record_kind, intent.record_id)
+                            )) is not None
+                            and current.record_digest
+                            == intent.expected_prior_record_digest
+                        )
+                    )
+                    for item in request.ordered_operation_inputs
+                    for intent in item.reduction.effect_materialization.record_intents
+                )
+                if not (
+                    resolved_targets_still_match
+                    and intent_preconditions_still_match
+                ):
+                    raise BootstrapGraphRelatedConflictError(
+                        transaction_group_id=request.transaction_group_id,
+                        expected_graph_revision=sealed_graph_revision,
+                        observed_graph_revision=before_graph,
+                    )
             before_observation = control.observation_revision
             accepted = any(
                 item.reduction.native_terminal.status == "accepted"
@@ -10205,20 +11434,11 @@ class SemanticIngestionAtomicStore:
                         )
                         for intent in materialization.record_intents
                     )
+                    materialized_records = tuple(sorted(
+                        materialized_records,
+                        key=lambda record: (record.record_kind, record.record_digest),
+                    ))
                     all_materialized_records.extend(materialized_records)
-                    if tuple(
-                        (record.record_kind, record.record_digest)
-                        for record in materialized_records
-                    ) != tuple(sorted(
-                        (
-                            record.record_kind,
-                            record.record_digest,
-                        )
-                        for record in materialized_records
-                    )):
-                        raise PreplanningStoreError(
-                            "bootstrap graph materialized records are not canonical"
-                        )
                 graph_payload = encode_typed_value(tuple(
                     record.model_dump(mode="python") for record in materialized_records
                 ))
@@ -10300,6 +11520,7 @@ class SemanticIngestionAtomicStore:
             if accepted:
                 from memorii.core.semantic_ingestion.contracts import SemanticGraphDelta
                 from memorii.core.semantic_ingestion.event_replay import (
+                    SemanticConflictProjectionStaleWinnerError,
                     build_semantic_memory_event_batch,
                     replay_semantic_event_batches,
                 )
@@ -10327,33 +11548,42 @@ class SemanticIngestionAtomicStore:
                     "graph_records": graph_records,
                     "terminal_binding_sets": (),
                 }
-                canonical_graph_delta = SemanticGraphDelta(
+                provisional_graph_delta = SemanticGraphDelta.model_construct(
                     **delta_body,
-                    delta_digest=contract_digest(
+                    delta_digest="0" * 64,
+                )
+                canonical_graph_delta = SemanticGraphDelta.model_validate({
+                    **delta_body,
+                    "delta_digest": contract_digest(
                         b"memorii.semantic-ingestion.graph-delta.v1",
-                        delta_body,
+                        provisional_graph_delta.model_dump(
+                            mode="python", exclude={"delta_digest"}
+                        ),
                     ),
-                )
-                prior_replay_state = self.semantic_replay_state()
-                if prior_replay_state.graph_revision != before_graph:
-                    raise PreplanningStoreError(
-                        "bootstrap graph replay state is stale"
+                })
+                try:
+                    canonical_event_batch = build_semantic_memory_event_batch(
+                        graph_delta=canonical_graph_delta,
+                        prior_state=prior_replay_state,
+                        repository_id=_SEMANTIC_EVENT_REPOSITORY_ID,
+                        source_id=request.operation_fence_binding.source_id,
+                        transaction_group_id=request.transaction_group_id,
+                        operation_fence_id=(
+                            request.operation_fence_binding.operation_fence_id
+                        ),
+                        writer_epoch=request.writer_commit_binding.expected_writer_epoch,
+                        graph_revision_before=before_graph,
+                        graph_revision_after=after_graph,
+                        timestamp=committed_at,
+                        registry=self._event_schema_registry_history.current,
                     )
-                canonical_event_batch = build_semantic_memory_event_batch(
-                    graph_delta=canonical_graph_delta,
-                    prior_state=prior_replay_state,
-                    repository_id=_SEMANTIC_EVENT_REPOSITORY_ID,
-                    source_id=request.operation_fence_binding.source_id,
-                    transaction_group_id=request.transaction_group_id,
-                    operation_fence_id=(
-                        request.operation_fence_binding.operation_fence_id
-                    ),
-                    writer_epoch=request.writer_commit_binding.expected_writer_epoch,
-                    graph_revision_before=before_graph,
-                    graph_revision_after=after_graph,
-                    timestamp=committed_at,
-                    registry=self._event_schema_registry_history.current,
-                )
+                except SemanticConflictProjectionStaleWinnerError as exc:
+                    observed = self.semantic_replay_state().graph_revision
+                    raise BootstrapGraphRelatedConflictError(
+                        transaction_group_id=request.transaction_group_id,
+                        expected_graph_revision=before_graph,
+                        observed_graph_revision=observed,
+                    ) from exc
                 next_replay_state = replay_semantic_event_batches(
                     repository_id=_SEMANTIC_EVENT_REPOSITORY_ID,
                     batches=(canonical_event_batch,),
@@ -12547,7 +13777,14 @@ def _bootstrap_graph_v3_terminal_payloads(*, request: BootstrapGraphTerminalPubl
         group_result_type.model_validate(item.model_dump(mode="python"))
         for item in request.ordered_group_result_constructions
     )
-    if tuple(item.transaction_group_id for item in group_results) != request.final_plan.canonical_group_order:
+    result_group_ids = tuple(item.transaction_group_id for item in group_results)
+    plan_group_ids = request.final_plan.canonical_group_order
+    failed_prefix = (
+        request.canonical_source_result_input.source_status == "failed"
+        and result_group_ids == plan_group_ids[: len(result_group_ids)]
+        and len(result_group_ids) < len(plan_group_ids)
+    )
+    if result_group_ids != plan_group_ids and not failed_prefix:
         raise PreplanningStoreError("bootstrap graph terminal group result order is invalid")
     entry_by_digest = {entry.entry_digest: entry for entry in request.complete_lineage.entries}
     latest_entries = tuple(

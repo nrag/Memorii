@@ -33,13 +33,13 @@ def _committed_manifest() -> dict[str, object]:
     return json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
 
 
-def test_committed_manifest_is_exact_generated_352_tuple_inventory() -> None:
+def test_committed_manifest_is_exact_generated_384_tuple_inventory() -> None:
     manifest = _committed_manifest()
 
     validate_manifest(manifest)
 
     assert manifest == build_manifest()
-    assert manifest["inventory_count"] == 200
+    assert manifest["inventory_count"] == 232
 
 
 @pytest.mark.parametrize(
@@ -104,7 +104,7 @@ def _write_receipts(path: Path, *, elapsed: float = 1.0) -> None:
                 "root": root,
                 "backend": backend,
                 "selectors": shard_selectors(manifest, root=root, backend=backend),
-                "selector_count": 25,
+                "selector_count": 29,
                 "elapsed_milliseconds": round(elapsed * 1000),
                 "runtime_budget_seconds": RUNTIME_BUDGET_SECONDS,
             }
@@ -151,5 +151,5 @@ def test_dedicated_owner_is_excluded_from_generic_unit_shards() -> None:
         "runtime_budget_seconds": 4200,
         "timeout_headroom_seconds": 1200,
         "timeout_minutes": 90,
-        "timing_exemption_reason": "Exact public-root and independent-process JSONL graph transaction shards own 25 manifest selectors each.",
+        "timing_exemption_reason": "Exact public-root and independent-process JSONL graph transaction shards own 29 manifest selectors each.",
     }

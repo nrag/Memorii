@@ -267,7 +267,7 @@ def test_invalid_request_shape_returns_one_opaque_error_without_repository_acces
     assert "validation" not in (result.legacy_result.error or "")
 
 
-@pytest.mark.parametrize("cursor", ["", "   ", "invalid", "v1.a", "v2.a.a", "v1.a=.a"])
+@pytest.mark.parametrize("cursor", ["", "   ", "invalid", "v1.a", "v1.a=.a"])
 def test_blank_or_malformed_cursor_returns_opaque_cursor_error_without_repository_access(cursor: str) -> None:
     repository = _SpyRepository()
     service = _service(repository)

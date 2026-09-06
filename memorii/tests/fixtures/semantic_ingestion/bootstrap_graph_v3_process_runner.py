@@ -7,8 +7,10 @@ import hashlib
 import json
 import signal
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from pathlib import Path
+from threading import Event
 
 from memorii.core.memory_evolution.atomic_store import PreplanningStoreError
 from memorii.core.memory_evolution.writer_admission import SemanticWriterAdmissionError
@@ -17,10 +19,15 @@ from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.provider.models import ProviderOperation
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.semantic_ingestion.bootstrap_graph_host import (
+    BootstrapGraphHostBundle,
     BootstrapGraphHostBundleBuilder,
 )
 from memorii.core.semantic_ingestion.bootstrap_graph_repository import (
     AtomicStoreBootstrapGraphControlEpochRepositoryV3,
+)
+from memorii.core.semantic_ingestion.contracts import (
+    BootstrapGraphPlanAtomicWriteRequestV3,
+    decode_bootstrap_graph_atomic_member_payload_v3,
 )
 from memorii.domain.enums import CommitStatus, MemoryDomain
 from memorii.integrations.hermes_provider import HermesMemoryProvider
@@ -30,7 +37,11 @@ from tests.fixtures.semantic_ingestion.bootstrap_graph_v3_fixture import (
 from tests.unit.core.semantic_ingestion.bootstrap_graph_production_roots_support import (
     GRAPH_SCENARIO_BEHAVIOR,
     RemovedBootstrapGraphHostBundleBuilder,
+    build_filesystem_provider,
+    build_provider_memory_service_from_env,
     graph_fact_proposal,
+    hermes_provider,
+    provider_service,
 )
 from tests.unit.core.semantic_ingestion.test_semantic_provider_composition import (
     TEST_NOW,
@@ -96,6 +107,16 @@ def _member_payload(member: dict) -> dict:
     if isinstance(payload, str):
         payload = decode_typed_value(payload.encode("utf-8"))
     return payload
+
+
+def _json_safe(value: object) -> object:
+    if isinstance(value, bytes):
+        return value.hex()
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    return value
 
 
 def _persisted_successor_evidence(service: object) -> dict[str, object]:
@@ -175,11 +196,42 @@ def _persisted_successor_evidence(service: object) -> dict[str, object]:
             "latest_entry_by_group": by_group,
             "entries": lineage_entries,
         })
-    return {
+    safe = _json_safe({
         "attempts": attempts,
         "lineages": lineages,
         "pre_execution": pre_execution,
-    }
+    })
+    assert isinstance(safe, dict)
+    return safe
+
+
+def _persisted_progress_evidence(service: object) -> list[dict[str, str]]:
+    """Return only decoded, sealed native progress references and digests."""
+    evidence = []
+    for record in service._memory_plane.list_records(
+        source_kind="semantic_ingestion_bootstrap_graph_v3_manifest"
+    ):
+        if "request" not in record.content:
+            continue
+        request = BootstrapGraphPlanAtomicWriteRequestV3.model_validate_json(
+            json.dumps(record.content["request"])
+        )
+        member = next(
+            (item for item in request.members if item.member_id == "source-progress"),
+            None,
+        )
+        if member is None:
+            continue
+        progress = decode_bootstrap_graph_atomic_member_payload_v3(
+            kind=member.kind, raw=member.canonical_payload,
+        )
+        evidence.append({
+            "kind": progress["kind"],
+            "progress_digest": progress["progress_digest"],
+            "plan_member_payload_digest": progress["plan_reference"]["member_payload_digest"],
+            "replay_member_payload_digest": progress["replay_bundle_reference"]["member_payload_digest"],
+        })
+    return evidence
 
 
 def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str, object]:
@@ -205,6 +257,10 @@ def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str
     service_holder: list[object] = []
     lost_ack_injected = False
     scan_calls = 0
+    paused = Event()
+    release_first = Event()
+    second_ready = Event()
+    release_second = Event()
 
     def before_cas(_group_id: str) -> None:
         if phase != "first":
@@ -240,6 +296,19 @@ def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str
             def reject(_binding: object) -> None:
                 raise SemanticWriterAdmissionError("writer authority is unavailable")
             atomic_store._writers.require_current = reject
+
+    def pause_first_group(_group_id: str) -> str | None:
+        if not paused.is_set():
+            paused.set()
+            if not release_first.wait(timeout=300):
+                raise AssertionError("test did not release A")
+            return "first"
+        if not second_ready.is_set():
+            second_ready.set()
+            if not release_second.wait(timeout=300):
+                raise AssertionError("test did not release B")
+            return "second"
+        return None
 
     def after_epoch_created(atomic_store: object, request: object, epoch: object) -> object:
         if behavior not in {
@@ -283,12 +352,16 @@ def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str
         # committed retained arms need accepted materialization.
         accepted_materialization=(behavior == "reused_committed"),
         unavailable_calls=unavailable_calls if behavior == "durable_retry" else None,
-        conflict_calls=conflict_calls if behavior == "resolved_conflict" else None,
+        conflict_calls=(
+            conflict_calls
+            if behavior in {"resolved_conflict", "reused_unfinished"}
+            else None
+        ),
         partial_conflict_calls=(
             partial_conflict_calls
             if behavior in {
                 "partial_commit", "reused_committed", "reused_final",
-                "reused_unfinished", "terminal_locator",
+                "terminal_locator",
             }
             else None
         ),
@@ -309,11 +382,15 @@ def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str
     )
     common: dict[str, object] = {
         "now_provider": lambda: clock[0],
-        "host_bootstrap_capability": _built_in_local_capability(scenario_test=True),
+        "host_bootstrap_capability": _built_in_local_capability(
+            scenario_test=(behavior != "real_related_conflict")
+        ),
         "host_bootstrap_material_verifier": DeterministicTestHostBootstrapMaterialVerifier(),
         "source_normalization_host_bundle_builder": normalization,
     }
-    if behavior == "coordinator_removed":
+    if behavior == "real_related_conflict":
+        pass
+    elif behavior == "coordinator_removed":
         common["bootstrap_graph_host_bundle_builder"] = (
             RemovedBootstrapGraphHostBundleBuilder()
         )
@@ -326,7 +403,21 @@ def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str
             ),
             promotion_enabled=not (behavior == "rollback" and phase == "reopen"),
         )
-    if root == "hermes":
+    if behavior == "real_related_conflict" and root == "filesystem":
+        service = build_filesystem_provider(
+            storage_root / "provider", memory_plane=memory_plane, **common
+        )
+    elif behavior == "real_related_conflict" and root == "factory":
+        service = build_provider_memory_service_from_env(
+            memory_plane=memory_plane, **common
+        )
+    elif behavior == "real_related_conflict" and root == "hermes":
+        service = hermes_provider(
+            service=provider_service(memory_plane=memory_plane, **common)
+        )._service
+    elif behavior == "real_related_conflict":
+        service = provider_service(memory_plane=memory_plane, **common)
+    elif root == "hermes":
         service = HermesMemoryProvider(
             service=ProviderMemoryService._from_scenario_test_host(
                 memory_plane=memory_plane, **common
@@ -337,6 +428,27 @@ def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str
             memory_plane=memory_plane, **common
         )
     service_holder.append(service)
+    if behavior == "real_related_conflict":
+        graph_bundle = (
+            service._provider_ingestion._semantic_runtime.bootstrap_graph_host_bundle
+        )
+        if type(graph_bundle) is not BootstrapGraphHostBundle:
+            raise AssertionError("proof did not compose the production graph host")
+        if hasattr(graph_bundle, "authority_provider"):
+            raise AssertionError("proof composed fixture graph authority")
+    prior_graph_effects = len(service._memory_plane.list_records(
+        source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+    ))
+    if behavior == "real_related_conflict" and phase == "first":
+        atomic = service._semantic_atomic_store
+        real_group_commit = atomic.commit_or_reload_bootstrap_graph_group_v3
+
+        def scheduled_group_commit(*, request):
+            cas_attempts.append(request.transaction_group_id)
+            pause_first_group(request.transaction_group_id)
+            return real_group_commit(request=request)
+
+        atomic.commit_or_reload_bootstrap_graph_group_v3 = scheduled_group_commit
     if behavior == "lost_ack" and phase == "first":
         atomic = service._semantic_atomic_store
         persist_terminal = atomic.persist_bootstrap_graph_terminal_v3
@@ -379,14 +491,52 @@ def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str
             authenticated_host_ingress=ingress,
         )
         operation_id = f"{operation_id}-after-rollback"
-    result = service.sync_event(
-        operation=ProviderOperation.CHAT_USER_TURN,
-        content="Atlas owner is Bob.",
-        operation_id=operation_id,
-        task_id="task:one",
-        user_id="user:alice",
-        authenticated_host_ingress=ingress,
-    )
+    if behavior == "real_related_conflict" and phase == "first":
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            pending = executor.submit(
+                service.sync_event,
+                operation=ProviderOperation.CHAT_USER_TURN,
+                content="Atlas owner is Bob.",
+                operation_id=operation_id,
+                task_id="task:one",
+                user_id="user:alice",
+                authenticated_host_ingress=ingress,
+            )
+            try:
+                if not paused.wait(timeout=300):
+                    raise AssertionError("A did not reach group CAS")
+                competing = executor.submit(
+                    service.sync_event,
+                    operation=ProviderOperation.CHAT_USER_TURN,
+                    content="Atlas owner is Bob.",
+                    operation_id=f"{operation_id}-winner",
+                    task_id="task:one",
+                    user_id="user:bob",
+                    authenticated_host_ingress=ingress,
+                )
+                if not second_ready.wait(timeout=300):
+                    raise AssertionError("B did not reach group CAS")
+                release_second.set()
+                winner = competing.result(timeout=300)
+                release_first.set()
+                result = pending.result(timeout=300)
+            finally:
+                release_second.set()
+                release_first.set()
+        if winner.blocked_reasons["semantic_ingestion"] != "source_only":
+            raise AssertionError(
+                "competing ingestion did not commit: "
+                f"{winner.blocked_reasons['semantic_ingestion']}"
+            )
+    else:
+        result = service.sync_event(
+            operation=ProviderOperation.CHAT_USER_TURN,
+            content="Atlas owner is Bob.",
+            operation_id=operation_id,
+            task_id="task:one",
+            user_id="user:alice",
+            authenticated_host_ingress=ingress,
+        )
     fixture_path = storage_root / "memory-plane" / "memory_records.jsonl"
     terminal_locator_removed = 0
     mixed_version_fixture_mutations = 0
@@ -426,7 +576,13 @@ def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str
     return {
         "semantic_ingestion": result.blocked_reasons["semantic_ingestion"],
         "cas_attempts": len(cas_attempts),
-        "graph_effects": len(successful_calls),
+        "graph_effects": (
+            len(service._memory_plane.list_records(
+                source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+            )) - prior_graph_effects
+            if behavior == "real_related_conflict"
+            else len(successful_calls)
+        ),
         "unavailable_calls": len(unavailable_calls),
         "conflict_calls": len(conflict_calls),
         "partial_conflict_calls": len(partial_conflict_calls),
@@ -443,6 +599,10 @@ def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str
             else prior_terminal_result.blocked_reasons["semantic_ingestion"]
         ),
         "successor_evidence": successor_evidence,
+        "source_progress_evidence": _persisted_progress_evidence(service),
+        "admission_count": len(service._memory_plane.list_records(
+            source_kind="semantic_ingestion_admission_index"
+        )),
     }
 
 

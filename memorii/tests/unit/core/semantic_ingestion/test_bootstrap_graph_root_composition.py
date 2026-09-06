@@ -5,11 +5,14 @@
 from __future__ import annotations
 
 import inspect
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 
 import pytest
 from memorii.core.filesystem_storage.bundle import (
     build_filesystem_provider as _production_filesystem_provider,
 )
+from memorii.core.memory_evolution.ingestion_contracts import decode_typed_value
 from memorii.core.memory_plane import JsonlMemoryPlaneStore, MemoryPlaneService
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.provider.factory import (
@@ -17,14 +20,17 @@ from memorii.core.provider.factory import (
 )
 from memorii.core.provider.models import ProviderOperation
 from memorii.core.provider.service import ProviderMemoryService
+from memorii.core.semantic_ingestion import contracts as semantic_contracts
 from memorii.core.semantic_ingestion.bootstrap_graph_host import (
     BootstrapGraphHostBundleBuilder,
 )
 from memorii.core.semantic_ingestion.contracts import (
+    BootstrapGraphGroupCommitReloadV3,
     ProviderEntityObject,
     ProviderFact,
     ProviderMention,
     ProviderSemanticProposal,
+    decode_semantic_contract,
 )
 from memorii.domain.enums import CommitStatus, MemoryDomain
 from memorii.integrations.hermes_provider import (
@@ -115,6 +121,121 @@ def test_all_normal_roots_install_builtin_graph_host_without_injection(
     assert not hasattr(runtime.bootstrap_graph_host_bundle, "authority_provider")
 
 
+def test_identical_two_ingestion_group_cas_race_rebases_without_replan() -> None:
+    """An identical concurrent write does not create a false related conflict."""
+    race_timeout_seconds = 120
+    plane = MemoryPlaneService()
+    paused = Event()
+    release_first = Event()
+    second_ready = Event()
+    release_second = Event()
+    calls: list[str] = []
+    cas_attempts: list[str] = []
+
+    def pause_a(_group_id: str) -> None:
+        if not paused.is_set():
+            paused.set()
+            assert release_first.wait(timeout=race_timeout_seconds), "test did not release A"
+            return
+        if not second_ready.is_set():
+            second_ready.set()
+            assert release_second.wait(timeout=race_timeout_seconds), "test did not release B"
+
+    def build_service(*, calls: list[str], before_cas=None) -> ProviderMemoryService:
+        normalization, _ = _v3_normalization_host_builder(
+            proposal=ProviderSemanticProposal(
+                mentions=(
+                    ProviderMention(local_id="atlas", mention_quote="Atlas", mention_context_quote="Atlas owner is Bob."),
+                    ProviderMention(local_id="bob", mention_quote="Bob", mention_context_quote="Atlas owner is Bob."),
+                ),
+                facts=(ProviderFact(
+                    local_id="owner", predicate_id="owner_is",
+                    subject_entity_ref="atlas", object=ProviderEntityObject(entity_ref="bob"),
+                    assertion_quote="Atlas owner is Bob.", predicate_anchor_quote="owner",
+                    polarity="positive", commitment="asserted",
+                ),),
+                abstained=False,
+            )
+        )
+        return provider_service(
+            memory_plane=plane,
+            now_provider=lambda: TEST_NOW,
+            host_bootstrap_capability=_built_in_local_capability(),
+            host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+            source_normalization_host_bundle_builder=normalization,
+            bootstrap_graph_host_bundle_builder=BootstrapGraphHostBundleBuilder(
+                    authority_provider=DeterministicBootstrapGraphAuthorityProviderV3(
+                        successful_calls=calls,
+                        accepted_materialization=True,
+                        before_compare_and_swap=before_cas,
+                        cas_attempts=cas_attempts,
+                )
+            ),
+        )
+
+    service = build_service(calls=calls, before_cas=pause_a)
+    ingress = _host_ingress()
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(
+            service.sync_event,
+            operation=ProviderOperation.CHAT_USER_TURN,
+            content="Atlas owner is Bob.",
+            operation_id="real-group-cas-race-a",
+            task_id="task:race", user_id="user:alice",
+            authenticated_host_ingress=ingress,
+        )
+        if not paused.wait(timeout=race_timeout_seconds):
+            early = first.result(timeout=race_timeout_seconds)
+            raise AssertionError(
+                "A did not reach its real group CAS: "
+                f"blocked={early.blocked_reasons!r}, calls={calls!r}"
+            )
+        second = executor.submit(
+            service.sync_event,
+            operation=ProviderOperation.CHAT_USER_TURN,
+            content="Atlas owner is Bob.",
+            operation_id="real-group-cas-race-b",
+            task_id="task:race", user_id="user:bob",
+            authenticated_host_ingress=ingress,
+        )
+        assert second_ready.wait(timeout=race_timeout_seconds), "B did not reach the real group CAS"
+        release_second.set()
+        second_result = second.result(timeout=race_timeout_seconds)
+        release_first.set()
+        first_result = first.result(timeout=race_timeout_seconds)
+
+    assert first_result.blocked_reasons["semantic_ingestion"] == "source_only"
+    assert second_result.blocked_reasons["semantic_ingestion"] == "source_only"
+    assert len(cas_attempts) == 2
+    assert len(calls) == 2
+    admissions = plane.list_records(source_kind="semantic_ingestion_admission_index")
+    assert len(admissions) == 2
+    group_commits = plane.list_records(
+        source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+    )
+    assert len(group_commits) == 2
+    accepted_effects = [
+        record
+        for record in plane.list_records(
+            source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_effect"
+        )
+        if record.content["kind"] == "graph_delta"
+    ]
+    assert len(accepted_effects) == 2
+    progress_checkpoints = [
+        record
+        for record in plane.list_records(
+            source_kind="semantic_ingestion_bootstrap_graph_v3_manifest"
+        )
+        if any(
+            member["member_id"] == "source-progress"
+            and member["kind"] == "bootstrap_graph_source_progress"
+            for member in record.content.get("request", {}).get("members", ())
+        )
+    ]
+    assert len(progress_checkpoints) == 6
+
+
 def test_normal_root_signatures_do_not_expose_graph_authority_injection() -> None:
     """Fixture graph providers are available only through the private test harness."""
     for target in (
@@ -159,9 +280,117 @@ def test_all_normal_roots_execute_builtin_native_graph_path_without_injection(
         authenticated_host_ingress=_host_ingress(),
     )
     assert result.blocked_reasons["semantic_ingestion"] == "source_only"
-    assert len(service._memory_plane.list_records(
+    primary_records = service._memory_plane.list_records(
         source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
-    )) == 1
+    )
+    assert len(primary_records) == 1
+    reload = decode_semantic_contract(
+        bytes.fromhex(primary_records[0].content["reload_hex"]),
+        BootstrapGraphGroupCommitReloadV3,
+    )
+    assert reload.persisted_result.core.disposition == "committed"
+    assert tuple(
+        item.final_status
+        for item in reload.persisted_result.core.ordered_operation_results
+    ) == ("accepted",)
+    assert (
+        reload.persisted_result.core.graph_revision_before
+        != reload.persisted_result.core.graph_revision_after
+    )
+
+    effects = service._memory_plane.list_records(
+        source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_effect"
+    )
+    assert tuple(sorted(record.content["kind"] for record in effects)) == (
+        "event_batch", "graph_delta", "observation_delta", "result",
+    )
+    graph_effect = next(
+        record for record in effects if record.content["kind"] == "graph_delta"
+    )
+    durable_records = decode_typed_value(
+        bytes.fromhex(graph_effect.content["payload_hex"])
+    )
+    durable_keys = tuple(
+        (record["record_kind"], record["record_digest"])
+        for record in durable_records
+    )
+    assert durable_keys == tuple(sorted(set(durable_keys)))
+
+    batches = service._semantic_atomic_store.semantic_event_batches()
+    assert len(batches) == 1
+    batch = batches[0]
+    assert all(
+        event.payload.graph_delta_digest == batch.graph_delta_digest
+        for event in batch.events
+    )
+    replay = service._semantic_atomic_store.semantic_replay_state()
+    assert replay.graph_revision == reload.persisted_result.core.graph_revision_after
+    assert replay.last_event_batch_digest == batch.event_batch_digest
+
+
+def test_builtin_root_rejects_substituted_reduction_snapshot_before_effect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    proposal = graph_fact_proposal()
+    normalization, _ = _v3_normalization_host_builder(proposal=proposal)
+    service = provider_service(
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=_built_in_local_capability(),
+        host_bootstrap_material_verifier=(
+            DeterministicTestHostBootstrapMaterialVerifier()
+        ),
+        source_normalization_host_bundle_builder=normalization,
+    )
+    graph_revision_before = (
+        service._semantic_atomic_store.semantic_replay_state().graph_revision
+    )
+    original = semantic_contracts.validate_bootstrap_native_operation_reduction_v3
+    rejected = False
+
+    def substitute_expected_snapshot(
+        reduction, *, sealed_snapshot_digest, effective_read_set_digest,
+    ) -> None:
+        nonlocal rejected
+        assert sealed_snapshot_digest != "0" * 64
+        try:
+            original(
+                reduction,
+                sealed_snapshot_digest="0" * 64,
+                effective_read_set_digest=effective_read_set_digest,
+            )
+        except ValueError:
+            rejected = True
+            raise
+
+    monkeypatch.setattr(
+        semantic_contracts,
+        "validate_bootstrap_native_operation_reduction_v3",
+        substitute_expected_snapshot,
+    )
+    result = service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="substituted-reduction-snapshot",
+        task_id="task:one",
+        user_id="user:alice",
+        authenticated_host_ingress=_host_ingress(),
+    )
+
+    assert rejected
+    assert result.blocked_reasons["semantic_ingestion"] == (
+        "graph_transaction_authority_unavailable"
+    )
+    assert not service._memory_plane.list_records(
+        source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+    )
+    assert not service._memory_plane.list_records(
+        source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_effect"
+    )
+    assert service._semantic_atomic_store.semantic_event_batches() == ()
+    assert (
+        service._semantic_atomic_store.semantic_replay_state().graph_revision
+        == graph_revision_before
+    )
 
 
 @pytest.mark.parametrize("root", ("direct", "factory", "filesystem", "hermes"))
@@ -437,12 +666,20 @@ def test_filesystem_root_reopens_graph_terminal_without_reexecuting(tmp_path) ->
         mentions=(
             ProviderMention(
                 local_id="atlas", mention_quote="Atlas",
-                mention_context_quote="Atlas owner is Bob.",
+                mention_context_quote=(
+                    "Atlas owns Bob. Carol owns Dan. Erin owns Finn."
+                ),
             ),
             ProviderMention(
                 local_id="bob", mention_quote="Bob",
-                mention_context_quote="Atlas owner is Bob.",
+                mention_context_quote=(
+                    "Atlas owns Bob. Carol owns Dan. Erin owns Finn."
+                ),
             ),
+            ProviderMention(local_id="carol", mention_quote="Carol", mention_context_quote="Atlas owns Bob. Carol owns Dan. Erin owns Finn."),
+            ProviderMention(local_id="dan", mention_quote="Dan", mention_context_quote="Atlas owns Bob. Carol owns Dan. Erin owns Finn."),
+            ProviderMention(local_id="erin", mention_quote="Erin", mention_context_quote="Atlas owns Bob. Carol owns Dan. Erin owns Finn."),
+            ProviderMention(local_id="finn", mention_quote="Finn", mention_context_quote="Atlas owns Bob. Carol owns Dan. Erin owns Finn."),
         ),
         facts=(ProviderFact(
             local_id="owner", predicate_id="owner_is", subject_entity_ref="atlas",
@@ -571,9 +808,9 @@ def test_filesystem_root_reloads_durable_graph_retry_without_reexecuting(tmp_pat
 @pytest.mark.parametrize(
     ("scenario", "group_count", "conflict_count", "effect_count"),
     (
-        ("resolved", 1, 2, 1),
-        ("exhausted", 1, 2, 1),
-        ("partial", 3, 4, 3),
+        ("resolved", 1, 1, 1),
+        ("exhausted", 1, 2, 0),
+        ("partial", 3, 1, 3),
     ),
 )
 def test_filesystem_root_reloads_graph_successor_without_reexecuting(
@@ -677,7 +914,8 @@ def test_direct_root_replans_once_after_related_conflict() -> None:
         bootstrap_graph_host_bundle_builder=BootstrapGraphHostBundleBuilder(
             authority_provider=DeterministicBootstrapGraphAuthorityProviderV3(
                 successful_calls=successful_calls,
-                conflict_calls=conflict_calls,
+                accepted_materialization=True,
+                related_conflict_calls=conflict_calls,
             )
         ),
     )
@@ -692,7 +930,7 @@ def test_direct_root_replans_once_after_related_conflict() -> None:
     assert result.blocked_reasons["semantic_ingestion"] == "source_only", (
         conflict_calls, successful_calls
     )
-    assert len(conflict_calls) == 2
+    assert len(conflict_calls) == 1
     assert len(successful_calls) == 1
     repeat = service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
@@ -701,39 +939,56 @@ def test_direct_root_replans_once_after_related_conflict() -> None:
         authenticated_host_ingress=_host_ingress(),
     )
     assert repeat == result
-    assert len(conflict_calls) == 2
+    assert len(conflict_calls) == 1
     assert len(successful_calls) == 1
 
 
-def test_direct_root_preserves_completed_group_during_related_conflict() -> None:
+def test_direct_root_leaves_multi_fact_source_effect_free() -> None:
     proposal = ProviderSemanticProposal(
         mentions=(
             ProviderMention(
                 local_id="atlas", mention_quote="Atlas",
-                mention_context_quote="Atlas owner is Bob.",
+                mention_context_quote=(
+                    "Atlas owns Bob. Carol owns Dan. Erin owns Finn."
+                ),
             ),
             ProviderMention(
                 local_id="bob", mention_quote="Bob",
-                mention_context_quote="Atlas owner is Bob.",
+                mention_context_quote=(
+                    "Atlas owns Bob. Carol owns Dan. Erin owns Finn."
+                ),
             ),
+            ProviderMention(local_id="carol", mention_quote="Carol", mention_context_quote="Atlas owns Bob. Carol owns Dan. Erin owns Finn."),
+            ProviderMention(local_id="dan", mention_quote="Dan", mention_context_quote="Atlas owns Bob. Carol owns Dan. Erin owns Finn."),
+            ProviderMention(local_id="erin", mention_quote="Erin", mention_context_quote="Atlas owns Bob. Carol owns Dan. Erin owns Finn."),
+            ProviderMention(local_id="finn", mention_quote="Finn", mention_context_quote="Atlas owns Bob. Carol owns Dan. Erin owns Finn."),
         ),
         facts=(
             ProviderFact(
                 local_id="owner", predicate_id="owner_is",
                 subject_entity_ref="atlas", object=ProviderEntityObject(entity_ref="bob"),
-                assertion_quote="Atlas owner is Bob.", predicate_anchor_quote="owner",
+                assertion_quote=(
+                    "Atlas owns Bob."
+                ),
+                predicate_anchor_quote="Atlas owns",
                 polarity="positive", commitment="asserted",
             ),
             ProviderFact(
-                local_id="owned-by", predicate_id="owned_by",
-                subject_entity_ref="bob", object=ProviderEntityObject(entity_ref="atlas"),
-                assertion_quote="Atlas owner is Bob.", predicate_anchor_quote="Bob",
+                local_id="owner-two", predicate_id="owner_is",
+                subject_entity_ref="carol", object=ProviderEntityObject(entity_ref="dan"),
+                assertion_quote=(
+                    "Carol owns Dan."
+                ),
+                predicate_anchor_quote="Carol owns",
                 polarity="positive", commitment="asserted",
             ),
             ProviderFact(
-                local_id="managed-by", predicate_id="managed_by",
-                subject_entity_ref="atlas", object=ProviderEntityObject(entity_ref="bob"),
-                assertion_quote="Atlas owner is Bob.", predicate_anchor_quote="owner",
+                local_id="owner-three", predicate_id="owner_is",
+                subject_entity_ref="erin", object=ProviderEntityObject(entity_ref="finn"),
+                assertion_quote=(
+                    "Erin owns Finn."
+                ),
+                predicate_anchor_quote="Erin owns",
                 polarity="positive", commitment="asserted",
             ),
         ),
@@ -750,14 +1005,15 @@ def test_direct_root_preserves_completed_group_during_related_conflict() -> None
         bootstrap_graph_host_bundle_builder=BootstrapGraphHostBundleBuilder(
             authority_provider=DeterministicBootstrapGraphAuthorityProviderV3(
                 successful_calls=successful_calls,
-                partial_conflict_calls=conflict_calls,
+                accepted_materialization=True,
             )
         ),
     )
 
     result = service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
-        content="Atlas owner is Bob.", operation_id="graph-partial-conflict",
+        content="Atlas owns Bob. Carol owns Dan. Erin owns Finn.",
+        operation_id="graph-partial-conflict",
         task_id="task:one", user_id="user:alice",
         authenticated_host_ingress=_host_ingress(),
     )
@@ -765,14 +1021,15 @@ def test_direct_root_preserves_completed_group_during_related_conflict() -> None
     assert result.blocked_reasons["semantic_ingestion"] == "source_only", (
         conflict_calls, successful_calls
     )
-    assert len(conflict_calls) == 4
-    assert len(successful_calls) == 3
+    assert conflict_calls == []
+    assert successful_calls == []
     repeat = service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
-        content="Atlas owner is Bob.", operation_id="graph-partial-conflict",
+        content="Atlas owns Bob. Carol owns Dan. Erin owns Finn.",
+        operation_id="graph-partial-conflict",
         task_id="task:one", user_id="user:alice",
         authenticated_host_ingress=_host_ingress(),
     )
     assert repeat == result
-    assert len(conflict_calls) == 4
-    assert len(successful_calls) == 3
+    assert conflict_calls == []
+    assert successful_calls == []

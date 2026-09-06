@@ -671,7 +671,7 @@ def _seed_canonical_conflict(service: ProviderMemoryService, now: datetime) -> _
     _support_dir = str(Path(__file__).parent / "semantic_ingestion")
     if _support_dir not in _sys.path:
         _sys.path.insert(0, _support_dir)
-    from semantic_terminal_test_support import (  # noqa: E402
+    from tests.fixtures.semantic_ingestion.semantic_terminal_fixture import (  # noqa: E402
         TestSemanticConflictAuthorityResolver,
         accepted_terminal,
         handoff,

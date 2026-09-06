@@ -19,10 +19,14 @@ from memorii.core.provider.models import ProviderOperation
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.semantic_ingestion.bootstrap_graph_host import BootstrapGraphHostBundleBuilder
 from memorii.core.semantic_ingestion.contracts import (
+    BootstrapGraphGroupCommitReloadV3,
+    BootstrapGraphGroupCommitRequestV3,
+    BootstrapGraphTerminalReloadV3,
     ProviderEntityObject,
     ProviderFact,
     ProviderMention,
     ProviderSemanticProposal,
+    decode_semantic_contract,
 )
 from memorii.integrations.hermes_provider import HermesMemoryProvider
 from tests.fixtures.semantic_ingestion.bootstrap_graph_v3_fixture import (
@@ -130,6 +134,102 @@ def _terminal_reload_identities(plane: MemoryPlaneService) -> tuple[tuple[str, s
             source_kind="semantic_ingestion_bootstrap_graph_v3_terminal_locator"
         )
     ))
+
+
+def _accepted_effect_identity(
+    service: ProviderMemoryService, plane: MemoryPlaneService,
+) -> tuple[object, ...]:
+    primary = plane.list_records(
+        source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+    )
+    assert len(primary) == 1
+    reload = decode_semantic_contract(
+        bytes.fromhex(primary[0].content["reload_hex"]),
+        BootstrapGraphGroupCommitReloadV3,
+    )
+    assert reload.persisted_result.core.disposition == "committed"
+    effects = plane.list_records(
+        source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_effect"
+    )
+    assert tuple(sorted(record.content["kind"] for record in effects)) == (
+        "event_batch", "graph_delta", "observation_delta", "result",
+    )
+    batches = service._semantic_atomic_store.semantic_event_batches()
+    assert len(batches) == 1
+    replay = service._semantic_atomic_store.semantic_replay_state()
+    assert replay.graph_revision == reload.persisted_result.core.graph_revision_after
+    assert replay.last_event_batch_digest == batches[0].event_batch_digest
+    return (
+        primary[0].memory_id,
+        reload.reload_digest,
+        reload.persisted_result.core.graph_revision_after,
+        tuple(
+            sorted(
+                (
+                    record.memory_id,
+                    record.content["kind"],
+                    record.content["payload_digest"],
+                    record.content["carrier_digest"],
+                )
+                for record in effects
+            )
+        ),
+        batches[0].event_batch_digest,
+    )
+
+
+def test_terminal_reload_rejects_absent_repository_group_primary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, plane = _graph_service(
+        storage=None, executor_calls=[], built_in=True
+    )
+    result = _sync(service, operation_id="terminal-missing-group-primary")
+    assert result.blocked_reasons["semantic_ingestion"] == "source_only"
+
+    primary = plane.list_records(
+        source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+    )[0]
+    group_request = decode_semantic_contract(
+        bytes.fromhex(primary.content["request_hex"]),
+        BootstrapGraphGroupCommitRequestV3,
+    )
+    locator = next(
+        record
+        for record in plane.list_records(
+            source_kind="semantic_ingestion_bootstrap_graph_v3_terminal_locator"
+        )
+        if record.content.get("semantic_ingestion_kind")
+        == "bootstrap_graph_v3_terminal_locator"
+    )
+    terminal_reload = BootstrapGraphTerminalReloadV3.model_validate(
+        locator.content["reload"], strict=False
+    )
+    get_record = plane.get_record
+
+    def hide_group_primary(memory_id: str):
+        if memory_id == primary.memory_id:
+            return None
+        return get_record(memory_id)
+
+    monkeypatch.setattr(plane, "get_record", hide_group_primary)
+    with pytest.raises(
+        PreplanningStoreError,
+        match="transaction result is not repository-owned",
+    ):
+        service._semantic_atomic_store._reload_bootstrap_graph_terminal_exact_v3(
+            locator_digest=terminal_reload.atomic_write_locator_digest,
+            expected_reload=terminal_reload,
+            expected_delivery_principal_binding_digest=(
+                terminal_reload.delivery_principal_binding_digest
+            ),
+            expected_required_scope_set_digest=(
+                terminal_reload.required_scope_set_digest
+            ),
+            expected_operation_fence_binding=(
+                group_request.operation_fence_binding
+            ),
+        )
 
 
 @pytest.mark.parametrize("persistent", (False, True))
@@ -277,6 +377,7 @@ def test_builtin_terminal_ack_loss_reloads_exact_terminal_without_duplicate_grou
     )
     assert len(before_terminal) == 3
     assert len(before_group) == 1
+    accepted_effect_before = _accepted_effect_identity(service, plane)
 
     reopened, reopened_plane = (
         _graph_service(
@@ -296,6 +397,9 @@ def test_builtin_terminal_ack_loss_reloads_exact_terminal_without_duplicate_grou
             source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
         )
     ) == before_group
+    assert _accepted_effect_identity(reopened, reopened_plane) == (
+        accepted_effect_before
+    )
 
 
 @pytest.mark.parametrize("persistent", (False, True))
@@ -385,6 +489,7 @@ def test_builtin_recovery_preserves_group_identity_after_lease_reclaim(
         source_kind="semantic_ingestion_bootstrap_graph_v3_pre_epoch_authority"
     )
     assert len(primary_before) == len(authority_before) == 1
+    accepted_effect_before = _accepted_effect_identity(service, plane)
 
     marker = BootstrapWriterHandoffMarkerV3.model_validate(
         plane.list_records(
@@ -453,4 +558,7 @@ def test_builtin_recovery_preserves_group_identity_after_lease_reclaim(
     )
     assert tuple(item.memory_id for item in authority_after) == tuple(
         item.memory_id for item in authority_before
+    )
+    assert _accepted_effect_identity(repeated_service, repeated_plane) == (
+        accepted_effect_before
     )

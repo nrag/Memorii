@@ -4,11 +4,11 @@
   "bound_documents": {
     "docs/design/conflict_attention.md": "0b5a8a9246fb3d0d2cf18d0589d3b412778f0caa167bac331c3ae9a7b7ec1a68",
     "docs/design/event_model.md": "9ce93e4a826f3e47b2e41fa06d2ec1e40bb0cad2475fa0527d9bb2c9ab3acdec",
-    "docs/design/semantic_ingestion_architecture.md": "f4085b99c15eeceeb0975e4cac5618e52e48c8b72c4c5a393807afbbe8ecc1a0"
+    "docs/design/semantic_ingestion_architecture.md": "5727af6bb79ce45a5c9180dbbb8525044ea62ce5d4dd0f5210ea5a2655723653"
   },
   "checkpoint_rule": "validate_complete_batch_position_and_binding_indexes_then_apply_the_same_fail_closed_algebra_as_genesis",
   "decision": "reject_non_identical_equal_version_envelopes",
-  "decision_digest": "bfc2d07387921dec887d0fd0b1f4421c00ab530d2e2ac4c6de338ef9a1e6ad7b",
+  "decision_digest": "361c5858226efebe254cdf55f31de3a54d19c195b01a2a98a4e4dcd478a8117f",
   "duplicate_rule": "only_a_byte_identical_canonical_envelope_is_an_idempotent_duplicate",
   "format": "memorii.equal-version-replay-decision.v1",
   "ordering_authority": "repository_batch_position",

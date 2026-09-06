@@ -3164,6 +3164,646 @@
     },
     {
       "requirement_ids": [
+        "GTC-R14"
+      ],
+      "node_id": "bootstrap-graph-source_progress_initial-direct-jsonl_independent_process",
+      "pytest_selector": "tests/unit/core/semantic_ingestion/test_bootstrap_graph_jsonl_race_reopen.py::test_graph_race_reopens_in_an_independent_jsonl_process[source_progress_initial-direct]",
+      "root": "direct",
+      "backend": "jsonl_independent_process",
+      "public_trigger": "ProviderMemoryService.sync_event",
+      "scenario": "source_progress_initial",
+      "injected_boundary": "bootstrap_graph_v3:source_progress_initial",
+      "expected_durable_state": "terminal_result",
+      "expected_cas_calls": 1,
+      "expected_cas_effects": 1,
+      "expected_event_effects": 1,
+      "expected_graph_effects": 1,
+      "expected_external_calls_digest": "72527e4a4c592b359350445d0c81542d0836f33943e540d62919b32266cb9be0",
+      "non_disclosure_oracle_digest": "5e468052b311b4fec3e886b94128788d7c5c9398aa897fe6346d5327733ba487",
+      "row_digest": "77fdeadb186393bb0c10fad4be1b340352e64e2752367d50849201a276f25a64"
+    },
+    {
+      "requirement_ids": [
+        "GTC-R14"
+      ],
+      "node_id": "bootstrap-graph-source_progress_initial-direct-memory",
+      "pytest_selector": "tests/unit/core/semantic_ingestion/test_bootstrap_graph_scenario_replay.py::test_graph_scenario_replays_without_effects_in_memory[source_progress_initial-direct]",
+      "root": "direct",
+      "backend": "memory",
+      "public_trigger": "ProviderMemoryService.sync_event",
+      "scenario": "source_progress_initial",
+      "injected_boundary": "bootstrap_graph_v3:source_progress_initial",
+      "expected_durable_state": "terminal_result",
+      "expected_cas_calls": 1,
+      "expected_cas_effects": 1,
+      "expected_event_effects": 1,
+      "expected_graph_effects": 1,
+      "expected_external_calls_digest": "72527e4a4c592b359350445d0c81542d0836f33943e540d62919b32266cb9be0",
+      "non_disclosure_oracle_digest": "5e468052b311b4fec3e886b94128788d7c5c9398aa897fe6346d5327733ba487",
+      "row_digest": "9542bd4172cc608d8bf9191ee171f650f040a22bcb70003fb59bbf60f530fa77"
+    },
+    {
+      "requirement_ids": [
+        "GTC-R14"
+      ],
+      "node_id": "bootstrap-graph-source_progress_initial-factory-jsonl_independent_process",
+      "pytest_selector": "tests/unit/core/semantic_ingestion/test_bootstrap_graph_jsonl_race_reopen.py::test_graph_race_reopens_in_an_independent_jsonl_process[source_progress_initial-factory]",
+      "root": "factory",
+      "backend": "jsonl_independent_process",
+      "public_trigger": "ProviderMemoryService.sync_event",
+      "scenario": "source_progress_initial",
+      "injected_boundary": "bootstrap_graph_v3:source_progress_initial",
+      "expected_durable_state": "terminal_result",
+      "expected_cas_calls": 1,
+      "expected_cas_effects": 1,
+      "expected_event_effects": 1,
+      "expected_graph_effects": 1,
+      "expected_external_calls_digest": "72527e4a4c592b359350445d0c81542d0836f33943e540d62919b32266cb9be0",
+      "non_disclosure_oracle_digest": "5e468052b311b4fec3e886b94128788d7c5c9398aa897fe6346d5327733ba487",
+      "row_digest": "606d4ce72c30e289fd222d61a5cfee910a8bf6386466691fbbce4672cc85fb6b"
+    },
+    {
+      "requirement_ids": [
+        "GTC-R14"
+      ],
+      "node_id": "bootstrap-graph-source_progress_initial-factory-memory",
+      "pytest_selector": "tests/unit/core/semantic_ingestion/test_bootstrap_graph_scenario_replay.py::test_graph_scenario_replays_without_effects_in_memory[source_progress_initial-factory]",
+      "root": "factory",
+      "backend": "memory",
+      "public_trigger": "ProviderMemoryService.sync_event",
+      "scenario": "source_progress_initial",
+      "injected_boundary": "bootstrap_graph_v3:source_progress_initial",
+      "expected_durable_state": "terminal_result",
+      "expected_cas_calls": 1,
+      "expected_cas_effects": 1,
+      "expected_event_effects": 1,
+      "expected_graph_effects": 1,
+      "expected_external_calls_digest": "72527e4a4c592b359350445d0c81542d0836f33943e540d62919b32266cb9be0",
+      "non_disclosure_oracle_digest": "5e468052b311b4fec3e886b94128788d7c5c9398aa897fe6346d5327733ba487",
+      "row_digest": "6aa0e5cc7adeacbb66b33b8f2fa243f4bd78a776e8aede17705c1505828edbc7"
+    },
+    {
+      "requirement_ids": [
+        "GTC-R14"
+      ],
+      "node_id": "bootstrap-graph-source_progress_initial-filesystem-jsonl_independent_process",
+      "pytest_selector": "tests/unit/core/semantic_ingestion/test_bootstrap_graph_jsonl_race_reopen.py::test_graph_race_reopens_in_an_independent_jsonl_process[source_progress_initial-filesystem]",
+      "root": "filesystem",
+      "backend": "jsonl_independent_process",
+      "public_trigger": "ProviderMemoryService.sync_event",
+      "scenario": "source_progress_initial",
+      "injected_boundary": "bootstrap_graph_v3:source_progress_initial",
+      "expected_durable_state": "terminal_result",
+      "expected_cas_calls": 1,
+      "expected_cas_effects": 1,
+      "expected_event_effects": 1,
+      "expected_graph_effects": 1,
+      "expected_external_calls_digest": "72527e4a4c592b359350445d0c81542d0836f33943e540d62919b32266cb9be0",
+      "non_disclosure_oracle_digest": "5e468052b311b4fec3e886b94128788d7c5c9398aa897fe6346d5327733ba487",
+      "row_digest": "0b6efc3ecf6e5e3202cc1fb7b615f717d7997ce3e50064200b9443b610daed59"
+    },
+    {
+      "requirement_ids": [
+        "GTC-R14"
+      ],
+      "node_id": "bootstrap-graph-source_progress_initial-filesystem-memory",
+      "pytest_selector": "tests/unit/core/semantic_ingestion/test_bootstrap_graph_scenario_replay.py::test_graph_scenario_replays_without_effects_in_memory[source_progress_initial-filesystem]",
+      "root": "filesystem",
+      "backend": "memory",
+      "public_trigger": "ProviderMemoryService.sync_event",
+      "scenario": "source_progress_initial",
+      "injected_boundary": "bootstrap_graph_v3:source_progress_initial",
+      "expected_durable_state": "terminal_result",
+      "expected_cas_calls": 1,
+      "expected_cas_effects": 1,
+      "expected_event_effects": 1,
+      "expected_graph_effects": 1,
+      "expected_external_calls_digest": "72527e4a4c592b359350445d0c81542d0836f33943e540d62919b32266cb9be0",
+      "non_disclosure_oracle_digest": "5e468052b311b4fec3e886b94128788d7c5c9398aa897fe6346d5327733ba487",
+      "row_digest": "c1f12fe8b872e5c05bf7aa986ac451c2c008562b7de1a70626c6627ffba3229d"
+    },
+    {
+      "requirement_ids": [
+        "GTC-R14"
+      ],
+      "node_id": "bootstrap-graph-source_progress_initial-hermes-jsonl_independent_process",
+      "pytest_selector": "tests/unit/core/semantic_ingestion/test_bootstrap_graph_jsonl_race_reopen.py::test_graph_race_reopens_in_an_independent_jsonl_process[source_progress_initial-hermes]",
+      "root": "hermes",
+      "backend": "jsonl_independent_process",
+      "public_trigger": "ProviderMemoryService.sync_event",
+      "scenario": "source_progress_initial",
+      "injected_boundary": "bootstrap_graph_v3:source_progress_initial",
+      "expected_durable_state": "terminal_result",
+      "expected_cas_calls": 1,
+      "expected_cas_effects": 1,
+      "expected_event_effects": 1,
+      "expected_graph_effects": 1,
+      "expected_external_calls_digest": "72527e4a4c592b359350445d0c81542d0836f33943e540d62919b32266cb9be0",
+      "non_disclosure_oracle_digest": "5e468052b311b4fec3e886b94128788d7c5c9398aa897fe6346d5327733ba487",
+      "row_digest": "b626b55cf3dbd474012be8b4397afd7a8981d8ea6c8b3c599e2ed64fb79d2ef4"
+    },
+    {
+      "requirement_ids": [
+        "GTC-R14"
+      ],
+      "node_id": "bootstrap-graph-source_progress_initial-hermes-memory",
+      "pytest_selector": "tests/unit/core/semantic_ingestion/test_bootstrap_graph_scenario_replay.py::test_graph_scenario_replays_without_effects_in_memory[source_progress_initial-hermes]",
+      "root": "hermes",
+      "backend": "memory",
+      "public_trigger": "ProviderMemoryService.sync_event",
+      "scenario": "source_progress_initial",
+      "injected_boundary": "bootstrap_graph_v3:source_progress_initial",
+      "expected_durable_state": "terminal_result",
+      "expected_cas_calls": 1,
+      "expected_cas_effects": 1,
+      "expected_event_effects": 1,
+      "expected_graph_effects": 1,
+      "expected_external_calls_digest": "72527e4a4c592b359350445d0c81542d0836f33943e540d62919b32266cb9be0",
+      "non_disclosure_oracle_digest": "5e468052b311b4fec3e886b94128788d7c5c9398aa897fe6346d5327733ba487",
+      "row_digest": "d9d0c04077308a4554457513d35ace82ed13edc222c2cf93ffd938c730c1d14b"
+    },
+    {
+      "requirement_ids": [
+        "GTC-R18"
+      ],
+      "node_id": "bootstrap-graph-source_progress_lost_ack-direct-jsonl_independent_process",
+      "pytest_selector": "tests/unit/core/semantic_ingestion/test_bootstrap_graph_jsonl_race_reopen.py::test_graph_race_reopens_in_an_independent_jsonl_process[source_progress_lost_ack-direct]",
+      "root": "direct",
+      "backend": "jsonl_independent_process",
+      "public_trigger": "ProviderMemoryService.sync_event",
+      "scenario": "source_progress_lost_ack",
+      "injected_boundary": "bootstrap_graph_v3:source_progress_lost_ack",
+      "expected_durable_state": "terminal_result",
+      "expected_cas_calls": 1,
+      "expected_cas_effects": 1,
+      "expected_event_effects": 1,
+      "expected_graph_effects": 1,
+      "expected_external_calls_digest": "b7eef40410e647e3d244d9b32041c796463023911828651eb0821b167d438a65",
+      "non_disclosure_oracle_digest": "bf7c4549e10a99fa678954d4a62b3c1bf21476885b135db24a1010e085e2aa07",
+      "row_digest": "24b5c1fd31260fa9115fefb20c5402dd89180bf097e532de73b55053960f8f03"
+    },
+    {
+      "requirement_ids": [
+        "GTC-R18"
+      ],
+      "node_id": "bootstrap-graph-source_progress_lost_ack-direct-memory",
+      "pytest_selector": "tests/unit/core/semantic_ingestion/test_bootstrap_graph_scenario_replay.py::test_graph_scenario_replays_without_effects_in_memory[source_progress_lost_ack-direct]",
+      "root": "direct",
+      "backend": "memory",
+      "public_trigger": "ProviderMemoryService.sync_event",
+      "scenario": "source_progress_lost_ack",
+      "injected_boundary": "bootstrap_graph_v3:source_progress_lost_ack",
+      "expected_durable_state": "terminal_result",
+      "expected_cas_calls": 1,
+      "expected_cas_effects": 1,
+      "expected_event_effects": 1,
+      "expected_graph_effects": 1,
+      "expected_external_calls_digest": "b7eef40410e647e3d244d9b32041c796463023911828651eb0821b167d438a65",
+      "non_disclosure_oracle_digest": "bf7c4549e10a99fa678954d4a62b3c1bf21476885b135db24a1010e085e2aa07",
+      "row_digest": "0c5707a2c86e51ab3b195b0202b53062ad73c8376292fed85c791d81cabc23dd"
+    },
+    {
+      "requirement_ids": [
+        "GTC-R18"
+      ],
+      "node_id": "bootstrap-graph-source_progress_lost_ack-factory-jsonl_independent_process",
+      "pytest_selector": "tests/unit/core/semantic_ingestion/test_bootstrap_graph_jsonl_race_reopen.py::test_graph_race_reopens_in_an_independent_jsonl_process[source_progress_lost_ack-factory]",
+      "root": "factory",
+      "backend": "jsonl_independent_process",
+      "public_trigger": "ProviderMemoryService.sync_event",
+      "scenario": "source_progress_lost_ack",
+      "injected_boundary": "bootstrap_graph_v3:source_progress_lost_ack",
+      "expected_durable_state": "terminal_result",
+      "expected_cas_calls": 1,
+      "expected_cas_effects": 1,
+      "expected_event_effects": 1,
+      "expected_graph_effects": 1,
+      "expected_external_calls_digest": "b7eef40410e647e3d244d9b32041c796463023911828651eb0821b167d438a65",
+      "non_disclosure_oracle_digest": "bf7c4549e10a99fa678954d4a62b3c1bf21476885b135db24a1010e085e2aa07",
+      "row_digest": "dd4868303ca08d3fa17633c84b5b20bf4e16b2381eddb5de00d0aa043a4cde05"
+    },
+    {
+      "requirement_ids": [
+        "GTC-R18"
+      ],
+      "node_id": "bootstrap-graph-source_progress_lost_ack-factory-memory",
+      "pytest_selector": "tests/unit/core/semantic_ingestion/test_bootstrap_graph_scenario_replay.py::test_graph_scenario_replays_without_effects_in_memory[source_progress_lost_ack-factory]",
+      "root": "factory",
+      "backend": "memory",
+      "public_trigger": "ProviderMemoryService.sync_event",
+      "scenario": "source_progress_lost_ack",
+      "injected_boundary": "bootstrap_graph_v3:source_progress_lost_ack",
+      "expected_durable_state": "terminal_result",
+      "expected_cas_calls": 1,
+      "expected_cas_effects": 1,
+      "expected_event_effects": 1,
+      "expected_graph_effects": 1,
+      "expected_external_calls_digest": "b7eef40410e647e3d244d9b32041c796463023911828651eb0821b167d438a65",
+      "non_disclosure_oracle_digest": "bf7c4549e10a99fa678954d4a62b3c1bf21476885b135db24a1010e085e2aa07",
+      "row_digest": "96018a7f9d1de4415e09bc5e3c324c3d8e6d1b3272facb520c4e1e2049e83f60"
+    },
+    {
+      "requirement_ids": [
+        "GTC-R18"
+      ],
+      "node_id": "bootstrap-graph-source_progress_lost_ack-filesystem-jsonl_independent_process",
+      "pytest_selector": "tests/unit/core/semantic_ingestion/test_bootstrap_graph_jsonl_race_reopen.py::test_graph_race_reopens_in_an_independent_jsonl_process[source_progress_lost_ack-filesystem]",
+      "root": "filesystem",
+      "backend": "jsonl_independent_process",
+      "public_trigger": "ProviderMemoryService.sync_event",
+      "scenario": "source_progress_lost_ack",
+      "injected_boundary": "bootstrap_graph_v3:source_progress_lost_ack",
+      "expected_durable_state": "terminal_result",
+      "expected_cas_calls": 1,
+      "expected_cas_effects": 1,
+      "expected_event_effects": 1,
+      "expected_graph_effects": 1,
+      "expected_external_calls_digest": "b7eef40410e647e3d244d9b32041c796463023911828651eb0821b167d438a65",
+      "non_disclosure_oracle_digest": "bf7c4549e10a99fa678954d4a62b3c1bf21476885b135db24a1010e085e2aa07",
+      "row_digest": "238744848aae516e7282e73a533e48aa40d3c2dc522d0882cd0a991adee8e9fb"
+    },
+    {
+      "requirement_ids": [
+        "GTC-R18"
+      ],
+      "node_id": "bootstrap-graph-source_progress_lost_ack-filesystem-memory",
+      "pytest_selector": "tests/unit/core/semantic_ingestion/test_bootstrap_graph_scenario_replay.py::test_graph_scenario_replays_without_effects_in_memory[source_progress_lost_ack-filesystem]",
+      "root": "filesystem",
+      "backend": "memory",
+      "public_trigger": "ProviderMemoryService.sync_event",
+      "scenario": "source_progress_lost_ack",
+      "injected_boundary": "bootstrap_graph_v3:source_progress_lost_ack",
+      "expected_durable_state": "terminal_result",
+      "expected_cas_calls": 1,
+      "expected_cas_effects": 1,
+      "expected_event_effects": 1,
+      "expected_graph_effects": 1,
+      "expected_external_calls_digest": "b7eef40410e647e3d244d9b32041c796463023911828651eb0821b167d438a65",
+      "non_disclosure_oracle_digest": "bf7c4549e10a99fa678954d4a62b3c1bf21476885b135db24a1010e085e2aa07",
+      "row_digest": "13dd929dd0d4303fe807b31e172105231a3e4fd72058c782ebf826777eab2eea"
+    },
+    {
+      "requirement_ids": [
+        "GTC-R18"
+      ],
+      "node_id": "bootstrap-graph-source_progress_lost_ack-hermes-jsonl_independent_process",
+      "pytest_selector": "tests/unit/core/semantic_ingestion/test_bootstrap_graph_jsonl_race_reopen.py::test_graph_race_reopens_in_an_independent_jsonl_process[source_progress_lost_ack-hermes]",
+      "root": "hermes",
+      "backend": "jsonl_independent_process",
+      "public_trigger": "ProviderMemoryService.sync_event",
+      "scenario": "source_progress_lost_ack",
+      "injected_boundary": "bootstrap_graph_v3:source_progress_lost_ack",
+      "expected_durable_state": "terminal_result",
+      "expected_cas_calls": 1,
+      "expected_cas_effects": 1,
+      "expected_event_effects": 1,
+      "expected_graph_effects": 1,
+      "expected_external_calls_digest": "b7eef40410e647e3d244d9b32041c796463023911828651eb0821b167d438a65",
+      "non_disclosure_oracle_digest": "bf7c4549e10a99fa678954d4a62b3c1bf21476885b135db24a1010e085e2aa07",
+      "row_digest": "dd00010a66b3474d49dbc70c0815195005b21a1c3154aead0e32d06c88ad7ddd"
+    },
+    {
+      "requirement_ids": [
+        "GTC-R18"
+      ],
+      "node_id": "bootstrap-graph-source_progress_lost_ack-hermes-memory",
+      "pytest_selector": "tests/unit/core/semantic_ingestion/test_bootstrap_graph_scenario_replay.py::test_graph_scenario_replays_without_effects_in_memory[source_progress_lost_ack-hermes]",
+      "root": "hermes",
+      "backend": "memory",
+      "public_trigger": "ProviderMemoryService.sync_event",
+      "scenario": "source_progress_lost_ack",
+      "injected_boundary": "bootstrap_graph_v3:source_progress_lost_ack",
+      "expected_durable_state": "terminal_result",
+      "expected_cas_calls": 1,
+      "expected_cas_effects": 1,
+      "expected_event_effects": 1,
+      "expected_graph_effects": 1,
+      "expected_external_calls_digest": "b7eef40410e647e3d244d9b32041c796463023911828651eb0821b167d438a65",
+      "non_disclosure_oracle_digest": "bf7c4549e10a99fa678954d4a62b3c1bf21476885b135db24a1010e085e2aa07",
+      "row_digest": "dcbee09db46b281f0270668bf2293ff0964d60b2b617e1193fbe00d6210db450"
+    },
+    {
+      "requirement_ids": [
+        "GTC-R15"
+      ],
+      "node_id": "bootstrap-graph-source_progress_reclaimed_lease-direct-jsonl_independent_process",
+      "pytest_selector": "tests/unit/core/semantic_ingestion/test_bootstrap_graph_jsonl_race_reopen.py::test_graph_race_reopens_in_an_independent_jsonl_process[source_progress_reclaimed_lease-direct]",
+      "root": "direct",
+      "backend": "jsonl_independent_process",
+      "public_trigger": "ProviderMemoryService.sync_event",
+      "scenario": "source_progress_reclaimed_lease",
+      "injected_boundary": "bootstrap_graph_v3:source_progress_reclaimed_lease",
+      "expected_durable_state": "terminal_result",
+      "expected_cas_calls": 1,
+      "expected_cas_effects": 1,
+      "expected_event_effects": 1,
+      "expected_graph_effects": 1,
+      "expected_external_calls_digest": "761d552910829e6c33ffc7252652c27c0ba860e1d30ed562a1b9c5f808dc2548",
+      "non_disclosure_oracle_digest": "93f2f2f7d334e0193adb76bf7b21e57575614690787b85c248362bebe0aa7bb4",
+      "row_digest": "f36b7293177f07a3e3b14f8b8ec6510bf9e94b4ed4c7c0c20d6dfcfc18c9814f"
+    },
+    {
+      "requirement_ids": [
+        "GTC-R15"
+      ],
+      "node_id": "bootstrap-graph-source_progress_reclaimed_lease-direct-memory",
+      "pytest_selector": "tests/unit/core/semantic_ingestion/test_bootstrap_graph_scenario_replay.py::test_graph_scenario_replays_without_effects_in_memory[source_progress_reclaimed_lease-direct]",
+      "root": "direct",
+      "backend": "memory",
+      "public_trigger": "ProviderMemoryService.sync_event",
+      "scenario": "source_progress_reclaimed_lease",
+      "injected_boundary": "bootstrap_graph_v3:source_progress_reclaimed_lease",
+      "expected_durable_state": "terminal_result",
+      "expected_cas_calls": 1,
+      "expected_cas_effects": 1,
+      "expected_event_effects": 1,
+      "expected_graph_effects": 1,
+      "expected_external_calls_digest": "761d552910829e6c33ffc7252652c27c0ba860e1d30ed562a1b9c5f808dc2548",
+      "non_disclosure_oracle_digest": "93f2f2f7d334e0193adb76bf7b21e57575614690787b85c248362bebe0aa7bb4",
+      "row_digest": "113aac760d48a1b302aec44b90bd2d8e82590259e5ebba8445299031b506e4e0"
+    },
+    {
+      "requirement_ids": [
+        "GTC-R15"
+      ],
+      "node_id": "bootstrap-graph-source_progress_reclaimed_lease-factory-jsonl_independent_process",
+      "pytest_selector": "tests/unit/core/semantic_ingestion/test_bootstrap_graph_jsonl_race_reopen.py::test_graph_race_reopens_in_an_independent_jsonl_process[source_progress_reclaimed_lease-factory]",
+      "root": "factory",
+      "backend": "jsonl_independent_process",
+      "public_trigger": "ProviderMemoryService.sync_event",
+      "scenario": "source_progress_reclaimed_lease",
+      "injected_boundary": "bootstrap_graph_v3:source_progress_reclaimed_lease",
+      "expected_durable_state": "terminal_result",
+      "expected_cas_calls": 1,
+      "expected_cas_effects": 1,
+      "expected_event_effects": 1,
+      "expected_graph_effects": 1,
+      "expected_external_calls_digest": "761d552910829e6c33ffc7252652c27c0ba860e1d30ed562a1b9c5f808dc2548",
+      "non_disclosure_oracle_digest": "93f2f2f7d334e0193adb76bf7b21e57575614690787b85c248362bebe0aa7bb4",
+      "row_digest": "398b2075af6cc70f1f3baf3bf37891014c70c9c289aced3ed53e5946b4dc4a3e"
+    },
+    {
+      "requirement_ids": [
+        "GTC-R15"
+      ],
+      "node_id": "bootstrap-graph-source_progress_reclaimed_lease-factory-memory",
+      "pytest_selector": "tests/unit/core/semantic_ingestion/test_bootstrap_graph_scenario_replay.py::test_graph_scenario_replays_without_effects_in_memory[source_progress_reclaimed_lease-factory]",
+      "root": "factory",
+      "backend": "memory",
+      "public_trigger": "ProviderMemoryService.sync_event",
+      "scenario": "source_progress_reclaimed_lease",
+      "injected_boundary": "bootstrap_graph_v3:source_progress_reclaimed_lease",
+      "expected_durable_state": "terminal_result",
+      "expected_cas_calls": 1,
+      "expected_cas_effects": 1,
+      "expected_event_effects": 1,
+      "expected_graph_effects": 1,
+      "expected_external_calls_digest": "761d552910829e6c33ffc7252652c27c0ba860e1d30ed562a1b9c5f808dc2548",
+      "non_disclosure_oracle_digest": "93f2f2f7d334e0193adb76bf7b21e57575614690787b85c248362bebe0aa7bb4",
+      "row_digest": "8d0934f6c4138ded2ae9d5a484a3b9c536ea7cfd4340645e4d7ffaad4a8cc09f"
+    },
+    {
+      "requirement_ids": [
+        "GTC-R15"
+      ],
+      "node_id": "bootstrap-graph-source_progress_reclaimed_lease-filesystem-jsonl_independent_process",
+      "pytest_selector": "tests/unit/core/semantic_ingestion/test_bootstrap_graph_jsonl_race_reopen.py::test_graph_race_reopens_in_an_independent_jsonl_process[source_progress_reclaimed_lease-filesystem]",
+      "root": "filesystem",
+      "backend": "jsonl_independent_process",
+      "public_trigger": "ProviderMemoryService.sync_event",
+      "scenario": "source_progress_reclaimed_lease",
+      "injected_boundary": "bootstrap_graph_v3:source_progress_reclaimed_lease",
+      "expected_durable_state": "terminal_result",
+      "expected_cas_calls": 1,
+      "expected_cas_effects": 1,
+      "expected_event_effects": 1,
+      "expected_graph_effects": 1,
+      "expected_external_calls_digest": "761d552910829e6c33ffc7252652c27c0ba860e1d30ed562a1b9c5f808dc2548",
+      "non_disclosure_oracle_digest": "93f2f2f7d334e0193adb76bf7b21e57575614690787b85c248362bebe0aa7bb4",
+      "row_digest": "ca93bec4f34327fc9a31738a76c138eabf4bcaf297182a6f04f882aeebe8a4a4"
+    },
+    {
+      "requirement_ids": [
+        "GTC-R15"
+      ],
+      "node_id": "bootstrap-graph-source_progress_reclaimed_lease-filesystem-memory",
+      "pytest_selector": "tests/unit/core/semantic_ingestion/test_bootstrap_graph_scenario_replay.py::test_graph_scenario_replays_without_effects_in_memory[source_progress_reclaimed_lease-filesystem]",
+      "root": "filesystem",
+      "backend": "memory",
+      "public_trigger": "ProviderMemoryService.sync_event",
+      "scenario": "source_progress_reclaimed_lease",
+      "injected_boundary": "bootstrap_graph_v3:source_progress_reclaimed_lease",
+      "expected_durable_state": "terminal_result",
+      "expected_cas_calls": 1,
+      "expected_cas_effects": 1,
+      "expected_event_effects": 1,
+      "expected_graph_effects": 1,
+      "expected_external_calls_digest": "761d552910829e6c33ffc7252652c27c0ba860e1d30ed562a1b9c5f808dc2548",
+      "non_disclosure_oracle_digest": "93f2f2f7d334e0193adb76bf7b21e57575614690787b85c248362bebe0aa7bb4",
+      "row_digest": "69231af08742cf2aab270a857401adb5119bd3447767ab9e155173546a584736"
+    },
+    {
+      "requirement_ids": [
+        "GTC-R15"
+      ],
+      "node_id": "bootstrap-graph-source_progress_reclaimed_lease-hermes-jsonl_independent_process",
+      "pytest_selector": "tests/unit/core/semantic_ingestion/test_bootstrap_graph_jsonl_race_reopen.py::test_graph_race_reopens_in_an_independent_jsonl_process[source_progress_reclaimed_lease-hermes]",
+      "root": "hermes",
+      "backend": "jsonl_independent_process",
+      "public_trigger": "ProviderMemoryService.sync_event",
+      "scenario": "source_progress_reclaimed_lease",
+      "injected_boundary": "bootstrap_graph_v3:source_progress_reclaimed_lease",
+      "expected_durable_state": "terminal_result",
+      "expected_cas_calls": 1,
+      "expected_cas_effects": 1,
+      "expected_event_effects": 1,
+      "expected_graph_effects": 1,
+      "expected_external_calls_digest": "761d552910829e6c33ffc7252652c27c0ba860e1d30ed562a1b9c5f808dc2548",
+      "non_disclosure_oracle_digest": "93f2f2f7d334e0193adb76bf7b21e57575614690787b85c248362bebe0aa7bb4",
+      "row_digest": "c28f7bd5735d4311739bb96362018de1302e002f728a5e121555293dc3d1f42c"
+    },
+    {
+      "requirement_ids": [
+        "GTC-R15"
+      ],
+      "node_id": "bootstrap-graph-source_progress_reclaimed_lease-hermes-memory",
+      "pytest_selector": "tests/unit/core/semantic_ingestion/test_bootstrap_graph_scenario_replay.py::test_graph_scenario_replays_without_effects_in_memory[source_progress_reclaimed_lease-hermes]",
+      "root": "hermes",
+      "backend": "memory",
+      "public_trigger": "ProviderMemoryService.sync_event",
+      "scenario": "source_progress_reclaimed_lease",
+      "injected_boundary": "bootstrap_graph_v3:source_progress_reclaimed_lease",
+      "expected_durable_state": "terminal_result",
+      "expected_cas_calls": 1,
+      "expected_cas_effects": 1,
+      "expected_event_effects": 1,
+      "expected_graph_effects": 1,
+      "expected_external_calls_digest": "761d552910829e6c33ffc7252652c27c0ba860e1d30ed562a1b9c5f808dc2548",
+      "non_disclosure_oracle_digest": "93f2f2f7d334e0193adb76bf7b21e57575614690787b85c248362bebe0aa7bb4",
+      "row_digest": "cc52325f3af44e9320dcc658dd51cff7bc02ca824790d742ebf22740265a23d7"
+    },
+    {
+      "requirement_ids": [
+        "GTC-R16"
+      ],
+      "node_id": "bootstrap-graph-source_progress_related_conflict-direct-jsonl_independent_process",
+      "pytest_selector": "tests/unit/core/semantic_ingestion/test_bootstrap_graph_jsonl_race_reopen.py::test_graph_race_reopens_in_an_independent_jsonl_process[source_progress_related_conflict-direct]",
+      "root": "direct",
+      "backend": "jsonl_independent_process",
+      "public_trigger": "ProviderMemoryService.sync_event",
+      "scenario": "source_progress_related_conflict",
+      "injected_boundary": "bootstrap_graph_v3:source_progress_related_conflict",
+      "expected_durable_state": "terminal_result",
+      "expected_cas_calls": 1,
+      "expected_cas_effects": 1,
+      "expected_event_effects": 1,
+      "expected_graph_effects": 1,
+      "expected_external_calls_digest": "ffaef527dfcf514d766d978ffcd82b5142d5cd2d930710c0f557bafb0f8a56af",
+      "non_disclosure_oracle_digest": "a3ef5f5c294ce1c51c1dcae989d43141a55b35ed94c9640ece1db431ad633020",
+      "row_digest": "55e875e2328a712639f7edc47b0f1da0f5a58f13b4d586440fd88ae529fd7553"
+    },
+    {
+      "requirement_ids": [
+        "GTC-R16"
+      ],
+      "node_id": "bootstrap-graph-source_progress_related_conflict-direct-memory",
+      "pytest_selector": "tests/unit/core/semantic_ingestion/test_bootstrap_graph_scenario_replay.py::test_graph_scenario_replays_without_effects_in_memory[source_progress_related_conflict-direct]",
+      "root": "direct",
+      "backend": "memory",
+      "public_trigger": "ProviderMemoryService.sync_event",
+      "scenario": "source_progress_related_conflict",
+      "injected_boundary": "bootstrap_graph_v3:source_progress_related_conflict",
+      "expected_durable_state": "terminal_result",
+      "expected_cas_calls": 1,
+      "expected_cas_effects": 1,
+      "expected_event_effects": 1,
+      "expected_graph_effects": 1,
+      "expected_external_calls_digest": "ffaef527dfcf514d766d978ffcd82b5142d5cd2d930710c0f557bafb0f8a56af",
+      "non_disclosure_oracle_digest": "a3ef5f5c294ce1c51c1dcae989d43141a55b35ed94c9640ece1db431ad633020",
+      "row_digest": "fe021705071d1ff1816f557963441ad72c2ca40dac18879ff1f353adfd4faabf"
+    },
+    {
+      "requirement_ids": [
+        "GTC-R16"
+      ],
+      "node_id": "bootstrap-graph-source_progress_related_conflict-factory-jsonl_independent_process",
+      "pytest_selector": "tests/unit/core/semantic_ingestion/test_bootstrap_graph_jsonl_race_reopen.py::test_graph_race_reopens_in_an_independent_jsonl_process[source_progress_related_conflict-factory]",
+      "root": "factory",
+      "backend": "jsonl_independent_process",
+      "public_trigger": "ProviderMemoryService.sync_event",
+      "scenario": "source_progress_related_conflict",
+      "injected_boundary": "bootstrap_graph_v3:source_progress_related_conflict",
+      "expected_durable_state": "terminal_result",
+      "expected_cas_calls": 1,
+      "expected_cas_effects": 1,
+      "expected_event_effects": 1,
+      "expected_graph_effects": 1,
+      "expected_external_calls_digest": "ffaef527dfcf514d766d978ffcd82b5142d5cd2d930710c0f557bafb0f8a56af",
+      "non_disclosure_oracle_digest": "a3ef5f5c294ce1c51c1dcae989d43141a55b35ed94c9640ece1db431ad633020",
+      "row_digest": "8a940ee0692793b5054746ae84f53a653807616f7f0f6f66fc83e56f2e6513e9"
+    },
+    {
+      "requirement_ids": [
+        "GTC-R16"
+      ],
+      "node_id": "bootstrap-graph-source_progress_related_conflict-factory-memory",
+      "pytest_selector": "tests/unit/core/semantic_ingestion/test_bootstrap_graph_scenario_replay.py::test_graph_scenario_replays_without_effects_in_memory[source_progress_related_conflict-factory]",
+      "root": "factory",
+      "backend": "memory",
+      "public_trigger": "ProviderMemoryService.sync_event",
+      "scenario": "source_progress_related_conflict",
+      "injected_boundary": "bootstrap_graph_v3:source_progress_related_conflict",
+      "expected_durable_state": "terminal_result",
+      "expected_cas_calls": 1,
+      "expected_cas_effects": 1,
+      "expected_event_effects": 1,
+      "expected_graph_effects": 1,
+      "expected_external_calls_digest": "ffaef527dfcf514d766d978ffcd82b5142d5cd2d930710c0f557bafb0f8a56af",
+      "non_disclosure_oracle_digest": "a3ef5f5c294ce1c51c1dcae989d43141a55b35ed94c9640ece1db431ad633020",
+      "row_digest": "81246f752e69c5de3016873455b5f5612c8c7ad6b61d5be3cd44789b35a95cc7"
+    },
+    {
+      "requirement_ids": [
+        "GTC-R16"
+      ],
+      "node_id": "bootstrap-graph-source_progress_related_conflict-filesystem-jsonl_independent_process",
+      "pytest_selector": "tests/unit/core/semantic_ingestion/test_bootstrap_graph_jsonl_race_reopen.py::test_graph_race_reopens_in_an_independent_jsonl_process[source_progress_related_conflict-filesystem]",
+      "root": "filesystem",
+      "backend": "jsonl_independent_process",
+      "public_trigger": "ProviderMemoryService.sync_event",
+      "scenario": "source_progress_related_conflict",
+      "injected_boundary": "bootstrap_graph_v3:source_progress_related_conflict",
+      "expected_durable_state": "terminal_result",
+      "expected_cas_calls": 1,
+      "expected_cas_effects": 1,
+      "expected_event_effects": 1,
+      "expected_graph_effects": 1,
+      "expected_external_calls_digest": "ffaef527dfcf514d766d978ffcd82b5142d5cd2d930710c0f557bafb0f8a56af",
+      "non_disclosure_oracle_digest": "a3ef5f5c294ce1c51c1dcae989d43141a55b35ed94c9640ece1db431ad633020",
+      "row_digest": "ba4e5c501b8ca9feb26f0c94606b581374d184553c3b89e9a89e2ec1a4f51bcc"
+    },
+    {
+      "requirement_ids": [
+        "GTC-R16"
+      ],
+      "node_id": "bootstrap-graph-source_progress_related_conflict-filesystem-memory",
+      "pytest_selector": "tests/unit/core/semantic_ingestion/test_bootstrap_graph_scenario_replay.py::test_graph_scenario_replays_without_effects_in_memory[source_progress_related_conflict-filesystem]",
+      "root": "filesystem",
+      "backend": "memory",
+      "public_trigger": "ProviderMemoryService.sync_event",
+      "scenario": "source_progress_related_conflict",
+      "injected_boundary": "bootstrap_graph_v3:source_progress_related_conflict",
+      "expected_durable_state": "terminal_result",
+      "expected_cas_calls": 1,
+      "expected_cas_effects": 1,
+      "expected_event_effects": 1,
+      "expected_graph_effects": 1,
+      "expected_external_calls_digest": "ffaef527dfcf514d766d978ffcd82b5142d5cd2d930710c0f557bafb0f8a56af",
+      "non_disclosure_oracle_digest": "a3ef5f5c294ce1c51c1dcae989d43141a55b35ed94c9640ece1db431ad633020",
+      "row_digest": "6eb126fb6f3feac799cf532049c34b35ba37e735ed5f24569b0f4945a1cae025"
+    },
+    {
+      "requirement_ids": [
+        "GTC-R16"
+      ],
+      "node_id": "bootstrap-graph-source_progress_related_conflict-hermes-jsonl_independent_process",
+      "pytest_selector": "tests/unit/core/semantic_ingestion/test_bootstrap_graph_jsonl_race_reopen.py::test_graph_race_reopens_in_an_independent_jsonl_process[source_progress_related_conflict-hermes]",
+      "root": "hermes",
+      "backend": "jsonl_independent_process",
+      "public_trigger": "ProviderMemoryService.sync_event",
+      "scenario": "source_progress_related_conflict",
+      "injected_boundary": "bootstrap_graph_v3:source_progress_related_conflict",
+      "expected_durable_state": "terminal_result",
+      "expected_cas_calls": 1,
+      "expected_cas_effects": 1,
+      "expected_event_effects": 1,
+      "expected_graph_effects": 1,
+      "expected_external_calls_digest": "ffaef527dfcf514d766d978ffcd82b5142d5cd2d930710c0f557bafb0f8a56af",
+      "non_disclosure_oracle_digest": "a3ef5f5c294ce1c51c1dcae989d43141a55b35ed94c9640ece1db431ad633020",
+      "row_digest": "c0de660b2e0cbc8df61a49ef2d06b1cad1b1adc5cc77c1dbec59ece69de36f5d"
+    },
+    {
+      "requirement_ids": [
+        "GTC-R16"
+      ],
+      "node_id": "bootstrap-graph-source_progress_related_conflict-hermes-memory",
+      "pytest_selector": "tests/unit/core/semantic_ingestion/test_bootstrap_graph_scenario_replay.py::test_graph_scenario_replays_without_effects_in_memory[source_progress_related_conflict-hermes]",
+      "root": "hermes",
+      "backend": "memory",
+      "public_trigger": "ProviderMemoryService.sync_event",
+      "scenario": "source_progress_related_conflict",
+      "injected_boundary": "bootstrap_graph_v3:source_progress_related_conflict",
+      "expected_durable_state": "terminal_result",
+      "expected_cas_calls": 1,
+      "expected_cas_effects": 1,
+      "expected_event_effects": 1,
+      "expected_graph_effects": 1,
+      "expected_external_calls_digest": "ffaef527dfcf514d766d978ffcd82b5142d5cd2d930710c0f557bafb0f8a56af",
+      "non_disclosure_oracle_digest": "a3ef5f5c294ce1c51c1dcae989d43141a55b35ed94c9640ece1db431ad633020",
+      "row_digest": "24a805b4d7312264d588671c9bcf1a7debf566f8d9d2dabe1731b21ff5c623ba"
+    },
+    {
+      "requirement_ids": [
         "GTC-R19"
       ],
       "node_id": "bootstrap-graph-success_finalization-direct-jsonl_independent_process",
@@ -4156,9 +4796,9 @@
     }
   ],
   "exclusions": [],
-  "required_tuple_digest": "181b8951400b82de668d7eda7274de8f1682aff9486809e6a597b4ef445037ef",
-  "inventory_count": 200,
+  "required_tuple_digest": "5a822f0a382822ffe15fd3a73d03aced25407edf90fbbebb5e3c108071c547e9",
+  "inventory_count": 232,
   "exclusion_count": 0,
-  "collection_digest": "e92fedf9f2ef814f0f321631409824188507bf01d60d9cd1fe4a7e4c1cc7811b",
-  "manifest_digest": "3aa13abd2d55159401568b6938b45c63e70dc2b8b25aff9be828814ebf62dcf2"
+  "collection_digest": "e2b0daa6d8a331e9700478544d8cf130e04e6eff16d0df4557eb86b7f13ab323",
+  "manifest_digest": "04d2d65ecdce7a7b74acb2c2930863f388c58b68f2a99d391fb09b9f050638ab"
 }

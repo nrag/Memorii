@@ -173,7 +173,7 @@
     {
       "requirement": "future_arena_lifecycle",
       "canonical_trigger": "ProviderMemoryService.sync_event",
-      "status": "specified_not_implemented",
+      "status": "implemented_not_composed",
       "binding_table": [
         [
           "create+nonce",
@@ -271,6 +271,154 @@
         "jsonl_restart_recovery_no_duplicate_effect",
         "all_eight_terminal_trace_and_durable_receipt",
         "all_eight_terminal_durable_effect_receipt"
+      ]
+    },
+    {
+      "requirement": "accepted_fact_group_commit",
+      "canonical_trigger": "ProviderMemoryService.sync_event",
+      "status": "implemented_locally_verified",
+      "mapper_preflight": {
+        "identity": "accepted_fact_group_commit_binding_preflight",
+        "mapped_on": "2026-09-05",
+        "baseline_revision": "821b0bc7fd47ca0c55a18ccebb4b1628fa13689b",
+        "scoped_diff_sha256": "ffd409fe541a0609806ec40e8140cb497cb930aa2628c81ca28745243097b250"
+      },
+      "composition_roots": [
+        "ProviderMemoryService",
+        "build_provider_memory_service_from_env",
+        "build_filesystem_provider",
+        "HermesMemoryProvider"
+      ],
+      "current_mapping_queries": [
+        "rg -n 'graph_bundle.execute|BootstrapGraphAuthorityRequestV3' memorii/memorii/core/provider/ingestion.py",
+        "rg -n 'build_builtin_bootstrap_graph_execution_v3|def _compile' memorii/memorii/core/semantic_ingestion/bootstrap_graph_builtin.py",
+        "rg -n 'group_commit_request|commit_or_reload' memorii/memorii/core/semantic_ingestion/bootstrap_graph_coordinator.py memorii/memorii/core/semantic_ingestion/bootstrap_graph_repository.py",
+        "rg -n 'commit_or_reload_bootstrap_graph_group_v3|checkpoint_bootstrap_graph_transaction_v3' memorii/memorii/core/memory_evolution/atomic_store.py"
+      ],
+      "exact_callsite_and_authority": "Provider ingestion calls BootstrapGraphHostBundle.execute with the normalization replay, PreparedSource, RequiredOutcomeScopeSet, OperationFenceBinding, OperationLeaseBinding, and SemanticWriterCommitBinding. The host calls build_builtin_bootstrap_graph_execution_v3; _compile binds reductions, plan members, evidence, attempt inputs, and plan to one SealedGraphStateSnapshot.digest. BootstrapGraphDependentCoordinatorV3._execute_attempt calls AtomicStoreBootstrapGraphGroupCommitRepositoryV3.commit_or_reload with the assembled BootstrapGraphGroupCommitRequestV3. AtomicStore.commit_or_reload_bootstrap_graph_group_v3 validates reduction snapshot/read-set authority, injects commit coordinates, canonically orders the durable records it constructs, writes graph/event/replay/reference-integrity state atomically, and the coordinator checkpoints the exact BootstrapNativeGroupCommitTerminalConstructionV3 reload.",
+      "current_owner_chain": [
+        "ProviderMemoryService.sync_event",
+        "ProviderIngestionCoordinator._run_semantic_ingestion",
+        "BootstrapGraphHostBundle.execute",
+        "build_builtin_bootstrap_graph_execution_v3",
+        "BuiltInBootstrapGraphTargetMaterializationPlannerV3.plan",
+        "BootstrapNativeSemanticReducerV3.reduce",
+        "BootstrapGraphDependentCoordinatorV3._execute_attempt",
+        "AtomicStoreBootstrapGraphGroupCommitRepositoryV3.commit_or_reload",
+        "AtomicStore.commit_or_reload_bootstrap_graph_group_v3",
+        "AtomicStore.checkpoint_bootstrap_graph_transaction_v3"
+      ],
+      "validation_write_read_outcome": "The store rejects substituted sealed-snapshot/read-set authority before CAS. For an accepted fact it materializes the planned records under store-owned commit coordinates, sorts the resulting durable records by record kind and durable digest, constructs and replays a typed SemanticGraphDelta, advances reference integrity, writes one group-commit primary plus effects, and reloads the exact result. Before checkpoint or recovery use, the store resolves the repository-owned request/reload pair and validates the persisted native terminal's attempt, member, authorization, lineage, control bindings, and request CTV against that exact pair without duplicating the request in the checkpoint schema.",
+      "current_caller_counts": {
+        "provider_to_graph_host_execute": 1,
+        "graph_host_to_builtin_execution_builder": 1,
+        "coordinator_to_group_commit_repository": 1,
+        "group_commit_repository_to_atomic_store": 1
+      },
+      "fallback_and_failure": "Missing graph authority remains fail-closed. Pre-CAS validation and genuine storage failures retain durable retry behavior. Post-effect checkpoint acknowledgement recovery reloads the existing group commit and cannot repeat the effect.",
+      "required_proof": "The four ordinary public roots each ingest an evidence-complete entity-object fact without scenario authority and persist exactly one accepted graph/event effect. Native result codec tests reject incompatible tags, types, schema additions, modalities, and digests. Group-checkpoint and terminal acknowledgement failure tests prove one effect and found-first recovery; terminal reload rejects an absent repository-owned group primary.",
+      "locally_verified_commands": [
+        "PYTHONPATH=memorii .venv/bin/python -m pytest memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_root_composition.py -k 'builtin_native_graph or substituted_reduction_snapshot' -q -p no:cacheprovider (collected four builtin-native roots plus the direct substituted-snapshot negative; exit 0; 5 passed, 38 deselected in 282.53s)",
+        "PYTHONPATH=memorii .venv/bin/python -m pytest memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_atomic_member_native_codec.py -q -p no:cacheprovider (exit 0; 5 passed in 84.67s)",
+        "PYTHONPATH=memorii .venv/bin/python -m pytest memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_post_effect_recovery.py -k '(builtin_terminal_ack_loss or builtin_recovery_preserves) and direct' -q -p no:cacheprovider (collected direct-False/direct-True for both test families; exit 0; 4 passed, 17 deselected in 221.25s; memory and JSONL reopen identities matched)",
+        "PYTHONPATH=memorii .venv/bin/python -m pytest memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_post_effect_recovery.py -k 'terminal_reload_rejects_absent' -xq -p no:cacheprovider (exit 0; 1 passed, 20 deselected in 113.82s; absent group primary rejected)"
+      ]
+    },
+    {
+      "requirement": "bootstrap_graph_source_progress_group_cas_replan",
+      "canonical_trigger": "ProviderMemoryService.sync_event",
+      "status": "implemented_locally_verified",
+      "mapper_preflight": {
+        "identity": "bootstrap_graph_source_progress_binding_preflight_2026_09_04",
+        "mapped_on": "2026-09-04",
+        "baseline_revision": "821b0bc7fd47ca0c55a18ccebb4b1628fa13689b",
+        "candidate_state": "real_group_cas_race_and_reopen_receipts_complete"
+      },
+      "current_mapping_queries": [
+        "rg -n 'def sync_event|def ingest|def _ingest_semantic_source|def _run_semantic_ingestion' memorii/memorii/core/provider/service.py memorii/memorii/core/provider/ingestion.py",
+        "rg -n 'build_builtin_bootstrap_graph_execution_v3|BootstrapGraphDependentCoordinatorV3' memorii/memorii/core/semantic_ingestion/bootstrap_graph_builtin.py",
+        "rg -n 'commit_or_reload_bootstrap_graph_group_v3|coordinate_related_conflict|_related_conflict_successor|reload_resume_closure_for_original_fence' memorii/memorii"
+      ],
+      "current_owner_chain": [
+        "ProviderMemoryService.sync_event (service.py:619)",
+        "ProviderIngestionCoordinator.ingest (ingestion.py:268)",
+        "ProviderIngestionCoordinator._ingest_semantic_source (ingestion.py:358)",
+        "ProviderIngestionCoordinator._run_semantic_ingestion (ingestion.py:1087)",
+        "build_builtin_bootstrap_graph_execution_v3 (bootstrap_graph_builtin.py:431)",
+        "BootstrapGraphDependentCoordinatorV3 construction (bootstrap_graph_builtin.py:421)",
+        "BootstrapGraphDependentCoordinatorV3._execute_attempt group-CAS conflict branch (bootstrap_graph_coordinator.py)",
+        "BootstrapGraphHostBundle/ScenarioBootstrapGraphHostBundle fresh authority reacquisition (bootstrap_graph_host.py)",
+        "BootstrapGraphDependentCoordinatorV3.coordinate_related_conflict (bootstrap_graph_coordinator.py)",
+        "BootstrapGraphDependentCoordinatorV3._related_conflict_successor (bootstrap_graph_coordinator.py)",
+        "AtomicStoreBootstrapGraphPlanRepositoryV3.reload_resume_closure_for_original_fence and atomic store"
+      ],
+      "specified_owner_chain": [
+        "ProviderMemoryService.sync_event",
+        "ProviderIngestionCoordinator.ingest",
+        "ProviderIngestionCoordinator._ingest_semantic_source",
+        "ProviderIngestionCoordinator._run_semantic_ingestion",
+        "build_builtin_bootstrap_graph_execution_v3",
+        "BootstrapGraphDependentCoordinatorV3._execute_attempt group-CAS conflict branch",
+        "BootstrapGraphHostBundle fresh authority reacquisition",
+        "BootstrapGraphDependentCoordinatorV3.coordinate_related_conflict",
+        "BootstrapGraphDependentCoordinatorV3._related_conflict_successor",
+        "AtomicStoreBootstrapGraphPlanRepositoryV3.reload_resume_closure_for_original_fence",
+        "checkpoint_bootstrap_graph_transaction_v3"
+      ],
+      "authority_and_outcome": "A clarification is admitted and committed through the ordinary semantic-conflict lifecycle. If that committed change makes an already-planned V3 group stale, the group-CAS owner returns the dedicated typed related-conflict requirement bound to the original OperationFenceBinding. The graph host reacquires a fresh shared graph snapshot, compiler, epoch and authorizer, then coordinate_related_conflict reloads the original fence's exact sealed closure before appending one typed successor. The original source is not readmitted or renormalized during replan.",
+      "current_caller_counts": {
+        "provider_to_group_cas_conflict_branch": 1,
+        "group_cas_conflict_branch_to_host_refresh": 1,
+        "host_refresh_to_coordinate_related_conflict": 1,
+        "group_cas_conflict_branch_to_related_conflict_successor": 1,
+        "related_conflict_successor_to_reload_resume_closure": 1
+      },
+      "implementation_blocker": null,
+      "locally_verified_commands": [
+        "PYTHONPATH=memorii .venv/bin/python -m pytest -q 'memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_scenario_replay.py::test_graph_scenario_replays_without_effects_in_memory[related_conflict-direct]' 'memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_scenario_replay.py::test_graph_scenario_replays_without_effects_in_memory[source_progress_related_conflict-direct]' -p no:cacheprovider (exit 0; 2 passed in 127.84s on 2026-09-05; the exact typed group-CAS related-conflict and source-progress successor paths retain the original fence without a second source admission)",
+        "PYTHONPATH=memorii .venv/bin/python -m pytest -q memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_root_composition.py::test_identical_two_ingestion_group_cas_race_rebases_without_replan -p no:cacheprovider (exit 0; 1 passed in 51.91s on 2026-09-05; byte-identical concurrent writes perform two CAS attempts and six ordinary progress checkpoints without a false successor)"
+      ],
+      "absence_contract": "An unavailable or invalid original-fence closure returns typed V3 noncommit and publishes no successor plan, attempt, lineage, admission, or delivery. Generic SemanticConflictProjectionStaleWinnerError remains non-V3 and cannot trigger a V3 successor.",
+      "required_proof": "Prove the normal clarification admission/commit lifecycle separately from the group-CAS successor. At group CAS, inject only the exact typed related-conflict emitted for a committed overlapping change and prove A's original-fence closure reload, one successor sequence, byte-identical independent-process JSONL reopen, and zero source readmission or renormalization. Also prove that an identical or unrelated concurrent graph revision rebases without a false successor.",
+      "post_implementation_gates": [
+        "native-member validation before reload/write",
+        "exact original-request/fence/principal/scopes/epoch/lease/writer propagation",
+        "one group-CAS related-conflict successor",
+        "zero full-pipeline re-entry",
+        "zero provider-event normalization",
+        "one admission per ingested record and no re-admission during replan",
+        "memory and jsonl independent-process transaction-boundary receipts",
+        "aggregate receipt union and timing inventory update"
+      ]
+    },
+    {
+      "requirement": "composite_conflict_cursor_clock",
+      "canonical_trigger": "ProviderMemoryService.prefetch_with_attention; ProviderMemoryService.handle_tool_call_with_attention",
+      "status": "implemented_locally_verified",
+      "mapper_preflight": {
+        "mapped_on": "2026-09-05",
+        "baseline_revision": "821b0bc7fd47ca0c55a18ccebb4b1628fa13689b",
+        "mapping_query": "rg -n 'prefetch_with_attention|_attention_page|_composite_attention_repository|CompositeConflictListingRepository' memorii/memorii/core/provider/service.py memorii/memorii/core/memory_evolution"
+      },
+      "current_owner_chain": [
+        "ProviderMemoryService.prefetch_with_attention / handle_tool_call_with_attention (service.py)",
+        "parse_conflict_list_request v1/v2 syntax admission (conflict_attention.py)",
+        "ProviderMemoryService._attention_page (service.py:1468)",
+        "ProviderMemoryService._composite_attention_repository (service.py:1496)",
+        "CompositeConflictListingRepository.list_conflicts (composite_conflict_listing.py:584)",
+        "FileConflictAttentionRepository.cursor_clock/cursor_signing_key (conflict_attention_repository.py)"
+      ],
+      "authority_and_outcome": "Authenticated ingress resolves the caller's conflict access; enabled composite composition requires the file ledger child. Provider construction deliberately does not pass its general-purpose now_provider into the composite. Fresh preparation holds one exclusive ledger lock over one record image, derives membership, conditionally preflights the active key only when the requested page requires a v2 cursor, then appends both child snapshots. Empty and one-page listings need no key; unavailable paginated keys append nothing.",
+      "current_caller_counts": {
+        "public_prefetch_to_attention_page": 1,
+        "public_tool_to_attention_page": 1,
+        "attention_page_to_composite_builder": 1,
+        "composite_builder_to_listing_owner": 1
+      },
+      "fallback_and_failure": "Disabled attention returns the documented empty page; enabled composite composition rejects a non-file-ledger child. No default clock fallback extends a short-lived or expired key: cursor issuance remains conflict_cursor_key_unavailable and continuation remains invalid_conflict_cursor.",
+      "locally_verified_commands": [
+        "PYTHONPATH=memorii .venv/bin/python -m pytest memorii/tests/unit/core/test_composite_conflict_listing_repository.py -q (exit 0; 10 passed in 8.96s; direct composition inherited the ledger clock, explicit override and short-lived-key negatives remained closed)",
+        "PYTHONPATH=memorii .venv/bin/python -m pytest memorii/tests/unit/core/test_composite_conflict_listing_repository.py memorii/tests/unit/core/test_conflict_attention_provider_service.py -q (exit 0; 47 passed in 9.09s; public prefetch/tool paths prove ledger-clock pagination, repeated short-key failure without byte changes, and real-ledger v1/v2 cross-protocol rejection without fallback)"
       ]
     },
     {

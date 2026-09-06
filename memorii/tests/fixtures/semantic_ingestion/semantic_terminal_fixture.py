@@ -1,14 +1,13 @@
 """Self-contained semantic terminal persistence fixtures shared without importing test modules."""
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from functools import cache
 from hashlib import sha256
+from pathlib import Path
 from typing import Literal
 
-from clean_room_request_test_support import (
-    build_prepared_source_authority,
-)
 from memorii.core.memory_evolution.admission import (
     GovernedSourceAdmissionService,
     SourceAdmissionAccepted,
@@ -34,6 +33,12 @@ from memorii.core.memory_evolution.conflict_attention import (
     SemanticConflictResolverAuthority,
     semantic_conflict_rendered_item_utf8_bytes,
 )
+from memorii.core.memory_evolution.delivery_coordinate_migration import (
+    DeliveryCoordinateMigrationCheckpoint,
+    activate_migration,
+    build_migration_plan,
+    certify_migration,
+)
 from memorii.core.memory_evolution.ingestion_contracts import (
     AuthenticatedIngressContext,
     DeliveryIdentity,
@@ -55,10 +60,16 @@ from memorii.core.memory_evolution.semantic_state import (
     SemanticClaimValueKey,
 )
 from memorii.core.memory_evolution.writer_admission import (
+    SemanticWriterAdmissionStore,
     SemanticWriterCommitBinding,
+    bounded_preplanning_ownership_manifest,
 )
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
+from memorii.core.memory_plane.store import JsonlMemoryPlaneStore
+from memorii.core.semantic_ingestion.authorization import (
+    SemanticAuthorizationAuthorityRepository,
+)
 from memorii.core.semantic_ingestion.capability import (
     AuthorizedSemanticIngestionRuntime,
     SemanticIngestionRuntimeAuthorization,
@@ -87,6 +98,7 @@ from memorii.core.semantic_ingestion.contracts import (
 )
 from memorii.core.semantic_ingestion.local_analyzer import ProductionLocalSemanticAnalyzer
 from memorii.core.semantic_ingestion.operation_assessment import seal_semantic_operation
+from memorii.core.semantic_ingestion.persistence import SemanticTerminalPersistenceService
 from memorii.core.semantic_ingestion.source_preparation import (
     InMemoryPreparedSourceRepository,
     TextPreparationService,
@@ -94,6 +106,9 @@ from memorii.core.semantic_ingestion.source_preparation import (
 from memorii.core.semantic_ingestion.temporal_evidence_resolution import TemporalEvidenceResolver
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
 from pydantic import BaseModel
+from tests.fixtures.semantic_ingestion.clean_room_request_fixture import (
+    build_prepared_source_authority,
+)
 from tests.fixtures.semantic_ingestion.host_bootstrap_authority import (
     build_test_host_verified_bootstrap_release_evidence,
 )
@@ -102,6 +117,139 @@ NOW = datetime(2026, 1, 1, tzinfo=UTC)
 SOURCE = "Atlas works for Memorii."
 SOURCE_ID = "source"
 SOURCE_DIGEST = sha256(SOURCE.encode()).hexdigest()
+
+
+class _CurrentAuthorization:
+    def verify_current(self, read_set, *, use_point: str) -> bool:
+        return use_point == "pre_commit"
+
+
+@dataclass(frozen=True)
+class TerminalPersistenceHarness:
+    plane: MemoryPlaneService
+    store: SemanticIngestionAtomicStore
+    service: SemanticTerminalPersistenceService
+    authorization_repository: SemanticAuthorizationAuthorityRepository
+    accepted_fence: OperationFenceBinding
+    zero_effect_fence: OperationFenceBinding
+
+
+def build_terminal_persistence_harness(root: Path) -> TerminalPersistenceHarness:
+    """Build a durable verified-writer harness through public admission owners."""
+
+    plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(root))
+    writers = SemanticWriterAdmissionStore(
+        plane,
+        bounded_preplanning_ownership_manifest(),
+        now_provider=lambda: NOW,
+    )
+    binding = writers.commit_binding(
+        writers.create_initial_evidence_only(
+            admission_id="semantic-ingestion",
+            writer_implementation_fingerprint="writer",
+            graph_schema_fingerprint="schema",
+        )
+    )
+    plan = build_migration_plan(
+        migration_plan_id="semantic-ingestion:verified",
+        source_writer_epoch=1,
+        legacy_snapshot_token=sha256(encode_typed_value(())).hexdigest(),
+        entries=(),
+    )
+    checkpoint_values = {
+        "migration_plan_id": plan.migration_plan_id,
+        "plan_digest": plan.plan_digest,
+        "completed_entry_digests": (),
+        "target_generation": 1,
+    }
+    checkpoint = DeliveryCoordinateMigrationCheckpoint(
+        **checkpoint_values,
+        checkpoint_digest=sha256(encode_typed_value(checkpoint_values)).hexdigest(),
+    )
+    certificate = certify_migration(
+        plan,
+        checkpoint,
+        independent_verifier_fingerprint="semantic-ingestion-verifier",
+    )
+    binding = writers.commit_binding(
+        writers.transition(
+            expected=binding,
+            admission_id="semantic-ingestion:verified",
+            runtime_mode="verified_semantic",
+            writer_implementation_fingerprint="writer:verified",
+            graph_schema_fingerprint="schema",
+            migration_activation=activate_migration(plan, certificate),
+            migration_plan=plan,
+            migration_checkpoint=checkpoint,
+            migration_certificate=certificate,
+            target_records=(),
+        )
+    )
+    store = SemanticIngestionAtomicStore(plane, writers, now_provider=lambda: NOW)
+    _, accepted_fence = handoff(
+        plane,
+        coordinate="accepted-observation",
+        atomic_store=store,
+        writer_binding=binding,
+    )
+    _, zero_effect_fence = handoff(
+        plane,
+        coordinate="zero-effect-observation",
+        atomic_store=store,
+        writer_binding=binding,
+    )
+    authorization_repository = SemanticAuthorizationAuthorityRepository(
+        atomic_store=store,
+        writer_binding_provider=lambda: binding,
+        now_provider=lambda: NOW,
+    )
+    service = SemanticTerminalPersistenceService(
+        atomic_store=store,
+        writer_binding_provider=lambda: binding,
+        authorization_repository=authorization_repository,
+    )
+    return TerminalPersistenceHarness(
+        plane=plane,
+        store=store,
+        service=service,
+        authorization_repository=authorization_repository,
+        accepted_fence=accepted_fence,
+        zero_effect_fence=zero_effect_fence,
+    )
+
+
+def persist_harness_terminal(
+    harness: TerminalPersistenceHarness,
+    *,
+    fence: OperationFenceBinding,
+    terminal: SemanticTerminalOutcome,
+) -> None:
+    if terminal.authorization_read_set is not None:
+        harness.authorization_repository.observe_verified(
+            authority_scope_id=harness.authorization_repository.scope_id(
+                source_id=fence.source_id,
+                source_digest=fence.source_digest,
+            ),
+            read_set=terminal.authorization_read_set,
+            valid_until=datetime(2030, 1, 1, tzinfo=UTC),
+        )
+    harness.service.persist(
+        fence=fence,
+        terminal=terminal,
+        authorization_verifier=_CurrentAuthorization(),
+    )
+
+
+def reopen_terminal_persistence_store(root: Path) -> SemanticIngestionAtomicStore:
+    """Reconstruct the durable replay owner from a fresh store composition."""
+
+    plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(root))
+    writers = SemanticWriterAdmissionStore(
+        plane,
+        bounded_preplanning_ownership_manifest(),
+        now_provider=lambda: NOW,
+    )
+    return SemanticIngestionAtomicStore(plane, writers, now_provider=lambda: NOW)
 
 
 @cache
@@ -879,4 +1027,23 @@ def accepted_terminal(
         accepted_carriers=carriers,
         terminal_binding_sets=binding_sets,
         attempt_count=0,
+    )
+
+
+def zero_effect_terminal(
+    *,
+    operation_id: str,
+    status: Literal["unresolved", "rejected", "evidence_only"] = "unresolved",
+    reason_codes: tuple[str, ...] = ("consensus_unresolved",),
+) -> SemanticTerminalOutcome:
+    """Build a canonical non-committing terminal without graph carriers."""
+    accepted = accepted_terminal(operation_id=operation_id)
+    return SemanticTerminalOutcome.create(
+        operation_id=accepted.operation_id,
+        status=status,
+        reason_codes=reason_codes,
+        candidates=accepted.candidates,
+        source_analyses=accepted.source_analyses,
+        temporal_closures=(),
+        attempt_count=accepted.attempt_count,
     )

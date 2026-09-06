@@ -30,13 +30,13 @@ STRUCTURAL_CHECKER = VECTORS / "check_cgs_structural_contract_v1.py"
 SEMANTIC_EXPECTED = {
     "fixture": "d3c1dce10624365647cbb00926f63b6deabe681e51a138bc3de88d7c60faef69",
     "validator": "46bbda1afb6ccbec5a49ea668752c19a7b1354b94515a33365191cee01745edb",
-    "checker": "8b3079548a1dba0f74256077a4c9bbd36b64d0837d69dd13db9919fad8abb2ed",
+    "checker": "0e57de8afcb4fd20aadf85c826977f5b31737bd20477fee8df4b6c4b9ee9daf0",
 }
-STRUCTURAL_CHECKER_SHA256 = "bed7ea867e30967d3fb75c8270ce749a2d7da245ff50886e442f653ff9a74364"
+STRUCTURAL_CHECKER_SHA256 = "b560897bd1a0c4d5dda7c6ab28b44fcba37188094f30e1d6c62ff6cfca5984ac"
 EXPECTED = {
-    "design": "f4085b99c15eeceeb0975e4cac5618e52e48c8b72c4c5a393807afbbe8ecc1a0",
-    "registry": "2b35944765b5e082221be66ccd26fd3a280aa5226a3814b793e84692e1ef78d9",
-    "authority": "44474c77b79c69c8c07084e1d8f8f06340afbc67b51fd550cf9d54e274ef9a60",
+    "design": "5727af6bb79ce45a5c9180dbbb8525044ea62ce5d4dd0f5210ea5a2655723653",
+    "registry": "70143b278e0fd72886362f4174c726c9ecf877b1e288d3dd2c196a78f385413e",
+    "authority": "bc2798ebfe4bc929bd4f3461123f9c77d8d15a2948c0e2dcffdc682b67f5ca98",
     "validator": "3066e6ffb015823283e57945863c22d4ecf32164c52ae8199eb1535c7798f145",
     "checker": "e2c35870a99e587f34cbffc701f42587520ee015009cd51647367da56716c732",
 }

@@ -83,6 +83,8 @@ _CHECKPOINT_KEY_DOMAIN = b"memorii.semantic-replay-checkpoint-key.v1\0"
 _CHECKPOINT_BUNDLE_DOMAIN = b"memorii.semantic-replay-checkpoint-bundle.v1\0"
 _CHECKPOINT_LIFECYCLE_DOMAIN = b"memorii.semantic-replay-checkpoint-lifecycle.v1\0"
 _REPLAY_AUTHORITY_MEMBER_DOMAIN = b"memorii.semantic-replay-authority-member.v1\0"
+
+
 _REPLAY_AUTHORITY_AGGREGATE_DOMAIN = b"memorii.semantic-replay-authority-aggregate.v1\0"
 _REPLAY_AUTHORITY_AGGREGATE_V2_DOMAIN = b"memorii.semantic-replay-authority-aggregate.v2\0"
 _REPLAY_MEMBER_PROJECTION_DOMAIN = b"memorii.semantic-replay-member-projection.v1\0"
@@ -132,6 +134,14 @@ class SemanticEventReplayError(ValueError):
     ) -> None:
         self.conflicting_byte_digests = tuple(sorted(set(conflicting_byte_digests)))
         super().__init__(message)
+
+
+class SemanticConflictProjectionStaleWinnerError(SemanticEventReplayError):
+    """The only replay failure that permits the V3 related-conflict bridge.
+
+    The atomic preflight owns this condition: callers must never classify a
+    generic replay error by its diagnostic text.
+    """
 
 
 class ProjectionHistoryCheckpointVerifier(Protocol):
@@ -953,7 +963,9 @@ def build_semantic_memory_event_batch(
     """Derive the canonical event/delta bijection without accepting caller events."""
 
     if prior_state.repository_id != repository_id or prior_state.graph_revision != graph_revision_before:
-        raise SemanticEventReplayError("event compilation state does not match repository graph revision")
+        raise SemanticConflictProjectionStaleWinnerError(
+            "event compilation state does not match repository graph revision"
+        )
     if registry.current_write_schema_version != CURRENT_SEMANTIC_EVENT_SCHEMA_VERSION:
         raise SemanticEventReplayError("event registry does not authorize the current writer")
     prior_by_record = {(record.record_kind, record.record_id): record for record in prior_state.materialized_records}

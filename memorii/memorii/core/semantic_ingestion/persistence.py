@@ -196,7 +196,7 @@ class SemanticTerminalPersistenceService:
         # lease or records the planned checkpoint.  The store rederives and
         # CAS-validates this exact input in the final terminal transaction.
         if not control.group_result_digests:
-            self._store.preflight_terminal_conflict_authority(
+            self._preflight_terminal_conflict_authority(
                 operation_fence=fence,
                 terminal=terminal,
                 writer_binding=writer,
@@ -304,7 +304,7 @@ class SemanticTerminalPersistenceService:
                     raise PreplanningStoreError("semantic ingestion terminal group requires planned progress")
                 # Rebuild against this exact control snapshot.  A raced
                 # publication must never reuse authority from an older read.
-                semantic_conflict_authority = self._store.preflight_terminal_conflict_authority(
+                semantic_conflict_authority = self._preflight_terminal_conflict_authority(
                     operation_fence=fence,
                     terminal=terminal,
                     writer_binding=writer,
@@ -443,6 +443,20 @@ class SemanticTerminalPersistenceService:
             expected_group_result_digests=control.group_result_digests,
         )
         self._store.finalize_source(self._seal(final))
+
+    def _preflight_terminal_conflict_authority(
+        self,
+        *,
+        operation_fence: OperationFenceBinding,
+        terminal: SemanticTerminalOutcome,
+        writer_binding: SemanticWriterCommitBinding,
+    ):
+        """Translate only the modeled clarification-winner stale precondition."""
+        return self._store.preflight_terminal_conflict_authority(
+            operation_fence=operation_fence,
+            terminal=terminal,
+            writer_binding=writer_binding,
+        )
 
     @staticmethod
     def _verify_commit_authorization(

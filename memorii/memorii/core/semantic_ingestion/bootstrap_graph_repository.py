@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from memorii.core.semantic_ingestion.contracts import (
     BootstrapCanonicalIdentityAuthorityWriteRequestV3,
@@ -14,12 +14,16 @@ from memorii.core.semantic_ingestion.contracts import (
     BootstrapGraphDependentCoordinatorRequestV3,
     BootstrapGraphPlanAtomicReloadV3,
     BootstrapGraphPlanAtomicWriteRequestV3,
+    BootstrapGraphSourceProgressV3,
     BootstrapGraphTerminalPublicationRequestV3,
     BootstrapGraphTerminalReloadV3,
     BootstrapGraphTransactionAuthorityReloadV3,
     BootstrapGraphTransactionAuthorityWriteRequestV3,
     RequiredOutcomeScopeSet,
 )
+
+if TYPE_CHECKING:
+    from memorii.core.memory_evolution.atomic_store import BootstrapGraphResumeClosureV3
 
 
 class _BootstrapGraphAtomicStoreV3(Protocol):
@@ -85,6 +89,36 @@ class _BootstrapGraphAtomicStoreV3(Protocol):
         required_outcome_scopes: RequiredOutcomeScopeSet,
         control_epoch: BootstrapGraphControlEpochV3,
     ) -> BootstrapGraphPlanAtomicReloadV3 | None: ...
+
+    def reload_bootstrap_graph_progress_for_original_fence_v3(
+        self,
+        *,
+        operation_fence_binding: object,
+        delivery_principal_binding_digest: str,
+        required_outcome_scopes: RequiredOutcomeScopeSet,
+        control_epoch: BootstrapGraphControlEpochV3,
+        operation_lease_binding: object,
+        writer_commit_binding: object,
+    ) -> object: ...
+
+    def reload_bootstrap_graph_resume_closure_for_original_fence_v3(
+        self,
+        *,
+        operation_fence_binding: object,
+        delivery_principal_binding_digest: str,
+        required_outcome_scopes: RequiredOutcomeScopeSet,
+        control_epoch: BootstrapGraphControlEpochV3,
+        operation_lease_binding: object,
+        writer_commit_binding: object,
+    ) -> BootstrapGraphResumeClosureV3: ...
+
+    def reload_bootstrap_graph_checkpoint_for_resume_v3(
+        self, *, operation_fence_binding: object,
+        delivery_principal_binding_digest: str,
+        required_outcome_scopes: RequiredOutcomeScopeSet,
+        control_epoch: BootstrapGraphControlEpochV3,
+        operation_lease_binding: object, writer_commit_binding: object,
+    ) -> object: ...
 
     def persist_bootstrap_graph_terminal_v3(
         self,
@@ -295,6 +329,62 @@ class AtomicStoreBootstrapGraphPlanRepositoryV3:
             delivery_principal_binding_digest=delivery_principal_binding_digest,
             required_outcome_scopes=required_outcome_scopes,
             control_epoch=control_epoch,
+        )
+
+    def reload_progress_for_original_fence(
+        self,
+        *,
+        operation_fence_binding: object,
+        delivery_principal_binding_digest: str,
+        required_outcome_scopes: RequiredOutcomeScopeSet,
+        control_epoch: BootstrapGraphControlEpochV3,
+        operation_lease_binding: object,
+        writer_commit_binding: object,
+    ) -> BootstrapGraphSourceProgressV3:
+        """Reload, never reconstruct, the bridge progress for an original fence."""
+        return self._atomic_store.reload_bootstrap_graph_progress_for_original_fence_v3(
+            operation_fence_binding=operation_fence_binding,
+            delivery_principal_binding_digest=delivery_principal_binding_digest,
+            required_outcome_scopes=required_outcome_scopes,
+            control_epoch=control_epoch,
+            operation_lease_binding=operation_lease_binding,
+            writer_commit_binding=writer_commit_binding,
+        )
+
+    def reload_resume_closure_for_original_fence(
+        self,
+        *,
+        operation_fence_binding: object,
+        delivery_principal_binding_digest: str,
+        required_outcome_scopes: RequiredOutcomeScopeSet,
+        control_epoch: BootstrapGraphControlEpochV3,
+        operation_lease_binding: object,
+        writer_commit_binding: object,
+    ) -> object:
+        """Return the exact sealed V3 predecessor closure for direct resume."""
+        return self._atomic_store.reload_bootstrap_graph_resume_closure_for_original_fence_v3(
+            operation_fence_binding=operation_fence_binding,
+            delivery_principal_binding_digest=delivery_principal_binding_digest,
+            required_outcome_scopes=required_outcome_scopes,
+            control_epoch=control_epoch,
+            operation_lease_binding=operation_lease_binding,
+            writer_commit_binding=writer_commit_binding,
+        )
+
+    def reload_checkpoint_for_resume(
+        self, *, operation_fence_binding: object,
+        delivery_principal_binding_digest: str,
+        required_outcome_scopes: RequiredOutcomeScopeSet,
+        control_epoch: BootstrapGraphControlEpochV3,
+        operation_lease_binding: object, writer_commit_binding: object,
+    ) -> object:
+        return self._atomic_store.reload_bootstrap_graph_checkpoint_for_resume_v3(
+            operation_fence_binding=operation_fence_binding,
+            delivery_principal_binding_digest=delivery_principal_binding_digest,
+            required_outcome_scopes=required_outcome_scopes,
+            control_epoch=control_epoch,
+            operation_lease_binding=operation_lease_binding,
+            writer_commit_binding=writer_commit_binding,
         )
 
 

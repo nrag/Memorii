@@ -12,7 +12,7 @@ from memorii.core.semantic_ingestion.contracts import (
     rebuild_bootstrap_graph_effect_contracts,
 )
 from memorii.core.semantic_ingestion.event_replay import SemanticMemoryEventBatch
-from tests.unit.core.semantic_ingestion.clean_room_request_test_support import build_prepared_source_authority
+from tests.fixtures.semantic_ingestion.clean_room_request_fixture import build_prepared_source_authority
 
 rebuild_bootstrap_graph_effect_contracts()
 

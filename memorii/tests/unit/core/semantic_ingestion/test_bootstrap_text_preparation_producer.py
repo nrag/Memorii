@@ -28,11 +28,11 @@ from memorii.core.semantic_ingestion.source_preparation import (
     InMemoryPreparedSourceRepository,
     TextPreparationService,
 )
+from tests.fixtures.semantic_ingestion.clean_room_request_fixture import (
+    build_prepared_source_authority,
+)
 from tests.fixtures.semantic_ingestion.host_bootstrap_authority import (
     build_test_host_verified_bootstrap_release_evidence,
-)
-from tests.unit.core.semantic_ingestion.clean_room_request_test_support import (
-    build_prepared_source_authority,
 )
 
 

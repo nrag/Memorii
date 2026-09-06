@@ -48,7 +48,7 @@ from memorii.core.semantic_ingestion.contracts import (
     contract_digest,
 )
 from planning_serialized_oracle import apply_serialized, materialize_serialized
-from semantic_terminal_test_support import accepted_terminal
+from tests.fixtures.semantic_ingestion.semantic_terminal_fixture import accepted_terminal
 
 NOW = datetime(2026, 8, 3, tzinfo=UTC)
 

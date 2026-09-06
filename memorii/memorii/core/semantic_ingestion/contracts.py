@@ -25,6 +25,7 @@ from memorii.core.memory_evolution.atomic_store import (
 )
 from memorii.core.memory_evolution.bootstrap_profile import BootstrapSegmentGrammarProof
 from memorii.core.memory_evolution.graph_records import (
+    CanonicalGraphRecordCodecEntry,
     GraphReadSet,
     GraphRecordKind,
     GraphStateSnapshot,
@@ -51,6 +52,7 @@ from memorii.core.memory_evolution.semantic_analysis.policies import (
 from memorii.core.memory_evolution.semantic_state import (
     AcceptedClaimIdentity,
     CompiledIdentityLineageTransition,
+    PredicateStateRule,
 )
 from memorii.core.memory_evolution.time_contracts import TimeInterval
 from memorii.domain.enums import SourceModality
@@ -8989,6 +8991,153 @@ class BootstrapOperationCoverageBindingV3(_BootstrapV3Contract):
         return self
 
 
+class BootstrapNativeEvidenceConstructionV3(_BootstrapV3Contract):
+    evidence_item_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source_span: SourceSpanReference
+    source_authority: SourceAuthority
+    citation_id: str = Field(min_length=1)
+    provenance_id: str = Field(min_length=1)
+    evidence_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    _digest_domain = b"memorii.bootstrap-graph.native-evidence-construction.v3"
+    _digest_field = "evidence_digest"
+
+
+class CertifiedTextEffectiveTime(BaseModel):
+    kind: Literal["certified_text_time"]
+    effective_at: datetime
+    evidence_spans: tuple[SourceSpanReference, ...]
+    temporal_policy_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    temporal_policy_snapshot_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+
+class AuthenticatedReferenceEffectiveTime(BaseModel):
+    kind: Literal["authenticated_reference_time"]
+    effective_at: datetime
+    reference_evidence: TemporalReferenceEvidence
+    temporal_policy_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    temporal_policy_snapshot_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+
+class SystemRecordedEffectiveTime(BaseModel):
+    kind: Literal["system_recorded_only"]
+    temporal_policy_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    temporal_policy_snapshot_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+
+EffectiveTimeCoordinate = Annotated[CertifiedTextEffectiveTime | AuthenticatedReferenceEffectiveTime | SystemRecordedEffectiveTime, Field(discriminator="kind")]
+
+
+class BootstrapNativeTemporalConstructionV3(_BootstrapV3Contract):
+    temporal_role: Literal["assertion", "replacement", "transition"]
+    temporal_consensus_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    effective_time: EffectiveTimeCoordinate
+    accepted_temporal_evidence: AcceptedTemporalEvidence
+    temporal_decision_binding: OperationTemporalDecisionBinding
+    temporal_policy_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    construction_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    _digest_domain = b"memorii.bootstrap-graph.native-temporal-construction.v3"
+    _digest_field = "construction_digest"
+
+    @model_validator(mode="after")
+    def validate_temporal_construction(self) -> BootstrapNativeTemporalConstructionV3:
+        if self.temporal_decision_binding.temporal_role != self.temporal_role:
+            raise ValueError("bootstrap native temporal construction role is substituted")
+        if self.accepted_temporal_evidence.decision_closure != self.temporal_decision_binding.decision_closure:
+            raise ValueError("bootstrap native temporal construction evidence is substituted")
+        return self
+
+
+class BootstrapNativeIdentityConstructionAuthorityV3(_BootstrapV3Contract):
+    graph_free_identity_input_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    authority_record_id: str = Field(min_length=1)
+    authority_record_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    verifier_id: str = Field(min_length=1)
+    semantic_authorization_read_set_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    identity_policy_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    operation_fence_id: str = Field(min_length=1)
+    operation_fence_binding_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    construction_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    _digest_domain = b"memorii.bootstrap-graph.native-identity-construction-authority.v3"
+    _digest_field = "construction_digest"
+
+
+class AcceptedOperationGovernanceCarrier(_BootstrapV3Contract):
+    operation_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    segment_language_route_digests: tuple[str, ...]
+    segment_governance_bindings: tuple[SegmentGovernanceBinding, ...]
+    message_admission_identities: tuple[MessageAdmissionIdentity, ...]
+    governance_carrier_artifact: GovernanceCarrierArtifact
+    carrier_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    _digest_domain = b"memorii.bootstrap-graph.accepted-operation-governance-carrier.v3"
+    _digest_field = "carrier_digest"
+
+    @model_validator(mode="after")
+    def validate_carrier(self) -> AcceptedOperationGovernanceCarrier:
+        if not self.segment_governance_bindings or not self.message_admission_identities:
+            raise ValueError("bootstrap operation governance carrier is substituted")
+        return self
+
+
+class ActionTransitionApplicabilityKey(BaseModel):
+    from_state_id: str = Field(min_length=1)
+    to_state_id: str = Field(min_length=1)
+    execution_branch_kind: str = Field(min_length=1)
+    applicability_key_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+
+class AcceptedActionTransitionReference(BaseModel):
+    transition_rule_id: str = Field(min_length=1)
+    applicability_key: ActionTransitionApplicabilityKey
+    action_policy_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    resolution_evidence_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+
+class BootstrapNativePlanningConstructionAuthorityV3(_BootstrapV3Contract):
+    source_id: str = Field(min_length=1)
+    source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    preparation_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    operation_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    operation_execution_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source_dependency_group_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    segment_governance: AcceptedOperationGovernanceCarrier
+    message_admission_identities: tuple[MessageAdmissionIdentity, ...]
+    required_scope_set_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    predicate_registry_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    predicate_trust_rule: PredicateTrustRule
+    predicate_state_rule: PredicateStateRule
+    source_authority_evidence: SourceAuthorityEvidence
+    action_policy_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    action_transition: AcceptedActionTransitionReference | None
+    planning_codec_entries: tuple[CanonicalGraphRecordCodecEntry, ...]
+    temporal_constructions: tuple[BootstrapNativeTemporalConstructionV3, ...]
+    evidence_constructions: tuple[BootstrapNativeEvidenceConstructionV3, ...]
+    identity_construction: BootstrapNativeIdentityConstructionAuthorityV3 | None
+    authority_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    _digest_domain = b"memorii.bootstrap-graph.native-planning-construction-authority.v3"
+    _digest_field = "authority_digest"
+
+    @model_validator(mode="after")
+    def validate_authority(self) -> BootstrapNativePlanningConstructionAuthorityV3:
+        if (
+            self.predicate_trust_rule.predicate_id == ""
+            or self.predicate_state_rule.predicate_id != self.predicate_trust_rule.predicate_id
+            or self.source_authority_evidence.source_id != self.source_id
+            or self.source_authority_evidence.source_digest != self.source_digest
+            or not self.message_admission_identities
+            or self.planning_codec_entries
+            != tuple(sorted(self.planning_codec_entries, key=lambda item: item.record_kind))
+            or len({item.record_kind for item in self.planning_codec_entries})
+            != len(self.planning_codec_entries)
+        ):
+            raise ValueError("bootstrap native planning construction authority is incomplete")
+        return self
+
+
 class BootstrapNativeOperationReductionInputV3(_BootstrapV3Contract):
     source_id: str = Field(min_length=1)
     source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -9008,6 +9157,7 @@ class BootstrapNativeOperationReductionInputV3(_BootstrapV3Contract):
     operation_execution_id: str = Field(pattern=r"^[0-9a-f]{64}$")
     coverage_bindings: tuple[BootstrapOperationCoverageBindingV3, ...]
     graph_free_identity_input: BootstrapGraphFreeIdentityPlanningInputV3 | None
+    planning_construction_authority: BootstrapNativePlanningConstructionAuthorityV3 | None = None
     input_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     _digest_domain = b"memorii.bootstrap-graph.native-operation-reduction-input.v3"
     _digest_field = "input_digest"
@@ -9035,6 +9185,22 @@ class BootstrapNativeOperationReductionInputV3(_BootstrapV3Contract):
             "group": self.operation_id in self.dependency_group.operation_ids,
             "bindings": not any(item.operation_execution_id != self.operation_execution_id or item.operation_id != self.operation_id or item.proposal_digest != subject.proposal_digest or item.member_digest != subject.member_digest or item.bootstrap_analysis_provenance != subject.bootstrap_analysis_provenance or item.operation_alignment_digest != alignment.alignment_digest for item in self.coverage_bindings),
             "identity": (self.operation_member.kind == "identity") == (self.graph_free_identity_input is not None),
+            "planning_authority": (
+                self.planning_construction_authority is None
+                or (
+                    self.planning_construction_authority.source_id == self.source_id
+                    and self.planning_construction_authority.source_digest == self.source_digest
+                    and self.planning_construction_authority.preparation_fingerprint == self.preparation_fingerprint
+                    and self.planning_construction_authority.operation_id == self.operation_id
+                    and self.planning_construction_authority.operation_execution_id == self.operation_execution_id
+                    and self.planning_construction_authority.source_dependency_group_id == self.dependency_group.group_id
+                )
+            ),
+            "identity_construction": (
+                self.planning_construction_authority is None
+                or (self.operation_member.kind == "identity")
+                == (self.planning_construction_authority.identity_construction is not None)
+            ),
         }
         failed = tuple(name for name, valid in checks.items() if not valid)
         if failed:
@@ -10252,7 +10418,8 @@ class BootstrapNativeTargetPlanningRequestV3(_BootstrapV3Contract):
     @model_validator(mode="after")
     def validate_request(self) -> BootstrapNativeTargetPlanningRequestV3:
         if (
-            self.effective_read_set.read_set_digest != self.sealed_snapshot.read_set.read_set_digest
+            self.effective_read_set.read_set_digest
+            != self.sealed_snapshot.canonical_graph.read_set.read_set_digest
             or self.current_planning_state.base_snapshot_digest != self.sealed_snapshot.snapshot_digest
         ):
             raise ValueError("native target planning authority is substituted")
@@ -11455,10 +11622,12 @@ class BootstrapGraphTerminalPublicationIntentV3(_BootstrapV3Contract):
         ids = tuple(item.member_id for item in self.member_intents)
         required = set(order)
         repeated = {"bootstrap_source_plan_lineage_entry", "transaction_group_result"}
+        present = set(kinds)
         if (
             not kinds or tuple(sorted(kinds, key=order.__getitem__)) != kinds
-            or len(ids) != len(set(ids)) or set(kinds) != required
-            or any(kinds.count(kind) != 1 for kind in required - repeated)
+            or len(ids) != len(set(ids))
+            or present not in (required, required - {"transaction_group_result"})
+            or any(kinds.count(kind) != 1 for kind in present - repeated)
             or self.expected_operation_generation != self.expected_artifact_generation
             or self.locator_digest != contract_digest(
                 b"memorii.semantic-ingestion.bootstrap-graph-terminal-publication-locator.v3",
@@ -11693,17 +11862,235 @@ class BootstrapGraphTerminalPreparationV3(_BootstrapV3Contract):
     _digest_field = "preparation_digest"
 
 
+class BootstrapGraphAtomicMemberReferenceV3(_BootstrapV3Contract):
+    """A typed, content-addressed pointer to one native V3 member."""
+
+    repository_id: Literal[
+        "semantic_ingestion.bootstrap_graph_plan.v3",
+        "semantic_ingestion.bootstrap_graph_replay_bundle.v3",
+        "semantic_ingestion.bootstrap_graph_observed_counters.v3",
+        "semantic_ingestion.bootstrap_graph_attempt.v3",
+        "semantic_ingestion.bootstrap_graph_authority.v3",
+        "semantic_ingestion.bootstrap_source_plan_lineage.v3",
+        "semantic_ingestion.bootstrap_graph_execution_manifest.v3",
+        "semantic_ingestion.bootstrap_graph_pre_execution_identity_closure.v3",
+        "semantic_ingestion.bootstrap_graph_progress.v3",
+        "semantic_ingestion.bootstrap_group_result.v3",
+    ]
+    artifact_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    generation: int = Field(ge=1)
+    member_id: str = Field(min_length=1)
+    member_kind: str = Field(min_length=1)
+    member_payload_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    payload_type: str = Field(min_length=1)
+    reference_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    _digest_domain = b"memorii.semantic-ingestion.bootstrap-graph-atomic-member-reference.v3"
+    _digest_field = "reference_digest"
+
+    @model_validator(mode="after")
+    def validate_literal_member_shape(self) -> BootstrapGraphAtomicMemberReferenceV3:
+        legal = {
+            ("semantic_ingestion.bootstrap_graph_plan.v3", "plan", "bootstrap_transaction_group_plan", "BootstrapTransactionGroupPlanV3"),
+            ("semantic_ingestion.bootstrap_graph_replay_bundle.v3", "replay-bundle", "bootstrap_graph_replay_bundle", "BootstrapGraphReplayBundleV3"),
+            ("semantic_ingestion.bootstrap_graph_observed_counters.v3", "observed-counters", "bootstrap_graph_observed_counters", "BootstrapGraphObservedCountersV3"),
+            ("semantic_ingestion.bootstrap_graph_attempt.v3", "attempt", "bootstrap_graph_dependent_attempt", "BootstrapGraphDependentAttemptV3"),
+            ("semantic_ingestion.bootstrap_graph_authority.v3", "successor-authority", "bootstrap_graph_successor_attempt_authority", "BootstrapGraphAttemptAuthorityV3"),
+            ("semantic_ingestion.bootstrap_source_plan_lineage.v3", "lineage", "bootstrap_source_plan_lineage", "BootstrapSourcePlanLineageV3"),
+            ("semantic_ingestion.bootstrap_graph_execution_manifest.v3", "execution-manifest", "ingestion_execution_manifest", "IngestionExecutionManifest"),
+            ("semantic_ingestion.bootstrap_graph_pre_execution_identity_closure.v3", "pre-execution-identity-closure", "bootstrap_graph_pre_execution_identity_closure", "BootstrapGraphPreExecutionManifestIdentityClosureV3"),
+            ("semantic_ingestion.bootstrap_graph_progress.v3", "source-progress", "bootstrap_graph_source_progress", "BootstrapGraphSourceProgressV3"),
+            ("semantic_ingestion.bootstrap_group_result.v3", self.member_id, "transaction_group_result", "BootstrapNativeGroupCommitTerminalConstructionV3"),
+        }
+        if (
+            self.repository_id == "semantic_ingestion.bootstrap_group_result.v3"
+            and not (
+                self.member_id.startswith("group-result:")
+                and len(self.member_id.removeprefix("group-result:")) == 64
+                and all(character in "0123456789abcdef" for character in self.member_id.removeprefix("group-result:"))
+            )
+        ):
+            raise ValueError("bootstrap graph group-result reference is not canonical")
+        if (self.repository_id, self.member_id, self.member_kind, self.payload_type) not in legal:
+            raise ValueError("bootstrap graph atomic member reference is not a legal native member")
+        return self
+
+
+class BootstrapGraphReplanClosureReferenceV3(_BootstrapV3Contract):
+    """The sealed predecessor closure retained by one related-conflict replan."""
+
+    predecessor_planned_progress_reference: BootstrapGraphAtomicMemberReferenceV3
+    predecessor_lineage_reference: BootstrapGraphAtomicMemberReferenceV3
+    canonical_final_result_references: tuple[BootstrapGraphAtomicMemberReferenceV3, ...]
+    unfinished_transaction_group_ids: tuple[str, ...]
+    replanned_transaction_group_ids: tuple[str, ...]
+    closure_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    _digest_domain = b"memorii.semantic-ingestion.bootstrap-graph-replan-closure-reference.v3"
+    _digest_field = "closure_digest"
+
+    @model_validator(mode="after")
+    def validate_closure(self) -> BootstrapGraphReplanClosureReferenceV3:
+        final_references = self.canonical_final_result_references
+        unfinished = self.unfinished_transaction_group_ids
+        replanned = self.replanned_transaction_group_ids
+        if (
+            self.predecessor_planned_progress_reference.payload_type
+            != "BootstrapGraphSourceProgressV3"
+            or self.predecessor_lineage_reference.payload_type
+            != "BootstrapSourcePlanLineageV3"
+            or any(
+                reference.payload_type
+                != "BootstrapNativeGroupCommitTerminalConstructionV3"
+                for reference in final_references
+            )
+            or tuple(reference.member_id for reference in final_references)
+            != tuple(sorted(reference.member_id for reference in final_references))
+            or len({reference.member_id for reference in final_references}) != len(final_references)
+            or not unfinished
+            or unfinished != tuple(sorted(set(unfinished)))
+            or not replanned
+            or replanned != tuple(sorted(set(replanned)))
+            or not set(replanned).issubset(unfinished)
+        ):
+            raise ValueError("bootstrap graph replan closure is invalid")
+        return self
+
+
+class BootstrapGraphReplayBundleV3(_BootstrapV3Contract):
+    request_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    normalization_replay_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    normalization_result_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source_alignment_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    replay_bundle_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    _digest_domain = b"memorii.semantic-ingestion.bootstrap-graph-replay-bundle.v3"
+    _digest_field = "replay_bundle_digest"
+
+
+class BootstrapGraphObservedCountersV3(_BootstrapV3Contract):
+    request_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    control_epoch_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    operation_fence_binding_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    execution_policy_reference_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    publication_generation: int = Field(ge=1)
+    observed_operations: int = Field(ge=0)
+    observed_groups: int = Field(ge=0)
+    observed_fixed_point_rounds: int = Field(ge=0)
+    observed_snapshot_records: int = Field(ge=0)
+    observed_snapshot_partitions: int = Field(ge=0)
+    observed_related_conflicts: int = Field(ge=0)
+    observed_attempts: int = Field(ge=0)
+    observed_read_set_extensions: int = Field(ge=0)
+    observed_reservations: int = Field(ge=0)
+    observed_lineage_entries: int = Field(ge=0)
+    observed_replay_artifacts: int = Field(ge=0)
+    observed_replay_bundle_bytes: int = Field(ge=0)
+    observed_decode_depth: int = Field(ge=0)
+    counters_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    _digest_domain = b"memorii.semantic-ingestion.bootstrap-graph-observed-counters.v3"
+    _digest_field = "counters_digest"
+
+
+class _BootstrapGraphSourceProgressV3(_BootstrapV3Contract):
+    kind: Literal["plan_published", "attempt_published", "planned"]
+    source_id: str = Field(min_length=1)
+    source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    preparation_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    operation_id: str = Field(min_length=1)
+    request_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    normalization_replay_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    normalization_result_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    control_epoch_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    operation_fence_binding_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    operation_lease_binding_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    writer_commit_binding_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    plan_reference: BootstrapGraphAtomicMemberReferenceV3
+    replay_bundle_reference: BootstrapGraphAtomicMemberReferenceV3
+    observed_counters_reference: BootstrapGraphAtomicMemberReferenceV3
+    predecessor_progress_reference: BootstrapGraphAtomicMemberReferenceV3 | None = None
+    replan_closure_reference: BootstrapGraphReplanClosureReferenceV3 | None = None
+    progress_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    _create_static_values = {
+        "predecessor_progress_reference": None,
+        "replan_closure_reference": None,
+    }
+
+    @model_validator(mode="after")
+    def validate_common_references(self) -> _BootstrapGraphSourceProgressV3:
+        if (
+            self.plan_reference.payload_type != "BootstrapTransactionGroupPlanV3"
+            or self.replay_bundle_reference.payload_type != "BootstrapGraphReplayBundleV3"
+            or self.observed_counters_reference.payload_type != "BootstrapGraphObservedCountersV3"
+            or (self.predecessor_progress_reference is not None and self.predecessor_progress_reference.payload_type != "BootstrapGraphSourceProgressV3")
+            or ((self.predecessor_progress_reference is None) != (self.replan_closure_reference is None))
+        ):
+            raise ValueError("bootstrap graph progress reference is substituted")
+        return self
+
+
+class BootstrapGraphPlanPublishedProgressV3(_BootstrapGraphSourceProgressV3):
+    kind: Literal["plan_published"] = "plan_published"
+    _create_static_values = {"kind": "plan_published"}
+    _digest_domain = b"memorii.semantic-ingestion.bootstrap-graph-source-progress.v3"
+    _digest_field = "progress_digest"
+
+
+class BootstrapGraphAttemptPublishedProgressV3(_BootstrapGraphSourceProgressV3):
+    kind: Literal["attempt_published"] = "attempt_published"
+    _create_static_values = {"kind": "attempt_published"}
+    authority_reference: BootstrapGraphAtomicMemberReferenceV3
+    attempt_reference: BootstrapGraphAtomicMemberReferenceV3
+    _digest_domain = b"memorii.semantic-ingestion.bootstrap-graph-source-progress.v3"
+    _digest_field = "progress_digest"
+
+    @model_validator(mode="after")
+    def validate_attempt_references(self) -> BootstrapGraphAttemptPublishedProgressV3:
+        if self.authority_reference.payload_type != "BootstrapGraphAttemptAuthorityV3" or self.attempt_reference.payload_type != "BootstrapGraphDependentAttemptV3":
+            raise ValueError("bootstrap graph attempt progress reference is substituted")
+        return self
+
+
+class BootstrapGraphPlannedProgressV3(BootstrapGraphAttemptPublishedProgressV3):
+    kind: Literal["planned"] = "planned"
+    _create_static_values = {
+        "kind": "planned",
+        "execution_manifest_reference": None,
+    }
+    lineage_reference: BootstrapGraphAtomicMemberReferenceV3
+    pre_execution_identity_closure_reference: BootstrapGraphAtomicMemberReferenceV3
+    execution_manifest_reference: BootstrapGraphAtomicMemberReferenceV3 | None = None
+
+    @model_validator(mode="after")
+    def validate_lineage_reference(self) -> BootstrapGraphPlannedProgressV3:
+        if (
+            self.lineage_reference.payload_type != "BootstrapSourcePlanLineageV3"
+            or self.pre_execution_identity_closure_reference.payload_type
+            != "BootstrapGraphPreExecutionManifestIdentityClosureV3"
+            or (self.execution_manifest_reference is not None and self.execution_manifest_reference.payload_type != "IngestionExecutionManifest")
+        ):
+            raise ValueError("bootstrap graph planned progress reference is substituted")
+        return self
+
+
+BootstrapGraphSourceProgressV3: TypeAlias = Annotated[
+    BootstrapGraphPlanPublishedProgressV3 | BootstrapGraphAttemptPublishedProgressV3 | BootstrapGraphPlannedProgressV3,
+    Field(discriminator="kind"),
+]
+
+
 BootstrapGraphPlanAtomicMemberKindV3: TypeAlias = Literal[
     "bootstrap_graph_coordinator_request", "bootstrap_graph_snapshot_authority",
     "bootstrap_graph_control_epoch", "graph_base_read_set",
     "graph_read_set_extension", "graph_reconciliation", "reference_closure",
     "group_compilation_request", "group_compilation_artifact",
     "group_independence_certificate", "bootstrap_graph_pre_execution_group_evidence",
+    "bootstrap_graph_pre_execution_identity_closure",
     "bootstrap_transaction_group_plan", "bootstrap_group_planning_authorization",
     "bootstrap_graph_dependent_attempt", "bootstrap_source_plan_lineage_entry",
     "bootstrap_graph_retry_progress", "bootstrap_graph_final_stage_evidence",
     "ingestion_execution_manifest", "transaction_group_result",
     "bootstrap_graph_terminal_handoff", "bootstrap_graph_canonical_source_result",
+    "bootstrap_graph_replay_bundle", "bootstrap_graph_observed_counters",
+    "bootstrap_graph_source_progress", "bootstrap_graph_successor_attempt_authority",
+    "bootstrap_source_plan_lineage",
 ]
 
 
@@ -11721,6 +12108,7 @@ BOOTSTRAP_GRAPH_V3_ATOMIC_MEMBER_CODECS: dict[str, str] = {
     "group_compilation_artifact": "bootstrap_graph_v3/group_compilation_artifact/native",
     "group_independence_certificate": "bootstrap_graph_v3/group_independence_certificate/native",
     "bootstrap_graph_pre_execution_group_evidence": "bootstrap_graph_v3/bootstrap_graph_pre_execution_group_evidence/native",
+    "bootstrap_graph_pre_execution_identity_closure": "bootstrap_graph_v3/bootstrap_graph_pre_execution_identity_closure/native",
     "bootstrap_transaction_group_plan": "bootstrap_graph_v3/bootstrap_transaction_group_plan/native",
     "bootstrap_group_planning_authorization": "bootstrap_graph_v3/bootstrap_group_planning_authorization/native",
     "bootstrap_graph_dependent_attempt": "bootstrap_graph_v3/bootstrap_graph_dependent_attempt/native",
@@ -11731,6 +12119,11 @@ BOOTSTRAP_GRAPH_V3_ATOMIC_MEMBER_CODECS: dict[str, str] = {
     "transaction_group_result": "bootstrap_graph_v3/transaction_group_result/native",
     "bootstrap_graph_terminal_handoff": "bootstrap_graph_v3/bootstrap_graph_terminal_handoff/native",
     "bootstrap_graph_canonical_source_result": "bootstrap_graph_v3/bootstrap_graph_canonical_source_result/native",
+    "bootstrap_graph_replay_bundle": "bootstrap_graph_v3/bootstrap_graph_replay_bundle/native",
+    "bootstrap_graph_observed_counters": "bootstrap_graph_v3/bootstrap_graph_observed_counters/native",
+    "bootstrap_graph_source_progress": "bootstrap_graph_v3/bootstrap_graph_source_progress/native",
+    "bootstrap_graph_successor_attempt_authority": "bootstrap_graph_v3/bootstrap_graph_successor_attempt_authority/native",
+    "bootstrap_source_plan_lineage": "bootstrap_graph_v3/bootstrap_source_plan_lineage/native",
 }
 
 _BOOTSTRAP_GRAPH_V3_ATOMIC_MEMBER_ENVELOPE = (
@@ -11770,6 +12163,19 @@ def encode_bootstrap_graph_atomic_member_payload_v3(
         and not isinstance(artifact, BootstrapNativeGroupCommitTerminalConstructionV3)
     ):
         raise SemanticContractCodecError("native transaction group result has an incompatible type")
+    expected_types: dict[str, type[BaseModel] | tuple[type[BaseModel], ...]] = {
+        "group_compilation_artifact": BootstrapGraphPlanCompilationV3,
+        "bootstrap_graph_replay_bundle": BootstrapGraphReplayBundleV3,
+        "bootstrap_graph_observed_counters": BootstrapGraphObservedCountersV3,
+        "bootstrap_graph_source_progress": (
+            BootstrapGraphPlanPublishedProgressV3,
+            BootstrapGraphAttemptPublishedProgressV3,
+            BootstrapGraphPlannedProgressV3,
+        ),
+    }
+    expected_type = expected_types.get(kind)
+    if expected_type is not None and not isinstance(artifact, expected_type):
+        raise SemanticContractCodecError("native bootstrap graph member has an incompatible type")
     payload = canonical_contract_value(artifact)
     if _contains_retired_bootstrap_graph_v3_reduction(payload):
         raise SemanticContractCodecError("retired generic bootstrap graph reduction")
@@ -11803,7 +12209,9 @@ def decode_bootstrap_graph_atomic_member_payload_v3(
     if kind == "transaction_group_result":
         try:
             return canonical_contract_value(
-                BootstrapNativeGroupCommitTerminalConstructionV3.model_validate(payload)
+                BootstrapNativeGroupCommitTerminalConstructionV3.model_validate(
+                    payload, strict=False
+                )
             )
         except (TypeError, ValueError) as exc:
             raise SemanticContractCodecError(
@@ -11892,6 +12300,25 @@ class BootstrapGraphGroupCommitRequestV3(_BootstrapV3Contract):
     @model_validator(mode="after")
     def validate_group_commit_request(self) -> BootstrapGraphGroupCommitRequestV3:
         inputs = self.ordered_operation_inputs
+        authority = next((
+            item for item in getattr(
+                self.attempt.attempt_authority, "group_member_authorities", ()
+            )
+            if item.transaction_group_id == self.transaction_group_id
+        ), None)
+        retained_unfinished = (
+            authority is not None
+            and authority.kind == "reused_unfinished"
+            and authority.predecessor_group_plan_member == self.group_plan_member
+            and authority.predecessor_planning_authorization
+            == self.planning_authorization
+            and authority.predecessor_lineage_entry.entry_digest
+            == self.source_plan_lineage_entry.entry_digest
+            and self.pre_execution_manifest_identity.core.producing_attempt_digest
+            == self.attempt.attempt_authority.predecessor_attempt_digest
+            and self.pre_execution_manifest_identity.core.producing_lineage_entry_digest
+            == self.source_plan_lineage_entry.entry_digest
+        )
         if (
             not self.operation_ids
             or self.operation_ids != tuple(sorted(set(self.operation_ids)))
@@ -11902,8 +12329,26 @@ class BootstrapGraphGroupCommitRequestV3(_BootstrapV3Contract):
             or self.planning_authorization.transaction_group_id != self.transaction_group_id
             or self.planning_authorization.operation_ids != self.operation_ids
             or self.source_plan_lineage_entry.transaction_group_id != self.transaction_group_id
-            or self.source_plan_lineage_entry.attempt_digest != self.attempt.attempt_digest
+            or (
+                self.source_plan_lineage_entry.attempt_digest
+                != self.attempt.attempt_digest
+                and not retained_unfinished
+            )
             or self.planning_authorization.group_plan_member_digest != self.group_plan_member.member_digest
+            or self.pre_execution_manifest_identity.core.transaction_group_id
+            != self.transaction_group_id
+            or (
+                self.pre_execution_manifest_identity.core.producing_attempt_digest
+                != self.attempt.attempt_digest
+                and not retained_unfinished
+            )
+            or self.pre_execution_manifest_identity.core.producing_lineage_entry_digest
+            != self.source_plan_lineage_entry.entry_digest
+            or (
+                self.pre_execution_manifest_identity.core.control_epoch_digest
+                != self.control_epoch.epoch_digest
+                and not retained_unfinished
+            )
             or self.operation_fence_binding != self.control_epoch.operation_fence_binding
             or self.operation_lease_binding != self.control_epoch.operation_lease_binding
             or self.writer_commit_binding != self.control_epoch.writer_commit_binding
@@ -11983,14 +12428,35 @@ class BootstrapNativeGroupCommitTerminalConstructionV3(_BootstrapV3Contract):
     @model_validator(mode="after")
     def validate_terminal_construction(self) -> BootstrapNativeGroupCommitTerminalConstructionV3:
         reload = self.group_commit_reload
+        authority = next((
+            item for item in getattr(
+                self.attempt.attempt_authority, "group_member_authorities", ()
+            )
+            if item.transaction_group_id == self.transaction_group_id
+        ), None)
+        retained_unfinished = (
+            authority is not None
+            and authority.kind == "reused_unfinished"
+            and authority.predecessor_group_plan_member == self.group_plan_member
+            and authority.predecessor_planning_authorization
+            == self.planning_authorization
+            and authority.predecessor_lineage_entry.entry_digest
+            == self.source_plan_lineage_entry.entry_digest
+        )
         if (
             self.request_digest != self.attempt.request_digest
             or self.normalization_replay_digest != self.attempt.normalization_replay_digest
-            or self.source_plan_lineage_entry.attempt_digest != self.attempt.attempt_digest
+            or (
+                self.source_plan_lineage_entry.attempt_digest
+                != self.attempt.attempt_digest
+                and not retained_unfinished
+            )
             or self.source_plan_lineage_entry.transaction_group_id != self.transaction_group_id
             or self.group_plan_member.operation_ids != reload.operation_ids
             or self.planning_authorization.transaction_group_id != self.transaction_group_id
             or self.planning_authorization.operation_ids != reload.operation_ids
+            or self.planning_authorization.group_plan_member_digest
+            != self.group_plan_member.member_digest
             or reload.transaction_group_id != self.transaction_group_id
             or self.operation_fence_binding.binding_digest
             != self.attempt.operation_fence_binding_digest
@@ -12001,6 +12467,30 @@ class BootstrapNativeGroupCommitTerminalConstructionV3(_BootstrapV3Contract):
         ):
             raise ValueError("bootstrap native group commit terminal construction is substituted")
         return self
+
+
+def validate_bootstrap_native_group_commit_terminal_request_v3(
+    construction: BootstrapNativeGroupCommitTerminalConstructionV3,
+    request: BootstrapGraphGroupCommitRequestV3,
+) -> None:
+    """Join a checkpoint terminal to the repository-owned request bytes."""
+    if (
+        construction.request_digest != request.request_digest
+        or construction.normalization_replay_digest
+        != request.normalization_replay_digest
+        or construction.attempt != request.attempt
+        or construction.source_plan_lineage_entry
+        != request.source_plan_lineage_entry
+        or construction.group_plan_member != request.group_plan_member
+        or construction.planning_authorization != request.planning_authorization
+        or construction.operation_fence_binding != request.operation_fence_binding
+        or construction.control_epoch != request.control_epoch
+        or construction.group_commit_reload.request_ctv_digest
+        != request.request_ctv_digest
+    ):
+        raise ValueError(
+            "bootstrap native group commit terminal request is substituted"
+        )
 
 
 class BootstrapGraphPlanAtomicWriteRequestV3(_BootstrapV3Contract):
@@ -12227,6 +12717,7 @@ class BootstrapGraphPlanCompilationV3(_BootstrapV3Contract):
     control_epoch_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     transaction_group_plan: BootstrapTransactionGroupPlanV3
     operation_reductions: tuple[BootstrapGraphOperationReductionV3, ...]
+    manifest_group_inputs: tuple[BootstrapGraphExecutionManifestGroupInputV3, ...]
     pre_execution_evidence: tuple[BootstrapGraphPreExecutionGroupEvidenceV3, ...]
     attempt_construction_inputs: BootstrapGraphAttemptConstructionInputsV3
     compilation_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -12246,9 +12737,25 @@ class BootstrapGraphPlanCompilationV3(_BootstrapV3Contract):
             for item in self.operation_reductions
         )
         evidence_groups = tuple(item.transaction_group_id for item in self.pre_execution_evidence)
-        if operations != reductions or evidence_groups != tuple(item.transaction_group_id for item in groups):
+        if (
+            operations != reductions
+            or evidence_groups != tuple(item.transaction_group_id for item in groups)
+            or tuple(item.transaction_group_id for item in self.manifest_group_inputs)
+            != tuple(item.transaction_group_id for item in groups)
+            or any(
+                item.group_plan_member != group
+                for item, group in zip(
+                    self.manifest_group_inputs, groups, strict=True
+                )
+            )
+        ):
             raise ValueError("bootstrap graph plan compilation closure is invalid")
         return self
+
+    @property
+    def plan(self) -> BootstrapTransactionGroupPlanV3:
+        """Coordinator view of the exact persisted transaction plan."""
+        return self.transaction_group_plan
 
 
 class BootstrapGraphAttemptConstructionInputsV3(_BootstrapV3Contract):
@@ -12316,10 +12823,24 @@ class BootstrapGraphDependentCoordinatorSucceededV3(_BootstrapV3Contract):
 class BootstrapGraphDependentPreGraphNonCommitV3(_BootstrapV3Contract):
     kind: Literal["pre_graph_noncommit"]
     request_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    reason: Literal["authority_unavailable", "normalization_incompatible", "snapshot_unavailable", "planning_unavailable", "authorization_unavailable"]
+    reason: Literal["authority_unavailable", "normalization_incompatible", "snapshot_unavailable", "planning_unavailable", "authorization_unavailable", "related_conflict_retry_exhausted"]
     reason_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     response_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     _digest_domain = b"memorii.semantic-ingestion.bootstrap-graph-dependent-coordinator-pre-graph-noncommit.v3"
+    _digest_field = "response_digest"
+
+
+class BootstrapGraphRelatedConflictRefreshRequiredV3(_BootstrapV3Contract):
+    """Internal handoff from a stale coordinator to its host authority owner."""
+
+    kind: Literal["related_conflict_refresh_required"]
+    request_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    transaction_group_id: str = Field(min_length=1)
+    expected_graph_revision: str = Field(min_length=1)
+    observed_graph_revision: str = Field(min_length=1)
+    operation_fence_binding_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    response_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    _digest_domain = b"memorii.semantic-ingestion.bootstrap-graph-related-conflict-refresh-required.v3"
     _digest_field = "response_digest"
 
 
@@ -12406,7 +12927,7 @@ class BootstrapGraphFinalizedFailureV3(_BootstrapV3Contract):
 
 BootstrapGraphDependentCoordinatorResultV3: TypeAlias = Annotated[
     BootstrapGraphDependentCoordinatorSucceededV3 | BootstrapGraphDependentPreGraphNonCommitV3 |
-    BootstrapGraphDurableRetryProgressV3 | BootstrapGraphFinalizedFailureV3,
+    BootstrapGraphRelatedConflictRefreshRequiredV3 | BootstrapGraphDurableRetryProgressV3 | BootstrapGraphFinalizedFailureV3,
     Field(discriminator="kind"),
 ]
 
@@ -12589,6 +13110,14 @@ class BootstrapSourceNormalizationAtomicWriteRequestV3(AtomicGenerationRequest):
         if self.request_digest != generation_request_digest(self):
             raise ValueError("bootstrap V3 atomic request digest is invalid")
         return self
+
+
+def bootstrap_v3_atomic_request_digest(values: dict[str, object]) -> str:
+    """Seal the closed V3 wire using its own typed serialization preimage."""
+    provisional = BootstrapSourceNormalizationAtomicWriteRequestV3.model_construct(
+        **values, request_digest="0" * 64
+    )
+    return generation_request_digest(provisional)
 
 
 # These host-owned leaves import policy contracts from this module.  Resolve the
@@ -12893,6 +13422,8 @@ _CONTRACT_KINDS: dict[type[BaseModel], str] = {
     BootstrapExistingCanonicalIdentityDecisionV3: "bootstrap_existing_canonical_identity_decision_v3",
     BootstrapNewCanonicalIdentityAllocationV3: "bootstrap_new_canonical_identity_allocation_v3",
     BootstrapAbsentCanonicalIdentityDecisionV3: "bootstrap_absent_canonical_identity_decision_v3",
+    BootstrapCanonicalIdentityBindingAllocationAuthorityV3: "bootstrap_canonical_identity_binding_allocation_authority_v3",
+    BootstrapCanonicalIdentityBindingAllocationReloadV3: "bootstrap_canonical_identity_binding_allocation_reload_v3",
     BootstrapNativeMentionTargetCandidateV3: "bootstrap_native_mention_target_candidate_v3",
     BootstrapNativeSelectorTargetV3: "bootstrap_native_selector_target_v3",
     BootstrapNativeTargetResolutionAuthorityV3: "bootstrap_native_target_resolution_authority_v3",
@@ -12956,6 +13487,13 @@ _CONTRACT_KINDS: dict[type[BaseModel], str] = {
     BootstrapGraphTerminalControlV3: "bootstrap_graph_terminal_control_v3",
     BootstrapGraphTerminalPersistenceHandoffV3: "bootstrap_graph_terminal_persistence_handoff_v3",
     BootstrapGraphTerminalReloadV3: "bootstrap_graph_terminal_reload_v3",
+    BootstrapGraphAtomicMemberReferenceV3: "bootstrap_graph_atomic_member_reference_v3",
+    BootstrapGraphReplanClosureReferenceV3: "bootstrap_graph_replan_closure_reference_v3",
+    BootstrapGraphReplayBundleV3: "bootstrap_graph_replay_bundle_v3",
+    BootstrapGraphObservedCountersV3: "bootstrap_graph_observed_counters_v3",
+    BootstrapGraphPlanPublishedProgressV3: "bootstrap_graph_plan_published_progress_v3",
+    BootstrapGraphAttemptPublishedProgressV3: "bootstrap_graph_attempt_published_progress_v3",
+    BootstrapGraphPlannedProgressV3: "bootstrap_graph_planned_progress_v3",
     BootstrapGraphPlanAtomicMemberV3: "bootstrap_graph_plan_atomic_member_v3",
     BootstrapGraphCurrentGenerationV3: "bootstrap_graph_current_generation_v3",
     BootstrapGraphCheckpointReceiptV3: "bootstrap_graph_checkpoint_receipt_v3",
@@ -13555,6 +14093,14 @@ __all__ = [
     "BootstrapGraphTerminalPersistenceHandoffV3",
     "BootstrapGraphTerminalReloadV3",
     "BootstrapGraphPlanAtomicMemberKindV3",
+    "BootstrapGraphAtomicMemberReferenceV3",
+    "BootstrapGraphReplanClosureReferenceV3",
+    "BootstrapGraphReplayBundleV3",
+    "BootstrapGraphObservedCountersV3",
+    "BootstrapGraphPlanPublishedProgressV3",
+    "BootstrapGraphAttemptPublishedProgressV3",
+    "BootstrapGraphPlannedProgressV3",
+    "BootstrapGraphSourceProgressV3",
     "BOOTSTRAP_GRAPH_V3_ATOMIC_MEMBER_CODECS",
     "encode_bootstrap_graph_atomic_member_payload_v3",
     "decode_bootstrap_graph_atomic_member_payload_v3",

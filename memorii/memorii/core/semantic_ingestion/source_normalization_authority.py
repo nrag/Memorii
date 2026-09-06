@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from memorii.core.memory_evolution.semantic_state import PredicateStateRule
 from memorii.core.semantic_ingestion.contracts import (
     BootstrapSemanticProposalRequestV3,
     BootstrapV3PayloadLimitAuthority,
@@ -38,6 +39,28 @@ class ProposalRunProductionAuthority(BaseModel):
             self.model_dump(mode="python", exclude={"authority_digest"}),
         ):
             raise ValueError("proposal-run production authority digest mismatch")
+        return self
+
+
+class BootstrapPlanningPolicyAuthority(BaseModel):
+    """Host-owned graph-planning policy identity sealed before normalization."""
+
+    predicate_registry_fingerprint: str = Field(pattern=_DIGEST)
+    predicate_state_rule: PredicateStateRule
+    action_policy_fingerprint: str = Field(pattern=_DIGEST)
+    authority_digest: str = Field(pattern=_DIGEST)
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    @model_validator(mode="after")
+    def validate_digest(self) -> BootstrapPlanningPolicyAuthority:
+        if self.predicate_state_rule.predicate_id == "":
+            raise ValueError("bootstrap planning predicate state rule is invalid")
+        if self.authority_digest != contract_digest(
+            b"memorii.semantic-ingestion.bootstrap-planning-policy-authority.v3",
+            self.model_dump(mode="python", exclude={"authority_digest"}),
+        ):
+            raise ValueError("bootstrap planning policy authority digest mismatch")
         return self
 
 
@@ -165,4 +188,5 @@ __all__ = [
     "GraphDependentExecutionPolicy",
     "ProposalRunProductionAuthority",
     "BootstrapV3RuntimeAuthority",
+    "BootstrapPlanningPolicyAuthority",
 ]

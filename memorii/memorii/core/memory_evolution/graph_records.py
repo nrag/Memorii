@@ -112,10 +112,16 @@ class _GraphRecord(BaseModel):
 
     @classmethod
     def create(cls, **values: object):
-        body = {"record_kind": cls.model_fields["record_kind"].default, **values}
+        body = {
+            "record_kind": cls.model_fields["record_kind"].default,
+            "record_version": 1,
+            **values,
+        }
+        provisional = cls.model_construct(**body, record_digest="0" * 64)
+        digest_body = provisional.model_dump(mode="python", exclude={"record_digest"})
         validated = cls.model_validate(
             body
-            | {"record_digest": graph_digest(b"memorii.canonical-graph-record.v1\0", body)}
+            | {"record_digest": graph_digest(b"memorii.canonical-graph-record.v1\0", digest_body)}
         )
         _arena_registry()[2](validated)
         return validated

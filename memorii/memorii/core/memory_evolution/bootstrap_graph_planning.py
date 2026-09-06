@@ -9,17 +9,36 @@ reconstructing a target later in the reducer.
 from __future__ import annotations
 
 from memorii.core.memory_evolution.graph_planning import (
+    AbsentPlanningPrecondition,
     DurablePlanningStateRecord,
+    GraphPlanningDelta,
     GraphPlanningState,
     PendingPlanningStateRecord,
+    PlanningGraphRecordMutation,
+    PlanningSnapshotGraphRecord,
+    canonical_planning_payload_from_record,
 )
 from memorii.core.memory_evolution.graph_records import (
+    CitationRecord,
+    ClaimProjection,
+    EntityRevision,
     GraphReadSet,
     GraphReadSetExtension,
     GraphRecordKind,
     GraphWriteIntent,
     PlannedEntityIdentity,
     PlannedIdentityReservation,
+    ProvenanceRecord,
+    RelationRevision,
+    graph_record_id,
+)
+from memorii.core.memory_evolution.semantic_state import (
+    AcceptedClaimIdentity,
+    ImmutableAssertionEntityRef,
+    LineageEvidenceReference,
+    SemanticAssertionKey,
+    SemanticClaimSlotKey,
+    SemanticClaimValueKey,
 )
 from memorii.core.memory_evolution.transaction_coordinator import SealedGraphStateSnapshot
 from memorii.core.semantic_ingestion.contracts import (
@@ -32,13 +51,21 @@ from memorii.core.semantic_ingestion.contracts import (
     BootstrapCanonicalIdentityClusterDecisionV3,
     BootstrapCanonicalIdentityDecisionProofV3,
     BootstrapCanonicalPlanningPrefixProofV3,
+    BootstrapGraphTargetMaterializationPlanV3,
     BootstrapGraphTargetReferenceV3,
+    BootstrapNativeEntitySeedV3,
+    BootstrapNativeEvidenceProjectionV3,
+    BootstrapNativeFactPlanningSeedV3,
     BootstrapNativeMentionTargetCandidateV3,
     BootstrapNativeOperationReductionInputV3,
+    BootstrapNativePlanningConstructionAuthorityV3,
+    BootstrapNativePlanningRecordV3,
     BootstrapNativePlanningUnavailableV3,
     BootstrapNativeTargetAuthorityV3,
+    BootstrapNativeTargetBindingV3,
     BootstrapNativeTargetPlanningRequestV3,
     BootstrapNativeTargetResolutionAuthorityV3,
+    BootstrapNativeTemporalTerminalBindingV3,
     BootstrapNewCanonicalIdentityAllocationV3,
     BootstrapNewFirstUseTargetAuthorityV3,
     BootstrapPendingTargetAuthorityV3,
@@ -46,6 +73,7 @@ from memorii.core.semantic_ingestion.contracts import (
     BootstrapSnapshotTargetAuthorityV3,
     BootstrapSourceLocalIdentityResolutionV3,
     BootstrapSourceOperationMembershipV3,
+    ClaimAssertion,
     contract_digest,
 )
 
@@ -121,18 +149,23 @@ def resolve_pending_precedence_target_v3(
 
 
 class BuiltInBootstrapGraphTargetMaterializationPlannerV3:
-    """Fail-closed initial native planning owner.
+    """Pure fact-only native target/materialization owner.
 
-    V3 target selection is intentionally separate from reduction.  Until a
-    complete role-to-record plan is supplied by the retained source authority,
-    the only lawful output is a request-bound unavailable result; no target or
-    record can be fabricated from transcript text or ambient graph access.
+    The planner consumes the sealed source construction and target authority;
+    it has no store or host-policy access.  Every unsupported or incomplete
+    arm remains the established zero-effect unresolved result.
     """
 
     def plan(
         self, *, request: BootstrapNativeTargetPlanningRequestV3
-    ) -> BootstrapNativePlanningUnavailableV3:
+    ) -> BootstrapGraphTargetMaterializationPlanV3 | BootstrapNativePlanningUnavailableV3:
         operation = request.operation_input
+        if (
+            operation.operation_member.kind == "fact"
+            and operation.operation_member.object.kind == "entity"
+            and operation.planning_construction_authority is not None
+        ):
+            return self._plan_entity_fact(request=request)
         return BootstrapNativePlanningUnavailableV3.create(
             request_digest=request.request_digest,
             transaction_group_id=request.transaction_group_id,
@@ -140,11 +173,309 @@ class BuiltInBootstrapGraphTargetMaterializationPlannerV3:
             operation_id=operation.operation_id,
             proposal_digest=operation.normalized_proposal.proposal_digest,
             status="unresolved",
-            reason_codes=(_unavailable_reason(operation),),
+            reason_codes=("graph_target_missing",),
             sealed_snapshot_digest=request.sealed_snapshot.snapshot_digest,
             effective_read_set_digest=request.effective_read_set.read_set_digest,
             planning_state_before_digest=request.current_planning_state.state_digest,
         )
+
+    def _plan_entity_fact(
+        self, *, request: BootstrapNativeTargetPlanningRequestV3,
+    ) -> BootstrapGraphTargetMaterializationPlanV3 | BootstrapNativePlanningUnavailableV3:
+        operation = request.operation_input
+        fact = operation.operation_member
+        assert fact.kind == "fact" and fact.object.kind == "entity"
+        authority = operation.planning_construction_authority
+        assert authority is not None
+        candidates = {item.mention_digest: item for item in request.target_resolution_authority.mention_candidates}
+        subject_candidate = candidates.get(fact.subject_mention_digest)
+        object_candidate = candidates.get(fact.object.mention_digest)
+        if subject_candidate is None or object_candidate is None:
+            return self._unavailable(request=request, reason="graph_target_missing")
+        if len(candidates) != len(request.target_resolution_authority.mention_candidates):
+            return self._unavailable(request=request, reason="graph_target_ambiguous")
+        subject = BootstrapNativeTargetBindingV3.create(
+            role="fact_subject", source_coordinate_digest=_mention_coordinate(
+                operation=operation, path="fact.subject", mention=fact.subject_mention_digest
+            ), authority=subject_candidate.target_authority,
+        )
+        object_target = BootstrapNativeTargetBindingV3.create(
+            role="fact_object", source_coordinate_digest=_mention_coordinate(
+                operation=operation, path="fact.object", mention=fact.object.mention_digest
+            ), authority=object_candidate.target_authority,
+        )
+        temporal = _one_assertion_temporal(authority)
+        records: list[BootstrapNativePlanningRecordV3] = []
+        created: list[BootstrapNativeEntitySeedV3] = []
+        for candidate in (subject_candidate, object_candidate):
+            if candidate.target_authority.kind != "new_first_use":
+                continue
+            decision = next(
+                item for item in request.target_resolution_authority.canonical_identity_authority.authority.cluster_decisions
+                if item.decision_digest == candidate.canonical_identity_decision_digest
+            )
+            if decision.kind != "new":
+                return self._unavailable(request=request, reason="reference_closure_incomplete")
+            entity = EntityRevision.create(
+                operation_id=operation.operation_id,
+                record_version=1,
+                codec_fingerprint=_codec(authority, "entity_revision"),
+                entity_revision_id=candidate.entity_revision_id,
+                logical_entity_id=candidate.logical_entity_id,
+                lifecycle="active",
+                source_evidence=tuple(
+                    LineageEvidenceReference(
+                        source_id=item.source_span.source_id,
+                        start=item.source_span.projection_span.start,
+                        end=item.source_span.projection_span.end,
+                        evidence_digest=item.evidence_digest,
+                    )
+                    for item in authority.evidence_constructions
+                    if item.evidence_item_digest in decision.proof.alias_proof_digests
+                ),
+            )
+            entity_record = _planning_record(
+                operation=operation, group_id=request.transaction_group_id, record=entity,
+            )
+            records.append(entity_record)
+            created.append(BootstrapNativeEntitySeedV3.create(
+                kind="entity", source_local_cluster_id=candidate.source_local_cluster_id,
+                mention_digests=decision.proof.mention_digests,
+                canonical_identity_decision_digest=decision.decision_digest,
+                canonical_identity_proof_digest=decision.proof.proof_digest,
+                seed_producer_operation_execution_id=decision.seed_producer_operation_execution_id,
+                seed_producer_source_coordinate_digest=decision.seed_producer_source_coordinate_digest,
+                logical_entity_id=candidate.logical_entity_id,
+                entity_revision_id=candidate.entity_revision_id,
+                entity_revision=entity_record.planning_payload,
+                aliases=(), type_evidence=(),
+                alias_type_proof_digest=contract_digest(
+                    b"memorii.bootstrap-graph.native-entity-alias-type-proof.v3",
+                    decision.decision_digest,
+                ),
+            ))
+        claim_id = contract_digest(
+            b"memorii.bootstrap-graph.native-fact-claim.v3",
+            (operation.operation_execution_id, fact.fact_digest),
+        )
+        claim = _claim_assertion(
+            operation=operation, fact=fact, claim_id=claim_id, authority=authority,
+            temporal=temporal, subject=subject_candidate, object_target=object_candidate,
+            target_resolution_authority=request.target_resolution_authority,
+        )
+        claim_record = _planning_record(operation=operation, group_id=request.transaction_group_id, record=claim)
+        projection = ClaimProjection.create(
+            operation_id=operation.operation_id, codec_fingerprint=_codec(authority, "claim_projection"),
+            claim_projection_id=contract_digest(b"memorii.bootstrap-graph.native-fact-projection.v3", claim_id),
+            claim_assertion_id=claim_id,
+            subject_entity_revision_id=subject_candidate.entity_revision_id,
+            subject_logical_entity_id=subject_candidate.logical_entity_id,
+            object_entity_revision_id=object_candidate.entity_revision_id,
+            object_logical_entity_id=object_candidate.logical_entity_id,
+        )
+        projection_record = _planning_record(operation=operation, group_id=request.transaction_group_id, record=projection)
+        relation = RelationRevision.create(
+            operation_id=operation.operation_id, codec_fingerprint=_codec(authority, "relation_revision"),
+            relation_revision_id=contract_digest(b"memorii.bootstrap-graph.native-fact-relation.v3", claim_id),
+            subject_entity_revision_id=subject_candidate.entity_revision_id,
+            subject_logical_entity_id=subject_candidate.logical_entity_id,
+            object_entity_revision_id=object_candidate.entity_revision_id,
+            object_logical_entity_id=object_candidate.logical_entity_id,
+            predicate_id=fact.predicate_id,
+        )
+        relation_record = _planning_record(operation=operation, group_id=request.transaction_group_id, record=relation)
+        records.extend((claim_record, projection_record, relation_record))
+        citations = []
+        provenances = []
+        evidence_projections = []
+        for evidence in authority.evidence_constructions:
+            citation = CitationRecord.create(
+                operation_id=operation.operation_id, codec_fingerprint=_codec(authority, "citation"),
+                citation_id=evidence.citation_id, cited_record_id=claim_id,
+            )
+            provenance = ProvenanceRecord.create(
+                operation_id=operation.operation_id, codec_fingerprint=_codec(authority, "provenance"),
+                provenance_id=evidence.provenance_id, source_id=operation.source_id,
+            )
+            citation_record = _planning_record(operation=operation, group_id=request.transaction_group_id, record=citation)
+            provenance_record = _planning_record(operation=operation, group_id=request.transaction_group_id, record=provenance)
+            records.extend((citation_record, provenance_record))
+            citations.append(citation_record.planning_payload)
+            provenances.append(provenance_record.planning_payload)
+            evidence_projections.append(BootstrapNativeEvidenceProjectionV3.create(
+                operation_execution_id=operation.operation_execution_id,
+                evidence_item_digest=evidence.evidence_item_digest,
+                citation_record=citation_record, provenance_record=provenance_record,
+            ))
+        terminal = BootstrapNativeTemporalTerminalBindingV3.create(
+            operation_execution_id=operation.operation_execution_id, operation_id=operation.operation_id,
+            temporal_role="assertion", temporal_consensus_digest=temporal.temporal_consensus_digest,
+            planning_record_digest=claim_record.record_digest,
+        )
+        records = sorted(records, key=lambda item: (item.record_kind, item.record_id, item.record_digest))
+        after = _fold_state(
+            state=request.current_planning_state, group_id=request.transaction_group_id,
+            records=tuple(records), authority=authority,
+        )
+        seed = BootstrapNativeFactPlanningSeedV3.create(
+            kind="fact", fact=fact, subject_target=subject, object_target=object_target,
+            created_entities=tuple(sorted(created, key=lambda item: item.entity_revision_id)),
+            claim_assertion=claim_record.planning_payload,
+            claim_projection=projection_record.planning_payload,
+            relation_revision=relation_record.planning_payload,
+            citations=tuple(citations), provenances=tuple(provenances), terminal_bindings=(terminal,),
+        )
+        return BootstrapGraphTargetMaterializationPlanV3.create(
+            request_digest=request.request_digest, transaction_group_id=request.transaction_group_id,
+            operation_execution_id=operation.operation_execution_id, operation_id=operation.operation_id,
+            proposal_digest=operation.normalized_proposal.proposal_digest, operation_kind="fact",
+            sealed_snapshot_digest=request.sealed_snapshot.snapshot_digest,
+            effective_read_set_digest=request.effective_read_set.read_set_digest,
+            planning_state_before_digest=request.current_planning_state.state_digest,
+            target_bindings=(subject, object_target), operation_seed=seed,
+            planning_records=tuple(records), terminal_bindings=(terminal,),
+            evidence_projections=tuple(evidence_projections), identity_materialization=None,
+            planning_state_after=after,
+        )
+
+    @staticmethod
+    def _unavailable(*, request: BootstrapNativeTargetPlanningRequestV3, reason: str) -> BootstrapNativePlanningUnavailableV3:
+        operation = request.operation_input
+        return BootstrapNativePlanningUnavailableV3.create(
+            request_digest=request.request_digest, transaction_group_id=request.transaction_group_id,
+            operation_execution_id=operation.operation_execution_id, operation_id=operation.operation_id,
+            proposal_digest=operation.normalized_proposal.proposal_digest, status="unresolved",
+            reason_codes=(reason,), sealed_snapshot_digest=request.sealed_snapshot.snapshot_digest,
+            effective_read_set_digest=request.effective_read_set.read_set_digest,
+            planning_state_before_digest=request.current_planning_state.state_digest,
+        )
+
+
+def _codec(authority: BootstrapNativePlanningConstructionAuthorityV3, kind: GraphRecordKind) -> str:
+    entries = tuple(item for item in authority.planning_codec_entries if item.record_kind == kind)
+    if len(entries) != 1:
+        raise ValueError("native fact planning codec authority is incomplete")
+    return entries[0].codec_fingerprint
+
+
+def _planning_codec(authority: BootstrapNativePlanningConstructionAuthorityV3, kind: GraphRecordKind) -> str:
+    entries = tuple(item for item in authority.planning_codec_entries if item.record_kind == kind)
+    if len(entries) != 1:
+        raise ValueError("native fact planning codec authority is incomplete")
+    return entries[0].planning_projection_codec_fingerprint
+
+
+def _planning_schema(authority: BootstrapNativePlanningConstructionAuthorityV3, kind: GraphRecordKind) -> str:
+    entries = tuple(item for item in authority.planning_codec_entries if item.record_kind == kind)
+    if len(entries) != 1:
+        raise ValueError("native fact planning codec authority is incomplete")
+    return entries[0].planning_projection_schema_fingerprint
+
+
+def _mention_coordinate(*, operation: BootstrapNativeOperationReductionInputV3, path: str, mention: str) -> str:
+    return contract_digest(
+        b"memorii.bootstrap-graph.cluster-reference-coordinate.v3",
+        {"operation_member_digest": operation.operation_subject.member_digest, "path": path, "mention_digest": mention},
+    )
+
+
+def _one_assertion_temporal(authority: BootstrapNativePlanningConstructionAuthorityV3):
+    rows = tuple(item for item in authority.temporal_constructions if item.temporal_role == "assertion")
+    if len(rows) != 1:
+        raise ValueError("native fact planning temporal construction is incomplete")
+    return rows[0]
+
+
+def _claim_assertion(*, operation, fact, claim_id: str, authority, temporal, subject, object_target, target_resolution_authority):
+    canonical = target_resolution_authority.canonical_identity_authority.authority
+    decisions = tuple(
+        item for item in canonical.cluster_decisions
+        if item.decision_digest in {
+            subject.canonical_identity_decision_digest,
+            object_target.canonical_identity_decision_digest,
+        }
+    )
+    if (
+        len(decisions) != 2
+        or any(
+            item.proof.required_scope_set_digest != authority.required_scope_set_digest
+            or item.proof.authorized_scope_identity != canonical.authorized_scope_identity
+            or item.proof.sealed_snapshot_digest != canonical.sealed_snapshot_digest
+            for item in decisions
+        )
+    ):
+        raise ValueError("native fact claim identity authority is incomplete")
+    claim_identity = AcceptedClaimIdentity(
+        subject_assertion_ref=ImmutableAssertionEntityRef(
+            entity_revision_id=subject.entity_revision_id,
+            logical_entity_id_at_assertion=subject.logical_entity_id,
+        ),
+        object_assertion_ref=ImmutableAssertionEntityRef(
+            entity_revision_id=object_target.entity_revision_id,
+            logical_entity_id_at_assertion=object_target.logical_entity_id,
+        ),
+        assertion_key_at_recording=SemanticAssertionKey(
+            slot=SemanticClaimSlotKey(
+                subject_logical_entity_id=subject.logical_entity_id,
+                predicate_id=fact.predicate_id,
+                scope_identity=canonical.authorized_scope_identity,
+                qualifier_partition=(),
+            ),
+            value=SemanticClaimValueKey(
+                object_kind="entity",
+                object_logical_entity_id=object_target.logical_entity_id,
+                value_policy_fingerprint=authority.predicate_state_rule.policy_fingerprint,
+            ),
+        ),
+        predicate_state_rule=authority.predicate_state_rule,
+        identity_lineage_snapshot_digest=canonical.sealed_snapshot_digest,
+    )
+    body = {
+        "record_kind": "claim_assertion", "operation_id": operation.operation_id,
+        "record_version": 1,
+        "codec_fingerprint": _codec(authority, "claim_assertion"), "claim_assertion_id": claim_id,
+        "statement_digest": fact.fact_digest,
+        "valid_interval": temporal.accepted_temporal_evidence.valid_interval,
+        "temporal_evidence": temporal.accepted_temporal_evidence,
+        "temporal_decision_binding": temporal.temporal_decision_binding,
+        "claim_identity": claim_identity,
+        "source_authority_evidence": authority.source_authority_evidence,
+        "predicate_trust_rule": authority.predicate_trust_rule,
+    }
+    provisional = ClaimAssertion.model_construct(**body, record_digest="0" * 64)
+    digest_body = provisional.model_dump(mode="python", exclude={"record_digest"})
+    return ClaimAssertion.model_validate(body | {
+        "record_digest": contract_digest(b"memorii.semantic-ingestion.temporal-carrier.v1", digest_body)
+    })
+
+
+def _planning_record(*, operation, group_id: str, record) -> BootstrapNativePlanningRecordV3:
+    payload = canonical_planning_payload_from_record(record, transaction_group_id=group_id)
+    return BootstrapNativePlanningRecordV3.create(
+        operation_execution_id=operation.operation_execution_id, record_kind=record.record_kind,
+        record_id=graph_record_id(record), precondition=AbsentPlanningPrecondition(), planning_payload=payload,
+        source_member_digest=operation.operation_subject.member_digest,
+    )
+
+
+def _fold_state(*, state: GraphPlanningState, group_id: str, records: tuple[BootstrapNativePlanningRecordV3, ...], authority: BootstrapNativePlanningConstructionAuthorityV3) -> GraphPlanningState:
+    mutations = tuple(sorted((
+            PlanningGraphRecordMutation.create(
+            mutation_kind="create", record_kind=record.record_kind, record_id=record.record_id,
+            before=record.precondition,
+            after_planning_record=PlanningSnapshotGraphRecord.create(
+                record_id=record.record_id, record_version=record.planning_payload.planning_record["record_version"],
+                payload=record.planning_payload,
+                planning_projection_codec_fingerprint=_planning_codec(authority, record.record_kind),
+                planning_projection_schema_fingerprint=_planning_schema(authority, record.record_kind),
+            ),
+        ) for record in records
+    ), key=lambda item: (item.record_kind, item.record_id)))
+    return state.apply(GraphPlanningDelta.create(
+        sequence=len(state.applied_planned_delta_digests) + 1,
+        base_state_digest=state.state_digest, producing_transaction_group_id=group_id,
+        mutations=mutations,
+    ))
 
 
 class BootstrapCanonicalIdentityBindingAllocationProjectorV3:
@@ -180,7 +511,7 @@ class BootstrapCanonicalIdentityBindingAllocationProjectorV3:
                 != (first.source_id, first.source_digest, first.preparation_fingerprint)
                 for item in operation_inputs
             )
-            or effective_read_set.read_set_digest != sealed_snapshot.read_set.read_set_digest
+            or effective_read_set.read_set_digest != sealed_snapshot.canonical_graph.read_set.read_set_digest
             or current_planning_state.base_snapshot_digest != sealed_snapshot.snapshot_digest
         ):
             raise ValueError("canonical identity authority source/state is substituted")
@@ -254,6 +585,12 @@ class BootstrapCanonicalIdentityBindingAllocationProjectorV3:
             extension = GraphReadSetExtension.create(
                 snapshot_token=sealed_snapshot.canonical_graph.snapshot_token,
                 graph_revision=sealed_snapshot.graph_state.graph_revision,
+                segment_governance_binding_digests=tuple(sorted({
+                    binding.binding_digest
+                    for operation in operation_inputs
+                    if operation.planning_construction_authority is not None
+                    for binding in operation.planning_construction_authority.segment_governance.segment_governance_bindings
+                })),
                 operation_fence_id=first.graph_free_identity_input.operation_fence_binding_digest if first.graph_free_identity_input else first.operation_execution_id,
                 issuer_repository_id=sealed_snapshot.graph_state.repository_id,
                 issuer_contract_fingerprint=allocation_policy_fingerprint,

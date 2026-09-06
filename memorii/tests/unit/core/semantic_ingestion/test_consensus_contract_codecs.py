@@ -20,7 +20,7 @@ from memorii.core.semantic_ingestion.contracts import (
     decode_semantic_contract,
     encode_semantic_contract,
 )
-from tests.unit.core.semantic_ingestion.clean_room_request_test_support import (
+from tests.fixtures.semantic_ingestion.clean_room_request_fixture import (
     build_clean_room_proposal_catalogs,
 )
 

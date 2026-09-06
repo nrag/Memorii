@@ -1,7 +1,8 @@
 # Event History, Replay, Trust, And Identity Milestone
 
 - Parent WorkPlan: `docs/work/semantic_ingestion/implementation.plan.md`
-- Status: active (unblocked by the 2026-09-04 M3.1 closure)
+- Status: active (local correction and 415-case family green; immutable
+  candidate, hosted checks, and whole-candidate review remain)
 - Requirements: SIA-R10, SIA-R18
 - Active linked debugging WorkPlan: `docs/work/semantic_ingestion/conflict-authority-proof-failures-2026-08-04/debug.plan.md`
 - Approved linked design: `docs/work/semantic_ingestion/semantic-conflict-introduction-authority-2026-08-04/design.plan.md`
@@ -55,23 +56,29 @@ as an automatic winner, and any non-atomic after-commit conflict-file append.
 - Focused core evidence recorded in the archive includes projection/scheduler
   `25 passed` and policy-migration plus event-replay `64 passed`.
 
-## Active Debugging Boundary
+## Corrected Debugging Boundary
 
-The exact 12-case proof now passes, and frozen review remediation has closed
+The 2026-09-04 closure audit found that the production replan proof encoded a
+new delivery/source admission instead of an append-only replacement on the
+original fence and that the coordinator caught a generic replay/integrity
+exception instead of a dedicated stale-winner signal. Both confirmed P2
+defects are corrected locally. Retained-attempt proof now covers exact
+predecessor/successor result closure, unrelated graph revision rebasing, and
+typed overlapping-write conflict behavior across memory and independent JSONL.
+
+Earlier frozen review remediation closed
 canonical supersession wire/retry, both submission-versus-projection orders,
 clarification lost acknowledgements, and real reopened conflict-checkpoint
-validation. The remaining active core gap is production-owned
-clarification-winner replan. Governing architecture requires append-only
-source/group plan lineage while current implementation still enforces one
-opaque plan, terminal artifact, and group result. The linked debug WorkPlan
-owns this typed lineage prerequisite and its deterministic replan proof.
+validation. That evidence remains regression input but does not close the newly
+confirmed delivery-identity and exception-boundary defects.
 
 The 2026-08-05 design-to-production audit proved this prerequisite belongs to
 approved M3 transaction planning and was omitted from M3 production and
 closure evidence. M3 is explicitly reopened; M4 is dependency-blocked rather
 than adding a conflict-specific reset.
 
-Current unresolved closure arrays remain:
+Until immutable candidate review, the historical unresolved closure arrays
+remain:
 
 - `remaining_validated_p1_p2: [semantic-conflict-introduction-unreachable]`
 - `remaining_blocks_approval: [semantic-conflict-introduction-authority]`
@@ -80,8 +87,9 @@ Current unresolved closure arrays remain:
 These arrays may be cleared only by revision-bound debug closure and milestone
 review; passing a narrower slice is insufficient.
 
-The linked debugging WorkPlan currently owns the detailed closure evidence for
-these arrays; M4 must not duplicate its ledger or claim the arrays cleared.
+The linked debugging WorkPlan owns the detailed correction evidence. These
+arrays may be cleared only by the final revision-bound review, not by the local
+passing runs alone.
 
 ## Completion Evidence
 
@@ -101,11 +109,10 @@ these arrays; M4 must not duplicate its ledger or claim the arrays cleared.
 
 ## Current Exact Next Action
 
-Execute the M4 completion operation
-`docs/work/semantic_ingestion/m4-closure-2026-09-04/implementation.plan.md`.
-Its first milestone resumes the linked debug at production-owned
-clarification-winner replan on the now-complete M3 append-only plan lineage,
-then proceeds to the provider, factory, cache, and Hermes composition slice.
+Freeze the shared M3.1/M4 candidate and run the exact-SHA hosted checks and
+whole-candidate reviews without adding scope. The first final-tree run passed
+414 tests and found only a stale architecture hash; after its correction the
+complete 415-case family passed under warnings-as-errors in 2142.04s.
 
 ## Delegation And Review Gate
 

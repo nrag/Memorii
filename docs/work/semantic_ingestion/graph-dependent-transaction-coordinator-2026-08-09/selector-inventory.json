@@ -2,7 +2,7 @@
   "artifact_kind": "bootstrap_graph_transaction_selector_inventory",
   "schema_version": 1,
   "collected_test_count": 232,
-  "required_tuple_count": 352,
+  "required_tuple_count": 384,
   "roots": ["direct", "factory", "filesystem", "hermes"],
   "backends": ["memory", "jsonl_independent_process"],
   "scenarios": {
@@ -30,9 +30,13 @@
     "mixed_version": "complete_public_root_backend_matrix",
     "rollback": "complete_public_root_backend_matrix",
     "coordinator_removed": "complete_public_root_backend_matrix",
-    "authority_omitted": "complete_public_root_backend_matrix"
+    "authority_omitted": "complete_public_root_backend_matrix",
+    "source_progress_initial": "complete_public_root_backend_matrix",
+    "source_progress_lost_ack": "complete_public_root_backend_matrix",
+    "source_progress_reclaimed_lease": "complete_public_root_backend_matrix",
+    "source_progress_related_conflict": "complete_public_root_backend_matrix"
   },
-  "complete_scenario_count": 25,
+  "complete_scenario_count": 29,
   "canonical_manifest_ready": true,
   "next_action": "run the generated selector validator and dedicated CI topology checks, then capture exhaustive shard evidence"
 }

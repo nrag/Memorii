@@ -19,6 +19,7 @@ from memorii.core.semantic_ingestion.contracts import (
     BootstrapGraphDependentCoordinatorResultV3,
     BootstrapGraphDependentPreGraphNonCommitV3,
     BootstrapGraphDurableRetryProgressV3,
+    BootstrapGraphRelatedConflictRefreshRequiredV3,
     BootstrapRecoveryReplayRecordV3,
     PreparedSource,
     RequiredOutcomeScopeSet,
@@ -67,9 +68,29 @@ class BootstrapGraphHostBundle:
         )
         if execution is None:
             return None
-        return execution.coordinator.coordinate(
+        result = execution.coordinator.coordinate(
             request=execution.request, transition=execution.transition,
         )
+        if not isinstance(result, BootstrapGraphRelatedConflictRefreshRequiredV3):
+            return result
+        # The host alone owns fresh snapshot/compiler/authorizer acquisition.
+        # The same admission request is reused exactly once; a second conflict
+        # cannot re-enter the provider or the coordinator's initial path.
+        refreshed = build_builtin_bootstrap_graph_execution_v3(
+            request=request, atomic_store=self.atomic_store,
+        )
+        if refreshed is None:
+            return None
+        resumed = refreshed.coordinator.coordinate_related_conflict(
+            request=refreshed.request, conflict=result,
+        )
+        if isinstance(resumed, BootstrapGraphRelatedConflictRefreshRequiredV3):
+            return BootstrapGraphDependentPreGraphNonCommitV3.create(
+                kind="pre_graph_noncommit", request_digest=resumed.request_digest,
+                reason="related_conflict_retry_exhausted",
+                reason_digest=resumed.response_digest,
+            )
+        return resumed
 
     def reload_terminal(
         self, *, normalization_replay: BootstrapRecoveryReplayRecordV3,
@@ -142,6 +163,21 @@ class ScenarioBootstrapGraphHostBundle(BootstrapGraphHostBundle):
         result = execution.coordinator.coordinate(
             request=execution.request, transition=execution.transition,
         )
+        if isinstance(result, BootstrapGraphRelatedConflictRefreshRequiredV3):
+            refreshed = self.authority_provider.acquire(
+                request=request, atomic_store=self.atomic_store,
+            )
+            if refreshed is None:
+                return None
+            result = refreshed.coordinator.coordinate_related_conflict(
+                request=refreshed.request, conflict=result,
+            )
+            if isinstance(result, BootstrapGraphRelatedConflictRefreshRequiredV3):
+                result = BootstrapGraphDependentPreGraphNonCommitV3.create(
+                    kind="pre_graph_noncommit", request_digest=result.request_digest,
+                    reason="related_conflict_retry_exhausted",
+                    reason_digest=result.response_digest,
+                )
         if hasattr(self.authority_provider, "acquire_errors"):
             errors = self.authority_provider.acquire_errors
             if errors is not None and result is not None:

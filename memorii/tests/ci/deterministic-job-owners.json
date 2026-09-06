@@ -5,7 +5,7 @@
       "runtime_budget_seconds": 4200,
       "timeout_headroom_seconds": 1200,
       "timeout_minutes": 90,
-      "timing_exemption_reason": "Exact public-root and independent-process JSONL graph transaction shards own 25 manifest selectors each."
+      "timing_exemption_reason": "Exact public-root and independent-process JSONL graph transaction shards own 29 manifest selectors each."
     },
     "equal-version-replay-decision": {
       "runtime_budget_seconds": 60,

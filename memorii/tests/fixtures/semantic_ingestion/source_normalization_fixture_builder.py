@@ -28,6 +28,7 @@ from memorii.core.memory_evolution.semantic_analysis.policies import (
     UdPathStep,
     UdRoleSchema,
 )
+from memorii.core.memory_evolution.semantic_state import PredicateStateRule
 from memorii.core.semantic_ingestion.contracts import (
     CANONICAL_INGESTION_EXECUTION_GRAPH,
     AnalyzerManifest,
@@ -70,6 +71,7 @@ from memorii.core.semantic_ingestion.contracts import (
 )
 from memorii.core.semantic_ingestion.proposal_adapter import ProjectionQuoteVerificationAuthority
 from memorii.core.semantic_ingestion.source_normalization_authority import (
+    BootstrapPlanningPolicyAuthority,
     BootstrapV3RuntimeAuthority,
     CapabilityRegistryEntry,
     CapabilityRegistrySnapshot,
@@ -335,7 +337,7 @@ class SourceBackedQuoteAuthority(ProjectionQuoteVerificationAuthority):
 
 def build_manifest_bound_prepared_source(*, source_id: str, source_digest: str, source_text: str) -> PreparedSource:
     """Rebind the clean-room retained-text fixture to four typed local manifests."""
-    from tests.unit.core.semantic_ingestion.clean_room_request_test_support import build_prepared_source_authority
+    from tests.fixtures.semantic_ingestion.clean_room_request_fixture import build_prepared_source_authority
 
     source = build_prepared_source_authority(source_id=source_id, source_digest=source_digest, source_text=source_text)
     def digest(label: str) -> str:
@@ -441,7 +443,7 @@ def build_bootstrap_v3_fixture_authority(*, source: PreparedSource) -> Bootstrap
     The helper has no V2 recovery/request bridge: callers receive the exact
     V3 proposal request and factories consumed by the configured host bundle.
     """
-    from tests.unit.core.semantic_ingestion.clean_room_request_test_support import (
+    from tests.fixtures.semantic_ingestion.clean_room_request_fixture import (
         build_clean_room_proposal_catalogs,
     )
 
@@ -693,6 +695,31 @@ def build_source_normalization_authority_bundle(
         "temporal_policy": temporal_policy, "trust_policy": trust_policy,
         "arbitration_as_of": arbitration_as_of, "capability_registry": capability_registry,
         "graph_dependent_execution_policy": graph_dependent_execution_policy,
+        "bootstrap_planning_policy_authority": BootstrapPlanningPolicyAuthority(
+            predicate_registry_fingerprint=_fixture_digest("predicate-registry", source.source_id),
+            predicate_state_rule=PredicateStateRule(
+                predicate_id="owner_is", cardinality="single",
+                conflict_behavior="compete_within_slot",
+                qualifier_partition_fields=(),
+                value_identity_policy_id="memorii.fixture.entity-value.v1",
+                policy_fingerprint=_fixture_digest("predicate-state", source.source_id),
+            ),
+            action_policy_fingerprint=_fixture_digest("action-policy", source.source_id),
+            authority_digest=contract_digest(
+                b"memorii.semantic-ingestion.bootstrap-planning-policy-authority.v3",
+                {
+                    "predicate_registry_fingerprint": _fixture_digest("predicate-registry", source.source_id),
+                    "predicate_state_rule": PredicateStateRule(
+                        predicate_id="owner_is", cardinality="single",
+                        conflict_behavior="compete_within_slot",
+                        qualifier_partition_fields=(),
+                        value_identity_policy_id="memorii.fixture.entity-value.v1",
+                        policy_fingerprint=_fixture_digest("predicate-state", source.source_id),
+                    ),
+                    "action_policy_fingerprint": _fixture_digest("action-policy", source.source_id),
+                },
+            ),
+        ),
     }
     # Match the canonical contract preimage exactly: Pydantic normalizes the
     # nested V3 authorities before the derivation authority validates itself.

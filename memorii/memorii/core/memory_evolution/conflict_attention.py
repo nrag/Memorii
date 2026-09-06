@@ -45,7 +45,7 @@ CLARIFICATION_MAX_ATTEMPTS = 3
 INTEGRITY_ATTENTION_QUESTION = "Memory integrity incident requires operator action."
 
 _DIGEST = re.compile(r"[0-9a-f]{64}\Z")
-_CURSOR_WIRE = re.compile(r"v1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\Z")
+_CURSOR_WIRE = re.compile(r"v[12]\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\Z")
 
 
 def _identifier(value: str) -> str:

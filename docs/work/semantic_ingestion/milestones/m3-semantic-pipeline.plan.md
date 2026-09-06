@@ -1,7 +1,8 @@
 # Candidate-To-Terminal Semantic Pipeline Milestone
 
 - Parent WorkPlan: `docs/work/semantic_ingestion/implementation.plan.md`
-- Status: complete (M3.1 final closure recorded 2026-09-04 at bd1ebf0)
+- Status: active (local M3.1 matrix green; coordinated immutable M3.1/M4
+  candidate, hosted checks, and final review pending)
 - Requirements: SIA-R02, SIA-R04, SIA-R05, SIA-R06, SIA-R07, SIA-R09, SIA-R12
 - Historical authority: archive headings `M3 - Candidate-to-terminal semantic pipeline`, the M3 closure increments, `M3 Administrative Completion`, and `Post-completion hosted-CI remediation`
 
@@ -11,6 +12,18 @@ Turn model proposals into accepted or evidence-only terminal groups through
 independent source analysis, closed temporal/trust policy, prompt and egress
 authority, lifecycle validation, and M2 atomic persistence. Every ambiguous,
 failed, or unauthorized path must have zero graph effect.
+
+## 2026-09-04 Closure Reopening
+
+The recorded v82 candidate identity cannot be reproduced from its declared
+base and artifact hashes, and the M4 replan correction touches this milestone's
+shared ingestion and append-only plan-lineage path. The prior implementation
+and test history remain valid development evidence, but final administrative
+closure is superseded. M3.1 will be revalidated and closed at the same immutable
+revision as M4 through
+`docs/work/semantic_ingestion/m4-closure-2026-09-04/implementation.plan.md`.
+
+No separate M3.1 product redesign is authorized by this reopening.
 
 ## Scope And Owners
 
@@ -1401,18 +1414,28 @@ The two mutually exclusive scope alternatives requiring a user decision are:
 
 ## Current Exact Next Action
 
-Build one complete non-test trusted-host `SourceNormalizationAuthorityBundle`
-with sealed producer resources, then prove real owner execution and JSONL
-restart continuation through direct, factory, filesystem, and Hermes roots.
-The shared coordinator now passes the actual bootstrap handoff to the injected
-provider and owner, rejects every absent/noncommit/malformed/stale/substituted
-normalization return before terminal work, and forwards the exact typed reload
-and publication reference to `pipeline.run` for repeat validation. The binding
-artifact records that no root currently constructs the complete host bundle and
-real execution owner, so end-to-end non-test caller count remains zero.
-The linked terminal-persistence testing WorkPlan remains the sole owner of
-serialization profiling, timing recapture, shard topology, and PR-gate
-performance evidence.
+Follow the coordinated completion operation through the active final M4 rerun,
+then freeze and review the shared candidate. The M3.1 four-root transaction,
+recovery, reopen, and append-only lineage matrix is locally green: 29 exact
+cases for each of four roots on memory and independent JSONL, with all eight
+receipts and their 232-selector union validated. No separate M3.1 feature work
+or scope expansion is authorized before candidate review.
+
+## 2026-09-05 Coordinated Local Closure Evidence
+
+- Direct, factory, filesystem, and Hermes roots each pass the same 29-case
+  exact selector for memory and independent-process JSONL. The eight receipts
+  bind one manifest digest and their exact union validates.
+- The source-progress contract and store-recovery family passes 18 tests in
+  422.16s; the selector contract passes 11 tests in 8.69s.
+- The complete semantic-ingestion acceptance file passes 200 tests under
+  warnings-as-errors in 1071.05s.
+- Identity hygiene, scoped Ruff, compilation, diff hygiene, and the applicable
+  traceability/lifecycle/structural validators pass. These are working-tree
+  results, not yet immutable candidate or hosted evidence.
+- Configured Pyright passes with 0 errors and 0 warnings after minimal
+  annotations narrowed the existing typed progress/member unions and included
+  the already-supported composite snapshot ledger member.
 
 - 2026-08-10 V3 public-root execution blocker: production
   `BootstrapTextPreparationProducer` correctly emits a

@@ -2,10 +2,10 @@
 
 - Work ID: semantic_conflict_authority_proof_failures
 - Work type: debugging
-- Status: active (unblocked 2026-09-04: the M3.1 closure supplies the required append-only plan lineage)
+- Status: blocked by linked M3.1 production target-planner prerequisite
 - Coordinator: Codex main thread
 - Created: 2026-08-04
-- Last updated: 2026-08-04
+- Last updated: 2026-09-04
 - Parent WorkPlan: `docs/work/semantic_ingestion/implementation.plan.md`
 - Related WorkPlans: `docs/work/semantic_ingestion/semantic-conflict-introduction-authority-2026-08-04/design.plan.md`; `docs/work/semantic_ingestion/testing.plan.md`
 - Canonical inputs: `docs/design/conflict_attention.md`; `docs/design/semantic_ingestion_architecture.md`; `docs/design/event_model.md`; seven-node verification map
@@ -495,13 +495,46 @@ Production replan is blocked on the explicitly reopened M3 source/group plan-
 lineage correction. That approved contract must exist before this operation can
 prove clarification-winner replan without a reverse progress transition.
 
-## Exact Next Action
+## 2026-09-04 Pre-Code Next Action (Completed)
 
-Perform the frozen three-role closure review of this debug operation (the
-production replan evidence below is complete), then hand the provider,
-factory, filesystem, derived-cache, composite, and Hermes conflict-attention
-composition slice to the M4 completion operation
-(`docs/work/semantic_ingestion/m4-closure-2026-09-04/implementation.plan.md`).
+The sole writer implements the smallest invariant-level correction: original-
+fence append-only replan through the existing graph transition authority,
+dedicated stale-winner signaling, and public `sync_event` regression proof for
+the complete Operation 1 family. Composition and replay/history are excluded.
+
+### 2026-09-04 closure-audit reopening
+
+- Confirmed P2 / `changes_required` / runtime behavior and persistence lineage:
+  `derive_conflict_replan_delivery_id` creates a second delivery/source
+  admission. The governing architecture requires replanning on the original
+  source and fence with append-only predecessor/replacement lineage and exact
+  unaffected-group reuse.
+- Confirmed P2 / `changes_required` / failure behavior and integrity: the
+  coordinator catches every `SemanticEventReplayError` as if it were the stale
+  clarification-winner race. Repository freeze, replay, schema, registry,
+  checkpoint, and integrity failures must propagate fail closed; only a
+  dedicated typed stale-winner signal may start replan.
+- The earlier two-attempt passing proof is now a reproducer of the first defect,
+  not closure evidence: it explicitly expects two governed admissions and a
+  nonterminal original control.
+- Root-cause correction and family-complete proof are specified in
+  `docs/work/semantic_ingestion/m4-closure-2026-09-04/implementation.plan.md`;
+  this debugging WorkPlan remains the sole detailed owner of hypotheses,
+  experiments, before/after discriminators, and correction evidence.
+
+### 2026-09-04 pre-code review and binding disposition
+
+- `test_reviewer` required the production happy-path test to reject any derived
+  delivery or second admission and required real public-root emitters for the
+  stale-winner and non-stale replay/integrity families. Generic exception
+  injection is supplemental only.
+- `code-mapper` confirmed all production roots converge on the provider
+  coordinator and terminal persistence owner, with no original-fence replan
+  verb currently wired at that boundary. The correction must connect existing
+  graph transition authority; it must not add another root or fallback.
+- Review result: both verification findings are confirmed P2 /
+  `changes_required`, remediation eligibility `eligible_p1_p2`; no design
+  ambiguity and no scope expansion.
 
 ### Production replan end-to-end proof complete (2026-09-04)
 
@@ -563,3 +596,166 @@ composition slice to the M4 completion operation
   implemented at the coordinator seam; the store-level race proof above
   remains the required closure evidence.
 rerun affected families and the exact reproducer, and perform frozen review.
+
+### 2026-09-04 Operation 1 authority-boundary audit (blocked before edit)
+
+- Experiment: traced the public `ProviderMemoryService.sync_event ->
+  ProviderIngestionCoordinator -> SemanticTerminalPersistenceService` path and
+  the configured bootstrap-graph host/coordinator path. Result: the provider
+  loop can only re-enter by deriving a second delivery; it has no original-fence
+  replan verb. `BootstrapGraphDependentCoordinatorV3.coordinate(transition=...)`
+  accepts only `initial`, `lease_renewed`, and `lease_reclaimed` control-epoch
+  transitions. Its existing `_related_conflict_successor` is private and can
+  run only after a graph-group CAS reports a related conflict; it has no input
+  for the persistence precondition's stale winner or its stale subset.
+- Experiment: inspected the original source-control owner. Result:
+  `PreplanningOperationControl.state` permits only `preplanning`, `planned`,
+  `terminal`, and `lease_recovery_exhausted`; `SourceCheckpointAtomicWriteRequest`
+  permits only `preplanning` and `planned`, and the store rejects a
+  `planned -> preplanning` transition. There is no persisted request/receipt
+  that authorizes the architecture-required
+  `planned -> plan_published -> attempt_published -> planned` replacement
+  transition or binds its predecessor closure, stale subset, and recovery
+  identity.
+- Root-cause conclusion: narrowing the generic `SemanticEventReplayError` to a
+  dedicated stale-winner subtype is implementable in isolation, but cannot
+  satisfy the required public original-fence replan without inventing a new
+  persisted replan request/state/receipt and recovery protocol. The currently
+  available graph successor routine cannot be safely called from terminal
+  persistence because it lacks the necessary predecessor and subset authority.
+- Blocker: the governing architecture specifies the target transition, but the
+  implementation contains no canonical public authority contract or storage
+  transition for a persistence-precondition stale winner. An external owner
+  must decide whether to (a) introduce that source-control replan contract and
+  its durable recovery semantics, or (b) designate an existing authority
+  artifact/owner that can carry the required predecessor, replacement subset,
+  and append-only lineage. Implementing either choice changes persisted
+  protocol surfaces beyond the assigned bounded correction.
+
+### Coordinator disposition of the proposed blocker
+
+The targeted `correctness_reviewer` challenge confirmed the implementation gap
+but rejected the need for an external semantic decision. The approved
+architecture already fixes the intermediate progress variants, original-fence
+state sequence, predecessor/final-result closure, exact reuse rules, retry
+limit, and found-first recovery behavior. Therefore this is a P2 /
+`changes_required` implementation gap inside Operation 1, not scope expansion
+or an external blocker. The smallest determinate slice is the design-named
+replan closure and intermediate progress contracts, a typed replan-or-reload
+repository operation, and a coordinator resume entrypoint that reuses the
+existing successor compilation/authority/lineage machinery.
+
+## Exact Next Action
+
+Execute slice 1 of the approved native bridge implementation at
+`docs/work/semantic_ingestion/bootstrap-v3-source-progress-bridge-2026-09-04/implementation.plan.md`.
+No provider wiring, delivery-derived fallback, composition, replay-history, or
+M3 closure work may begin before the native contract and assembler slice passes.
+
+### 2026-09-04 final causal resolution
+
+- The apparent external-decision blocker was rejected: the approved design
+  already assigned fresh acquisition to the graph host and exact predecessor
+  recovery to the native V3 repository/coordinator.
+- The production defect had two parts. The typed group conflict was returned to
+  the host without a callable fresh-coordinator resume entrypoint, leaving the
+  implemented successor routine unreachable. Separately, group CAS derived its
+  before-revision from source-local operation control, so a fresh shared graph
+  snapshot still retried against `genesis` after a competing ingestion.
+- `coordinate_related_conflict` now carries the typed old-fence conflict into a
+  freshly acquired coordinator, reloads exact original-fence bytes, and calls
+  the bounded successor. Group CAS derives the expected revision from the sealed
+  group read set; generic non-V3 stale-winner behavior remains unchanged.
+- The earlier two-ingestion result used fixture graph authority and is not
+  production proof. After switching to each genuine public root and the exact
+  production `BootstrapGraphHostBundle`, both A and B are admitted but the
+  built-in compiler emits unresolved `graph_target_missing`; B does not advance
+  graph revision, so A performs no replan. The typed conflict/resume correction
+  remains implemented, but its required ordinary-ingestion proof is blocked by
+  the separate M3.1 target-planner gap recorded in the linked bridge WorkPlan.
+
+### 2026-09-04 original-fence retry and typed signal progress
+
+- Changed `SemanticTerminalPersistenceService` to translate only the exact
+  conflict-vs-projection graph-revision precondition into
+  `SemanticConflictProjectionStaleWinnerError`; all other
+  `SemanticEventReplayError` instances preserve their identity and propagate.
+- Changed `ProviderIngestionCoordinator` to catch only that signal and retry
+  on the original `ProviderEvent`/delivery/fence. The retry creates a fresh
+  single-scope evidence arena but does not derive a delivery identity, source,
+  or admission.
+- Replaced the former successor-delivery public-root assertions with original
+  fence/one-admission assertions, and added a generic repository-freeze error
+  discriminator. `test_second_consecutive_staleness_propagates_fail_closed`
+  passed (`1 passed in 23.93s`). The configured-root happy-path and generic
+  error runs exceeded the local command-return window after entering their slow
+  fixture setup; full family evidence remains pending.
+- Commands: scoped Ruff (fixed one import ordering issue), bytecode compile,
+  and `git diff --check` passed.
+- Remaining required work: introduce and wire the approved
+  `GraphDependentReplanClosure`/intermediate progress and original-fence
+  replan-or-reload persistence protocol, then prove graph successor reuse,
+  restart, concurrency, and real-emitter failure families. This partial retry
+  correction does not close Operation 1 or M3.1/M4.
+
+- Contracts checkpoint: added the closed persisted replan closure, final-result
+  and successor-authority unions, policy/counter references, intermediate
+  progress variants, and exact pre-planning/planned progress shapes, codec
+  registrations, and behavioral mutation proof. Focused contract tests passed
+  (`29 passed in 14.05s`); scoped Ruff, bytecode
+  compilation, and diff checks passed. Runtime persistence/coordinator wiring
+  remains intentionally unmodified, so this checkpoint is partial and does
+  not close Operation 1 or M3.1/M4.
+
+- Repository checkpoint: `SourceCheckpointAtomicWriteRequest` now recognizes
+  `plan_published` and `attempt_published`; `SemanticIngestionAtomicStore`
+  validates the original-fence sequence
+  `planned -> plan_published -> attempt_published -> planned`, exact lease and
+  predecessor closure preservation, and rejects a typed intermediate through
+  the legacy checkpoint fallback. The new
+  `AtomicStoreGraphDependentSourceProgressRepository` publishes or reloads the
+  exact persisted progress image rather than rebuilding a lost acknowledgement.
+  Replay authority decodes all four closed progress discriminators as sealed
+  progress members. Focused memory and independently reopened JSONL proof
+  passed (`31 passed in 26.36s` including the contract family); scoped Ruff,
+  bytecode compilation, and `git diff --check` pass. Provider/coordinator
+  invocation, successor compilation, and the broader invalid-transition
+  matrix remain for the next checkpoint, so this is partial and does not close
+  Operation 1 or M3.1/M4.
+
+- Repository correction: replan predecessor lookup now scans backward through
+  append-only terminal-group generations for the latest valid typed `planned`
+  image, while rejecting an in-flight `plan_published` or `attempt_published`
+  duplicate. The replan closure must partition that prior unfinished group set
+  and name exactly the control's retained final-result digests before a new
+  plan publication can proceed. Provider/coordinator invocation remains
+  excluded; focused partial-commit generation proof is the immediate remaining
+  repository test addition.
+
+- Runtime-wiring preflight: the requested binding is not determinate from the
+  current canonical owners. The provider's only stale-winner catch is after
+  `_run_semantic_ingestion`; normal Bootstrap-V3 execution returns
+  `bootstrap_graph_terminal_persisted` and bypasses that generic persistence
+  seam. `BootstrapGraphDependentCoordinatorV3` persists exclusively through
+  `BootstrapGraphPlanAtomicWriteRequestV3` using
+  `BootstrapTransactionGroupPlanV3`, `BootstrapGraphDependentAttemptV3`, and
+  `BootstrapSourcePlanLineageV3`. The new original-fence repository accepts
+  only `SourceCheckpointAtomicWriteRequest` whose progress models require the
+  non-V3 `TransactionSemanticGroupPlanReference`,
+  `SourceTransactionPlanLineageReference`, and non-V3 successor/final-result
+  unions. There is no converter, shared supertype, or V3 progress-publish
+  request/receipt from which those required closed values can be recovered.
+  Calling the private `_related_conflict_successor` is also insufficient: it
+  accepts only a group-CAS conflict discovered during `_execute_attempt`, not
+  the terminal-persistence stale-winner signal, and it recompiles before a
+  typed original-fence closure is persisted. A fabricated adapter would violate
+  the required byte-identical reuse and durable recovery semantics. This is a
+  concrete implementation-boundary blocker, not a reason to add a fallback.
+
+- Independent architecture disposition: the design requires both the generic
+  four-state progress boundary and the Bootstrap-V3 exact-reuse grammar, but it
+  defines neither a common request nor a normative member-kind mapping and
+  reload-equivalence rule. Reverting the generic contracts would violate the
+  accepted conformance direction; adding a V3 adapter/request/receipt would
+  change persisted semantics. The debugging operation therefore stops pending
+  authorization for a separate bounded design delta.

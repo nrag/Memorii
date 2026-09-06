@@ -2927,6 +2927,25 @@ def _is_bootstrap_graph_v3_authority_write(
     governed: list[CanonicalMemoryRecord], current: tuple[CanonicalMemoryRecord, ...],
 ) -> bool:
     """Admit only one exact pre-epoch authority record and its reverse index."""
+    if len(governed) == 1 and governed[0].source_kind == "semantic_ingestion_bootstrap_canonical_identity_authority_v3":
+        try:
+            from memorii.core.semantic_ingestion.contracts import (
+                BootstrapCanonicalIdentityBindingAllocationReloadV3,
+                decode_semantic_contract,
+                encode_semantic_contract,
+            )
+            record = governed[0]
+            raw = bytes.fromhex(record.content["canonical_hex"])
+            reload = decode_semantic_contract(raw, BootstrapCanonicalIdentityBindingAllocationReloadV3)
+            return (
+                encode_semantic_contract(reload) == raw
+                and record.memory_id == "semantic_ingestion:bootstrap-graph-v3:canonical-identity-authority:" + reload.reload_digest
+                and record.content.get("semantic_ingestion_kind") == "bootstrap_canonical_identity_authority_v3"
+                and record.content.get("reload_digest") == reload.reload_digest
+                and record.memory_id not in {item.memory_id for item in current}
+            )
+        except (KeyError, TypeError, ValueError):
+            return False
     expected = {
         "semantic_ingestion_bootstrap_graph_v3_pre_epoch_authority",
         "semantic_ingestion_bootstrap_graph_v3_authority_index",

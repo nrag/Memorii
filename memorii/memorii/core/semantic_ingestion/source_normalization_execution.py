@@ -34,6 +34,7 @@ from memorii.core.semantic_ingestion.contracts import (
     contract_digest,
 )
 from memorii.core.semantic_ingestion.source_normalization_authority import (
+    BootstrapPlanningPolicyAuthority,
     BootstrapV3RuntimeAuthority,
     CapabilityRegistrySnapshot,
     ConsensusPolicyAuthority,
@@ -125,6 +126,7 @@ class SourceNormalizationDerivationAuthority(BaseModel):
     arbitration_as_of: datetime
     capability_registry: CapabilityRegistrySnapshot
     graph_dependent_execution_policy: GraphDependentExecutionPolicy
+    bootstrap_planning_policy_authority: BootstrapPlanningPolicyAuthority
     authority_digest: str = Field(pattern=_DIGEST)
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
@@ -555,6 +557,11 @@ class SourceNormalizationExecutionOwner:
                 ),
                 bootstrap_recovery_key=self._recovery_key(invocation=invocation, handoff=handoff),
                 bootstrap_recovery_claim=current, operation_fence_binding=authority.publication.operation_fence_binding,
+                prepared_source=invocation.source,
+                source_authority_evidence=invocation.source_authority_evidence,
+                source_interval_evidence=invocation.source_interval_evidence,
+                policy_bundle=invocation.policy_bundle,
+                planning_policy_authority=authority.derivation.bootstrap_planning_policy_authority,
                 operation_lease_binding=authority.publication.operation_lease_binding,
                 writer_commit_binding=authority.publication.writer_commit_binding,
                 expected_operation_generation=authority.publication.expected_operation_generation,

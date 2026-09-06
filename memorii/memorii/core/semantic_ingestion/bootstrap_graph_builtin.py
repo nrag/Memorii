@@ -12,14 +12,20 @@ from __future__ import annotations
 from dataclasses import dataclass
 from hashlib import sha256
 
+from memorii.core.memory_evolution.bootstrap_graph_planning import (
+    BootstrapCanonicalIdentityBindingAllocationProjectorV3,
+    BootstrapNativeTargetResolutionProjectorV3,
+    BuiltInBootstrapGraphTargetMaterializationPlannerV3,
+)
 from memorii.core.memory_evolution.graph_planning import GraphPlanningState
-from memorii.core.memory_evolution.transaction_coordinator import GraphReadSetToken
+from memorii.core.memory_evolution.transaction_coordinator import GraphReadSetToken, SealedGraphStateSnapshot
 from memorii.core.semantic_ingestion.bootstrap_graph_coordinator import BootstrapGraphDependentCoordinatorV3
 from memorii.core.semantic_ingestion.bootstrap_graph_host import (
     BootstrapGraphAuthorityRequestV3,
     BootstrapGraphExecutionV3,
 )
 from memorii.core.semantic_ingestion.bootstrap_graph_repository import (
+    AtomicStoreBootstrapCanonicalIdentityAuthorityRepositoryV3,
     AtomicStoreBootstrapGraphControlEpochRepositoryV3,
     AtomicStoreBootstrapGraphGroupCommitRepositoryV3,
     AtomicStoreBootstrapGraphPlanRepositoryV3,
@@ -29,8 +35,10 @@ from memorii.core.semantic_ingestion.bootstrap_graph_repository import (
 from memorii.core.semantic_ingestion.bootstrap_graph_terminal_preparation import (
     DeterministicBootstrapGraphTerminalPreparationV3,
 )
+from memorii.core.semantic_ingestion.bootstrap_native_reducer import BootstrapNativeSemanticReducerV3
 from memorii.core.semantic_ingestion.contracts import (
     CANONICAL_INGESTION_EXECUTION_GRAPH,
+    BootstrapCanonicalIdentityAuthorityWriteRequestV3,
     BootstrapGraphAttemptConstructionInputsV3,
     BootstrapGraphControlEpochTransitionRequestV3,
     BootstrapGraphControlEpochUnavailableV3,
@@ -50,6 +58,7 @@ from memorii.core.semantic_ingestion.contracts import (
     BootstrapNativeOperationCompilationV3,
     BootstrapNativeOperationEffectMaterializationV3,
     BootstrapNativeOperationTerminalV3,
+    BootstrapNativeTargetPlanningRequestV3,
     BootstrapNoReservationUseV3,
     BootstrapTransactionGroupOperationPlanV3,
     BootstrapTransactionGroupPlanMemberV3,
@@ -109,8 +118,14 @@ class _BuiltInCompilation:
         return getattr(self.native, name)
 
 
-def _compile(*, request: object, epoch: object, operation_inputs: tuple[object, ...]) -> _BuiltInCompilation:
-    snapshot = request.graph_authority.snapshot
+def _compile(
+    *, request: object, epoch: object, operation_inputs: tuple[object, ...],
+    sealed_snapshot: SealedGraphStateSnapshot, canonical_identity_authority: object | None,
+) -> _BuiltInCompilation:
+    snapshot = GraphSemanticSnapshotBundleV3.create(
+        graph_snapshot=sealed_snapshot.canonical_graph,
+        base_read_set=sealed_snapshot.canonical_graph.read_set,
+    )
     policy = request.graph_authority.execution_policy
     groups = request.source_dependency_groups
     expected_ids = tuple(operation_id for group in groups for operation_id in group.operation_ids)
@@ -131,7 +146,7 @@ def _compile(*, request: object, epoch: object, operation_inputs: tuple[object, 
         raise ValueError("retained bootstrap graph reduction authority is incomplete")
     by_operation = {item.operation_id: item for item in relevant_operations}
     state = GraphPlanningState.create(
-        base_snapshot_digest=snapshot.snapshot_digest, records=(),
+        base_snapshot_digest=sealed_snapshot.snapshot_digest, records=(),
         codec_manifest_fingerprint=snapshot.graph_snapshot.codec_manifest_fingerprint,
         applied_planned_delta_digests=(),
     )
@@ -156,46 +171,74 @@ def _compile(*, request: object, epoch: object, operation_inputs: tuple[object, 
                 segment_ids=(operation.operation_subject.segment_id,),
                 dependency_group_ids=(group.group_id,), planning_result=None,
             ))
-            compilation = BootstrapNativeOperationCompilationV3.create(
+            if canonical_identity_authority is None:
+                compilation = BootstrapNativeOperationCompilationV3.create(
+                    transaction_group_id=group.group_id, operation_input=operation,
+                    operation_id=operation.operation_id,
+                    operation_execution_id=operation.operation_execution_id,
+                    operation_member=operation.operation_member,
+                    resolved_graph_targets=(), sealed_operations=(),
+                    accepted_carriers=(), terminal_binding_sets=(),
+                    terminal_status="unresolved", reason_codes=("graph_target_missing",),
+                )
+                materialization = BootstrapNativeOperationEffectMaterializationV3.create(
+                    operation_execution_id=operation.operation_execution_id,
+                    operation_id=operation.operation_id, terminal_status="unresolved",
+                    accepted_effect=None, record_intents=(),
+                    observation_disposition="unresolved",
+                    observation_reason_codes=("graph_target_missing",),
+                )
+                terminal = BootstrapNativeOperationTerminalV3.create(
+                    operation_execution_id=operation.operation_execution_id,
+                    operation_id=operation.operation_id,
+                    proposal_digest=operation.normalized_proposal.proposal_digest,
+                    operation_kind=operation.operation_member.kind,
+                    sealed_snapshot_digest=sealed_snapshot.snapshot_digest,
+                    effective_read_set_digest=snapshot.base_read_set.read_set_digest,
+                    native_compilation_digest=compilation.compilation_digest,
+                    status="unresolved", reason_codes=("graph_target_missing",),
+                    coverage_binding_digests=tuple(item.binding_digest for item in operation.coverage_bindings),
+                    accepted_effect_digest=None, record_intent_digests=(),
+                )
+                closure = BootstrapNativeOperationArtifactClosureV3.create(
+                    operation_execution_id=operation.operation_execution_id,
+                    operation_id=operation.operation_id, terminal_digest=terminal.terminal_digest,
+                    native_compilation_digest=compilation.compilation_digest,
+                    accepted_effect_digest=None, record_intent_digests=(),
+                    coverage_binding_digests=terminal.coverage_binding_digests,
+                    graph_target_digests=(), planning_result_digest=None,
+                )
+                reductions.append(BootstrapGraphOperationReductionV3.create(
+                    transaction_group_id=group.group_id, operation_id=operation.operation_id,
+                    proposal_digest=operation.normalized_proposal.proposal_digest,
+                    operation_execution_id=operation.operation_execution_id,
+                    sealed_snapshot_digest=sealed_snapshot.snapshot_digest,
+                    effective_read_set_digest=snapshot.base_read_set.read_set_digest,
+                    native_compilation=compilation, native_terminal=terminal,
+                    native_artifact_closure=closure,
+                    effect_materialization=materialization,
+                ))
+                continue
+            target_authority = BootstrapNativeTargetResolutionProjectorV3().project(
+                operation_input=operation, transaction_group_id=group.group_id,
+                sealed_snapshot=sealed_snapshot, effective_read_set=snapshot.base_read_set,
+                current_planning_state=state, canonical_identity_authority=canonical_identity_authority,
+            )
+            target_request = BootstrapNativeTargetPlanningRequestV3.create(
                 transaction_group_id=group.group_id, operation_input=operation,
-                operation_id=operation.operation_id, operation_execution_id=operation.operation_execution_id,
-                operation_member=operation.operation_member, resolved_graph_targets=(),
-                sealed_operations=(), accepted_carriers=(), terminal_binding_sets=(),
-                terminal_status="unresolved", reason_codes=("graph_target_missing",),
+                sealed_snapshot=sealed_snapshot, effective_read_set=snapshot.base_read_set,
+                current_planning_state=state, target_resolution_authority=target_authority,
             )
-            materialization = BootstrapNativeOperationEffectMaterializationV3.create(
-                operation_execution_id=operation.operation_execution_id, operation_id=operation.operation_id,
-                terminal_status="unresolved", accepted_effect=None, record_intents=(),
-                observation_disposition="unresolved", observation_reason_codes=("graph_target_missing",),
+            planned = BuiltInBootstrapGraphTargetMaterializationPlannerV3().plan(request=target_request)
+            reduction = BootstrapNativeSemanticReducerV3().reduce(
+                request=target_request, planning=planned,
             )
-            terminal = BootstrapNativeOperationTerminalV3.create(
-                operation_execution_id=operation.operation_execution_id, operation_id=operation.operation_id,
-                proposal_digest=operation.normalized_proposal.proposal_digest,
-                operation_kind=operation.operation_member.kind, sealed_snapshot_digest=snapshot.snapshot_digest,
-                effective_read_set_digest=snapshot.base_read_set.read_set_digest,
-                native_compilation_digest=compilation.compilation_digest, status="unresolved",
-                reason_codes=("graph_target_missing",),
-                coverage_binding_digests=tuple(item.binding_digest for item in operation.coverage_bindings),
-                accepted_effect_digest=None, record_intent_digests=(),
-            )
-            closure = BootstrapNativeOperationArtifactClosureV3.create(
-                operation_execution_id=operation.operation_execution_id, operation_id=operation.operation_id,
-                terminal_digest=terminal.terminal_digest, native_compilation_digest=compilation.compilation_digest,
-                accepted_effect_digest=None, record_intent_digests=(),
-                coverage_binding_digests=terminal.coverage_binding_digests, graph_target_digests=(), planning_result_digest=None,
-            )
-            reductions.append(BootstrapGraphOperationReductionV3.create(
-                transaction_group_id=group.group_id, operation_id=operation.operation_id,
-                proposal_digest=operation.normalized_proposal.proposal_digest,
-                operation_execution_id=operation.operation_execution_id,
-                sealed_snapshot_digest=snapshot.snapshot_digest,
-                effective_read_set_digest=snapshot.base_read_set.read_set_digest,
-                native_compilation=compilation, native_terminal=terminal,
-                native_artifact_closure=closure, effect_materialization=materialization,
-            ))
+            reductions.append(reduction)
+            if hasattr(planned, "planning_state_after"):
+                state = planned.planning_state_after
         members.append(BootstrapTransactionGroupPlanMemberV3.create(
             transaction_group_id=group.group_id, source_dependency_group_digest=group.group_id,
-            sealed_graph_snapshot_digest=snapshot.snapshot_digest, graph_read_set=read_token,
+            sealed_graph_snapshot_digest=sealed_snapshot.snapshot_digest, graph_read_set=read_token,
             reference_integrity_ledger_digest=read_token.reference_ledger_digest,
             planning_state_before=state, operation_plans=tuple(plans), planning_state_after=state,
             required_reservation_digests=(),
@@ -204,7 +247,7 @@ def _compile(*, request: object, epoch: object, operation_inputs: tuple[object, 
     evidence = tuple(BootstrapGraphPreExecutionGroupEvidenceV3.create(
         request_digest=request.request_digest, normalization_replay_digest=request.normalization_replay.replay_digest,
         transaction_group_id=group.group_id, group_plan_member_digest=member.member_digest,
-        graph_snapshot_digest=snapshot.snapshot_digest, sealed_read_set_digest=snapshot.base_read_set.read_set_digest,
+        graph_snapshot_digest=sealed_snapshot.snapshot_digest, sealed_read_set_digest=snapshot.base_read_set.read_set_digest,
         reconciliation_digest=_digest((request.request_digest, "reconciliation")),
         reference_closure_digest=_digest((request.request_digest, "reference")), graph_validation_attempts=(),
         causal_blockers=(), terminal_before_planning_proof_digests=(), control_epoch_digest=epoch.epoch_digest,
@@ -212,7 +255,7 @@ def _compile(*, request: object, epoch: object, operation_inputs: tuple[object, 
     inputs = BootstrapGraphAttemptConstructionInputsV3.create(
         request_digest=request.request_digest, normalization_replay_digest=request.normalization_replay.replay_digest,
         normalization_result_digest=request.normalization_replay.source_normalization_result.result_digest,
-        source_alignment_digest=request.source_alignment.alignment_digest, graph_snapshot_digest=snapshot.snapshot_digest,
+        source_alignment_digest=request.source_alignment.alignment_digest, graph_snapshot_digest=sealed_snapshot.snapshot_digest,
         sealed_read_set_digest=snapshot.base_read_set.read_set_digest,
         reconciliation_digest=evidence[0].reconciliation_digest, reference_closure_digest=evidence[0].reference_closure_digest,
         execution_policy_reference_digest=policy.artifact_digest, control_epoch_digest=epoch.epoch_digest,
@@ -220,7 +263,7 @@ def _compile(*, request: object, epoch: object, operation_inputs: tuple[object, 
     )
     plan = BootstrapTransactionGroupPlanV3.create(
         request_digest=request.request_digest, normalization_replay_digest=request.normalization_replay.replay_digest,
-        source_alignment_digest=request.source_alignment.alignment_digest, graph_snapshot_digest=snapshot.snapshot_digest,
+        source_alignment_digest=request.source_alignment.alignment_digest, graph_snapshot_digest=sealed_snapshot.snapshot_digest,
         sealed_read_set_digest=snapshot.base_read_set.read_set_digest, fixed_point_rounds=1, group_members=members,
         canonical_group_order=tuple(item.transaction_group_id for item in members),
         execution_policy_reference_digest=policy.artifact_digest,
@@ -228,19 +271,66 @@ def _compile(*, request: object, epoch: object, operation_inputs: tuple[object, 
         operation_fence_binding_digest=epoch.operation_fence_binding.binding_digest,
         writer_commit_binding_digest=epoch.writer_commit_binding.binding_digest, control_epoch_digest=epoch.epoch_digest,
     )
+    reductions_by_group: dict[str, list[BootstrapGraphOperationReductionV3]] = {}
+    for reduction in reductions:
+        reductions_by_group.setdefault(reduction.transaction_group_id, []).append(reduction)
+    manifest_group_inputs = tuple(
+        BootstrapGraphExecutionManifestGroupInputV3.create(
+            transaction_group_id=member.transaction_group_id,
+            group_plan_member=member,
+            compilation_request_digest=request.request_digest,
+            compilation_artifact_digest=contract_digest(
+                b"memorii.bootstrap-graph.builtin.compilation-artifact.v3",
+                tuple(item.native_compilation.compilation_digest for item in sorted(
+                    reductions_by_group[member.transaction_group_id],
+                    key=lambda item: item.operation_id,
+                )),
+            ),
+            independence_certificate_digest=contract_digest(
+                b"memorii.bootstrap-graph.builtin.independence-certificate.v3",
+                tuple(item.native_artifact_closure.closure_digest for item in sorted(
+                    reductions_by_group[member.transaction_group_id],
+                    key=lambda item: item.operation_id,
+                )),
+            ),
+            ordered_operation_ids=member.operation_ids,
+            proposed_delta_digest=contract_digest(
+                b"memorii.bootstrap-graph.builtin.proposed-delta.v3",
+                tuple(item.effect_materialization.materialization_digest for item in sorted(
+                    reductions_by_group[member.transaction_group_id],
+                    key=lambda item: item.operation_id,
+                )),
+            ),
+            event_batch_digest=contract_digest(
+                b"memorii.bootstrap-graph.builtin.event-batch.v3",
+                tuple(item.native_terminal.terminal_digest for item in sorted(
+                    reductions_by_group[member.transaction_group_id],
+                    key=lambda item: item.operation_id,
+                )),
+            ),
+        )
+        for member in plan.group_members
+    )
     return _BuiltInCompilation(BootstrapGraphPlanCompilationV3.create(
         request_digest=request.request_digest, normalization_replay_digest=request.normalization_replay.replay_digest,
         control_epoch_digest=epoch.epoch_digest, transaction_group_plan=plan,
-        operation_reductions=tuple(reductions), attempt_construction_inputs=inputs, pre_execution_evidence=evidence,
+        operation_reductions=tuple(reductions), manifest_group_inputs=manifest_group_inputs,
+        attempt_construction_inputs=inputs, pre_execution_evidence=evidence,
     ))
 
 
 @dataclass(frozen=True)
 class _Compiler:
     operation_inputs: tuple[object, ...]
+    sealed_snapshot: SealedGraphStateSnapshot
+    canonical_identity_authority: object | None
 
     def compile(self, *, request: object, control_epoch: object) -> _BuiltInCompilation:
-        return _compile(request=request, epoch=control_epoch, operation_inputs=self.operation_inputs)
+        return _compile(
+            request=request, epoch=control_epoch, operation_inputs=self.operation_inputs,
+            sealed_snapshot=self.sealed_snapshot,
+            canonical_identity_authority=self.canonical_identity_authority,
+        )
 
 
 @dataclass(frozen=True)
@@ -401,8 +491,38 @@ class _BuiltInBootstrapGraphExecutionBuilderV3:
             delivery_principal_binding_digest=request.operation_fence_binding.delivery_principal_binding_digest, required_outcome_scopes=request.required_outcome_scopes,
             graph_authority=authority, request_core_digest=request_core_digest, initial_control_epoch=epoch,
         )
-        compilation = _compile(request=coordinator_request, epoch=epoch,
-                               operation_inputs=reduction_reload.authority_member.operation_inputs)
+        graph_state = atomic_store.semantic_replay_state()
+        reference_integrity = atomic_store.reference_integrity_snapshot()
+        graph_snapshot = atomic_store.graph_state_snapshot()
+        confirmed_graph_state = atomic_store.semantic_replay_state()
+        partition_versions = {
+            item.partition_id: item.version
+            for item in graph_snapshot.read_set.partition_versions
+        }
+        if (
+            graph_state != confirmed_graph_state
+            or partition_versions.get("canonical_graph") != graph_state.state_digest
+            or partition_versions.get("reference_ledger")
+            != reference_integrity.ledger_digest
+        ):
+            return None
+        sealed_snapshot = SealedGraphStateSnapshot.create(
+            graph_state=graph_state, canonical_graph=graph_snapshot,
+            reference_integrity=reference_integrity,
+            read_set=GraphReadSetToken.create(
+                graph_revision=graph_state.graph_revision,
+                replay_state_digest=graph_state.state_digest,
+                reference_ledger_digest=reference_integrity.ledger_digest,
+            ), system_as_of=graph_snapshot.system_as_of,
+        )
+        operation_inputs = reduction_reload.authority_member.operation_inputs
+        initial_state = GraphPlanningState.create(base_snapshot_digest=sealed_snapshot.snapshot_digest, records=(), codec_manifest_fingerprint=authority.snapshot.graph_snapshot.codec_manifest_fingerprint, applied_planned_delta_digests=())
+        canonical_candidate = BootstrapCanonicalIdentityBindingAllocationProjectorV3().project(operation_inputs=operation_inputs, recovery_key_digest=request.normalization_replay.recovery_key_digest, sealed_snapshot=sealed_snapshot, effective_read_set=graph_snapshot.read_set, current_planning_state=initial_state, required_scope_set_digest=request.required_outcome_scopes.required_scope_set_digest, authorized_scope_identity=request.operation_fence_binding.delivery_principal_binding_digest, allocation_namespace_id=request.operation_fence_binding.allocation_namespace_id, allocation_policy_fingerprint=authority.execution_policy.policy_digest, allow_new_allocation=True, source_plan_checkpoint_digest=request_core_digest, publication_generation_digest=epoch.epoch_digest)
+        canonical_reload = AtomicStoreBootstrapCanonicalIdentityAuthorityRepositoryV3(atomic_store=atomic_store).publish_or_reload(request=BootstrapCanonicalIdentityAuthorityWriteRequestV3.create(authority_reload=canonical_candidate, operation_fence_binding=request.operation_fence_binding, operation_lease_binding=request.operation_lease_binding, writer_commit_binding=request.writer_commit_binding, delivery_principal_binding_digest=request.operation_fence_binding.delivery_principal_binding_digest, required_outcome_scopes=request.required_outcome_scopes))
+        compilation = _compile(
+            request=coordinator_request, epoch=epoch, operation_inputs=operation_inputs,
+            sealed_snapshot=sealed_snapshot, canonical_identity_authority=canonical_reload,
+        )
         source = request.prepared_source
         artifact = source.governance_carrier_artifact
         host = BootstrapGraphTerminalHostAuthorityV3.create(
@@ -421,7 +541,7 @@ class _BuiltInBootstrapGraphExecutionBuilderV3:
         coordinator = BootstrapGraphDependentCoordinatorV3(
             epoch_repository=epochs, plan_repository=AtomicStoreBootstrapGraphPlanRepositoryV3(atomic_store=atomic_store),
             terminal_port=AtomicStoreBootstrapGraphTerminalPersistencePortV3(atomic_store=atomic_store),
-            compiler=_Compiler(reduction_reload.authority_member.operation_inputs), authorizer=_Authorizer(compilation),
+            compiler=_Compiler(operation_inputs, sealed_snapshot, canonical_reload), authorizer=_Authorizer(compilation),
             group_commit_repository=AtomicStoreBootstrapGraphGroupCommitRepositoryV3(atomic_store=atomic_store),
             terminal_preparer=DeterministicBootstrapGraphTerminalPreparationV3(), terminal_host_authority=host,
         )
@@ -431,9 +551,7 @@ class _BuiltInBootstrapGraphExecutionBuilderV3:
 def build_builtin_bootstrap_graph_execution_v3(
     *, request: BootstrapGraphAuthorityRequestV3, atomic_store: object,
 ) -> BootstrapGraphExecutionV3 | None:
-    return _BuiltInBootstrapGraphExecutionBuilderV3().build(
-        request=request, atomic_store=atomic_store,
-    )
+    return _BuiltInBootstrapGraphExecutionBuilderV3().build(request=request, atomic_store=atomic_store)
 
 
 class BuiltInBootstrapGraphAuthorityProviderV3:

@@ -45,10 +45,10 @@ from memorii.core.semantic_ingestion.event_replay import (
     replay_semantic_event_batches,
 )
 from memorii.core.semantic_ingestion.persistence import SemanticTerminalPersistenceService
-from semantic_terminal_test_support import (
+from tests.fixtures.semantic_ingestion.semantic_terminal_fixture import (
     TestSemanticConflictAuthorityResolver as _TestSemanticConflictAuthorityResolver,
 )
-from semantic_terminal_test_support import accepted_terminal
+from tests.fixtures.semantic_ingestion.semantic_terminal_fixture import accepted_terminal
 from tests.unit.core.semantic_ingestion.test_projection_scheduler import (
     T0,
     _digest,
@@ -106,7 +106,7 @@ def _persist_one_normal_event(
     The migration catch-up tests exercise one normal late event; an ordinary
     accepted terminal is that event, with no clarification lifecycle noise.
     """
-    from semantic_terminal_test_support import handoff
+    from tests.fixtures.semantic_ingestion.semantic_terminal_fixture import handoff
 
     _, fence = handoff(
         plane,
@@ -1819,7 +1819,7 @@ def test_normal_writer_and_cutover_race_has_one_linearized_winner(
     # and a freely-running unclassified admission write would move it under
     # the cutover's captured read set mid-race.  With the admission staged,
     # the race exercises exactly the two linearized graph writes.
-    from semantic_terminal_test_support import handoff as _handoff
+    from tests.fixtures.semantic_ingestion.semantic_terminal_fixture import handoff as _handoff
 
     _, race_fence = _handoff(
         plane,

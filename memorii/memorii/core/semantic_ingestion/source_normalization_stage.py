@@ -5,24 +5,29 @@ from __future__ import annotations
 from dataclasses import dataclass
 from hashlib import sha256
 
-from pydantic import BaseModel
-
 from memorii.core.memory_evolution.atomic_store import (
     AtomicGenerationMember,
     OperationLeaseBinding,
 )
+from memorii.core.memory_evolution.graph_records import canonical_graph_codec_manifest
 from memorii.core.memory_evolution.ingestion_contracts import (
     OperationFenceBinding,
     SemanticWriterCommitBinding,
     encode_typed_value,
 )
 from memorii.core.semantic_ingestion.contracts import (
+    AcceptedOperationGovernanceCarrier,
+    AcceptedTemporalEvidence,
+    AuthenticatedSourceIntervalEvidence,
     BootstrapAnalysisLaneResultV3,
     BootstrapDeclaredSegmentLanguageRoute,
     BootstrapGraphFreeIdentityPlanningInputV3,
     BootstrapGraphFreeInterpretationBundleV3,
     BootstrapGraphNormalizationAuthorityMemberV3,
+    BootstrapNativeEvidenceConstructionV3,
     BootstrapNativeOperationReductionInputV3,
+    BootstrapNativePlanningConstructionAuthorityV3,
+    BootstrapNativeTemporalConstructionV3,
     BootstrapNormalizationRequestCoreV3,
     BootstrapOperationCoverageBindingV3,
     BootstrapProposalRunPayloadV3,
@@ -36,24 +41,170 @@ from memorii.core.semantic_ingestion.contracts import (
     BootstrapSourceNormalizationResultV3,
     BootstrapSourceProposalAlignmentV3,
     BootstrapV3PayloadLimitAuthority,
+    OperationTemporalAttachmentBinding,
+    OperationTemporalDecisionBinding,
     PreparedSource,
+    SemanticArbitrationPolicyBundle,
+    SourceAuthorityEvidence,
+    SourceSpan,
+    SourceSpanReference,
+    SystemRecordedEffectiveTime,
+    TemporalEvidenceCandidate,
+    bootstrap_v3_atomic_request_digest,
     canonical_contract_value,
     contract_digest,
     encode_semantic_contract,
 )
 from memorii.core.semantic_ingestion.source_normalization_authority import (
+    BootstrapPlanningPolicyAuthority,
     CapabilityRegistrySnapshot,
     GraphDependentExecutionPolicy,
 )
 from memorii.core.semantic_ingestion.source_normalization_repository import SourceNormalizationStage
+from memorii.core.semantic_ingestion.temporal_evidence_resolution import TemporalEvidenceResolver
+
+
+def _source_span_from_reference(reference: SourceSpanReference) -> SourceSpan:
+    """Project the exact retained projection coordinate for native planning.
+
+    The source reference has already proved projection/local offset and text
+    identity.  This owner deliberately exposes only the source coordinate used
+    by the temporal binding contracts; no text, span, or authority is guessed.
+    """
+    projected = reference.projection_span
+    if (
+        projected.end <= projected.start
+        or reference.segment_local_span.end - reference.segment_local_span.start
+        != projected.end - projected.start
+        or reference.projection_digest != projected.artifact.artifact_digest
+    ):
+        raise ValueError("bootstrap native planning source-span reference is invalid")
+    return SourceSpan(
+        source_id=reference.source_id,
+        start=projected.start,
+        end=projected.end,
+    )
+
+
+def _planning_construction_authority_for_operation(
+    *, core: BootstrapNormalizationRequestCoreV3, operation_id: str,
+    operation_execution_id: str, member: object, segment_id: str,
+    dependency_group_id: str, prepared_source: PreparedSource,
+    source_authority_evidence: SourceAuthorityEvidence,
+    source_interval_evidence: AuthenticatedSourceIntervalEvidence | None,
+    policy_bundle: SemanticArbitrationPolicyBundle,
+    planning_policy_authority: BootstrapPlanningPolicyAuthority,
+) -> BootstrapNativePlanningConstructionAuthorityV3:
+    """Seal the fact-path construction inputs while all host authority is live."""
+    route = next(item for item in prepared_source.segment_language_routes.routes if item.segment_id == segment_id)
+    binding = next(
+        item for item in prepared_source.segment_governance_carriers.bindings
+        if item.segment_id == route.parent_projection_segment_id
+    )
+    admissions = tuple(item for item in prepared_source.message_admission_carriers.identities if item.segment_governance_binding_digest == binding.binding_digest)
+    artifact = prepared_source.governance_carrier_artifact
+    routes = (route.route_digest,)
+    if (
+        not admissions or not routes or getattr(member, "kind", None) != "fact"
+        or binding not in artifact.segment_governance.bindings
+        or any(item not in artifact.message_admissions.identities for item in admissions)
+    ):
+        raise ValueError("bootstrap native planning construction input is unavailable")
+    fact = member
+    rule = policy_bundle.trust_policy.rule_for(fact.predicate_id)
+    consensus = next(item for item in core.source_alignment.temporal_attachment_consensus if item.operation_id == operation_id and item.temporal_role == "assertion")
+    candidates = () if source_interval_evidence is None else (TemporalEvidenceCandidate.create(
+        candidate_id=contract_digest(
+            b"memorii.bootstrap-graph.native-source-interval-candidate.v3",
+            (operation_id, source_interval_evidence.evidence_digest),
+        ), kind="authenticated_source_interval",
+        interval=source_interval_evidence.interval, source_authority=source_authority_evidence.authority,
+        authenticated_source_interval_evidence=source_interval_evidence,
+    ),)
+    if consensus.status != "stable":
+        raise ValueError("bootstrap native planning temporal consensus is unavailable")
+    closure = TemporalEvidenceResolver().resolve(predicate_id=fact.predicate_id, candidates=candidates,
+        trust_policy=policy_bundle.trust_policy, temporal_policy=policy_bundle.temporal_policy,
+        arbitration_as_of=policy_bundle.arbitration_as_of,
+        source_present_attachment=bool(consensus.stable_candidate_ids))
+    if closure.outcome != "pass":
+        raise ValueError("bootstrap native planning temporal authority is unavailable")
+    attachment = OperationTemporalAttachmentBinding.create(operation_id=operation_id, temporal_role="assertion",
+        stable_attachment_consensus_digest=consensus.consensus_digest,
+        candidate_ids=tuple(item.candidate_id for item in candidates), candidate_spans=())
+    scope = next(item for item in core.source_alignment.scope_consensus if item.operation_id == operation_id)
+    parser = next(item for item in core.source_alignment.parser_consensus if item.operation_id == operation_id)
+    decision = OperationTemporalDecisionBinding.create(operation_id=operation_id, temporal_role="assertion",
+        scope_assessment_digest=scope.consensus_digest,
+        semantic_assessment_digest=parser.assessment_digest,
+        temporal_attachment=attachment, decision_closure=closure)
+    temporal = BootstrapNativeTemporalConstructionV3.create(temporal_role="assertion", temporal_consensus_digest=consensus.consensus_digest,
+        effective_time=SystemRecordedEffectiveTime(kind="system_recorded_only", temporal_policy_fingerprint=policy_bundle.temporal_policy.fingerprint,
+            temporal_policy_snapshot_digest=policy_bundle.temporal_policy.snapshot_digest),
+        accepted_temporal_evidence=AcceptedTemporalEvidence(decision_closure=closure), temporal_decision_binding=decision,
+        temporal_policy_fingerprint=policy_bundle.temporal_policy.fingerprint)
+    mention_digests = {fact.subject_mention_digest}
+    if fact.object.kind == "entity":
+        mention_digests.add(fact.object.mention_digest)
+    cluster_evidence = tuple(
+        item for cluster in core.source_alignment.source_local_identity.clusters
+        if mention_digests.intersection(cluster.mention_digests)
+        for item in cluster.source_evidence
+    )
+    evidence_items = tuple(sorted(
+        {item.item_digest: item for item in (fact.assertion, fact.predicate_anchor, *fact.temporal_qualifiers, *cluster_evidence)}.values(),
+        key=lambda item: item.item_digest,
+    ))
+    evidence = tuple(BootstrapNativeEvidenceConstructionV3.create(evidence_item_digest=item.item_digest, source_span=item.span,
+        source_authority=source_authority_evidence.authority,
+        citation_id=contract_digest(b"memorii.bootstrap-graph.native-citation-id.v3", (operation_execution_id, item.item_digest)),
+        provenance_id=contract_digest(b"memorii.bootstrap-graph.native-provenance-id.v3", (operation_execution_id, item.item_digest)))
+        for item in evidence_items)
+    return BootstrapNativePlanningConstructionAuthorityV3.create(source_id=core.recovery_key.source_id, source_digest=core.recovery_key.source_digest,
+        preparation_fingerprint=core.recovery_key.preparation_fingerprint, operation_id=operation_id, operation_execution_id=operation_execution_id,
+        source_dependency_group_id=dependency_group_id, segment_governance=AcceptedOperationGovernanceCarrier.create(operation_id=operation_id,
+            segment_language_route_digests=routes,
+            segment_governance_bindings=(binding,), message_admission_identities=admissions,
+            governance_carrier_artifact=prepared_source.governance_carrier_artifact), message_admission_identities=admissions,
+        required_scope_set_digest=prepared_source.governance_carrier_artifact.required_outcome_scopes.required_scope_set_digest,
+        predicate_registry_fingerprint=planning_policy_authority.predicate_registry_fingerprint, predicate_trust_rule=rule,
+        predicate_state_rule=planning_policy_authority.predicate_state_rule,
+        source_authority_evidence=source_authority_evidence,
+        action_policy_fingerprint=planning_policy_authority.action_policy_fingerprint, action_transition=None,
+        planning_codec_entries=canonical_graph_codec_manifest().entries, temporal_constructions=(temporal,), evidence_constructions=evidence,
+        identity_construction=None)
 
 
 def _native_reduction_inputs(
     *, core: BootstrapNormalizationRequestCoreV3, operation_fence_binding: OperationFenceBinding,
+    prepared_source: PreparedSource, source_authority_evidence: SourceAuthorityEvidence,
+    source_interval_evidence: AuthenticatedSourceIntervalEvidence | None,
+    policy_bundle: SemanticArbitrationPolicyBundle,
+    planning_policy_authority: BootstrapPlanningPolicyAuthority,
 ) -> tuple[BootstrapNativeOperationReductionInputV3, ...]:
     """Project V3-native operation inputs from the sealed normalization core."""
     payload = core.proposal_payload
     alignment = core.source_alignment
+    if (
+        (prepared_source.source_id, prepared_source.source_digest, prepared_source.preparation_fingerprint)
+        != (core.recovery_key.source_id, core.recovery_key.source_digest, core.recovery_key.preparation_fingerprint)
+        or (source_authority_evidence.source_id, source_authority_evidence.source_digest)
+        != (core.recovery_key.source_id, core.recovery_key.source_digest)
+        or (
+            source_interval_evidence is not None
+            and (
+                source_interval_evidence.source_id,
+                source_interval_evidence.source_digest,
+                source_interval_evidence.source_authority_evidence_digest,
+            )
+            != (
+                core.recovery_key.source_id,
+                core.recovery_key.source_digest,
+                source_authority_evidence.evidence_digest,
+            )
+        )
+    ):
+        raise ValueError("bootstrap native planning construction authority is substituted")
     subjects = {
         item.operation_id: item
         for subject_set in core.interpretation_bundle.subject_sets
@@ -135,6 +286,20 @@ def _native_reduction_inputs(
                     dependency_group_id=group.group_id,
                     operation_fence_binding_digest=operation_fence_binding.binding_digest,
                 )
+            planning_authority = (
+                _planning_construction_authority_for_operation(
+                    core=core, operation_id=operation_id,
+                    operation_execution_id=execution_id, member=member,
+                    segment_id=subject.segment_id, dependency_group_id=group.group_id,
+                    prepared_source=prepared_source,
+                    source_authority_evidence=source_authority_evidence,
+                    source_interval_evidence=source_interval_evidence,
+                    policy_bundle=policy_bundle,
+                    planning_policy_authority=planning_policy_authority,
+                )
+                if member.kind == "fact"
+                else None
+            )
             inputs.append(BootstrapNativeOperationReductionInputV3.create(
                 source_id=core.recovery_key.source_id,
                 source_digest=core.recovery_key.source_digest,
@@ -154,6 +319,7 @@ def _native_reduction_inputs(
                 operation_execution_id=execution_id,
                 coverage_bindings=bindings,
                 graph_free_identity_input=identity_input,
+                planning_construction_authority=planning_authority,
             ))
     return tuple(sorted(inputs, key=lambda item: (item.dependency_group.group_id, item.operation_id)))
 
@@ -180,6 +346,11 @@ class BootstrapV3SourceNormalizationInputs:
     graph_dependent_execution_policy: GraphDependentExecutionPolicy
     bootstrap_recovery_key: BootstrapRecoveryKeyV3
     bootstrap_recovery_claim: BootstrapRecoveryClaimV3
+    prepared_source: PreparedSource
+    source_authority_evidence: SourceAuthorityEvidence
+    source_interval_evidence: AuthenticatedSourceIntervalEvidence | None
+    policy_bundle: SemanticArbitrationPolicyBundle
+    planning_policy_authority: BootstrapPlanningPolicyAuthority
     operation_fence_binding: OperationFenceBinding
     operation_lease_binding: OperationLeaseBinding
     writer_commit_binding: SemanticWriterCommitBinding
@@ -199,9 +370,9 @@ class GraphFreeSourceNormalizationInvocation:
 
     operation_id: str
     source: PreparedSource
-    source_authority_evidence: BaseModel
-    source_interval_evidence: BaseModel | None
-    policy_bundle: BaseModel
+    source_authority_evidence: SourceAuthorityEvidence
+    source_interval_evidence: AuthenticatedSourceIntervalEvidence | None
+    policy_bundle: SemanticArbitrationPolicyBundle
     authorization_read_set_provider: object
     operation_fence_binding: OperationFenceBinding
 
@@ -331,6 +502,11 @@ class BootstrapV3SourceNormalizationStage:
             ),
             operation_inputs=_native_reduction_inputs(
                 core=core, operation_fence_binding=inputs.operation_fence_binding,
+                prepared_source=inputs.prepared_source,
+                source_authority_evidence=inputs.source_authority_evidence,
+                source_interval_evidence=inputs.source_interval_evidence,
+                policy_bundle=inputs.policy_bundle,
+                planning_policy_authority=inputs.planning_policy_authority,
             ),
             execution_policy=inputs.graph_dependent_execution_policy,
             execution_policy_canonical_bytes=encode_typed_value(
@@ -392,11 +568,7 @@ class BootstrapV3SourceNormalizationStage:
             "bootstrap_recovery_key": inputs.bootstrap_recovery_key, "bootstrap_recovery_claim": inputs.bootstrap_recovery_claim,
         }
         return BootstrapSourceNormalizationAtomicWriteRequestV3.model_validate(
-            base | {
-                "request_digest": sha256(
-                    encode_typed_value(canonical_contract_value(base))
-                ).hexdigest()
-            }
+            base | {"request_digest": bootstrap_v3_atomic_request_digest(base)}
         )
 
 
