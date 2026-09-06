@@ -1,0 +1,84 @@
+{
+  "cells": {
+    "enabled": {
+      "content_validation_calls": 833,
+      "decode_reencode_identical": true,
+      "elapsed_seconds": 1.0836363609996624,
+      "output_sha256": "ae485a5f913853b4e99c138713621bd5713cc4313a339280e154d751527485ef"
+    },
+    "legacy": {
+      "content_validation_calls": 1021,
+      "decode_reencode_identical": true,
+      "elapsed_seconds": 1.243835378998483,
+      "output_sha256": "ae485a5f913853b4e99c138713621bd5713cc4313a339280e154d751527485ef"
+    },
+    "rollback": {
+      "content_validation_calls": 1021,
+      "decode_reencode_identical": true,
+      "elapsed_seconds": 1.0975851679977495,
+      "output_sha256": "ae485a5f913853b4e99c138713621bd5713cc4313a339280e154d751527485ef"
+    },
+    "saturated_enabled": {
+      "content_validation_calls": 1303,
+      "decode_reencode_identical": true,
+      "elapsed_seconds": 1.526769357995363,
+      "output_sha256": "ae485a5f913853b4e99c138713621bd5713cc4313a339280e154d751527485ef"
+    },
+    "saturated_legacy": {
+      "content_validation_calls": 1303,
+      "decode_reencode_identical": true,
+      "elapsed_seconds": 1.5053663599974243,
+      "output_sha256": "ae485a5f913853b4e99c138713621bd5713cc4313a339280e154d751527485ef"
+    },
+    "unavailable": {
+      "content_validation_calls": 1021,
+      "decode_reencode_identical": true,
+      "elapsed_seconds": 1.1843637990023126,
+      "output_sha256": "ae485a5f913853b4e99c138713621bd5713cc4313a339280e154d751527485ef"
+    }
+  },
+  "certifies_m3_1": false,
+  "decision": "BEHAVIORAL_EQUIVALENCE_PASS",
+  "evidence_stage": "reference_only_locally_verified",
+  "experiment": "VBP-EXP-003",
+  "failure": {
+    "direct_message": "1 validation error for PreparedSource\nsemantic_context\n  Value error, source semantic context digest mismatch [type=value_error, input_value={'source_id': 'substitute...6ecd0c46dbb677064e9b01'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/value_error",
+    "direct_type": "ValidationError",
+    "durable_records_sha256": "1476bd746779820f8be50e29dd4df36ad35228f0865da24092c55fdbbcea6554",
+    "full_terminal_kind": "result",
+    "full_terminal_sha256": "1c8f44316843cf57708f166891f99009104b453bc07cd8f4794560a4ae4f8482"
+  },
+  "output_sha256": "ae485a5f913853b4e99c138713621bd5713cc4313a339280e154d751527485ef",
+  "prepared_boundary_snapshots": [
+    [
+      "_bootstrap_prepare_and_handoff",
+      "14096128aaedcc613063dd0a46ca865c6426748ecc8055280d368bf56d1d4217"
+    ],
+    [
+      "decode_semantic_contract",
+      "14096128aaedcc613063dd0a46ca865c6426748ecc8055280d368bf56d1d4217"
+    ],
+    [
+      "encode_semantic_contract",
+      "14096128aaedcc613063dd0a46ca865c6426748ecc8055280d368bf56d1d4217"
+    ],
+    [
+      "prepare",
+      "14096128aaedcc613063dd0a46ca865c6426748ecc8055280d368bf56d1d4217"
+    ],
+    [
+      "publish",
+      "14096128aaedcc613063dd0a46ca865c6426748ecc8055280d368bf56d1d4217"
+    ],
+    [
+      "publish_bootstrap_prepared_source_if_absent",
+      "14096128aaedcc613063dd0a46ca865c6426748ecc8055280d368bf56d1d4217"
+    ],
+    [
+      "publish_prepared_source",
+      "14096128aaedcc613063dd0a46ca865c6426748ecc8055280d368bf56d1d4217"
+    ]
+  ],
+  "production_implementation_changed": false,
+  "schema": "memorii.semantic-ingestion.validation-boundary.behavioral-equivalence.v1"
+}

@@ -1,0 +1,72 @@
+{
+  "checked_owner_count": 12,
+  "durable_writers": [
+    {
+      "path": "memorii/memorii/core/semantic_ingestion/authorization.py",
+      "present": true,
+      "symbol": "apply_verified_transition"
+    },
+    {
+      "path": "memorii/memorii/core/semantic_ingestion/source_preparation.py",
+      "present": true,
+      "symbol": "def publish("
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/atomic_store.py",
+      "present": true,
+      "symbol": "publish_prepared_source"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/atomic_store.py",
+      "present": true,
+      "symbol": "publish_bootstrap_prepared_source_if_absent"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/atomic_store.py",
+      "present": true,
+      "symbol": "publish_admitted_source"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/atomic_store.py",
+      "present": true,
+      "symbol": "bootstrap_writer_handoff"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/atomic_store.py",
+      "present": true,
+      "symbol": "publish_or_reload_bootstrap_graph_transaction_authority_v3"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/atomic_store.py",
+      "present": true,
+      "symbol": "publish_or_reload_bootstrap_canonical_identity_authority_v3"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/atomic_store.py",
+      "present": true,
+      "symbol": "persist_bootstrap_graph_terminal_v3"
+    },
+    {
+      "path": "memorii/memorii/core/semantic_ingestion/persistence.py",
+      "present": true,
+      "symbol": "class SemanticTerminalPersistenceService"
+    }
+  ],
+  "failures": [],
+  "global_guards": {
+    "bypass_fallback": true,
+    "omitted_authority_argument": true,
+    "removed_handoff": true
+  },
+  "passed": true,
+  "production_non_test_caller_count": 5,
+  "production_non_test_callers": [
+    "memorii/memorii/core/semantic_ingestion/production_capture.py:116",
+    "memorii/memorii/integrations/hermes_provider.py:106",
+    "memorii/memorii/integrations/hermes_provider.py:279",
+    "memorii/memorii/integrations/hermes_provider.py:300",
+    "memorii/memorii/integrations/hermes_provider.py:346"
+  ],
+  "requirement_count": 12,
+  "schema": "memorii.production-entrypoint-bindings-validation.v2"
+}

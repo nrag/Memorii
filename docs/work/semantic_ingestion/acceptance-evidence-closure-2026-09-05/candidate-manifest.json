@@ -1,0 +1,52 @@
+{
+  "schema": "memorii.testing.scoped-candidate-manifest.v2",
+  "base_revision": "821b0bc7fd47ca0c55a18ccebb4b1628fa13689b",
+  "scoped_diff_sha256": "315ad288d6d69f21939dcc1e52ade0dd5500dd93e7bada9bf51d3dfd4b8290f8",
+  "primary_files": {
+    "memorii/tests/acceptance/semantic_ingestion/test_sia_requirements.py": "e998a4cfd9de07400108319091bd797870aae895fb7d1a469c3fe5273e4d4536",
+    "memorii/tests/fixtures/semantic_ingestion/clean_room_request_fixture.py": "70f8e4df3d134558d19fdd2bf39031f31ff6eaa2664855428c2fabdca4455eff",
+    "memorii/tests/fixtures/semantic_ingestion/semantic_terminal_fixture.py": "89c5fb39c1b9a50997d940eff368773927a01827beba42f83bc6b9d729179508",
+    "memorii/tests/fixtures/semantic_ingestion/event_replay_fixture.py": "d700cda58add58d035c9123f21ce5404ae7f0fa0e7eea7f1355519cf2ae6aefc"
+  },
+  "authority_files": {
+    "memorii/tests/fixtures/semantic_ingestion/host_bootstrap_authority.py": "7f67e0c7a772c6fbee6dc10fdab662bbad4f763b212aa48f48b2b4bb9784fd5c",
+    "memorii/tests/fixtures/semantic_ingestion/scenario_fixture_authority.py": "19166928571f35450b14920d659f46d57aee2de4be5943e607de471f29362023",
+    "memorii/memorii/core/filesystem_storage/bundle.py": "0f16ad0ec356d9879277041c92c2c1f683ec1d9b80ac9986088d9d5b9bde5ae7",
+    "memorii/memorii/core/provider/factory.py": "52668e699e2208aa3a7503a910a6a4ad4f42dde8a181b697afc0510e8e1ee0d2",
+    "memorii/memorii/core/provider/service.py": "158de9fd81860d7cc4ec55fa97fd4dd90a1f5d780f4155d80d69b9416abf2966",
+    "memorii/memorii/core/semantic_ingestion/production_authority.py": "394cb372058b398d2a1e56e5cf7ce356905335a9aa85bf4df95c8e5b4fd39805",
+    "memorii/memorii/core/semantic_ingestion/event_replay.py": "523c6042bdb03a64a0192e25926486d079eb71665283c5931f9bd344a88e8580",
+    "memorii/memorii/core/memory_evolution/identity_lineage.py": "3af735da933644b5dcee3a7cec659a7702a1c7a397f5d0448b2955d8205ebf14",
+    "memorii/memorii/core/memory_evolution/projection_history.py": "b7de42eca4a015a6168ca0232643b4a6cd08fac10ee73bec0809e59cadd11ec5",
+    "docs/design/semantic_ingestion_canonical_evidence/production-entrypoint-bindings-v1.json": "dd018336321d0ff78410a517cd545078ffa4e5bbcc7464c683c70c99f573e977"
+  },
+  "registered_support_files": {
+    "memorii/tests/unit/stores/test_event_log_store.py": "2406cc1f7d4ce7d87140adabb721b85c15818ade098449f90dfb7d637a34d13e",
+    "memorii/tests/integration/test_memory_evolution_production_boundary.py": "e71585b518fb93eaf576c0fee4f393327011b25c24663b1359edd3bb418ed5a6"
+  },
+  "fixture_consumer_files": {
+    "memorii/tests/fixtures/semantic_ingestion/source_normalization_fixture_builder.py": "069fdf174995c0d9e2fc36415fe8c51707e5c404acc5103b94987b02c01f2d08",
+    "memorii/tests/unit/core/memory_evolution/test_graph_effect_contracts.py": "c09351c4c5c2774a9be66a1abd37c5d44ddd7dab9cb6895a48b772770f0482c1",
+    "memorii/tests/unit/core/semantic_ingestion/graph_record_test_support.py": "11592d1eabfecd7b45e4c3f2857080f84cab97ceb56a41e17c04aaebba279b00",
+    "memorii/tests/unit/core/semantic_ingestion/test_bootstrap_route_contracts.py": "025582d53e4112e1d3f4dbb0ddfbca9a0a6d3cce04fb74ac47f8b6808c56553b",
+    "memorii/tests/unit/core/semantic_ingestion/test_bootstrap_text_preparation_producer.py": "e3bc20a611c24d36f48e5a5b714c0f766d7a1f0782f84727f73524faf40cd85e",
+    "memorii/tests/unit/core/semantic_ingestion/test_consensus_contract_codecs.py": "99045904a64b9d26d87bd03b2ee80fe1a6547c798b7ffef4f5854e5009dd3213",
+    "memorii/tests/unit/core/semantic_ingestion/test_event_replay.py": "2651007338e8ba9e141e684e90a77f01db0dd01f68450f5c1aa4d4b041a341f8",
+    "memorii/tests/unit/core/semantic_ingestion/test_graph_planning.py": "8a9b2c884c4df33d03c2801e1e1c3db37f382a6f5d09aff0f3d58bc96667bdfd",
+    "memorii/tests/unit/core/semantic_ingestion/test_identity_lineage.py": "ec5d04bf532a5a38ffee1f8be7178b36e683f3e98a0d042c53d026aa35a03d17",
+    "memorii/tests/unit/core/semantic_ingestion/test_policy_migration.py": "def3f211fe4c64a00e2603f9ec118ac9133ba9c3050427f940f8ad184420b567",
+    "memorii/tests/unit/core/semantic_ingestion/test_prompt_and_egress_authority.py": "3c328137f18144aacca01d79b917d73170ab896ddb04d1c939715adf075dc9d0",
+    "memorii/tests/unit/core/semantic_ingestion/test_semantic_generation_transactions.py": "30a37318a37f1c40a304074d80b28c3e2c9807c27d34c47b75a7132c3589cd1d",
+    "memorii/tests/unit/core/semantic_ingestion/test_semantic_provider_composition.py": "b4ea9e3b769e44e1bd23af7b3ff887e1296e293a3be6918d6d64ab0be93ab29f",
+    "memorii/tests/unit/core/semantic_ingestion/test_semantic_terminal_persistence.py": "e3fc6ab9f0fd6724b4bb100c4cc0f78ff819321c3743ec1cf0f858b1adee151f",
+    "memorii/tests/unit/core/semantic_ingestion/test_transaction_group_plan_repository.py": "f2ee8a1dab9c8743fb8f82c592dc7003c8e35646152334a4f0a76f919b5e16e9",
+    "memorii/tests/unit/core/test_conflict_clarification.py": "4e735d306637086b78c24dbe5a6567dfa27785f7a9fe89dcfc76eb372eaf7f5c"
+  },
+  "deleted_duplicate_files": [
+    "memorii/tests/unit/core/semantic_ingestion/clean_room_request_test_support.py",
+    "memorii/tests/unit/core/semantic_ingestion/semantic_terminal_test_support.py"
+  ],
+  "scoped_diff_algorithm": "sha256(git diff --binary <base_revision> -- <primary files, fixture consumer files, deleted duplicate files in lexical path order>)",
+  "scope": "three registry-named acceptance selectors, canonical fixture ownership, direct production authorities, registered support nodes, and all fixture import consumers",
+  "tree_state": "coordinated dirty tree scoped by this manifest"
+}

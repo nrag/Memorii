@@ -43,6 +43,82 @@ Use separate linked WorkPlans for separate work types.
 
 An active WorkPlan must not be silently converted from one work type to another.
 
+### Indexed Multi-Milestone WorkPlans
+
+Use an indexed layout when an operation has multiple milestones with distinct
+acceptance evidence or review cycles, or when completed history makes routine
+resume materially expensive. Keep a small bounded operation in one file.
+
+Recommended layout:
+
+```text
+docs/work/<work-id>/
+├── <work-type>.plan.md
+├── resume.md
+├── milestones/
+│   ├── <behavioral-milestone>.plan.md
+│   └── ...
+└── history/
+    └── <content-addressed-or-dated-archive>.md
+```
+
+The canonical `<work-type>.plan.md` remains the WorkPlan and owns:
+
+* global objective, scope, constraints, sources, and completion contract
+* milestone order, dependencies, status, and requirement allocation
+* cross-milestone decisions, blockers, and final closure
+* exactly one current next action
+* links to the resume packet, active milestone, and preserved history
+
+Each milestone packet owns:
+
+* bounded requirements, scope, exclusions, and dependencies
+* canonical owners and changed surfaces
+* acceptance criteria and required evidence
+* progress, decisions, review findings, and remediation for that milestone
+* revision-bound completion or exact blocker state
+
+Milestone acceptance is local evidence only. It never satisfies the parent
+WorkPlan or parent milestone completion contract unless the parent requirement
+allocation explicitly marks every requirement it owns complete and records the
+same revision-bound evidence. A bounded slice approval must state its parent
+requirements as `partial`, `blocked`, or `not_applicable`; it must not call the
+parent milestone complete by implication.
+
+A milestone packet is part of its parent WorkPlan, not a new WorkPlan and not a
+new work type. Work that crosses into design, debugging, testing architecture,
+or PR review still requires a separate linked WorkPlan under normal routing.
+
+When a linked WorkPlan of another work type is active, it is the sole detailed
+owner of its in-flight changed-surface, authority-chain, gate, experiment, and
+evidence ledgers. The parent milestone records only the boundary, link, status,
+completion dependency, and a compact current summary; the index records only
+cross-milestone status and dependencies. Do not duplicate or clear the linked
+operation's detailed ledgers in either parent packet.
+
+Do not duplicate detailed evidence in the index. The index records the result
+and points to its owner. Do not put global decisions only in a milestone packet.
+Completed milestone packets become stable records; later corrections use a
+linked operation or an explicitly recorded reopening rather than rewriting
+their evidence silently.
+
+When splitting an existing WorkPlan:
+
+1. preserve the original bytes in `history/` and record their checksum
+2. inventory requirements, decisions, findings, evidence, blockers, links, and
+   next-action markers
+3. create a crosswalk assigning every active obligation to the index or exactly
+   one milestone packet
+4. preserve the canonical WorkPlan path as the new index so inbound links keep
+   resolving
+5. verify the archive checksum, crosswalk, links, and active-state equivalence
+   independently before resuming product edits
+
+For a manifest-backed split, run `.agents/scripts/verify_workplan_split.py`
+normally and with `--self-test`. Keep its manifest and pin current whenever an
+indexed artifact changes. The verifier supplements independent review; it does
+not turn a planning-file checksum into product or CI evidence.
+
 ## General Requirements
 
 A WorkPlan must be self-contained.
@@ -56,6 +132,30 @@ Assume the reader has:
 * artifacts explicitly referenced by the WorkPlan
 
 Do not assume access to previous chats or unstated reasoning.
+
+### Resume Packets
+
+When an active WorkPlan becomes expensive to reload because it contains
+substantial completed history, add a compact `resume.md` beside it. The
+WorkPlan remains the complete authority and retains its history; the resume
+packet is the default handoff artifact for new coordinators and subagents.
+
+A resume packet must contain only current, revision-bound state:
+
+* active WorkPlan and linked operation
+* active milestone packet, when the WorkPlan is indexed
+* canonical inputs and frozen identities
+* current objective, scope, and exclusions
+* completed behavior relevant to the next action
+* confirmed open findings and blockers
+* exact next action and its completion evidence
+* current changed surfaces, commands, and evidence limitations
+
+Link the packet from the WorkPlan header or first current-state section. Update
+it whenever the exact next action, candidate identity, open findings, or
+evidence changes. Do not copy progress logs, superseded review rounds, or
+completed milestone narratives into it. Consult the full WorkPlan only when
+historical rationale is necessary or when updating its canonical logs.
 
 A WorkPlan is a living document. Update it whenever work changes the known
 state, including after:
@@ -295,6 +395,36 @@ unrun or failing, any known failure lacks the required disposition evidence, or
 any required current-revision CI check is non-green or unavailable without an
 explicit blocked outcome.
 
+### Production Entrypoint Bindings
+
+For every in-scope requirement that affects runtime behavior, persistence,
+transactions, lifecycle, replay, recovery, or an integration, maintain a
+`production_entrypoint_bindings` ledger. It proves the requirement is reachable
+through a real composition root rather than merely represented by a schema,
+helper, repository, fixture, or unit test.
+
+| Requirement | Canonical trigger and composition root | Exact callsite and arguments/authority | Owner chain: validation -> write/read -> outcome | Proof and caller count | Status or explicit blocker |
+| ----------- | --------------------------------------- | -------------------------------------- | ------------------------------------------------- | ---------------------- | -------------------------- |
+
+Each implemented entry must name the real trigger, the constructor or factory
+that composes it, each canonical owner in order, the exact arguments and
+authority carried at the callsite, every validation boundary, and the durable
+write/read or terminal outcome. Record a focused path proof and the number of
+production callers found by the mapping query. A zero caller, a test-only
+caller, a dependency-injection default that leaves the owner absent, or an
+optional fallback that bypasses the chain is `not implemented`, not partial
+implementation. If the design deliberately excludes a requirement, record the
+governing exclusion and the fail-closed behavior; otherwise record a concrete
+blocker rather than fabricating inputs or a synthetic terminal result.
+
+One cheap Spark-class `code-mapper` preflight must produce the ledger artifact
+before the first writer edit for the affected execution boundary. It is
+revision-bound, names the searched composition roots and queries, and is the
+shared map consumed by the Terra reviewers. Reuse it for a frozen candidate;
+refresh it only when a remediation changes a mapped trigger, owner, authority,
+or persistence boundary. Reviewers must challenge its coverage, not repeat
+undirected repository mapping.
+
 ### Sources Of Truth
 
 List the exact specifications, code, tests, logs, incidents, measurements, or
@@ -504,6 +634,98 @@ The coordinator must:
 Use one writer at a time for overlapping artifacts.
 
 Read-only exploration and independent review may run in parallel.
+
+### Cost-Aware Delegation
+
+Use all useful concurrency, but assign model capacity to the judgment required
+by the subtask rather than using the most expensive reviewer for every read.
+
+* use Spark-class explorers, code mappers, and error detectives for repository
+  inventory, execution-path mapping, log triage, counts, ownership maps, and
+  other read-heavy mechanical evidence
+* use one Terra-class worker as the sole writer for overlapping production,
+  test, documentation, workflow, or generated artifacts
+* reserve Terra-class reviewers for coherent milestone, remediation-delta, and
+  final-branch judgments where independent correctness reasoning is required
+* run independent read-only tasks concurrently when their outputs can be
+  reconciled without overlapping writes
+* do not repeat whole-scope review or broad verification after micro-edits;
+  prefer the smallest discriminating command and a targeted delta review
+* record every delegation, model tier, writer/read-only role, reason, output,
+  and status in the active WorkPlan's delegation and cost ledger
+
+The coordinator must validate delegated evidence directly. Parallelism reduces
+latency and cost only when tasks are bounded, non-duplicative, and have a clear
+consumer in the active next action.
+
+#### Delegation Task Packet
+
+Every delegation must be self-contained and name:
+
+* the active WorkPlan or resume packet
+* one objective and its direct consumer
+* explicit exclusions
+* governing sources
+* owned files, symbols, commands, or evidence set
+* known facts that must not be rediscovered
+* the required output shape
+* completion and concrete-blocker conditions
+
+Default to artifact-only delegation with no inherited conversation context.
+When the agent interface exposes a context-fork option, use `fork_turns: none`
+unless essential user-provided information has not yet been made durable. A
+delegate must follow its task packet and repository artifacts over unrelated
+inherited conversation. Do not ask two read-only roles the same question;
+choose the narrowest role that can produce the required evidence.
+
+Use the maximum *useful* concurrency, not the maximum agent count. Normally no
+more than three non-overlapping read-only tasks should run beside the sole
+writer. Record why any additional task has a distinct consumer.
+
+#### Writer Completion Contract
+
+A writer owns its bounded slice until every stated acceptance criterion is
+complete or one concrete blocker prevents progress. Progress is not a handoff.
+The writer must not send a final response merely because one checkpoint or
+focused test passed. If the slice proves too large, report that before editing
+or ask the coordinator to split it at a non-overlapping artifact boundary.
+
+The writer that starts a long command owns it through its terminal result. The
+coordinator and other agents must not poll, rerun, or duplicate that command.
+Allow at most one interim status for a genuinely long command or blocker and
+one concise final report containing changed paths, exact evidence, remaining
+risk, and whether every acceptance criterion was met.
+
+#### Candidate Freeze Gate
+
+Do not launch a coherent-milestone or final reviewer cohort until:
+
+* no writer is active on the reviewed artifacts
+* the candidate revision and dirty-tree identity are recorded
+* the review scope, requirements, and exclusions are fixed
+* focused checks for the changed behavior are green or their failures are the
+  explicit subject of the review
+* the changed-surface and evidence ledgers are current
+* the required `production_entrypoint_bindings` ledger and its Spark preflight
+  artifact are current for every in-scope runtime, persistence, transaction,
+  lifecycle, replay, recovery, or integration requirement
+
+The candidate is not reviewable when a required binding is absent, has zero
+production callers, relies on an optional fallback, or lacks an exact
+callsite/authority chain. Treat that as a review-readiness blocker; do not let
+reviewers infer reachability from type definitions, helper tests, or a bounded
+slice report.
+
+If the gate is not satisfied, use a bounded mapper, test-matrix consultation,
+or root-cause challenge instead of a full review. After remediation, request a
+delta review from only the affected reviewer roles. Repeat all three reviewers
+only when a public, persisted, transaction, security, or other material
+contract boundary changed, or for final whole-branch approval.
+
+Spark-class delegates must escalate rather than decide any unresolved public,
+persisted, transaction, authorization, security, migration, or compatibility
+semantic. This preserves independent Terra-class judgment at the boundaries
+where mistakes are expensive while keeping mechanical evidence work cheap.
 
 The standard reviewers are:
 
@@ -873,6 +1095,12 @@ Implementation is complete only when:
   recorded without inflating it into a product defect
 * no accidental stubs, skipped tests, ignored errors, undocumented TODOs, or
   incomplete fallback paths remain
+* every required `production_entrypoint_bindings` entry is implemented with a
+  nonzero production caller, an exact composition-root callsite and authority
+  chain, and a focused path proof; any excluded entry has an explicit governing
+  exclusion and fail-closed behavior
+* no bounded slice approval is used as evidence that a parent milestone or
+  parent WorkPlan requirement is complete
 * the live diff is fully classified, every scope delta is resolved, every
   affected authority chain is current, and every required local job passes
 * no known failure is excluded without identical clean-merge-base reproduction

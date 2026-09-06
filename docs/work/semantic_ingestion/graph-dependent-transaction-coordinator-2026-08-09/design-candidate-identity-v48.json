@@ -1,0 +1,31 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_v3_group_keyed_reload_exclusive_binding",
+  "semantic_predecessor": "design-candidate-identity-v47.json",
+  "semantic_change_from_predecessor": "make commit request reload and indexes coherently group-keyed, purge withdrawn active binding vocabulary, and close pre-CAS failure versus committed/noncommitting result algebra",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree_stable",
+  "status_list_sha256": "bb1099a6a89ed650c8c2c6c570659a7f343324af1a23d55860beeeeb6a2bb176",
+  "review_scope": [
+    "group-keyed request reload primary and per-operation fanout identity",
+    "two-operation convergence lost acknowledgement retry and terminal recovery",
+    "exclusive GroupCommitRequestV3 to GroupCommitReloadV3 active binding vocabulary and validator",
+    "closed zero-effect pre-CAS failure and committed/noncommitting operation/revision algebra",
+    "truthful design-stage zero-caller and absent implementation evidence"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "1130b2e6e83fa5a7c401d4cacb3ee73702db63a7b4fe3230591175b406030953",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "807bec5a39652c94148756b153e4e2a1a4bcc9030916681d1cb5474dce8f9d41",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "58af25ba9428ef512b0202b18549d86632cfb680221bc131fadc63f5aa31d5a1"
+  },
+  "checks": [
+    "git diff --check",
+    "binding and candidate JSON parse",
+    "withdrawn active binding token absence",
+    "group identity fanout two-operation and failure partition anchors",
+    "stable status and artifact identity pass one",
+    "stable status and artifact identity pass two"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

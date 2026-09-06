@@ -38,6 +38,19 @@ class MemoryPlaneUnitOfWork:
     def committed(self) -> bool:
         return self._committed_revision is not None
 
+    @property
+    def durable(self) -> bool:
+        return self._store.durable
+
+    def load_or_create_protected_secret(
+        self, *, purpose: str, length: int
+    ) -> bytes:
+        self._ensure_open()
+        return self._store.load_or_create_protected_secret(
+            purpose=purpose,
+            length=length,
+        )
+
     def stage_record(
         self,
         record: CanonicalMemoryRecord,

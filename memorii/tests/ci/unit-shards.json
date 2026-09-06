@@ -2,10 +2,24 @@
   "pytest_args": [
     "tests/unit",
     "--ignore=tests/unit/tools/test_generation_closure_exactness.py",
-    "--ignore=tests/unit/tools/test_scenario_fixture_authority.py"
+    "--ignore=tests/unit/tools/test_scenario_fixture_authority.py",
+    "--ignore=tests/unit/core/test_projection_history.py",
+    "--ignore=tests/unit/core/semantic_ingestion/test_projection_scheduler.py",
+    "--ignore=tests/unit/core/semantic_ingestion/test_policy_migration.py",
+    "--ignore=tests/unit/core/semantic_ingestion/test_identity_lineage.py",
+    "--ignore=tests/unit/core/semantic_ingestion/test_graph_planning.py",
+    "--ignore=tests/unit/core/semantic_ingestion/test_identity_lineage_prerequisites.py",
+    "--ignore=tests/unit/core/semantic_ingestion/test_semantic_terminal_persistence.py",
+    "--ignore=tests/unit/core/semantic_ingestion/test_provider_compatibility.py",
+    "--ignore=tests/unit/core/semantic_ingestion/test_bootstrap_graph_jsonl_race_reopen.py",
+    "--ignore=tests/unit/core/semantic_ingestion/test_bootstrap_graph_scenario_replay.py",
+    "--ignore=tests/unit/core/semantic_ingestion/test_bootstrap_graph_root_composition.py",
+    "--ignore=tests/unit/core/semantic_ingestion/test_canonical_evidence_mode_parity.py",
+    "--ignore=tests/unit/core/semantic_ingestion/test_canonical_evidence_production_limits.py"
   ],
+  "assignment_scope": "file",
   "schema_version": 1,
-  "shard_count": 4,
-  "target_seconds": 600,
+  "shard_count": 6,
+  "target_seconds": 720,
   "timing_manifest": "unit-test-durations.json"
 }

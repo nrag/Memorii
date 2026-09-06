@@ -1,0 +1,542 @@
+{
+  "candidate_kind": "memorii_build_design",
+  "candidate_version": 11,
+  "frozen_on": "2026-08-17",
+  "governing_prior_candidate_lock": "4b2af56947b56b006c5aa45b715fe95834c44b059665787f74c87fe49d6d0245",
+  "parent_candidate_lock": "3677607e62f285c8fb9da63e380f501e1e11a362c26f0c959cdc32036e2d0ac8",
+  "production_code_changed": false,
+  "requirements": {
+    "VCC-R01": "specified_and_executably_supported",
+    "VCC-R02": "specified_and_executably_supported",
+    "VCC-R03": "specified_and_executably_supported",
+    "VCC-R04": "specified_and_executably_supported",
+    "VCC-R05": "specified_and_executably_supported",
+    "VCC-R06": "specified_and_executably_supported",
+    "VCC-R07": "specified_and_executably_supported",
+    "VCC-R08": "specified_and_executably_supported",
+    "VCC-R09": "specified_and_executably_supported",
+    "VCC-R10": "specified_and_executably_supported",
+    "VCC-R11": "specified_and_executably_supported",
+    "VCC-R12": "specified_and_executably_supported"
+  },
+  "schema": "memorii.design-candidate-manifest.v1",
+  "scope": "validated canonical closure for semantic-ingestion duplicate canonical reconstruction and digest elimination",
+  "tests_changed": false,
+  "tracked_files": [
+    {
+      "path": "docs/design/semantic_ingestion_validated_canonical_closure.md",
+      "role": "canonical_design",
+      "sha256": "1ff6e62ececfbfc774ee6fc4777effc70eddcd526dbaac482b723fe7761ec2d7"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-entrypoint-bindings-v1.md",
+      "role": "normative_production_binding_addendum",
+      "sha256": "5b0d82d18cdf3aa11ea448c0183ae877d334b82f1a0cf1f4ccf019e809b9dda9"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/preflight-review-v1.md",
+      "role": "implementation_readiness_preflight",
+      "sha256": "5076072ca189305f01d391a2163fc48278113c73958cca31b407a1356f008a1d"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-canonical-evidence-production-performance-2026-08-16/evidence/pbd-exp-010-mandatory-validation-floor-census-v1.json",
+      "role": "frozen_validation_floor_input",
+      "sha256": "a88a73f5d2f597532761aea0c061e96984ee3f09c777e22a0a94b27013c5dcc5"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-canonical-evidence-production-performance-2026-08-16/evidence/pbd_exp_005_pipeline_duplicate_step2.py",
+      "role": "frozen_production_reference_harness",
+      "sha256": "46eb75927c2d15c3131552542299cf384b65093919fd2ff184ad3ba234dc8a91"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/vcc_exp_001_member_span_inventory.py",
+      "role": "executable_evidence_program",
+      "sha256": "cea4db694f4f1683669aa869b9762197149fddf1aeb96e5303d4b3cf8fa3aba3"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/vcc-exp-001-member-span-inventory-v1.json",
+      "role": "measured_evidence",
+      "sha256": "e82ca696278c7a22e0ff6aea6967240c9dfda53698900b500d6f1f55818cee7e"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/vcc_exp_001b_full_path_inventory.py",
+      "role": "executable_evidence_program",
+      "sha256": "cfa6681f718f6865ee32c9d3b17b5283b15ab938be70d189f3c91d3290cee7f8"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/vcc-exp-001b-full-path-inventory-v2.json",
+      "role": "measured_evidence",
+      "sha256": "5dddd53d0c39beb677178f451df7cbbbf8321def3e83c99098914a65e9eae6ed"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/vcc-exp-001b-structural-reconciliation-v1.json",
+      "role": "measured_evidence",
+      "sha256": "bf4e1de7c332e9a24edf86d66ac43e0d25afd646ef034adfcf47337c979aab98"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/vcc-exp-001b-current-validation-floor-run-v1.json",
+      "role": "measured_evidence",
+      "sha256": "f3aea2572a9270fba0dd6a9cf106ec9d2cb2a9d9bddeffaf92ca6633c51df95a"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/vcc_exp_002_digest_reduction_counterfactual.py",
+      "role": "executable_evidence_program",
+      "sha256": "7195708f09c223517eba649023f9227163cb0da7610437bdbe0225da5d85ffe2"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/vcc-exp-002-digest-reduction-counterfactual-v1.json",
+      "role": "measured_evidence",
+      "sha256": "158dbb14598c1b0073182ca7832a2e452866cbed0bf52ce798af5ac91136b41b"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/vcc_exp_003_security_capacity_attacks.py",
+      "role": "executable_evidence_program",
+      "sha256": "56a8f536d792d26c8ec4a24fa3b8c0ea873dd6b77a84b63cb3e64ae5f8ee9ae8"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/vcc-exp-003-security-capacity-attacks-v1.json",
+      "role": "measured_evidence",
+      "sha256": "2a001807be4f9d43808ded292dce6e3bb102499cebb998f0af10c08d683414f4"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/vcc_exp_003b_compact_index_capacity.py",
+      "role": "executable_evidence_program",
+      "sha256": "b11a94f878768006dbfcedff17553ba60e74504e256cc7cc793815f3de4511f4"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/vcc-exp-003b-compact-index-capacity-v1.json",
+      "role": "measured_evidence",
+      "sha256": "cbd69fc9f8ccf8b9e5fc9e1a4e980ad34c3d393b62fe0ddb4283628825c8631a"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/vcc_exp_004_rollback_equivalence.py",
+      "role": "executable_evidence_program",
+      "sha256": "6c481414521d4c017bdcdfd29c6fb584c3bf1188a59d202ffff42666d0d2c051"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/vcc-exp-004-rollback-equivalence-v1.json",
+      "role": "measured_evidence",
+      "sha256": "c0c138844c5b4099a934a4049cc7470a943c1a383153858e6caf42e5f9ae24d4"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/blocker-remediation-v1.md",
+      "role": "normative_blocker_remediation",
+      "sha256": "52e94e534aadd4c9acc046829f24af11aae9e7ccc0816eb4e79935fcf323da63"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/vcc_exp_005_owner_codec_span_feasibility.py",
+      "role": "executable_owner_codec_feasibility",
+      "sha256": "7bf7b9290047aa919f1eaddec128e0900db97a1e9c622495accfba7d0eb6300a"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/vcc-exp-005-owner-codec-span-feasibility-v1.json",
+      "role": "measured_owner_codec_feasibility",
+      "sha256": "c66d9004522b5d3babc0d3015887647faad60cf77125899d028990f8b1e424db"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-entrypoint-bindings-v2.json",
+      "role": "normative_production_binding_ledger",
+      "sha256": "881ddfd2742344d2ca7163dc71f291c39fb4a79928c8567f64d65e13fe4c00ca"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/validate_production_entrypoint_bindings_v2.py",
+      "role": "production_binding_validator",
+      "sha256": "6f9b5709693ac4b0dac6d53ab9f545996df164b87ea7398dd96714ac17e2a2d4"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-entrypoint-bindings-v2-validation.json",
+      "role": "production_binding_validation_result",
+      "sha256": "02e3174d1da59c141c42837f0e5e9767aeb0107a45ead021564501993790b3ea"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/validate_candidate_manifest_v2.py",
+      "role": "candidate_manifest_validator",
+      "sha256": "4ceb9b434f1e45340fb918f5a576ad2e1f2672fc2c7480c42a72b2e7342994ee"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/blocker-remediation-v2.md",
+      "role": "normative_blocker_remediation_v2",
+      "sha256": "dfb5ec1766732e6d306a1c4be549e63729b3d1979429a5eb99e7780bedf47e9f"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/build_production_entrypoint_bindings_v3.py",
+      "role": "production_binding_ledger_builder_v3",
+      "sha256": "1def3eba15d6cb0d0d44222bb122e2a651dddb0a2df571c601a2bd0f59104d3e"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-entrypoint-bindings-v3.json",
+      "role": "normative_production_binding_ledger_v3",
+      "sha256": "d5dbe3b2eec3274b0ebed1ad26d7c0ec89f184c71d205e6706c1e43f966168e1"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/validate_production_entrypoint_bindings_v3.py",
+      "role": "production_binding_validator_v3",
+      "sha256": "97aea2e763b65d22147db5b877e63df895ba364bae9af2f96c9c1b04478de16c"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-entrypoint-bindings-v3-validation.json",
+      "role": "production_binding_validation_result_v3",
+      "sha256": "eeecbb685b217dc1782f96b01db23ed446034b0c01cf8fa3a43aacf36ff7e0df"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/validate_candidate_manifest_v3.py",
+      "role": "candidate_manifest_validator_v3",
+      "sha256": "682896bf50efa1afb3e0ec43870ea46077bf0365f7aa2f8f2abcc12406d46bfc"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/blocker-remediation-v3.md",
+      "role": "normative_blocker_remediation_v3",
+      "sha256": "1ea4acc5293234486d7752f3db61cfa30f9a67e990f4a817f3aec134e96afdcc"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/vcc_exp_006_complete_owner_seam_proof.py",
+      "role": "complete_owner_seam_proof",
+      "sha256": "9dc015cf3c20b63ce0988a3e61630f00c09c8dd9e68ada913b3c1fa6e4cd8cd0"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/vcc-exp-006-complete-owner-seam-proof-v1.json",
+      "role": "complete_owner_seam_result",
+      "sha256": "ef93821b40b28a6ef0ad1dc6ed08a5cdbf7bbe2e92bca6d676a48083c8826ca0"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-entrypoint-bindings-v4.json",
+      "role": "normative_production_binding_ledger_v4",
+      "sha256": "a5c23390506586a5749bd7fea0cdc823c09f2e5e2f1de5eb55389e941c33e379"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-entrypoint-expected-rows-v1.json",
+      "role": "independent_expected_row_contract",
+      "sha256": "ed7ded292ee6be2f4df44686ab06033a09776db8b02de6b9da903ceb6ed483ef"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/validate_production_entrypoint_bindings_v4.py",
+      "role": "production_binding_validator_v4",
+      "sha256": "4001a72321fefc75f44e1850af6fb44be1fcb43ee3eedb50562918cc200c06a5"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-entrypoint-bindings-v4-validation.json",
+      "role": "production_binding_validation_result_v4",
+      "sha256": "4a0389361a26a5631be26649c23327b8705aaf50fef366220c2d1f9a2db181ad"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/validate_candidate_manifest_v4.py",
+      "role": "candidate_manifest_validator_v4",
+      "sha256": "c340c68839bfb68e803e65fde9a6d81355e76c9e6c12d03c209a7ad76b5f59a9"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/blocker-remediation-v4.md",
+      "role": "normative_blocker_remediation_v4",
+      "sha256": "2b9a01b874a038ad1d5a22495e4ab66b6679dbbe27af20583fc25788080b8a62"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/vcc_exp_007_production_callback_wrapper_proof.py",
+      "role": "production_callback_wrapper_proof",
+      "sha256": "d4052963b28da24001209e7a5e4c62f5e22f2c84c176d15a2797fea05cc3ccec"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/vcc-exp-007-production-callback-wrapper-proof-v1.json",
+      "role": "production_callback_wrapper_result",
+      "sha256": "232be4f8976e1c8c25f917df4e2d27c0eecda7130d61a71575fb8bae53d1e0a7"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-entrypoint-expected-graph-v2.json",
+      "role": "independent_owner_graph_contract",
+      "sha256": "82f28466d417ba447b8d8c3ea6cc558784778becc0ddf1c733708538e14c7112"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-entrypoint-bindings-v5.json",
+      "role": "normative_production_binding_ledger_v5",
+      "sha256": "6cfe7a7266bbaf9bfd78d27dbe0da90ce398cb50137499102c605a22619c926c"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/validate_production_entrypoint_bindings_v5.py",
+      "role": "production_binding_validator_v5",
+      "sha256": "a4fe754cd0efe8ed5f3d2625fa0cfbd5239d1202a58ff0ccd0fef8fe9c5a71a9"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-entrypoint-bindings-v5-validation.json",
+      "role": "production_binding_validation_result_v5",
+      "sha256": "36943d3c64d30dfccfe828dff1bc8b7d201baa7d4075cf28d4ac297d7e9bcf4c"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/validate_candidate_manifest_v5.py",
+      "role": "candidate_manifest_validator_v5",
+      "sha256": "9f1833e3dc04afd2b10a54956c9a871dc1b97edd1d39de8f95b54f6e7570a26e"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/blocker-remediation-v5.md",
+      "role": "normative_blocker_remediation_v5",
+      "sha256": "8502fb68eb18722e9742b5d46a92ad37e8681d87595b8c417bbf8abab801260b"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/vcc_exp_008_stateful_callback_attacks.py",
+      "role": "stateful_callback_attack_proof",
+      "sha256": "7dce6a6f1db64e230123a870f3f5e00ca62e7bf53508695242771e17adc5c52c"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/vcc-exp-008-stateful-callback-attacks-v1.json",
+      "role": "stateful_callback_attack_result",
+      "sha256": "b8f1cd6ba143afc28a453e174a3def43bdc18640c675e54c58a36d905b95fa70"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-owner-oracle-v3.json",
+      "role": "independent_production_owner_oracle_v3",
+      "sha256": "5e70cc6d4eddf2b8de82a950486d9e388cd74479f7b2411fe947fffdc06c421a"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-entrypoint-bindings-v6.json",
+      "role": "source_bound_production_binding_ledger_v6",
+      "sha256": "547d347f6c082451155c3a591a3816845cba7454a1c3efc4ef1219532b9b56c4"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/validate_production_entrypoint_bindings_v6.py",
+      "role": "source_bound_production_binding_validator_v6",
+      "sha256": "93d4681fae8970bf153109d1e850bfff5e69be2a112690cd92ddd25ec6e6b0a9"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-entrypoint-bindings-v6-validation.json",
+      "role": "source_bound_production_binding_validation_v6",
+      "sha256": "79699a0f7ac7c70e12177eb26879bd0a8772a39c8ba6dae88f0394927376b49b"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/validate_candidate_manifest_v6.py",
+      "role": "candidate_manifest_validator_v6",
+      "sha256": "a23a7404a6faf5958c75999b47d62b852a097ba63c4bf4fd015488b897e10655"
+    },
+    {
+      "path": "memorii/memorii/core/provider/service.py",
+      "role": "frozen_production_source_evidence",
+      "sha256": "846b487d1b2ebc37f02b377ec2f37b291b71dd1cb1b68480d6545eeb8d9ab831"
+    },
+    {
+      "path": "memorii/memorii/core/provider/factory.py",
+      "role": "frozen_production_source_evidence",
+      "sha256": "1987d2d6b78e52ef46ab4294394f3d6421dbe6bcbd54fd8cb0c8f9d5842b605d"
+    },
+    {
+      "path": "memorii/memorii/core/filesystem_storage/bundle.py",
+      "role": "frozen_production_source_evidence",
+      "sha256": "91c7676ede308ad1f33d27504a7cf328f0a6ed55194b6aeab701503207fa989d"
+    },
+    {
+      "path": "memorii/memorii/integrations/hermes_provider.py",
+      "role": "frozen_production_source_evidence",
+      "sha256": "36f72ec99822bf7d6ca49f3ec25a4addc472f722b6b3a43d18598e1218565648"
+    },
+    {
+      "path": "memorii/memorii/core/semantic_ingestion/canonical_evidence_arena.py",
+      "role": "frozen_production_source_evidence",
+      "sha256": "379fe056ad6d9b171851a6e596f4c9ca879920c8fa337239a9fee406baddabb9"
+    },
+    {
+      "path": "memorii/memorii/core/provider/ingestion.py",
+      "role": "frozen_production_source_evidence",
+      "sha256": "f02eb0a26028a551cfd88585b82f21ff48598bc9521a18f92182c486022d0885"
+    },
+    {
+      "path": "memorii/memorii/core/semantic_ingestion/contracts.py",
+      "role": "frozen_production_source_evidence",
+      "sha256": "c86451330398f3649243dd928a31cc6f7ba01985b9387a146315c8a6f681cfcb"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/ingestion_contracts.py",
+      "role": "frozen_production_source_evidence",
+      "sha256": "af1c7312f4f970e66bfe1bf06e151837a34656bad102f1ee2f4ec2ef63451bcc"
+    },
+    {
+      "path": "memorii/memorii/core/semantic_ingestion/persistence.py",
+      "role": "frozen_production_source_evidence",
+      "sha256": "ce9bafa874b9cf3a00650821680ab73dcf35fd4174b6ab8e7f48fedd138247fd"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/atomic_store.py",
+      "role": "frozen_production_source_evidence",
+      "sha256": "f09b5d2551234deef12a1bbac801c2aa62d937aff83bfd2f21a3970d6518e9da"
+    },
+    {
+      "path": "memorii/memorii/core/semantic_ingestion/source_normalization_execution.py",
+      "role": "frozen_production_source_evidence",
+      "sha256": "f0d0f926277f1a65f57a126b0c69f816243b1bd2a21625a39508a4c77bffe6f6"
+    },
+    {
+      "path": "memorii/memorii/core/semantic_ingestion/production_capture.py",
+      "role": "frozen_production_source_evidence",
+      "sha256": "ba4ac049e526d96dc561a564e3c11ca15f2a4f1c1f922d4607594bea9d751338"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/blocker-delta-review-round-5.md",
+      "role": "independent_delta_review_round_5",
+      "sha256": "29327406fbd26a149eb57c9e1dea52ca1423adbb5c959f508b74c06540c4074b"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/blocker-remediation-v6.md",
+      "role": "normative_blocker_remediation_v6",
+      "sha256": "dcd8578fb2150fc53ab5e2577bdd04829d5479688d523f0e9dd44e6252ac7c40"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-owner-oracle-v4.json",
+      "role": "independent_production_owner_oracle_v4",
+      "sha256": "cd70b2cfae73e61d9dee71f77e0275c2753eb63b21ba971d036b1343ca8b1725"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-entrypoint-bindings-v7.json",
+      "role": "closed_family_production_binding_ledger_v7",
+      "sha256": "b8159ad0b573aef606688310cd2cf93148234f2bf061dcbf46859f52ab4d1544"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/validate_production_entrypoint_bindings_v7.py",
+      "role": "closed_family_production_binding_validator_v7",
+      "sha256": "87845172a821fc1b5c9256d3fe5852f8843b7beea5c41e636f1a100059b42642"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-entrypoint-bindings-v7-validation.json",
+      "role": "closed_family_production_binding_validation_v7",
+      "sha256": "0a199c94de072d50d2cd2eb277eb0ca3efdc81f4a850810b0466f23c149623b2"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/validate_candidate_manifest_v7.py",
+      "role": "candidate_manifest_validator_v7",
+      "sha256": "0cc890481675bbdb6548d75890b9d50d89dd30a186ea97853e5d02f893b06355"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/blocker-delta-review-round-6.md",
+      "role": "independent_delta_review_round_6",
+      "sha256": "4f9acda2e5899a111f8ee79a18acc5600635c67378ea15714fc4ecb13f62498d"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/blocker-remediation-v7.md",
+      "role": "normative_blocker_remediation_v7",
+      "sha256": "1464cf88bc7c29702129b95bfce888d21991dcbc88d49dc02b0055558cb42670"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-owner-oracle-v5.json",
+      "role": "independent_production_owner_oracle_v5",
+      "sha256": "901baae900d63c740c01d3a7a8aa67e71a8db4819c65e76032be1500ba2961e8"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-entrypoint-bindings-v8.json",
+      "role": "composition_chain_binding_ledger_v8",
+      "sha256": "af3231249b2565c6a466091217d3eacd19a858dc08026519527a9bcfe90f81b7"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/validate_production_entrypoint_bindings_v8.py",
+      "role": "composition_chain_binding_validator_v8",
+      "sha256": "b7b4f25d9fe2e059d2edcf1e0dcafd0c21a1f3c9c5bdb405a9f33f97eac38138"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-entrypoint-bindings-v8-validation.json",
+      "role": "composition_chain_binding_validation_v8",
+      "sha256": "703963dc54223050692511066c2e658f0139676de14d55dd3b84c0fc941c19f2"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/validate_candidate_manifest_v8.py",
+      "role": "candidate_manifest_validator_v8",
+      "sha256": "1614350030fdc95f95a9d0c6773c9a44d09a6ce95db083d45ced368d81288675"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/blocker-delta-review-round-7.md",
+      "role": "independent_delta_review_round_7",
+      "sha256": "16a0e15011cdec840275a7885a8ebc584d1099b7bc01efd31cdf08bfbc6d830c"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/blocker-remediation-v8.md",
+      "role": "normative_blocker_remediation_v8",
+      "sha256": "7aefd949ca7e33c5a2e31e1ae96d9137f587e507bb20de13ba68c150e5cd8570"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-owner-oracle-v6.json",
+      "role": "independent_production_owner_oracle_v6",
+      "sha256": "0ba6e98cd183f274dbb4eeaff61f755259792155bf4ef88066b8ff47f2888442"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-entrypoint-bindings-v9.json",
+      "role": "exact_ast_binding_ledger_v9",
+      "sha256": "dde2c3b67c063beec5ad47f68af51b61cca3d33e7201b6fff97c8f400826c93d"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/validate_production_entrypoint_bindings_v9.py",
+      "role": "exact_ast_binding_validator_v9",
+      "sha256": "9e0f631c15cc0b375589088bb992347e9c6b872c046ce64ab7fcaf7cf2832b69"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-entrypoint-bindings-v9-validation.json",
+      "role": "exact_ast_binding_validation_v9",
+      "sha256": "3e8cbeaeb72ad75236bf6390b36e8e9ba0ddf5d81feb12b9f95d8663a544f952"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/validate_candidate_manifest_v9.py",
+      "role": "candidate_manifest_validator_v9",
+      "sha256": "f8539772fc714938c85e06bfc4400b9decb122fcb36759dba4edfb7083b68ecc"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/blocker-delta-review-round-8.md",
+      "role": "independent_delta_review_round_8",
+      "sha256": "59ef6f9e51e7f04ff703e666a6cb4d9b7c0940c47f4b50cca8e546be20cda6eb"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/blocker-remediation-v9.md",
+      "role": "normative_blocker_remediation_v9",
+      "sha256": "38ae1051d586ff251f45adae5536f06b38e114b0780cb863973d3257f8df1537"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-owner-oracle-v7.json",
+      "role": "independent_production_owner_oracle_v7",
+      "sha256": "a50788d8645cb9703b12b8d3c0edc6d56e824ae80a6bcd78fd6d2bcaf9122bb8"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-entrypoint-bindings-v10.json",
+      "role": "runtime_pinned_owner_ledger_v10",
+      "sha256": "1dc158510065a96a652edff89228a18cfde764ec9249a6b644f72b96a11501e6"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/validate_production_entrypoint_bindings_v10.py",
+      "role": "runtime_pinned_owner_validator_v10",
+      "sha256": "7cacb9151ca5648937f1de92b932daee6bebe555fa79bb3f0a59e1d5ceb364a8"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-entrypoint-bindings-v10-validation.json",
+      "role": "runtime_pinned_owner_validation_v10",
+      "sha256": "982a8240b02e557732bc3c114522fe50ecbecfda2a27058670c03689816e2a36"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/validate_candidate_manifest_v10.py",
+      "role": "candidate_manifest_validator_v10",
+      "sha256": "4d67277cfdaf67fff3bf6798dcd5294ae86bd88a8544fe9d276ea63eb35e757b"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/blocker-delta-review-round-9.md",
+      "role": "targeted_delta_review_round_9",
+      "sha256": "73ade4913a02d6f3ee8bcb623651eb6d2ed20efb23c1d87e29157e087d026b4b"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/blocker-remediation-v10.md",
+      "role": "normative_blocker_remediation_v10",
+      "sha256": "b34204ecfd586c05e2ebc050dad6d4b93d6e3de908701e32f489fe009ab1d953"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-entrypoint-bindings-v11.json",
+      "role": "normative_production_binding_ledger_v11",
+      "sha256": "433fe52b96a45d3e3f3c458f1ad9549317b38d3ed04630f5f3ee95d9bc0f1ab8"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-owner-oracle-v8.json",
+      "role": "independent_production_owner_oracle_v8",
+      "sha256": "d13450614a081c80096057738af7f382efa815739df77545f4847aee08a5cf4a"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/validate_production_entrypoint_bindings_v11.py",
+      "role": "production_binding_validator_v11",
+      "sha256": "4df1e42dcaa6e39d441cbd623b9889c013906078194741aee66ab738da4e819a"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-entrypoint-bindings-v11-validation.json",
+      "role": "production_binding_validation_result_v11",
+      "sha256": "4b96ae315c0494e65fc2fd889648740926a7a54b61a3373fcfd195ada0a8f0a8"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/validate_candidate_manifest_v11.py",
+      "role": "candidate_manifest_validator_v11",
+      "sha256": "799b2691d6fbabbc7507456382d461ea842f558d82c29734707403ea8e5ca2b6"
+    }
+  ]
+}

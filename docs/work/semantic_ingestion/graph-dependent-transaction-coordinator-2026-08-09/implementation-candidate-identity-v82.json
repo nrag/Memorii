@@ -1,0 +1,43 @@
+{
+  "artifact_kind": "implementation_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_v3_m31_final_closure_disposition",
+  "semantic_predecessor": "design-candidate-identity-v76.json",
+  "implementation_predecessor": "implementation-candidate-identity-v81.json",
+  "base_revision": "bd1ebf0",
+  "tree_state": "clean_except_workplan_closure_edits",
+  "status_list_sha256": "ef923ca7bcc55bfef74437f3e85aca33829faf5d2a6178aacaf6f62887b09d41",
+  "delta_scope": [
+    "closure disposition only: no production, test, workflow, or persisted byte changed by this operation",
+    "re-pin all v81 artifacts at HEAD bd1ebf0 after dispositioning three post-freeze drifts as non-semantic",
+    "selector drift 88516a2 re-points pytest selector paths only; requirement_ids rule, 200 rows, and 352-tuple coverage unchanged",
+    "workflow drift touched no byte of the bootstrap-graph-transaction-boundary job",
+    "architecture doc drift is the reviewed e273f1a/0d928fa renumbering cascade closed at 7c5152b"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "f4085b99c15eeceeb0975e4cac5618e52e48c8b72c4c5a393807afbbe8ecc1a0",
+    "docs/work/semantic_ingestion/implementation.plan.md": "2be73996878d897e412f23db6778888d8c2aacc749f9cbd59eb70b16d0b1b84a",
+    "docs/work/semantic_ingestion/resume.md": "934510c312dcf47a6e86fb9eb60d4efeae295b0a7f1f4152db55ad3d9a41db96",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/implementation.plan.md": "3107dd256e2970a2423ab7f948cff5a3b83b1f26009516d34a5c46356e1acbec",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/testing.plan.md": "381bb071eb8c1e3ac201c191f75cebed1e9fe49310d83b540cc3e5fde2ab7212",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "838d36c8e8865ea9610e8a9bf5b60e855c342005062f1e475f9cf62b7a8baf98",
+    "docs/work/semantic_ingestion/bootstrap-graph-authority-unavailable-2026-08-11/debug.plan.md": "b9e435febd05c620e94a498553a5ac16d7c90abd23244bbcd9fb679afce6e15b",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/implementation-candidate-identity-v80.json": "c964112f3ff9854ab6d6c8e97e2d8bcebf6969e893a810b8044047fb36fcffdb",
+    ".github/workflows/pr-gates.yml": "1786056ee48df2373fd3da8c7384257477715e50bcf17a61c2b5176d95078fb0",
+    "memorii/tests/ci/deterministic-job-owners.json": "26754d03417b6ceb47882b202ec3e64a6e434c7d3669f019536221b8fca738f3",
+    "memorii/memorii/tools/bootstrap_graph_transaction_selector.py": "333eff1af003ae096f0330152c97719843c819cb2705f713f302e773d5a005a0",
+    "memorii/memorii/tools/identity_hygiene.py": "07702e7d10ade8c415e83aefcb06eca467bf3b83230eb2ea339793478b0032a7"
+  },
+  "evidence": [
+    "v81 hash ledger: 8/11 byte-identical; drift dispositioned in the Final Closure Record 2026-09-04",
+    "regenerated selector manifest validation plus selector tests: 11 passed in 8.03s",
+    "static tooling config budget-ledger pin: 18 passed in 30.96s",
+    "identity hygiene mutation suite: 150 passed in 36.66s",
+    "hosted graph-boundary CI evidence recorded by PR #116 executed-CI promotion at bd1ebf0",
+    "v80 specification and v78 correctness/test reviews report empty remaining arrays"
+  ],
+  "evidence_maturity": "final_closure_disposition_recorded",
+  "remaining_validated_p1_p2": [],
+  "remaining_blocks_approval": [],
+  "remaining_changes_required": []
+}

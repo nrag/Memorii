@@ -38,8 +38,9 @@ class _EvolutionIngestionHarness:
         *,
         defer_assertions: bool = False,
         authenticated_ingress: object | None = None,
+        canonical_evidence_arena: object | None = None,
     ) -> tuple[ProviderSyncResult, EvolutionOperation | None, MemoryEvolutionResult | None]:
-        del authenticated_ingress
+        del authenticated_ingress, canonical_evidence_arena
         result, source_records = self._memory_plane.prepare_provider_event(event)
         if not result.transcript_ids:
             if source_records:
@@ -108,8 +109,9 @@ class MemoryEvolutionProviderHarness(ProviderMemoryService):
         event: ProviderEvent,
         *,
         authenticated_host_ingress: object | None,
+        canonical_evidence_arena: object,
     ) -> ProviderSyncResult:
-        del authenticated_host_ingress
+        del authenticated_host_ingress, canonical_evidence_arena
         result, _, evolution_result = self._provider_ingestion.ingest(
             event,
             defer_assertions=event.operation.value in {"chat_user_turn", "chat_assistant_turn"},

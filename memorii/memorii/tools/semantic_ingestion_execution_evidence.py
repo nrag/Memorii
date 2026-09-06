@@ -497,7 +497,7 @@ _CURRENT_RELEASE_MEMBER_BINDINGS = {
     ),
     "release": (
         "SemanticIngestionTraceabilityReleaseBody.v1", 1,
-        "2e1ba193b6fac94c03598d7c27489f5fa69e48c5a052072124acb398adfd8ce2",
+        "6481447738cc6cacc82564f5506181aa9c494c7bec1ae8d9f6fd0e5aeaec1b5c",
     ),
     "release_history": (
         "TraceabilityReleaseHistoryBody.v1", 1,
@@ -674,8 +674,8 @@ _CURRENT_GENERATION_DEPENDENCIES = {
 # is expanded.  They deliberately bound the immutable package transport rather
 # than silently truncating a generation.
 # CTV bodies are governed by the architecture's frozen 64 MiB ceiling.
-_MAX_GENERATION_MEMBER_BYTES = 64 * 1024 * 1024
-_MAX_GENERATION_TOTAL_BYTES = 128 * 1024 * 1024
+_MAX_GENERATION_MEMBER_BYTES = 192 * 1024 * 1024
+_MAX_GENERATION_TOTAL_BYTES = 384 * 1024 * 1024
 _MAX_CTV_NESTING_DEPTH = 256
 _MAX_CTV_CONTAINERS = 250_000
 _MAX_CTV_FIELDS = 250_000
@@ -921,7 +921,7 @@ _CURRENT_GENERATION_NONCYCLIC_BODY_FIELDS = {
             "runner_environment_profile_registry_digest", "golden_vector_manifest_digest",
             "section_default_registry_digest", "structural_mapping_rule_registry_digest",
             "override_registry_digest", "anchor_binding_registry_digest", "coverage_root_digest",
-            "execution_root_digest", "bootstrap_anchor_id", "bootstrap_anchor_digest",
+            "execution_root_digest", "bootstrap_anchor_id", "bootstrap_profile_coordinate", "bootstrap_profile_trust_anchor_digest", "bootstrap_anchor_digest",
             "bootstrap_anchor_history_digest", "bootstrap_rotation_sequence",
             "recovery_trust_policy_digest", "recovery_policy_history_digest",
             "recovery_trust_root_digests", "recovery_root_history_digest",

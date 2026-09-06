@@ -1,0 +1,26 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_transaction_v3_same_generation_authority_projection",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree",
+  "status_list_sha256": "2c4765e6b18e0c0bdec5fe48e90300a6b472d68c104f5235b37f4f6df3881635",
+  "review_scope": [
+    "same-generation persisted graph snapshot and read-set authority",
+    "replayable execution-policy and capability-registry authority",
+    "prepared-source terminal authority and derived terminal capability bindings",
+    "ordinary-root composition, recovery, absence, migration, rollback, and attack closure"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "159b490f2390b637559be45f4b81986c1fb280a7eaf9ebb727b19266e5978494",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "37ed69013e6072cac29a1d85ac1f581a9b52762fa2ecb5a9cee75dcd3f658603",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "d507332444d447803da8fa06d95eb8389dd9aa682cdc959707c21ee5c511d625"
+  },
+  "checks": [
+    "git diff --check",
+    "binding and candidate JSON parse",
+    "authority-projection source, generation, root, and recovery inventory assertions",
+    "two exact artifact and status identity passes"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

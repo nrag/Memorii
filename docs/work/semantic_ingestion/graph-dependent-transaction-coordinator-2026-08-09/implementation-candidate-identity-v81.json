@@ -1,0 +1,44 @@
+{
+  "artifact_kind": "implementation_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_v3_m31_measured_gate_closure",
+  "semantic_predecessor": "design-candidate-identity-v76.json",
+  "implementation_predecessor": "implementation-candidate-identity-v80.json",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree_stable",
+  "status_list_sha256": "ef923ca7bcc55bfef74437f3e85aca33829faf5d2a6178aacaf6f62887b09d41",
+  "delta_scope": [
+    "retain v78 runtime persistence composition and recovery bytes unchanged",
+    "retain approved v80 active-state governance correction",
+    "permit graph requirement coordinates only in the canonical selector manifest requirement_ids traceability field",
+    "update the dedicated exhaustive graph shard from a stale 2100-second budget to a measured 4200-second budget with a 90-minute workflow timeout and 1200 seconds headroom",
+    "preserve all 200 selectors 352 traceability tuples warnings roots backends assertions and aggregate receipt validation"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "83a9fe92adde7cb45072c8d2b8aa43c0eaa68df456df0c4aab35f9002af14364",
+    "docs/work/semantic_ingestion/implementation.plan.md": "d6ec43e0eb965433868d6026d25dfe152207540c07b536b9d77b6b8c84740362",
+    "docs/work/semantic_ingestion/resume.md": "004bed3ab56af0a86eb77794a64f0b4c84c4ee41ee5bdd1f1c93140723f4d291",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/implementation.plan.md": "9bb882d5e9f08106f5176ae431bee44f15485698540b5c0d5fe9ff8a1be01a75",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/testing.plan.md": "381bb071eb8c1e3ac201c191f75cebed1e9fe49310d83b540cc3e5fde2ab7212",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "838d36c8e8865ea9610e8a9bf5b60e855c342005062f1e475f9cf62b7a8baf98",
+    "docs/work/semantic_ingestion/bootstrap-graph-authority-unavailable-2026-08-11/debug.plan.md": "b9e435febd05c620e94a498553a5ac16d7c90abd23244bbcd9fb679afce6e15b",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/implementation-candidate-identity-v80.json": "c964112f3ff9854ab6d6c8e97e2d8bcebf6969e893a810b8044047fb36fcffdb",
+    ".github/workflows/pr-gates.yml": "7044e4587b389f79f56fdb8c1a55ccd9324c05f256b1acaa9f4e57fec2385311",
+    "memorii/tests/ci/deterministic-job-owners.json": "26754d03417b6ceb47882b202ec3e64a6e434c7d3669f019536221b8fca738f3",
+    "memorii/memorii/tools/bootstrap_graph_transaction_selector.py": "ed836efe6d5b6ab06520c7d95356572896d60d7f6114e7bd07422d3efe19a58f",
+    "memorii/memorii/tools/identity_hygiene.py": "07702e7d10ade8c415e83aefcb06eca467bf3b83230eb2ea339793478b0032a7"
+  },
+  "evidence": [
+    "direct memory manifest shard: 25 passed in 3468.59s",
+    "selector manifest and workflow topology tests: 11 passed in 5.84s",
+    "dedicated job owner and workflow timeout contract: 1 passed in 0.16s",
+    "identity hygiene mutation suite: 150 passed in 26.62s",
+    "repository field-aware identity scan passed",
+    "scoped Ruff Python compilation JSON parsing and git diff check passed",
+    "v80 specification review and v78 correctness/test reviews report empty remaining arrays"
+  ],
+  "evidence_maturity": "runtime_reviewed_and_test_gate_delta_frozen",
+  "remaining_validated_p1_p2": [],
+  "remaining_blocks_approval": [],
+  "remaining_changes_required": []
+}

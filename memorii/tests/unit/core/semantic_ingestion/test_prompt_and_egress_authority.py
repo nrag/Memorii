@@ -4,6 +4,7 @@ from multiprocessing import get_context
 from pathlib import Path
 
 import pytest
+from memorii.core.memory_evolution.models import SourceObservation, SourceType
 from memorii.core.prompts.registry import PromptRegistry
 from memorii.core.prompts.runtime_manifest import PromptOwner
 from memorii.core.semantic_ingestion.contracts import (
@@ -15,6 +16,8 @@ from memorii.core.semantic_ingestion.contracts import (
     SourceAuthority,
     SourceAuthorityEvidence,
     TemporalPolicySnapshot,
+    TextPreparationPolicy,
+    TextPreparationRequest,
     TimeInterval,
     TrustPolicySnapshot,
 )
@@ -27,8 +30,14 @@ from memorii.core.semantic_ingestion.egress import (
     SignedEgressPolicyCommand,
     verify_current_egress,
 )
-from memorii.core.semantic_ingestion.pipeline import SemanticIngestionPipeline
 from memorii.core.semantic_ingestion.prompt_authority import SemanticPromptAuthority
+from memorii.core.semantic_ingestion.source_preparation import (
+    InMemoryPreparedSourceRepository,
+    TextPreparationService,
+)
+from tests.fixtures.semantic_ingestion.clean_room_request_fixture import (
+    build_prepared_source_authority,
+)
 
 
 class _Verifier:
@@ -114,6 +123,39 @@ def _source_authority(binding: ProviderEgressBinding) -> SourceAuthorityEvidence
     )
 
 
+def _prepared_source_repository(
+    binding: ProviderEgressBinding, source_text: str
+) -> InMemoryPreparedSourceRepository:
+    repository = InMemoryPreparedSourceRepository()
+    policy = TextPreparationPolicy.create(
+        max_segment_characters=4096,
+        supported_languages=("en",),
+        segmentation_algorithm=(
+            "memorii.semantic-ingestion.safe-sentence-first-paragraph-bounded.v1"
+        ),
+        context_window_algorithm=(
+            "memorii.semantic-ingestion.owned-partition-whole-boundary-context.v1"
+        ),
+    )
+    observation = SourceObservation(
+        source_id=binding.source_id,
+        text=source_text,
+        source_type=SourceType.USER,
+        source_digest=binding.source_digest,
+        delivery_key_digest=sha256(b"prompt-egress-test-delivery").hexdigest(),
+    )
+    TextPreparationService(
+        producer=lambda request: build_prepared_source_authority(
+            source_id=request.observation.source_id,
+            source_digest=request.observation.source_digest or "",
+            source_text=request.observation.text,
+            preparation_policy=request.policy,
+        ),
+        repository=repository,
+    ).prepare_and_publish(TextPreparationRequest(observation=observation, policy=policy))
+    return repository
+
+
 class _Authorization:
     def __init__(self, binding: ProviderEgressBinding) -> None:
         self.binding = binding
@@ -188,15 +230,6 @@ def test_signed_egress_lifecycle_cas_and_zero_wire_on_revocation():
         repository.apply(_command(action="rotate", expected_revision=0, decision=decision, command_id="stale"), control_plane_principal="admin")
     repository.apply(_command(action="revoke", expected_revision=1, command_id="revoke"), control_plane_principal="admin")
     assert verify_current_egress(repository, binding=binding, at=at) is None
-    transport = _CaptureTransport()
-    source = "source"
-    outcome = SemanticIngestionPipeline(transport=transport).run(
-        operation_id="operation-a", source_id=binding.source_id, source_digest=binding.source_digest,
-        source_text=source, policy_bundle=_bundle(at), registered_prompt=_prompt(source),
-        egress_binding=binding, egress_policy_provider=repository,
-    )
-    assert outcome.status == "evidence_only"
-    assert transport.requests == []
 
 
 def test_jsonl_egress_repository_is_process_safe_reopenable_and_idempotent(
@@ -292,128 +325,9 @@ def test_jsonl_egress_repository_fails_closed_on_malformed_reopen(tmp_path: Path
         repository.current(binding=_binding(), at=datetime(2026, 1, 2, tzinfo=UTC))
 
 
-@pytest.mark.parametrize("field, value", [("tenant_id", "tenant-b"), ("source_id", "source-b"), ("segment_id", "segment-b")])
-def test_exact_authenticated_binding_substitution_has_zero_wire(field: str, value: str):
-    at = datetime(2026, 1, 2, tzinfo=UTC)
-    binding = _binding()
-    decision = ProviderEgressDecision.create(
-        binding=binding, policy_id="policy-a", policy_revision=1, policy_fingerprint="b" * 64,
-        expires_at=at + timedelta(hours=1),
-    )
-    repository = InMemoryEgressPolicyRepository(signature_verifier=_Verifier(), lifecycle_verifier=_Lifecycle())
-    repository.apply(_command(action="install", expected_revision=0, decision=decision), control_plane_principal="admin")
-    transport = _CaptureTransport()
-    source = "source"
-    outcome = SemanticIngestionPipeline(transport=transport).run(
-        operation_id="operation-a", source_id=binding.source_id, source_digest=binding.source_digest,
-        source_text=source, policy_bundle=_bundle(at), registered_prompt=_prompt(source),
-        egress_binding=binding.model_copy(update={field: value}), egress_policy_provider=repository,
-    )
-    assert outcome.status == "evidence_only"
-    assert transport.requests == []
 
 
-def test_policy_rotation_between_repair_attempts_blocks_second_wire_call():
-    at = datetime(2026, 1, 2, tzinfo=UTC)
-    binding = _binding()
-    decision = ProviderEgressDecision.create(
-        binding=binding, policy_id="policy-a", policy_revision=1, policy_fingerprint="b" * 64,
-        expires_at=at + timedelta(hours=1),
-    )
-
-    class _RotateAfterFirstRead:
-        def __init__(self) -> None:
-            self.reads = 0
-
-        def current(self, *, binding: ProviderEgressBinding, at: datetime):
-            self.reads += 1
-            return decision if self.reads == 1 else None
-
-    provider = _RotateAfterFirstRead()
-    transport = _CaptureTransport()
-    source = "source"
-    outcome = SemanticIngestionPipeline(transport=transport).run(
-        operation_id="operation-a", source_id=binding.source_id, source_digest=binding.source_digest,
-        source_text=source, policy_bundle=_bundle(at), registered_prompt=_prompt(source),
-        egress_binding=binding, egress_policy_provider=provider,
-        current_time_provider=lambda: at,
-        source_authority_evidence=_source_authority(binding),
-        authorization_read_set_provider=_Authorization(binding),
-    )
-    assert outcome.status == "evidence_only"
-    assert outcome.attempt_count == 1
-    assert len(transport.requests) == 1
 
 
-def test_server_time_expiry_before_request_has_zero_wire() -> None:
-    arbitration_at = datetime(2026, 1, 2, tzinfo=UTC)
-    binding = _binding()
-    decision = ProviderEgressDecision.create(
-        binding=binding,
-        policy_id="policy-a",
-        policy_revision=1,
-        policy_fingerprint="b" * 64,
-        expires_at=arbitration_at + timedelta(hours=1),
-    )
-    repository = InMemoryEgressPolicyRepository(
-        signature_verifier=_Verifier(), lifecycle_verifier=_Lifecycle()
-    )
-    repository.apply(
-        _command(action="install", expected_revision=0, decision=decision),
-        control_plane_principal="admin",
-    )
-    transport = _CaptureTransport()
-    outcome = SemanticIngestionPipeline(transport=transport).run(
-        operation_id="operation-a",
-        source_id=binding.source_id,
-        source_digest=binding.source_digest,
-        source_text="source",
-        policy_bundle=_bundle(arbitration_at),
-        registered_prompt=_prompt("source"),
-        egress_binding=binding,
-        egress_policy_provider=repository,
-        current_time_provider=lambda: arbitration_at + timedelta(hours=2),
-        source_authority_evidence=_source_authority(binding),
-        authorization_read_set_provider=_Authorization(binding),
-    )
-    assert outcome.status == "evidence_only"
-    assert outcome.attempt_count == 0
-    assert transport.requests == []
 
 
-def test_server_time_expiry_after_response_stops_before_repair() -> None:
-    arbitration_at = datetime(2026, 1, 2, tzinfo=UTC)
-    binding = _binding()
-    decision = ProviderEgressDecision.create(
-        binding=binding,
-        policy_id="policy-a",
-        policy_revision=1,
-        policy_fingerprint="b" * 64,
-        expires_at=arbitration_at + timedelta(hours=1),
-    )
-    repository = InMemoryEgressPolicyRepository(
-        signature_verifier=_Verifier(), lifecycle_verifier=_Lifecycle()
-    )
-    repository.apply(
-        _command(action="install", expected_revision=0, decision=decision),
-        control_plane_principal="admin",
-    )
-    times = iter((arbitration_at, arbitration_at + timedelta(hours=2)))
-    transport = _CaptureTransport()
-    outcome = SemanticIngestionPipeline(transport=transport).run(
-        operation_id="operation-a",
-        source_id=binding.source_id,
-        source_digest=binding.source_digest,
-        source_text="source",
-        policy_bundle=_bundle(arbitration_at),
-        registered_prompt=_prompt("source"),
-        egress_binding=binding,
-        egress_policy_provider=repository,
-        current_time_provider=lambda: next(times),
-        source_authority_evidence=_source_authority(binding),
-        authorization_read_set_provider=_Authorization(binding),
-    )
-    assert outcome.status == "evidence_only"
-    assert outcome.reason_codes == ("authorization_changed_after_response",)
-    assert outcome.attempt_count == 1
-    assert len(transport.requests) == 1

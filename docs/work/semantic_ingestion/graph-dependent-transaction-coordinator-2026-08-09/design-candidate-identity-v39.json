@@ -1,0 +1,26 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_transaction_v3_sealed_final_stage_evidence",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree",
+  "status_list_sha256": "1b75f3a810e43ff85f51342c6e53403eb28d090b30d082df7e2f912873686ee7",
+  "review_scope": [
+    "DREV-046 sealed typed final-stage evidence input",
+    "dedicated coordinator checkpoint and reload ownership",
+    "normal partial-replan and terminal-before-planning evidence closure"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "519178dfb0304ec76cfea95b67369db3b1b6e6f5c4a246df1b8fd4020b05b6c1",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "bc9988bff27983ce7a46c824c5317afa314e5d623a9a9fd4167b97820dbf4333",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "f9e44cba19e1d17809cdced0973e9f922cf24c223d4e82c2763b81079eda1c7a"
+  },
+  "checks": [
+    "git diff --check",
+    "binding and identity JSON parse",
+    "final-stage evidence schema signature and checkpoint assertions",
+    "nine terminal member kinds preserved",
+    "two exact artifact and status identity passes"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

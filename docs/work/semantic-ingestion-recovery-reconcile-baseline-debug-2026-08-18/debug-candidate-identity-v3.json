@@ -1,0 +1,16 @@
+{
+  "format": "memorii.debug-candidate-identity.v3",
+  "supersedes": ["debug-candidate-identity-v1.json", "debug-candidate-identity-v2.json"],
+  "head_commit": "b9daf00a0e6956e51106756f1baaf23190c688bb",
+  "scope_sha256": {
+    "memorii/memorii/core/provider/service.py": "7dae2d44c56bc7a904137e9976080f6b44264683e38850bc9b4fb58aac5244b3",
+    "memorii/memorii/core/semantic_ingestion/capability.py": "9026cc5399f47151f65b168bf1aa1fb89820d68b6359187a031980ec40b0f948",
+    "memorii/tests/unit/core/semantic_ingestion/test_semantic_provider_composition.py": "dbd48d120ba831f6542fd5d79626fc7a4650ece933d929b88a4e7b9a86787fa5",
+    "docs/work/semantic-ingestion-recovery-reconcile-baseline-debug-2026-08-18/debug.plan.md": "7132847934212c8aa9bbd19adee4a8b4d4e3352b43ae114614633e67d5fd8e07",
+    "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/milestones/recovery-reconciliation-fresh-owner-propagation.md": "bee929f4efa49f67bb83e765d01fc75428aa1ef2cd60d5531c818ecc3fdd328b",
+    "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/build_production_entrypoint_bindings_v13.py": "bb768c9ba6c8bd9aac4d1755753c35ce9813ef01687700ec8d6c2b7a5b10a0de",
+    "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/validate_production_entrypoint_bindings_v13.py": "5741e1e180e1d590b040f9e6ce662fbf175e641bbc57e7ab46aa24517e7530e8",
+    "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-entrypoint-bindings-v13.json": "933e1642efe44a3f3e38be139c8240848f5811ed3f4bc6bede7d83ff83ac7f1b",
+    "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-entrypoint-bindings-v13-validation.json": "aa80bf3b04968d4d15db49990a7ebd4950bbcd8d4f899f8b9be847faddb993a3"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_transaction_v3_pre_cas_group_evidence",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree",
+  "status_list_sha256": "1b75f3a810e43ff85f51342c6e53403eb28d090b30d082df7e2f912873686ee7",
+  "review_scope": [
+    "complete typed pre-CAS validation blocker and proof evidence",
+    "compiler plan attempt and checkpoint evidence joins",
+    "strict separation from post-CAS final-stage evidence"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "a66e3f965b9f1b4c615ae2904665e79c62f8b8e85a4a6847b189c0df357e1988",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "29762ccdcd8874b4f41767c57c6560a05bbc0543bf6e9d1b99c15384678a51cd",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "d9d21cf85af96884060f06f2b7b0cd8f67f4f6df417af548c0058ffc74aa4b91"
+  },
+  "checks": [
+    "git diff --check",
+    "binding and identity JSON parse",
+    "compiler attempt and plan-checkpoint evidence assertions",
+    "pre-CAS versus post-CAS evidence separation",
+    "two exact artifact and status identity passes"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

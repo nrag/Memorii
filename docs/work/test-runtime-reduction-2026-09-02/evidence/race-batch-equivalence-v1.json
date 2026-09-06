@@ -1,0 +1,136 @@
+{
+  "batch_mode_seconds": 2347.6,
+  "byte_identical": false,
+  "elements": 200,
+  "mismatches": [
+    {
+      "batch_sha256": "4b8e428376760c2a138a5feb9c4c97852c05a0719d9567359dc4638213dcb27f",
+      "element": "initial_attempt-direct-first",
+      "single_sha256": "b14937604f7aed0c0ff2813a22258e0f588c12954bf119b227774cab571f6ec0"
+    },
+    {
+      "batch_sha256": "e53f879aec81afc7cfc83faebb5a821eac485e0989b191cc9bc59c92a9395b92",
+      "element": "reused_committed-direct-first",
+      "single_sha256": "4f2876a86b69c2081016b5d13c128986830126241fa7be0ca4607911d087dfb3"
+    },
+    {
+      "batch_sha256": "7f61c1a7b682db909a7705f0f9bd2c0d63987533a5c84c4c8aadc3e01ba3829a",
+      "element": "reused_committed-direct-reopen",
+      "single_sha256": "b162167708a80c1d2a79a3fb8f5abba1751a2b157af7fa5fdbf325498437fcdc"
+    },
+    {
+      "batch_sha256": "257cfb90fe1b731be54b60814898f31cad0f1c4a7beef466f9328c039fe10b58",
+      "element": "reused_committed-factory-first",
+      "single_sha256": "ae82dc5be55e2988d8b9fbcdc20f01dff5e3890637888d57d4c84fad30ddbc8d"
+    },
+    {
+      "batch_sha256": "8be517a1d74c0888f23332f688e3f82a3b557303f9bfd1df729dbc6deec70021",
+      "element": "reused_committed-factory-reopen",
+      "single_sha256": "a9af3f85b65412386f52041b27f15c10078e6f61d40ec5417c9f62fd9b95e28a"
+    },
+    {
+      "batch_sha256": "9e5288148297bc7db6b23bdb8f7208fe50d6e2d678445c9a5b28f9575f95da3a",
+      "element": "reused_committed-filesystem-first",
+      "single_sha256": "d6c0239d344fdd5ea41b1ee7188747787e4bc07377821f6ad8321501b884aeaf"
+    },
+    {
+      "batch_sha256": "843d1a705fbae489743565f9ffe68291f8962548cec99c6ad2ec91af075e2d14",
+      "element": "reused_committed-filesystem-reopen",
+      "single_sha256": "9520ed5ee1f86286b76dbe81870f79df23cdaa9090074ec09add0a49c83813bd"
+    },
+    {
+      "batch_sha256": "844eb1fe93885aa77b34f09641e446bfc371cfcd3cdc519fa53f7f7e7c26018c",
+      "element": "reused_committed-hermes-first",
+      "single_sha256": "6dbed1853ee392a30e7ca6c2ecdac4a967e59a5391ddb6862e18953b9d5aff2c"
+    },
+    {
+      "batch_sha256": "32e9b408b39e7bc5ddb885d6230510df043a18aabe1df318688518c670ca5ad2",
+      "element": "reused_committed-hermes-reopen",
+      "single_sha256": "9261afb78651e330e761f49a091d9cd896c71e6449c7051c1508f8ceffbbdad7"
+    },
+    {
+      "batch_sha256": "1c0c4f64c3cc682512ce86135be418cde2987c368f7c3edc2fa10c993b2d2411",
+      "element": "reused_final-direct-first",
+      "single_sha256": "d5bc08277507604aed01629ea3c1ccb502e1cbdcb4bbdedd8d2d3d55dad814f5"
+    },
+    {
+      "batch_sha256": "411e68b83aabac41d6b6e89a15f2d5365d41812e621e4a11582d6965d07f07a5",
+      "element": "reused_final-direct-reopen",
+      "single_sha256": "42c49cc491eb626f84d9de1944d74c33f9e21906ea3f9efc3ed3ed775fb0897e"
+    },
+    {
+      "batch_sha256": "67850b8a574c16ee5ab54950ee49433f4f114f91ede645b1cdbadcf9f0814f88",
+      "element": "reused_final-factory-first",
+      "single_sha256": "24936c2052a1b15983ee14e1749625a78ee415597e393fc02ccb8464bfd8680b"
+    },
+    {
+      "batch_sha256": "5c78b54f8962c24a1439ccfc8ce773daa74e94a4ad2a7848d27ad97bc3d19574",
+      "element": "reused_final-factory-reopen",
+      "single_sha256": "3b334acebe701adaf24a2bb54a944c494928fb07e488cdb92b93e90bd9256644"
+    },
+    {
+      "batch_sha256": "d2bf33541b25e3b47813cd026948f817882781eaf461643668d2d08e8acf5616",
+      "element": "reused_final-filesystem-first",
+      "single_sha256": "ab4a75f660e396f9133d661a78c46a2f6a433b5cf234adb86d8b2b76d54afa4a"
+    },
+    {
+      "batch_sha256": "cbc75a7de57e7daa4a3fb7e31ec9398383a7eb9338880d7877ed463d6207ef44",
+      "element": "reused_final-filesystem-reopen",
+      "single_sha256": "1e82d62de6190f07398370f813989708e3e825002e183a71768442002ad05415"
+    },
+    {
+      "batch_sha256": "379144e99fd6843dbc85db4853c8609976c7c5fd282be961318466f3ce819812",
+      "element": "reused_final-hermes-first",
+      "single_sha256": "8a1f533ff15de2056dff304a813097ea1a3391d899468fdd2418d9b8c99b0add"
+    },
+    {
+      "batch_sha256": "c7ac334e6cb7e7fdfaf181ce527c347c1d4f1f3f48ebdf5f9f5b1470aa1db763",
+      "element": "reused_final-hermes-reopen",
+      "single_sha256": "f0bcb9ebc371f1780a5633ad667763b576f1f766e96d517188f85b4221bc7c38"
+    },
+    {
+      "batch_sha256": "a14263f427c828258d5f9cf1a3336deeaa09f7d0f4271f3d4da0b73f8511f039",
+      "element": "reused_unfinished-direct-first",
+      "single_sha256": "bdc076077275ffc41b92b1fd124d2c7bede4b434b08cfe1c7014cc809809d52c"
+    },
+    {
+      "batch_sha256": "e32e0792fc992f1418c6ad920fad05cc154189e986365e87ab60622279102e72",
+      "element": "reused_unfinished-direct-reopen",
+      "single_sha256": "785ec871cb0b7f071c7dcbc4b29924294dcee39e790961eea11ec0cbbf07ccfa"
+    },
+    {
+      "batch_sha256": "f00141c8009bb0759341a63a53bb4d8d91c0c34fde1b5900895cabe8017b2dea",
+      "element": "reused_unfinished-factory-first",
+      "single_sha256": "1ffea459b21ff2d0c04dc380a4a5b77035b8e4c49161a645002d7db60089728d"
+    },
+    {
+      "batch_sha256": "96bb34a48fd4d09956be084c0055c2b2ccdb6183421c46fb02954fac67eb6b7d",
+      "element": "reused_unfinished-factory-reopen",
+      "single_sha256": "e2d84706e5fb84aeeaee4a5708c5e36b1b637842c665024c7ab1c9bd6b2930e7"
+    },
+    {
+      "batch_sha256": "f1aced8728bc9076943f2149a9a94062401b3b55d9790b792c23700ca3370472",
+      "element": "reused_unfinished-filesystem-first",
+      "single_sha256": "ae5d41f9955a4e84897a95b6f28f353455e1fccd38deb481efe1a7cc43b5dd16"
+    },
+    {
+      "batch_sha256": "8c9ae082080b52876f56cb29f63fd73c1c5ac62ddcaed2606c5203fa88668384",
+      "element": "reused_unfinished-filesystem-reopen",
+      "single_sha256": "5b24adca7835948c0d19e483c78df682884956a90054107989fcfb0a6bfb8793"
+    },
+    {
+      "batch_sha256": "caa87db7276b2834fbdeea803d0687c241e94d37de837042060f52d32e0aa39a",
+      "element": "reused_unfinished-hermes-first",
+      "single_sha256": "5418d2b1c148e0dd666151de14b253637fa4a8312ac26852d4903a6e3648920b"
+    },
+    {
+      "batch_sha256": "0f52bd88175fcea9530adb19ce1776a163245e5f0a423532ce0a3be8db8ae946",
+      "element": "reused_unfinished-hermes-reopen",
+      "single_sha256": "e03bea971c6bc85a99d02ac0544b4d3f9e13c1d05fe3093c6b8ea4c9bef97b16"
+    }
+  ],
+  "revision": "210b96d8abe2d25c34f1a6d2d53f997e2a25be8a",
+  "single_element_mode_seconds": 4187.5,
+  "spawn_savings_seconds": 1839.9,
+  "total_elapsed_seconds": 6535.6
+}

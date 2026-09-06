@@ -1,0 +1,1286 @@
+{
+  "proof_catalog": {
+    "VCC-R01-ENABLED-EQUIVALENCE": {
+      "gate": "vcc_r01_enabled_equivalence",
+      "phase": "implementation",
+      "required": true
+    },
+    "VCC-R01-FALLBACK": {
+      "gate": "vcc_r01_fallback",
+      "phase": "implementation",
+      "required": true
+    },
+    "VCC-R01-NEGATIVE-HANDOFF": {
+      "gate": "vcc_r01_negative_handoff",
+      "phase": "implementation",
+      "required": true
+    },
+    "VCC-R02-ENABLED-EQUIVALENCE": {
+      "gate": "vcc_r02_enabled_equivalence",
+      "phase": "implementation",
+      "required": true
+    },
+    "VCC-R02-FALLBACK": {
+      "gate": "vcc_r02_fallback",
+      "phase": "implementation",
+      "required": true
+    },
+    "VCC-R02-NEGATIVE-HANDOFF": {
+      "gate": "vcc_r02_negative_handoff",
+      "phase": "implementation",
+      "required": true
+    },
+    "VCC-R03-ENABLED-EQUIVALENCE": {
+      "gate": "vcc_r03_enabled_equivalence",
+      "phase": "implementation",
+      "required": true
+    },
+    "VCC-R03-FALLBACK": {
+      "gate": "vcc_r03_fallback",
+      "phase": "implementation",
+      "required": true
+    },
+    "VCC-R03-NEGATIVE-HANDOFF": {
+      "gate": "vcc_r03_negative_handoff",
+      "phase": "implementation",
+      "required": true
+    },
+    "VCC-R04-ENABLED-EQUIVALENCE": {
+      "gate": "vcc_r04_enabled_equivalence",
+      "phase": "implementation",
+      "required": true
+    },
+    "VCC-R04-FALLBACK": {
+      "gate": "vcc_r04_fallback",
+      "phase": "implementation",
+      "required": true
+    },
+    "VCC-R04-NEGATIVE-HANDOFF": {
+      "gate": "vcc_r04_negative_handoff",
+      "phase": "implementation",
+      "required": true
+    },
+    "VCC-R05-ENABLED-EQUIVALENCE": {
+      "gate": "vcc_r05_enabled_equivalence",
+      "phase": "implementation",
+      "required": true
+    },
+    "VCC-R05-FALLBACK": {
+      "gate": "vcc_r05_fallback",
+      "phase": "implementation",
+      "required": true
+    },
+    "VCC-R05-NEGATIVE-HANDOFF": {
+      "gate": "vcc_r05_negative_handoff",
+      "phase": "implementation",
+      "required": true
+    },
+    "VCC-R06-ENABLED-EQUIVALENCE": {
+      "gate": "vcc_r06_enabled_equivalence",
+      "phase": "implementation",
+      "required": true
+    },
+    "VCC-R06-FALLBACK": {
+      "gate": "vcc_r06_fallback",
+      "phase": "implementation",
+      "required": true
+    },
+    "VCC-R06-NEGATIVE-HANDOFF": {
+      "gate": "vcc_r06_negative_handoff",
+      "phase": "implementation",
+      "required": true
+    },
+    "VCC-R07-ENABLED-EQUIVALENCE": {
+      "gate": "vcc_r07_enabled_equivalence",
+      "phase": "implementation",
+      "required": true
+    },
+    "VCC-R07-FALLBACK": {
+      "gate": "vcc_r07_fallback",
+      "phase": "implementation",
+      "required": true
+    },
+    "VCC-R07-NEGATIVE-HANDOFF": {
+      "gate": "vcc_r07_negative_handoff",
+      "phase": "implementation",
+      "required": true
+    },
+    "VCC-R08-ENABLED-EQUIVALENCE": {
+      "gate": "vcc_r08_enabled_equivalence",
+      "phase": "implementation",
+      "required": true
+    },
+    "VCC-R08-FALLBACK": {
+      "gate": "vcc_r08_fallback",
+      "phase": "implementation",
+      "required": true
+    },
+    "VCC-R08-NEGATIVE-HANDOFF": {
+      "gate": "vcc_r08_negative_handoff",
+      "phase": "implementation",
+      "required": true
+    },
+    "VCC-R09-ENABLED-EQUIVALENCE": {
+      "gate": "vcc_r09_enabled_equivalence",
+      "phase": "implementation",
+      "required": true
+    },
+    "VCC-R09-FALLBACK": {
+      "gate": "vcc_r09_fallback",
+      "phase": "implementation",
+      "required": true
+    },
+    "VCC-R09-NEGATIVE-HANDOFF": {
+      "gate": "vcc_r09_negative_handoff",
+      "phase": "implementation",
+      "required": true
+    },
+    "VCC-R10-ENABLED-EQUIVALENCE": {
+      "gate": "vcc_r10_enabled_equivalence",
+      "phase": "implementation",
+      "required": true
+    },
+    "VCC-R10-FALLBACK": {
+      "gate": "vcc_r10_fallback",
+      "phase": "implementation",
+      "required": true
+    },
+    "VCC-R10-NEGATIVE-HANDOFF": {
+      "gate": "vcc_r10_negative_handoff",
+      "phase": "implementation",
+      "required": true
+    },
+    "VCC-R11-ENABLED-EQUIVALENCE": {
+      "gate": "vcc_r11_enabled_equivalence",
+      "phase": "implementation",
+      "required": true
+    },
+    "VCC-R11-FALLBACK": {
+      "gate": "vcc_r11_fallback",
+      "phase": "implementation",
+      "required": true
+    },
+    "VCC-R11-NEGATIVE-HANDOFF": {
+      "gate": "vcc_r11_negative_handoff",
+      "phase": "implementation",
+      "required": true
+    },
+    "VCC-R12-ENABLED-EQUIVALENCE": {
+      "gate": "vcc_r12_enabled_equivalence",
+      "phase": "implementation",
+      "required": true
+    },
+    "VCC-R12-FALLBACK": {
+      "gate": "vcc_r12_fallback",
+      "phase": "implementation",
+      "required": true
+    },
+    "VCC-R12-NEGATIVE-HANDOFF": {
+      "gate": "vcc_r12_negative_handoff",
+      "phase": "implementation",
+      "required": true
+    }
+  },
+  "rows": {
+    "VCC-R01": {
+      "authority_bindings": [
+        {
+          "parameter": "verified_production_host_authority",
+          "proof_id": "VCC-R01-AUTH-01",
+          "status": "planned"
+        },
+        {
+          "parameter": "arena_nonce",
+          "proof_id": "VCC-R01-AUTH-02",
+          "status": "planned"
+        }
+      ],
+      "call_edges": [
+        {
+          "from_owner": "provider/service.py::ProviderMemoryService.sync_event",
+          "proof_id": "VCC-R01-EDGE-01",
+          "status": "planned",
+          "to_owner": "provider/ingestion.py::ProviderIngestion.ingest"
+        },
+        {
+          "from_owner": "provider/ingestion.py::ProviderIngestion.ingest",
+          "proof_id": "VCC-R01-EDGE-02",
+          "status": "planned",
+          "to_owner": "semantic_ingestion/contracts.py::encode_semantic_contract"
+        },
+        {
+          "from_owner": "semantic_ingestion/contracts.py::encode_semantic_contract",
+          "proof_id": "VCC-R01-EDGE-03",
+          "status": "planned",
+          "to_owner": "semantic_ingestion/persistence.py::SemanticTerminalPersistenceService.persist"
+        }
+      ],
+      "current_production_anchor": {
+        "caller_query_pattern": "\\.sync_event\\(",
+        "caller_query_roots": [
+          "memorii/memorii/core",
+          "memorii/memorii/integrations"
+        ],
+        "captured_non_test_callers": 1,
+        "edge_token": "service.sync_event(",
+        "excluded_path_parts": [
+          "benchmark",
+          "test",
+          "tests",
+          "tools"
+        ],
+        "from_path": "memorii/memorii/core/semantic_ingestion/production_capture.py",
+        "from_symbol": "def _capture_child(",
+        "to_path": "memorii/memorii/core/provider/service.py",
+        "to_symbol": "def sync_event("
+      },
+      "durable_outcome": {
+        "mode": "unchanged_persistence",
+        "path": "memorii/memorii/core/semantic_ingestion/persistence.py",
+        "status": "existing",
+        "symbol": "def persist("
+      },
+      "fallback_branch": {
+        "path": "memorii/memorii/core/provider/ingestion.py",
+        "status": "existing",
+        "token": "source_only"
+      },
+      "ordered_owner_chain": [
+        "provider/service.py::ProviderMemoryService.sync_event",
+        "provider/ingestion.py::ProviderIngestion.ingest",
+        "semantic_ingestion/contracts.py::encode_semantic_contract",
+        "semantic_ingestion/persistence.py::SemanticTerminalPersistenceService.persist"
+      ],
+      "planned_proof_ids": [
+        "VCC-R01-ENABLED-EQUIVALENCE",
+        "VCC-R01-NEGATIVE-HANDOFF",
+        "VCC-R01-FALLBACK"
+      ],
+      "production_trigger": "ProviderMemoryService.sync_event",
+      "status": "planned",
+      "target_callsite": {
+        "constructor": "ProviderMemoryService.__init__",
+        "owner": "provider/service.py::ProviderMemoryService.sync_event",
+        "parameters": [
+          "verified_production_host_authority",
+          "arena_nonce"
+        ],
+        "status": "planned"
+      },
+      "validation_boundary": {
+        "path": "memorii/memorii/core/semantic_ingestion/contracts.py",
+        "status": "existing",
+        "symbol": "def decode_semantic_contract("
+      }
+    },
+    "VCC-R02": {
+      "authority_bindings": [
+        {
+          "parameter": "value",
+          "proof_id": "VCC-R02-AUTH-01",
+          "status": "planned"
+        },
+        {
+          "parameter": "expected_type",
+          "proof_id": "VCC-R02-AUTH-02",
+          "status": "planned"
+        },
+        {
+          "parameter": "canonical_profile",
+          "proof_id": "VCC-R02-AUTH-03",
+          "status": "planned"
+        }
+      ],
+      "call_edges": [
+        {
+          "from_owner": "semantic_ingestion/contracts.py::encode_semantic_contract",
+          "proof_id": "VCC-R02-EDGE-01",
+          "status": "planned",
+          "to_owner": "memory_evolution/ingestion_contracts.py::encode_typed_value"
+        },
+        {
+          "from_owner": "memory_evolution/ingestion_contracts.py::encode_typed_value",
+          "proof_id": "VCC-R02-EDGE-02",
+          "status": "planned",
+          "to_owner": "memory_evolution/ingestion_contracts.py::_json"
+        },
+        {
+          "from_owner": "memory_evolution/ingestion_contracts.py::_json",
+          "proof_id": "VCC-R02-EDGE-03",
+          "status": "planned",
+          "to_owner": "semantic_ingestion/persistence.py::def persist("
+        }
+      ],
+      "current_production_anchor": {
+        "caller_query_pattern": "\\.sync_event\\(",
+        "caller_query_roots": [
+          "memorii/memorii/core",
+          "memorii/memorii/integrations"
+        ],
+        "captured_non_test_callers": 1,
+        "edge_token": "service.sync_event(",
+        "excluded_path_parts": [
+          "benchmark",
+          "test",
+          "tests",
+          "tools"
+        ],
+        "from_path": "memorii/memorii/core/semantic_ingestion/production_capture.py",
+        "from_symbol": "def _capture_child(",
+        "to_path": "memorii/memorii/core/provider/service.py",
+        "to_symbol": "def sync_event("
+      },
+      "durable_outcome": {
+        "mode": "unchanged_persistence",
+        "path": "memorii/memorii/core/semantic_ingestion/persistence.py",
+        "status": "existing",
+        "symbol": "def persist("
+      },
+      "fallback_branch": {
+        "path": "memorii/memorii/core/semantic_ingestion/contracts.py",
+        "status": "existing",
+        "token": "SemanticContractCodecError"
+      },
+      "ordered_owner_chain": [
+        "semantic_ingestion/contracts.py::encode_semantic_contract",
+        "memory_evolution/ingestion_contracts.py::encode_typed_value",
+        "memory_evolution/ingestion_contracts.py::_json",
+        "semantic_ingestion/persistence.py::def persist("
+      ],
+      "planned_proof_ids": [
+        "VCC-R02-ENABLED-EQUIVALENCE",
+        "VCC-R02-NEGATIVE-HANDOFF",
+        "VCC-R02-FALLBACK"
+      ],
+      "production_trigger": "canonical contract encoding",
+      "status": "planned",
+      "target_callsite": {
+        "constructor": "ProviderMemoryService.__init__",
+        "owner": "semantic_ingestion/contracts.py::encode_semantic_contract",
+        "parameters": [
+          "value",
+          "expected_type",
+          "canonical_profile"
+        ],
+        "status": "planned"
+      },
+      "validation_boundary": {
+        "path": "memorii/memorii/core/semantic_ingestion/contracts.py",
+        "status": "existing",
+        "symbol": "def decode_semantic_contract("
+      }
+    },
+    "VCC-R03": {
+      "authority_bindings": [
+        {
+          "parameter": "writer_binding",
+          "proof_id": "VCC-R03-AUTH-01",
+          "status": "planned"
+        },
+        {
+          "parameter": "expected_writer_epoch",
+          "proof_id": "VCC-R03-AUTH-02",
+          "status": "planned"
+        },
+        {
+          "parameter": "expected_writer_admission_digest",
+          "proof_id": "VCC-R03-AUTH-03",
+          "status": "planned"
+        }
+      ],
+      "call_edges": [
+        {
+          "from_owner": "provider/ingestion.py::_admit_with_writer_retry",
+          "proof_id": "VCC-R03-EDGE-01",
+          "status": "planned",
+          "to_owner": "memory_evolution/atomic_store.py::publish_admitted_source"
+        },
+        {
+          "from_owner": "memory_evolution/atomic_store.py::publish_admitted_source",
+          "proof_id": "VCC-R03-EDGE-02",
+          "status": "planned",
+          "to_owner": "semantic_ingestion/authorization.py::SemanticAuthorizationAuthorityRepository.apply_verified_transition"
+        },
+        {
+          "from_owner": "semantic_ingestion/authorization.py::SemanticAuthorizationAuthorityRepository.apply_verified_transition",
+          "proof_id": "VCC-R03-EDGE-03",
+          "status": "planned",
+          "to_owner": "semantic_ingestion/persistence.py::SemanticTerminalPersistenceService.persist"
+        }
+      ],
+      "current_production_anchor": {
+        "caller_query_pattern": "\\.sync_event\\(",
+        "caller_query_roots": [
+          "memorii/memorii/core",
+          "memorii/memorii/integrations"
+        ],
+        "captured_non_test_callers": 1,
+        "edge_token": "service.sync_event(",
+        "excluded_path_parts": [
+          "benchmark",
+          "test",
+          "tests",
+          "tools"
+        ],
+        "from_path": "memorii/memorii/core/semantic_ingestion/production_capture.py",
+        "from_symbol": "def _capture_child(",
+        "to_path": "memorii/memorii/core/provider/service.py",
+        "to_symbol": "def sync_event("
+      },
+      "durable_outcome": {
+        "mode": "writer_local_transition",
+        "path": "memorii/memorii/core/semantic_ingestion/authorization.py",
+        "status": "existing",
+        "symbol": "def apply_verified_transition("
+      },
+      "fallback_branch": {
+        "path": "memorii/memorii/core/provider/ingestion.py",
+        "status": "existing",
+        "token": "_admit_with_writer_retry"
+      },
+      "ordered_owner_chain": [
+        "provider/ingestion.py::_admit_with_writer_retry",
+        "memory_evolution/atomic_store.py::publish_admitted_source",
+        "semantic_ingestion/authorization.py::SemanticAuthorizationAuthorityRepository.apply_verified_transition",
+        "semantic_ingestion/persistence.py::SemanticTerminalPersistenceService.persist"
+      ],
+      "planned_proof_ids": [
+        "VCC-R03-ENABLED-EQUIVALENCE",
+        "VCC-R03-NEGATIVE-HANDOFF",
+        "VCC-R03-FALLBACK"
+      ],
+      "production_trigger": "durable writer admission",
+      "status": "planned",
+      "target_callsite": {
+        "constructor": "ProviderMemoryService.__init__",
+        "owner": "provider/ingestion.py::_admit_with_writer_retry",
+        "parameters": [
+          "writer_binding",
+          "expected_writer_epoch",
+          "expected_writer_admission_digest"
+        ],
+        "status": "planned"
+      },
+      "validation_boundary": {
+        "path": "memorii/memorii/core/semantic_ingestion/authorization.py",
+        "status": "existing",
+        "symbol": "def apply_verified_transition("
+      }
+    },
+    "VCC-R04": {
+      "authority_bindings": [
+        {
+          "parameter": "value",
+          "proof_id": "VCC-R04-AUTH-01",
+          "status": "planned"
+        },
+        {
+          "parameter": "check",
+          "proof_id": "VCC-R04-AUTH-02",
+          "status": "planned"
+        }
+      ],
+      "call_edges": [
+        {
+          "from_owner": "memory_evolution/ingestion_contracts.py::_normalized_typed_json",
+          "proof_id": "VCC-R04-EDGE-01",
+          "status": "planned",
+          "to_owner": "memory_evolution/ingestion_contracts.py::_json"
+        },
+        {
+          "from_owner": "memory_evolution/ingestion_contracts.py::_json",
+          "proof_id": "VCC-R04-EDGE-02",
+          "status": "planned",
+          "to_owner": "memory_evolution/ingestion_contracts.py::encode_typed_value"
+        },
+        {
+          "from_owner": "memory_evolution/ingestion_contracts.py::encode_typed_value",
+          "proof_id": "VCC-R04-EDGE-03",
+          "status": "planned",
+          "to_owner": "semantic_ingestion/persistence.py::def persist("
+        }
+      ],
+      "current_production_anchor": {
+        "caller_query_pattern": "\\.sync_event\\(",
+        "caller_query_roots": [
+          "memorii/memorii/core",
+          "memorii/memorii/integrations"
+        ],
+        "captured_non_test_callers": 1,
+        "edge_token": "service.sync_event(",
+        "excluded_path_parts": [
+          "benchmark",
+          "test",
+          "tests",
+          "tools"
+        ],
+        "from_path": "memorii/memorii/core/semantic_ingestion/production_capture.py",
+        "from_symbol": "def _capture_child(",
+        "to_path": "memorii/memorii/core/provider/service.py",
+        "to_symbol": "def sync_event("
+      },
+      "durable_outcome": {
+        "mode": "unchanged_persistence",
+        "path": "memorii/memorii/core/semantic_ingestion/persistence.py",
+        "status": "existing",
+        "symbol": "def persist("
+      },
+      "fallback_branch": {
+        "path": "memorii/memorii/core/memory_evolution/ingestion_contracts.py",
+        "status": "existing",
+        "token": "CanonicalTypedValueError"
+      },
+      "ordered_owner_chain": [
+        "memory_evolution/ingestion_contracts.py::_normalized_typed_json",
+        "memory_evolution/ingestion_contracts.py::_json",
+        "memory_evolution/ingestion_contracts.py::encode_typed_value",
+        "semantic_ingestion/persistence.py::def persist("
+      ],
+      "planned_proof_ids": [
+        "VCC-R04-ENABLED-EQUIVALENCE",
+        "VCC-R04-NEGATIVE-HANDOFF",
+        "VCC-R04-FALLBACK"
+      ],
+      "production_trigger": "codec traversal",
+      "status": "planned",
+      "target_callsite": {
+        "constructor": "ProviderMemoryService.__init__",
+        "owner": "memory_evolution/ingestion_contracts.py::encode_typed_value",
+        "parameters": [
+          "value",
+          "check"
+        ],
+        "status": "planned"
+      },
+      "validation_boundary": {
+        "path": "memorii/memorii/core/memory_evolution/ingestion_contracts.py",
+        "status": "existing",
+        "symbol": "def decode_typed_value("
+      }
+    },
+    "VCC-R05": {
+      "authority_bindings": [
+        {
+          "parameter": "validated_closure",
+          "proof_id": "VCC-R05-AUTH-01",
+          "status": "planned"
+        },
+        {
+          "parameter": "expected_scope",
+          "proof_id": "VCC-R05-AUTH-02",
+          "status": "planned"
+        },
+        {
+          "parameter": "expected_profile",
+          "proof_id": "VCC-R05-AUTH-03",
+          "status": "planned"
+        }
+      ],
+      "call_edges": [
+        {
+          "from_owner": "provider/ingestion.py::_run_semantic_ingestion",
+          "proof_id": "VCC-R05-EDGE-01",
+          "status": "planned",
+          "to_owner": "semantic_ingestion/source_normalization_stage.py"
+        },
+        {
+          "from_owner": "semantic_ingestion/source_normalization_stage.py",
+          "proof_id": "VCC-R05-EDGE-02",
+          "status": "planned",
+          "to_owner": "semantic_ingestion/bootstrap_graph_host.py::BootstrapGraphHostBundle.execute"
+        },
+        {
+          "from_owner": "semantic_ingestion/bootstrap_graph_host.py::BootstrapGraphHostBundle.execute",
+          "proof_id": "VCC-R05-EDGE-03",
+          "status": "planned",
+          "to_owner": "semantic_ingestion/persistence.py::def persist("
+        }
+      ],
+      "current_production_anchor": {
+        "caller_query_pattern": "\\.sync_event\\(",
+        "caller_query_roots": [
+          "memorii/memorii/core",
+          "memorii/memorii/integrations"
+        ],
+        "captured_non_test_callers": 1,
+        "edge_token": "service.sync_event(",
+        "excluded_path_parts": [
+          "benchmark",
+          "test",
+          "tests",
+          "tools"
+        ],
+        "from_path": "memorii/memorii/core/semantic_ingestion/production_capture.py",
+        "from_symbol": "def _capture_child(",
+        "to_path": "memorii/memorii/core/provider/service.py",
+        "to_symbol": "def sync_event("
+      },
+      "durable_outcome": {
+        "mode": "unchanged_persistence",
+        "path": "memorii/memorii/core/semantic_ingestion/persistence.py",
+        "status": "existing",
+        "symbol": "def persist("
+      },
+      "fallback_branch": {
+        "path": "memorii/memorii/core/provider/ingestion.py",
+        "status": "existing",
+        "token": "source_only"
+      },
+      "ordered_owner_chain": [
+        "provider/ingestion.py::_run_semantic_ingestion",
+        "semantic_ingestion/source_normalization_stage.py",
+        "semantic_ingestion/bootstrap_graph_host.py::BootstrapGraphHostBundle.execute",
+        "semantic_ingestion/persistence.py::def persist("
+      ],
+      "planned_proof_ids": [
+        "VCC-R05-ENABLED-EQUIVALENCE",
+        "VCC-R05-NEGATIVE-HANDOFF",
+        "VCC-R05-FALLBACK"
+      ],
+      "production_trigger": "closure lookup at a redundant digest site",
+      "status": "planned",
+      "target_callsite": {
+        "constructor": "ProviderMemoryService.__init__",
+        "owner": "provider/ingestion.py::_run_semantic_ingestion",
+        "parameters": [
+          "validated_closure",
+          "expected_scope",
+          "expected_profile"
+        ],
+        "status": "planned"
+      },
+      "validation_boundary": {
+        "path": "memorii/memorii/core/semantic_ingestion/bootstrap_graph_host.py",
+        "status": "existing",
+        "symbol": "def execute("
+      }
+    },
+    "VCC-R06": {
+      "authority_bindings": [
+        {
+          "parameter": "BootstrapWriterHandoffRequest",
+          "proof_id": "VCC-R06-AUTH-01",
+          "status": "planned"
+        },
+        {
+          "parameter": "expected_writer_admission_digest",
+          "proof_id": "VCC-R06-AUTH-02",
+          "status": "planned"
+        },
+        {
+          "parameter": "expected_writer_epoch",
+          "proof_id": "VCC-R06-AUTH-03",
+          "status": "planned"
+        }
+      ],
+      "call_edges": [
+        {
+          "from_owner": "provider/ingestion.py::_bootstrap_prepare_and_handoff",
+          "proof_id": "VCC-R06-EDGE-01",
+          "status": "planned",
+          "to_owner": "memory_evolution/atomic_store.py::bootstrap_writer_handoff"
+        },
+        {
+          "from_owner": "memory_evolution/atomic_store.py::bootstrap_writer_handoff",
+          "proof_id": "VCC-R06-EDGE-02",
+          "status": "planned",
+          "to_owner": "semantic_ingestion/source_normalization_execution.py::normalize_after_recovery_claim"
+        }
+      ],
+      "current_production_anchor": {
+        "caller_query_pattern": "\\.sync_event\\(",
+        "caller_query_roots": [
+          "memorii/memorii/core",
+          "memorii/memorii/integrations"
+        ],
+        "captured_non_test_callers": 1,
+        "edge_token": "service.sync_event(",
+        "excluded_path_parts": [
+          "benchmark",
+          "test",
+          "tests",
+          "tools"
+        ],
+        "from_path": "memorii/memorii/core/semantic_ingestion/production_capture.py",
+        "from_symbol": "def _capture_child(",
+        "to_path": "memorii/memorii/core/provider/service.py",
+        "to_symbol": "def sync_event("
+      },
+      "durable_outcome": {
+        "mode": "writer_handoff",
+        "path": "memorii/memorii/core/memory_evolution/atomic_store.py",
+        "status": "existing",
+        "symbol": "def bootstrap_writer_handoff("
+      },
+      "fallback_branch": {
+        "path": "memorii/memorii/core/provider/ingestion.py",
+        "status": "existing",
+        "token": "authority_unavailable"
+      },
+      "ordered_owner_chain": [
+        "provider/ingestion.py::_bootstrap_prepare_and_handoff",
+        "memory_evolution/atomic_store.py::bootstrap_writer_handoff",
+        "semantic_ingestion/source_normalization_execution.py::normalize_after_recovery_claim"
+      ],
+      "planned_proof_ids": [
+        "VCC-R06-ENABLED-EQUIVALENCE",
+        "VCC-R06-NEGATIVE-HANDOFF",
+        "VCC-R06-FALLBACK"
+      ],
+      "production_trigger": "bootstrap writer handoff",
+      "status": "planned",
+      "target_callsite": {
+        "constructor": "ProviderMemoryService.__init__",
+        "owner": "provider/ingestion.py::_bootstrap_prepare_and_handoff",
+        "parameters": [
+          "BootstrapWriterHandoffRequest",
+          "expected_writer_admission_digest",
+          "expected_writer_epoch"
+        ],
+        "status": "planned"
+      },
+      "validation_boundary": {
+        "path": "memorii/memorii/core/semantic_ingestion/source_normalization_execution.py",
+        "status": "existing",
+        "symbol": "def normalize_after_recovery_claim("
+      }
+    },
+    "VCC-R07": {
+      "authority_bindings": [
+        {
+          "parameter": "arena_nonce",
+          "proof_id": "VCC-R07-AUTH-01",
+          "status": "planned"
+        },
+        {
+          "parameter": "operation_fence_binding",
+          "proof_id": "VCC-R07-AUTH-02",
+          "status": "planned"
+        },
+        {
+          "parameter": "authenticated_partition",
+          "proof_id": "VCC-R07-AUTH-03",
+          "status": "planned"
+        },
+        {
+          "parameter": "writer_binding",
+          "proof_id": "VCC-R07-AUTH-04",
+          "status": "planned"
+        }
+      ],
+      "call_edges": [
+        {
+          "from_owner": "provider/service.py::ProviderMemoryService.sync_event",
+          "proof_id": "VCC-R07-EDGE-01",
+          "status": "planned",
+          "to_owner": "provider/ingestion.py::ProviderIngestion.ingest"
+        },
+        {
+          "from_owner": "provider/ingestion.py::ProviderIngestion.ingest",
+          "proof_id": "VCC-R07-EDGE-02",
+          "status": "planned",
+          "to_owner": "semantic_ingestion/persistence.py::SemanticTerminalPersistenceService.persist"
+        },
+        {
+          "from_owner": "semantic_ingestion/persistence.py::SemanticTerminalPersistenceService.persist",
+          "proof_id": "VCC-R07-EDGE-03",
+          "status": "planned",
+          "to_owner": "semantic_ingestion/canonical_evidence_arena.py::require_active_nonce"
+        }
+      ],
+      "current_production_anchor": {
+        "caller_query_pattern": "\\.sync_event\\(",
+        "caller_query_roots": [
+          "memorii/memorii/core",
+          "memorii/memorii/integrations"
+        ],
+        "captured_non_test_callers": 1,
+        "edge_token": "service.sync_event(",
+        "excluded_path_parts": [
+          "benchmark",
+          "test",
+          "tests",
+          "tools"
+        ],
+        "from_path": "memorii/memorii/core/semantic_ingestion/production_capture.py",
+        "from_symbol": "def _capture_child(",
+        "to_path": "memorii/memorii/core/provider/service.py",
+        "to_symbol": "def sync_event("
+      },
+      "durable_outcome": {
+        "mode": "unchanged_persistence",
+        "path": "memorii/memorii/core/semantic_ingestion/persistence.py",
+        "status": "existing",
+        "symbol": "def persist("
+      },
+      "fallback_branch": {
+        "path": "memorii/memorii/core/semantic_ingestion/canonical_evidence_arena.py",
+        "status": "existing",
+        "token": "require_active_nonce"
+      },
+      "ordered_owner_chain": [
+        "provider/service.py::ProviderMemoryService.sync_event",
+        "provider/ingestion.py::ProviderIngestion.ingest",
+        "semantic_ingestion/persistence.py::SemanticTerminalPersistenceService.persist",
+        "semantic_ingestion/canonical_evidence_arena.py::require_active_nonce"
+      ],
+      "planned_proof_ids": [
+        "VCC-R07-ENABLED-EQUIVALENCE",
+        "VCC-R07-NEGATIVE-HANDOFF",
+        "VCC-R07-FALLBACK"
+      ],
+      "production_trigger": "operation-scoped reuse lookup",
+      "status": "planned",
+      "target_callsite": {
+        "constructor": "ProviderMemoryService.__init__",
+        "owner": "provider/service.py::ProviderMemoryService.sync_event",
+        "parameters": [
+          "arena_nonce",
+          "operation_fence_binding",
+          "authenticated_partition",
+          "writer_binding"
+        ],
+        "status": "planned"
+      },
+      "validation_boundary": {
+        "path": "memorii/memorii/core/semantic_ingestion/persistence.py",
+        "status": "existing",
+        "symbol": "def persist("
+      }
+    },
+    "VCC-R08": {
+      "authority_bindings": [
+        {
+          "parameter": "operation_charge",
+          "proof_id": "VCC-R08-AUTH-01",
+          "status": "planned"
+        },
+        {
+          "parameter": "process_reservation",
+          "proof_id": "VCC-R08-AUTH-02",
+          "status": "planned"
+        },
+        {
+          "parameter": "capacity_state",
+          "proof_id": "VCC-R08-AUTH-03",
+          "status": "planned"
+        }
+      ],
+      "call_edges": [
+        {
+          "from_owner": "semantic_ingestion/canonical_evidence_arena.py::CanonicalEvidenceArena",
+          "proof_id": "VCC-R08-EDGE-01",
+          "status": "planned",
+          "to_owner": "provider/service.py::ProviderMemoryService.sync_event"
+        }
+      ],
+      "current_production_anchor": {
+        "caller_query_pattern": "\\.sync_event\\(",
+        "caller_query_roots": [
+          "memorii/memorii/core",
+          "memorii/memorii/integrations"
+        ],
+        "captured_non_test_callers": 1,
+        "edge_token": "service.sync_event(",
+        "excluded_path_parts": [
+          "benchmark",
+          "test",
+          "tests",
+          "tools"
+        ],
+        "from_path": "memorii/memorii/core/semantic_ingestion/production_capture.py",
+        "from_symbol": "def _capture_child(",
+        "to_path": "memorii/memorii/core/provider/service.py",
+        "to_symbol": "def sync_event("
+      },
+      "durable_outcome": {
+        "mode": "no_durable_write",
+        "path": "memorii/memorii/core/semantic_ingestion/canonical_evidence_arena.py",
+        "status": "existing",
+        "symbol": "def close("
+      },
+      "fallback_branch": {
+        "path": "memorii/memorii/core/semantic_ingestion/canonical_evidence_arena.py",
+        "status": "existing",
+        "token": "capacity_fallbacks"
+      },
+      "ordered_owner_chain": [
+        "semantic_ingestion/canonical_evidence_arena.py::CanonicalEvidenceArena",
+        "provider/service.py::ProviderMemoryService.sync_event"
+      ],
+      "planned_proof_ids": [
+        "VCC-R08-ENABLED-EQUIVALENCE",
+        "VCC-R08-NEGATIVE-HANDOFF",
+        "VCC-R08-FALLBACK"
+      ],
+      "production_trigger": "closure reservation and seal",
+      "status": "planned",
+      "target_callsite": {
+        "constructor": "ProviderMemoryService.__init__",
+        "owner": "semantic_ingestion/canonical_evidence_arena.py",
+        "parameters": [
+          "operation_charge",
+          "process_reservation",
+          "capacity_state"
+        ],
+        "status": "planned"
+      },
+      "validation_boundary": {
+        "path": "memorii/memorii/core/semantic_ingestion/canonical_evidence_arena.py",
+        "status": "existing",
+        "symbol": "def admit_success("
+      }
+    },
+    "VCC-R09": {
+      "authority_bindings": [
+        {
+          "parameter": "fence",
+          "proof_id": "VCC-R09-AUTH-01",
+          "status": "planned"
+        },
+        {
+          "parameter": "terminal",
+          "proof_id": "VCC-R09-AUTH-02",
+          "status": "planned"
+        },
+        {
+          "parameter": "writer_control",
+          "proof_id": "VCC-R09-AUTH-03",
+          "status": "planned"
+        }
+      ],
+      "call_edges": [
+        {
+          "from_owner": "provider/ingestion.py::_persist_semantic_terminal",
+          "proof_id": "VCC-R09-EDGE-01",
+          "status": "planned",
+          "to_owner": "semantic_ingestion/persistence.py::SemanticTerminalPersistenceService.persist"
+        },
+        {
+          "from_owner": "semantic_ingestion/persistence.py::SemanticTerminalPersistenceService.persist",
+          "proof_id": "VCC-R09-EDGE-02",
+          "status": "planned",
+          "to_owner": "memory_evolution/atomic_store.py::persist_bootstrap_graph_terminal_v3"
+        }
+      ],
+      "current_production_anchor": {
+        "caller_query_pattern": "\\.sync_event\\(",
+        "caller_query_roots": [
+          "memorii/memorii/core",
+          "memorii/memorii/integrations"
+        ],
+        "captured_non_test_callers": 1,
+        "edge_token": "service.sync_event(",
+        "excluded_path_parts": [
+          "benchmark",
+          "test",
+          "tests",
+          "tools"
+        ],
+        "from_path": "memorii/memorii/core/semantic_ingestion/production_capture.py",
+        "from_symbol": "def _capture_child(",
+        "to_path": "memorii/memorii/core/provider/service.py",
+        "to_symbol": "def sync_event("
+      },
+      "durable_outcome": {
+        "mode": "unchanged_persistence",
+        "path": "memorii/memorii/core/semantic_ingestion/persistence.py",
+        "status": "existing",
+        "symbol": "def persist("
+      },
+      "fallback_branch": {
+        "path": "memorii/memorii/core/semantic_ingestion/persistence.py",
+        "status": "existing",
+        "token": "retry"
+      },
+      "ordered_owner_chain": [
+        "provider/ingestion.py::_persist_semantic_terminal",
+        "semantic_ingestion/persistence.py::SemanticTerminalPersistenceService.persist",
+        "memory_evolution/atomic_store.py::persist_bootstrap_graph_terminal_v3"
+      ],
+      "planned_proof_ids": [
+        "VCC-R09-ENABLED-EQUIVALENCE",
+        "VCC-R09-NEGATIVE-HANDOFF",
+        "VCC-R09-FALLBACK"
+      ],
+      "production_trigger": "terminal commit and replay",
+      "status": "planned",
+      "target_callsite": {
+        "constructor": "ProviderMemoryService.__init__",
+        "owner": "semantic_ingestion/persistence.py::SemanticTerminalPersistenceService.persist",
+        "parameters": [
+          "fence",
+          "terminal",
+          "writer_control"
+        ],
+        "status": "planned"
+      },
+      "validation_boundary": {
+        "path": "memorii/memorii/core/semantic_ingestion/persistence.py",
+        "status": "existing",
+        "symbol": "def persist("
+      }
+    },
+    "VCC-R10": {
+      "authority_bindings": [
+        {
+          "parameter": "verified_production_host_authority",
+          "proof_id": "VCC-R10-AUTH-01",
+          "status": "planned"
+        },
+        {
+          "parameter": "validated_closure_capability",
+          "proof_id": "VCC-R10-AUTH-02",
+          "status": "planned"
+        }
+      ],
+      "call_edges": [
+        {
+          "from_owner": "semantic_ingestion/production_authority.py::build_verified_production_host_authority",
+          "proof_id": "VCC-R10-EDGE-01",
+          "status": "planned",
+          "to_owner": "provider/service.py::ProviderMemoryService.__init__"
+        },
+        {
+          "from_owner": "provider/service.py::ProviderMemoryService.__init__",
+          "proof_id": "VCC-R10-EDGE-02",
+          "status": "planned",
+          "to_owner": "semantic_ingestion/contracts.py::encode_semantic_contract"
+        },
+        {
+          "from_owner": "semantic_ingestion/contracts.py::encode_semantic_contract",
+          "proof_id": "VCC-R10-EDGE-03",
+          "status": "planned",
+          "to_owner": "semantic_ingestion/persistence.py::def persist("
+        }
+      ],
+      "current_production_anchor": {
+        "caller_query_pattern": "\\.sync_event\\(",
+        "caller_query_roots": [
+          "memorii/memorii/core",
+          "memorii/memorii/integrations"
+        ],
+        "captured_non_test_callers": 1,
+        "edge_token": "service.sync_event(",
+        "excluded_path_parts": [
+          "benchmark",
+          "test",
+          "tests",
+          "tools"
+        ],
+        "from_path": "memorii/memorii/core/semantic_ingestion/production_capture.py",
+        "from_symbol": "def _capture_child(",
+        "to_path": "memorii/memorii/core/provider/service.py",
+        "to_symbol": "def sync_event("
+      },
+      "durable_outcome": {
+        "mode": "unchanged_persistence",
+        "path": "memorii/memorii/core/semantic_ingestion/persistence.py",
+        "status": "existing",
+        "symbol": "def persist("
+      },
+      "fallback_branch": {
+        "path": "memorii/memorii/core/provider/service.py",
+        "status": "existing",
+        "token": "verified_production_host_authority"
+      },
+      "ordered_owner_chain": [
+        "semantic_ingestion/production_authority.py::build_verified_production_host_authority",
+        "provider/service.py::ProviderMemoryService.__init__",
+        "semantic_ingestion/contracts.py::encode_semantic_contract",
+        "semantic_ingestion/persistence.py::def persist("
+      ],
+      "planned_proof_ids": [
+        "VCC-R10-ENABLED-EQUIVALENCE",
+        "VCC-R10-NEGATIVE-HANDOFF",
+        "VCC-R10-FALLBACK"
+      ],
+      "production_trigger": "canonical codec issuance",
+      "status": "planned",
+      "target_callsite": {
+        "constructor": "ProviderMemoryService.__init__",
+        "owner": "semantic_ingestion/contracts.py::encode_semantic_contract",
+        "parameters": [
+          "verified_production_host_authority",
+          "validated_closure_capability"
+        ],
+        "status": "planned"
+      },
+      "validation_boundary": {
+        "path": "memorii/memorii/core/semantic_ingestion/production_authority.py",
+        "status": "existing",
+        "symbol": "def verified_production_authority_inputs("
+      }
+    },
+    "VCC-R11": {
+      "authority_bindings": [
+        {
+          "parameter": "metrics_sink",
+          "proof_id": "VCC-R11-AUTH-01",
+          "status": "planned"
+        },
+        {
+          "parameter": "content_free_snapshot",
+          "proof_id": "VCC-R11-AUTH-02",
+          "status": "planned"
+        }
+      ],
+      "call_edges": [
+        {
+          "from_owner": "provider/service.py::ProviderMemoryService.sync_event",
+          "proof_id": "VCC-R11-EDGE-01",
+          "status": "planned",
+          "to_owner": "semantic_ingestion/canonical_evidence_arena.py::CanonicalEvidenceArena.snapshot"
+        },
+        {
+          "from_owner": "semantic_ingestion/canonical_evidence_arena.py::CanonicalEvidenceArena.snapshot",
+          "proof_id": "VCC-R11-EDGE-02",
+          "status": "planned",
+          "to_owner": "semantic_ingestion/persistence.py::def persist("
+        }
+      ],
+      "current_production_anchor": {
+        "caller_query_pattern": "\\.sync_event\\(",
+        "caller_query_roots": [
+          "memorii/memorii/core",
+          "memorii/memorii/integrations"
+        ],
+        "captured_non_test_callers": 1,
+        "edge_token": "service.sync_event(",
+        "excluded_path_parts": [
+          "benchmark",
+          "test",
+          "tests",
+          "tools"
+        ],
+        "from_path": "memorii/memorii/core/semantic_ingestion/production_capture.py",
+        "from_symbol": "def _capture_child(",
+        "to_path": "memorii/memorii/core/provider/service.py",
+        "to_symbol": "def sync_event("
+      },
+      "durable_outcome": {
+        "mode": "unchanged_persistence",
+        "path": "memorii/memorii/core/semantic_ingestion/persistence.py",
+        "status": "existing",
+        "symbol": "def persist("
+      },
+      "fallback_branch": {
+        "path": "memorii/memorii/core/provider/service.py",
+        "status": "existing",
+        "token": "sync_event"
+      },
+      "ordered_owner_chain": [
+        "provider/service.py::ProviderMemoryService.sync_event",
+        "semantic_ingestion/canonical_evidence_arena.py::CanonicalEvidenceArena.snapshot",
+        "semantic_ingestion/persistence.py::def persist("
+      ],
+      "planned_proof_ids": [
+        "VCC-R11-ENABLED-EQUIVALENCE",
+        "VCC-R11-NEGATIVE-HANDOFF",
+        "VCC-R11-FALLBACK"
+      ],
+      "production_trigger": "closure lifecycle observation",
+      "status": "planned",
+      "target_callsite": {
+        "constructor": "ProviderMemoryService.__init__",
+        "owner": "provider/service.py::ProviderMemoryService.sync_event",
+        "parameters": [
+          "metrics_sink",
+          "content_free_snapshot"
+        ],
+        "status": "planned"
+      },
+      "validation_boundary": {
+        "path": "memorii/memorii/core/provider/service.py",
+        "status": "existing",
+        "symbol": "def sync_event("
+      }
+    },
+    "VCC-R12": {
+      "authority_bindings": [
+        {
+          "parameter": "validated_canonical_closure_enabled",
+          "proof_id": "VCC-R12-AUTH-01",
+          "status": "planned"
+        }
+      ],
+      "call_edges": [
+        {
+          "from_owner": "provider/service.py::ProviderMemoryService.sync_event",
+          "proof_id": "VCC-R12-EDGE-01",
+          "status": "planned",
+          "to_owner": "semantic_ingestion/canonical_evidence_arena.py::CanonicalEvidenceArena"
+        },
+        {
+          "from_owner": "semantic_ingestion/canonical_evidence_arena.py::CanonicalEvidenceArena",
+          "proof_id": "VCC-R12-EDGE-02",
+          "status": "planned",
+          "to_owner": "provider/ingestion.py::ProviderIngestion.ingest"
+        },
+        {
+          "from_owner": "provider/ingestion.py::ProviderIngestion.ingest",
+          "proof_id": "VCC-R12-EDGE-03",
+          "status": "planned",
+          "to_owner": "semantic_ingestion/persistence.py::def persist("
+        }
+      ],
+      "current_production_anchor": {
+        "caller_query_pattern": "\\.sync_event\\(",
+        "caller_query_roots": [
+          "memorii/memorii/core",
+          "memorii/memorii/integrations"
+        ],
+        "captured_non_test_callers": 1,
+        "edge_token": "service.sync_event(",
+        "excluded_path_parts": [
+          "benchmark",
+          "test",
+          "tests",
+          "tools"
+        ],
+        "from_path": "memorii/memorii/core/semantic_ingestion/production_capture.py",
+        "from_symbol": "def _capture_child(",
+        "to_path": "memorii/memorii/core/provider/service.py",
+        "to_symbol": "def sync_event("
+      },
+      "durable_outcome": {
+        "mode": "unchanged_persistence",
+        "path": "memorii/memorii/core/semantic_ingestion/persistence.py",
+        "status": "existing",
+        "symbol": "def persist("
+      },
+      "fallback_branch": {
+        "path": "memorii/memorii/core/semantic_ingestion/canonical_evidence_arena.py",
+        "status": "existing",
+        "token": "capacity_fallbacks"
+      },
+      "ordered_owner_chain": [
+        "provider/service.py::ProviderMemoryService.sync_event",
+        "semantic_ingestion/canonical_evidence_arena.py::CanonicalEvidenceArena",
+        "provider/ingestion.py::ProviderIngestion.ingest",
+        "semantic_ingestion/persistence.py::def persist("
+      ],
+      "planned_proof_ids": [
+        "VCC-R12-ENABLED-EQUIVALENCE",
+        "VCC-R12-NEGATIVE-HANDOFF",
+        "VCC-R12-FALLBACK"
+      ],
+      "production_trigger": "closure mode selection before operation allocation",
+      "status": "planned",
+      "target_callsite": {
+        "constructor": "ProviderMemoryService.__init__",
+        "owner": "provider/service.py::ProviderMemoryService.sync_event",
+        "parameters": [
+          "validated_canonical_closure_enabled"
+        ],
+        "status": "planned"
+      },
+      "validation_boundary": {
+        "path": "memorii/memorii/core/provider/service.py",
+        "status": "existing",
+        "symbol": "def sync_event("
+      }
+    }
+  },
+  "schema": "memorii.production-entrypoint-expected-rows.v1"
+}

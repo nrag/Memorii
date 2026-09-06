@@ -1,11 +1,25 @@
 from datetime import UTC, datetime
+from hashlib import sha256
 from pathlib import Path
 
 import pytest
+from memorii.core.memory_evolution.atomic_store import SemanticIngestionAtomicStore
+from memorii.core.memory_evolution.conflict_attention import (
+    ConflictClarificationProcessingReceipt,
+)
+from memorii.core.memory_evolution.ingestion_contracts import encode_typed_value
 from memorii.core.memory_evolution.writer_admission import (
     SemanticWriterAdmissionError,
     SemanticWriterAdmissionStore,
+    _is_atomic_clarification_projection_write,
+    _is_bootstrap_graph_v3_epoch_transition_write,
     bounded_preplanning_ownership_manifest,
+)
+from memorii.core.memory_plane.models import CanonicalMemoryRecord
+from memorii.core.memory_plane.semantic_control import (
+    SEMANTIC_CONTROL_ID_PREFIXES,
+    SEMANTIC_CONTROL_SOURCE_KINDS,
+    semantic_control_class,
 )
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.memory_plane.store import (
@@ -15,6 +29,247 @@ from memorii.core.memory_plane.store import (
     MemoryPlaneStore,
     RecordAbsentPrecondition,
 )
+from memorii.domain.enums import (
+    CommitStatus,
+    MemoryDomain,
+    MemoryRecordVisibility,
+)
+
+
+def _bootstrap_graph_v3_epoch_transition_records() -> tuple[CanonicalMemoryRecord, ...]:
+    """The exact content join emitted by the dedicated graph epoch store."""
+    timestamp = datetime(2026, 1, 1, tzinfo=UTC)
+    request_core_digest = sha256(b"graph-request-core").hexdigest()
+    epoch_digest = sha256(b"graph-epoch").hexdigest()
+    transition_digest = sha256(b"graph-transition").hexdigest()
+    epoch = {
+        "request_core_digest": request_core_digest,
+        "epoch_digest": epoch_digest,
+        "epoch": 0,
+    }
+
+    def record(*, kind: str, content: dict[str, object]) -> CanonicalMemoryRecord:
+        return CanonicalMemoryRecord(
+            memory_id=f"semantic_ingestion:bootstrap_graph_v3:{kind}",
+            domain=MemoryDomain.EXECUTION,
+            text="",
+            content=content,
+            status=CommitStatus.COMMITTED,
+            source_kind=f"semantic_ingestion_bootstrap_graph_v3_{kind}",
+            timestamp=timestamp,
+            visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+        )
+
+    return (
+        record(
+            kind="epoch",
+            content={"semantic_ingestion_kind": "bootstrap_graph_v3_epoch", "epoch": epoch},
+        ),
+        record(
+            kind="epoch_head",
+            content={
+                "semantic_ingestion_kind": "bootstrap_graph_v3_epoch_head",
+                "request_core_digest": request_core_digest,
+                "epoch": 0,
+                "epoch_digest": epoch_digest,
+            },
+        ),
+        record(
+            kind="epoch_transition",
+            content={
+                "semantic_ingestion_kind": "bootstrap_graph_v3_epoch_transition",
+                "transition_digest": transition_digest,
+                "transition": {"transition_digest": transition_digest},
+                "epoch": epoch,
+            },
+        ),
+    )
+
+
+def test_bootstrap_graph_v3_epoch_transition_admits_exact_atomic_record_tuple() -> None:
+    records = _bootstrap_graph_v3_epoch_transition_records()
+
+    assert _is_bootstrap_graph_v3_epoch_transition_write(list(records), [])
+
+    bad_head = records[1].model_copy(
+        update={"content": records[1].content | {"epoch_digest": sha256(b"other").hexdigest()}}
+    )
+    assert not _is_bootstrap_graph_v3_epoch_transition_write(
+        [records[0], bad_head, records[2]], []
+    )
+
+
+def _clarification_terminal_pair(
+    outcome: str = "rejected",
+) -> tuple[CanonicalMemoryRecord, CanonicalMemoryRecord]:
+    operation_id = sha256(b"clarification-operation").hexdigest()
+    conflict_revision = sha256(b"conflict-revision").hexdigest()
+    resulting_revision = sha256(b"resulting-revision").hexdigest()
+    proposal_digest = sha256(b"proposal").hexdigest()
+    policy_fingerprint = sha256(b"policy").hexdigest()
+    semantic_result_digest = sha256(b"semantic-result").hexdigest()
+    body: dict[str, object] = {
+        "processing_operation_id": operation_id,
+        "conflict_id": "conflict",
+        "conflict_revision": conflict_revision,
+        "resulting_conflict_revision": resulting_revision,
+        "proposal_digest": proposal_digest,
+        "source_user_event_id": "user-event",
+        "source_user_event_digest": sha256(b"user-event").hexdigest(),
+        "policy_fingerprint": policy_fingerprint,
+        "committed_outcome": outcome,
+        "semantic_result_digest": semantic_result_digest,
+        "semantic_terminal_hex": None,
+        "graph_delta_hex": None,
+        "graph_delta_digest": None,
+        "semantic_event_batch_id": None,
+        "semantic_event_batch_digest": None,
+        "graph_revision_before": None,
+        "graph_revision_after": None,
+        "semantic_recovery_authority_generation": None,
+        "semantic_recovery_authority_id": None,
+    }
+    transaction_id = f"clarification-{operation_id}"
+    transaction_digest = sha256(encode_typed_value(body)).hexdigest()
+    receipt = ConflictClarificationProcessingReceipt.create(
+        processing_operation_id=operation_id,
+        conflict_id="conflict",
+        conflict_revision=resulting_revision,
+        proposal_digest=proposal_digest,
+        policy_fingerprint=policy_fingerprint,
+        semantic_transaction_id=transaction_id,
+        semantic_transaction_digest=transaction_digest,
+        semantic_result_digest=semantic_result_digest,
+        committed_outcome=outcome,
+        committed_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    transaction_record = CanonicalMemoryRecord(
+        memory_id=f"semantic_ingestion:clarification:transaction:{operation_id}",
+        domain=MemoryDomain.EXECUTION,
+        text="",
+        content={
+            "semantic_ingestion_kind": "conflict_clarification_transaction",
+            "semantic_transaction_id": transaction_id,
+            "semantic_transaction_digest": transaction_digest,
+            "transaction": body,
+        },
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_conflict_clarification_transaction",
+        timestamp=datetime(2026, 1, 1, tzinfo=UTC),
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+    receipt_record = CanonicalMemoryRecord(
+        memory_id=f"semantic_ingestion:clarification:receipt:{operation_id}",
+        domain=MemoryDomain.EXECUTION,
+        text="",
+        content={
+            "semantic_ingestion_kind": "conflict_clarification_processing_receipt",
+            "receipt": receipt.model_dump(mode="json"),
+        },
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_conflict_clarification_receipt",
+        timestamp=datetime(2026, 1, 1, tzinfo=UTC),
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+    return transaction_record, receipt_record
+
+
+@pytest.mark.parametrize("outcome", ["rejected", "insufficient"])
+def test_detached_clarification_terminal_pair_is_not_admitted(
+    outcome: str,
+) -> None:
+    """A receipt pair cannot stand in for its same-plane conflict closure."""
+    records = _clarification_terminal_pair(outcome)
+    assert not _is_atomic_clarification_projection_write(records, [])
+
+
+def test_direct_governed_write_rejects_detached_clarification_receipt_pair() -> None:
+    """The MemoryPlane policy, not just its helper, rejects the loose pair."""
+
+    backend = InMemoryMemoryPlaneStore()
+    plane = MemoryPlaneService(record_store=backend)
+    admissions = SemanticWriterAdmissionStore(
+        plane, bounded_preplanning_ownership_manifest()
+    )
+    admission = admissions.create_initial_evidence_only(
+        admission_id="writer-admission",
+        writer_implementation_fingerprint="writer-fingerprint",
+        graph_schema_fingerprint="schema-fingerprint",
+    )
+    atomic = SemanticIngestionAtomicStore(plane, admissions)
+    authorization = admissions._authorize_atomic(
+        admissions.commit_binding(admission), capability=atomic._write_capability
+    )
+    records = _clarification_terminal_pair()
+    before = backend.read_snapshot()
+
+    with pytest.raises(SemanticWriterAdmissionError):
+        plane.conditionally_write_records(
+            records,
+            preconditions=tuple(
+                RecordAbsentPrecondition(memory_id=record.memory_id)
+                for record in records
+            ),
+            authorization=authorization,
+        )
+
+    assert backend.read_snapshot() == before
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "missing",
+        "duplicate",
+        "foreign_kind",
+        "mismatched_operation_ids",
+        "wrong_prefix",
+        "divergent_binding",
+    ],
+)
+def test_no_projection_clarification_terminal_pair_rejects_every_mutated_family(
+    mutation: str,
+) -> None:
+    transaction, receipt = _clarification_terminal_pair()
+    if mutation == "missing":
+        records = (transaction,)
+    elif mutation == "duplicate":
+        records = (transaction, receipt, receipt)
+    elif mutation == "foreign_kind":
+        records = (transaction, receipt.model_copy(update={"source_kind": "semantic_ingestion_event_batch"}))
+    elif mutation == "mismatched_operation_ids":
+        body = dict(transaction.content["transaction"])
+        body["processing_operation_id"] = sha256(b"other-operation").hexdigest()
+        records = (
+            transaction.model_copy(
+                update={
+                    "content": transaction.content
+                    | {
+                        "semantic_transaction_digest": sha256(encode_typed_value(body)).hexdigest(),
+                        "transaction": body,
+                    }
+                }
+            ),
+            receipt,
+        )
+    elif mutation == "wrong_prefix":
+        records = (transaction, receipt.model_copy(update={"memory_id": "clarification:receipt:wrong"}))
+    else:
+        body = dict(transaction.content["transaction"])
+        body["proposal_digest"] = sha256(b"other-proposal").hexdigest()
+        records = (
+            transaction.model_copy(
+                update={
+                    "content": transaction.content
+                    | {
+                        "semantic_transaction_digest": sha256(encode_typed_value(body)).hexdigest(),
+                        "transaction": body,
+                    }
+                }
+            ),
+            receipt,
+        )
+    assert not _is_atomic_clarification_projection_write(records, [])
 
 
 def test_certified_current_writer_is_recoverable_and_exact() -> None:
@@ -154,31 +409,122 @@ def test_reopened_jsonl_backend_denies_governed_write_before_policy_reinstall(tm
 
 
 @pytest.mark.parametrize("backend_kind", ["memory", "jsonl"])
-@pytest.mark.parametrize("source_kind", [
-    "semantic_ingestion_source",
-    "semantic_ingestion_metadata_poor_snapshot",
-    "semantic_ingestion_admission_index",
-    "semantic_ingestion_profile_selection",
-    "semantic_ingestion_profile_verification",
-    "semantic_ingestion_profile_outcome",
-])
-def test_admission_records_reject_unbound_generic_writes(
-    tmp_path: Path, backend_kind: str, source_kind: str
-) -> None:
+@pytest.mark.parametrize(
+    "source_kind",
+    [
+        "semantic_ingestion_source",
+        "semantic_ingestion_metadata_poor_snapshot",
+        "semantic_ingestion_admission_index",
+        "semantic_ingestion_profile_selection",
+        "semantic_ingestion_profile_verification",
+        "semantic_ingestion_profile_outcome",
+    ],
+)
+def test_admission_records_reject_unbound_generic_writes(tmp_path: Path, backend_kind: str, source_kind: str) -> None:
     backend: MemoryPlaneStore = (
-        InMemoryMemoryPlaneStore()
-        if backend_kind == "memory"
-        else JsonlMemoryPlaneStore(tmp_path / source_kind)
+        InMemoryMemoryPlaneStore() if backend_kind == "memory" else JsonlMemoryPlaneStore(tmp_path / source_kind)
     )
     plane = MemoryPlaneService(record_store=backend)
     admissions = SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest())
     current = admissions.create_initial_evidence_only(
         admission_id="writer-admission", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
     )
-    forged = admissions.require_current(admissions.commit_binding(current)).model_copy(update={
-        "memory_id": f"semantic_ingestion:forged:{source_kind}", "source_kind": source_kind
-    })
+    forged = admissions.require_current(admissions.commit_binding(current)).model_copy(
+        update={"memory_id": f"semantic_ingestion:forged:{source_kind}", "source_kind": source_kind}
+    )
     before = backend.read_snapshot()
     with pytest.raises(SemanticWriterAdmissionError):
         plane.write_records((forged,))
     assert backend.read_snapshot() == before
+
+
+@pytest.mark.parametrize(
+    ("memory_id", "source_kind"),
+    (
+        *tuple(
+            (f"ordinary:semantic-control-source:{index}", source_kind)
+            for index, source_kind in enumerate(sorted(SEMANTIC_CONTROL_SOURCE_KINDS))
+        ),
+        *tuple((f"{prefix}direct-cas-probe", "ordinary") for prefix in SEMANTIC_CONTROL_ID_PREFIXES),
+    ),
+)
+def test_every_semantic_control_source_and_namespace_rejects_direct_cas(
+    memory_id: str,
+    source_kind: str,
+) -> None:
+    backend = InMemoryMemoryPlaneStore()
+    plane = MemoryPlaneService(record_store=backend)
+    admissions = SemanticWriterAdmissionStore(
+        plane,
+        bounded_preplanning_ownership_manifest(),
+    )
+    admissions.create_initial_evidence_only(
+        admission_id="writer-admission",
+        writer_implementation_fingerprint="writer-fingerprint",
+        graph_schema_fingerprint="schema-fingerprint",
+    )
+    forged = CanonicalMemoryRecord(
+        memory_id=memory_id,
+        domain=MemoryDomain.SEMANTIC,
+        text="forged semantic control",
+        content={},
+        status=CommitStatus.COMMITTED,
+        source_kind=source_kind,
+        timestamp=datetime(2026, 1, 1, tzinfo=UTC),
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+    before = backend.read_snapshot()
+
+    with pytest.raises(SemanticWriterAdmissionError):
+        plane.conditionally_write_records(
+            (forged,),
+            preconditions=(RecordAbsentPrecondition(memory_id=forged.memory_id),),
+        )
+
+    assert backend.read_snapshot() == before
+
+
+@pytest.mark.parametrize(
+    ("memory_id", "source_kind"),
+    (
+        (
+            "semantic_ingestion:bootstrap-v3-recovery:" + ("a" * 64),
+            "semantic_ingestion_bootstrap_v3_recovery_index",
+        ),
+        (
+            "semantic_ingestion:source-normalization-recovery:" + ("b" * 64),
+            "semantic_ingestion_source_normalization_recovery_index",
+        ),
+    ),
+)
+def test_recovery_indices_are_classified_as_recovery_namespaces(
+    memory_id: str,
+    source_kind: str,
+) -> None:
+    record = CanonicalMemoryRecord(
+        memory_id=memory_id,
+        domain=MemoryDomain.EXECUTION,
+        text="",
+        content={},
+        status=CommitStatus.COMMITTED,
+        source_kind=source_kind,
+        timestamp=datetime(2026, 1, 1, tzinfo=UTC),
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+
+    assert semantic_control_class(record) == "recovery"
+
+
+def test_mismatched_bootstrap_recovery_namespace_stays_unknown() -> None:
+    record = CanonicalMemoryRecord(
+        memory_id="semantic_ingestion:bootstrap-v3-recovery:" + ("c" * 64),
+        domain=MemoryDomain.EXECUTION,
+        text="",
+        content={},
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_bootstrap_handoff_marker",
+        timestamp=datetime(2026, 1, 1, tzinfo=UTC),
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+
+    assert semantic_control_class(record) == "unknown"

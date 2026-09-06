@@ -1,0 +1,438 @@
+{
+  "schema": "memorii.semantic-ingestion.canonical-evidence.binding-map.v9",
+  "production_entrypoint_bindings": [
+    {
+      "requirement": "public_matrix",
+      "canonical_trigger": "ProviderMemoryService.sync_event",
+      "composition_roots": [
+        "ProviderMemoryService",
+        "build_provider_memory_service_from_env",
+        "build_filesystem_provider",
+        "HermesMemoryProvider"
+      ],
+      "matrix_order": [
+        "direct/memory",
+        "direct/jsonl",
+        "factory/memory",
+        "factory/jsonl",
+        "filesystem/memory",
+        "filesystem/jsonl",
+        "hermes/memory",
+        "hermes/jsonl"
+      ],
+      "fixture_ast_grammar": "thin-fixture-ast-grammar-v1.json",
+      "fixture_responsibility_allowlist": [
+        "parse lock-pinned manifests and deterministic input bytes",
+        "create one temporary storage root per isolated cell",
+        "select the declared public root and memory or JSONL backend",
+        "call build_verified_production_host_authority",
+        "construct the declared public root with only the returned typed authority bundle",
+        "call public sync_event exactly once",
+        "supervise the isolated child and serialize child measurements and production-issued receipts"
+      ],
+      "forbidden": [
+        "bootstrap_graph_host_bundle_builder",
+        "ProviderMemoryService._from_scenario_test_host",
+        "unit-test-module imports",
+        "scenario_test material or trust domain",
+        "fixture signing or verification",
+        "source normalization, graph construction, semantic ingestion, digest/canonicalization/cache logic, persistence/business policy",
+        "private or test helper calls",
+        "receipt or trace fabrication"
+      ],
+      "production_authority_boundary": {
+        "owning_module": "memorii/memorii/core/semantic_ingestion/production_authority.py",
+        "typed_bundle": "VerifiedProductionHostAuthority",
+        "factory": "build_verified_production_host_authority",
+        "verifier_input": "HostBootstrapMaterialVerifier.verify(presentation=..., required_trust_domain='production', server_time=...)",
+        "capability_input": "HostBootstrapCapability.load_bootstrap_material_presentation",
+        "output_authority": [
+          "HostBootstrapCapability",
+          "HostBootstrapMaterialVerifier",
+          "AuthenticatedIngressContextResolver",
+          "ProductionAuthorityCompositionReceipt"
+        ],
+        "root_argument": "verified_production_host_authority",
+        "default_behavior": "unchanged; all four existing roots retain current default construction when the explicit bundle is absent",
+        "fail_closed": "missing, malformed, scenario_test, expired, or unverified material returns no bundle and no public root may enter semantic ingestion"
+      },
+      "receipt_contract": {
+        "owner": "ProductionAuthorityCompositionReceipt has private construction and carries a non-serializable ProductionAuthorityOperationToken; build_verified_production_host_authority is its sole issuer",
+        "fields": [
+          "schema",
+          "receipt_digest",
+          "authority_digest",
+          "verified_material_digest",
+          "verification_digest",
+          "trust_domain",
+          "factory_symbol",
+          "verification_symbol",
+          "root_symbol",
+          "root",
+          "backend",
+          "operation_identity",
+          "source_revision",
+          "trace_identity"
+        ],
+        "linkage": "factory computes the receipt after verifier success; child validates exact receipt type and private operation-token object identity against the production trace before serialization; root binds root/backend/operation identity; diagnostic trace recomputes trace_identity from ordered production frames; serialization excludes the token and makes no cryptographic issuance claim"
+      },
+      "diagnostic_trace_contract": {
+        "mode": "diagnostic_profiled_non_latency only",
+        "source_path_rule": "every frame path is a locked memorii/memorii production source path; test, fixture, scenario, generated, and absent paths are rejected",
+        "ordered_common_frames": [
+          "memorii.core.semantic_ingestion.production_authority.build_verified_production_host_authority",
+          "memorii.core.memory_evolution.bootstrap_profile.HostBootstrapMaterialVerifier.verify",
+          "ProviderMemoryService.sync_event",
+          "ProviderMemoryService._ingest_event",
+          "ProviderIngestionCoordinator.ingest",
+          "ProviderIngestionCoordinator._run_semantic_ingestion"
+        ],
+        "root_construction_frames": {
+          "direct": "ProviderMemoryService.__init__",
+          "factory": "build_provider_memory_service_from_env",
+          "filesystem": "build_filesystem_provider",
+          "hermes": "HermesMemoryProvider.__init__"
+        },
+        "acceptance": "each of eight cells supplies exactly the expected ordered frames, production receipt, matching receipt trace_identity, and matching diagnostic/latency evidence identity; missing, reordered, substituted, non-production, or fabricated frames fail closed"
+      },
+      "owner_chain": [
+        "build_verified_production_host_authority",
+        "public root constructed with VerifiedProductionHostAuthority",
+        "ProviderMemoryService.sync_event",
+        "ProviderMemoryService._ingest_event",
+        "ProviderIngestionCoordinator.ingest",
+        "ProviderIngestionCoordinator._run_semantic_ingestion",
+        "BuiltInLocalHostSemanticIngestionCapability default BootstrapGraphHostBundle"
+      ],
+      "source_frame_map": {
+        "memorii.core.semantic_ingestion.production_authority.build_verified_production_host_authority": {
+          "path": "memorii/memorii/core/semantic_ingestion/production_authority.py",
+          "sha256": "394cb372058b398d2a1e56e5cf7ce356905335a9aa85bf4df95c8e5b4fd39805"
+        },
+        "memorii.core.memory_evolution.bootstrap_profile.HostBootstrapMaterialVerifier.verify": {
+          "path": "memorii/memorii/core/memory_evolution/bootstrap_profile.py",
+          "sha256": "f5c937d276709be573c68731dba9fc581a64dc95d2162683cb436f8a90c85cd6"
+        },
+        "memorii.core.provider.service.ProviderMemoryService.__init__": {
+          "path": "memorii/memorii/core/provider/service.py",
+          "sha256": "846b487d1b2ebc37f02b377ec2f37b291b71dd1cb1b68480d6545eeb8d9ab831"
+        },
+        "memorii.core.provider.factory.build_provider_memory_service_from_env": {
+          "path": "memorii/memorii/core/provider/factory.py",
+          "sha256": "1987d2d6b78e52ef46ab4294394f3d6421dbe6bcbd54fd8cb0c8f9d5842b605d"
+        },
+        "memorii.core.filesystem_storage.bundle.build_filesystem_provider": {
+          "path": "memorii/memorii/core/filesystem_storage/bundle.py",
+          "sha256": "91c7676ede308ad1f33d27504a7cf328f0a6ed55194b6aeab701503207fa989d"
+        },
+        "memorii.integrations.hermes_provider.HermesMemoryProvider.__init__": {
+          "path": "memorii/memorii/integrations/hermes_provider.py",
+          "sha256": "36f72ec99822bf7d6ca49f3ec25a4addc472f722b6b3a43d18598e1218565648"
+        },
+        "memorii.core.provider.service.ProviderMemoryService.sync_event": {
+          "path": "memorii/memorii/core/provider/service.py",
+          "sha256": "846b487d1b2ebc37f02b377ec2f37b291b71dd1cb1b68480d6545eeb8d9ab831"
+        },
+        "memorii.core.provider.service.ProviderMemoryService._ingest_event": {
+          "path": "memorii/memorii/core/provider/service.py",
+          "sha256": "846b487d1b2ebc37f02b377ec2f37b291b71dd1cb1b68480d6545eeb8d9ab831"
+        },
+        "memorii.core.provider.ingestion.ProviderIngestionCoordinator.ingest": {
+          "path": "memorii/memorii/core/provider/ingestion.py",
+          "sha256": "f0d8abe952d6ef2d1ae9eb74b240529a25509534c39caa24051a950003cf128e"
+        },
+        "memorii.core.provider.ingestion.ProviderIngestionCoordinator._run_semantic_ingestion": {
+          "path": "memorii/memorii/core/provider/ingestion.py",
+          "sha256": "f0d8abe952d6ef2d1ae9eb74b240529a25509534c39caa24051a950003cf128e"
+        },
+        "memorii.core.semantic_ingestion.canonical_evidence_arena.CanonicalEvidenceArena": {
+          "path": "memorii/memorii/core/semantic_ingestion/canonical_evidence_arena.py",
+          "sha256": "379fe056ad6d9b171851a6e596f4c9ca879920c8fa337239a9fee406baddabb9"
+        },
+        "memorii.core.semantic_ingestion.contracts.encode_semantic_contract": {
+          "path": "memorii/memorii/core/semantic_ingestion/contracts.py",
+          "sha256": "2139897d7091d8d519ca60a77be0d04aaf86d20f82741f2426fa47b31ececd9a"
+        }
+      },
+      "caller_proof": {
+        "required": "a non-test production caller must call the production factory, construct each root with its typed verified bundle, invoke ProviderMemoryService.sync_event once, and reach ProviderIngestionCoordinator._run_semantic_ingestion with production-trust authority; contract-only, fixture-only, private, scenario, optional/default, or fallback paths are insufficient",
+        "result": "implemented_unvalidated: CanonicalEvidenceCaptureSupervisor.capture_cell is a non-test production caller that invokes the production factory, selects every declared root/backend, and calls public sync_event once with only the returned typed authority. Scenario_test and ProviderMemoryService._from_scenario_test_host remain forbidden bridges; terminal receipt and ordered-trace proof remain pending focused validation."
+      },
+      "status": "implemented_unvalidated_production_authority_composition",
+      "post_implementation_proof_gates": [
+        "remove a required owner-chain caller and reject capture",
+        "omit verified_production_host_authority at any root and reject capture",
+        "verifier failure or no bundle prevents sync_event",
+        "each diagnostic receipt and trace is production-issued, source-locked, recomputed, and terminal-complete",
+        "each latency cell binds the immutable diagnostic-cell hash and exact root/backend/ordinal/operation/receipt/trace/source/evidence identities",
+        "explicit authority absence preserves existing root defaults outside diagnostic capture",
+        "child rejects a forged receipt or trace whose private operation-token identity/type is not the factory-issued object before serialization",
+        "serialized receipt contains no operation token or origin-validated assertion"
+      ]
+    },
+    {
+      "requirement": "future_arena_lifecycle",
+      "canonical_trigger": "ProviderMemoryService.sync_event",
+      "status": "implemented_not_composed",
+      "binding_table": [
+        [
+          "create+nonce",
+          "ProviderMemoryService.sync_event (memorii/memorii/core/provider/service.py)",
+          "future explicit canonical_evidence_arena and arena_nonce are created before the existing _ingest_event call"
+        ],
+        [
+          "propagate",
+          "ProviderMemoryService._ingest_event -> ProviderIngestionCoordinator.ingest -> ProviderIngestionCoordinator._run_semantic_ingestion",
+          "future explicit canonical_evidence_arena and arena_nonce parameters propagate through these existing callsites; no optional/default/fallback parameter"
+        ],
+        [
+          "same-invocation retry",
+          "no existing canonical-evidence retry branch",
+          "no hidden retry is claimed; ProviderMemoryService.sync_event will own a future same-invocation retry loop and reuse its one arena_nonce"
+        ],
+        [
+          "existing unrelated retry",
+          "ProviderIngestionCoordinator._admit_with_writer_retry",
+          "this existing writer-admission retry is not an arena retry and must not receive or recreate arena state"
+        ],
+        [
+          "later invocation",
+          "ProviderMemoryService.sync_event",
+          "each later public call creates a distinct arena_nonce"
+        ],
+        [
+          "recovery",
+          "ProviderIngestionCoordinator._run_semantic_ingestion durable-recovery branches",
+          "recovery reloads durable state only; it receives no arena and never synthesizes one"
+        ],
+        [
+          "terminal",
+          "ProviderMemoryService.sync_event finally (future explicit branch)",
+          "future owner tears down arena on success, exception, and cancellation"
+        ],
+        [
+          "concurrency+capacity",
+          "ProviderMemoryService.sync_event future explicit arena parameter",
+          "one arena-local counter per invocation; capacity fallback is passed explicitly to the canonical codec owner"
+        ]
+      ]
+    },
+    {
+      "requirement": "external_result_lock_capture",
+      "canonical_trigger": "canonical_evidence_preimport_gate.sh capture",
+      "composition_roots": [
+        "externally hashed canonical_evidence_preimport_gate.sh"
+      ],
+      "exact_callsite_and_authority": "capture pre-import hashes every candidate-lock artifact and capture-ready production source, invokes the lock-pinned static AST grammar validator in isolated mode against the exact locked runner, O_EXCL-writes execution lock only after grammar acceptance and before runner-target invocation, then O_EXCL-writes result lock containing record paths/hashes plus execution-lock hash and prints its SHA-256",
+      "owner_chain": [
+        "external launcher",
+        "isolated static grammar verifier",
+        "execution lock",
+        "future non-test production caller",
+        "diagnostic and latency artifacts",
+        "result lock",
+        "external expected-result-lock SHA-256",
+        "validator"
+      ],
+      "caller_proof": "authority_path_implemented_unvalidated_but_external_capture_not_implemented: CanonicalEvidenceCaptureSupervisor.capture_cell is the non-test caller that supplies the verified authority factory to the selected public root; the external launcher still lacks production-origin diagnostic and latency records, terminal durable-effect receipts, and the result-lock chain, so no external capture or persistence proof is complete; fixture, schema, optional/default, and fallback paths are rejected",
+      "status": "specified_not_implemented_fail_closed",
+      "comparison_contract": "Before either capture, the external launcher consumes the lock-pinned concrete comparison-schedule-authority instance once. Each capture execution lock and record binds its SHA-256. After both captures, the launcher O_EXCL-writes the comparison-result-binding instance; its externally supplied SHA-256 is checked before Python imports either side."
+    },
+    {
+      "requirement": "whole_design_capture_supervisor",
+      "canonical_trigger": "ProviderMemoryService.sync_event",
+      "canonical_owner": "memorii.core.semantic_ingestion.production_capture.CanonicalEvidenceCaptureSupervisor",
+      "production_caller": "CanonicalEvidenceCaptureSupervisor.capture_cell",
+      "status": "implemented_unvalidated_authority_path",
+      "exact_callsite_and_authority": "capture_cell creates a fresh child and storage root, obtains only build_verified_production_host_authority(capability, verifier, server_time), constructs the selected public root with verified_production_host_authority, and calls public sync_event exactly once. It does not call private terminals or create authority. Terminal durable-effect receipt and ordered diagnostic-trace serialization remain pending focused validation work.",
+      "required_authority": [
+        "opaque VerifiedProductionHostAuthority",
+        "production trust verification",
+        "authenticated ingress",
+        "fresh child-process isolation"
+      ],
+      "legacy_conflict_rule": "Every direct, factory, filesystem, and Hermes root rejects a supplied verified_production_host_authority combined with any legacy capability, verifier, resolver, graph-builder, scenario, or authority argument; absent bundle preserves existing defaults.",
+      "implemented_source_entries": [
+        "memorii/memorii/core/semantic_ingestion/production_authority.py",
+        "memorii/memorii/core/semantic_ingestion/production_capture.py"
+      ],
+      "proof": "A non-test production caller trace plus a terminal durable-effect receipt is required for all eight cells. Each receipt binds operation/root/backend/source, transaction-or-memory durable identity, effect digest, successful durable terminal status, replay identity, and no-duplicate count one. Contract, fixture, optional-argument, fallback, source-only, persistence-failed, replay-duplicate, absent, or evidence-only paths do not satisfy this binding.",
+      "post_implementation_gates": [
+        "invalid_or_expired_ingress",
+        "verifier_failure",
+        "opaque_bundle_substitution",
+        "legacy_conflict_each_root",
+        "legacy_absence_defaults",
+        "same_invocation_retry_nonce_reuse",
+        "later_invocation_nonce_separation",
+        "cancellation_or_error_finally_teardown",
+        "concurrent_isolation",
+        "capacity_fallback",
+        "jsonl_restart_recovery_no_duplicate_effect",
+        "all_eight_terminal_trace_and_durable_receipt",
+        "all_eight_terminal_durable_effect_receipt"
+      ]
+    },
+    {
+      "requirement": "accepted_fact_group_commit",
+      "canonical_trigger": "ProviderMemoryService.sync_event",
+      "status": "implemented_locally_verified",
+      "mapper_preflight": {
+        "identity": "accepted_fact_group_commit_binding_preflight",
+        "mapped_on": "2026-09-05",
+        "baseline_revision": "821b0bc7fd47ca0c55a18ccebb4b1628fa13689b",
+        "scoped_diff_sha256": "ffd409fe541a0609806ec40e8140cb497cb930aa2628c81ca28745243097b250"
+      },
+      "composition_roots": [
+        "ProviderMemoryService",
+        "build_provider_memory_service_from_env",
+        "build_filesystem_provider",
+        "HermesMemoryProvider"
+      ],
+      "current_mapping_queries": [
+        "rg -n 'graph_bundle.execute|BootstrapGraphAuthorityRequestV3' memorii/memorii/core/provider/ingestion.py",
+        "rg -n 'build_builtin_bootstrap_graph_execution_v3|def _compile' memorii/memorii/core/semantic_ingestion/bootstrap_graph_builtin.py",
+        "rg -n 'group_commit_request|commit_or_reload' memorii/memorii/core/semantic_ingestion/bootstrap_graph_coordinator.py memorii/memorii/core/semantic_ingestion/bootstrap_graph_repository.py",
+        "rg -n 'commit_or_reload_bootstrap_graph_group_v3|checkpoint_bootstrap_graph_transaction_v3' memorii/memorii/core/memory_evolution/atomic_store.py"
+      ],
+      "exact_callsite_and_authority": "Provider ingestion calls BootstrapGraphHostBundle.execute with the normalization replay, PreparedSource, RequiredOutcomeScopeSet, OperationFenceBinding, OperationLeaseBinding, and SemanticWriterCommitBinding. The host calls build_builtin_bootstrap_graph_execution_v3; _compile binds reductions, plan members, evidence, attempt inputs, and plan to one SealedGraphStateSnapshot.digest. BootstrapGraphDependentCoordinatorV3._execute_attempt calls AtomicStoreBootstrapGraphGroupCommitRepositoryV3.commit_or_reload with the assembled BootstrapGraphGroupCommitRequestV3. AtomicStore.commit_or_reload_bootstrap_graph_group_v3 validates reduction snapshot/read-set authority, injects commit coordinates, canonically orders the durable records it constructs, writes graph/event/replay/reference-integrity state atomically, and the coordinator checkpoints the exact BootstrapNativeGroupCommitTerminalConstructionV3 reload.",
+      "current_owner_chain": [
+        "ProviderMemoryService.sync_event",
+        "ProviderIngestionCoordinator._run_semantic_ingestion",
+        "BootstrapGraphHostBundle.execute",
+        "build_builtin_bootstrap_graph_execution_v3",
+        "BuiltInBootstrapGraphTargetMaterializationPlannerV3.plan",
+        "BootstrapNativeSemanticReducerV3.reduce",
+        "BootstrapGraphDependentCoordinatorV3._execute_attempt",
+        "AtomicStoreBootstrapGraphGroupCommitRepositoryV3.commit_or_reload",
+        "AtomicStore.commit_or_reload_bootstrap_graph_group_v3",
+        "AtomicStore.checkpoint_bootstrap_graph_transaction_v3"
+      ],
+      "validation_write_read_outcome": "The store rejects substituted sealed-snapshot/read-set authority before CAS. For an accepted fact it materializes the planned records under store-owned commit coordinates, sorts the resulting durable records by record kind and durable digest, constructs and replays a typed SemanticGraphDelta, advances reference integrity, writes one group-commit primary plus effects, and reloads the exact result. Before checkpoint or recovery use, the store resolves the repository-owned request/reload pair and validates the persisted native terminal's attempt, member, authorization, lineage, control bindings, and request CTV against that exact pair without duplicating the request in the checkpoint schema.",
+      "current_caller_counts": {
+        "provider_to_graph_host_execute": 1,
+        "graph_host_to_builtin_execution_builder": 1,
+        "coordinator_to_group_commit_repository": 1,
+        "group_commit_repository_to_atomic_store": 1
+      },
+      "fallback_and_failure": "Missing graph authority remains fail-closed. Pre-CAS validation and genuine storage failures retain durable retry behavior. Post-effect checkpoint acknowledgement recovery reloads the existing group commit and cannot repeat the effect.",
+      "required_proof": "The four ordinary public roots each ingest an evidence-complete entity-object fact without scenario authority and persist exactly one accepted graph/event effect. Native result codec tests reject incompatible tags, types, schema additions, modalities, and digests. Group-checkpoint and terminal acknowledgement failure tests prove one effect and found-first recovery; terminal reload rejects an absent repository-owned group primary.",
+      "locally_verified_commands": [
+        "PYTHONPATH=memorii .venv/bin/python -m pytest memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_root_composition.py -k 'builtin_native_graph or substituted_reduction_snapshot' -q -p no:cacheprovider (collected four builtin-native roots plus the direct substituted-snapshot negative; exit 0; 5 passed, 38 deselected in 282.53s)",
+        "PYTHONPATH=memorii .venv/bin/python -m pytest memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_atomic_member_native_codec.py -q -p no:cacheprovider (exit 0; 5 passed in 84.67s)",
+        "PYTHONPATH=memorii .venv/bin/python -m pytest memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_post_effect_recovery.py -k '(builtin_terminal_ack_loss or builtin_recovery_preserves) and direct' -q -p no:cacheprovider (collected direct-False/direct-True for both test families; exit 0; 4 passed, 17 deselected in 221.25s; memory and JSONL reopen identities matched)",
+        "PYTHONPATH=memorii .venv/bin/python -m pytest memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_post_effect_recovery.py -k 'terminal_reload_rejects_absent' -xq -p no:cacheprovider (exit 0; 1 passed, 20 deselected in 113.82s; absent group primary rejected)"
+      ]
+    },
+    {
+      "requirement": "bootstrap_graph_source_progress_group_cas_replan",
+      "canonical_trigger": "ProviderMemoryService.sync_event",
+      "status": "implemented_locally_verified",
+      "mapper_preflight": {
+        "identity": "bootstrap_graph_source_progress_binding_preflight_2026_09_04",
+        "mapped_on": "2026-09-04",
+        "baseline_revision": "821b0bc7fd47ca0c55a18ccebb4b1628fa13689b",
+        "candidate_state": "real_group_cas_race_and_reopen_receipts_complete"
+      },
+      "current_mapping_queries": [
+        "rg -n 'def sync_event|def ingest|def _ingest_semantic_source|def _run_semantic_ingestion' memorii/memorii/core/provider/service.py memorii/memorii/core/provider/ingestion.py",
+        "rg -n 'build_builtin_bootstrap_graph_execution_v3|BootstrapGraphDependentCoordinatorV3' memorii/memorii/core/semantic_ingestion/bootstrap_graph_builtin.py",
+        "rg -n 'commit_or_reload_bootstrap_graph_group_v3|coordinate_related_conflict|_related_conflict_successor|reload_resume_closure_for_original_fence' memorii/memorii"
+      ],
+      "current_owner_chain": [
+        "ProviderMemoryService.sync_event (service.py:619)",
+        "ProviderIngestionCoordinator.ingest (ingestion.py:268)",
+        "ProviderIngestionCoordinator._ingest_semantic_source (ingestion.py:358)",
+        "ProviderIngestionCoordinator._run_semantic_ingestion (ingestion.py:1087)",
+        "build_builtin_bootstrap_graph_execution_v3 (bootstrap_graph_builtin.py:431)",
+        "BootstrapGraphDependentCoordinatorV3 construction (bootstrap_graph_builtin.py:421)",
+        "BootstrapGraphDependentCoordinatorV3._execute_attempt group-CAS conflict branch (bootstrap_graph_coordinator.py)",
+        "BootstrapGraphHostBundle/ScenarioBootstrapGraphHostBundle fresh authority reacquisition (bootstrap_graph_host.py)",
+        "BootstrapGraphDependentCoordinatorV3.coordinate_related_conflict (bootstrap_graph_coordinator.py)",
+        "BootstrapGraphDependentCoordinatorV3._related_conflict_successor (bootstrap_graph_coordinator.py)",
+        "AtomicStoreBootstrapGraphPlanRepositoryV3.reload_resume_closure_for_original_fence and atomic store"
+      ],
+      "specified_owner_chain": [
+        "ProviderMemoryService.sync_event",
+        "ProviderIngestionCoordinator.ingest",
+        "ProviderIngestionCoordinator._ingest_semantic_source",
+        "ProviderIngestionCoordinator._run_semantic_ingestion",
+        "build_builtin_bootstrap_graph_execution_v3",
+        "BootstrapGraphDependentCoordinatorV3._execute_attempt group-CAS conflict branch",
+        "BootstrapGraphHostBundle fresh authority reacquisition",
+        "BootstrapGraphDependentCoordinatorV3.coordinate_related_conflict",
+        "BootstrapGraphDependentCoordinatorV3._related_conflict_successor",
+        "AtomicStoreBootstrapGraphPlanRepositoryV3.reload_resume_closure_for_original_fence",
+        "checkpoint_bootstrap_graph_transaction_v3"
+      ],
+      "authority_and_outcome": "A clarification is admitted and committed through the ordinary semantic-conflict lifecycle. If that committed change makes an already-planned V3 group stale, the group-CAS owner returns the dedicated typed related-conflict requirement bound to the original OperationFenceBinding. The graph host reacquires a fresh shared graph snapshot, compiler, epoch and authorizer, then coordinate_related_conflict reloads the original fence's exact sealed closure before appending one typed successor. The original source is not readmitted or renormalized during replan.",
+      "current_caller_counts": {
+        "provider_to_group_cas_conflict_branch": 1,
+        "group_cas_conflict_branch_to_host_refresh": 1,
+        "host_refresh_to_coordinate_related_conflict": 1,
+        "group_cas_conflict_branch_to_related_conflict_successor": 1,
+        "related_conflict_successor_to_reload_resume_closure": 1
+      },
+      "implementation_blocker": null,
+      "locally_verified_commands": [
+        "PYTHONPATH=memorii .venv/bin/python -m pytest -q 'memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_scenario_replay.py::test_graph_scenario_replays_without_effects_in_memory[related_conflict-direct]' 'memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_scenario_replay.py::test_graph_scenario_replays_without_effects_in_memory[source_progress_related_conflict-direct]' -p no:cacheprovider (exit 0; 2 passed in 127.84s on 2026-09-05; the exact typed group-CAS related-conflict and source-progress successor paths retain the original fence without a second source admission)",
+        "PYTHONPATH=memorii .venv/bin/python -m pytest -q memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_root_composition.py::test_disjoint_accepted_group_cas_winner_forces_typed_successor -p no:cacheprovider (exit 0; 1 passed in 86.74s on 2026-09-06; disjoint materialized targets still advance the globally sealed graph/ledger partitions and force one typed successor)"
+      ],
+      "absence_contract": "An unavailable or invalid original-fence closure returns typed V3 noncommit and publishes no successor plan, attempt, lineage, admission, or delivery. Generic SemanticConflictProjectionStaleWinnerError remains non-V3 and cannot trigger a V3 successor.",
+      "required_proof": "Prove the normal clarification admission/commit lifecycle separately from the group-CAS successor. At the physical group CAS, allow an accepted semantic winner with disjoint materialized record intents to advance the globally sealed graph/ledger partitions, then prove A's original-fence closure reload, one successor sequence, byte-identical independent-process JSONL reopen, and zero source readmission or renormalization. Separately prove that an execution-domain write outside the sealed graph read set performs one CAS without a conflict or retry.",
+      "post_implementation_gates": [
+        "native-member validation before reload/write",
+        "exact original-request/fence/principal/scopes/epoch/lease/writer propagation",
+        "one group-CAS related-conflict successor",
+        "zero full-pipeline re-entry",
+        "zero provider-event normalization",
+        "one admission per ingested record and no re-admission during replan",
+        "memory and jsonl independent-process transaction-boundary receipts",
+        "aggregate receipt union and timing inventory update"
+      ]
+    },
+    {
+      "requirement": "composite_conflict_cursor_clock",
+      "canonical_trigger": "ProviderMemoryService.prefetch_with_attention; ProviderMemoryService.handle_tool_call_with_attention",
+      "status": "implemented_locally_verified",
+      "mapper_preflight": {
+        "mapped_on": "2026-09-05",
+        "baseline_revision": "821b0bc7fd47ca0c55a18ccebb4b1628fa13689b",
+        "mapping_query": "rg -n 'prefetch_with_attention|_attention_page|_composite_attention_repository|CompositeConflictListingRepository' memorii/memorii/core/provider/service.py memorii/memorii/core/memory_evolution"
+      },
+      "current_owner_chain": [
+        "ProviderMemoryService.prefetch_with_attention / handle_tool_call_with_attention (service.py)",
+        "parse_conflict_list_request v1/v2 syntax admission (conflict_attention.py)",
+        "ProviderMemoryService._attention_page (service.py:1468)",
+        "ProviderMemoryService._composite_attention_repository (service.py:1496)",
+        "CompositeConflictListingRepository.list_conflicts (composite_conflict_listing.py:584)",
+        "FileConflictAttentionRepository.cursor_clock/cursor_signing_key (conflict_attention_repository.py)"
+      ],
+      "authority_and_outcome": "Authenticated ingress resolves the caller's conflict access; enabled composite composition requires the file ledger child. Provider construction deliberately does not pass its general-purpose now_provider into the composite. Fresh preparation holds one exclusive ledger lock over one record image, derives membership, conditionally preflights the active key only when the requested page requires a v2 cursor, then appends both child snapshots. Empty and one-page listings need no key; unavailable paginated keys append nothing.",
+      "current_caller_counts": {
+        "public_prefetch_to_attention_page": 1,
+        "public_tool_to_attention_page": 1,
+        "attention_page_to_composite_builder": 1,
+        "composite_builder_to_listing_owner": 1
+      },
+      "fallback_and_failure": "Disabled attention returns the documented empty page; enabled composite composition rejects a non-file-ledger child. No default clock fallback extends a short-lived or expired key: cursor issuance remains conflict_cursor_key_unavailable and continuation remains invalid_conflict_cursor.",
+      "locally_verified_commands": [
+        "PYTHONPATH=memorii .venv/bin/python -m pytest memorii/tests/unit/core/test_composite_conflict_listing_repository.py -q (exit 0; 10 passed in 8.96s; direct composition inherited the ledger clock, explicit override and short-lived-key negatives remained closed)",
+        "PYTHONPATH=memorii .venv/bin/python -m pytest memorii/tests/unit/core/test_composite_conflict_listing_repository.py memorii/tests/unit/core/test_conflict_attention_provider_service.py -q (exit 0; 47 passed in 9.09s; public prefetch/tool paths prove ledger-clock pagination, repeated short-key failure without byte changes, and real-ledger v1/v2 cross-protocol rejection without fallback)"
+      ]
+    },
+    {
+      "requirement": "canonical_evidence_arena",
+      "canonical_trigger": "ProviderMemoryService.sync_event",
+      "canonical_owner": "memorii.core.semantic_ingestion.canonical_evidence_arena.CanonicalEvidenceArena",
+      "status": "specified_not_implemented",
+      "key": "(canonical_contract_bytes, concrete_contract_type, profile_revision, codec_revision, domain); canonical bytes precede digest and no claimed digest/envelope is keyed",
+      "value": "immutable canonical bytes plus typed ValidatedCanonicalEvidenceResult and validation provenance",
+      "eligible": "only recursively repeated content-addressed typed contracts in one sync_event operation",
+      "miss_and_failure": "first encounter runs complete existing validation and caches only post-success; invalid, error, noneligible, malformed-context, or saturated paths execute legacy exactly",
+      "hit": "returns semantically identical typed result but never skips downstream provenance, lifecycle, transaction, or persistence",
+      "context": "private object key through Pydantic ValidationInfo.context; missing/wrong/copy/stale context fails closed",
+      "lifecycle": "sync_event owns create, same-invocation retry reuse, later/concurrent isolation, bounded no-eviction saturation fallback, and finally teardown; recovery never creates an arena"
+    }
+  ]
+}

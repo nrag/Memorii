@@ -1,0 +1,20 @@
+{
+  "arena_structural_no_write": true,
+  "composition_root_count": 4,
+  "edge_count": 22,
+  "failures": [],
+  "mutation_results": {
+    "capture_only_root": true,
+    "constructor_direction": true,
+    "duplicate_symbol_qualname": true,
+    "invented_edge": true,
+    "invented_state_authority": true,
+    "missing_runtime_proof": true,
+    "r08_durable_write": true,
+    "reversed_edge": true,
+    "snapshot_edge_invention": true
+  },
+  "passed": true,
+  "requirement_count": 12,
+  "schema": "memorii.production-entrypoint-bindings-validation.v5"
+}

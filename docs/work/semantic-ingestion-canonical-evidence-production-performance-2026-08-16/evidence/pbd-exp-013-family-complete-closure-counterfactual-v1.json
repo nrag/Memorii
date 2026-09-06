@@ -1,0 +1,1238 @@
+{
+  "bounds": {
+    "maximum_charged_bytes": 33554432,
+    "maximum_entries": 512,
+    "maximum_root_bytes": 2097152,
+    "scope": "one provider operation; writer proofs are unique per write invocation"
+  },
+  "certifies_m3_1": false,
+  "decision": "REPEATED_DIGEST_REDUCTION_TARGET_NOT_MET",
+  "elapsed_reduction_fraction": 0.16987701618677897,
+  "elapsed_seconds": {
+    "family_complete_closure": 66.2120925440031,
+    "safe_reference": 79.7617869099995
+  },
+  "evidence_stage": "reference_only_diagnostic",
+  "experiment": "PBD-EXP-013",
+  "full_digest_computations": {
+    "family_complete_closure": 27584,
+    "safe_reference": 42955
+  },
+  "production_implementation_changed": false,
+  "promise_projection_equal": true,
+  "promise_projection_sha256": "204514bc04d4ee551323db7dc1a4ab15e4da4c4cb79fce751d84dcceabd6ffdb",
+  "proof": {
+    "admissions": 90,
+    "capacity_fallbacks": 0,
+    "charged_bytes": 10262837,
+    "decode_hits": 30,
+    "decode_misses": 26,
+    "encode_hits": 59,
+    "encode_misses": 64,
+    "entries": 90,
+    "writer_scoped_hits": 4
+  },
+  "proof_covered_digest_validations": 15371,
+  "repeated_digest_computations": {
+    "family_complete_closure": 27346,
+    "safe_reference": 42717
+  },
+  "repeated_digest_reduction_fraction": 0.35983332162839154,
+  "runs": {
+    "family_complete_closure": {
+      "blocked_reasons": {
+        "episodic": "operation 'chat_user_turn' blocks direct 'episodic' commit in provider ingestion path",
+        "semantic": "operation 'chat_user_turn' blocks direct 'semantic' commit in provider ingestion path",
+        "semantic_ingestion": "source_only",
+        "user": "operation 'chat_user_turn' blocks direct 'user' commit in provider ingestion path"
+      },
+      "bootstrap_publish_calls": 1,
+      "content_validation_calls": 42955,
+      "content_validation_families": {
+        "memorii.core.semantic_ingestion.contracts.ActionProposalCatalog": {
+          "calls": 3
+        },
+        "memorii.core.semantic_ingestion.contracts.AnalyzerManifest": {
+          "calls": 4
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapAnalysisLaneResultV3": {
+          "calls": 412
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapAnalysisRouteProjection": {
+          "calls": 2
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapAnalyzerRoleInterpretationV3": {
+          "calls": 208
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapAnalyzerScopeInterpretationV3": {
+          "calls": 330
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapAnalyzerScopeObservationV3": {
+          "calls": 332
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapAnalyzerTemporalAttachmentObservationV3": {
+          "calls": 258
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapAnalyzerTemporalAttachmentV3": {
+          "calls": 256
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphAtomicEffectReceiptV3": {
+          "calls": 15
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphAttemptConstructionInputsV3": {
+          "calls": 4
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphAuthorityGenerationV3": {
+          "calls": 9
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphAuthorityPublicationCoreV3": {
+          "calls": 9
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphAuthorityPublicationReceiptV3": {
+          "calls": 9
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphCanonicalSourceResultInputV3": {
+          "calls": 4
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphCanonicalSourceResultV3": {
+          "calls": 6
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphCheckpointReceiptV3": {
+          "calls": 14
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphControlEpochAdvancedV3": {
+          "calls": 1
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphControlEpochFoundV3": {
+          "calls": 2
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphControlEpochTransitionRequestV3": {
+          "calls": 5
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphControlEpochV3": {
+          "calls": 30
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphCurrentGenerationV3": {
+          "calls": 62
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphDependentAttemptV3": {
+          "calls": 21
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphDependentCoordinatorRequestV3": {
+          "calls": 6
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphDependentCoordinatorSucceededV3": {
+          "calls": 1
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphExecutionManifestConstructionV3": {
+          "calls": 1
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphExecutionManifestGroupInputV3": {
+          "calls": 12
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphFinalStageEvidenceV3": {
+          "calls": 1
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphFreeInterpretationBundleV3": {
+          "calls": 63
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphGroupCommitReloadV3": {
+          "calls": 15
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphGroupCommitRequestV3": {
+          "calls": 6
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphGroupCommitResultCoreV3": {
+          "calls": 15
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphGroupCommitResultV3": {
+          "calls": 15
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphNormalizationAuthorityMemberV3": {
+          "calls": 15
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphNormalizationAuthorityReloadV3": {
+          "calls": 11
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphOperationCommitResultV3": {
+          "calls": 18
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphOperationReductionV3": {
+          "calls": 28
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphOperationStoreMaterializationInputV3": {
+          "calls": 7
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphPlanAtomicMemberV3": {
+          "calls": 73
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphPlanAtomicReloadCoreV3": {
+          "calls": 10
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphPlanAtomicReloadV3": {
+          "calls": 5
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphPlanAtomicWriteIdentityV3": {
+          "calls": 4
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphPlanAtomicWriteRequestV3": {
+          "calls": 15
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphPlanAuthorizationSetV3": {
+          "calls": 1
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphPlanCompilationV3": {
+          "calls": 2
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphPreExecutionGroupEvidenceV3": {
+          "calls": 4
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphPreExecutionManifestCoreV3": {
+          "calls": 10
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphPreExecutionManifestIdentityClosureV3": {
+          "calls": 9
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphPreExecutionManifestIdentityV3": {
+          "calls": 11
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphPreparedSourceTerminalAuthorityV3": {
+          "calls": 11
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphSnapshotAuthorityV3": {
+          "calls": 21
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphTerminalControlV3": {
+          "calls": 4
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphTerminalHandoffCoreV3": {
+          "calls": 8
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphTerminalHostAuthorityV3": {
+          "calls": 1
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphTerminalMemberIntentV3": {
+          "calls": 63
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphTerminalPersistenceHandoffV3": {
+          "calls": 5
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphTerminalPreparationV3": {
+          "calls": 1
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphTerminalPublicationIntentV3": {
+          "calls": 8
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphTerminalPublicationRequestV3": {
+          "calls": 4
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphTerminalReloadV3": {
+          "calls": 4
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphTransactionAuthorityProjectionV3": {
+          "calls": 12
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphTransactionAuthorityReloadV3": {
+          "calls": 8
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphTransactionAuthorityWriteRequestV3": {
+          "calls": 3
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGroupPlanningAuthorizationV3": {
+          "calls": 36
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapInitialAttemptAuthorityV3": {
+          "calls": 19
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapLinguisticAnalysisRequestV3": {
+          "calls": 2
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapNativeGroupCommitTerminalConstructionV3": {
+          "calls": 12
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapNativeOperationArtifactClosureV3": {
+          "calls": 26
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapNativeOperationCompilationV3": {
+          "calls": 26
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapNativeOperationEffectMaterializationV3": {
+          "calls": 26
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapNativeOperationReductionInputV3": {
+          "calls": 41
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapNativeOperationTerminalV3": {
+          "calls": 26
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapNoReservationUseV3": {
+          "calls": 39
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapNormalizationRequestCoreV3": {
+          "calls": 33
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapNormalizedProposalV3": {
+          "calls": 101
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapOperationAlignmentV3": {
+          "calls": 105
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapOperationTemporalAttachmentConsensusSetV3": {
+          "calls": 105
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapParserConsensusAssessmentV3": {
+          "calls": 105
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapPreAlignmentOperationSubjectSetV3": {
+          "calls": 63
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapPreAlignmentOperationSubjectV3": {
+          "calls": 101
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapPredicateEventDetectionRequestV3": {
+          "calls": 1
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapPredicateLanePayloadV3": {
+          "calls": 101
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapProposalAttemptV3": {
+          "calls": 63
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapProposalCoverageAuditV3": {
+          "calls": 67
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapProposalEntityObjectV3": {
+          "calls": 159
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapProposalEvidenceItemV3": {
+          "calls": 1537
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapProposalFactV3": {
+          "calls": 162
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapProposalMentionV3": {
+          "calls": 398
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapProposalRunPayloadV3": {
+          "calls": 65
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapProposalTransportRequestV3": {
+          "calls": 63
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapRecoveryReplayRecordV3": {
+          "calls": 22
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapSegmentAnalysisInputV3": {
+          "calls": 6
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapSemanticProposalRequestV3": {
+          "calls": 2
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapSemanticProposalRunV3": {
+          "calls": 27
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapSemanticReductionAuthorityMemberV3": {
+          "calls": 18
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapSemanticReductionAuthorityReloadV3": {
+          "calls": 1
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapSemanticScopeConsensusV3": {
+          "calls": 105
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapSourceDependencyGroupV3": {
+          "calls": 110
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapSourceLocalIdentityClusterDecisionV3": {
+          "calls": 208
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapSourceLocalIdentityPartitionEvidenceV3": {
+          "calls": 101
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapSourceLocalIdentityResolutionV3": {
+          "calls": 105
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapSourceNormalizationEvidenceManifestV3": {
+          "calls": 36
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapSourceNormalizationRequestV3": {
+          "calls": 28
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapSourceNormalizationResultV3": {
+          "calls": 31
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapSourcePlanLineageEntryV3": {
+          "calls": 21
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapSourcePlanLineageV3": {
+          "calls": 4
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapSourcePrePartitionMentionV3": {
+          "calls": 200
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapSourceProposalAlignmentV3": {
+          "calls": 68
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapSpacyLanePayloadV3": {
+          "calls": 101
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapStableSemanticScopeV3": {
+          "calls": 104
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapStanzaLanePayloadV3": {
+          "calls": 101
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapTemporalAttachmentConsensusV3": {
+          "calls": 67
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapTemporalLanePayloadV3": {
+          "calls": 101
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapTemporalResolutionRequestV3": {
+          "calls": 1
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapTransactionGroupOperationPlanV3": {
+          "calls": 36
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapTransactionGroupPlanMemberV3": {
+          "calls": 34
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapTransactionGroupPlanV3": {
+          "calls": 9
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapV3PayloadLimitAuthority": {
+          "calls": 61
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapV3PayloadLimitPolicy": {
+          "calls": 58
+        },
+        "memorii.core.semantic_ingestion.contracts.DependencyArc": {
+          "calls": 202
+        },
+        "memorii.core.semantic_ingestion.contracts.GraphDependentExecutionPolicyReferenceV3": {
+          "calls": 19
+        },
+        "memorii.core.semantic_ingestion.contracts.GraphSemanticSnapshotBundleV3": {
+          "calls": 19
+        },
+        "memorii.core.semantic_ingestion.contracts.LanguageConstructionPolicyAuthorityBundle": {
+          "calls": 2
+        },
+        "memorii.core.semantic_ingestion.contracts.LinguisticAnalysis": {
+          "calls": 202
+        },
+        "memorii.core.semantic_ingestion.contracts.LinguisticToken": {
+          "calls": 202
+        },
+        "memorii.core.semantic_ingestion.contracts.ParserConsensusPolicy": {
+          "calls": 2
+        },
+        "memorii.core.semantic_ingestion.contracts.PredicateEventManifest": {
+          "calls": 2
+        },
+        "memorii.core.semantic_ingestion.contracts.PredicatePromptContract": {
+          "calls": 4
+        },
+        "memorii.core.semantic_ingestion.contracts.PredicateProposalCatalog": {
+          "calls": 3
+        },
+        "memorii.core.semantic_ingestion.contracts.ProjectionTextSpan": {
+          "calls": 5331
+        },
+        "memorii.core.semantic_ingestion.contracts.RetainedSourceTextArtifact": {
+          "calls": 5275
+        },
+        "memorii.core.semantic_ingestion.contracts.RetainedSourceTextSpan": {
+          "calls": 2639
+        },
+        "memorii.core.semantic_ingestion.contracts.ScopeConsensusPolicy": {
+          "calls": 2
+        },
+        "memorii.core.semantic_ingestion.contracts.SegmentLocalTextArtifact": {
+          "calls": 5309
+        },
+        "memorii.core.semantic_ingestion.contracts.SegmentLocalTextSpan": {
+          "calls": 5309
+        },
+        "memorii.core.semantic_ingestion.contracts.SemanticProjectionSegment": {
+          "calls": 23
+        },
+        "memorii.core.semantic_ingestion.contracts.SemanticProjectionTextArtifact": {
+          "calls": 5330
+        },
+        "memorii.core.semantic_ingestion.contracts.SemanticProposalRequest": {
+          "calls": 1
+        },
+        "memorii.core.semantic_ingestion.contracts.SemanticProposerManifest": {
+          "calls": 3
+        },
+        "memorii.core.semantic_ingestion.contracts.SourceSpanReference": {
+          "calls": 2635
+        },
+        "memorii.core.semantic_ingestion.contracts.TemporalAttachmentConsensusPolicy": {
+          "calls": 2
+        },
+        "memorii.core.semantic_ingestion.contracts.TemporalResolverManifest": {
+          "calls": 2
+        },
+        "memorii.core.semantic_ingestion.contracts.TextPreparationPolicy": {
+          "calls": 24
+        },
+        "memorii.core.semantic_ingestion.contracts.VerbatimTextArtifactMappingProof": {
+          "calls": 2658
+        }
+      },
+      "elapsed_seconds": 66.2120925440031,
+      "family_complete_closure_proof": {
+        "admissions": 90,
+        "capacity_fallbacks": 0,
+        "charged_bytes": 10262837,
+        "decode_hits": 30,
+        "decode_misses": 26,
+        "encode_hits": 59,
+        "encode_misses": 64,
+        "entries": 90,
+        "writer_scoped_hits": 4
+      },
+      "graph_execute_calls": 1,
+      "graph_outcomes": [
+        {
+          "elapsed_seconds": 41.85209232800116,
+          "kind": "succeeded",
+          "reason": null,
+          "type": "memorii.core.semantic_ingestion.contracts.BootstrapGraphDependentCoordinatorSucceededV3"
+        }
+      ],
+      "hierarchical_closure_proof": {
+        "admissions": 0,
+        "calls": 3,
+        "capacity_fallbacks": 0,
+        "coherence_checks": 0,
+        "coherence_rejections": 0,
+        "full_admission_validations": 0,
+        "proof_covered_revalidations": 0,
+        "retained_members": 0,
+        "retained_payload_bytes": 0
+      },
+      "installed_identities": {
+        "atomic_store_exact": true,
+        "installed_pipeline_id": 4650196800,
+        "installed_runtime_id": 4649036704,
+        "pipeline_exact": true,
+        "preparation_service_exact": true,
+        "repository_exact": true,
+        "runtime_exact": true,
+        "selected_pipeline_id": 4650196800,
+        "selected_runtime_id": 4649036704
+      },
+      "mode": "safe_reference",
+      "normalization_boundary_events": [
+        {
+          "boundary": "interpreter",
+          "elapsed_seconds": 0.3138753690000158,
+          "result_type": "BootstrapV3GraphFreeInterpretation"
+        },
+        {
+          "boundary": "publication_stage",
+          "elapsed_seconds": 14.838103962996684,
+          "result_type": "BootstrapSourceNormalizationResultV3"
+        }
+      ],
+      "normalization_lane_calls": {
+        "predicate": 1,
+        "proposal": 1,
+        "spacy": 1,
+        "stanza": 1,
+        "temporal": 1
+      },
+      "normalization_outcomes": [
+        {
+          "elapsed_seconds": 15.86456324000028,
+          "phase": null,
+          "reason": null,
+          "type": "memorii.core.semantic_ingestion.contracts.BootstrapSourceNormalizationResultV3"
+        }
+      ],
+      "normalization_reload_bundle": {
+        "admissions": 0,
+        "calls": 3,
+        "capacity_fallbacks": 0,
+        "coherence_checks": 0,
+        "coherence_rejections": 0,
+        "full_validations": 3,
+        "hits": 0,
+        "retained_members": 0,
+        "retained_payload_bytes": 0
+      },
+      "output_sha256": "d708e216e929475f9717441583db66cb0e00232e170b0eab38219341b09918a2",
+      "persisted_reload_hits": 0,
+      "pipeline_run_calls": 0,
+      "pipeline_run_identities": [],
+      "producer_calls": 2,
+      "profile_top_cumulative": [],
+      "reconstruction_trace": {},
+      "reduction_authority_clause_diagnostics": [
+        {
+          "core_bytes_equal": true,
+          "core_bytes_sha256": "f68106b29ce86906b4ebdbfe9a3468f2acb35a7ea66e33f67f01669ddfdd27f4",
+          "expected_operation_ids": [
+            "42423de3954a3749a8aa5ab1ce2f5925f76c2dae8e9de6d217774629d437ae4a"
+          ],
+          "nonempty_operation_inputs": true,
+          "operation_id_closure_exact": true,
+          "operation_ids_sorted_unique": true,
+          "operation_pairs": [
+            [
+              "7bd0759dec27e51e51a33c3910116e02303651f7d6c5ff95201c6df3b08dcf0f",
+              "42423de3954a3749a8aa5ab1ce2f5925f76c2dae8e9de6d217774629d437ae4a"
+            ]
+          ],
+          "pairs_sorted": true,
+          "policy_bytes_equal": true,
+          "policy_bytes_sha256": "b632f0baa212389c5245bbe6cff1cad4fef2762ceca70ef88edbf7b2f64c93ca",
+          "registry_bytes_equal": true,
+          "registry_bytes_sha256": "c8a2ba21816cbe7573957bae9d328a5e5540f5f8c69253dc6d9caadfdcda9679"
+        }
+      ],
+      "reference_digest_counterfactual": {
+        "admissions": 0,
+        "capacity_fallbacks": 0,
+        "charged_bytes": 0,
+        "coherence_rejections": 0,
+        "digest_computations": 27584,
+        "entries": 0,
+        "hierarchical_proof_covered_digest_validations": 15371,
+        "hits": 0,
+        "misses": 0
+      },
+      "repository_load_calls": 1,
+      "semantic_publish_calls": 1,
+      "validated_evidence_measurement": {
+        "families": {},
+        "maximum_entry_bytes": 0,
+        "most_repeated_entries": [],
+        "peak_canonical_bytes_without_eviction": 0,
+        "peak_entries_without_eviction": 0,
+        "repeat_validations": 0,
+        "total_validations": 0,
+        "unique_entries": 0
+      },
+      "validation_floor_census": {
+        "boundary_events": {},
+        "classification_identity_counts": {},
+        "classification_validation_counts": {},
+        "conservative_security_adjusted_floor": 0,
+        "identities": {},
+        "in_process_role_identity_counts": {},
+        "in_process_role_validation_counts": {},
+        "mandatory_boundary_root_families": {},
+        "nonwriter_event_identity_floor": 0,
+        "repeat_validations": 0,
+        "total_validations": 0,
+        "unique_content_identities": 0,
+        "writer_required_occurrences": 0
+      }
+    },
+    "safe_reference": {
+      "blocked_reasons": {
+        "episodic": "operation 'chat_user_turn' blocks direct 'episodic' commit in provider ingestion path",
+        "semantic": "operation 'chat_user_turn' blocks direct 'semantic' commit in provider ingestion path",
+        "semantic_ingestion": "source_only",
+        "user": "operation 'chat_user_turn' blocks direct 'user' commit in provider ingestion path"
+      },
+      "bootstrap_publish_calls": 1,
+      "content_validation_calls": 42955,
+      "content_validation_families": {
+        "memorii.core.semantic_ingestion.contracts.ActionProposalCatalog": {
+          "calls": 3
+        },
+        "memorii.core.semantic_ingestion.contracts.AnalyzerManifest": {
+          "calls": 4
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapAnalysisLaneResultV3": {
+          "calls": 412
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapAnalysisRouteProjection": {
+          "calls": 2
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapAnalyzerRoleInterpretationV3": {
+          "calls": 208
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapAnalyzerScopeInterpretationV3": {
+          "calls": 330
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapAnalyzerScopeObservationV3": {
+          "calls": 332
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapAnalyzerTemporalAttachmentObservationV3": {
+          "calls": 258
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapAnalyzerTemporalAttachmentV3": {
+          "calls": 256
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphAtomicEffectReceiptV3": {
+          "calls": 15
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphAttemptConstructionInputsV3": {
+          "calls": 4
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphAuthorityGenerationV3": {
+          "calls": 9
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphAuthorityPublicationCoreV3": {
+          "calls": 9
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphAuthorityPublicationReceiptV3": {
+          "calls": 9
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphCanonicalSourceResultInputV3": {
+          "calls": 4
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphCanonicalSourceResultV3": {
+          "calls": 6
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphCheckpointReceiptV3": {
+          "calls": 14
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphControlEpochAdvancedV3": {
+          "calls": 1
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphControlEpochFoundV3": {
+          "calls": 2
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphControlEpochTransitionRequestV3": {
+          "calls": 5
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphControlEpochV3": {
+          "calls": 30
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphCurrentGenerationV3": {
+          "calls": 62
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphDependentAttemptV3": {
+          "calls": 21
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphDependentCoordinatorRequestV3": {
+          "calls": 6
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphDependentCoordinatorSucceededV3": {
+          "calls": 1
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphExecutionManifestConstructionV3": {
+          "calls": 1
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphExecutionManifestGroupInputV3": {
+          "calls": 12
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphFinalStageEvidenceV3": {
+          "calls": 1
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphFreeInterpretationBundleV3": {
+          "calls": 63
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphGroupCommitReloadV3": {
+          "calls": 15
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphGroupCommitRequestV3": {
+          "calls": 6
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphGroupCommitResultCoreV3": {
+          "calls": 15
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphGroupCommitResultV3": {
+          "calls": 15
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphNormalizationAuthorityMemberV3": {
+          "calls": 15
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphNormalizationAuthorityReloadV3": {
+          "calls": 11
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphOperationCommitResultV3": {
+          "calls": 18
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphOperationReductionV3": {
+          "calls": 28
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphOperationStoreMaterializationInputV3": {
+          "calls": 7
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphPlanAtomicMemberV3": {
+          "calls": 73
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphPlanAtomicReloadCoreV3": {
+          "calls": 10
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphPlanAtomicReloadV3": {
+          "calls": 5
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphPlanAtomicWriteIdentityV3": {
+          "calls": 4
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphPlanAtomicWriteRequestV3": {
+          "calls": 15
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphPlanAuthorizationSetV3": {
+          "calls": 1
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphPlanCompilationV3": {
+          "calls": 2
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphPreExecutionGroupEvidenceV3": {
+          "calls": 4
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphPreExecutionManifestCoreV3": {
+          "calls": 10
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphPreExecutionManifestIdentityClosureV3": {
+          "calls": 9
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphPreExecutionManifestIdentityV3": {
+          "calls": 11
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphPreparedSourceTerminalAuthorityV3": {
+          "calls": 11
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphSnapshotAuthorityV3": {
+          "calls": 21
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphTerminalControlV3": {
+          "calls": 4
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphTerminalHandoffCoreV3": {
+          "calls": 8
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphTerminalHostAuthorityV3": {
+          "calls": 1
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphTerminalMemberIntentV3": {
+          "calls": 63
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphTerminalPersistenceHandoffV3": {
+          "calls": 5
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphTerminalPreparationV3": {
+          "calls": 1
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphTerminalPublicationIntentV3": {
+          "calls": 8
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphTerminalPublicationRequestV3": {
+          "calls": 4
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphTerminalReloadV3": {
+          "calls": 4
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphTransactionAuthorityProjectionV3": {
+          "calls": 12
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphTransactionAuthorityReloadV3": {
+          "calls": 8
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGraphTransactionAuthorityWriteRequestV3": {
+          "calls": 3
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapGroupPlanningAuthorizationV3": {
+          "calls": 36
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapInitialAttemptAuthorityV3": {
+          "calls": 19
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapLinguisticAnalysisRequestV3": {
+          "calls": 2
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapNativeGroupCommitTerminalConstructionV3": {
+          "calls": 12
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapNativeOperationArtifactClosureV3": {
+          "calls": 26
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapNativeOperationCompilationV3": {
+          "calls": 26
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapNativeOperationEffectMaterializationV3": {
+          "calls": 26
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapNativeOperationReductionInputV3": {
+          "calls": 41
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapNativeOperationTerminalV3": {
+          "calls": 26
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapNoReservationUseV3": {
+          "calls": 39
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapNormalizationRequestCoreV3": {
+          "calls": 33
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapNormalizedProposalV3": {
+          "calls": 101
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapOperationAlignmentV3": {
+          "calls": 105
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapOperationTemporalAttachmentConsensusSetV3": {
+          "calls": 105
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapParserConsensusAssessmentV3": {
+          "calls": 105
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapPreAlignmentOperationSubjectSetV3": {
+          "calls": 63
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapPreAlignmentOperationSubjectV3": {
+          "calls": 101
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapPredicateEventDetectionRequestV3": {
+          "calls": 1
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapPredicateLanePayloadV3": {
+          "calls": 101
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapProposalAttemptV3": {
+          "calls": 63
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapProposalCoverageAuditV3": {
+          "calls": 67
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapProposalEntityObjectV3": {
+          "calls": 159
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapProposalEvidenceItemV3": {
+          "calls": 1537
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapProposalFactV3": {
+          "calls": 162
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapProposalMentionV3": {
+          "calls": 398
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapProposalRunPayloadV3": {
+          "calls": 65
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapProposalTransportRequestV3": {
+          "calls": 63
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapRecoveryReplayRecordV3": {
+          "calls": 22
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapSegmentAnalysisInputV3": {
+          "calls": 6
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapSemanticProposalRequestV3": {
+          "calls": 2
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapSemanticProposalRunV3": {
+          "calls": 27
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapSemanticReductionAuthorityMemberV3": {
+          "calls": 18
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapSemanticReductionAuthorityReloadV3": {
+          "calls": 1
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapSemanticScopeConsensusV3": {
+          "calls": 105
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapSourceDependencyGroupV3": {
+          "calls": 110
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapSourceLocalIdentityClusterDecisionV3": {
+          "calls": 208
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapSourceLocalIdentityPartitionEvidenceV3": {
+          "calls": 101
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapSourceLocalIdentityResolutionV3": {
+          "calls": 105
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapSourceNormalizationEvidenceManifestV3": {
+          "calls": 36
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapSourceNormalizationRequestV3": {
+          "calls": 28
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapSourceNormalizationResultV3": {
+          "calls": 31
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapSourcePlanLineageEntryV3": {
+          "calls": 21
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapSourcePlanLineageV3": {
+          "calls": 4
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapSourcePrePartitionMentionV3": {
+          "calls": 200
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapSourceProposalAlignmentV3": {
+          "calls": 68
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapSpacyLanePayloadV3": {
+          "calls": 101
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapStableSemanticScopeV3": {
+          "calls": 104
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapStanzaLanePayloadV3": {
+          "calls": 101
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapTemporalAttachmentConsensusV3": {
+          "calls": 67
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapTemporalLanePayloadV3": {
+          "calls": 101
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapTemporalResolutionRequestV3": {
+          "calls": 1
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapTransactionGroupOperationPlanV3": {
+          "calls": 36
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapTransactionGroupPlanMemberV3": {
+          "calls": 34
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapTransactionGroupPlanV3": {
+          "calls": 9
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapV3PayloadLimitAuthority": {
+          "calls": 61
+        },
+        "memorii.core.semantic_ingestion.contracts.BootstrapV3PayloadLimitPolicy": {
+          "calls": 58
+        },
+        "memorii.core.semantic_ingestion.contracts.DependencyArc": {
+          "calls": 202
+        },
+        "memorii.core.semantic_ingestion.contracts.GraphDependentExecutionPolicyReferenceV3": {
+          "calls": 19
+        },
+        "memorii.core.semantic_ingestion.contracts.GraphSemanticSnapshotBundleV3": {
+          "calls": 19
+        },
+        "memorii.core.semantic_ingestion.contracts.LanguageConstructionPolicyAuthorityBundle": {
+          "calls": 2
+        },
+        "memorii.core.semantic_ingestion.contracts.LinguisticAnalysis": {
+          "calls": 202
+        },
+        "memorii.core.semantic_ingestion.contracts.LinguisticToken": {
+          "calls": 202
+        },
+        "memorii.core.semantic_ingestion.contracts.ParserConsensusPolicy": {
+          "calls": 2
+        },
+        "memorii.core.semantic_ingestion.contracts.PredicateEventManifest": {
+          "calls": 2
+        },
+        "memorii.core.semantic_ingestion.contracts.PredicatePromptContract": {
+          "calls": 4
+        },
+        "memorii.core.semantic_ingestion.contracts.PredicateProposalCatalog": {
+          "calls": 3
+        },
+        "memorii.core.semantic_ingestion.contracts.ProjectionTextSpan": {
+          "calls": 5331
+        },
+        "memorii.core.semantic_ingestion.contracts.RetainedSourceTextArtifact": {
+          "calls": 5275
+        },
+        "memorii.core.semantic_ingestion.contracts.RetainedSourceTextSpan": {
+          "calls": 2639
+        },
+        "memorii.core.semantic_ingestion.contracts.ScopeConsensusPolicy": {
+          "calls": 2
+        },
+        "memorii.core.semantic_ingestion.contracts.SegmentLocalTextArtifact": {
+          "calls": 5309
+        },
+        "memorii.core.semantic_ingestion.contracts.SegmentLocalTextSpan": {
+          "calls": 5309
+        },
+        "memorii.core.semantic_ingestion.contracts.SemanticProjectionSegment": {
+          "calls": 23
+        },
+        "memorii.core.semantic_ingestion.contracts.SemanticProjectionTextArtifact": {
+          "calls": 5330
+        },
+        "memorii.core.semantic_ingestion.contracts.SemanticProposalRequest": {
+          "calls": 1
+        },
+        "memorii.core.semantic_ingestion.contracts.SemanticProposerManifest": {
+          "calls": 3
+        },
+        "memorii.core.semantic_ingestion.contracts.SourceSpanReference": {
+          "calls": 2635
+        },
+        "memorii.core.semantic_ingestion.contracts.TemporalAttachmentConsensusPolicy": {
+          "calls": 2
+        },
+        "memorii.core.semantic_ingestion.contracts.TemporalResolverManifest": {
+          "calls": 2
+        },
+        "memorii.core.semantic_ingestion.contracts.TextPreparationPolicy": {
+          "calls": 24
+        },
+        "memorii.core.semantic_ingestion.contracts.VerbatimTextArtifactMappingProof": {
+          "calls": 2658
+        }
+      },
+      "elapsed_seconds": 79.7617869099995,
+      "family_complete_closure_proof": {
+        "admissions": 0,
+        "capacity_fallbacks": 0,
+        "charged_bytes": 0,
+        "decode_hits": 0,
+        "decode_misses": 0,
+        "encode_hits": 0,
+        "encode_misses": 0,
+        "entries": 0,
+        "writer_scoped_hits": 0
+      },
+      "graph_execute_calls": 1,
+      "graph_outcomes": [
+        {
+          "elapsed_seconds": 52.33014738399652,
+          "kind": "succeeded",
+          "reason": null,
+          "type": "memorii.core.semantic_ingestion.contracts.BootstrapGraphDependentCoordinatorSucceededV3"
+        }
+      ],
+      "hierarchical_closure_proof": {
+        "admissions": 0,
+        "calls": 3,
+        "capacity_fallbacks": 0,
+        "coherence_checks": 0,
+        "coherence_rejections": 0,
+        "full_admission_validations": 0,
+        "proof_covered_revalidations": 0,
+        "retained_members": 0,
+        "retained_payload_bytes": 0
+      },
+      "installed_identities": {
+        "atomic_store_exact": true,
+        "installed_pipeline_id": 4391618656,
+        "installed_runtime_id": 4391619952,
+        "pipeline_exact": true,
+        "preparation_service_exact": true,
+        "repository_exact": true,
+        "runtime_exact": true,
+        "selected_pipeline_id": 4391618656,
+        "selected_runtime_id": 4391619952
+      },
+      "mode": "safe_reference",
+      "normalization_boundary_events": [
+        {
+          "boundary": "interpreter",
+          "elapsed_seconds": 0.30877928900008556,
+          "result_type": "BootstrapV3GraphFreeInterpretation"
+        },
+        {
+          "boundary": "publication_stage",
+          "elapsed_seconds": 17.71467778799706,
+          "result_type": "BootstrapSourceNormalizationResultV3"
+        }
+      ],
+      "normalization_lane_calls": {
+        "predicate": 1,
+        "proposal": 1,
+        "spacy": 1,
+        "stanza": 1,
+        "temporal": 1
+      },
+      "normalization_outcomes": [
+        {
+          "elapsed_seconds": 18.722993628995027,
+          "phase": null,
+          "reason": null,
+          "type": "memorii.core.semantic_ingestion.contracts.BootstrapSourceNormalizationResultV3"
+        }
+      ],
+      "normalization_reload_bundle": {
+        "admissions": 0,
+        "calls": 3,
+        "capacity_fallbacks": 0,
+        "coherence_checks": 0,
+        "coherence_rejections": 0,
+        "full_validations": 3,
+        "hits": 0,
+        "retained_members": 0,
+        "retained_payload_bytes": 0
+      },
+      "output_sha256": "3f74ffa633c717f5b3143e92af0726f0e531149f114e5c07ce48c6f3d33d232e",
+      "persisted_reload_hits": 0,
+      "pipeline_run_calls": 0,
+      "pipeline_run_identities": [],
+      "producer_calls": 2,
+      "profile_top_cumulative": [],
+      "reconstruction_trace": {},
+      "reduction_authority_clause_diagnostics": [
+        {
+          "core_bytes_equal": true,
+          "core_bytes_sha256": "f68106b29ce86906b4ebdbfe9a3468f2acb35a7ea66e33f67f01669ddfdd27f4",
+          "expected_operation_ids": [
+            "42423de3954a3749a8aa5ab1ce2f5925f76c2dae8e9de6d217774629d437ae4a"
+          ],
+          "nonempty_operation_inputs": true,
+          "operation_id_closure_exact": true,
+          "operation_ids_sorted_unique": true,
+          "operation_pairs": [
+            [
+              "7bd0759dec27e51e51a33c3910116e02303651f7d6c5ff95201c6df3b08dcf0f",
+              "42423de3954a3749a8aa5ab1ce2f5925f76c2dae8e9de6d217774629d437ae4a"
+            ]
+          ],
+          "pairs_sorted": true,
+          "policy_bytes_equal": true,
+          "policy_bytes_sha256": "b632f0baa212389c5245bbe6cff1cad4fef2762ceca70ef88edbf7b2f64c93ca",
+          "registry_bytes_equal": true,
+          "registry_bytes_sha256": "c8a2ba21816cbe7573957bae9d328a5e5540f5f8c69253dc6d9caadfdcda9679"
+        }
+      ],
+      "reference_digest_counterfactual": {
+        "admissions": 0,
+        "capacity_fallbacks": 0,
+        "charged_bytes": 0,
+        "coherence_rejections": 0,
+        "digest_computations": 42955,
+        "entries": 0,
+        "hierarchical_proof_covered_digest_validations": 0,
+        "hits": 0,
+        "misses": 0
+      },
+      "repository_load_calls": 1,
+      "semantic_publish_calls": 1,
+      "validated_evidence_measurement": {
+        "families": {},
+        "maximum_entry_bytes": 0,
+        "most_repeated_entries": [],
+        "peak_canonical_bytes_without_eviction": 0,
+        "peak_entries_without_eviction": 0,
+        "repeat_validations": 0,
+        "total_validations": 0,
+        "unique_entries": 0
+      },
+      "validation_floor_census": {
+        "boundary_events": {},
+        "classification_identity_counts": {},
+        "classification_validation_counts": {},
+        "conservative_security_adjusted_floor": 0,
+        "identities": {},
+        "in_process_role_identity_counts": {},
+        "in_process_role_validation_counts": {},
+        "mandatory_boundary_root_families": {},
+        "nonwriter_event_identity_floor": 0,
+        "repeat_validations": 0,
+        "total_validations": 0,
+        "unique_content_identities": 0,
+        "writer_required_occurrences": 0
+      }
+    }
+  },
+  "schema": "memorii.semantic-ingestion.production-performance.family-complete-closure-counterfactual.v1",
+  "security_contract": "A miss performs complete production validation before admitting exact root bytes and concrete type in one trust-event scope. A hit requires byte-for-byte root equality. Writer scopes include the concrete writer-admission invocation and cannot authorize another write. All semantic validators, decoder bounds, closure checks and writer admissions execute; only nested content-digest recomputation is proof-covered.",
+  "target": {
+    "maximum_repeated_digest_computations": 4272,
+    "maximum_total_full_digest_computations": 4510,
+    "minimum_repeated_digest_reduction_fraction": 0.9
+  }
+}

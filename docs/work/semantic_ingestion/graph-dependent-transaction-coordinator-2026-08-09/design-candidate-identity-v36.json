@@ -1,0 +1,26 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_transaction_v3_per_group_pre_execution_identity_closure",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree",
+  "status_list_sha256": "1b75f3a810e43ff85f51342c6e53403eb28d090b30d082df7e2f912873686ee7",
+  "review_scope": [
+    "DREV-044 producing attempt lineage group identity",
+    "partial commit and related conflict retained/replaced closure",
+    "found and absent identity selection attacks"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "1bc8c93481ff498f74381374220766503badd717b8005c05ad1be6b210e50837",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "9f7a97126d0ec92352d2fcfa59ce91eef7006c4629f134c030bb231563cc9e78",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "b09032d3eb977152a482714b7b29ca01c0d3064e966cae4782a2ca24835805fb"
+  },
+  "checks": [
+    "git diff --check",
+    "binding and identity JSON parse",
+    "44x4x2 coverage assertion",
+    "singular final pre-execution identity search",
+    "two exact artifact and status identity passes"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

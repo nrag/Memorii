@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "memorii.semantic-ingestion.canonical-evidence.result-lock.v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "candidate_lock_hash", "execution_lock_hash", "comparison_schedule_authority_hash", "artifacts", "terminal_durable_effect_receipts"],
+  "properties": {
+    "schema": {"const": "memorii.semantic-ingestion.canonical-evidence.result-lock.v2"},
+    "candidate_lock_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "execution_lock_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "comparison_schedule_authority_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "artifacts": {
+      "type": "array", "minItems": 2, "maxItems": 2,
+      "items": {"type": "object", "additionalProperties": false, "required": ["role", "path", "sha256"], "properties": {"role": {"enum": ["diagnostic", "latency"]}, "path": {"type": "string", "pattern": "^/"}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}
+    },
+    "terminal_durable_effect_receipts": {"type": "array", "minItems": 8, "maxItems": 8, "items": {"type": "object", "additionalProperties": false, "required": ["schema", "operation_identity", "root", "backend", "source_revision", "transaction_or_memory_durable_identity", "effect_digest", "terminal_status", "replay_identity", "no_duplicate_count"], "properties": {"schema": {"const": "memorii.semantic-ingestion.canonical-evidence.terminal-durable-effect-receipt.v1"}, "operation_identity": {"type": "string", "minLength": 1}, "root": {"enum": ["direct", "factory", "filesystem", "hermes"]}, "backend": {"enum": ["memory", "jsonl"]}, "source_revision": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "transaction_or_memory_durable_identity": {"type": "string", "minLength": 1}, "effect_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "terminal_status": {"const": "successful_durable_terminal"}, "replay_identity": {"type": "string", "minLength": 1}, "no_duplicate_count": {"const": 1}}}}
+  }
+}

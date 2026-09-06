@@ -138,6 +138,62 @@ def provider_tool_schemas() -> list[dict[str, object]]:
     ]
 
 
+def provider_tool_schemas_with_attention() -> list[dict[str, object]]:
+    """Return the opt-in tool set paired with attention-aware dispatch."""
+
+    return [*provider_tool_schemas(), conflict_attention_resolve_tool_schema(), conflict_attention_list_tool_schema()]
+
+
+def conflict_attention_resolve_tool_schema() -> dict[str, object]:
+    return _schema(
+        "memorii_resolve_conflict",
+        "Submit an explicit clarification for a displayed semantic conflict.",
+        {
+            "conflict_id": {"type": "string"},
+            "expected_conflict_revision": {"type": "string"},
+            "operation_id": {"type": "string"},
+            "action": {"type": "string", "enum": ["select", "both_with_validity", "neither"]},
+            "selected_candidate_ids": {"type": "array", "items": {"type": "string"}},
+            "validity_intervals": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "candidate_id": {"type": "string"},
+                        "valid_from": {"type": "string", "format": "date-time"},
+                        "valid_to": {"type": ["string", "null"], "format": "date-time"},
+                    },
+                    "required": ["candidate_id", "valid_from"],
+                    "additionalProperties": False,
+                },
+            },
+            "source_user_event_id": {"type": "string"},
+            "user_confirmation_receipt": {"type": ["string", "null"]},
+        },
+        [
+            "conflict_id",
+            "expected_conflict_revision",
+            "operation_id",
+            "action",
+            "selected_candidate_ids",
+            "validity_intervals",
+            "source_user_event_id",
+        ],
+    )
+
+
+def conflict_attention_list_tool_schema() -> dict[str, object]:
+    return _schema(
+        "memorii_list_conflicts",
+        "List unresolved Memorii conflicts visible to the authenticated caller.",
+        {
+            "scope_ids": {"type": "array", "items": {"type": "string"}},
+            "page_size": {"type": "integer", "minimum": 1, "maximum": 100},
+            "cursor": {"type": ["string", "null"]},
+        },
+    )
+
+
 def _schema(
     name: str,
     description: str,

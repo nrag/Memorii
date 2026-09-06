@@ -1,0 +1,222 @@
+{
+  "family": "writer_admission_authenticated_ingress",
+  "rows": [
+    {
+      "authority_and_authenticated_ingress_arguments": [
+        "verified_production_host_authority or host_bootstrap_capability + host_bootstrap_material_verifier",
+        "authenticated_host_ingress forwarded to _ingest_event"
+      ],
+      "behavioral_test_node_ids": [
+        "test_profileless_service_waits_for_resolved_ingress_then_creates_default_once",
+        "test_profileless_service_rejects_invalid_or_foreign_durable_writer_without_writes"
+      ],
+      "composition_root": "ProviderMemoryService.__init__",
+      "durable_or_no_write_outcome": "Resolved ingress validates an existing writer or creates exactly one evidence-only writer before coordinator ingestion; missing or rejected ingress writes no writer record.",
+      "fallback_or_fail_closed_behavior": "Absent/rejected ingress yields source-only admission; malformed or foreign durable writer raises SemanticWriterAdmissionError before ingestion.",
+      "ordered_validation_chain": [
+        "ProviderMemoryService._resolve_ingress(authenticated_host_ingress)",
+        "ProviderMemoryService._ensure_writer_admission_record()",
+        "SemanticWriterAdmissionStore.current() or create_initial_evidence_only()",
+        "ProviderMemoryService._validate_semantic_runtime_after_ingress()",
+        "ProviderIngestionCoordinator.ingest()"
+      ],
+      "production_caller_census": {
+        "count": 6,
+        "query": "AST: count ast.Call nodes whose callee is ast.Attribute.attr or ast.Name.id equal to 'sync_event' under memorii/memorii/**/*.py; tests excluded.",
+        "symbol": "sync_event"
+      },
+      "requirement_ids": [
+        "VCC-R02",
+        "VCC-R03",
+        "VCC-R10"
+      ],
+      "row_id": "direct_sync_event",
+      "trigger": {
+        "path": "memorii/memorii/core/provider/service.py",
+        "symbol": "ProviderMemoryService.sync_event"
+      }
+    },
+    {
+      "authority_and_authenticated_ingress_arguments": [
+        "verified_production_host_authority or host_bootstrap_capability + host_bootstrap_material_verifier",
+        "authenticated_host_ingress forwarded to _preflight_ingress"
+      ],
+      "behavioral_test_node_ids": [
+        "test_memory_write_preflights_ingress_before_writer_creation"
+      ],
+      "composition_root": "ProviderMemoryService.__init__",
+      "durable_or_no_write_outcome": "Resolved ingress reaches the same writer boundary before ProviderIngestionCoordinator.ingest; missing/rejected ingress writes no writer record.",
+      "fallback_or_fail_closed_behavior": "Absent/rejected ingress returns a blocked source-only write decision; invalid durable writer fails closed before ingestion.",
+      "ordered_validation_chain": [
+        "ProviderMemoryService._resolve_ingress(authenticated_host_ingress)",
+        "ProviderMemoryService._ensure_writer_admission_record()",
+        "SemanticWriterAdmissionStore.current() or create_initial_evidence_only()",
+        "ProviderMemoryService._validate_semantic_runtime_after_ingress()",
+        "ProviderIngestionCoordinator.ingest()"
+      ],
+      "production_caller_census": {
+        "count": 2,
+        "query": "AST: count ast.Call nodes whose callee is ast.Attribute.attr or ast.Name.id equal to 'apply_memory_write' under memorii/memorii/**/*.py; tests excluded.",
+        "symbol": "apply_memory_write"
+      },
+      "requirement_ids": [
+        "VCC-R02",
+        "VCC-R03",
+        "VCC-R10"
+      ],
+      "row_id": "direct_apply_memory_write",
+      "trigger": {
+        "path": "memorii/memorii/core/provider/service.py",
+        "symbol": "ProviderMemoryService.apply_memory_write"
+      }
+    },
+    {
+      "authority_and_authenticated_ingress_arguments": [
+        "verified_production_host_authority forwarded unchanged to ProviderMemoryService",
+        "authenticated ingress resolver is authority-owned; event ingress remains a public trigger argument"
+      ],
+      "behavioral_test_node_ids": [
+        "test_builtin_local_capability_wires_provider_hermes_and_filesystem_without_entrypoint_patch"
+      ],
+      "composition_root": "build_provider_memory_service_from_env",
+      "durable_or_no_write_outcome": "Factory construction is write-free; downstream resolved public ingress owns writer validation/creation.",
+      "fallback_or_fail_closed_behavior": "Legacy authority injection with verified authority is rejected; no optional authority fallback bypasses the service preflight.",
+      "ordered_validation_chain": [
+        "ProviderMemoryService._resolve_ingress(authenticated_host_ingress)",
+        "ProviderMemoryService._ensure_writer_admission_record()",
+        "SemanticWriterAdmissionStore.current() or create_initial_evidence_only()",
+        "ProviderMemoryService._validate_semantic_runtime_after_ingress()",
+        "ProviderIngestionCoordinator.ingest()"
+      ],
+      "production_caller_census": {
+        "count": 3,
+        "query": "AST: count ast.Call nodes whose callee is ast.Attribute.attr or ast.Name.id equal to 'build_provider_memory_service_from_env' under memorii/memorii/**/*.py; tests excluded.",
+        "symbol": "build_provider_memory_service_from_env"
+      },
+      "requirement_ids": [
+        "VCC-R02",
+        "VCC-R03",
+        "VCC-R10"
+      ],
+      "row_id": "repository_factory",
+      "trigger": {
+        "path": "memorii/memorii/core/provider/factory.py",
+        "symbol": "build_provider_memory_service_from_env"
+      }
+    },
+    {
+      "authority_and_authenticated_ingress_arguments": [
+        "service=None composes memory_plane + verified_production_host_authority or host capability/material verifier",
+        "authenticated_host_ingress forwarded to both _sync_composite_event calls"
+      ],
+      "behavioral_test_node_ids": [
+        "test_configured_hermes_constructs_write_free_then_creates_once_after_authenticated_turn"
+      ],
+      "composition_root": "HermesMemoryProvider.__init__",
+      "durable_or_no_write_outcome": "Construction and rejected ingress are write-free; authenticated turn creates one writer through the canonical service preflight.",
+      "fallback_or_fail_closed_behavior": "Invalid service-plus-authority composition raises ValueError; rejected ingress cannot create durable writer state.",
+      "ordered_validation_chain": [
+        "ProviderMemoryService._resolve_ingress(authenticated_host_ingress)",
+        "ProviderMemoryService._ensure_writer_admission_record()",
+        "SemanticWriterAdmissionStore.current() or create_initial_evidence_only()",
+        "ProviderMemoryService._validate_semantic_runtime_after_ingress()",
+        "ProviderIngestionCoordinator.ingest()"
+      ],
+      "production_caller_census": {
+        "count": 1,
+        "query": "AST: count ast.Call nodes whose callee is ast.Attribute.attr or ast.Name.id equal to 'sync_turn' under memorii/memorii/**/*.py; tests excluded.",
+        "symbol": "sync_turn"
+      },
+      "requirement_ids": [
+        "VCC-R02",
+        "VCC-R03",
+        "VCC-R10"
+      ],
+      "row_id": "configured_hermes_sync_turn",
+      "trigger": {
+        "path": "memorii/memorii/integrations/hermes_provider.py",
+        "symbol": "HermesMemoryProvider.sync_turn"
+      }
+    },
+    {
+      "authority_and_authenticated_ingress_arguments": [
+        "configured Hermes service authority is retained by self._service",
+        "authenticated_host_ingress forwarded unchanged to apply_memory_write"
+      ],
+      "behavioral_test_node_ids": [
+        "test_memory_write_preflights_ingress_before_writer_creation"
+      ],
+      "composition_root": "HermesMemoryProvider.__init__",
+      "durable_or_no_write_outcome": "Resolved ingress reaches the service preflight before writer creation; missing/rejected ingress is write-free.",
+      "fallback_or_fail_closed_behavior": "Target classification is typed; malformed or foreign durable writer fails closed in the canonical service owner.",
+      "ordered_validation_chain": [
+        "ProviderMemoryService._resolve_ingress(authenticated_host_ingress)",
+        "ProviderMemoryService._ensure_writer_admission_record()",
+        "SemanticWriterAdmissionStore.current() or create_initial_evidence_only()",
+        "ProviderMemoryService._validate_semantic_runtime_after_ingress()",
+        "ProviderIngestionCoordinator.ingest()"
+      ],
+      "production_caller_census": {
+        "count": 2,
+        "query": "AST: count ast.Call nodes whose callee is ast.Attribute.attr or ast.Name.id equal to 'on_memory_write' under memorii/memorii/**/*.py; tests excluded.",
+        "symbol": "on_memory_write"
+      },
+      "requirement_ids": [
+        "VCC-R02",
+        "VCC-R03",
+        "VCC-R10"
+      ],
+      "row_id": "configured_hermes_memory_write",
+      "trigger": {
+        "path": "memorii/memorii/integrations/hermes_provider.py",
+        "symbol": "HermesMemoryProvider.on_memory_write"
+      }
+    },
+    {
+      "authority_and_authenticated_ingress_arguments": [
+        "verified_production_host_authority forwarded through filesystem bundle to repository factory",
+        "authenticated ingress remains the subsequent ProviderMemoryService public trigger argument"
+      ],
+      "behavioral_test_node_ids": [
+        "test_builtin_local_capability_wires_provider_hermes_and_filesystem_without_entrypoint_patch"
+      ],
+      "composition_root": "FilesystemStorageBundle.build_provider_memory_service",
+      "durable_or_no_write_outcome": "Filesystem composition is write-free; resolved public ingress writes at most one canonical writer record.",
+      "fallback_or_fail_closed_behavior": "No authority means source-only behavior; invalid durable JSONL writer fails closed before a new ingestion record.",
+      "ordered_validation_chain": [
+        "ProviderMemoryService._resolve_ingress(authenticated_host_ingress)",
+        "ProviderMemoryService._ensure_writer_admission_record()",
+        "SemanticWriterAdmissionStore.current() or create_initial_evidence_only()",
+        "ProviderMemoryService._validate_semantic_runtime_after_ingress()",
+        "ProviderIngestionCoordinator.ingest()"
+      ],
+      "production_caller_census": {
+        "count": 2,
+        "query": "AST: count ast.Call nodes whose callee is ast.Attribute.attr or ast.Name.id equal to 'build_filesystem_provider' under memorii/memorii/**/*.py; tests excluded.",
+        "symbol": "build_filesystem_provider"
+      },
+      "requirement_ids": [
+        "VCC-R02",
+        "VCC-R03",
+        "VCC-R10"
+      ],
+      "row_id": "filesystem_root",
+      "trigger": {
+        "path": "memorii/memorii/core/filesystem_storage/bundle.py",
+        "symbol": "build_filesystem_provider"
+      }
+    }
+  ],
+  "schema": "memorii.production-entrypoint-bindings.v14",
+  "source_hashes": {
+    "memorii/memorii/core/filesystem_storage/bundle.py": "0f16ad0ec356d9879277041c92c2c1f683ec1d9b80ac9986088d9d5b9bde5ae7",
+    "memorii/memorii/core/provider/factory.py": "52668e699e2208aa3a7503a910a6a4ad4f42dde8a181b697afc0510e8e1ee0d2",
+    "memorii/memorii/core/provider/service.py": "158de9fd81860d7cc4ec55fa97fd4dd90a1f5d780f4155d80d69b9416abf2966",
+    "memorii/memorii/core/semantic_ingestion/capability.py": "7784fc40f48c5603a63da5c2f537f926ada576edaafd8bafb1bcd7984753b908",
+    "memorii/memorii/core/semantic_ingestion/production_authority.py": "394cb372058b398d2a1e56e5cf7ce356905335a9aa85bf4df95c8e5b4fd39805",
+    "memorii/memorii/core/semantic_ingestion/production_capture.py": "ba4ac049e526d96dc561a564e3c11ca15f2a4f1c1f922d4607594bea9d751338",
+    "memorii/memorii/integrations/hermes_provider.py": "36f72ec99822bf7d6ca49f3ec25a4addc472f722b6b3a43d18598e1218565648",
+    "memorii/tests/unit/core/semantic_ingestion/test_semantic_provider_composition.py": "fa89fb53d6823a431acad60fd7e2532c7951fdc287cbf6bc4aee7f3388d2daf4"
+  },
+  "supersedes": "production-entrypoint-bindings-v13.json"
+}

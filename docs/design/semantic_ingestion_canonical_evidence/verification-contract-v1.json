@@ -1,0 +1,154 @@
+{
+  "schema": "memorii.semantic-ingestion.canonical-evidence.verification-contract.v8",
+  "sole_acceptance_command": "expected_lock=<frozen-lock-sha256>; expected_launcher=<frozen-launcher-sha256>; expected_baseline_result_lock=<externally-printed-sha256>; expected_candidate_result_lock=<externally-printed-sha256>; expected_comparison_result_binding=<externally-printed-sha256>; /usr/bin/shasum -a 256 docs/design/semantic_ingestion_canonical_evidence/candidate-lock-v1.json memorii/tests/fixtures/semantic_ingestion/canonical_evidence_preimport_gate.sh; memorii/tests/fixtures/semantic_ingestion/canonical_evidence_preimport_gate.sh \"$expected_lock\" \"$expected_launcher\" bind <two captured side arguments and authority locks>; memorii/tests/fixtures/semantic_ingestion/canonical_evidence_preimport_gate.sh \"$expected_lock\" \"$expected_launcher\" validate --baseline-result-lock <path> --candidate-result-lock <path> --expected-result-lock-sha256 \"$expected_baseline_result_lock\" --expected-result-lock-sha256 \"$expected_candidate_result_lock\" --comparison-result-binding <path> --expected-comparison-result-binding-sha256 \"$expected_comparison_result_binding\" <four-record-execution-and-authority-lock-arguments>",
+  "external_preimport_trust_root": "System sha256 tooling verifies the frozen lock and launcher before the launcher runs. Before Python import the launcher hashes every candidate-lock artifact including the concrete pre-capture schedule authority and both comparison schemas. Capture consumes that authority before grammar validation, records its hash in the execution lock, and atomically creates an O_EXCL result lock containing exact artifact paths/hashes, execution-lock hash, and all eight terminal durable-effect receipts. After both captures, bind atomically O_EXCL-creates the post-capture comparison-result binding and prints exactly its SHA-256; same-path replay exits 64 without changing those bytes. Validation consumes the captured binding SHA-256 and externally supplied result-lock SHA-256 values before Python imports either side. Each side resolves its supplied immutable authority lock and source manifest independently, and public record/pair validation receives that resolved lock without a workspace-current fallback. Duplicate, omission, crossed, swapped, stale, same-id, mixed-fixture/environment/schedule, warmup/order, persistence-failed, absent, result-lock receipt mismatch, and replay-duplicate evidence rejects. Python resolution is not a trust root.",
+  "design_time_vectors": "--self-test validates synthetic schema vectors only and is never an acceptance/capture path.",
+  "implementation_time_proof_gates": ["owner_chain_removed", "authority_argument_omitted", "verifier_failure_or_no_bundle", "trace_reordered_or_substituted", "receipt_fabricated", "trace_source_path_altered", "latency_diagnostic_identity_mismatch", "explicit_authority_absence_preserves_legacy_defaults", "altered_resolver_or_runner_cannot_execute_acceptance"],
+  "matrix_order": [
+    "direct/memory",
+    "direct/jsonl",
+    "factory/memory",
+    "factory/jsonl",
+    "filesystem/memory",
+    "filesystem/jsonl",
+    "hermes/memory",
+    "hermes/jsonl"
+  ],
+  "modes": {
+    "diagnostic": "diagnostic_profiled_non_latency",
+    "latency": "latency_unprofiled"
+  },
+  "equations": [
+    "eligible=unique+repeated",
+    "unique=len(per_identity)",
+    "candidate per_identity value=1 for every eligible unique identity",
+    "global>=eligible+direct_non_eligible",
+    "global<=1000",
+    "aggregate_global=sum(global)<=8000"
+  ],
+  "thresholds": {
+    "median_reduction_at_least": 0.75,
+    "p95_to_median_at_most": 1.5,
+    "child_rss_delta_bytes_at_most": 134217728
+  },
+  "self_test_mutations": [
+    "duplicate_cell",
+    "wrong_order",
+    "equation",
+    "zero_digest",
+    "multiple_digest",
+    "capacity",
+    "aggregate_capacity",
+    "mode_link",
+    "duplicate_receipt",
+    "duplicate_operation",
+    "duplicate_nonce",
+    "source_identity",
+    "lock_artifact",
+    "fixture_missing",
+    "fixture_stale",
+    "fixture_substituted",
+    "mode_missing_latency_wall",
+    "mode_missing_diagnostic_profile",
+    "median_exact_boundary",
+    "median_one_unit_excess",
+    "p95_exact_boundary",
+    "p95_one_unit_excess",
+    "rss_exact_boundary",
+    "rss_one_unit_excess",
+    "one_retained_sample",
+    "nineteen_retained_samples",
+    "twenty_one_retained_samples",
+    "warmup_contamination",
+    "execution_order_drift",
+    "crossed_comparison_side",
+    "swapped_comparison_side",
+    "stale_comparison_binding",
+    "same_comparison_identity",
+    "mixed_fixture_environment_or_schedule",
+    "durable_receipt_absent",
+    "durable_receipt_persistence_failure",
+    "durable_receipt_replay_duplicate",
+    "durable_receipt_mismatch"
+    ,"fixture_decorator"
+    ,"fixture_parameter_annotation"
+    ,"fixture_return_annotation"
+    ,"fixture_function_type_comment"
+    ,"fixture_assignment_type_comment"
+    ,"fixture_type_ignore"
+    ,"fixture_type_parameters_when_parser_supported"
+    ,"fixture_default_or_keyword_default"
+    ,"fixture_async_or_generator"
+    ,"source_frame_duplicate"
+    ,"source_frame_omission"
+    ,"source_frame_extra"
+    ,"source_frame_wrong_owner"
+    ,"source_frame_fake_digest"
+    ,"source_frame_sentinel"
+    ,"source_frame_all_symbols_one_valid_source"
+    ,"preimport_outer_lock_tamper"
+    ,"preimport_source_frame_duplicate"
+    ,"preimport_source_frame_omission"
+    ,"preimport_source_frame_extra"
+    ,"preimport_source_frame_wrong_owner"
+    ,"preimport_source_frame_fake_digest"
+    ,"preimport_source_frame_sentinel"
+    ,"preimport_source_frame_all_symbols_one_valid_source"
+    ,"preimport_function_type_comment_before_locks"
+    ,"preimport_assignment_type_comment_before_locks"
+    ,"preimport_type_ignore_before_locks"
+    ,"fixture_test_helper_import"
+    ,"fixture_private_bridge"
+    ,"fixture_graph_builder_injection"
+    ,"fixture_scenario_material"
+    ,"fixture_duplicate_verifier"
+    ,"fixture_fabricated_receipt"
+    ,"diagnostic_missing_production_symbol"
+    ,"diagnostic_reordered_trace"
+    ,"diagnostic_wrong_source_path"
+    ,"diagnostic_fabricated_trace"
+    ,"diagnostic_latency_identity_mismatch"
+    ,"unknown_import"
+    ,"alias_evasion"
+    ,"fixture_direct_coordinator"
+    ,"fixture_direct_ingest"
+    ,"fixture_direct_run_semantic_ingestion"
+    ,"fixture_zero_sync_event"
+    ,"fixture_two_sync_event"
+    ,"fixture_extra_business_logic"
+    ,"receipt_recomputed_identity"
+    ,"trace_missing_terminal"
+    ,"latency_cell_hash_mismatch"
+    ,"capture_ready_missing_production_authority"
+    ,"fully_recomputed_forged_receipt_trace"
+    ,"frozen_artifact_hash_mismatch"
+    ,"wrong_but_locked_trace_source"
+    ,"arbitrary_cwd_fake_interpreter"
+    ,"pythonpath_shadow"
+    ,"each_executable_authority_mutation"
+    ,"fixture_wrong_discriminator"
+    ,"fixture_extra_property"
+    ,"fixture_traversal_path"
+    ,"receipt_wrong_discriminator"
+    ,"receipt_extra_property"
+    ,"trace_wrong_discriminator"
+    ,"trace_extra_property"
+    ,"result_lock_regenerated_against_expected_hash"
+    ,"forged_receipt_trace_record_execution_lock_result_lock"
+    ,"comparison_two_distinct_locks_positive"
+    ,"comparison_crossed_lock"
+    ,"comparison_swapped_lock"
+    ,"comparison_stale_lock"
+    ,"comparison_same_identity"
+    ,"comparison_mixed_fixture"
+    ,"comparison_environment_mismatch"
+    ,"comparison_warmup_contamination"
+    ,"comparison_one_sample"
+    ,"comparison_schedule_mismatch"
+    ,"external_two_authority_topology_positive"
+    ,"external_two_authority_topology_matching_hash_negatives"
+    ,"external_bind_stdout_hash_and_same_path_replay"
+    ,"external_schema_valid_execution_order_permutation_cross_side_rejection"
+    ,"external_result_lock_receipt_equality_rejection"
+  ]
+}

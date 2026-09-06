@@ -1,0 +1,25 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_transaction_v3_terminal_intent_registry_and_recovery_authority",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree",
+  "status_list_sha256": "9865f6c2db395e9a3b4a173dd9f48726d7f9ba173efe9f9ba6284a50aa53a9aa",
+  "review_scope": [
+    "DREV-020 closed nine-kind terminal member-intent registry and realization",
+    "DREV-021 found completed-lease recovery versus absent live publication",
+    "DREV-035 pre-intent terminal handoff core acyclicity"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "e8b087a5707da32d2fdf62080ddc4e69da14263a6db33fb33fce4fa79de509e5",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "f6a8bf87796b433c71043351111c5604c24a9b1e88918e4b28133f13b0a92342",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "206cbf2f8eab64378e62a8fdf5c89e859d99d8b28e6164cbc72481d01c7b8c86"
+  },
+  "checks": [
+    "git diff --check",
+    "binding and identity JSON parse",
+    "44x4x2 coverage assertion",
+    "two exact artifact and status identity passes"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

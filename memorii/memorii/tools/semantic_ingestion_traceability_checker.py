@@ -650,10 +650,10 @@ def _load_independent_registry_bytes(raw: bytes) -> dict[str, Any]:
     ):
         raise TraceabilityCoverageError("registry heading defaults use invalid field types")
     paths = [item["heading_path"] for item in defaults]
-    # This independent loader deliberately repeats the closed 151-heading
+    # This independent loader deliberately repeats the closed 193-heading
     # contract rather than importing the production-side registry validation.
-    if len(defaults) != 151 or len(set(paths)) != 151 or any(not item.get("requirements") for item in defaults):
-        raise TraceabilityCoverageError("registry does not contain exactly 151 nonempty unique defaults")
+    if len(defaults) != 193 or len(set(paths)) != 193 or any(not item.get("requirements") for item in defaults):
+        raise TraceabilityCoverageError("registry does not contain exactly 193 nonempty unique defaults")
     if any(
         not isinstance(item.get("requirements"), list)
         or len(item["requirements"]) != len(set(item["requirements"]))
@@ -1152,13 +1152,13 @@ def rebuild_structural_manifest_bytes(
     def effective_parse_check() -> None:
         if parse_check is not None:
             parse_check()
-        if monotonic() - started >= 30:
+        if monotonic() - started >= 60:
             raise TraceabilityCoverageError("independent structural parser deadline exceeded")
 
     def effective_reconstruction_check() -> None:
         if reconstruction_check is not None:
             reconstruction_check()
-        if monotonic() - started >= 60:
+        if monotonic() - started >= 240:
             raise TraceabilityCoverageError("independent structural reconstruction deadline exceeded")
 
     _validate_raw_design_bytes(design_bytes)

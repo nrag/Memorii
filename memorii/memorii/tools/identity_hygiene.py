@@ -566,14 +566,18 @@ def _scan_python(path: Path, relative: str) -> list[IdentityViolation]:
 
 
 def _allowed_structured_traceability(path: str, location: str, field: str) -> bool:
-    if path != "docs/design/semantic_ingestion/traceability_registry/registry-v1.json":
-        return False
-    patterns = {
-        "requirement_id": r"^\$\.requirement_bindings\[\d+\]\.requirement_id$",
-        "requirements": r"^\$\.heading_defaults\[\d+\]\.requirements\[\d+\]$",
-        "selector_values": r"^\$\.structural_rules\[\d+\]\.selector_values\[\d+\]$",
-        "test_id": r"^\$\.test_evidence_groups\[\d+\]\.selected_tests\[\d+\]\.test_id$",
+    patterns_by_path = {
+        "docs/design/semantic_ingestion/traceability_registry/registry-v1.json": {
+            "requirement_id": r"^\$\.requirement_bindings\[\d+\]\.requirement_id$",
+            "requirements": r"^\$\.heading_defaults\[\d+\]\.requirements\[\d+\]$",
+            "selector_values": r"^\$\.structural_rules\[\d+\]\.selector_values\[\d+\]$",
+            "test_id": r"^\$\.test_evidence_groups\[\d+\]\.selected_tests\[\d+\]\.test_id$",
+        },
+        "memorii/tests/ci/bootstrap-graph-transaction-boundary.json": {
+            "requirement_ids": r"^\$\.rows\[\d+\]\.requirement_ids\[\d+\]$",
+        },
     }
+    patterns = patterns_by_path.get(path, {})
     pattern = patterns.get(field)
     return pattern is not None and re.fullmatch(pattern, location) is not None
 

@@ -1,0 +1,332 @@
+{
+  "certifies_m3_1": false,
+  "counterfactual_boundary": "Bootstrap preparation/publication, handoff, persisted reload validation, production TextPreparationService source/policy checks, and the handled pre-pipeline terminal path execute. Only the second producer invocation and duplicate publication attempt are replaced. This scenario does not reach SemanticIngestionPipeline.run.",
+  "decision": "DUPLICATE_STEP2_PRE_PIPELINE_CONFIRMED",
+  "distributions_seconds": {
+    "persisted_reload": {
+      "maximum": 0.820485751995875,
+      "mean": 0.8086631609961236,
+      "median": 0.8073395949977566,
+      "minimum": 0.7981641359947389,
+      "population_stdev": 0.00916069522250973
+    },
+    "rollback": {
+      "maximum": 1.0543055390007794,
+      "mean": 0.9518180803327899,
+      "median": 0.904630780001753,
+      "minimum": 0.8965179219958372,
+      "population_stdev": 0.07254522269786014
+    },
+    "safe_reference": {
+      "maximum": 1.020587589002389,
+      "mean": 0.945037608333223,
+      "median": 0.9408354990009684,
+      "minimum": 0.8736897369963117,
+      "population_stdev": 0.06004436150675051
+    }
+  },
+  "evidence_stage": "reference_only_diagnostic",
+  "experiment": "PBD-EXP-004",
+  "manifest": {
+    "child_timeout_seconds": 120,
+    "order": [
+      {
+        "mode": "safe_reference",
+        "ordinal": 0,
+        "sample": 1
+      },
+      {
+        "mode": "persisted_reload",
+        "ordinal": 1,
+        "sample": 1
+      },
+      {
+        "mode": "rollback",
+        "ordinal": 2,
+        "sample": 0
+      },
+      {
+        "mode": "persisted_reload",
+        "ordinal": 3,
+        "sample": 0
+      },
+      {
+        "mode": "safe_reference",
+        "ordinal": 4,
+        "sample": 2
+      },
+      {
+        "mode": "persisted_reload",
+        "ordinal": 5,
+        "sample": 2
+      },
+      {
+        "mode": "rollback",
+        "ordinal": 6,
+        "sample": 2
+      },
+      {
+        "mode": "rollback",
+        "ordinal": 7,
+        "sample": 1
+      },
+      {
+        "mode": "safe_reference",
+        "ordinal": 8,
+        "sample": 0
+      }
+    ],
+    "random_seed": 20260817,
+    "samples_per_mode": 3,
+    "script_sha256": "76782c72f4d7a3279efa5b6009b4577fd4efdd8c49694bbba067f4095f22f7cb"
+  },
+  "output_sha256": "ae485a5f913853b4e99c138713621bd5713cc4313a339280e154d751527485ef",
+  "persisted_reload_median_reduction_fraction": 0.14189080253133002,
+  "pipeline_reload_exercised": false,
+  "production_implementation_changed": false,
+  "runs": [
+    {
+      "bootstrap_publish_calls": 1,
+      "content_validation_calls": 833,
+      "elapsed_seconds": 0.8736897369963117,
+      "mode": "safe_reference",
+      "ordinal": 0,
+      "ordinary_validation_sites": [
+        "publish_bootstrap_prepared_source_if_absent",
+        "encode_semantic_contract",
+        "_bootstrap_prepare_and_handoff",
+        "decode_semantic_contract",
+        "publish_prepared_source",
+        "decode_semantic_contract",
+        "publish"
+      ],
+      "output_sha256": "ae485a5f913853b4e99c138713621bd5713cc4313a339280e154d751527485ef",
+      "persisted_reload_hits": 0,
+      "producer_calls": 2,
+      "registered_validation_sites": [
+        "prepare",
+        "prepare"
+      ],
+      "repository_load_calls": 0,
+      "sample": 1,
+      "semantic_publish_calls": 1
+    },
+    {
+      "bootstrap_publish_calls": 1,
+      "content_validation_calls": 777,
+      "elapsed_seconds": 0.8073395949977566,
+      "mode": "persisted_reload",
+      "ordinal": 1,
+      "ordinary_validation_sites": [
+        "publish_bootstrap_prepared_source_if_absent",
+        "encode_semantic_contract",
+        "_bootstrap_prepare_and_handoff",
+        "decode_semantic_contract",
+        "decode_semantic_contract",
+        "load",
+        "prepare"
+      ],
+      "output_sha256": "ae485a5f913853b4e99c138713621bd5713cc4313a339280e154d751527485ef",
+      "persisted_reload_hits": 1,
+      "producer_calls": 1,
+      "registered_validation_sites": [
+        "prepare"
+      ],
+      "repository_load_calls": 1,
+      "sample": 1,
+      "semantic_publish_calls": 0
+    },
+    {
+      "bootstrap_publish_calls": 1,
+      "content_validation_calls": 833,
+      "elapsed_seconds": 0.8965179219958372,
+      "mode": "rollback",
+      "ordinal": 2,
+      "ordinary_validation_sites": [
+        "publish_bootstrap_prepared_source_if_absent",
+        "encode_semantic_contract",
+        "_bootstrap_prepare_and_handoff",
+        "decode_semantic_contract",
+        "publish_prepared_source",
+        "decode_semantic_contract",
+        "publish"
+      ],
+      "output_sha256": "ae485a5f913853b4e99c138713621bd5713cc4313a339280e154d751527485ef",
+      "persisted_reload_hits": 0,
+      "producer_calls": 2,
+      "registered_validation_sites": [
+        "prepare",
+        "prepare"
+      ],
+      "repository_load_calls": 0,
+      "sample": 0,
+      "semantic_publish_calls": 1
+    },
+    {
+      "bootstrap_publish_calls": 1,
+      "content_validation_calls": 777,
+      "elapsed_seconds": 0.820485751995875,
+      "mode": "persisted_reload",
+      "ordinal": 3,
+      "ordinary_validation_sites": [
+        "publish_bootstrap_prepared_source_if_absent",
+        "encode_semantic_contract",
+        "_bootstrap_prepare_and_handoff",
+        "decode_semantic_contract",
+        "decode_semantic_contract",
+        "load",
+        "prepare"
+      ],
+      "output_sha256": "ae485a5f913853b4e99c138713621bd5713cc4313a339280e154d751527485ef",
+      "persisted_reload_hits": 1,
+      "producer_calls": 1,
+      "registered_validation_sites": [
+        "prepare"
+      ],
+      "repository_load_calls": 1,
+      "sample": 0,
+      "semantic_publish_calls": 0
+    },
+    {
+      "bootstrap_publish_calls": 1,
+      "content_validation_calls": 833,
+      "elapsed_seconds": 0.9408354990009684,
+      "mode": "safe_reference",
+      "ordinal": 4,
+      "ordinary_validation_sites": [
+        "publish_bootstrap_prepared_source_if_absent",
+        "encode_semantic_contract",
+        "_bootstrap_prepare_and_handoff",
+        "decode_semantic_contract",
+        "publish_prepared_source",
+        "decode_semantic_contract",
+        "publish"
+      ],
+      "output_sha256": "ae485a5f913853b4e99c138713621bd5713cc4313a339280e154d751527485ef",
+      "persisted_reload_hits": 0,
+      "producer_calls": 2,
+      "registered_validation_sites": [
+        "prepare",
+        "prepare"
+      ],
+      "repository_load_calls": 0,
+      "sample": 2,
+      "semantic_publish_calls": 1
+    },
+    {
+      "bootstrap_publish_calls": 1,
+      "content_validation_calls": 777,
+      "elapsed_seconds": 0.7981641359947389,
+      "mode": "persisted_reload",
+      "ordinal": 5,
+      "ordinary_validation_sites": [
+        "publish_bootstrap_prepared_source_if_absent",
+        "encode_semantic_contract",
+        "_bootstrap_prepare_and_handoff",
+        "decode_semantic_contract",
+        "decode_semantic_contract",
+        "load",
+        "prepare"
+      ],
+      "output_sha256": "ae485a5f913853b4e99c138713621bd5713cc4313a339280e154d751527485ef",
+      "persisted_reload_hits": 1,
+      "producer_calls": 1,
+      "registered_validation_sites": [
+        "prepare"
+      ],
+      "repository_load_calls": 1,
+      "sample": 2,
+      "semantic_publish_calls": 0
+    },
+    {
+      "bootstrap_publish_calls": 1,
+      "content_validation_calls": 833,
+      "elapsed_seconds": 0.904630780001753,
+      "mode": "rollback",
+      "ordinal": 6,
+      "ordinary_validation_sites": [
+        "publish_bootstrap_prepared_source_if_absent",
+        "encode_semantic_contract",
+        "_bootstrap_prepare_and_handoff",
+        "decode_semantic_contract",
+        "publish_prepared_source",
+        "decode_semantic_contract",
+        "publish"
+      ],
+      "output_sha256": "ae485a5f913853b4e99c138713621bd5713cc4313a339280e154d751527485ef",
+      "persisted_reload_hits": 0,
+      "producer_calls": 2,
+      "registered_validation_sites": [
+        "prepare",
+        "prepare"
+      ],
+      "repository_load_calls": 0,
+      "sample": 2,
+      "semantic_publish_calls": 1
+    },
+    {
+      "bootstrap_publish_calls": 1,
+      "content_validation_calls": 833,
+      "elapsed_seconds": 1.0543055390007794,
+      "mode": "rollback",
+      "ordinal": 7,
+      "ordinary_validation_sites": [
+        "publish_bootstrap_prepared_source_if_absent",
+        "encode_semantic_contract",
+        "_bootstrap_prepare_and_handoff",
+        "decode_semantic_contract",
+        "publish_prepared_source",
+        "decode_semantic_contract",
+        "publish"
+      ],
+      "output_sha256": "ae485a5f913853b4e99c138713621bd5713cc4313a339280e154d751527485ef",
+      "persisted_reload_hits": 0,
+      "producer_calls": 2,
+      "registered_validation_sites": [
+        "prepare",
+        "prepare"
+      ],
+      "repository_load_calls": 0,
+      "sample": 1,
+      "semantic_publish_calls": 1
+    },
+    {
+      "bootstrap_publish_calls": 1,
+      "content_validation_calls": 833,
+      "elapsed_seconds": 1.020587589002389,
+      "mode": "safe_reference",
+      "ordinal": 8,
+      "ordinary_validation_sites": [
+        "publish_bootstrap_prepared_source_if_absent",
+        "encode_semantic_contract",
+        "_bootstrap_prepare_and_handoff",
+        "decode_semantic_contract",
+        "publish_prepared_source",
+        "decode_semantic_contract",
+        "publish"
+      ],
+      "output_sha256": "ae485a5f913853b4e99c138713621bd5713cc4313a339280e154d751527485ef",
+      "persisted_reload_hits": 0,
+      "producer_calls": 2,
+      "registered_validation_sites": [
+        "prepare",
+        "prepare"
+      ],
+      "repository_load_calls": 0,
+      "sample": 0,
+      "semantic_publish_calls": 1
+    }
+  ],
+  "schema": "memorii.semantic-ingestion.production-performance.duplicate-step2.v1",
+  "validation_counts": {
+    "persisted_reload": [
+      777
+    ],
+    "rollback": [
+      833
+    ],
+    "safe_reference": [
+      833
+    ]
+  }
+}

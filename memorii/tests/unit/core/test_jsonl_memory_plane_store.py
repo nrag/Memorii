@@ -157,3 +157,40 @@ def test_jsonl_file_keeps_append_history(tmp_path) -> None:
     assert '"text":"v1"' in lines[0]
     assert '"text":"v2"' in lines[1]
     assert '"text":"v3"' in lines[2]
+
+
+def test_same_handle_reuses_only_a_validated_unchanged_snapshot(tmp_path, monkeypatch) -> None:
+    store = JsonlMemoryPlaneStore(tmp_path / "memory_plane")
+    store.stage_record(_record("cand:1"))
+    reads = 0
+    original = store._iter_jsonl_lines_unlocked
+
+    def counted():
+        nonlocal reads
+        reads += 1
+        return original()
+
+    monkeypatch.setattr(store, "_iter_jsonl_lines_unlocked", counted)
+    assert store.get_record("cand:1") is not None
+    assert store.get_record("cand:1") is not None
+    assert reads == 0
+
+
+def test_second_handle_replace_invalidates_first_handle_snapshot(tmp_path, monkeypatch) -> None:
+    path = tmp_path / "memory_plane"
+    first = JsonlMemoryPlaneStore(path)
+    first.stage_record(_record("cand:1"))
+    assert first.get_record("cand:1") is not None
+    reads = 0
+    original = first._iter_jsonl_lines_unlocked
+
+    def counted():
+        nonlocal reads
+        reads += 1
+        return original()
+
+    monkeypatch.setattr(first, "_iter_jsonl_lines_unlocked", counted)
+    second = JsonlMemoryPlaneStore(path)
+    second.stage_record(_record("cand:2"))
+    assert first.get_record("cand:2") is not None
+    assert reads == 1

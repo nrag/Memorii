@@ -5,12 +5,19 @@ from __future__ import annotations
 import json
 import tempfile
 from dataclasses import replace
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from memorii.core.filesystem_storage.bundle import build_filesystem_provider
+from memorii.core.memory_evolution.conflict_attention import (
+    ConflictAccessContext,
+    ConflictAttentionPage,
+    ConflictListRequest,
+)
+from memorii.core.memory_evolution.identity_lineage import identity_lineage_audit_view
 from memorii.core.memory_evolution.ingestion_contracts import (
     CanonicalTypedValueProfileBinding,
     artifact_preimage,
@@ -19,6 +26,36 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     encode_artifact,
     encode_typed_value,
     serialize_artifact,
+)
+from memorii.core.memory_evolution.projection_history import (
+    projection_records_from_replay_state,
+)
+from memorii.core.memory_evolution.semantic_state import LineageEntityIdentity
+from memorii.core.provider.factory import build_provider_memory_service_from_env
+from memorii.core.provider.models import ProviderOperation
+from memorii.core.semantic_ingestion.capability import (
+    BuiltInLocalHostSemanticIngestionCapability,
+)
+from memorii.core.semantic_ingestion.contracts import (
+    SemanticArtifactClosure,
+    SemanticGraphDelta,
+    SemanticObservationDelta,
+    TimeInterval,
+    decode_semantic_contract,
+)
+from memorii.core.semantic_ingestion.event_replay import (
+    FileSemanticEventRepository,
+    MemoryIntegrityConflict,
+    SemanticEventReplayError,
+    create_replay_checkpoint,
+    replay_semantic_checkpoint_tail,
+)
+from memorii.core.semantic_ingestion.production_authority import (
+    build_verified_production_host_authority,
+)
+from memorii.core.semantic_ingestion.production_capture import (
+    CanonicalEvidenceCaptureCell,
+    CanonicalEvidenceCaptureSupervisor,
 )
 from memorii.tools.semantic_ingestion_acceptance_watermark_store import (
     FileTraceabilityReleaseWatermarkStore,
@@ -45,11 +82,32 @@ from memorii.tools.semantic_ingestion_traceability_release import (
     IndependentGenerationVerificationResult,
     VerifierHeldTrustMaterial,
 )
+from tests.fixtures.semantic_ingestion.event_replay_fixture import (
+    build_identity_lineage_delta,
+    build_identity_rekey_record,
+    build_replay_checkpoint_fixture,
+)
+from tests.fixtures.semantic_ingestion.host_bootstrap_authority import (
+    DeterministicTestHostBootstrapMaterialVerifier,
+    build_test_host_verified_bootstrap_release_evidence,
+    present_authenticated_host_bootstrap_material,
+)
 from tests.fixtures.semantic_ingestion.scenario_fixture_authority import (
     ExplicitTestIndependentGenerationVerifier,
+    build_scenario_test_host_capability,
 )
 from tests.fixtures.semantic_ingestion.scenario_fixture_authority import (
     build_generation_package as build_current_generation_package,
+)
+from tests.fixtures.semantic_ingestion.semantic_terminal_fixture import (
+    NOW as TERMINAL_NOW,
+)
+from tests.fixtures.semantic_ingestion.semantic_terminal_fixture import (
+    accepted_terminal,
+    build_terminal_persistence_harness,
+    persist_harness_terminal,
+    reopen_terminal_persistence_store,
+    zero_effect_terminal,
 )
 
 
@@ -107,16 +165,16 @@ def _history(entries: list[dict[str, object]], *, key: str = "bootstrap-key") ->
     return _signed({"history_id": "history", "issuance_purpose": "semantic_ingestion_traceability_release_history", "canonical_profile_id": "memorii-sia-canonical-json-v1", "signature_profile_id": "deterministic-v1", "issuer_key_or_certificate_digest": key, "entries": entries}, domain=b"memorii:sia-traceability-release-history:v1", digest_field="release_history_digest", key=key)
 
 
-_STRUCTURAL_BYTES: bytes | None = None
+_STRUCTURAL_BYTES: dict[tuple[str, str], bytes] = {}
 
 
 def _structural_bytes(*, design: bytes, registry: object, registry_bytes: bytes) -> bytes:
-    global _STRUCTURAL_BYTES
-    if _STRUCTURAL_BYTES is None:
-        _STRUCTURAL_BYTES = rebuild_structural_manifest_bytes(
+    cache_key = (sha256(design).hexdigest(), sha256(registry_bytes).hexdigest())
+    if cache_key not in _STRUCTURAL_BYTES:
+        _STRUCTURAL_BYTES[cache_key] = rebuild_structural_manifest_bytes(
             design_bytes=design, registry=registry, registry_bytes=registry_bytes
         )
-    return _STRUCTURAL_BYTES
+    return _STRUCTURAL_BYTES[cache_key]
 
 
 def _minimal_registered_design(registry_source: dict[str, object]) -> bytes:
@@ -2394,3 +2452,536 @@ def test_registered_approval_uses_composition_owned_trust() -> None:
     """The registry maps this behavioral proof to the trust-ownership requirement."""
     inputs = _approval_inputs("semantic-ingestion-acceptance-release-trust")
     assert _approve(inputs)["command_id"] == "pytest-acceptance-release-trust-v1"
+
+
+class _AttentionRepository:
+    def __init__(self) -> None:
+        self.calls: list[tuple[ConflictAccessContext, ConflictListRequest]] = []
+
+    def list_conflicts(
+        self, access: ConflictAccessContext, request: ConflictListRequest
+    ) -> ConflictAttentionPage:
+        self.calls.append((access, request))
+        return ConflictAttentionPage(total_pending=0)
+
+
+def _production_capability() -> BuiltInLocalHostSemanticIngestionCapability:
+    scenario = build_scenario_test_host_capability()
+    material = scenario.bootstrap_material_presentation.material
+    production_material = replace(
+        material,
+        release_evidence=build_test_host_verified_bootstrap_release_evidence(
+            metadata=material.release_metadata,
+            external_root_digest=material.release_evidence.external_root_digest,
+            active_lifecycle_snapshot_digest=(
+                material.release_evidence.active_lifecycle_snapshot_digest
+            ),
+            verified_at=material.release_evidence.verified_at,
+            trust_domain="production",
+        ),
+        trust_domain="production",
+    )
+    capability = BuiltInLocalHostSemanticIngestionCapability(
+        bootstrap_material_presentation=present_authenticated_host_bootstrap_material(
+            production_material
+        ),
+        authorization_bytes=scenario.authorization_bytes,
+        authorization_verifier=scenario.authorization_verifier,
+        policy_provider=scenario.policy_provider,
+        current_bootstrap_release_verifier=scenario.current_bootstrap_release_verifier,
+        initial_writer_activation=None,
+    )
+    return capability
+
+
+def _production_authority():
+    authority = build_verified_production_host_authority(
+        host_bootstrap_capability=_production_capability(),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        server_time=datetime(2026, 9, 5, tzinfo=UTC),
+    )
+    assert authority is not None
+    return authority
+
+
+def _production_ingress():
+    from memorii.core.memory_evolution.ingestion_contracts import AuthenticatedHostIngress
+
+    return AuthenticatedHostIngress(
+        provider_identity="scenario-test-host",
+        principal_handle=object(),
+        session_handle=object(),
+        received_at=datetime(2026, 9, 5, tzinfo=UTC),
+    )
+
+
+def test_production_composition(tmp_path: Path) -> None:
+    """Ordinary ingestion and attention roots require verified authority."""
+
+    capability = _production_capability()
+    supervisor = CanonicalEvidenceCaptureSupervisor(child_timeout_seconds=120)
+    for root in ("direct", "factory", "filesystem", "hermes"):
+        captured = supervisor.capture_cell(
+            CanonicalEvidenceCaptureCell(
+                root=root,
+                backend="memory",
+                host_bootstrap_capability=capability,
+                host_bootstrap_material_verifier=(
+                    DeterministicTestHostBootstrapMaterialVerifier()
+                ),
+                server_time=datetime(2026, 9, 5, tzinfo=UTC),
+                operation=ProviderOperation.CHAT_USER_TURN,
+                content="Atlas owner is Alice.",
+                operation_identity=f"acceptance-production-composition-{root}",
+                authenticated_host_ingress=_production_ingress(),
+                task_id="task:scenario-task",
+                user_id="user:scenario-user",
+            )
+        )
+        assert captured.root == root
+        assert captured.backend == "memory"
+        assert captured.receipt["trust_domain"] == "production"
+        blocked = captured.result["blocked_reasons"]
+        assert isinstance(blocked, dict)
+        assert (
+            blocked["semantic_ingestion"]
+            == "source_alignment_authority_unavailable"
+        )
+
+    authority = _production_authority()
+    enabled_roots = (
+        lambda repository: build_provider_memory_service_from_env(
+            conflict_attention_repository=repository,
+            conflict_attention_enabled=True,
+            verified_production_host_authority=authority,
+        ),
+        lambda repository: build_filesystem_provider(
+            tmp_path / "filesystem",
+            conflict_attention_repository=repository,
+            conflict_attention_enabled=True,
+            verified_production_host_authority=authority,
+        ),
+    )
+    for build in enabled_roots:
+        repository = _AttentionRepository()
+        envelope = build(repository).prefetch_with_attention(
+            "latest memory", authenticated_host_ingress=_production_ingress()
+        )
+        assert envelope.attention_required.total_pending == 0
+        assert len(repository.calls) == 1
+        access, request = repository.calls[0]
+        assert access.authorized_scope_ids == (
+            "session:scenario-session",
+            "task:scenario-task",
+            "user:scenario-user",
+        )
+        assert request == ConflictListRequest(page_size=3)
+
+    disabled_roots = (
+        lambda repository: build_provider_memory_service_from_env(
+            conflict_attention_repository=repository,
+            conflict_attention_enabled=False,
+            verified_production_host_authority=authority,
+        ),
+        lambda repository: build_filesystem_provider(
+            tmp_path / "filesystem-disabled",
+            conflict_attention_repository=repository,
+            conflict_attention_enabled=False,
+            verified_production_host_authority=authority,
+        ),
+    )
+    missing_authority_roots = (
+        lambda repository: build_provider_memory_service_from_env(
+            conflict_attention_repository=repository,
+            conflict_attention_enabled=True,
+        ),
+        lambda repository: build_filesystem_provider(
+            tmp_path / "filesystem-missing-authority",
+            conflict_attention_repository=repository,
+            conflict_attention_enabled=True,
+        ),
+    )
+    for build in (*disabled_roots, *missing_authority_roots):
+        repository = _AttentionRepository()
+        envelope = build(repository).prefetch_with_attention(
+            "latest memory", authenticated_host_ingress=_production_ingress()
+        )
+        assert envelope.attention_required == ConflictAttentionPage(total_pending=0)
+        assert repository.calls == []
+
+
+def _event_delta(
+    *, operation_id: str, subject: str = "atlas", source: str = "source",
+    valid_end: datetime | None = None,
+) -> SemanticGraphDelta:
+    return SemanticGraphDelta.create(
+        accepted_terminal(
+            operation_id=operation_id,
+            source_id=source,
+            source_text=f"{subject} works for Memorii.",
+            subject_logical_entity_id=f"entity:{subject}",
+            subject_entity_revision_id=f"entity-revision:{subject}:v1",
+            valid_end=valid_end or datetime(2026, 2, 1, tzinfo=UTC),
+        )
+    )
+
+
+def test_event_replay_integrity(tmp_path: Path) -> None:
+    """Exact file replay reopens from a signed checkpoint and rejects divergence."""
+
+    path = tmp_path / "events.jsonl"
+    repository = FileSemanticEventRepository(path, repository_id="acceptance")
+    kwargs = {
+        "graph_delta": _event_delta(operation_id="event", source="event-source"),
+        "source_id": "event-source",
+        "transaction_group_id": "event-operation",
+        "operation_fence_id": "a" * 64,
+        "writer_epoch": 1,
+        "graph_revision_before": "genesis",
+        "graph_revision_after": "event-1",
+        "timestamp": TERMINAL_NOW,
+    }
+    committed = repository.append_graph_delta(**kwargs)
+    event = committed.events[0]
+    assert event.event_id != event.payload.record_id
+    assert event.source_event_id != event.payload.record_id
+    assert event.dedupe_key not in {
+        event.event_id,
+        event.source_event_id,
+        event.payload.record_id,
+    }
+    assert repository.append_graph_delta(**kwargs) == committed
+    retained = path.read_bytes()
+    with pytest.raises(MemoryIntegrityConflict, match="logical retry"):
+        repository.append_graph_delta(
+            **{
+                **kwargs,
+                "graph_delta": _event_delta(
+                    operation_id="event", source="event-source",
+                    valid_end=datetime(2026, 3, 1, tzinfo=UTC),
+                ),
+                "graph_revision_before": "event-1",
+                "graph_revision_after": "event-2",
+            }
+        )
+    assert path.read_bytes() == retained
+    reopened = FileSemanticEventRepository(
+        path, repository_id="acceptance"
+    )
+    replayed = reopened.replay_genesis()
+    assert replayed.last_event_batch_digest == committed.event_batch_digest
+    assert replayed.event_bindings[0].event_id == event.event_id
+    assert replayed.event_bindings[0].dedupe_key == event.dedupe_key
+    assert replayed.event_bindings[0].record_id == event.payload.record_id
+    assert replayed.event_bindings[0].graph_revision_after == "event-1"
+    checkpoint = build_replay_checkpoint_fixture(
+        repository_id="acceptance",
+        registry=reopened.registry,
+        graph_revision=replayed.graph_revision,
+        valid_from=datetime(2025, 1, 1, tzinfo=UTC),
+    )
+    bundle = create_replay_checkpoint(
+        state=replayed,
+        watermark_batch=committed,
+        writer_epoch=1,
+        authority=checkpoint.authority,
+        created_at=TERMINAL_NOW,
+        projection_history_bindings=checkpoint.projection_history_bindings,
+    )
+    recovered = replay_semantic_checkpoint_tail(
+        bundle,
+        tail_batches=(),
+        authority=checkpoint.authority,
+        projection_history_verifier=checkpoint.projection_history_verifier,
+    )
+    assert encode_typed_value(recovered.model_dump(mode="python")) == encode_typed_value(
+        replayed.model_dump(mode="python")
+    )
+    persistence_root = tmp_path / "terminal-outcomes"
+    harness = build_terminal_persistence_harness(persistence_root)
+    committed_terminal = accepted_terminal(
+        operation_id=harness.accepted_fence.operation_id
+    )
+    zero_effect = zero_effect_terminal(
+        operation_id=harness.zero_effect_fence.operation_id
+    )
+    assert committed_terminal.status == "accepted"
+    assert committed_terminal.accepted_carriers
+    assert committed_terminal.terminal_binding_sets
+    assert zero_effect.status == "unresolved"
+    assert zero_effect.accepted_carriers == ()
+    assert zero_effect.terminal_binding_sets == ()
+    with pytest.raises(ValueError, match="only accepted terminals"):
+        SemanticGraphDelta.create(zero_effect)
+    persist_harness_terminal(
+        harness,
+        fence=harness.accepted_fence,
+        terminal=committed_terminal,
+    )
+    persist_harness_terminal(
+        harness,
+        fence=harness.zero_effect_fence,
+        terminal=zero_effect,
+    )
+    for store in (harness.store, reopen_terminal_persistence_store(persistence_root)):
+        accepted_control = store.get_operation(harness.accepted_fence)
+        zero_effect_control = store.get_operation(harness.zero_effect_fence)
+        accepted_members = store.generation_members(
+            harness.accepted_fence, accepted_control.generation - 1
+        )
+        zero_effect_members = store.generation_members(
+            harness.zero_effect_fence, zero_effect_control.generation - 1
+        )
+        assert {member.kind for member in accepted_members} == {
+            "artifact_closure",
+            "artifact_index",
+            "event_batch",
+            "graph_delta",
+            "group_result",
+            "observation_delta",
+        }
+        assert {member.kind for member in zero_effect_members} == {
+            "artifact_closure",
+            "artifact_index",
+            "group_result",
+            "observation_delta",
+        }
+        accepted_observation = decode_semantic_contract(
+            next(
+                member.canonical_payload
+                for member in accepted_members
+                if member.kind == "observation_delta"
+            ),
+            SemanticObservationDelta,
+        )
+        zero_effect_observation = decode_semantic_contract(
+            next(
+                member.canonical_payload
+                for member in zero_effect_members
+                if member.kind == "observation_delta"
+            ),
+            SemanticObservationDelta,
+        )
+        accepted_closure = decode_semantic_contract(
+            next(
+                member.canonical_payload
+                for member in accepted_members
+                if member.kind == "artifact_closure"
+            ),
+            SemanticArtifactClosure,
+        )
+        zero_effect_closure = decode_semantic_contract(
+            next(
+                member.canonical_payload
+                for member in zero_effect_members
+                if member.kind == "artifact_closure"
+            ),
+            SemanticArtifactClosure,
+        )
+        assert accepted_observation.terminal_digest == committed_terminal.terminal_digest
+        assert accepted_observation.graph_delta_digest is not None
+        assert zero_effect_observation.terminal_digest == zero_effect.terminal_digest
+        assert zero_effect_observation.graph_delta_digest is None
+        assert accepted_closure.terminal_digest == committed_terminal.terminal_digest
+        assert zero_effect_closure.terminal_digest == zero_effect.terminal_digest
+        authority = store.semantic_replay_authority()
+        expected_observations = {
+            (
+                harness.accepted_fence.operation_fence_id,
+                next(
+                    member.member_id
+                    for member in accepted_members
+                    if member.kind == "observation_delta"
+                ),
+                sha256(
+                    next(
+                        member.canonical_payload
+                        for member in accepted_members
+                        if member.kind == "observation_delta"
+                    )
+                ).hexdigest(),
+            ),
+            (
+                harness.zero_effect_fence.operation_fence_id,
+                next(
+                    member.member_id
+                    for member in zero_effect_members
+                    if member.kind == "observation_delta"
+                ),
+                sha256(
+                    next(
+                        member.canonical_payload
+                        for member in zero_effect_members
+                        if member.kind == "observation_delta"
+                    )
+                ).hexdigest(),
+            ),
+        }
+        assert expected_observations <= {
+            (
+                binding.operation_fence_id,
+                binding.member_id,
+                binding.payload_digest,
+            )
+            for binding in authority.observation_bindings
+        }
+        assert authority.artifact_bindings
+    path.write_bytes(retained + b"{\"canonical_hex\":\"00\"}")
+    with pytest.raises(SemanticEventReplayError, match="partial batch"):
+        FileSemanticEventRepository(path, repository_id="acceptance").replay_genesis()
+
+
+def test_historical_truth_evolution(tmp_path: Path) -> None:
+    """Correction, late arrival, and rekey retain historical truth after reopen."""
+
+    path = tmp_path / "history.jsonl"
+    repository = FileSemanticEventRepository(path, repository_id="history")
+    common_policy = {
+        "eligible_authority_classes": frozenset({"official", "regulator"}),
+        "authority_rank_by_class": {"official": 10, "regulator": 20},
+    }
+    first_terminal = accepted_terminal(
+        operation_id="history-atlas",
+        source_id="atlas-source",
+        source_text="atlas works for Memorii.",
+        subject_logical_entity_id="entity:atlas",
+        subject_entity_revision_id="entity-revision:atlas:v1",
+        authority_class="official",
+        valid_start=TERMINAL_NOW,
+        valid_end=TERMINAL_NOW + timedelta(days=31),
+        **common_policy,
+    )
+    first = repository.append_graph_delta(
+        graph_delta=SemanticGraphDelta.create(first_terminal),
+        source_id="atlas-source", transaction_group_id="history-atlas",
+        operation_fence_id="b" * 64, writer_epoch=1,
+        graph_revision_before="genesis", graph_revision_after="history-1",
+        timestamp=TERMINAL_NOW,
+    )
+    predecessor_state = repository.replay_genesis()
+    correction_terminal = accepted_terminal(
+        operation_id="history-atlas-correction",
+        source_id="atlas-correction-source",
+        source_text="atlas works for Acme after the correction.",
+        subject_logical_entity_id="entity:atlas",
+        subject_entity_revision_id="entity-revision:atlas:v1",
+        object_logical_entity_id="entity:acme",
+        object_entity_revision_id="entity-revision:acme:v1",
+        authority_class="regulator",
+        # The regulator's correction is ingested later, but governs a period
+        # that began before the earlier source was recorded.
+        valid_start=TERMINAL_NOW - timedelta(days=7),
+        valid_end=TERMINAL_NOW + timedelta(days=14),
+        operation_kind="correction",
+        **common_policy,
+    )
+    correction = repository.append_graph_delta(
+        graph_delta=SemanticGraphDelta.create(correction_terminal),
+        source_id="atlas-correction-source",
+        transaction_group_id="history-atlas-correction",
+        operation_fence_id="c" * 64, writer_epoch=1,
+        graph_revision_before="history-1", graph_revision_after="history-2",
+        timestamp=TERMINAL_NOW + timedelta(minutes=1),
+    )
+    correction_state = repository.replay_genesis()
+    lineage = build_identity_rekey_record(
+        claim_terminal=first_terminal,
+        state=correction_state,
+        predecessor=LineageEntityIdentity(
+            entity_revision_id="entity-revision:atlas:v1",
+            logical_entity_id="entity:atlas",
+        ),
+        successor=LineageEntityIdentity(
+            entity_revision_id="entity-revision:atlas:v2",
+            logical_entity_id="entity:atlas",
+        ),
+        operation_id="history-atlas-rekey",
+        recorded_at=TERMINAL_NOW + timedelta(minutes=2),
+    )
+    migration = repository.append_graph_delta(
+        graph_delta=build_identity_lineage_delta(lineage),
+        source_id="atlas-migration-source",
+        transaction_group_id="history-atlas-rekey",
+        operation_fence_id="d" * 64, writer_epoch=1,
+        graph_revision_before="history-2", graph_revision_after="history-3",
+        timestamp=TERMINAL_NOW + timedelta(minutes=2),
+    )
+    current = repository.replay_genesis()
+    historical = FileSemanticEventRepository(path, repository_id="history").replay_genesis()
+    assert encode_typed_value(historical.model_dump(mode="python")) == encode_typed_value(
+        current.model_dump(mode="python")
+    )
+    assert historical.last_event_batch_digest == migration.event_batch_digest
+    assert {binding.transaction_group_id for binding in historical.event_bindings} == {
+        "history-atlas",
+        "history-atlas-correction",
+        "history-atlas-rekey",
+    }
+    assert first.event_batch_digest != correction.event_batch_digest
+    assert predecessor_state.materialized_records[0] in current.materialized_records
+
+    _, predecessor_trust, _, _, _ = projection_records_from_replay_state(
+        predecessor_state
+    )
+    temporal, trust, _, _, _ = projection_records_from_replay_state(current)
+    intervals = {
+        projection.valid_interval
+        for projection in temporal
+        if projection.valid_interval is not None
+    }
+    assert TimeInterval(start=TERMINAL_NOW - timedelta(days=7), end=TERMINAL_NOW) in intervals
+    assert TimeInterval(start=TERMINAL_NOW, end=TERMINAL_NOW + timedelta(days=14)) in intervals
+    assert TimeInterval(start=TERMINAL_NOW + timedelta(days=14), end=TERMINAL_NOW + timedelta(days=31)) in intervals
+    official_id = first_terminal.accepted_carriers[0].claim_assertion_id
+    regulator_id = correction_terminal.accepted_carriers[0].claim_assertion_id
+    predecessor_claim = next(
+        projection
+        for projection in predecessor_trust
+        if projection.source_record_kind == "claim_assertion"
+    )
+    assert predecessor_claim.selected_assertion_ids == (official_id,)
+    assert predecessor_claim.retained_assertion_ids == ()
+    overlap_trust = next(
+        projection
+        for projection in trust
+        if projection.source_record_kind == "claim_assertion"
+        and projection.valid_interval
+        == TimeInterval(
+            start=TERMINAL_NOW,
+            end=TERMINAL_NOW + timedelta(days=14),
+        )
+    )
+    assert overlap_trust.selected_assertion_ids == (regulator_id,)
+    assert overlap_trust.retained_assertion_ids == (official_id,)
+
+    before_rekey = identity_lineage_audit_view(
+        current, system_time=TERMINAL_NOW + timedelta(minutes=1)
+    )
+    after_rekey = identity_lineage_audit_view(current)
+    assert before_rekey.resolved_claims[0].subject.resolved_identity.entity_revision_id == "entity-revision:atlas:v1"
+    assert after_rekey.resolved_claims[0].subject.assertion_reference.entity_revision_id == "entity-revision:atlas:v1"
+    assert after_rekey.resolved_claims[0].subject.resolved_identity.entity_revision_id == "entity-revision:atlas:v2"
+
+    checkpoint = build_replay_checkpoint_fixture(
+        repository_id="history",
+        registry=repository.registry,
+        graph_revision=current.graph_revision,
+        valid_from=datetime(2025, 1, 1, tzinfo=UTC),
+    )
+    bundle = create_replay_checkpoint(
+        state=current,
+        watermark_batch=migration,
+        writer_epoch=1,
+        authority=checkpoint.authority,
+        created_at=TERMINAL_NOW + timedelta(minutes=3),
+        projection_history_bindings=checkpoint.projection_history_bindings,
+    )
+    recovered = replay_semantic_checkpoint_tail(
+        bundle,
+        tail_batches=(),
+        authority=checkpoint.authority,
+        projection_history_verifier=checkpoint.projection_history_verifier,
+    )
+    assert encode_typed_value(recovered.model_dump(mode="python")) == encode_typed_value(
+        historical.model_dump(mode="python")
+    )

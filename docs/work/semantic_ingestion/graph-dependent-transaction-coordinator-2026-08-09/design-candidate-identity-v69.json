@@ -1,0 +1,33 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_v3_canonical_identity_binding_allocation_authority",
+  "semantic_predecessor": "design-candidate-identity-v68.json",
+  "semantic_change_from_predecessor": "add source-wide authenticated canonical identity binding/allocation authority and replace per-mention entity seeds with complete cluster decision and proof closure",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree_stable",
+  "status_list_sha256": "64be56bfae0caaeef1d85b4d9ff1e9d0a5f67ff1f47504c888cfefba080eb324",
+  "review_scope": [
+    "snapshot read-set scope and planning-state bound canonical cluster decisions",
+    "existing target proof or one source-wide stable allocation per referenced cluster",
+    "persisted reload and per-operation target seed joins",
+    "complete entity seed mention vector cluster decision alias and type proof closure",
+    "existing and absent zero-create plus two-operation pending reuse",
+    "stale cross-scope cluster substitution multi-mention proof and backend recovery tests"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "d3eab51056b533886811c1cb54f947f93d36733b5fc91949c4636d16cb2173a7",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "f661eb0ea375e6404843a278b3e03f5053f0008310bfae50e7446d7d95853dee",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "6d2ce6a253d16eb6f738c50f1582f4a66f4f26de310de83e14f731dd49ee9d11"
+  },
+  "checks": [
+    "git diff --check",
+    "binding and candidate JSON parse",
+    "single canonical identity authority reload and entity seed declarations",
+    "source-wide allocation and pending reuse anchors",
+    "scope cluster mention proof and recovery mutation anchors",
+    "stable status and artifact identity pass one",
+    "stable status and artifact identity pass two"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

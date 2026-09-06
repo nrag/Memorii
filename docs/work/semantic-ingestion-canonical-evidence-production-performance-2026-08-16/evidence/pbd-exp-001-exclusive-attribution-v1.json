@@ -1,0 +1,264 @@
+{
+  "certifies_m3_1": false,
+  "decision": "RESIDUAL_STAGE_LOCALIZED",
+  "evidence_stage": "reference_only_diagnostic",
+  "experiment": "PBD-EXP-001",
+  "leading_safe_reference_residual_category": "bootstrap_handoff",
+  "legacy_minus_reference_seconds": {
+    "bootstrap_handoff": -0.01918083700729767,
+    "bootstrap_persistence": -0.011523198001668788,
+    "memory_write": -0.00011780700151575729,
+    "preparation": 0.12811361401691101,
+    "preparation_publication": -0.00637364000431262,
+    "provider_orchestration": -0.011030240006220993,
+    "semantic_coordinator": -0.006348909002554137,
+    "semantic_persistence": -0.007490869000321254
+  },
+  "manifest": {
+    "child_timeout_seconds": 120,
+    "order": [
+      {
+        "mode": "safe_reference",
+        "ordinal": 0,
+        "sample": 0
+      },
+      {
+        "mode": "safe_reference",
+        "ordinal": 1,
+        "sample": 1
+      },
+      {
+        "mode": "legacy",
+        "ordinal": 2,
+        "sample": 2
+      },
+      {
+        "mode": "legacy",
+        "ordinal": 3,
+        "sample": 1
+      },
+      {
+        "mode": "legacy",
+        "ordinal": 4,
+        "sample": 0
+      },
+      {
+        "mode": "safe_reference",
+        "ordinal": 5,
+        "sample": 2
+      }
+    ],
+    "random_seed": 20260817,
+    "samples_per_mode": 3,
+    "script_sha256": "270def46a32206d0ace23074c599c30cf998344dadb092effc2335552d0ac7c0",
+    "setup_excluded": true
+  },
+  "median_exclusive_seconds": {
+    "legacy": {
+      "bootstrap_handoff": 0.22656956099672243,
+      "bootstrap_persistence": 0.16300758800207404,
+      "memory_write": 0.007707917000516318,
+      "preparation": 0.2994365560080041,
+      "preparation_publication": 0.0581959530027234,
+      "provider_orchestration": 0.1002802459988743,
+      "semantic_coordinator": 0.032938821001152974,
+      "semantic_persistence": 0.1706952039967291
+    },
+    "safe_reference": {
+      "bootstrap_handoff": 0.2457503980040201,
+      "bootstrap_persistence": 0.17453078600374283,
+      "memory_write": 0.007825724002032075,
+      "preparation": 0.1713229419910931,
+      "preparation_publication": 0.06456959300703602,
+      "provider_orchestration": 0.1113104860050953,
+      "semantic_coordinator": 0.03928773000370711,
+      "semantic_persistence": 0.17818607299705036
+    }
+  },
+  "next_discriminating_ablation": "Instrument the leading residual category's immediate production-owned children, then replace exactly one pure deterministic child result with a captured equivalent inside a reference-only cell. Require identical output bytes and validation counts.",
+  "output_sha256": "ae485a5f913853b4e99c138713621bd5713cc4313a339280e154d751527485ef",
+  "production_implementation_changed": false,
+  "runs": [
+    {
+      "attributed_over_elapsed": 0.9780338449127851,
+      "attributed_seconds": 0.968344936001813,
+      "content_validation_calls": 833,
+      "elapsed_seconds": 0.990093483000237,
+      "exclusive_seconds": {
+        "bootstrap_handoff": 0.23809255800733808,
+        "bootstrap_persistence": 0.17693202299415134,
+        "memory_write": 0.007825724002032075,
+        "preparation": 0.1713229419910931,
+        "preparation_publication": 0.06011720200331183,
+        "provider_orchestration": 0.1113104860050953,
+        "semantic_coordinator": 0.03370076699502533,
+        "semantic_persistence": 0.16904323400376597
+      },
+      "instrumented_calls": {
+        "bootstrap_handoff": 1,
+        "bootstrap_persistence": 1,
+        "memory_write": 3,
+        "preparation": 2,
+        "preparation_publication": 1,
+        "provider_orchestration": 1,
+        "semantic_coordinator": 1,
+        "semantic_persistence": 1
+      },
+      "mode": "safe_reference",
+      "ordinal": 0,
+      "output_sha256": "ae485a5f913853b4e99c138713621bd5713cc4313a339280e154d751527485ef",
+      "sample": 0
+    },
+    {
+      "attributed_over_elapsed": 0.9780694773089006,
+      "attributed_seconds": 0.9824500499962596,
+      "content_validation_calls": 833,
+      "elapsed_seconds": 1.0044787950027967,
+      "exclusive_seconds": {
+        "bootstrap_handoff": 0.2457503980040201,
+        "bootstrap_persistence": 0.16882515099132434,
+        "memory_write": 0.006784364006307442,
+        "preparation": 0.16855284999473952,
+        "preparation_publication": 0.06456959300703602,
+        "provider_orchestration": 0.11049389099207474,
+        "semantic_coordinator": 0.03928773000370711,
+        "semantic_persistence": 0.17818607299705036
+      },
+      "instrumented_calls": {
+        "bootstrap_handoff": 1,
+        "bootstrap_persistence": 1,
+        "memory_write": 3,
+        "preparation": 2,
+        "preparation_publication": 1,
+        "provider_orchestration": 1,
+        "semantic_coordinator": 1,
+        "semantic_persistence": 1
+      },
+      "mode": "safe_reference",
+      "ordinal": 1,
+      "output_sha256": "ae485a5f913853b4e99c138713621bd5713cc4313a339280e154d751527485ef",
+      "sample": 1
+    },
+    {
+      "attributed_over_elapsed": 0.9825068436004554,
+      "attributed_seconds": 1.0882725439951173,
+      "content_validation_calls": 1021,
+      "elapsed_seconds": 1.107648818004236,
+      "exclusive_seconds": {
+        "bootstrap_handoff": 0.22656956099672243,
+        "bootstrap_persistence": 0.20855961499910336,
+        "memory_write": 0.007707917000516318,
+        "preparation": 0.2994365560080041,
+        "preparation_publication": 0.0557184949866496,
+        "provider_orchestration": 0.1002802459988743,
+        "semantic_coordinator": 0.032185281001147814,
+        "semantic_persistence": 0.15781487300409935
+      },
+      "instrumented_calls": {
+        "bootstrap_handoff": 1,
+        "bootstrap_persistence": 1,
+        "memory_write": 3,
+        "preparation": 2,
+        "preparation_publication": 1,
+        "provider_orchestration": 1,
+        "semantic_coordinator": 1,
+        "semantic_persistence": 1
+      },
+      "mode": "legacy",
+      "ordinal": 2,
+      "output_sha256": "ae485a5f913853b4e99c138713621bd5713cc4313a339280e154d751527485ef",
+      "sample": 2
+    },
+    {
+      "attributed_over_elapsed": 0.9802819567417989,
+      "attributed_seconds": 1.0028658149967669,
+      "content_validation_calls": 1021,
+      "elapsed_seconds": 1.023038125000312,
+      "exclusive_seconds": {
+        "bootstrap_handoff": 0.21789828100736486,
+        "bootstrap_persistence": 0.1474904780043289,
+        "memory_write": 0.006638734994339757,
+        "preparation": 0.27068041500024265,
+        "preparation_publication": 0.0581959530027234,
+        "provider_orchestration": 0.09832792798988521,
+        "semantic_coordinator": 0.032938821001152974,
+        "semantic_persistence": 0.1706952039967291
+      },
+      "instrumented_calls": {
+        "bootstrap_handoff": 1,
+        "bootstrap_persistence": 1,
+        "memory_write": 3,
+        "preparation": 2,
+        "preparation_publication": 1,
+        "provider_orchestration": 1,
+        "semantic_coordinator": 1,
+        "semantic_persistence": 1
+      },
+      "mode": "legacy",
+      "ordinal": 3,
+      "output_sha256": "ae485a5f913853b4e99c138713621bd5713cc4313a339280e154d751527485ef",
+      "sample": 1
+    },
+    {
+      "attributed_over_elapsed": 0.9791603161873984,
+      "attributed_seconds": 1.2014267929989728,
+      "content_validation_calls": 1021,
+      "elapsed_seconds": 1.2269970229972387,
+      "exclusive_seconds": {
+        "bootstrap_handoff": 0.2739898319996428,
+        "bootstrap_persistence": 0.16300758800207404,
+        "memory_write": 0.010320729008526541,
+        "preparation": 0.3317291009952896,
+        "preparation_publication": 0.0641035590087995,
+        "provider_orchestration": 0.13482976999512175,
+        "semantic_coordinator": 0.040658770987647586,
+        "semantic_persistence": 0.182787443001871
+      },
+      "instrumented_calls": {
+        "bootstrap_handoff": 1,
+        "bootstrap_persistence": 1,
+        "memory_write": 3,
+        "preparation": 2,
+        "preparation_publication": 1,
+        "provider_orchestration": 1,
+        "semantic_coordinator": 1,
+        "semantic_persistence": 1
+      },
+      "mode": "legacy",
+      "ordinal": 4,
+      "output_sha256": "ae485a5f913853b4e99c138713621bd5713cc4313a339280e154d751527485ef",
+      "sample": 0
+    },
+    {
+      "attributed_over_elapsed": 0.9757916522278044,
+      "attributed_seconds": 1.0091081310019945,
+      "content_validation_calls": 833,
+      "elapsed_seconds": 1.03414302499732,
+      "exclusive_seconds": {
+        "bootstrap_handoff": 0.24806628700025612,
+        "bootstrap_persistence": 0.17453078600374283,
+        "memory_write": 0.008254002998000942,
+        "preparation": 0.17227988699596608,
+        "preparation_publication": 0.07095168700470822,
+        "provider_orchestration": 0.11350677100563189,
+        "semantic_coordinator": 0.039414713995938655,
+        "semantic_persistence": 0.18210399599774973
+      },
+      "instrumented_calls": {
+        "bootstrap_handoff": 1,
+        "bootstrap_persistence": 1,
+        "memory_write": 3,
+        "preparation": 2,
+        "preparation_publication": 1,
+        "provider_orchestration": 1,
+        "semantic_coordinator": 1,
+        "semantic_persistence": 1
+      },
+      "mode": "safe_reference",
+      "ordinal": 5,
+      "output_sha256": "ae485a5f913853b4e99c138713621bd5713cc4313a339280e154d751527485ef",
+      "sample": 2
+    }
+  ],
+  "schema": "memorii.semantic-ingestion.production-performance.exclusive-attribution.v1"
+}

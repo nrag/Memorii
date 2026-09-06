@@ -9,7 +9,8 @@ Read:
 
 - root `AGENTS.md`
 - `.agents/PLANS.md`
-- the active design WorkPlan, if one exists
+- the active design WorkPlan index, resume packet, and active milestone packet
+  when the design operation uses an indexed layout
 - governing documents selected through the repository knowledge router
 - relevant production code and tests
 
@@ -17,6 +18,17 @@ Create or resume a WorkPlan whose work type is `design`.
 
 The main thread is the coordinator. Use exactly one writer for the canonical
 design and overlapping generated artifacts.
+
+Apply the delegation task packet, artifact-only context, writer completion,
+long-command ownership, and candidate freeze contracts in `.agents/PLANS.md`.
+Use a compact resume packet instead of full historical plan context when one
+exists.
+
+For a large design with independently reviewable milestones, apply the indexed
+WorkPlan contract in `.agents/PLANS.md`. Keep global requirements and authority
+boundaries in the index; keep detailed acceptance and evidence in the owning
+milestone packet. Do not mix a later implementation milestone into the design
+WorkPlan.
 
 ## Phase 1: Establish The Problem And Baseline
 
@@ -46,6 +58,10 @@ Before drafting algorithms or schemas, define every applicable boundary:
 - public, persisted, transaction, trust, provider, prompt, artifact, adapter,
   integration, and command-line boundaries
 - authority chain from source bytes to derived artifacts and gates
+- for each runtime, persistence, transaction, lifecycle, replay, recovery, or
+  integration behavior: canonical trigger, composition root, exact
+  owner-to-owner arguments and authority, durable read/write or outcome, and
+  fail-closed absence behavior
 - unsupported inputs and fail-closed behavior
 
 Treat requirement and milestone coordinates as planning metadata, never as a
@@ -129,6 +145,8 @@ The design is not review-ready when:
 - independent evidence is required but independence is undefined
 - a requirement depends on CI or operational evidence without an owner
 - implementation would need hidden conversation context
+- a runtime or persistence requirement has no production-entrypoint binding plan
+  that a later Spark mapper can verify without inventing authority
 
 ## Phase 5: Draft The Design
 
@@ -148,6 +166,9 @@ Cover applicable:
 Preserve the universal Memorii invariants in `AGENTS.md`.
 
 ## Phase 6: Independent Review And Convergence
+
+Satisfy the candidate freeze gate in `.agents/PLANS.md` before launching the
+reviewer cohort. Reviewers inspect one frozen design identity.
 
 After the readiness checks pass and a coherent draft exists, run concurrently:
 

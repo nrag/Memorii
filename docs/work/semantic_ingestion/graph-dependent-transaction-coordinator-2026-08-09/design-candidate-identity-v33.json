@@ -1,0 +1,26 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_transaction_v3_acyclic_checkpoint_result",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree",
+  "status_list_sha256": "15fc5acedd81ab62b5ad055c76b8c48d196a0bd817bfe47c863d46bef203485c",
+  "review_scope": [
+    "DREV-042 immutable reload core",
+    "receipt successor generation threading",
+    "two-pass checkpoint and found-retry byte identity"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "7f4d468e71fc54d8a511e3049063c2e28f3f1dc67e4d11e0fca961131e0eea14",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "e8c45d6bec24ce7fc9177041183c1e7ffcf02af102a4c51c8ffbd9bd744ecd05",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "e0f6ff2d3bf6c49b65b45f8da20eb0500301cf2df2b586118c92fab10fd49ff5"
+  },
+  "checks": [
+    "git diff --check",
+    "binding and identity JSON parse",
+    "44x4x2 coverage assertion",
+    "receipt and reload digest cycle search",
+    "two exact artifact and status identity passes"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

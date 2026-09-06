@@ -1,0 +1,26 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_transaction_v3_post_result_manifest_construction_owner",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree",
+  "status_list_sha256": "1b75f3a810e43ff85f51342c6e53403eb28d090b30d082df7e2f912873686ee7",
+  "review_scope": [
+    "terminal preparation constructs manifest construction after group results",
+    "closed host-owned versus final-state field source partition",
+    "no prebuilt ambient default or digest-only manifest construction"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "6fd97e1fc134acbf1c6f1a9718c99c78e7b23b0bf68f32b976857d0a5d9e002d",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "895242892a82de265bf2f0390d1b5354f37fb8923dd196d8d949265754812f5d",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "5dbccf3539e2c7c51ea58bd110a4dbd9cf0b0c91132307e4bfb6f167c22ce4b4"
+  },
+  "checks": [
+    "git diff --check",
+    "binding and identity JSON parse",
+    "terminal signature excludes prebuilt manifest construction",
+    "closed field-source assertions",
+    "two exact artifact and status identity passes"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

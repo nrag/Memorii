@@ -9,7 +9,8 @@ Read:
 
 - root `AGENTS.md`
 - `.agents/PLANS.md`
-- the active implementation WorkPlan
+- the active implementation WorkPlan index, resume packet, and active milestone
+  packet when the operation uses an indexed layout
 - the frozen approved design baseline
 - governing documents selected through the knowledge router
 - nearby production code, tests, tooling, and CI
@@ -19,6 +20,30 @@ Create or resume a WorkPlan whose work type is `implementation`.
 The main thread is the coordinator. Use exactly one writer at a time for
 overlapping code, tests, documents, prompts, schemas, configuration, migrations,
 and generated artifacts.
+
+## Cost-Aware Implementation Delegation
+
+Use Spark-class explorers, code mappers, and error detectives for read-heavy
+repository mapping, ownership tracing, test inventory, collection counts,
+timing evidence, and failure triage. Use a Terra-class worker as the sole writer
+for a coherent implementation slice. Reserve Terra-class spec, correctness,
+and test reviewers for coherent milestone boundaries, bounded remediation
+deltas, and final branch review.
+
+Keep useful read-only work parallel, but do not create redundant agents that
+answer the same question. Do not rerun broad suites or whole-scope reviews after
+micro-edits. Use focused discriminating checks during construction and run each
+required broad gate once at the candidate revision.
+
+Record the bounded task, role and model tier, writer/read-only ownership,
+rationale, output, and status in the active WorkPlan delegation and cost ledger.
+The coordinator remains responsible for validating every delegated claim.
+
+Apply the delegation task packet, artifact-only context, writer completion,
+long-command ownership, and candidate freeze contracts in `.agents/PLANS.md`.
+For a large historical WorkPlan, give delegates its current resume packet by
+default, include the active milestone packet, and load historical sections only
+for a named unresolved question.
 
 ## Phase 1: Readiness And Baseline
 
@@ -36,6 +61,9 @@ Record:
   planning-derived sibling names and generated or persisted occurrences
 - the changed-surface, authority-chain, gate, and known-failure ledgers from
   `.agents/PLANS.md`, initialized from the live diff and current workflows
+- the `production_entrypoint_bindings` ledger for every in-scope runtime,
+  persistence, transaction, lifecycle, replay, recovery, or integration
+  requirement, initialized by one Spark `code-mapper` preflight artifact
 
 Reconstruct requirements independently from the design. Do not rely only on an
 existing requirements table.
@@ -69,6 +97,13 @@ Stop for a design decision when a material semantic choice remains unresolved.
 
 ## Phase 2: Plan Vertical Milestones
 
+For a multi-milestone operation, create one milestone packet under
+`milestones/` using the indexed WorkPlan contract in `.agents/PLANS.md`. Keep
+global scope, dependencies, requirement allocation, and exactly one next action
+in the index; keep detailed implementation and evidence in the milestone
+packet. Do not create a separate milestone file for a small operation that is
+clearer as one bounded WorkPlan.
+
 Each milestone must identify:
 
 - requirements and observable behavior
@@ -79,6 +114,11 @@ Each milestone must identify:
 - evidence maturity delivered
 - explicit non-goals and completion criteria
 - base/head revision identity for closure evidence
+
+A slice may close only its own bounded acceptance criteria. It must map each
+parent requirement as partial, blocked, or not applicable until the parent
+milestone records complete requirement evidence; never promote a slice approval
+to parent-milestone completion.
 
 Milestones organize work only. Their number, phase, requirement set, WorkPlan
 ID, or review coordinate must not name any output. Resolve filenames, symbols,
@@ -148,6 +188,9 @@ Spawn exactly one worker for overlapping changes. Require the worker to:
     enter code, serialized bytes, tests, fixtures, generators, or workflows
 12. after each material edit, reconcile the live diff and refresh every
     affected downstream artifact, checksum, workflow pin, validator, and gate
+13. update the binding ledger with the exact composition-root callsite,
+    arguments/authority, production caller count, validation, write/read, and
+    outcome proof; reject optional fallbacks and zero-caller owners
 
 Do not hard-code fixtures, add test-only production branches, bypass canonical
 owners, introduce parallel truth, hide invalid state with casts or defaults, or
@@ -221,6 +264,10 @@ than the approved design.
 
 ## Phase 7: Independent Review And Remediation
 
+Satisfy the candidate freeze gate in `.agents/PLANS.md` before launching the
+reviewer cohort. A moving candidate receives mapping or a bounded consultation,
+not a full milestone review.
+
 After a coherent milestone, run concurrently:
 
 - `spec_auditor`
@@ -229,6 +276,16 @@ After a coherent milestone, run concurrently:
 
 Require reviewers to inspect the complete current state and classify findings
 under `AGENTS.md`.
+
+For runtime, persistence, transaction, lifecycle, replay, recovery, or
+integration scope, give reviewers the frozen Spark preflight binding ledger.
+They must challenge its coverage and exact path proof rather than repeat general
+repository mapping.
+
+Run these full reviewers once for the coherent milestone. After a bounded
+remediation, use targeted delta review by the affected reviewer roles; do not
+repeat all three whole-scope reviews unless the correction materially changes
+the contract or execution boundary.
 
 The milestone closure record must explicitly contain
 `remaining_validated_p1_p2: []`. A confirmed P1/P2 finding prevents completion.

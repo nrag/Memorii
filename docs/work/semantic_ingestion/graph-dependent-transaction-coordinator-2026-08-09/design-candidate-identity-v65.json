@@ -1,0 +1,33 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_v3_planning_native_closure_identity_admission",
+  "semantic_predecessor": "design-candidate-identity-v64.json",
+  "semantic_change_from_predecessor": "make the complete pre-CAS closure planning-native, add exactly-one pending-or-snapshot target authority and a pure V3 identity admission boundary, and bind reducer plan/unavailable arms to the exact request",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree_stable",
+  "status_list_sha256": "207bd67f00edf812b6ebee0e8b910993e2c3df255b4b9268f09f89e9f61caff4",
+  "review_scope": [
+    "exactly-one snapshot versus pending target authority and pending precedence",
+    "planning-only pre-CAS records and store-owned durable materialization",
+    "native temporal terminal bindings and exact planning-record union bijections",
+    "pure identity admission derivation and initial replacement reuse absence call algebra",
+    "request-bound reducer plan or unavailable terminal and zero-effect closure",
+    "pending removal preconditions root composition and generic prohibition"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "6206a952388d9631fa7e7925681f63bb294d49c34f10d930fd886c6334ae6244",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "008176b8d1ef778e4fc1c360413b8fa5d0a4b6118c3f370e5f11cf662c1ce066",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "b9e4164978c5e7736059707396e5662340109770584bde1b09f6979183abec0e"
+  },
+  "checks": [
+    "git diff --check",
+    "binding and candidate JSON parse",
+    "single active snapshot target native terminal binding and identity admission protocol declarations",
+    "no SemanticTerminalBindingSet in active bootstrap V3 schema",
+    "pending precedence planning union identity call and unavailable mapping anchors",
+    "stable status and artifact identity pass one",
+    "stable status and artifact identity pass two"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

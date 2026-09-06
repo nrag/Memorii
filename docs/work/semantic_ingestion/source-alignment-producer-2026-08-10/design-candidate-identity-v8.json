@@ -1,0 +1,17 @@
+{
+  "artifact_kind": "source_alignment_producer_design_candidate_identity",
+  "schema_version": 1,
+  "created_at": "2026-08-10",
+  "git_head": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "branch": "semantic-indexing-m4",
+  "dirty_tree_status_sha256": "e82230e360a43a12649fbe9faca94777790f746163d047ce7509eacf6a7fb555",
+  "dirty_tree_binary_diff_sha256": "22d573d9d4260a456d8c5357072598963cf10967b09309b66cbf9e3e37e5ace4",
+  "parent_candidate": "design-candidate-identity-v7.json",
+  "reviewed_artifacts": [
+    {"path": "docs/design/semantic_ingestion_architecture.md", "sha256": "f81ff8481fc0123a7a0124f200d4f5cfdb117df8c911c691363218615d47ab46"},
+    {"path": "docs/work/semantic_ingestion/source-alignment-producer-2026-08-10/design.plan.md", "sha256": "c18c040878d35c666a8068a4d3c7383c4755601b14de866621958dd76d346163"},
+    {"path": "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/implementation.plan.md", "sha256": "df985ba43e4c52fc54b18e00cb428a85bcd3af48422261fba443963194debde3"}
+  ],
+  "scope": "Complete SAP-R01 through SAP-R07 final whole-design review after exhaustive stable-name schema-version-2 declaration closure",
+  "candidate_status": "frozen_for_final_whole_design_review"
+}

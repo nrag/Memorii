@@ -1,0 +1,33 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_v3_occurrence_aware_first_use_dependency",
+  "semantic_predecessor": "design-candidate-identity-v72.json",
+  "semantic_change_from_predecessor": "make first-use dependencies and target arms bind every canonical cluster-reference occurrence while preserving membership-level producer order and one allocation seed",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree_stable",
+  "status_list_sha256": "64be56bfae0caaeef1d85b4d9ff1e9d0a5f67ff1f47504c888cfefba080eb324",
+  "review_scope": [
+    "canonical membership cluster source-coordinate occurrence CTV",
+    "producer occurrences and later consumer occurrence bijection to all references",
+    "coordinate-bound new-first-use and pending target arms",
+    "one allocation and seed across producer co-occurrences",
+    "same-cluster subject-object repeated participants and nested correction paths",
+    "occurrence recovery and terminal pre-index mutation tests"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "57e78a28c6ac804ca61c96f421f9c6e6353d3bbf6028c031109ec30e30ef989c",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "5d959b158f46d22e9c85b9afe2ab202641f4e166cabe0c7d48f23b67aeaa6230",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "35f8a543e4df9c9e05b21fbc24ff580b857721825c24ec75fab7cbc041e21c03"
+  },
+  "checks": [
+    "git diff --check",
+    "binding and candidate JSON parse",
+    "single cluster-reference occurrence declaration",
+    "occurrence bijection target coordinate and one-seed anchors",
+    "duplicate missing reorder cross-operation recovery pre-index test anchors",
+    "stable status and artifact identity pass one",
+    "stable status and artifact identity pass two"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

@@ -3,27 +3,45 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from hashlib import sha256
 from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from memorii.core.memory_evolution.atomic_store import SemanticIngestionAtomicStore
-from memorii.core.memory_evolution.bootstrap_profile import VerifiedBootstrapProfile
-from memorii.core.memory_evolution.writer_admission import SemanticWriterAdmissionStore
+from memorii.core.memory_evolution.atomic_store import (
+    SemanticIngestionAtomicStore,
+)
+from memorii.core.memory_evolution.bootstrap_profile import (
+    CurrentBootstrapReleaseVerifier,
+    HostBootstrapMaterialPresentation,
+    HostVerifiedBootstrapMaterial,
+    VerifiedBootstrapProfile,
+    verify_bootstrap_profile,
+)
+from memorii.core.memory_evolution.writer_admission import (
+    SemanticConflictAuthorityAdministrationGrant,
+    SemanticWriterAdmissionStore,
+)
+from memorii.core.semantic_ingestion.bootstrap_graph_host import (
+    BootstrapGraphHostBundle,
+    BootstrapGraphHostBundleBuilder,
+)
 from memorii.core.semantic_ingestion.contracts import (
-    SemanticCandidateAssessor,
     SemanticPipelinePolicyProvider,
+    TextPreparationPolicy,
     contract_digest,
 )
-from memorii.core.semantic_ingestion.egress import EgressPolicyProvider
-from memorii.core.semantic_ingestion.local_analyzer import (
-    LocalSemanticProposalProducer,
-    ProductionLocalSemanticAnalyzer,
+from memorii.core.semantic_ingestion.source_normalization_host import (
+    SourceNormalizationHostBundle,
+    SourceNormalizationHostBundleBuilder,
 )
-from memorii.core.semantic_ingestion.pipeline import SemanticIngestionPipeline
+from memorii.core.semantic_ingestion.source_preparation import (
+    AtomicStorePreparedSourceRepository,
+    PreparedSourceRepository,
+    TextPreparationService,
+)
 
 
 class SemanticDeploymentAuthorizationUse(BaseModel):
@@ -54,7 +72,11 @@ class SemanticDeploymentAuthorizationUse(BaseModel):
             "use_point": use_point,
         }
         return cls(
-            **body,
+            profile_manifest_digest=body["profile_manifest_digest"],
+            verified_bootstrap_release_digest=body[
+                "verified_bootstrap_release_digest"
+            ],
+            use_point=use_point,
             use_digest=contract_digest(b"memorii.semantic-ingestion.deployment-authorization-use.v1", body),
         )
 
@@ -100,13 +122,17 @@ class SemanticDeploymentAuthorizationVerifier(Protocol):
 class AuthorizedSemanticIngestionRuntime:
     authorization_bytes: bytes
     authorization_verifier: SemanticDeploymentAuthorizationVerifier
-    pipeline: SemanticIngestionPipeline
     policy_provider: SemanticPipelinePolicyProvider
-    egress_policy_provider: EgressPolicyProvider | None
-    candidate_assessor: SemanticCandidateAssessor
-    local_proposal_producer: LocalSemanticProposalProducer | None = None
+    text_preparation_service: TextPreparationService | None = None
+    prepared_source_repository: PreparedSourceRepository | None = None
+    text_preparation_policy: TextPreparationPolicy | None = None
+    source_normalization_host_bundle: SourceNormalizationHostBundle | None = None
+    bootstrap_graph_host_bundle: BootstrapGraphHostBundle | None = None
     writer_admission: SemanticWriterAdmissionStore | None = None
     atomic_store: SemanticIngestionAtomicStore | None = None
+    _conflict_authority_administration_grant: (
+        SemanticConflictAuthorityAdministrationGrant | None
+    ) = field(default=None, init=False, repr=False, compare=False)
 
     def verify_authorization(
         self,
@@ -148,15 +174,199 @@ class AuthorizedSemanticIngestionRuntime:
             raise ValueError("semantic runtime deployment authorization is unavailable")
         if (self.writer_admission is None) != (self.atomic_store is None):
             raise ValueError("semantic runtime writer and atomic store must be supplied together")
+        if self.source_normalization_host_bundle is not None and self.atomic_store is None:
+            raise ValueError(
+                "source normalization requires atomic-store authority"
+            )
+        if self.bootstrap_graph_host_bundle is not None and self.atomic_store is None:
+            raise ValueError("bootstrap graph execution requires atomic-store authority")
+        if (self.text_preparation_service is None) != (
+            self.prepared_source_repository is None
+        ):
+            raise ValueError("semantic runtime preparation producer and repository must be supplied together")
+        if (self.text_preparation_service is None) != (
+            self.text_preparation_policy is None
+        ):
+            raise ValueError("semantic runtime preparation producer and policy must be supplied together")
+        if self.atomic_store is not None and self.prepared_source_repository is not None and not isinstance(
+            self.prepared_source_repository, AtomicStorePreparedSourceRepository
+        ):
+            raise ValueError("production semantic runtime must use atomic prepared-source storage")
+        if (
+            self.atomic_store is not None
+            and not self.atomic_store.has_replay_integrity_composition
+        ):
+            raise ValueError("semantic runtime atomic store has no replay integrity authority")
+        if self.atomic_store is not None and self.writer_admission is not None:
+            grant = self.writer_admission._claim_conflict_authority_administration(
+                owner=self
+            )
+            object.__setattr__(
+                self, "_conflict_authority_administration_grant", grant
+            )
+            binding = self.writer_admission.commit_binding(
+                self.writer_admission.current()
+            )
+            self.atomic_store.bootstrap_reference_integrity(writer_binding=binding)
+
+    def conflict_authority_administration_grant(
+        self,
+    ) -> SemanticConflictAuthorityAdministrationGrant:
+        grant = self._conflict_authority_administration_grant
+        if grant is None:
+            raise ValueError(
+                "semantic runtime is not verified for conflict authority administration"
+            )
+        return grant
 
 
 class HostSemanticIngestionRuntimeBuilder(Protocol):
     """Structural protocol implemented only by the installed host capability."""
 
     def build_semantic_ingestion_runtime(
-        self, *, memory_plane: object, now_provider: Callable[[], datetime],
+        self,
+        *,
+        memory_plane: object,
+        now_provider: Callable[[], datetime],
+        bootstrap_profile: VerifiedBootstrapProfile,
     ) -> AuthorizedSemanticIngestionRuntime | None:
         ...
+
+
+class HostSemanticWriterActivation(Protocol):
+    """Host-held authority for an explicit initial semantic writer activation."""
+
+    def activate_initial_writer(
+        self,
+        *,
+        writers: object,
+        now_provider: Callable[[], datetime],
+    ) -> None: ...
+
+
+@dataclass(frozen=True)
+class BuiltInLocalHostSemanticIngestionCapability:
+    """Deterministic local host composition over externally verified V1 authority.
+
+    This capability intentionally owns no trust root, release bytes, or policy
+    decision.  A host must supply those verified authorities before the
+    ordinary composition root can construct the local runtime.
+    """
+
+    bootstrap_material_presentation: HostBootstrapMaterialPresentation
+    authorization_bytes: bytes
+    authorization_verifier: SemanticDeploymentAuthorizationVerifier
+    policy_provider: SemanticPipelinePolicyProvider
+    current_bootstrap_release_verifier: CurrentBootstrapReleaseVerifier | None
+    initial_writer_activation: HostSemanticWriterActivation | None = None
+    source_normalization_host_bundle_builder: SourceNormalizationHostBundleBuilder | None = None
+    bootstrap_graph_host_bundle_builder: BootstrapGraphHostBundleBuilder | None = None
+
+    def load_bootstrap_material_presentation(self) -> HostBootstrapMaterialPresentation:
+        return self.bootstrap_material_presentation
+
+    def build_semantic_ingestion_runtime(
+        self,
+        *,
+        memory_plane: object,
+        now_provider: Callable[[], datetime],
+        bootstrap_profile: VerifiedBootstrapProfile,
+        verified_material: HostVerifiedBootstrapMaterial,
+        semantic_integrity_lifecycle: object | None = None,
+    ) -> AuthorizedSemanticIngestionRuntime | None:
+        """Build only the complete local path, otherwise leave the source evidence-only."""
+        if (
+            self.current_bootstrap_release_verifier is None
+            or not self.authorization_bytes
+            or verified_material != self.bootstrap_material_presentation.material
+        ):
+            return None
+        try:
+            material_profile = verify_bootstrap_profile(verified_material)
+        except ValueError:
+            return None
+        if material_profile != bootstrap_profile or not material_profile.enabled:
+            return None
+        from memorii.core.memory_evolution.writer_admission import (
+            SemanticWriterAdmissionStore,
+            bounded_preplanning_ownership_manifest,
+            writer_admission_memory_id,
+        )
+        from memorii.core.memory_plane.service import MemoryPlaneService
+
+        if not isinstance(memory_plane, MemoryPlaneService):
+            raise TypeError("built-in semantic runtime requires a memory plane service")
+        writers = SemanticWriterAdmissionStore(
+            memory_plane,
+            bounded_preplanning_ownership_manifest(),
+            now_provider=now_provider,
+        )
+        if (
+            verified_material.trust_domain == "scenario_test"
+            and verified_material.release_evidence.trust_domain == "scenario_test"
+            and memory_plane.get_record(writer_admission_memory_id()) is None
+        ):
+            # The no-auto-create writer contract leaves a fresh store unbound;
+            # the scenario test domain owns creating the evidence-only epoch
+            # that its runtime builds either upgrade or retain.
+            writers.create_initial_evidence_only(
+                admission_id="scenario-semantic-writer",
+                writer_implementation_fingerprint="scenario-local-semantic-runtime",
+                graph_schema_fingerprint="memorii-semantic-graph-v1",
+            )
+        if self.initial_writer_activation is not None:
+            if (
+                verified_material.trust_domain != "scenario_test"
+                or verified_material.release_evidence.trust_domain != "scenario_test"
+            ):
+                return None
+            self.initial_writer_activation.activate_initial_writer(
+                writers=writers, now_provider=now_provider
+            )
+        store = SemanticIngestionAtomicStore(
+            memory_plane,
+            writers,
+            now_provider=now_provider,
+            semantic_freeze_guard=(
+                semantic_integrity_lifecycle.freeze_guard
+                if semantic_integrity_lifecycle is not None
+                else None
+            ),
+            semantic_integrity_incident_reporter=(
+                semantic_integrity_lifecycle.incident_reporter
+                if semantic_integrity_lifecycle is not None
+                else None
+            ),
+            semantic_integrity_linearization=(
+                semantic_integrity_lifecycle.linearization
+                if semantic_integrity_lifecycle is not None
+                else None
+            ),
+            current_bootstrap_release_verifier=self.current_bootstrap_release_verifier,
+        )
+        host_bundle = (
+            None
+            if self.source_normalization_host_bundle_builder is None
+            else self.source_normalization_host_bundle_builder.build(atomic_store=store)
+        )
+        # Graph execution is part of the ordinary local runtime.  Hosts may
+        # replace the authority provider explicitly, but absence of a fixture
+        # builder must not silently downgrade an accepted source to source-only.
+        if self.bootstrap_graph_host_bundle_builder is None:
+            graph_bundle = BootstrapGraphHostBundle(atomic_store=store)
+        else:
+            graph_bundle = self.bootstrap_graph_host_bundle_builder.build(atomic_store=store)
+        runtime = build_authorized_local_semantic_runtime(
+            authorization_bytes=self.authorization_bytes,
+            authorization_verifier=self.authorization_verifier,
+            policy_provider=self.policy_provider,
+            writer_admission=writers,
+            atomic_store=store,
+            bootstrap_profile=bootstrap_profile,
+            source_normalization_host_bundle=host_bundle,
+            bootstrap_graph_host_bundle=graph_bundle,
+        )
+        return runtime
 
 
 def build_authorized_local_semantic_runtime(
@@ -166,18 +376,47 @@ def build_authorized_local_semantic_runtime(
     policy_provider: SemanticPipelinePolicyProvider,
     writer_admission: SemanticWriterAdmissionStore | None = None,
     atomic_store: SemanticIngestionAtomicStore | None = None,
+    bootstrap_profile: VerifiedBootstrapProfile | None = None,
+    source_normalization_host_bundle: SourceNormalizationHostBundle | None = None,
+    bootstrap_graph_host_bundle: BootstrapGraphHostBundle | None = None,
 ) -> AuthorizedSemanticIngestionRuntime:
     """Build the ordinary zero-egress production semantic ingestion composition."""
 
-    analyzer = ProductionLocalSemanticAnalyzer()
+    if (writer_admission is None) != (atomic_store is None):
+        raise ValueError("local semantic runtime writer and atomic store must be supplied together")
+    prepared_source_repository = None
+    text_preparation_service = None
+    text_preparation_policy = None
+    if atomic_store is not None and bootstrap_profile is not None:
+        assert writer_admission is not None
+        prepared_source_repository = AtomicStorePreparedSourceRepository(
+            atomic_store=atomic_store,
+            writer_binding=lambda: writer_admission.commit_binding(
+                writer_admission.current()
+            ),
+        )
+        text_preparation_service = TextPreparationService.for_verified_bootstrap_profile(
+            profile=bootstrap_profile,
+            repository=prepared_source_repository,
+        )
+        text_preparation_policy = (
+            bootstrap_profile.artifacts.profile_manifest.preparation_policy
+        )
+    if source_normalization_host_bundle is not None and atomic_store is None:
+        raise ValueError(
+            "source normalization requires atomic-store authority"
+        )
+    if bootstrap_graph_host_bundle is not None and atomic_store is None:
+        raise ValueError("bootstrap graph execution requires atomic-store authority")
     return AuthorizedSemanticIngestionRuntime(
         authorization_bytes=authorization_bytes,
         authorization_verifier=authorization_verifier,
-        pipeline=SemanticIngestionPipeline(transport=None),
         policy_provider=policy_provider,
-        egress_policy_provider=None,
-        candidate_assessor=analyzer,
-        local_proposal_producer=analyzer,
+        text_preparation_service=text_preparation_service,
+        prepared_source_repository=prepared_source_repository,
+        text_preparation_policy=text_preparation_policy,
+        source_normalization_host_bundle=source_normalization_host_bundle,
+        bootstrap_graph_host_bundle=bootstrap_graph_host_bundle,
         writer_admission=writer_admission,
         atomic_store=atomic_store,
     )
@@ -185,7 +424,9 @@ def build_authorized_local_semantic_runtime(
 
 __all__ = [
     "AuthorizedSemanticIngestionRuntime",
+    "BuiltInLocalHostSemanticIngestionCapability",
     "HostSemanticIngestionRuntimeBuilder",
+    "HostSemanticWriterActivation",
     "SemanticDeploymentAuthorizationUse",
     "SemanticDeploymentAuthorizationVerifier",
     "SemanticIngestionRuntimeAuthorization",

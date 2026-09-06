@@ -1,0 +1,17 @@
+{
+  "artifact_kind": "source_alignment_producer_design_candidate_identity",
+  "schema_version": 1,
+  "created_at": "2026-08-10",
+  "git_head": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "branch": "semantic-indexing-m4",
+  "dirty_tree_status_sha256": "e82230e360a43a12649fbe9faca94777790f746163d047ce7509eacf6a7fb555",
+  "dirty_tree_binary_diff_sha256": "80a76e549c83821af63bf445995862246772f3e090c7cc443332474b6a26d5fd",
+  "parent_candidate": "design-candidate-identity-v4.json",
+  "reviewed_artifacts": [
+    {"path": "docs/design/semantic_ingestion_architecture.md", "sha256": "2f762e63dea928b6fefa0aec4875fd8742ec70a411cb1c7a2df9296a2ff94377"},
+    {"path": "docs/work/semantic_ingestion/source-alignment-producer-2026-08-10/design.plan.md", "sha256": "ab2ef8d5dcc9f007a9719c962df6295c32888832da6218a263054b8f2f84df31"},
+    {"path": "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/implementation.plan.md", "sha256": "df985ba43e4c52fc54b18e00cb428a85bcd3af48422261fba443963194debde3"}
+  ],
+  "scope": "Complete SAP-R01 through SAP-R07 graph-free source alignment producer design, including typed contracts, algorithms, atomic publication/replay, production binding, compatibility, security, observability, evidence and CI topology",
+  "candidate_status": "frozen_for_final_whole_design_review"
+}

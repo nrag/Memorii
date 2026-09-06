@@ -1,0 +1,94 @@
+{
+  "catalog_schemas": [
+    {
+      "embedded_schema_ids": [
+        "memorii.semantic-ingestion.action-proposal-role-contract",
+        "memorii.semantic-ingestion.action-proposal-state-contract"
+      ],
+      "schema_id": "memorii.semantic-ingestion.action-proposal-catalog",
+      "schema_version": "v1"
+    },
+    {
+      "embedded_schema_ids": [
+        "memorii.semantic-ingestion.predicate-prompt-contract"
+      ],
+      "schema_id": "memorii.semantic-ingestion.predicate-proposal-catalog",
+      "schema_version": "v1"
+    }
+  ],
+  "closed_wire_type_tokens": [
+    "claim_value_type_or_null",
+    "commitment_tuple",
+    "digest_lowercase_64hex",
+    "endpoint_kind_actor_object",
+    "grounding_requirement_verbatim_source_mention",
+    "identifier",
+    "literal_true",
+    "object_value_kind_entity_literal",
+    "subject_value_kind_entity",
+    "text",
+    "action_role_id_tuple",
+    "action_role_contract_tuple",
+    "action_state_contract_tuple",
+    "predicate_prompt_contract_tuple"
+  ],
+  "record_schemas": [
+    {
+      "fields": [
+        ["role_id", "identifier"],
+        ["endpoint_kind", "endpoint_kind_actor_object"],
+        ["description", "text"],
+        ["grounding_requirement", "grounding_requirement_verbatim_source_mention"]
+      ],
+      "schema_id": "memorii.semantic-ingestion.action-proposal-role-contract",
+      "schema_version": "v1"
+    },
+    {
+      "fields": [
+        ["state_id", "identifier"],
+        ["description", "text"],
+        ["allowed_role_ids", "action_role_id_tuple"],
+        ["required_state_anchor", "literal_true"]
+      ],
+      "schema_id": "memorii.semantic-ingestion.action-proposal-state-contract",
+      "schema_version": "v1"
+    },
+    {
+      "fields": [
+        ["predicate_id", "identifier"],
+        ["description", "text"],
+        ["subject_value_kind", "subject_value_kind_entity"],
+        ["object_value_kind", "object_value_kind_entity_literal"],
+        ["object_literal_type", "claim_value_type_or_null"],
+        ["supported_commitments", "commitment_tuple"],
+        ["contract_digest", "digest_lowercase_64hex"]
+      ],
+      "schema_id": "memorii.semantic-ingestion.predicate-prompt-contract",
+      "schema_version": "v1"
+    },
+    {
+      "fields": [
+        ["vocabulary_namespace", "identifier"],
+        ["proposal_capability_fingerprint", "digest_lowercase_64hex"],
+        ["roles", "action_role_contract_tuple"],
+        ["states", "action_state_contract_tuple"],
+        ["catalog_schema_fingerprint", "digest_lowercase_64hex"],
+        ["catalog_fingerprint", "digest_lowercase_64hex"]
+      ],
+      "schema_id": "memorii.semantic-ingestion.action-proposal-catalog",
+      "schema_version": "v1"
+    },
+    {
+      "fields": [
+        ["vocabulary_namespace", "identifier"],
+        ["proposal_capability_fingerprint", "digest_lowercase_64hex"],
+        ["predicates", "predicate_prompt_contract_tuple"],
+        ["catalog_schema_fingerprint", "digest_lowercase_64hex"],
+        ["catalog_fingerprint", "digest_lowercase_64hex"]
+      ],
+      "schema_id": "memorii.semantic-ingestion.predicate-proposal-catalog",
+      "schema_version": "v1"
+    }
+  ],
+  "schema_manifest_version": "v1"
+}

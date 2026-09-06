@@ -1,0 +1,25 @@
+{
+  "artifact_kind": "source_alignment_producer_design_candidate_identity",
+  "schema_version": 1,
+  "created_at": "2026-08-10",
+  "git_head": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "branch": "semantic-indexing-m4",
+  "dirty_tree_status_sha256": "e82230e360a43a12649fbe9faca94777790f746163d047ce7509eacf6a7fb555",
+  "dirty_tree_binary_diff_sha256": "e3d579b855e46c9b9b79416d16b97b349350efb61c1a5ed89f45246ccf23574f",
+  "reviewed_artifacts": [
+    {
+      "path": "docs/design/semantic_ingestion_architecture.md",
+      "sha256": "3e83cf4202e6df0b0f04ddc99ee61ea86a6344723f04729dd615aed3e223eea1"
+    },
+    {
+      "path": "docs/work/semantic_ingestion/source-alignment-producer-2026-08-10/design.plan.md",
+      "sha256": "ad6ccd2621f568630368fc4558ed77e34d0d3995ca74798fed92f5fb0ac0f9a7"
+    },
+    {
+      "path": "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/implementation.plan.md",
+      "sha256": "df985ba43e4c52fc54b18e00cb428a85bcd3af48422261fba443963194debde3"
+    }
+  ],
+  "scope": "Graph-free interpretation bundle, consensus, source-local identity partition, source alignment/grouping, atomic publication, replay, and provider binding design delta",
+  "candidate_status": "frozen_for_full_review"
+}

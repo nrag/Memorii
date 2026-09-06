@@ -1,0 +1,32 @@
+{
+  "canonical_preimage_length": 280,
+  "canonical_preimage_sha256": "e966f6abb6d236cd0b2cadd530f517a33ec43d132d5740d70ac6be74e5b3f33e",
+  "certifies_m3_1": false,
+  "consume_elapsed_seconds": 0.40812707399982173,
+  "consume_iterations": 100000,
+  "decision": "SECURITY_PROTOTYPE_PASS_INTEGRATION_UNPROVEN",
+  "digest": "32bb669e54844ac63e2fa7179fc6e8a8ecc612af59aa5e4da91fd38c4531bb09",
+  "evidence_stage": "reference_only_feasibility",
+  "experiment": "COA-EXP-002",
+  "integration_blocker": "Pydantic nested validators receive raw reconstructed models, not the private attestation handle; automatic lookup would require a caller digest, object identity, equality, or canonical-byte reconstruction.",
+  "production_integration_measured": false,
+  "rejected_attack_count": 15,
+  "rejected_attacks": [
+    "caller_claimed_digest",
+    "model_construct",
+    "caller_bytes",
+    "copied_handle",
+    "serialized_handle",
+    "arbitrary_object",
+    "wrong_nonce",
+    "wrong_type",
+    "wrong_profile",
+    "wrong_codec",
+    "wrong_domain",
+    "wrong_purpose",
+    "cross_issuer",
+    "mutated_value_reissue",
+    "closed_issuer_replay"
+  ],
+  "schema": "memorii.semantic-ingestion.codec-attestation.trusted-issuance-prototype.v1"
+}

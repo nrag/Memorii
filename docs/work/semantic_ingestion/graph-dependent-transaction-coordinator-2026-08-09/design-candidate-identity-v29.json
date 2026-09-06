@@ -1,0 +1,26 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_transaction_v3_native_producer_ports",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree",
+  "status_list_sha256": "34b0a628dfec50d85451d325af82f20d6742ce3676b0dca5af2f8b50f86c58f6",
+  "review_scope": [
+    "native V3 plan compiler and manifest inputs",
+    "post-reload V3 planning authorizer",
+    "V3 group executor internal pre-CAS authority recheck"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "ce73144e8628ce75c87ddeefd8f7970424634840e3f2412315d1ad8366e8ca21",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "5883ec61ecdd84c188de3e8152a8d5b5a3122a23853dc9dffe5f9505b971e5d4",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "d6e6ba6efdc14241ecfec02c466e724008ff1bf4d112904eaaf496f68446d905"
+  },
+  "checks": [
+    "git diff --check",
+    "binding and identity JSON parse",
+    "44x4x2 coverage assertion",
+    "generic V1/V2 producer bridge search",
+    "two exact artifact and status identity passes"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

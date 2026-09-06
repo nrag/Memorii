@@ -1,0 +1,16 @@
+{
+  "failures": [],
+  "mutation_results": {
+    "coordinated_chain_edges": true,
+    "coordinated_parameter_binding": true,
+    "missing_proof_catalog_entry": true,
+    "no_durable_write_violation": true,
+    "repository_wide_instead_of_scoped_count": true,
+    "unrelated_fallback_token": true,
+    "wrong_durable_semantics": true
+  },
+  "passed": true,
+  "requirement_count": 12,
+  "schema": "memorii.production-entrypoint-bindings-validation.v4",
+  "symbol_scoped_capture_cell_call_count": 1
+}

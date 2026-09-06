@@ -1,0 +1,36 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_transaction_v3_amendment",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "branch": "semantic-indexing-m4",
+  "tree_state": "dirty_shared_worktree",
+  "status_list_sha256": "d36afb1bdbefd3e55387371e638e0709d8c0d36d10e82027b8323785c63c7850",
+  "review_scope": [
+    "GTC-R14",
+    "GTC-R15",
+    "GTC-R16",
+    "GTC-R17",
+    "GTC-R18",
+    "GTC-R19",
+    "GTC-R20"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "01b9a727a51e48402054e7d2808c0fb4dd0ce43cf662b3ffd0380957217814ba",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "ccddd8a654df8d889132440871ee3ca768aa64604acbe0b8916379dc23bc7c9e",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "7b586c2ee24e2e782dd66d559337a0cb7a3910ea2748b48076939bf547eeab85",
+    "docs/work/semantic_ingestion/source-normalization-authority-bundle-2026-08-10/design.plan.md": "05fa22accd930fa91d6e2cbfb1c5b346dbd144074238aba314ed4120dd15297b"
+  },
+  "checks": [
+    "git diff --check",
+    "python3 -m json.tool production-entrypoint-bindings.json"
+  ],
+  "evidence_maturity": "specified_and_derivable_only",
+  "exclusions": [
+    "production implementation",
+    "test implementation",
+    "workflow or CI enforcement",
+    "generic V1 graph coordinator approval",
+    "unrelated dirty-tree changes"
+  ]
+}

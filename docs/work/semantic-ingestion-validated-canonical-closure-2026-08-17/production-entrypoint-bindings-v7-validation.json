@@ -1,0 +1,31 @@
+{
+  "composition_root_count": 4,
+  "edge_count": 23,
+  "failures": [],
+  "mutation_results": {
+    "R08_relabelled_durable": true,
+    "aliased_durable_sink_source": true,
+    "capture_root": true,
+    "detached_trigger_row": true,
+    "direct_durable_sink_source": true,
+    "disconnected_row": true,
+    "dynamic_durable_sink_source": true,
+    "forged_composition_root_mapping": true,
+    "forged_trigger_mapping": true,
+    "missing_authority_keyword": true,
+    "none_hermes_authority": true,
+    "receiver_field_reassignment": true,
+    "removed_composite_trigger": true,
+    "removed_memory_write_trigger": true,
+    "reversed_constructor": true,
+    "substituted_authority_source": true,
+    "wrong_receiver_source": true,
+    "wrong_target_same_name": true
+  },
+  "passed": true,
+  "read_only_inputs": true,
+  "row_count": 12,
+  "schema": "memorii.production-entrypoint-bindings-validation.v7",
+  "source_hash_count": 12,
+  "trigger_count": 9
+}

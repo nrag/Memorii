@@ -1,0 +1,22 @@
+{
+  "format": "memorii.debug-candidate-identity.v4",
+  "supersedes": [
+    "debug-candidate-identity-v1.json",
+    "debug-candidate-identity-v2.json",
+    "debug-candidate-identity-v3.json"
+  ],
+  "head_commit": "5bd516bf4b576d927f1a32edb01531b6f18419e6",
+  "tree_state": "clean",
+  "scope_sha256": {
+    "memorii/memorii/core/provider/service.py": "8264ea7d8522f1329649fe1e5162c15e4f0cf70e4afbcb50930ac0a83ef8679d",
+    "memorii/memorii/core/semantic_ingestion/capability.py": "9026cc5399f47151f65b168bf1aa1fb89820d68b6359187a031980ec40b0f948",
+    "memorii/tests/unit/core/semantic_ingestion/test_semantic_provider_composition.py": "4a7127b81ce516a9eb81e9fb330292446511fe3b273ff5336d44d49f4ddd3dc2",
+    "memorii/tests/unit/core/semantic_ingestion/test_bootstrap_recovery_replay_v3.py": "1e6be9cad5306aaf39cc887926f285745e1bf2df7c46ec0717709a534e0063cf",
+    "memorii/tests/unit/core/semantic_ingestion/test_bootstrap_v3_recovery_reopen.py": "4ef595dde0805654f5d2ff2e4ff5f25096e5c794ff1fe71469867fdb363254bb",
+    "docs/work/semantic-ingestion-recovery-reconcile-baseline-debug-2026-08-18/debug.plan.md": "48a8d2d43ccd94af85ca22af264178cb1bb1f6976f923a8fd845ea0a0ae82609",
+    "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/build_production_entrypoint_bindings_v14.py": "c513531c71eb7a18443ea6f03f7faf7507b5159585f20b8df59b0cbc7e28dc06",
+    "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/validate_production_entrypoint_bindings_v14.py": "89bd5f442141948f2b44f725f0bb181618b2ed2d4ad522e37f1421bd2d5dfaba",
+    "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-entrypoint-bindings-v14.json": "c27b63b70b0e095e7f8eae2129c57c600623ae6f8551679c6d3e55c38a440b84",
+    "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-entrypoint-bindings-v14-validation.json": "740741dea3da267327e59890fc9516682bb47901075b6c952779ad63e0221a1e"
+  }
+}

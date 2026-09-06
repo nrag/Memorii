@@ -1,0 +1,147 @@
+{
+  "schema_version": "memorii.semantic-conflict-verification-map.v1",
+  "planned_collections": {
+    "semantic_ingestion_generation": {"baseline": 34, "delta": 2, "final": 36},
+    "semantic_terminal_persistence": {"baseline": 156, "delta": 3, "final": 159},
+    "semantic_projection_history": {"baseline": 84, "delta": 2, "final": 86},
+    "provider_compatibility": {"baseline": 14, "delta": 1, "final": 15},
+    "duration_balanced_unit": {"baseline": 3035, "delta": 5, "final": 3040}
+  },
+  "proofs": [
+    {
+      "requirements": ["SCI-R01", "SCI-R02", "SCI-R03", "SCI-R05"],
+      "node": "tests/unit/core/semantic_ingestion/test_event_replay.py::test_semantic_conflict_derivation_and_replay_matrix_is_byte_exact",
+      "failure_signal": "contest derivation, coalescing, successor, genesis, or checkpoint-tail bytes differ",
+      "required_job": "unit-test-shards",
+      "selector": "tests/unit/core/semantic_ingestion/test_event_replay.py",
+      "timing_inventory": "tests/ci/unit-test-durations.json",
+      "budget_seconds": 45,
+      "duplicate_exclusion": "owns pure derivation and replay only; no filesystem or provider assertions"
+    },
+    {
+      "requirements": ["SCI-R02", "SCI-R05", "SCI-R08"],
+      "node": "tests/unit/core/semantic_ingestion/test_event_replay.py::test_semantic_conflict_replay_binding_rejects_every_prefix_and_pointer_mutation",
+      "failure_signal": "mutated conflict record, pointer, authority pointer, count, order, repository, watermark, nonempty v1 binding, or future, retired, or mixed authority version becomes visible",
+      "required_job": "unit-test-shards",
+      "selector": "tests/unit/core/semantic_ingestion/test_event_replay.py",
+      "timing_inventory": "tests/ci/unit-test-durations.json",
+      "budget_seconds": 30,
+      "duplicate_exclusion": "owns replay-binding mutations and v1-empty/v2/future/retired/mixed reader dispatch; terminal suite owns durable reopen"
+    },
+    {
+      "requirements": ["SCI-R01", "SCI-R02", "SCI-R04", "SCI-R05", "SCI-R06"],
+      "node": "tests/unit/core/semantic_ingestion/test_policy_migration.py::test_cutover_and_decay_conflict_authority_share_projection_cas",
+      "failure_signal": "temporal cutover, trust cutover, or scheduled decay introduces, changes, or resolves a contest without exact authority, replay binding, conflict pointer, or clarification-race serialization",
+      "required_job": "semantic-projection-history",
+      "selector": "tests/unit/core/semantic_ingestion/test_policy_migration.py tests/unit/core/semantic_ingestion/test_projection_scheduler.py",
+      "timing_inventory": null,
+      "timing_policy": "dedicated 15-minute exhaustive job; implementation evidence records measured wall time and headroom",
+      "budget_seconds": 180,
+      "duplicate_exclusion": "owns non-ingestion projection publishers; terminal suite owns generic durable failpoints"
+    },
+    {
+      "requirements": ["SCI-R01", "SCI-R02", "SCI-R04"],
+      "node": "tests/unit/core/test_projection_history.py::test_generic_projection_publication_requires_exact_conflict_authority",
+      "failure_signal": "prepare or direct publish makes a contested projection record, certificate, generation, or pointer visible without the exact conflict authority and same-CAS records",
+      "required_job": "semantic-projection-history",
+      "selector": "tests/unit/core/test_projection_history.py",
+      "timing_inventory": null,
+      "timing_policy": "dedicated 15-minute exhaustive job; implementation evidence records measured wall time and headroom",
+      "budget_seconds": 45,
+      "duplicate_exclusion": "owns the shared ProjectionCommitRequest choke point; policy-migration node owns specific non-ingestion publishers"
+    },
+    {
+      "requirements": ["SCI-R01", "SCI-R02", "SCI-R05"],
+      "node": "tests/unit/core/semantic_ingestion/test_semantic_terminal_persistence.py::test_conflict_publication_is_atomic_at_every_durable_boundary",
+      "failure_signal": "graph, event, projection, conflict record, or pointer is partially visible across failure, lost acknowledgement, retry, or reopen",
+      "required_job": "semantic-terminal-persistence",
+      "selector": "tests/ci/semantic-terminal-persistence-shards.json",
+      "timing_inventory": "tests/ci/semantic-terminal-persistence-test-durations.json",
+      "budget_seconds": 240,
+      "duplicate_exclusion": "owns durable atomicity only; event replay owns derivation permutations"
+    },
+    {
+      "requirements": ["SCI-R04"],
+      "node": "tests/unit/core/semantic_ingestion/test_semantic_terminal_persistence.py::test_conflict_authority_bijection_scope_display_and_revocation_fail_before_write",
+      "failure_signal": "missing, extra, swapped, stale, revoked, cross-tenant, unsafe, oversized, or nonbijective authority changes any durable member",
+      "required_job": "semantic-terminal-persistence",
+      "selector": "tests/ci/semantic-terminal-persistence-shards.json",
+      "timing_inventory": "tests/ci/semantic-terminal-persistence-test-durations.json",
+      "budget_seconds": 180,
+      "duplicate_exclusion": "owns write-side authority and CAS; provider integration owns read-before-payload behavior"
+    },
+    {
+      "requirements": ["SCI-R05", "SCI-R06"],
+      "node": "tests/unit/core/semantic_ingestion/test_semantic_terminal_persistence.py::test_projection_and_claimed_clarification_races_have_one_pointer_winner",
+      "failure_signal": "either race order creates two current revisions, stale semantic effects, a detached receipt, or nonidentical recovery",
+      "required_job": "semantic-terminal-persistence",
+      "selector": "tests/ci/semantic-terminal-persistence-shards.json",
+      "timing_inventory": "tests/ci/semantic-terminal-persistence-test-durations.json",
+      "budget_seconds": 180,
+      "duplicate_exclusion": "owns deterministic same-store CAS barriers; file-cache lock tests remain separate"
+    },
+    {
+      "requirements": ["SCI-R05", "SCI-R06"],
+      "node": "tests/unit/core/test_conflict_attention_repository.py::test_canonical_conflict_cache_rebuild_cannot_change_authority_or_cursor_membership",
+      "failure_signal": "cache loss, truncation, substitution, duplicate import, or rebuild changes canonical bytes, pointers, clarification, or retained cursor membership",
+      "required_job": "unit-test-shards",
+      "selector": "tests/unit/core/test_conflict_attention_repository.py",
+      "timing_inventory": "tests/ci/unit-test-durations.json",
+      "budget_seconds": 20,
+      "duplicate_exclusion": "owns derived-cache behavior only; canonical replay and atomicity have separate owners"
+    },
+    {
+      "requirements": ["SCI-R05", "SCI-R07"],
+      "node": "tests/unit/core/test_conflict_attention_repository.py::test_composite_attention_snapshot_binds_both_child_authorities",
+      "failure_signal": "semantic and integrity members collide, paginate under different snapshots, lose total ordinal order, omit or duplicate a page member, or resolve through the wrong authority",
+      "required_job": "unit-test-shards",
+      "selector": "tests/unit/core/test_conflict_attention_repository.py",
+      "timing_inventory": "tests/ci/unit-test-durations.json",
+      "budget_seconds": 15,
+      "duplicate_exclusion": "owns composite repository algebra; integration owns Hermes rendering"
+    },
+    {
+      "requirements": ["SCI-R07", "SCI-R08"],
+      "node": "tests/unit/core/test_provider_factory.py::test_conflict_attention_factory_requires_complete_single_authority_composition",
+      "failure_signal": "partial resolver, repository, authorization, cursor, or cache composition reaches storage, creates two authorities, or lets the file cache originate state",
+      "required_job": "unit-test-shards",
+      "selector": "tests/unit/core/test_provider_factory.py tests/unit/core/test_filesystem_storage_bundle.py",
+      "timing_inventory": "tests/ci/unit-test-durations.json",
+      "budget_seconds": 15,
+      "duplicate_exclusion": "owns construction and dependency identity only; vertical integration owns runtime behavior"
+    },
+    {
+      "requirements": ["SCI-R01", "SCI-R04", "SCI-R05", "SCI-R06", "SCI-R07"],
+      "node": "tests/integration/test_conflict_attention_persistence.py::test_real_contest_restarts_lists_and_clarifies_through_hermes",
+      "failure_signal": "real ingestion fails to introduce, restart, authorize-before-read, render within budget, or clarify one canonical conflict",
+      "required_job": "semantic-ingestion-generation",
+      "selector": "tests/integration/test_conflict_attention_persistence.py",
+      "timing_inventory": null,
+      "timing_policy": "dedicated 15-minute job exemption; implementation evidence records measured wall time and headroom",
+      "budget_seconds": 120,
+      "duplicate_exclusion": "single vertical path; it never seeds a conflict repository or repeats unit mutation matrices"
+    },
+    {
+      "requirements": ["SCI-R07", "SCI-R08"],
+      "node": "tests/integration/test_conflict_attention_persistence.py::test_attention_disable_and_reenable_retains_exact_canonical_conflict_state",
+      "failure_signal": "disabled reads or conflict-producing writes access or mutate authority, or re-enable changes canonical bytes, listing membership, or clarification identity",
+      "required_job": "semantic-ingestion-generation",
+      "selector": "tests/integration/test_conflict_attention_persistence.py",
+      "timing_inventory": null,
+      "timing_policy": "dedicated 15-minute job exemption; implementation evidence records measured wall time and headroom",
+      "budget_seconds": 60,
+      "duplicate_exclusion": "owns supported feature rollback/re-enable only; pinned provider fixture owns pre-feature compatibility"
+    },
+    {
+      "requirements": ["SCI-R07", "SCI-R08"],
+      "node": "tests/unit/core/semantic_ingestion/test_provider_compatibility.py::test_pre_feature_store_and_legacy_provider_bytes_remain_compatible",
+      "failure_signal": "new reader cannot open the pinned empty-authority store, legacy wire bytes change, or unsupported old-binary rollback is implied",
+      "required_job": "provider-compatibility",
+      "selector": "tests/unit/core/semantic_ingestion/test_provider_compatibility.py tests/integration/semantic_ingestion/test_provider_compatibility_recapture.py",
+      "timing_inventory": null,
+      "timing_policy": "dedicated provider-compatibility job exemption; implementation evidence records measured wall time and headroom",
+      "budget_seconds": 60,
+      "duplicate_exclusion": "owns pinned baseline and public compatibility only; future/retired conflict bytes are replay-owner mutations"
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+{
+  "comparisons": {
+    "load-n4": {
+      "node_sets_equal": true,
+      "only_other_count": 0,
+      "only_serial_count": 0,
+      "outcome_differences": [],
+      "outcomes_equal": true
+    },
+    "load-n8": {
+      "node_sets_equal": true,
+      "only_other_count": 0,
+      "only_serial_count": 0,
+      "outcome_differences": [],
+      "outcomes_equal": true
+    },
+    "loadfile-n8": {
+      "node_sets_equal": true,
+      "only_other_count": 0,
+      "only_serial_count": 0,
+      "outcome_differences": [],
+      "outcomes_equal": true
+    }
+  },
+  "environment": {
+    "dirty_tree": [
+      " M docs/work/semantic-ingestion-canonical-evidence-production-performance-2026-08-16/evidence/pbd-exp-014-default-on-wall-clock-v2.json"
+    ],
+    "preflight_collected": "4077 tests collected in 7.37s",
+    "pythonpath": ""
+  },
+  "equivalent": true,
+  "revision": "253cee90baef39a7c9ebf96ea71e9ecf15ef9fd1",
+  "runs": {
+    "load-n4": {
+      "exit_status": 1,
+      "failed": 3,
+      "nodes": 4072,
+      "passed": 4067,
+      "seconds": 6819.7,
+      "skipped": 2
+    },
+    "load-n8": {
+      "exit_status": 1,
+      "failed": 3,
+      "nodes": 4072,
+      "passed": 4067,
+      "seconds": 4950.4,
+      "skipped": 2
+    },
+    "loadfile-n8": {
+      "exit_status": 1,
+      "failed": 3,
+      "nodes": 4072,
+      "passed": 4067,
+      "seconds": 3418.8,
+      "skipped": 2
+    },
+    "serial": {
+      "exit_status": 1,
+      "failed": 3,
+      "nodes": 4072,
+      "passed": 4067,
+      "seconds": 11998.2,
+      "skipped": 2
+    }
+  }
+}

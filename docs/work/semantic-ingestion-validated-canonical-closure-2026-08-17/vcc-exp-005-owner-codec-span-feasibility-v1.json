@@ -1,0 +1,350 @@
+{
+  "normalization_owner": "memorii.core.memory_evolution.ingestion_contracts._normalized_typed_json",
+  "owner_seam": "memorii.core.memory_evolution.ingestion_contracts._json",
+  "passed": true,
+  "production_code_changed": false,
+  "proof_semantics": "The prototype replaces only the byte writer used by the real codec owner; production normalization, public codec entrypoints, and decoders execute unchanged.",
+  "public_codec_entrypoints": [
+    "encode_typed_value/decode_typed_value",
+    "encode_semantic_contract/decode_semantic_contract"
+  ],
+  "schema": "memorii.vcc-owner-codec-span-feasibility.v1",
+  "security_boundary": "Spans are observations over bytes emitted by the codec owner; they carry no validation, authorization, persistence, or writer authority.",
+  "semantic_contract_case": {
+    "byte_identical": true,
+    "canonical_sha256": "840b69dc6063a06234cb4b9ca9c9c7c14d77fd9febdccaeaabacc5078881faa1",
+    "contract_kind": "construction_family",
+    "decoder_compatible": true,
+    "span_count": 20
+  },
+  "span_integrity": "Every recorded span is in bounds, the root span covers the complete canonical bytes, and every span digest equals its exact canonical byte slice.",
+  "tests_changed": false,
+  "typed_cases": [
+    {
+      "byte_identical": true,
+      "canonical_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "case": "null",
+      "check_callback_count": 2,
+      "decoder_compatible": true,
+      "final_span_writer_calls_per_encode": 1,
+      "span_count": 1,
+      "stateful_check_equivalence": [
+        {
+          "calls": 1,
+          "fail_at": 1,
+          "outcome": "stopped"
+        },
+        {
+          "calls": 2,
+          "fail_at": 2,
+          "outcome": "stopped"
+        },
+        {
+          "calls": 2,
+          "fail_at": 3,
+          "outcome": "completed"
+        }
+      ]
+    },
+    {
+      "byte_identical": true,
+      "canonical_sha256": "b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b",
+      "case": "boolean",
+      "check_callback_count": 2,
+      "decoder_compatible": true,
+      "final_span_writer_calls_per_encode": 1,
+      "span_count": 1,
+      "stateful_check_equivalence": [
+        {
+          "calls": 1,
+          "fail_at": 1,
+          "outcome": "stopped"
+        },
+        {
+          "calls": 2,
+          "fail_at": 2,
+          "outcome": "stopped"
+        },
+        {
+          "calls": 2,
+          "fail_at": 3,
+          "outcome": "completed"
+        }
+      ]
+    },
+    {
+      "byte_identical": true,
+      "canonical_sha256": "87915b0ca20f732b1536170420bc4d607bbf29157ce79d8c87eccd8368375d08",
+      "case": "integer",
+      "check_callback_count": 8,
+      "decoder_compatible": true,
+      "final_span_writer_calls_per_encode": 1,
+      "span_count": 3,
+      "stateful_check_equivalence": [
+        {
+          "calls": 1,
+          "fail_at": 1,
+          "outcome": "stopped"
+        },
+        {
+          "calls": 4,
+          "fail_at": 4,
+          "outcome": "stopped"
+        },
+        {
+          "calls": 8,
+          "fail_at": 8,
+          "outcome": "stopped"
+        },
+        {
+          "calls": 8,
+          "fail_at": 9,
+          "outcome": "completed"
+        }
+      ]
+    },
+    {
+      "byte_identical": true,
+      "canonical_sha256": "28380feb8724d669bc8d4cf5b5a5bb1adbdc61b81ebd06f3fabc567b4f3b0fc5",
+      "case": "unicode_string",
+      "check_callback_count": 2,
+      "decoder_compatible": true,
+      "final_span_writer_calls_per_encode": 1,
+      "span_count": 1,
+      "stateful_check_equivalence": [
+        {
+          "calls": 1,
+          "fail_at": 1,
+          "outcome": "stopped"
+        },
+        {
+          "calls": 2,
+          "fail_at": 2,
+          "outcome": "stopped"
+        },
+        {
+          "calls": 2,
+          "fail_at": 3,
+          "outcome": "completed"
+        }
+      ]
+    },
+    {
+      "byte_identical": true,
+      "canonical_sha256": "e4cd8e2105b19487e20983bc97a7804d3fe8602b38aa3ab8e57e75e2696a7298",
+      "case": "bytes",
+      "check_callback_count": 8,
+      "decoder_compatible": true,
+      "final_span_writer_calls_per_encode": 1,
+      "span_count": 3,
+      "stateful_check_equivalence": [
+        {
+          "calls": 1,
+          "fail_at": 1,
+          "outcome": "stopped"
+        },
+        {
+          "calls": 4,
+          "fail_at": 4,
+          "outcome": "stopped"
+        },
+        {
+          "calls": 8,
+          "fail_at": 8,
+          "outcome": "stopped"
+        },
+        {
+          "calls": 8,
+          "fail_at": 9,
+          "outcome": "completed"
+        }
+      ]
+    },
+    {
+      "byte_identical": true,
+      "canonical_sha256": "ccb5fce1e33641c9b83eda56441857eb1fbafe65f170f2847fab95cdde19a8a3",
+      "case": "list",
+      "check_callback_count": 18,
+      "decoder_compatible": true,
+      "final_span_writer_calls_per_encode": 1,
+      "span_count": 7,
+      "stateful_check_equivalence": [
+        {
+          "calls": 1,
+          "fail_at": 1,
+          "outcome": "stopped"
+        },
+        {
+          "calls": 9,
+          "fail_at": 9,
+          "outcome": "stopped"
+        },
+        {
+          "calls": 18,
+          "fail_at": 18,
+          "outcome": "stopped"
+        },
+        {
+          "calls": 18,
+          "fail_at": 19,
+          "outcome": "completed"
+        }
+      ]
+    },
+    {
+      "byte_identical": true,
+      "canonical_sha256": "edb3596c6a7f6bfab180ec2bb9aeb0ed32f82510a16579a09dc39bab7018ac5f",
+      "case": "tuple",
+      "check_callback_count": 18,
+      "decoder_compatible": true,
+      "final_span_writer_calls_per_encode": 1,
+      "span_count": 7,
+      "stateful_check_equivalence": [
+        {
+          "calls": 1,
+          "fail_at": 1,
+          "outcome": "stopped"
+        },
+        {
+          "calls": 9,
+          "fail_at": 9,
+          "outcome": "stopped"
+        },
+        {
+          "calls": 18,
+          "fail_at": 18,
+          "outcome": "stopped"
+        },
+        {
+          "calls": 18,
+          "fail_at": 19,
+          "outcome": "completed"
+        }
+      ]
+    },
+    {
+      "byte_identical": true,
+      "canonical_sha256": "28d25744a5b7a1ed42ddf64050ef5cc860ce1ac5ff5854d9dd81961a7f85fc12",
+      "case": "map_order",
+      "check_callback_count": 28,
+      "decoder_compatible": true,
+      "final_span_writer_calls_per_encode": 1,
+      "span_count": 13,
+      "stateful_check_equivalence": [
+        {
+          "calls": 1,
+          "fail_at": 1,
+          "outcome": "stopped"
+        },
+        {
+          "calls": 14,
+          "fail_at": 14,
+          "outcome": "stopped"
+        },
+        {
+          "calls": 28,
+          "fail_at": 28,
+          "outcome": "stopped"
+        },
+        {
+          "calls": 28,
+          "fail_at": 29,
+          "outcome": "completed"
+        }
+      ]
+    },
+    {
+      "byte_identical": true,
+      "canonical_sha256": "9582d08c1c8ca2f0bbaa9560f71e81d0eb0d97e581ddfdd146e350f76e489fc7",
+      "case": "set_order",
+      "check_callback_count": 12,
+      "decoder_compatible": true,
+      "final_span_writer_calls_per_encode": 1,
+      "span_count": 5,
+      "stateful_check_equivalence": [
+        {
+          "calls": 1,
+          "fail_at": 1,
+          "outcome": "stopped"
+        },
+        {
+          "calls": 6,
+          "fail_at": 6,
+          "outcome": "stopped"
+        },
+        {
+          "calls": 12,
+          "fail_at": 12,
+          "outcome": "stopped"
+        },
+        {
+          "calls": 12,
+          "fail_at": 13,
+          "outcome": "completed"
+        }
+      ]
+    },
+    {
+      "byte_identical": true,
+      "canonical_sha256": "1d6ddc34c1edbdf78f948b987b264f5c0123f7c3220628c0cef5b48489feb8bc",
+      "case": "frozenset_order",
+      "check_callback_count": 24,
+      "decoder_compatible": true,
+      "final_span_writer_calls_per_encode": 1,
+      "span_count": 9,
+      "stateful_check_equivalence": [
+        {
+          "calls": 1,
+          "fail_at": 1,
+          "outcome": "stopped"
+        },
+        {
+          "calls": 12,
+          "fail_at": 12,
+          "outcome": "stopped"
+        },
+        {
+          "calls": 24,
+          "fail_at": 24,
+          "outcome": "stopped"
+        },
+        {
+          "calls": 24,
+          "fail_at": 25,
+          "outcome": "completed"
+        }
+      ]
+    },
+    {
+      "byte_identical": true,
+      "canonical_sha256": "f8e31d44cbe31a4a66f858e0235861ffdff6a1337dd91021b2aa6c91c725abe2",
+      "case": "nested",
+      "check_callback_count": 72,
+      "decoder_compatible": true,
+      "final_span_writer_calls_per_encode": 1,
+      "span_count": 32,
+      "stateful_check_equivalence": [
+        {
+          "calls": 1,
+          "fail_at": 1,
+          "outcome": "stopped"
+        },
+        {
+          "calls": 36,
+          "fail_at": 36,
+          "outcome": "stopped"
+        },
+        {
+          "calls": 72,
+          "fail_at": 72,
+          "outcome": "stopped"
+        },
+        {
+          "calls": 72,
+          "fail_at": 73,
+          "outcome": "completed"
+        }
+      ]
+    }
+  ]
+}

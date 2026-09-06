@@ -10,9 +10,11 @@ operational run, or change M1 behavior.
 The fixture emits operational-shaped registered CTV bodies so the normal
 decoder, DAG, and release-closure verifier exercise their production wire
 contracts. Every such body is signed by a dedicated deterministic test-only
-trust root. That root exists only in the scenario test trust configuration and
-is absent from default/production trust configuration. Production trust lookup
-must reject the same bytes before release authority can be established.
+trust root. That root exists only in the separately bounded `scenario_test`
+host trust-domain capability and is absent from default/production capability
+discovery. Production trust lookup must reject the same bytes before release
+authority can be established; the scenario runner must likewise reject the
+production and unrelated roots.
 
 Genesis fixture roots use the typed `independently_provisioned_genesis`
 provenance variant defined by the architecture. It names a verifier-held
@@ -48,9 +50,53 @@ the comparison result. Persistence receives only the extractor's ordinary
 proposal. The comparator is the sole consumer of hidden scenario truth.
 
 No LLM, production extractor, persistence result, generated digest, signature,
-or existing golden artifact may author scenario truth. The production extractor
-is a system under test. The initial feasibility run invokes the real
-`EnglishRuleMemoryExtractor`, not a fixture proposal or an oracle-shaped fake.
+or existing golden artifact may author scenario truth. The production local
+ingestion path is a system under test. The feasibility run invokes ordinary
+`ProviderMemoryService` ingress with a scenario-test-material
+`BuiltInLocalHostSemanticIngestionCapability`, not a direct extractor callback,
+fixture proposal, or an oracle-shaped fake. The capability uses the corrected
+V1 finite corpus and local analyzer described in Section 3.23.0; scenario test
+material is rejected by default and production host trust boundaries.
+
+Scenario traversal is zero-based and declaration ordered: the validator walks
+the root `scenarios` array from index `0`, then each selected scenario's
+`interaction.turns` array from index `0`. `traversal_ordinal` is the resulting
+zero-based global position; it is not a scenario ID, turn ID, verdict, or
+hidden entity identity. For each rendered turn, renderer A emits this exact
+declaration-ordered typed-value body, with no aliases, defaults, omitted nulls,
+or additional fields:
+
+```text
+schema_id = "memorii.scenario_first.public_ingress_id"
+schema_version = 1
+traversal_ordinal = <non-negative integer>
+rendered_source_sha256 = <64 lowercase hex SHA-256 of exact rendered UTF-8 bytes>
+user_id = <non-empty public scope string>
+session_id = <non-empty public scope string>
+task_id = <non-empty public scope string>
+```
+
+The preimage is `encode_typed_value` of that declaration-ordered body using
+the existing `semantic_ingestion_typed_value` canonical profile, prefixed by
+the exact ASCII domain bytes
+`memorii.scenario-first.public-ingress-id.v1\0`. The opaque event ID spelling
+is exactly `scenario-event-` followed by the first 32 lowercase hexadecimal
+characters of SHA-256 over those prefixed bytes. The host-visible normalized
+source ID is exactly `tx:` plus that opaque event ID. No private scenario field
+is an operand.
+
+Renderer B independently reproduces the traversal, declaration-ordered CTV
+bytes, digest, event ID, and normalized source ID without importing renderer
+A or its ID helper; their byte-for-byte agreement is required before ingress.
+The mutation matrix changes each preimage field, field order, typed-value
+profile, domain byte, output prefix, truncation length, hex case, `tx:` source
+spelling, traversal order, and duplicate/reused event ID; each mutation must
+fail before host ingress. Its private renderer/comparator map is the sole
+mapping from the opaque event/source pair to a scenario turn. The host sees
+neither a scenario ID, classification, expectation, hidden entity ID, nor a
+reversible mapping value. Trace and persistence proof rejects attempts to pass
+the private map through event fields, ingress, host material, traces, or
+persisted records.
 
 Opaque runtime IDs and output ordering are intentionally not compared. The
 comparator preserves, and fails on a difference in, claim multiplicity, entity
@@ -96,14 +142,38 @@ polarity, modality, attribution, temporal, and scope form.
 
 ## Rendering and span contract
 
-Renderer A maps one turn to one `SourceObservation` with source ID equal to the
-turn ID. It uses only the fixed grammar `Subject owner is Person.` or `Subject
-status is value.`; a non-assertion becomes the fixed insufficient-evidence
-sentence. The source kind is `user`, language is `en`, and scope/timestamp are
-copied from the scenario. Speaker is bound in the source envelope and must
-match direct attribution. The extracted evidence quote and offsets are checked
-against the rendered UTF-8 source bytes. Rendered texts, speaker/turn ordering,
-reference mapping, and span map are run artifacts, not scenario authority.
+Renderer A maps one private scenario turn to one `RenderedScenarioObservation`.
+Its private `turn_id` remains only in the renderer/comparator view. For ordinal
+`n`, the renderer derives the host-visible opaque event ID exactly as Section
+3.23.0 requires; the public provider event operation ID is that value, and the
+host-visible normalized source ID is the normal `tx:<opaque-event-id>` form.
+The `SourceObservation`, authenticated ingress, host capability, provider
+result, trace, and persisted records receive only the opaque IDs and ordinary
+public source bytes/metadata. The renderer/comparator keeps the only private
+map from `(opaque-event-id, tx:<opaque-event-id>)` to `turn_id`; that map is
+not serialized, returned by the runner, included in a CTV body, or passed to
+any production owner.
+
+It uses only the fixed grammar `Subject owner is Person.` or `Subject status is
+value.`; a non-assertion becomes the fixed insufficient-evidence sentence. The
+source kind is `user`, language is `en`, and scope/timestamp are copied from
+the scenario. Speaker is bound in the source envelope and must match direct
+attribution. Before comparison, and only in comparator-private state, actual
+host source IDs are remapped through the private map to the scenario provenance
+turn ID. The extracted evidence quote and byte offsets are checked against the
+rendered UTF-8 source bytes after that remap. Rendered texts, speaker/turn
+ordering, private mapping, and span map are run artifacts, not scenario
+authority.
+
+The runner must prove one positive opaque-ID/remap execution; rejection before
+ingress for a missing map member, an injected opaque ID, or an ID reused for a
+different ordinal/source-digest/scope tuple; and exact same-ID retry/reopen
+equality for the same tuple. A trace-and-persistence leak proof inspects public
+event fields, authenticated ingress, host material, provider result, trace
+records, and persisted artifacts and rejects any private `turn_id`, scenario
+ID, classification, expectation, or private-map value. Comparator remapping is
+also exercised for every owner/status/abstain/ambiguous outcome and must reject
+an absent, extra, swapped, or non-`tx:` source coordinate.
 
 Metamorphic variants are generated from the same hidden world: opaque scenario
 and entity IDs are permuted; independent turns are reordered; unrelated
@@ -162,9 +232,10 @@ source bytes per turn <= 64 KiB; total rendered bytes <= 64 MiB; structural spoo
 bytes <= 128 MiB; extractor/ingress wall time <= 30 seconds; structural
 reconstruction wall time <= 60 seconds; and automatic retries = 0. The scenario
 authority has no larger implicit cap. It uses public provider composition and
-ingress in rule mode; an oracle spy proves hidden truth is absent from
-constructor arguments, prompt variables, source envelopes, persistence payloads,
-and traces. It spools large structural members and records per-member digests.
+ingress through the built-in capability; an oracle spy proves hidden truth is
+absent from constructor arguments, prompt variables, source envelopes,
+persistence payloads, and traces. It spools large structural members and
+records per-member digests.
 Timeout, cap exhaustion, or interruption fails closed and rollback changes no
 active pointer; it is never truncation or retry.
 
@@ -176,11 +247,12 @@ Run from repository root:
 PYTHONPATH=memorii .venv/bin/python docs/design/semantic_ingestion/traceability_golden_vectors/validate_scenario_first.py docs/design/semantic_ingestion/traceability_golden_vectors/scenario-first-v1.json
 ```
 
-The validator is independent from the renderer/extractor output comparison:
-it validates hidden truth before rendering, then the runtime extractor receives
-only observations, and the comparator projects its actual proposal. The initial
-four-case spike proves `match`, `ambiguous`, and `abstain` paths. It does not
-claim live-LLM quality or production persistence certification.
+The validator is independent from the renderer/runtime output comparison: it
+validates hidden truth before rendering, then the built-in host capability
+receives only authenticated public observations, and the comparator projects
+only actual protected terminal/output evidence. The initial four-case spike
+proves `match`, `ambiguous`, and `abstain` paths. It does not claim live-LLM
+quality or production persistence certification.
 
 The public-ingress and clean-room elaboration feasibility command is:
 
@@ -201,4 +273,7 @@ envelope bytes/digest, and structural spool, and the adversarial corpus covers
 field order, domains, provenance variants, resolver/watermark paths, legacy and
 mixed-generation migration, rollback, and interruption. Later full-generation
 work derives RFC8032 signatures from an isolated test root. Those signatures are
-accepted only by scenario test trust and rejected by production/default lookup.
+accepted only by the scenario-test trust-domain capability and rejected by
+production/default lookup. The three-root domain proof also rejects production
+and unrelated roots at the scenario runner, and scenario-test and unrelated
+roots at production/default entry points.

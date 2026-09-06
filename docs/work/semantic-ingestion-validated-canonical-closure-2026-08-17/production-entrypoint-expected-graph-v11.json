@@ -1,0 +1,130 @@
+{
+  "edges": [
+    [
+      "service_owner",
+      "memorii/memorii/core/provider/service.py",
+      "CanonicalEvidenceArena("
+    ],
+    [
+      "service_handoff",
+      "memorii/memorii/core/provider/service.py",
+      "canonical_evidence_arena=canonical_evidence_arena"
+    ],
+    [
+      "coordinator_stage",
+      "memorii/memorii/core/provider/ingestion.py",
+      "canonical_staging=canonical_evidence_arena"
+    ],
+    [
+      "coordinator_seal",
+      "memorii/memorii/core/provider/ingestion.py",
+      "bind_and_seal(CanonicalValidationScope("
+    ],
+    [
+      "coordinator_lookup",
+      "memorii/memorii/core/provider/ingestion.py",
+      "lookup_sealed("
+    ],
+    [
+      "coordinator_lease",
+      "memorii/memorii/core/provider/ingestion.py",
+      "canonical_evidence_lease=lease"
+    ],
+    [
+      "codec_explicit_stage",
+      "memorii/memorii/core/semantic_ingestion/contracts.py",
+      "def encode_semantic_contract_result("
+    ],
+    [
+      "codec_stage_parameter",
+      "memorii/memorii/core/semantic_ingestion/contracts.py",
+      "canonical_staging:"
+    ],
+    [
+      "arena_bind",
+      "memorii/memorii/core/semantic_ingestion/canonical_evidence_arena.py",
+      "def bind_and_seal("
+    ],
+    [
+      "arena_lookup",
+      "memorii/memorii/core/semantic_ingestion/canonical_evidence_arena.py",
+      "def lookup_sealed("
+    ],
+    [
+      "atomic_lease",
+      "memorii/memorii/core/memory_evolution/atomic_store.py",
+      "canonical_evidence_lease: CanonicalEvidenceLease | None"
+    ],
+    [
+      "atomic_tenant",
+      "memorii/memorii/core/memory_evolution/atomic_store.py",
+      "scope.tenant"
+    ],
+    [
+      "atomic_writer",
+      "memorii/memorii/core/memory_evolution/atomic_store.py",
+      "scope.writer != f\"{current.admission_digest}:{current.writer_epoch}\""
+    ]
+  ],
+  "expected_mutation_names": [
+    "remove_service_owner",
+    "remove_service_handoff",
+    "remove_coordinator_stage",
+    "remove_coordinator_seal",
+    "remove_coordinator_lookup",
+    "remove_coordinator_lease",
+    "remove_codec_explicit_stage",
+    "remove_codec_stage_parameter",
+    "remove_arena_bind",
+    "remove_arena_lookup",
+    "remove_atomic_lease",
+    "remove_atomic_tenant",
+    "remove_atomic_writer",
+    "forbidden_0",
+    "forbidden_1",
+    "forbidden_2",
+    "forbidden_3",
+    "disconnect_service_owner",
+    "disconnect_service_handoff",
+    "disconnect_coordinator_stage",
+    "disconnect_coordinator_seal",
+    "disconnect_coordinator_lookup",
+    "disconnect_coordinator_lease",
+    "disconnect_codec_explicit_stage",
+    "disconnect_codec_stage_parameter",
+    "disconnect_arena_bind",
+    "disconnect_arena_lookup",
+    "disconnect_atomic_lease",
+    "disconnect_atomic_tenant",
+    "disconnect_atomic_writer",
+    "scope_operation",
+    "scope_generation"
+  ],
+  "family": "prepared_source_sealed_authority",
+  "forbidden_ambient_tokens": [
+    [
+      "memorii/memorii/core/semantic_ingestion/contracts.py",
+      "current_canonical_evidence_arena"
+    ],
+    [
+      "memorii/memorii/core/semantic_ingestion/canonical_evidence_arena.py",
+      "ContextVar"
+    ],
+    [
+      "memorii/memorii/core/provider/ingestion.py",
+      "arena_nonce"
+    ],
+    [
+      "memorii/memorii/core/provider/service.py",
+      "arena_nonce"
+    ]
+  ],
+  "schema": "memorii.production-entrypoint-bindings.v11",
+  "source_hashes": {
+    "memorii/memorii/core/memory_evolution/atomic_store.py": "0696c2ce4e4e47ced182b722b865bf520bf1d41e7b4fbbd961024ef259632658",
+    "memorii/memorii/core/provider/ingestion.py": "b3e28e88ac97bfb8555c2b5f203ce8845c6c0669deff05543c02c7fa5b7d3573",
+    "memorii/memorii/core/provider/service.py": "163acdff07307ee6c31a93cd84a5ba616094f2b51003e12a39baa3f859ba7664",
+    "memorii/memorii/core/semantic_ingestion/canonical_evidence_arena.py": "a686a4e3103efa3d667004bdf0492cc04d15cda9b4bb28d2d91c716d66691442",
+    "memorii/memorii/core/semantic_ingestion/contracts.py": "6dae50d13268c46c4356c32de0eadb9216d3aac6d4b737c7468c752f9bcc02bc"
+  }
+}

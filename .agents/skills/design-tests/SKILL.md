@@ -9,13 +9,36 @@ Read:
 
 - root `AGENTS.md`
 - `.agents/PLANS.md`
-- the active testing WorkPlan for long-running work
+- the active testing WorkPlan, plus the parent index/resume/active milestone
+  packet when test architecture supports an indexed operation
 - governing product designs and implementation paths
 - existing tests, fixtures, CI gates, timing evidence, and recent failures
 
 Create or resume a WorkPlan whose work type is `testing` when the work is
 long-running. Keep product-semantic changes in a separate design,
 implementation, or debugging WorkPlan.
+
+## Cost-Aware Test Architecture
+
+Keep exactly one writer for overlapping test, timing, and workflow artifacts.
+Use Spark-class mapper and error-detective roles for owner inventory, collection
+counts, durations, workflow arguments, shard overlap, and the smallest
+discriminating command. Reserve Terra-class reviewers for a coherent topology
+change. Do not repeatedly run broad suites while iterating: run focused
+discriminating checks, then run each required broad or dedicated gate once at
+the candidate revision.
+
+Use dedicated exhaustive jobs only when they prove a unique invariant and do
+not duplicate another required job. Record the allocation and model-tier
+rationale in the WorkPlan delegation and cost ledger.
+
+Apply the delegation task packet, artifact-only context, writer completion,
+long-command ownership, and candidate freeze contracts in `.agents/PLANS.md`.
+Do not launch reviewers while test, timing, or workflow artifacts are moving.
+
+Keep test-architecture decisions in the testing WorkPlan. Link their results
+from the affected milestone packet without copying detailed timing, topology,
+or review history into the parent implementation index.
 
 ## 1. Establish The Test Contract
 
@@ -109,6 +132,11 @@ A dedicated slow-exhaustive gate may still be required on pull requests when it
 proves a unique merge-blocking invariant, has a measured budget, and does not
 rerun a broad suite merely to add one case. It is not BVT or PR-fast.
 
+For every added or moved test, prove one intended required-job owner and remove
+accidental duplicate collection across fast shards and dedicated exhaustive
+jobs. Assign collection, timing, and long-command ownership to one delegate and
+record the measured result in the WorkPlan.
+
 Treat unexplained runtime growth as a test-architecture regression. Prefer
 shared immutable setup, session-scoped derivation, smaller authoritative
 fixtures, and boundary-level proofs over repeated full reconstruction.
@@ -174,6 +202,9 @@ experiment for high-risk tests to prove they fail for the intended reason.
 Run independent `test_reviewer` and `correctness_reviewer` passes for a coherent
 test-architecture change. Reconcile findings under `AGENTS.md` and the testing
 completion contract in `.agents/PLANS.md`.
+
+Run those reviewers once per coherent topology change. Use narrow delta review
+after a bounded correction; do not repeat a full review after a micro-edit.
 
 ## Completion
 

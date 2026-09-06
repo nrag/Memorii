@@ -1,0 +1,61 @@
+{
+  "comparisons": {
+    "load-n4": {
+      "node_sets_equal": false,
+      "only_other_count": 4054,
+      "only_serial_count": 0,
+      "outcome_differences": [],
+      "outcomes_equal": true
+    },
+    "load-n8": {
+      "node_sets_equal": false,
+      "only_other_count": 4054,
+      "only_serial_count": 0,
+      "outcome_differences": [],
+      "outcomes_equal": true
+    },
+    "loadfile-n8": {
+      "node_sets_equal": false,
+      "only_other_count": 4054,
+      "only_serial_count": 0,
+      "outcome_differences": [],
+      "outcomes_equal": true
+    }
+  },
+  "equivalent": false,
+  "revision": "baa654f35abe051e0cf8fcf18bef7929e694afba",
+  "runs": {
+    "load-n4": {
+      "exit_status": 1,
+      "failed": 4,
+      "nodes": 4055,
+      "passed": 4049,
+      "seconds": 5874.9,
+      "skipped": 2
+    },
+    "load-n8": {
+      "exit_status": 1,
+      "failed": 6,
+      "nodes": 4055,
+      "passed": 4047,
+      "seconds": 6050.0,
+      "skipped": 2
+    },
+    "loadfile-n8": {
+      "exit_status": 1,
+      "failed": 4,
+      "nodes": 4055,
+      "passed": 4049,
+      "seconds": 4313.4,
+      "skipped": 2
+    },
+    "serial": {
+      "exit_status": 2,
+      "failed": 1,
+      "nodes": 1,
+      "passed": 0,
+      "seconds": 11.7,
+      "skipped": 0
+    }
+  }
+}

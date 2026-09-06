@@ -1,0 +1,115 @@
+{
+  "format": "memorii.design-candidate-identity.v1",
+  "created": "2026-08-08",
+  "base_commit": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "head_commit": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty-local",
+  "candidate_freeze": {
+    "state": "closed-approved-design",
+    "statement": "The final V1 eight-owner, signed-release, coordinate-free access denial, ordered current-assertion recovery, ingress-language, pre-writer-result, discriminated authority-unavailable terminal, and marker-bound writer-handoff scope is approved for bounded implementation at the recorded canonical design hash. Any semantic change requires a new design operation and review; this closure does not authorize artifact issuance or deployment."
+  },
+  "design_closure": {
+    "approval": "final targeted specification, correctness, and test review accepted the corrected V1 authority design",
+    "remaining_validated_p1_p2": [],
+    "remaining_blocks_approval": [],
+    "remaining_changes_required": [],
+    "implementation_handoff": "Implement the approved corrected V1 authority at the recorded canonical design SHA-256, then collect the required checker, composition, failpoint, JSONL, collection, timing, and CI evidence."
+  },
+  "dirty_tree_identity": {
+    "status_command": "git status --porcelain=v1 -z --untracked-files=all",
+    "status_sha256": "73c767584ff29ac73dff9eebff180d51b862a7d5077d69b497e4b5e1d6d35178",
+    "entry_count": 36,
+    "tracked_or_deleted_entry_count": 29,
+    "untracked_entry_count": 7,
+    "identity_artifact_self_excluded": true
+  },
+  "diff_identity": {
+    "binary_diff_command": "git diff --binary",
+    "binary_diff_sha256": "bdef5f1345a8132f36c6e400254e947f48732f6061bf9eff1d79db3d54355726",
+    "staged_binary_diff_command": "git diff --cached --binary",
+    "staged_binary_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "canonical_identities": {
+    "design_path": "docs/design/semantic_ingestion_architecture.md",
+    "design_sha256": "43550572621383259ed31c3dd7942c2e5cf43e0acd4692cd50abefede6afd1bd",
+    "workplan_path": "docs/work/semantic_ingestion/bootstrap-step12-route-2026-08-08/design.plan.md",
+    "workplan_sha256": "f72842f827acb370be49bc0152bfb9cd8589cda7189b0517c106d5fb6cc76acf"
+  },
+  "review_scope": {
+    "included_paths": [
+      "docs/design/semantic_ingestion_architecture.md",
+      "docs/work/semantic_ingestion/bootstrap-step12-route-2026-08-08/design.plan.md",
+      "docs/work/semantic_ingestion/implementation.plan.md",
+      "docs/work/semantic_ingestion/resume.md",
+      "docs/work/semantic_ingestion/milestones/m3-semantic-pipeline.plan.md"
+    ],
+    "requirements": ["BSD-R01", "BSD-R02", "BSD-R03", "BSD-R04"],
+    "validated_findings": ["BSD-REV-001 (reviewer DREV-001)", "BSD-REV-002 (reviewer DREV-002)", "BSD-REV-003 (reviewer DREV-003)", "specification release/transaction gap", "test gate/evidence gap"],
+    "exclusions": [
+      "production code and tests",
+      "CTV/profile artifact generation and release issuance",
+      "general language detection, classifier routing, non-English routing, remote proposal, configurable registries, downloads, and new external dependencies",
+      "all dirty paths outside included_paths"
+    ]
+  },
+  "changed_surface_ledger": [
+    {
+      "path": "docs/design/semantic_ingestion_architecture.md",
+      "surface_class": "normative design and persisted-contract authority",
+      "owner": "linked bootstrap Step-1/Step-2 design WorkPlan",
+      "authority_chain": "signed V1 release coordinate/profile-anchor -> host-verified external-root/lifecycle evidence -> regenerated V1 anchor/release -> three CTV artifacts -> exact eight-owner component root -> closed authenticated ingress evidence -> admitted observation/fence -> coordinate-free access denial or ordered current authorization/release assertion -> pre-writer result -> retained-pending or prepared-published authority-unavailable terminal, or marker-bound writer handoff",
+      "required_gate": "git diff --check; independent specification/correctness/test review",
+      "status": "approved design baseline"
+    },
+    {
+      "path": "docs/work/semantic_ingestion/bootstrap-step12-route-2026-08-08/design.plan.md",
+      "surface_class": "design WorkPlan",
+      "owner": "linked bootstrap Step-1/Step-2 design WorkPlan",
+      "authority_chain": "requirements/evidence/attack ledger -> candidate identity -> independent reviews",
+      "required_gate": "candidate identity reproduction; independent reviews",
+      "status": "complete"
+    },
+    {
+      "path": "docs/work/semantic_ingestion/{implementation.plan.md,resume.md,milestones/m3-semantic-pipeline.plan.md}",
+      "surface_class": "linked implementation navigation",
+      "owner": "semantic-ingestion implementation WorkPlan",
+      "authority_chain": "implementation index/resume/M3 packet -> approved linked design boundary -> bounded implementation and evidence collection",
+      "required_gate": "link and exact-next-action review",
+      "status": "in scope as linkage only"
+    }
+  ],
+  "authority_chain_ledger": [
+    {
+      "chain": "canonical design -> signed existing V1 bootstrap coordinate/profile-anchor fields -> host-verified external-root/release/lifecycle evidence -> three regenerated V1 CTV profile/grammar artifacts -> verified-profile factory -> real provider/Hermes/filesystem composition",
+      "cardinality": "exactly three V1 content artifacts; one expanded eight-symbol component root",
+      "current_state": "specified; no generated artifact or implementation claim"
+    },
+    {
+      "chain": "existing AuthenticatedIngressContext language tuple, SessionAuthorizationEvidence, DeliveryPrincipalBinding, and sealed governance carriers -> closed bootstrap-language evidence -> retained pending outcome with immutable delivery/fence identity and pinned V1 release evidence -> current DeliveryAuthorizationRequest plus host-only release assertion -> grammar proof -> source-owned prepared CAS -> BootstrapPreparedSourceAccepted -> BootstrapDeclaredSegmentLanguageRoute/PreparedSource -> discriminated retained-pending/prepared-published authority-unavailable terminal or marker-bound writer handoff",
+      "cardinality": "one retained language/release/fence evidence set per admitted source and one declared route/proof per prepared segment",
+      "current_state": "specified; no new host/caller authority"
+    },
+    {
+      "chain": "design WorkPlan -> candidate identity -> specification/correctness/test reviews -> reconciliation",
+      "cardinality": "one frozen candidate identity and three independent reviews",
+      "current_state": "final targeted approval recorded; implementation handoff ready"
+    }
+  ],
+  "focused_checks": [
+    {
+      "command": "git diff --check",
+      "result": "pass",
+      "scope": "current dirty tree"
+    },
+    {
+      "command": "recompute git status/diff/design/WorkPlan SHA-256 values recorded here",
+      "result": "pass after identity artifact is excluded from its own status snapshot",
+      "scope": "candidate identity"
+    }
+  ],
+  "limitations": [
+    "The binary diff and dirty-tree identity include concurrent unrelated user changes; they are explicitly excluded from review scope.",
+    "No production/test or generated-artifact check was run because this candidate changes design and planning artifacts only.",
+    "The identity artifact excludes itself from the recorded status snapshot to avoid a self-referential hash cycle."
+  ]
+}

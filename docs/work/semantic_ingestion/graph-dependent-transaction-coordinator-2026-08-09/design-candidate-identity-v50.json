@@ -1,0 +1,31 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_v3_typed_store_materialization_complete_plan_member",
+  "semantic_predecessor": "design-candidate-identity-v49.json",
+  "semantic_change_from_predecessor": "supply complete typed compiler terminal artifact-closure planning and reservation inputs for store-only effect derivation and replace the transaction group plan member with one complete state-bound schema",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree_stable",
+  "status_list_sha256": "809f3d8cc9fb1f022b2c3c6e653db2cb243a790c01eebb08a28ec6c0f32366b5",
+  "review_scope": [
+    "complete typed per-operation semantic reduction and store materialization input",
+    "store-only graph event observation revision result and receipt derivation",
+    "complete replacement transaction group plan member schema preimages joins order and limits",
+    "coordinator checkpoint attempt authorization commit and post-execution consumer mapping",
+    "four-root public constructor and mutation coverage"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "dbfc89f2d1cc06e43fe15268e25b5468a10b9c3760498f75f6bc6339fbaa5231",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "10389f61dd761b119d3dab4af9e614591de71d97dc782b8506b7b3078ef50c82",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "ce6fb2cb91e45869538d562444506c637cd3fe7ba1a6c6ebc3450c3d5deb0730"
+  },
+  "checks": [
+    "git diff --check",
+    "binding and candidate JSON parse",
+    "typed reduction materialization and store derivation anchors",
+    "complete plan member preimage limit and consumer-map anchors",
+    "stable status and artifact identity pass one",
+    "stable status and artifact identity pass two"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

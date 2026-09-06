@@ -1,0 +1,28 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_transaction_v3_persisted_authority_generation_and_root_bundle",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree",
+  "status_list_sha256": "2c4765e6b18e0c0bdec5fe48e90300a6b472d68c104f5235b37f4f6df3881635",
+  "review_scope": [
+    "normalization-generation exact policy and capability canonical-byte member and replay reload",
+    "dedicated acyclic pre-epoch authority generation receipt reload and exact epoch-zero bridge",
+    "mandatory replacement host bundle and complete fresh and recovery order",
+    "recovery authority before terminal lookup plus migration rollback and attack closure"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "7bd18b7e5a4f9d3bea7b9bf7c2f5e884442853bf914c38a815e19e2878a384f5",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "0f0a4b347ca831343917cb5ff1f8ffe522703e0974d2ca0c2d1a6376d5c99d8a",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "187c49cc9dbc6bf5d214caa478bc83dffd1ca539408b44ff83f0fd1068a7e928"
+  },
+  "checks": [
+    "git diff --check",
+    "binding and candidate JSON parse",
+    "normalization-authority member and caller-derivation prohibition assertions",
+    "pre-epoch versus post-epoch generation-family and bridge assertions",
+    "mandatory bundle fresh recovery and recovery-before-terminal assertions",
+    "two exact artifact and status identity passes"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

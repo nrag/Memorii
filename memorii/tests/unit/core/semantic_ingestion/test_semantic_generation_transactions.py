@@ -6,6 +6,7 @@ import pytest
 from memorii.core.memory_evolution.admission import GovernedSourceAdmissionService
 from memorii.core.memory_evolution.atomic_store import (
     AtomicGenerationMember,
+    AuthorizationReadSetPrecondition,
     CommittedGroupAtomicWriteRequest,
     NonCommittingGroupAtomicWriteRequest,
     PreplanningOperationControl,
@@ -28,6 +29,7 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     DeliveryPrincipalBinding,
     OperationFenceBinding,
     RequiredOutcomeScopeSet,
+    SemanticWriterCommitBinding,
     encode_typed_value,
 )
 from memorii.core.memory_evolution.writer_admission import (
@@ -37,13 +39,28 @@ from memorii.core.memory_evolution.writer_admission import (
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.memory_plane.store import JsonlMemoryPlaneStore, MemoryPlaneStore, _PersistedBatch
+from memorii.core.semantic_ingestion.contracts import (
+    SemanticArtifactClosure,
+    SemanticEffectGroupResult,
+    SemanticGraphDelta,
+    SemanticObservationDelta,
+    SemanticTerminalOutcome,
+)
+from memorii.core.semantic_ingestion.persistence import SemanticTerminalPersistenceService
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
 from test_semantic_atomic_store import _handoff
+from tests.fixtures.semantic_ingestion.semantic_terminal_fixture import accepted_terminal
 
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
 
 
-def _setup(*, verified: bool = False, planned: bool = False, backend: MemoryPlaneStore | None = None):
+def _setup(
+    *,
+    verified: bool = False,
+    planned: bool = False,
+    backend: MemoryPlaneStore | None = None,
+    planned_terminal_status: str = "unresolved",
+):
     plane = MemoryPlaneService(record_store=backend) if backend is not None else MemoryPlaneService()
     admission, _ = _handoff(plane)
     writers = SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest(), now_provider=lambda: NOW)
@@ -81,17 +98,20 @@ def _setup(*, verified: bool = False, planned: bool = False, backend: MemoryPlan
     )
     assert claimed.lease is not None
     if planned:
-        members = tuple(_member(kind, kind) for kind in (
-            "artifact_closure", "artifact_index", "independence_certificate", "plan",
-            "planning_artifact", "planning_authorization", "progress",
-        ))
-        request = SourceCheckpointAtomicWriteRequest(
+        terminal = _terminal_for_operation(claimed.operation_fence, terminal_status=planned_terminal_status)
+        closure = SemanticArtifactClosure.create(terminal)
+        request = _seal(SourceCheckpointAtomicWriteRequest(
             operation_fence_binding=claimed.operation_fence,
             operation_lease_binding=store.lease_binding(claimed), writer_commit_binding=binding,
-            expected_operation_generation=1, expected_artifact_generation=1, members=members,
+            expected_operation_generation=1, expected_artifact_generation=1,
+            members=SemanticTerminalPersistenceService._checkpoint_members(
+                terminal,
+                closure,
+                binding,
+            ),
             required_artifact_digests=(), request_digest="0" * 64, progress_state="planned",
-        )
-        store.checkpoint_source_progress(_seal(request))
+        ))
+        store.checkpoint_source_progress(request)
         claimed = store.get_operation(claimed.operation_fence)
     return plane, store, binding, claimed
 
@@ -105,6 +125,147 @@ def _member(member_id: str, kind: str) -> AtomicGenerationMember:
 
 def _seal(request):
     return request.model_copy(update={"request_digest": generation_request_digest(request)})
+
+
+def _terminal_for_operation(
+    operation_fence: OperationFenceBinding,
+    *,
+    terminal_status: str = "unresolved",
+) -> SemanticTerminalOutcome:
+    base = accepted_terminal(operation_id=operation_fence.operation_id)
+    if terminal_status == "accepted":
+        return base
+    return SemanticTerminalOutcome.create(
+        operation_id=base.operation_id,
+        status="unresolved",
+        reason_codes=("consensus_unresolved",),
+        candidates=base.candidates,
+        source_analyses=base.source_analyses,
+        temporal_closures=(),
+        attempt_count=base.attempt_count,
+    )
+
+
+def _noncommitting_terminal_group_request(
+    *,
+    store: SemanticIngestionAtomicStore,
+    binding: SemanticWriterCommitBinding,
+    control: PreplanningOperationControl,
+    terminal: SemanticTerminalOutcome | None = None,
+    expected_generation: int | None = None,
+    expected_artifact_generation: int | None = None,
+    expected_observation_revision: str | None = None,
+    observation_revision_after: str | None = None,
+    required_artifact_digests: tuple[str, ...] = (),
+) -> NonCommittingGroupAtomicWriteRequest:
+    if terminal is None:
+        terminal = _terminal_for_operation(control.operation_fence)
+    if expected_generation is None:
+        expected_generation = control.generation
+    if expected_artifact_generation is None:
+        expected_artifact_generation = control.generation
+    if expected_observation_revision is None:
+        expected_observation_revision = control.observation_revision
+    if observation_revision_after is None:
+        observation_revision_after = SemanticTerminalPersistenceService._next_revision(
+            b"memorii.semantic-ingestion.observation-revision.v1",
+            expected_observation_revision,
+            terminal.terminal_digest,
+        )
+    closure = SemanticArtifactClosure.create(terminal)
+    return _seal(NonCommittingGroupAtomicWriteRequest(
+        operation_fence_binding=control.operation_fence,
+        operation_lease_binding=store.lease_binding(control),
+        writer_commit_binding=binding,
+        expected_operation_generation=expected_generation,
+        expected_artifact_generation=expected_artifact_generation,
+        members=SemanticTerminalPersistenceService._noncommitting_group_members(
+            terminal,
+            closure,
+            SemanticEffectGroupResult.create(terminal=terminal, artifact_closure=closure),
+            SemanticObservationDelta.create(terminal=terminal, graph_delta=None),
+        ),
+        required_artifact_digests=required_artifact_digests,
+        request_digest="0" * 64,
+        expected_observation_revision=expected_observation_revision,
+        observation_revision_after=observation_revision_after,
+    ))
+
+
+def _committed_terminal_group_request(
+    *,
+    store: SemanticIngestionAtomicStore,
+    binding: SemanticWriterCommitBinding,
+    control: PreplanningOperationControl,
+    terminal: SemanticTerminalOutcome | None = None,
+    expected_generation: int | None = None,
+    expected_artifact_generation: int | None = None,
+    expected_graph_revision: str | None = None,
+    graph_revision_after: str | None = None,
+    expected_observation_revision: str | None = None,
+    observation_revision_after: str | None = None,
+    expected_effective_read_set_digest: str | None = None,
+    required_artifact_digests: tuple[str, ...] = (),
+    authorization_precondition: AuthorizationReadSetPrecondition | None = None,
+) -> CommittedGroupAtomicWriteRequest:
+    if terminal is None:
+        terminal = _terminal_for_operation(control.operation_fence, terminal_status="accepted")
+    if expected_generation is None:
+        expected_generation = control.generation
+    if expected_artifact_generation is None:
+        expected_artifact_generation = control.generation
+    if expected_graph_revision is None:
+        expected_graph_revision = control.graph_revision
+    if expected_observation_revision is None:
+        expected_observation_revision = control.observation_revision
+    if expected_effective_read_set_digest is None:
+        expected_effective_read_set_digest = control.effective_read_set_digest
+    closure = SemanticArtifactClosure.create(terminal)
+    graph_delta = SemanticGraphDelta.create(terminal)
+    if graph_revision_after is None:
+        graph_revision_after = SemanticTerminalPersistenceService._next_revision(
+            b"memorii.semantic-ingestion.graph-revision.v1",
+            expected_graph_revision,
+            graph_delta.delta_digest,
+        )
+    if observation_revision_after is None:
+        observation_revision_after = SemanticTerminalPersistenceService._next_revision(
+            b"memorii.semantic-ingestion.observation-revision.v1",
+            expected_observation_revision,
+            terminal.terminal_digest,
+        )
+    group_result = SemanticEffectGroupResult.create(terminal=terminal, artifact_closure=closure)
+    observation = SemanticObservationDelta.create(terminal=terminal, graph_delta=graph_delta)
+    event_batch = store.prepare_semantic_event_batch(
+        graph_delta=graph_delta,
+        operation_fence=control.operation_fence,
+        writer_binding=binding,
+        graph_revision_before=expected_graph_revision,
+        graph_revision_after=graph_revision_after,
+    )
+    return _seal(CommittedGroupAtomicWriteRequest(
+        operation_fence_binding=control.operation_fence,
+        operation_lease_binding=store.lease_binding(control),
+        writer_commit_binding=binding,
+        expected_operation_generation=expected_generation,
+        expected_artifact_generation=expected_artifact_generation,
+        members=SemanticTerminalPersistenceService._committed_group_members(
+            terminal,
+            closure,
+            group_result,
+            graph_delta,
+            event_batch,
+            observation,
+        ),
+        required_artifact_digests=required_artifact_digests,
+        request_digest="0" * 64,
+        expected_graph_revision=expected_graph_revision,
+        expected_observation_revision=expected_observation_revision,
+        expected_effective_read_set_digest=expected_effective_read_set_digest,
+        graph_revision_after=graph_revision_after,
+        observation_revision_after=observation_revision_after,
+        authorization_precondition=authorization_precondition,
+    ))
 
 
 def _rewrite_operation_family_to_legacy_raw_ids(
@@ -195,11 +356,10 @@ def test_exact_generation_recovery_rejects_a_renewed_lease_owner() -> None:
 
 @pytest.mark.parametrize("committed", [False, True])
 def test_terminal_group_enforces_committing_and_noncommitting_member_sets(committed: bool) -> None:
-    _, store, binding, control = _setup(verified=committed, planned=True)
-    common = dict(
-        operation_fence_binding=control.operation_fence, operation_lease_binding=store.lease_binding(control),
-        writer_commit_binding=binding, expected_operation_generation=2, expected_artifact_generation=2,
-        required_artifact_digests=(), request_digest="0" * 64,
+    _, store, binding, control = _setup(
+        verified=committed,
+        planned=True,
+        planned_terminal_status="accepted" if committed else "unresolved",
     )
     if committed:
         authority_scope_id = "test:terminal-group"
@@ -225,33 +385,35 @@ def test_terminal_group_enforces_committing_and_noncommitting_member_sets(commit
                 coordinates_digest=sha256(encode_typed_value(authority_body)).hexdigest(),
             ),
         )
-        request = CommittedGroupAtomicWriteRequest(
-            **common,
-            members=tuple(_member(kind, kind) for kind in ("event_batch", "graph_delta", "group_result", "observation_delta")),
-            expected_graph_revision="genesis", expected_observation_revision="genesis",
+        request = _committed_terminal_group_request(
+            store=store,
+            binding=binding,
+            control=control,
+            expected_graph_revision="genesis",
+            expected_observation_revision="genesis",
             expected_effective_read_set_digest="0" * 64,
-            graph_revision_after="g2", observation_revision_after="o2",
             authorization_precondition=authorization_precondition,
         )
     else:
-        request = NonCommittingGroupAtomicWriteRequest(
-            **common,
-            members=tuple(_member(kind, kind) for kind in ("group_result", "observation_delta")),
-            expected_observation_revision="genesis", observation_revision_after="o2",
+        request = _noncommitting_terminal_group_request(
+            store=store,
+            binding=binding,
+            control=control,
+            expected_observation_revision="genesis",
         )
-    request = _seal(request)
     assert store.persist_terminal_group(request) == request.members
 
 
 def test_finalization_requires_complete_lifecycle_generation_and_closes_operation() -> None:
     _, store, binding, control = _setup(planned=True)
-    group = _seal(NonCommittingGroupAtomicWriteRequest(
-        operation_fence_binding=control.operation_fence, operation_lease_binding=store.lease_binding(control),
-        writer_commit_binding=binding, expected_operation_generation=2, expected_artifact_generation=2,
-        members=tuple(_member(kind, kind) for kind in ("group_result", "observation_delta")),
-        required_artifact_digests=(), request_digest="0" * 64,
-        expected_observation_revision="genesis", observation_revision_after="o2",
-    ))
+    group = _noncommitting_terminal_group_request(
+        store=store,
+        binding=binding,
+        control=control,
+        expected_generation=2,
+        expected_artifact_generation=2,
+        expected_observation_revision="genesis",
+    )
     store.persist_terminal_group(group)
     group_digest = next(member.payload_digest for member in group.members if member.kind == "group_result")
     request = _seal(SourceFinalizationAtomicWriteRequest(
@@ -294,35 +456,42 @@ def test_missing_artifact_or_invalid_digest_changes_nothing() -> None:
 
 
 def test_terminal_group_stale_graph_or_observation_revision_changes_nothing() -> None:
-    plane, store, binding, control = _setup(verified=True, planned=True)
-    base = CommittedGroupAtomicWriteRequest(
-        operation_fence_binding=control.operation_fence, operation_lease_binding=store.lease_binding(control),
-        writer_commit_binding=binding, expected_operation_generation=2, expected_artifact_generation=2,
-        members=tuple(_member(kind, kind) for kind in ("event_batch", "graph_delta", "group_result", "observation_delta")),
-        required_artifact_digests=(), request_digest="0" * 64,
-        expected_graph_revision="stale", expected_observation_revision="genesis",
-        expected_effective_read_set_digest="0" * 64, graph_revision_after="g2", observation_revision_after="o2",
+    plane, store, binding, control = _setup(
+        verified=True,
+        planned=True,
+        planned_terminal_status="accepted",
+    )
+    canonical = _committed_terminal_group_request(
+        store=store,
+        binding=binding,
+        control=control,
     )
     before = plane.list_records()
+    stale_graph = _seal(canonical.model_copy(update={
+        "request_digest": "0" * 64,
+        "expected_graph_revision": "stale",
+    }))
     with pytest.raises(PreplanningStoreError, match="graph/read-set"):
-        store.persist_terminal_group(_seal(base))
+        store.persist_terminal_group(stale_graph)
+    stale_observation = _seal(canonical.model_copy(update={
+        "request_digest": "0" * 64,
+        "expected_observation_revision": "stale",
+    }))
     with pytest.raises(PreplanningStoreError, match="observation"):
-        store.persist_terminal_group(_seal(base.model_copy(update={
-            "request_digest": "0" * 64, "expected_graph_revision": "genesis",
-            "expected_observation_revision": "stale",
-        })))
+        store.persist_terminal_group(stale_observation)
     assert plane.list_records() == before
 
 
 def test_finalization_rejects_missing_or_substituted_group_result_closure() -> None:
     plane, store, binding, control = _setup(planned=True)
-    group = _seal(NonCommittingGroupAtomicWriteRequest(
-        operation_fence_binding=control.operation_fence, operation_lease_binding=store.lease_binding(control),
-        writer_commit_binding=binding, expected_operation_generation=2, expected_artifact_generation=2,
-        members=tuple(_member(kind, kind) for kind in ("group_result", "observation_delta")),
-        required_artifact_digests=(), request_digest="0" * 64,
-        expected_observation_revision="genesis", observation_revision_after="o2",
-    ))
+    group = _noncommitting_terminal_group_request(
+        store=store,
+        binding=binding,
+        control=control,
+        expected_generation=2,
+        expected_artifact_generation=2,
+        expected_observation_revision="genesis",
+    )
     store.persist_terminal_group(group)
     members = tuple(_member(f"final:{kind}", kind) for kind in (
         "lifecycle", "observation_delta", "source_result", "source_summary", "terminal_operation"
@@ -340,15 +509,18 @@ def test_finalization_rejects_missing_or_substituted_group_result_closure() -> N
 
 
 def test_evidence_only_writer_rejects_committed_graph_and_event_generation() -> None:
-    plane, store, binding, control = _setup(planned=True)
-    request = _seal(CommittedGroupAtomicWriteRequest(
-        operation_fence_binding=control.operation_fence, operation_lease_binding=store.lease_binding(control),
-        writer_commit_binding=binding, expected_operation_generation=2, expected_artifact_generation=2,
-        members=tuple(_member(kind, kind) for kind in ("event_batch", "graph_delta", "group_result", "observation_delta")),
-        required_artifact_digests=(), request_digest="0" * 64,
-        expected_graph_revision="genesis", expected_observation_revision="genesis",
-        expected_effective_read_set_digest="0" * 64, graph_revision_after="g2", observation_revision_after="o2",
-    ))
+    plane, store, binding, control = _setup(
+        planned=True,
+        planned_terminal_status="accepted",
+    )
+    request = _committed_terminal_group_request(
+        store=store,
+        binding=binding,
+        control=control,
+        expected_graph_revision="genesis",
+        expected_observation_revision="genesis",
+        expected_effective_read_set_digest="0" * 64,
+    )
     before = plane.list_records()
     with pytest.raises(PreplanningStoreError, match="evidence-only"):
         store.persist_terminal_group(request)
@@ -382,17 +554,17 @@ def test_empty_checkpoint_and_duplicate_terminal_singletons_are_rejected() -> No
     assert plane.list_records() == before
 
     _, planned_store, planned_binding, planned_control = _setup(planned=True)
-    duplicate = _seal(NonCommittingGroupAtomicWriteRequest(
-        operation_fence_binding=planned_control.operation_fence,
-        operation_lease_binding=planned_store.lease_binding(planned_control),
-        writer_commit_binding=planned_binding, expected_operation_generation=2, expected_artifact_generation=2,
-        members=(
-            _member("group:a", "group_result"), _member("group:b", "group_result"),
-            _member("observation", "observation_delta"),
-        ),
-        required_artifact_digests=(), request_digest="0" * 64,
-        expected_observation_revision="genesis", observation_revision_after="o2",
-    ))
+    duplicate = _seal(
+        _noncommitting_terminal_group_request(
+            store=planned_store, binding=planned_binding, control=planned_control
+        ).model_copy(update={
+            "request_digest": "0" * 64,
+            "members": (
+                _member("group:a", "group_result"), _member("group:b", "group_result"),
+                _member("observation", "observation_delta"),
+            ),
+        })
+    )
     with pytest.raises(PreplanningStoreError, match="incomplete"):
         planned_store.persist_terminal_group(duplicate)
 
@@ -407,13 +579,12 @@ def test_later_generation_reuses_prior_complete_replay_artifact() -> None:
         required_artifact_digests=(artifact.payload_digest,), request_digest="0" * 64, progress_state="planned",
     ))
     store.checkpoint_source_progress(checkpoint)
-    group = _seal(NonCommittingGroupAtomicWriteRequest(
-        operation_fence_binding=control.operation_fence, operation_lease_binding=store.lease_binding(control),
-        writer_commit_binding=binding, expected_operation_generation=3, expected_artifact_generation=3,
-        members=tuple(_member(kind, kind) for kind in ("group_result", "observation_delta")),
-        required_artifact_digests=(artifact.payload_digest,), request_digest="0" * 64,
-        expected_observation_revision="genesis", observation_revision_after="o2",
-    ))
+    control = store.get_operation(control.operation_fence)
+    group = _noncommitting_terminal_group_request(
+        store=store, binding=binding, control=control, expected_generation=3,
+        expected_artifact_generation=3, expected_observation_revision="genesis",
+        required_artifact_digests=(artifact.payload_digest,),
+    )
     assert store.persist_terminal_group(group) == group.members
 
 
@@ -431,13 +602,10 @@ def test_jsonl_group_and_finalization_lost_ack_recover_exact_generations(tmp_pat
     path = tmp_path / "generations"
     backend = _JsonlLostAckStore(path)
     _, store, binding, control = _setup(planned=True, backend=backend)
-    group = _seal(NonCommittingGroupAtomicWriteRequest(
-        operation_fence_binding=control.operation_fence, operation_lease_binding=store.lease_binding(control),
-        writer_commit_binding=binding, expected_operation_generation=2, expected_artifact_generation=2,
-        members=tuple(_member(kind, kind) for kind in ("group_result", "observation_delta")),
-        required_artifact_digests=(), request_digest="0" * 64,
-        expected_observation_revision="genesis", observation_revision_after="o2",
-    ))
+    group = _noncommitting_terminal_group_request(
+        store=store, binding=binding, control=control, expected_generation=2,
+        expected_artifact_generation=2, expected_observation_revision="genesis",
+    )
     backend.armed = True
     with pytest.raises(RuntimeError, match="lost acknowledgement"):
         store.persist_terminal_group(group)
@@ -482,18 +650,10 @@ def test_jsonl_restart_recovers_exact_generation_after_lost_ack_at_each_boundary
         ))
         publish = store.checkpoint_source_progress
     else:
-        group = _seal(NonCommittingGroupAtomicWriteRequest(
-            operation_fence_binding=control.operation_fence,
-            operation_lease_binding=store.lease_binding(control),
-            writer_commit_binding=binding,
-            expected_operation_generation=2,
-            expected_artifact_generation=2,
-            members=(_member("restart:group", "group_result"), _member("restart:observation", "observation_delta")),
-            required_artifact_digests=(),
-            request_digest="0" * 64,
-            expected_observation_revision="genesis",
-            observation_revision_after="restart-o2",
-        ))
+        group = _noncommitting_terminal_group_request(
+            store=store, binding=binding, control=control, expected_generation=2,
+            expected_artifact_generation=2, expected_observation_revision="genesis",
+        )
         if phase == "group":
             request = group
             publish = store.persist_terminal_group
@@ -512,7 +672,11 @@ def test_jsonl_restart_recovers_exact_generation_after_lost_ack_at_each_boundary
                 required_artifact_digests=(),
                 request_digest="0" * 64,
                 source_summary_kind="graph_bound",
-                expected_group_result_digests=(group.members[0].payload_digest,),
+                expected_group_result_digests=(next(
+                    member.payload_digest
+                    for member in group.members
+                    if member.kind == "group_result"
+                ),),
             ))
             publish = store.finalize_source
     backend.armed = True
@@ -561,21 +725,15 @@ def test_legacy_raw_namespace_reopen_keeps_lease_and_generation_family_isolated(
         execution_token="legacy-reclaimer",
         duration=timedelta(minutes=5),
     )
-    group = _seal(NonCommittingGroupAtomicWriteRequest(
-        operation_fence_binding=reclaimed.operation_fence,
-        operation_lease_binding=reopened.lease_binding(reclaimed),
-        writer_commit_binding=binding,
-        expected_operation_generation=2,
-        expected_artifact_generation=2,
-        members=(_member("legacy:group", "group_result"), _member("legacy:observation", "observation_delta")),
-        required_artifact_digests=(),
-        request_digest="0" * 64,
-        expected_observation_revision="genesis",
-        observation_revision_after="legacy-o2",
-    ))
+    group = _noncommitting_terminal_group_request(
+        store=reopened, binding=binding, control=reopened.get_operation(reclaimed.operation_fence),
+        expected_generation=2, expected_artifact_generation=2, expected_observation_revision="genesis",
+    )
     assert reopened.persist_terminal_group(group) == group.members
     current = reopened.get_operation(control.operation_fence)
-    group_digest = group.members[0].payload_digest
+    group_digest = next(
+        member.payload_digest for member in group.members if member.kind == "group_result"
+    )
     final = _seal(SourceFinalizationAtomicWriteRequest(
         operation_fence_binding=current.operation_fence,
         operation_lease_binding=reopened.lease_binding(current),
@@ -730,39 +888,34 @@ def test_legacy_raw_namespace_never_crosses_tenant_fence_on_reopen(tmp_path: Pat
     assert plane.list_records() == before
 
 
-def test_multigroup_finalization_requires_exact_persisted_order() -> None:
+def test_finalization_requires_exact_singleton_group_result_closure() -> None:
     plane, store, binding, control = _setup(planned=True)
-    digests = []
-    for generation, before, after, suffix in ((2, "genesis", "o2", "a"), (3, "o2", "o3", "b")):
-        group = _seal(NonCommittingGroupAtomicWriteRequest(
-            operation_fence_binding=control.operation_fence, operation_lease_binding=store.lease_binding(control),
-            writer_commit_binding=binding, expected_operation_generation=generation,
-            expected_artifact_generation=generation,
-            members=(
-                _member(f"group:{suffix}", "group_result"),
-                _member(f"observation:{suffix}", "observation_delta"),
-            ),
-            required_artifact_digests=(), request_digest="0" * 64,
-            expected_observation_revision=before, observation_revision_after=after,
-        ))
-        store.persist_terminal_group(group)
-        digests.append(next(member.payload_digest for member in group.members if member.kind == "group_result"))
-        control = store.get_operation(control.operation_fence)
+    group = _noncommitting_terminal_group_request(
+        store=store,
+        binding=binding,
+        control=control,
+    )
+    store.persist_terminal_group(group)
+    group_digest = next(
+        member.payload_digest for member in group.members if member.kind == "group_result"
+    )
+    control = store.get_operation(control.operation_fence)
     final_members = tuple(_member(f"final:{kind}", kind) for kind in (
         "lifecycle", "observation_delta", "source_result", "source_summary", "terminal_operation"
     ))
     base = SourceFinalizationAtomicWriteRequest(
         operation_fence_binding=control.operation_fence, operation_lease_binding=store.lease_binding(control),
-        writer_commit_binding=binding, expected_operation_generation=4, expected_artifact_generation=4,
+        writer_commit_binding=binding, expected_operation_generation=3, expected_artifact_generation=3,
         members=final_members, required_artifact_digests=(), request_digest="0" * 64,
-        source_summary_kind="graph_bound", expected_group_result_digests=tuple(reversed(digests)),
+        source_summary_kind="graph_bound", expected_group_result_digests=("f" * 64,),
     )
     before = plane.list_records()
     with pytest.raises(PreplanningStoreError, match="closure"):
         store.finalize_source(_seal(base))
     assert plane.list_records() == before
     exact = _seal(base.model_copy(update={
-        "request_digest": "0" * 64, "expected_group_result_digests": tuple(digests)
+        "request_digest": "0" * 64,
+        "expected_group_result_digests": (group_digest,),
     }))
     assert store.finalize_source(exact) == exact.members
 
@@ -789,13 +942,11 @@ def test_finalization_rejects_duplicate_members_and_summary_group_mismatches() -
         store.finalize_source(graph_bound)
     assert plane.list_records() == before
 
-    group = _seal(NonCommittingGroupAtomicWriteRequest(
-        operation_fence_binding=control.operation_fence, operation_lease_binding=store.lease_binding(control),
-        writer_commit_binding=binding, expected_operation_generation=2, expected_artifact_generation=2,
-        members=(_member("group", "group_result"), _member("observation", "observation_delta")),
-        required_artifact_digests=(), request_digest="0" * 64,
-        expected_observation_revision="genesis", observation_revision_after="o2",
-    ))
+    group = _noncommitting_terminal_group_request(
+        store=store, binding=binding, control=control,
+        expected_generation=2, expected_artifact_generation=2,
+        expected_observation_revision="genesis",
+    )
     store.persist_terminal_group(group)
     digest = next(member.payload_digest for member in group.members if member.kind == "group_result")
     control = store.get_operation(control.operation_fence)

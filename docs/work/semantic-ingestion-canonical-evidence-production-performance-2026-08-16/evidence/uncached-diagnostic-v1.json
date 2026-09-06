@@ -1,0 +1,60 @@
+{
+  "schema": "memorii.semantic-ingestion.uncached-diagnostic.v1",
+  "classification": "source_bound_diagnostic_not_m3_1_baseline",
+  "captured_at": "2026-08-16",
+  "environment": {
+    "platform": "macOS-26.6.1-x86_64-i386-64bit",
+    "python": "3.12.14",
+    "pydantic": "2.13.4",
+    "dependency_manifest": {
+      "path": "memorii/pyproject.toml",
+      "sha256": "e6ad0cdbb8239fb8b94f5c64a3a6f01a46490a5becfb578b62392c5bc3b9cd2f"
+    }
+  },
+  "reproducer": {
+    "operation_id": "scenario-event-84e8a0327f5b941e0eadbb8bb4fe8cf6",
+    "composition_authority": "scenario_owned_diagnostic_only",
+    "production_trigger": "memorii.core.provider.service.ProviderMemoryService.sync_event",
+    "backend": "memory",
+    "profile_scope": "after imports and service construction; sync_event only"
+  },
+  "measurements": {
+    "profiled_elapsed_seconds": 10.204397443005291,
+    "profiled_function_calls": 4688592,
+    "digest_calls": 1898,
+    "unique_digest_outputs": 53,
+    "redundant_digest_calls": 1845,
+    "redundant_digest_ratio": 0.9720758693361433,
+    "maximum_identity_repetition": 215,
+    "unique_canonical_bytes": 133444,
+    "median_entry_bytes": 759,
+    "p95_entry_bytes": 5708,
+    "maximum_entry_bytes": 59405
+  },
+  "production_sources": {
+    "memorii/memorii/core/provider/service.py": "5d1d864c5f8377e683e447151ecb94f3d1d928958881abd749c2204cba4934e4",
+    "memorii/memorii/core/provider/ingestion.py": "d3f2e4bf11fb71284eb61eb98b701dc76bcee60e93a3ecdbb1957af4524335f6",
+    "memorii/memorii/core/semantic_ingestion/contracts.py": "fb3c266d796660e905b656d052f755213d098a0666a8ec5a4d9a49edef3f9d20",
+    "memorii/memorii/core/memory_evolution/ingestion_contracts.py": "af1c7312f4f970e66bfe1bf06e151837a34656bad102f1ee2f4ec2ef63451bcc",
+    "memorii/memorii/core/semantic_ingestion/source_preparation.py": "cfbddb34320011f0144f35a97b162de53a37c68b374fe99672f392106164a58c",
+    "memorii/memorii/core/memory_evolution/atomic_store.py": "f09b5d2551234deef12a1bbac801c2aa62d937aff83bfd2f21a3970d6518e9da"
+  },
+  "artifacts": {
+    "profile": {
+      "path": "docs/work/semantic-ingestion-canonical-evidence-production-performance-2026-08-16/evidence/uncached-sync-event.prof",
+      "sha256": "987fae35ab9b047765d84f588398d9a14974f7d89b7c43348d307d15ad05df06"
+    },
+    "profile_reproducer": {
+      "path": "docs/work/semantic-ingestion-canonical-evidence-production-performance-2026-08-16/evidence/profile_sync_event.py",
+      "sha256": "efdd003d2bfce6ad56447888b5a4c22fd076998600161b59dc42dbdd39a1f281"
+    },
+    "repetition_counter": {
+      "path": "docs/work/semantic-ingestion-canonical-evidence-production-performance-2026-08-16/evidence/count_repeated_digests.py",
+      "sha256": "fc40277624d1d3af3c3a46ffd3e365c35d43a7f758fdce64a491d7c0c2b1e2ae"
+    },
+    "byte_measurement": {
+      "path": "docs/work/semantic-ingestion-canonical-evidence-production-performance-2026-08-16/evidence/measure_unique_digest_bytes.py",
+      "sha256": "c3ee104189d717f4a9e23ff73b6adc489f2744ea9b9422d0414e3ee96abeb05e"
+    }
+  }
+}

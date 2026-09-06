@@ -1,0 +1,33 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_v3_typed_normalization_core_coverage_vector",
+  "semantic_predecessor": "design-candidate-identity-v57.json",
+  "semantic_change_from_predecessor": "make the pre-authority normalization core an exhaustive typed reloadable object and replace singular event coverage with a canonical vector under one stable operation execution identity",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree_stable",
+  "status_list_sha256": "527b3877e043ac67fba3f707acc62f0d16a78683763111255b6ae27750bf3309",
+  "review_scope": [
+    "strict exhaustive BootstrapNormalizationRequestCoreV3 CTV and exclusion boundary",
+    "pre-authority derivation, byte-identical embedding, and exact store reload",
+    "stable operation execution identity and canonical many-to-many coverage vector",
+    "two-events-one-operation, one-event-multiple-operations, unresolved and mixed cardinality",
+    "no duplicate downstream operation identity and unchanged mandatory composition order",
+    "truthful DREV-051 zero-caller implementation evidence obligation"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "0ec36cc862f12bb524bcca9385655a178f11d61174c83172286223bbcc7fb4d8",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "c4bc48073f4e12e702a557b87213c0c2eb89a3dfe9f26e3e1035995cb6f712b1",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "e14238c10671943bc88b1d3e168c6fdaa7a0e563e52801cd9c592fe709453f81"
+  },
+  "checks": [
+    "git diff --check",
+    "binding and candidate JSON parse",
+    "exactly one active normalization core, operation input, and coverage binding declaration",
+    "typed core exclusion and exact reload anchors",
+    "coverage vector cardinality and stable downstream identity anchors",
+    "stable status and artifact identity pass one",
+    "stable status and artifact identity pass two"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

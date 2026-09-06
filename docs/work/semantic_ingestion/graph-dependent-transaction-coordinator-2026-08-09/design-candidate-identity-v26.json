@@ -1,0 +1,25 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_transaction_v3_arm_specific_cas_effect_equality",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree",
+  "status_list_sha256": "9865f6c2db395e9a3b4a173dd9f48726d7f9ba173efe9f9ba6284a50aa53a9aa",
+  "review_scope": [
+    "DREV-039 committed CAS effect equality chain",
+    "noncommitting and failed null/not-applicable algebra",
+    "found and absent same-group substitution attacks"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "d9bb4a35f98115b8dd54359aed3a5b16d7c0032db5712fe2a59bcf2ce0b27429",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "495116ffc3fac00c4ed8abe44dde743cc2f02a2058e27ff4b2c89d658d457a4c",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "c54694a0ee9eef7aa2c7560803dd88bf95550903c7c52dcbe99e1004c58c4500"
+  },
+  "checks": [
+    "git diff --check",
+    "binding and identity JSON parse",
+    "44x4x2 coverage assertion",
+    "two exact artifact and status identity passes"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import base64
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
-from typing import Literal
+from typing import Any, Literal
 
 from memorii.core.memory_evolution.delivery_coordinate_migration import (
     DeliveryCoordinateMigrationActivation,
@@ -23,11 +24,18 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     SemanticRecordOwnershipManifest,
     SemanticWriterAdmission,
     SemanticWriterCommitBinding,
+    decode_typed_value,
     encode_typed_value,
 )
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
+from memorii.core.memory_plane.semantic_control import (
+    SEMANTIC_PROJECTION_SOURCE_KINDS,
+    is_semantic_control_record,
+    semantic_control_class,
+)
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.memory_plane.store import (
+    MemoryPlanePrecondition,
     MemoryPlaneRevisionConflictError,
     MemoryPlaneWriteAuthorization,
     RecordAbsentPrecondition,
@@ -36,26 +44,45 @@ from memorii.core.memory_plane.store import (
 )
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
 
-_KINDS = frozenset(
-    {
-        "admitted_source",
-        "admission_index",
-        "profile_selection",
-        "profile_verification",
-        "profile_outcome",
-        "legacy_delivery_record",
-        "preplanning_operation_control",
-        "preplanning_introduction",
-        "preplanning_artifact_index",
-        "preplanning_artifact_closure",
-        "operation_control",
-        "generation_member",
-        "generation_manifest",
-        "migration_plan",
-        "migration_checkpoint",
-        "migration_certificate",
-        "authorization_authority",
-    }
+_SEMANTIC_PROJECTION_SOURCE_KINDS = SEMANTIC_PROJECTION_SOURCE_KINDS
+
+_KINDS = (
+    frozenset(
+        {
+            "admitted_source",
+            "admission_index",
+            "profile_selection",
+            "profile_verification",
+            "profile_outcome",
+            "legacy_delivery_record",
+            "preplanning_operation_control",
+            "preplanning_introduction",
+            "preplanning_artifact_index",
+            "preplanning_artifact_closure",
+            "operation_control",
+            "generation_member",
+            "generation_manifest",
+            "migration_plan",
+            "migration_checkpoint",
+            "migration_certificate",
+            "authorization_authority",
+            "semantic_event_batch",
+            "semantic_replay_state",
+            "reference_integrity_ledger",
+            "accepted_identity_operation",
+            "graph_identity_reservation",
+            "bootstrap_graph_v3_member",
+            "bootstrap_graph_v3_manifest",
+            "bootstrap_graph_v3_idempotency",
+            "bootstrap_graph_v3_epoch",
+            "bootstrap_graph_v3_epoch_head",
+            "bootstrap_graph_v3_epoch_transition",
+            "bootstrap_graph_v3_terminal_locator",
+            "bootstrap_graph_v3_terminal_control",
+            "bootstrap_graph_v3_terminal_identity",
+        }
+    )
+    | _SEMANTIC_PROJECTION_SOURCE_KINDS
 )
 _METHODS = frozenset(
     {
@@ -63,6 +90,8 @@ _METHODS = frozenset(
         "checkpoint_source_progress",
         "persist_terminal_group",
         "finalize_source",
+        "checkpoint_bootstrap_graph_transaction_v3",
+        "transition_or_find_bootstrap_graph_control_epoch_v3",
         "conditionally_write_records",
         "apply_batch",
         "stage_record",
@@ -84,6 +113,19 @@ class SemanticWriterWriteAuthorization(MemoryPlaneWriteAuthorization):
     owner: object | None
     lease_expires_at: datetime | None = None
     server_now: Callable[[], datetime] | None = None
+
+
+@dataclass(frozen=True)
+class SemanticConflictAuthorityAdministrationAuthorization(
+    MemoryPlaneWriteAuthorization
+):
+    owner: object
+
+
+@dataclass(frozen=True)
+class SemanticConflictAuthorityAdministrationGrant:
+    _issuer: object
+    _owner: object
 
 
 def bounded_preplanning_ownership_manifest() -> SemanticRecordOwnershipManifest:
@@ -117,11 +159,32 @@ class SemanticWriterAdmissionStore:
             raise SemanticWriterAdmissionError("unsupported semantic ownership manifest")
         self._memory_plane, self._manifest, self._now = memory_plane, manifest, now_provider
         self._atomic_owners: set[object] = set()
+        self._conflict_authority_administration_owner: object | None = None
+        self._conflict_authority_administration_grant: (
+            SemanticConflictAuthorityAdministrationGrant | None
+        ) = None
         self._transition_owner = object()
         self._memory_plane.install_governed_write_policy(SemanticGovernedWritePolicy(self))
 
     def governed_write_policy(self) -> SemanticGovernedWritePolicy:
         return SemanticGovernedWritePolicy(self)
+
+    def _claim_conflict_authority_administration(
+        self, *, owner: object
+    ) -> SemanticConflictAuthorityAdministrationGrant:
+        if self._conflict_authority_administration_owner is None:
+            self._conflict_authority_administration_owner = owner
+            self._conflict_authority_administration_grant = (
+                SemanticConflictAuthorityAdministrationGrant(
+                    _issuer=self, _owner=owner
+                )
+            )
+        elif self._conflict_authority_administration_owner is not owner:
+            raise SemanticWriterAdmissionError(
+                "conflict authority administration is already owned"
+            )
+        assert self._conflict_authority_administration_grant is not None
+        return self._conflict_authority_administration_grant
 
     def create_initial_evidence_only(
         self, *, admission_id: str, writer_implementation_fingerprint: str, graph_schema_fingerprint: str
@@ -230,7 +293,8 @@ class SemanticWriterAdmissionStore:
         if runtime_mode not in {"verified_semantic", "evidence_only"}:
             raise SemanticWriterAdmissionError("legacy writer authority cannot be reissued")
         verified_certificate = certify_migration(
-            migration_plan, migration_checkpoint,
+            migration_plan,
+            migration_checkpoint,
             independent_verifier_fingerprint=migration_certificate.independent_verifier_fingerprint,
         )
         if verified_certificate != migration_certificate:
@@ -278,13 +342,16 @@ class SemanticWriterAdmissionStore:
                     "target_record_id": target.memory_id,
                     "target_record_digest": target_digest,
                 }
-                expected_projections.append(DeliveryCoordinateMigrationTargetProjection(
-                    **values, projection_digest=sha256(encode_typed_value(values)).hexdigest()
-                ))
+                expected_projections.append(
+                    DeliveryCoordinateMigrationTargetProjection(
+                        **values, projection_digest=sha256(encode_typed_value(values)).hexdigest()
+                    )
+                )
         target_projections = tuple(expected_projections)
         legacy_records = sorted(
             (
-                record for record in self._memory_plane.list_records()
+                record
+                for record in self._memory_plane.list_records()
                 if record.source_kind == "semantic_ingestion_legacy_delivery_record"
                 and record.content.get("source_writer_epoch") == expected.expected_writer_epoch
             ),
@@ -325,15 +392,19 @@ class SemanticWriterAdmissionStore:
                 current.activated_at,
                 target_projections,
             )
-            if any(self._memory_plane.get_record(record.memory_id) != record for record in (*persisted, *target_records)):
+            if any(
+                self._memory_plane.get_record(record.memory_id) != record for record in (*persisted, *target_records)
+            ):
                 raise SemanticWriterAdmissionError("completed migration generation is partial or mismatched")
             return current
         if not current_record.content.get("draining", False):
             self._memory_plane.conditionally_write_records(
                 (_record(current, self._manifest, current_record.timestamp, draining=True),),
-                preconditions=(RecordDigestPrecondition(
-                    memory_id=current_record.memory_id, expected_digest=record_digest(current_record)
-                ),),
+                preconditions=(
+                    RecordDigestPrecondition(
+                        memory_id=current_record.memory_id, expected_digest=record_digest(current_record)
+                    ),
+                ),
                 authorization=SemanticWriterWriteAuthorization(
                     admission=current, manifest=self._manifest, owner=self._transition_owner
                 ),
@@ -377,21 +448,106 @@ class SemanticWriterAdmissionStore:
             admission=current, manifest=self._manifest, owner=self._transition_owner
         )
         migration_records = _migration_records(
-            migration_plan, migration_checkpoint, migration_certificate, migration_activation, at
-            , target_projections
+            migration_plan, migration_checkpoint, migration_certificate, migration_activation, at, target_projections
         )
         self._memory_plane.conditionally_write_records(
             (
-                _record(successor, self._manifest, at, migration_activation_digest=migration_activation.activation_digest),
+                _record(
+                    successor, self._manifest, at, migration_activation_digest=migration_activation.activation_digest
+                ),
                 *migration_records,
                 *target_records,
             ),
             preconditions=(
-                RecordDigestPrecondition(memory_id=current_record.memory_id, expected_digest=record_digest(current_record)),
+                RecordDigestPrecondition(
+                    memory_id=current_record.memory_id, expected_digest=record_digest(current_record)
+                ),
                 *(RecordAbsentPrecondition(memory_id=record.memory_id) for record in migration_records),
                 *(RecordAbsentPrecondition(memory_id=record.memory_id) for record in target_records),
             ),
             authorization=authorization,
+        )
+        return successor
+
+    def advance_policy_epoch(
+        self,
+        *,
+        expected: SemanticWriterCommitBinding,
+        policy_activation_digest: str,
+        records: tuple[CanonicalMemoryRecord, ...],
+        preconditions: tuple[MemoryPlanePrecondition, ...],
+    ) -> SemanticWriterAdmission:
+        """Fence a policy cutover with the same CAS that advances writer epoch."""
+
+        if (
+            len(policy_activation_digest) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in policy_activation_digest
+            )
+        ):
+            raise SemanticWriterAdmissionError("policy activation digest is invalid")
+        current_record = self._memory_plane.get_record(writer_admission_memory_id())
+        if current_record is None:
+            raise SemanticWriterAdmissionError("semantic writer is unbound")
+        current, manifest = _from_record(current_record)
+        if manifest != self._manifest or self.commit_binding(current) != expected:
+            if (
+                current.previous_admission_digest == expected.admission_digest
+                and current.writer_epoch == expected.expected_writer_epoch + 1
+                and current_record.content.get("policy_activation_digest")
+                == policy_activation_digest
+            ):
+                return current
+            raise SemanticWriterAdmissionError(
+                "semantic writer binding is stale or mismatched"
+            )
+        at = self._now()
+        successor = SemanticWriterAdmission(
+            admission_id=current.admission_id,
+            writer_namespace=current.writer_namespace,
+            active_runtime_mode=current.active_runtime_mode,
+            active_writer_implementation_fingerprint=(
+                current.active_writer_implementation_fingerprint
+            ),
+            accepted_graph_schema_fingerprint=(
+                current.accepted_graph_schema_fingerprint
+            ),
+            writer_epoch=current.writer_epoch + 1,
+            activated_at=at,
+            previous_admission_digest=current.admission_digest,
+            admission_digest=_admission_digest(
+                current.admission_id,
+                current.active_runtime_mode,
+                current.active_writer_implementation_fingerprint,
+                current.accepted_graph_schema_fingerprint,
+                current.writer_epoch + 1,
+                at,
+                current.admission_digest,
+            ),
+        )
+        self._memory_plane.conditionally_write_records(
+            (
+                _record(
+                    successor,
+                    self._manifest,
+                    at,
+                    policy_activation_digest=policy_activation_digest,
+                ),
+                *records,
+            ),
+            preconditions=(
+                RecordDigestPrecondition(
+                    memory_id=current_record.memory_id,
+                    expected_digest=record_digest(current_record),
+                ),
+                *preconditions,
+            ),
+            authorization=SemanticWriterWriteAuthorization(
+                admission=current,
+                manifest=self._manifest,
+                owner=self._transition_owner,
+            ),
         )
         return successor
 
@@ -433,33 +589,29 @@ class SemanticGovernedWritePolicy:
         current: tuple[CanonicalMemoryRecord, ...],
         authorization: MemoryPlaneWriteAuthorization | None,
     ) -> None:
-        governed = [
-            record
-            for record in records
-            if record.source_kind == "semantic_ingestion_writer_admission"
-            or record.source_kind in {
-                "semantic_ingestion_source",
-                "semantic_ingestion_metadata_poor_snapshot",
-                "semantic_ingestion_admission_index",
-                "semantic_ingestion_profile_selection",
-                "semantic_ingestion_profile_verification",
-                "semantic_ingestion_profile_outcome",
-                "semantic_ingestion_legacy_delivery_record",
-            }
-            or record.source_kind.startswith("semantic_ingestion_preplanning")
-            or record.source_kind.startswith("semantic_ingestion_generation")
-            or record.source_kind.startswith("semantic_ingestion_migration")
-            or record.source_kind == "semantic_ingestion_migrated_target"
-            or record.source_kind == "semantic_ingestion_authorization_authority"
-            or record.memory_id == writer_admission_memory_id()
-            or record.memory_id.startswith("semantic_ingestion:operation:")
-            or record.memory_id.startswith("semantic_ingestion:artifact:")
-            or record.memory_id.startswith("semantic_ingestion:generation:")
-            or record.memory_id.startswith("semantic_ingestion:migration:")
-            or record.memory_id.startswith("semantic_ingestion:migrated:")
-            or record.memory_id.startswith("semantic_ingestion:authorization:")
-        ]
+        governed = [record for record in records if is_semantic_control_record(record)]
         if not governed:
+            return
+        conflict_authority_records = [
+            record
+            for record in governed
+            if record.source_kind == "semantic_ingestion_conflict_authority"
+        ]
+        if isinstance(
+            authorization,
+            SemanticConflictAuthorityAdministrationAuthorization,
+        ):
+            if (
+                authorization.owner
+                is not self._admissions._conflict_authority_administration_grant
+                or len(conflict_authority_records) != len(governed)
+            ):
+                raise SemanticWriterAdmissionError(
+                    "conflict authority administration is not authorized"
+                )
+            _validate_conflict_authority_administration_write(
+                tuple(conflict_authority_records), current
+            )
             return
         if not isinstance(authorization, SemanticWriterWriteAuthorization):
             raise SemanticWriterAdmissionError("governed semantic write is not authorized")
@@ -469,6 +621,26 @@ class SemanticGovernedWritePolicy:
             authorization.server_now is None or authorization.lease_expires_at <= authorization.server_now()
         ):
             raise SemanticWriterAdmissionError("semantic write lease expired before storage CAS")
+        if conflict_authority_records:
+            _validate_conflict_authority_atomic_closure(
+                tuple(conflict_authority_records),
+                records,
+                current,
+                (
+                    authorization.server_now()
+                    if authorization.server_now is not None
+                    else self._admissions._now()
+                ),
+            )
+            records = tuple(
+                record for record in records if record not in conflict_authority_records
+            )
+            governed = [
+                record for record in governed if record not in conflict_authority_records
+            ]
+            if not governed:
+                return
+        had_conflict_authority_records = bool(conflict_authority_records)
         current_record = next(
             (record for record in current if record.memory_id == writer_admission_memory_id()),
             None,
@@ -493,11 +665,54 @@ class SemanticGovernedWritePolicy:
                 if len(governed) != 1 or not proposed_record.content.get("draining", False):
                     raise SemanticWriterAdmissionError("writer drain freeze is invalid")
                 return
-            migration_records = [record for record in governed if record.source_kind.startswith("semantic_ingestion_migration")]
+            policy_records = tuple(record for record in records if record not in writer_records)
+            policy_projection_records = [
+                record
+                for record in policy_records
+                if record.source_kind.startswith("semantic_projection_")
+                or record.memory_id.startswith("semantic_projection:")
+            ]
+            policy_activation_digest = proposed_record.content.get(
+                "policy_activation_digest"
+            )
+            if policy_activation_digest is not None:
+                if (
+                    not isinstance(policy_activation_digest, str)
+                    or manifest != current_manifest
+                    or proposed.admission_id != current_admission.admission_id
+                    or proposed.writer_epoch != current_admission.writer_epoch + 1
+                    or proposed.previous_admission_digest
+                    != current_admission.admission_digest
+                    or proposed.active_runtime_mode
+                    != current_admission.active_runtime_mode
+                    or proposed.active_writer_implementation_fingerprint
+                    != current_admission.active_writer_implementation_fingerprint
+                    or proposed.accepted_graph_schema_fingerprint
+                    != current_admission.accepted_graph_schema_fingerprint
+                    or not _is_atomic_projection_publication_write(
+                        policy_records,
+                        policy_projection_records,
+                    )
+                    or not any(
+                        record.source_kind
+                        == "semantic_ingestion_projection_publication"
+                        and record.content.get("authority_coordinate_digest")
+                        == policy_activation_digest
+                        and record.content.get("writer_epoch")
+                        == proposed.writer_epoch
+                        for record in policy_records
+                    )
+                ):
+                    raise SemanticWriterAdmissionError(
+                        "policy writer transition is invalid"
+                    )
+                return
+            migration_records = [
+                record for record in governed if record.source_kind.startswith("semantic_ingestion_migration")
+            ]
             if (
                 len(migration_records) < 4
-                or
-                manifest != current_manifest
+                or manifest != current_manifest
                 or proposed.writer_epoch != current_admission.writer_epoch + 1
                 or proposed.previous_admission_digest != current_admission.admission_digest
                 or proposed.active_runtime_mode == "legacy_pre_cutover"
@@ -511,6 +726,15 @@ class SemanticGovernedWritePolicy:
             raise SemanticWriterAdmissionError("governed semantic authorization is stale")
         if any(record.source_kind == "semantic_ingestion_writer_admission" for record in governed):
             raise SemanticWriterAdmissionError("writer admission transition lacks transition authority")
+        if any(semantic_control_class(record) == "unknown" for record in governed):
+            raise SemanticWriterAdmissionError("unknown semantic control namespace is forbidden")
+        projection_records = [
+            record
+            for record in governed
+            if record.source_kind.startswith("semantic_projection_")
+            or record.memory_id.startswith("semantic_projection:")
+        ]
+        _validate_projection_namespace_records(projection_records)
         if all(record.source_kind == "semantic_ingestion_authorization_authority" for record in governed):
             if len(governed) != 1:
                 raise SemanticWriterAdmissionError("authorization authority transition is not isolated")
@@ -521,6 +745,63 @@ class SemanticGovernedWritePolicy:
             if record.content.get("semantic_ingestion_kind") == "preplanning_operation_control"
         ]
         if len(controls) != 1:
+            if _is_atomic_admission_only_write(
+                governed,
+                self._admissions.commit_binding(current_admission),
+            ):
+                return
+            # A clarification pointer closure is independently validated
+            # above. Its replay aggregate is the only additional governed
+            # member and must travel in that same write; it is not a free
+            # standing replay-authority mutation.
+            if (
+                had_conflict_authority_records
+                and frozenset(record.source_kind for record in governed)
+                in {
+                    frozenset({"semantic_ingestion_replay_authority"}),
+                    frozenset({
+                        "semantic_ingestion_conflict_clarification_transaction",
+                        "semantic_ingestion_conflict_clarification_receipt",
+                        "semantic_ingestion_replay_authority",
+                    }),
+                }
+                and len(governed)
+                in {1, 3}
+            ):
+                return
+            if _is_atomic_projection_publication_write(
+                records,
+                projection_records,
+            ):
+                return
+            if _is_atomic_projection_migration_progress_write(
+                records,
+                projection_records,
+            ):
+                return
+            if _is_atomic_clarification_projection_write(
+                records,
+                projection_records,
+            ):
+                return
+            if _is_semantic_integrity_incident_write(governed):
+                return
+            if _is_semantic_clean_recovery_write(governed):
+                return
+            if _is_reference_integrity_bootstrap_write(governed):
+                return
+            if _is_accepted_identity_operation_write(governed):
+                return
+            if _is_prepared_source_publication_write(governed):
+                return
+            if _is_bootstrap_authority_terminal_write(governed):
+                return
+            if _is_bootstrap_v3_recovery_claim_write(governed, current):
+                return
+            if _is_bootstrap_graph_v3_authority_write(governed, current):
+                return
+            if _is_bootstrap_graph_v3_epoch_transition_write(governed, current):
+                return
             raise SemanticWriterAdmissionError("governed semantic write lacks one atomic control record")
         try:
             binding = SemanticWriterCommitBinding.model_validate(controls[0].content["control"]["writer_binding"])
@@ -528,6 +809,8 @@ class SemanticGovernedWritePolicy:
             raise SemanticWriterAdmissionError("governed semantic control binding is corrupt") from exc
         if binding != self._admissions.commit_binding(current_admission):
             raise SemanticWriterAdmissionError("governed semantic control binding is mismatched")
+        if _is_bootstrap_handoff_write(governed, controls[0], binding):
+            return
         control_body = controls[0].content["control"]
         operation_fence = OperationFenceBinding.model_validate(control_body["operation_fence"])
         operation_namespace = control_body.get("persistence_namespace_id") or operation_fence.operation_id
@@ -537,8 +820,7 @@ class SemanticGovernedWritePolicy:
             if current_record.content.get("draining", False):
                 raise SemanticWriterAdmissionError("retiring writer epoch is frozen to new operations")
             preplanning = [
-                record for record in governed
-                if record.source_kind.startswith("semantic_ingestion_preplanning")
+                record for record in governed if record.source_kind.startswith("semantic_ingestion_preplanning")
             ]
             _validate_initial_preplanning_generation(preplanning, controls[0], operation_fence, operation_namespace)
             admission_records = [record for record in governed if record not in preplanning]
@@ -551,22 +833,41 @@ class SemanticGovernedWritePolicy:
             if record.memory_id == control_id
             or record.memory_id.startswith(f"semantic_ingestion:artifact:{operation_namespace}:")
         ]
-        _validate_initial_preplanning_generation(current_generation, prior_control, operation_fence, operation_namespace)
+        _validate_initial_preplanning_generation(
+            current_generation, prior_control, operation_fence, operation_namespace
+        )
         if len(governed) == 1 and controls[0].memory_id == control_id:
             return
-        generation_records = [record for record in governed if record.memory_id.startswith(
-            f"semantic_ingestion:generation:{operation_namespace}:"
-        )]
-        if len(generation_records) != len(governed) - 1:
+        if _is_bootstrap_v3_ready_claim_write(governed, current):
+            return
+        if _is_bootstrap_v3_publish_consume_write(governed, current):
+            return
+        if _is_bootstrap_graph_v3_group_commit_write(governed, current):
+            return
+        if _is_bootstrap_graph_v3_checkpoint_write(governed, current):
+            return
+        if _is_bootstrap_graph_v3_terminal_write(governed, current):
+            return
+        generation_records = [
+            record
+            for record in governed
+            if record.memory_id.startswith(f"semantic_ingestion:generation:{operation_namespace}:")
+        ]
+        replay_authority_records = [
+            record for record in governed if semantic_control_class(record) == "replay_authority"
+        ]
+        if len(generation_records) != (len(governed) - len(projection_records) - len(replay_authority_records) - 1):
             raise SemanticWriterAdmissionError("generation contains cross-operation governed records")
         manifests = [
-            record for record in generation_records
+            record
+            for record in generation_records
             if record.content.get("semantic_ingestion_kind") == "generation_manifest"
         ]
         if len(manifests) != 1:
             raise SemanticWriterAdmissionError("generation requires exactly one manifest")
         member_records = [
-            record for record in generation_records
+            record
+            for record in generation_records
             if record.content.get("semantic_ingestion_kind") == "generation_member"
         ]
         manifest_members = manifests[0].content.get("members")
@@ -577,10 +878,1800 @@ class SemanticGovernedWritePolicy:
         if expected != actual or len(expected) != len(member_records):
             raise SemanticWriterAdmissionError("generation manifest membership is inconsistent")
         if current_admission.active_runtime_mode == "evidence_only" and any(
-            record.content.get("member", {}).get("kind") in {"graph_delta", "event_batch"}
-            for record in member_records
+            record.content.get("member", {}).get("kind") in {"graph_delta", "event_batch"} for record in member_records
         ):
             raise SemanticWriterAdmissionError("evidence-only writer cannot publish graph or event effects")
+        if projection_records and not any(
+            record.content.get("member", {}).get("kind") == "event_batch" for record in member_records
+        ):
+            raise SemanticWriterAdmissionError("projection publication lacks its atomic event generation")
+        has_event_member = any(
+            record.content.get("member", {}).get("kind") == "event_batch" for record in member_records
+        )
+        if has_event_member:
+            _validate_replay_authority_closure(replay_authority_records)
+        elif replay_authority_records:
+            _validate_non_event_replay_authority_closure(replay_authority_records)
+
+
+def _validate_conflict_authority_administration_write(
+    records: tuple[CanonicalMemoryRecord, ...],
+    current: tuple[CanonicalMemoryRecord, ...],
+) -> None:
+    from memorii.core.memory_evolution.conflict_attention import (
+        ActiveSemanticConflictResolverAuthority,
+        SemanticConflictResolverAuthority,
+    )
+    from memorii.core.memory_evolution.projection_history import (
+        ProjectionHistoryError,
+        decode_conflict_authority_record,
+    )
+
+    try:
+        decoded = tuple(decode_conflict_authority_record(record) for record in records)
+        by_type = {record_type: value for record_type, value, _ in decoded}
+        if (
+            len(records) != 3
+            or set(by_type)
+            != {
+                "resolver_authority",
+                "resolver_pointer_history",
+                "resolver_pointer",
+            }
+        ):
+            raise ValueError
+        authority = SemanticConflictResolverAuthority.model_validate(
+            by_type["resolver_authority"]
+        )
+        pointer = ActiveSemanticConflictResolverAuthority.model_validate(
+            by_type["resolver_pointer"]
+        )
+        pointer_history = ActiveSemanticConflictResolverAuthority.model_validate(
+            by_type["resolver_pointer_history"]
+        )
+    except (ProjectionHistoryError, TypeError, ValueError) as exc:
+        raise SemanticWriterAdmissionError(
+            "conflict authority administration closure is invalid"
+        ) from exc
+    expected_authority_id = (
+        "semantic_ingestion:conflict-authority:resolver:"
+        f"{authority.authority_record_id}"
+    )
+    expected_pointer_id = (
+        "semantic_ingestion:conflict-authority:resolver-pointer:"
+        f"{pointer.tenant_partition_id}:{pointer.renderer_schema}"
+    )
+    expected_pointer_history_id = (
+        "semantic_ingestion:conflict-authority:resolver-pointer-history:"
+        f"{pointer.tenant_partition_id}:{pointer.renderer_schema}:"
+        f"{pointer.pointer_revision}"
+    )
+    proposed_ids = {record.memory_id for record in records}
+    current_pointer_record = next(
+        (record for record in current if record.memory_id == expected_pointer_id), None
+    )
+    if (
+        proposed_ids
+        != {
+            expected_authority_id,
+            expected_pointer_history_id,
+            expected_pointer_id,
+        }
+        or pointer_history != pointer
+        or pointer.authority_record_id != authority.authority_record_id
+        or pointer.authority_record_digest != authority.authority_record_digest
+        or pointer.tenant_partition_id != authority.tenant_partition_id
+        or pointer.renderer_schema != authority.renderer_schema
+        or (
+            current_pointer_record is None
+            and (
+                authority.authority_revision != 1
+                or pointer.pointer_revision != 1
+                or pointer.predecessor_pointer_digest is not None
+            )
+        )
+    ):
+        raise SemanticWriterAdmissionError(
+            "conflict authority administration closure is invalid"
+        )
+    if current_pointer_record is not None:
+        try:
+            _, current_value, _ = decode_conflict_authority_record(
+                current_pointer_record
+            )
+            current_pointer = ActiveSemanticConflictResolverAuthority.model_validate(
+                current_value
+            )
+        except (ProjectionHistoryError, ValueError) as exc:
+            raise SemanticWriterAdmissionError(
+                "current conflict authority pointer is corrupt"
+            ) from exc
+        if (
+            pointer.pointer_revision != current_pointer.pointer_revision + 1
+            or pointer.predecessor_pointer_digest != current_pointer.pointer_digest
+        ):
+            raise SemanticWriterAdmissionError(
+                "conflict authority administration revision is invalid"
+            )
+        current_authority_record = next(
+            (
+                record
+                for record in current
+                if record.memory_id
+                == "semantic_ingestion:conflict-authority:resolver:"
+                f"{current_pointer.authority_record_id}"
+            ),
+            None,
+        )
+        if current_authority_record is None:
+            raise SemanticWriterAdmissionError(
+                "current conflict authority record is absent"
+            )
+        try:
+            _, current_authority_value, _ = decode_conflict_authority_record(
+                current_authority_record
+            )
+            current_authority = SemanticConflictResolverAuthority.model_validate(
+                current_authority_value
+            )
+        except (ProjectionHistoryError, ValueError) as exc:
+            raise SemanticWriterAdmissionError(
+                "current conflict authority record is corrupt"
+            ) from exc
+        if (
+            authority.authority_revision != current_authority.authority_revision + 1
+            or authority.predecessor_authority_record_digest
+            != current_authority.authority_record_digest
+        ):
+            raise SemanticWriterAdmissionError(
+                "conflict authority administration revision is invalid"
+            )
+
+
+def _validate_conflict_authority_atomic_closure(
+    records: tuple[CanonicalMemoryRecord, ...],
+    complete_write: tuple[CanonicalMemoryRecord, ...],
+    current: tuple[CanonicalMemoryRecord, ...],
+    server_now: datetime,
+) -> None:
+    from memorii.core.memory_evolution.conflict_attention import (
+        ActiveSemanticConflict,
+        ActiveSemanticConflictResolverAuthority,
+        ConflictClarificationAttempt,
+        ConflictClarificationAttemptResult,
+        ConflictClarificationProcessingReceipt,
+        ConflictClarificationWork,
+        SemanticConflictClarificationNonceConsumption,
+        SemanticConflictClarificationSubmissionGeneration,
+        SemanticConflictClarificationSubmissionOperation,
+        SemanticConflictClarificationTransition,
+        SemanticConflictClarificationWorkGeneration,
+        SemanticConflictLedgerHead,
+        SemanticConflictResolverAuthority,
+        VerifiedUserConfirmation,
+        decode_persisted_conflict_generation,
+        verified_user_confirmation_digest,
+    )
+    from memorii.core.memory_evolution.projection_history import (
+        ProjectionHistoryError,
+        decode_conflict_authority_record,
+    )
+
+    try:
+        decoded = tuple(decode_conflict_authority_record(record) for record in records)
+        record_types = tuple(value[0] for value in decoded)
+        immutable_coordinates = tuple(
+            coordinate
+            for record_type, _, coordinate in decoded
+            if record_type in {"introduction", "transition", "clarification_transition"}
+            and coordinate is not None
+        )
+        heads = tuple(
+            SemanticConflictLedgerHead.model_validate(value)
+            for record_type, value, _ in decoded
+            if record_type == "ledger_head"
+        )
+    except (ProjectionHistoryError, TypeError, ValueError) as exc:
+        raise SemanticWriterAdmissionError(
+            "semantic conflict authority closure is invalid"
+        ) from exc
+    try:
+        submissions = tuple(
+            decode_persisted_conflict_generation(
+                value, SemanticConflictClarificationSubmissionGeneration
+            )
+            for record_type, value, _ in decoded
+            if record_type == "clarification_submission"
+        )
+        submission_operations = tuple(
+            decode_persisted_conflict_generation(
+                value, SemanticConflictClarificationSubmissionOperation
+            )
+            for record_type, value, _ in decoded
+            if record_type == "clarification_submission_operation"
+        )
+        nonce_consumptions = tuple(
+            decode_persisted_conflict_generation(
+                value, SemanticConflictClarificationNonceConsumption
+            )
+            for record_type, value, _ in decoded
+            if record_type == "clarification_nonce_consumption"
+        )
+        confirmation_proofs = tuple(
+            decode_persisted_conflict_generation(value, VerifiedUserConfirmation)
+            for record_type, value, _ in decoded
+            if record_type == "clarification_confirmation_proof"
+        )
+        work_generations = tuple(
+            decode_persisted_conflict_generation(
+                value, SemanticConflictClarificationWorkGeneration
+            )
+            for record_type, value, _ in decoded
+            if record_type == "clarification_work"
+        )
+        work_members = tuple(
+            decode_persisted_conflict_generation(value, ConflictClarificationWork)
+            for record_type, value, _ in decoded
+            if record_type == "clarification_work_member"
+        )
+        attempt_members = tuple(
+            decode_persisted_conflict_generation(value, ConflictClarificationAttempt)
+            for record_type, value, _ in decoded
+            if record_type == "clarification_attempt_member"
+        )
+        result_members = tuple(
+            decode_persisted_conflict_generation(value, ConflictClarificationAttemptResult)
+            for record_type, value, _ in decoded
+            if record_type == "clarification_attempt_result_member"
+        )
+    except (TypeError, ValueError) as exc:
+        raise SemanticWriterAdmissionError(
+            "semantic conflict authority closure is invalid"
+        ) from exc
+    try:
+        for record, (record_type, value, _) in zip(records, decoded, strict=True):
+            if record_type == "clarification_work_member":
+                member = decode_persisted_conflict_generation(
+                    value, ConflictClarificationWork
+                )
+                expected_id = (
+                    "semantic_ingestion:conflict-authority:clarification-work-member:"
+                    f"{member.work_digest}"
+                )
+            elif record_type == "clarification_attempt_member":
+                member = decode_persisted_conflict_generation(
+                    value, ConflictClarificationAttempt
+                )
+                expected_id = (
+                    "semantic_ingestion:conflict-authority:clarification-attempt-member:"
+                    f"{member.attempt_digest}"
+                )
+            elif record_type == "clarification_attempt_result_member":
+                member = decode_persisted_conflict_generation(
+                    value, ConflictClarificationAttemptResult
+                )
+                expected_id = (
+                    "semantic_ingestion:conflict-authority:clarification-attempt-result-member:"
+                    f"{member.result_digest}"
+                )
+            elif record_type == "clarification_submission_operation":
+                member = decode_persisted_conflict_generation(
+                    value, SemanticConflictClarificationSubmissionOperation
+                )
+                expected_id = (
+                    "semantic_ingestion:conflict-authority:clarification-submission-operation:"
+                    f"{member.operation_id}"
+                )
+            elif record_type == "clarification_nonce_consumption":
+                member = decode_persisted_conflict_generation(
+                    value, SemanticConflictClarificationNonceConsumption
+                )
+                expected_id = (
+                    "semantic_ingestion:conflict-authority:clarification-nonce-consumption:"
+                    f"{member.nonce_digest}"
+                )
+            elif record_type == "clarification_confirmation_proof":
+                member = decode_persisted_conflict_generation(
+                    value, VerifiedUserConfirmation
+                )
+                expected_id = (
+                    "semantic_ingestion:conflict-authority:clarification-confirmation-proof:"
+                    f"{verified_user_confirmation_digest(member)}"
+                )
+            else:
+                continue
+            if record.memory_id != expected_id:
+                raise ValueError
+    except (TypeError, ValueError) as exc:
+        raise SemanticWriterAdmissionError(
+            "semantic conflict authority closure is invalid"
+        ) from exc
+    allowed_types = {
+        "introduction",
+        "transition",
+        "clarification_transition",
+        "clarification_submission",
+        "clarification_submission_operation",
+        "clarification_confirmation_proof",
+        "clarification_nonce_consumption",
+        "clarification_work",
+        "clarification_work_member",
+        "clarification_attempt_member",
+        "clarification_attempt_result_member",
+        "pointer_history",
+        "active_pointer",
+        "ledger_head",
+    }
+    projection_records = tuple(
+        record
+        for record in complete_write
+        if record.source_kind.startswith("semantic_projection_")
+    )
+    if work_generations:
+        # Claim and renewal append no pointer transition: their complete CAS is
+        # one immutable successor keyed by an already durable predecessor.
+        # Do not let an arbitrary record type piggyback on that narrow closure.
+        if len(work_generations) != 1:
+            raise SemanticWriterAdmissionError(
+                "semantic conflict authority closure is invalid"
+            )
+        generation = work_generations[0]
+        projection_supersession = (
+            generation.transition is None
+            and "transition" in record_types
+            and not any(
+                record.source_kind
+                == "semantic_ingestion_conflict_clarification_receipt"
+                for record in complete_write
+            )
+        )
+        transitions = tuple(
+            decode_persisted_conflict_generation(
+                value, SemanticConflictClarificationTransition
+            )
+            for record_type, value, _ in decoded
+            if record_type == "clarification_transition"
+        )
+        expected_members = (
+            1 + (1 if generation.attempt is not None else 0)
+            + (1 if generation.attempt_result is not None else 0)
+        )
+        if (
+            len(work_members) != 1
+            or work_members[0] != generation.work
+            or len(attempt_members) != (1 if generation.attempt is not None else 0)
+            or (generation.attempt is not None and attempt_members[0] != generation.attempt)
+            or len(result_members) != (1 if generation.attempt_result is not None else 0)
+            or (
+                generation.attempt_result is not None
+                and result_members[0] != generation.attempt_result
+            )
+            or (
+                generation.transition is None
+                # Terminal semantic completion appends its ordinary work
+                # successor together with receipt/effect records.  Its exact
+                # composite closure is checked in the terminal branch below.
+                and not any(
+                    record.source_kind
+                    == "semantic_ingestion_conflict_clarification_receipt"
+                    for record in complete_write
+                )
+                and not projection_supersession
+                and len(records) != 1 + expected_members
+            )
+        ):
+            raise SemanticWriterAdmissionError(
+                "semantic conflict authority closure is invalid"
+            )
+        predecessor: ConflictClarificationWork | None = None
+        try:
+            submissions_by_transition_digest = {}
+            successors_by_predecessor_digest = {}
+            active_pointer = None
+            current_head = None
+            for record in current:
+                if record.source_kind != "semantic_ingestion_conflict_authority":
+                    continue
+                record_type, value, _ = decode_conflict_authority_record(record)
+                if (
+                    record_type == "active_pointer"
+                    and record.memory_id
+                    == "semantic_ingestion:conflict-authority:pointer:"
+                    f"{generation.work.conflict_id}"
+                ):
+                    active_pointer = ActiveSemanticConflict.model_validate(value)
+                    continue
+                if record_type == "ledger_head":
+                    if current_head is not None:
+                        raise ValueError
+                    current_head = SemanticConflictLedgerHead.model_validate(value)
+                    continue
+                if record_type == "clarification_submission":
+                    submission = decode_persisted_conflict_generation(
+                        value, SemanticConflictClarificationSubmissionGeneration
+                    )
+                    submissions_by_transition_digest[submission.transition.transition_digest] = submission
+                    candidate = submission.work
+                elif record_type == "clarification_work":
+                    successor = decode_persisted_conflict_generation(
+                        value, SemanticConflictClarificationWorkGeneration
+                    )
+                    if successor.predecessor_work_digest in successors_by_predecessor_digest:
+                        raise ValueError
+                    successors_by_predecessor_digest[successor.predecessor_work_digest] = successor
+                    candidate = successor.work
+                else:
+                    candidate = None
+                if candidate is not None and candidate.work_digest == generation.predecessor_work_digest:
+                    if predecessor is not None:
+                        raise ValueError
+                    predecessor = candidate
+            # A queue successor may only extend the submitted generation that
+            # is live at this conflict's active pointer.  Historic exhausted
+            # chains remain immutable audit data, never writable queue roots.
+            if active_pointer is None:
+                raise ValueError
+            active_submission = submissions_by_transition_digest.get(
+                active_pointer.current_record_digest
+            )
+            if active_submission is None:
+                raise ValueError
+            current_work = active_submission.work
+            seen_work_digests = set()
+            while current_work.work_digest in successors_by_predecessor_digest:
+                if current_work.work_digest in seen_work_digests:
+                    raise ValueError
+                seen_work_digests.add(current_work.work_digest)
+                current_work = successors_by_predecessor_digest[current_work.work_digest].work
+            if current_work.work_digest != generation.predecessor_work_digest:
+                raise ValueError
+        except (ProjectionHistoryError, TypeError, ValueError) as exc:
+            raise SemanticWriterAdmissionError(
+                "semantic conflict authority closure is invalid"
+            ) from exc
+        if (
+            predecessor is None
+            or generation.work.conflict_id != predecessor.conflict_id
+            or generation.work.conflict_revision != predecessor.conflict_revision
+            or generation.work.proposal_digest != predecessor.proposal_digest
+            or generation.work.processing_operation_id != predecessor.processing_operation_id
+            or generation.work.work_revision != predecessor.work_revision + 1
+            or (predecessor.owner_token is None and (
+                not (
+                    projection_supersession
+                    and generation.attempt is None
+                    and generation.attempt_result is None
+                    and generation.work.owner_token is None
+                    and generation.work.ownership_epoch == predecessor.ownership_epoch
+                    and generation.work.attempt_count == predecessor.attempt_count
+                )
+                and (
+                    generation.attempt is None
+                    or generation.attempt_result is not None
+                    or generation.work.owner_token is None
+                    or generation.work.ownership_epoch != predecessor.ownership_epoch + 1
+                    or generation.work.attempt_count != predecessor.attempt_count
+                )
+            ))
+            or (predecessor.owner_token is not None and not (
+                # Renewal preserves the attempt and ownership epoch.
+                (
+                    generation.attempt is None
+                    and generation.attempt_result is None
+                    and generation.transition is None
+                    and generation.work.owner_token == predecessor.owner_token
+                    and generation.work.ownership_epoch == predecessor.ownership_epoch
+                    and generation.work.attempt_count == predecessor.attempt_count
+                )
+                # Reclaim closes the expired attempt and starts a fresh epoch.
+                or (
+                    projection_supersession
+                    and generation.attempt is None
+                    and generation.attempt_result is not None
+                    and generation.attempt_result.outcome.value == "superseded"
+                    and generation.work.owner_token is None
+                    and generation.work.ownership_epoch == predecessor.ownership_epoch
+                    and generation.work.attempt_count == predecessor.attempt_count
+                    and generation.attempt_result.downstream_receipt_digest is None
+                    and generation.attempt_result.superseded_by_conflict_revision is not None
+                )
+                or (
+                    generation.attempt is not None
+                    and generation.attempt_result is not None
+                    and generation.attempt_result.outcome.value == "lease_expired"
+                    and generation.work.owner_token is not None
+                    and generation.work.ownership_epoch == predecessor.ownership_epoch + 1
+                    and generation.work.attempt_count == predecessor.attempt_count
+                )
+                # Failure closes the current attempt and makes work unowned.
+                or (
+                    generation.attempt is None
+                    and generation.attempt_result is not None
+                    and generation.attempt_result.outcome.value
+                    in {
+                        "retryable_failure",
+                        "terminal_failure",
+                        "accepted",
+                        "rejected",
+                        "insufficient",
+                    }
+                    and generation.work.owner_token is None
+                    and generation.work.ownership_epoch == predecessor.ownership_epoch
+                    and generation.work.attempt_count
+                    == predecessor.attempt_count
+                    + (
+                        1
+                        if generation.attempt_result.outcome.value
+                        == "retryable_failure"
+                        else 0
+                    )
+                )
+            ))
+        ):
+            raise SemanticWriterAdmissionError(
+                "semantic conflict authority closure is invalid"
+            )
+        if generation.transition is not None:
+            # Exhaustion is not a queue-only successor.  It is the same-plane
+            # lifecycle CAS that reopens the conflict, so the work generation
+            # must carry the exact transition, pointer/history pair, and ledger
+            # head which ProjectionHistoryRepository writes atomically.
+            transition = generation.transition
+            try:
+                if (
+                    len(transitions) != 1
+                    or transitions[0] != transition
+                    or current_head is None
+                    or transition.conflict_id != generation.work.conflict_id
+                    or transition.predecessor_conflict_revision
+                    != active_pointer.current_conflict_revision
+                    or transition.predecessor_record_digest
+                    != active_pointer.current_record_digest
+                    or transition.predecessor_status.value
+                    != "clarification_submitted"
+                    or transition.record_coordinate
+                    != current_head.last_record_coordinate + 1
+                    or transition.transition_coordinate
+                    != active_pointer.pointer_revision + 1
+                    or len(records) != 1 + expected_members + 4
+                    or record_types.count("clarification_transition") != 1
+                    or record_types.count("pointer_history") != 1
+                    or record_types.count("active_pointer") != 1
+                    or record_types.count("ledger_head") != 1
+                ):
+                    raise ValueError
+                transition_id = (
+                    "semantic_ingestion:conflict-authority:clarification-transition:"
+                    f"{transition.transition_digest}"
+                )
+                successor_body = {
+                    "conflict_id": transition.conflict_id,
+                    "current_conflict_revision": transition.resulting_attention.conflict_revision,
+                    "current_record_id": transition_id,
+                    "current_record_digest": transition.transition_digest,
+                    "pointer_revision": active_pointer.pointer_revision + 1,
+                    "predecessor_pointer_digest": active_pointer.pointer_digest,
+                }
+                successor_pointer = ActiveSemanticConflict(
+                    **successor_body,
+                    pointer_digest=sha256(
+                        b"memorii.semantic-conflict-active-pointer.v1\0"
+                        + encode_typed_value(successor_body)
+                    ).hexdigest(),
+                )
+                successor_head = SemanticConflictLedgerHead.create(
+                    repository_id=current_head.repository_id,
+                    last_record_coordinate=transition.record_coordinate,
+                    head_revision=current_head.head_revision + 1,
+                    predecessor_head_digest=current_head.head_digest,
+                )
+                by_type = {
+                    record_type: (record, value)
+                    for record, (record_type, value, _) in zip(
+                        records, decoded, strict=True
+                    )
+                    if record_type
+                    in {"clarification_transition", "pointer_history", "active_pointer", "ledger_head"}
+                }
+                history_id = (
+                    "semantic_ingestion:conflict-authority:pointer-history:"
+                    f"{transition.conflict_id}:{successor_pointer.pointer_revision}"
+                )
+                pointer_id = (
+                    "semantic_ingestion:conflict-authority:pointer:"
+                    f"{transition.conflict_id}"
+                )
+                if (
+                    by_type["clarification_transition"][0].memory_id != transition_id
+                    or by_type["pointer_history"][0].memory_id != history_id
+                    or by_type["active_pointer"][0].memory_id != pointer_id
+                    or by_type["ledger_head"][0].memory_id
+                    != "semantic_ingestion:conflict-authority:ledger-head"
+                    or ActiveSemanticConflict.model_validate(by_type["pointer_history"][1])
+                    != successor_pointer
+                    or ActiveSemanticConflict.model_validate(by_type["active_pointer"][1])
+                    != successor_pointer
+                    or SemanticConflictLedgerHead.model_validate(by_type["ledger_head"][1])
+                    != successor_head
+                ):
+                    raise ValueError
+            except (KeyError, TypeError, ValueError) as exc:
+                raise SemanticWriterAdmissionError(
+                    "semantic conflict authority closure is invalid"
+                ) from exc
+        if not any(
+            record.source_kind
+            == "semantic_ingestion_conflict_clarification_receipt"
+            for record in complete_write
+        ):
+            return
+    if submissions:
+        # Submission is a pointer transition plus its immutable operation,
+        # proposal, and initial unclaimed work.  The generation's strict model
+        # validation binds all those members; require the exact transition to
+        # be present in this same write before accepting the pointer closure.
+        transitions = tuple(
+            decode_persisted_conflict_generation(
+                value, SemanticConflictClarificationTransition
+            )
+            for record_type, value, _ in decoded
+            if record_type == "clarification_transition"
+        )
+        if (
+            len(submissions) != 1
+            or len(transitions) != 1
+            or submissions[0].transition != transitions[0]
+            or len(submission_operations) != 1
+            or submission_operations[0].operation_id != submissions[0].operation_receipt.operation_id
+            or submission_operations[0].request_digest != submissions[0].operation_receipt.request_digest
+            or submission_operations[0].proposal_digest != submissions[0].operation_receipt.proposal_digest
+            or submission_operations[0].operation_receipt_digest != submissions[0].operation_receipt.receipt_digest
+            or submission_operations[0].generation_digest != submissions[0].generation_digest
+            or submission_operations[0].verified_confirmation_digest != submissions[0].operation_receipt.verified_confirmation_digest
+            or len(nonce_consumptions) != (1 if submissions[0].verified_confirmation is not None else 0)
+            or len(confirmation_proofs) != (1 if submissions[0].verified_confirmation is not None else 0)
+            or (
+                submissions[0].verified_confirmation is not None
+                and confirmation_proofs[0] != submissions[0].verified_confirmation
+            )
+            or (submissions[0].verified_confirmation is not None and nonce_consumptions[0].operation_id != submissions[0].operation_receipt.operation_id)
+            or len(work_members) != 1
+            or work_members[0] != submissions[0].work
+            or attempt_members
+            or result_members
+        ):
+            raise SemanticWriterAdmissionError(
+                "semantic conflict authority closure is invalid"
+            )
+    terminal_transitions = tuple(
+        decode_persisted_conflict_generation(value, SemanticConflictClarificationTransition)
+        for record_type, value, _ in decoded
+        if record_type == "clarification_transition"
+    )
+    if (
+        not submissions
+        and len(terminal_transitions) == 1
+        and terminal_transitions[0].reason.value in {"accepted", "rejected", "insufficient"}
+    ):
+        # Semantic completion is a composite write, never a loose pointer
+        # edge.  The already durable attempt is intentionally not repeated;
+        # its terminal work successor and result member bind it to the one
+        # receipt carried by the same complete memory-plane write.
+        transition = terminal_transitions[0]
+        receipts = tuple(
+            record
+            for record in complete_write
+            if record.source_kind == "semantic_ingestion_conflict_clarification_receipt"
+        )
+        transactions = tuple(
+            record
+            for record in complete_write
+            if record.source_kind == "semantic_ingestion_conflict_clarification_transaction"
+        )
+        try:
+            if len(result_members) != 1:
+                raise ValueError
+            receipt = (
+                ConflictClarificationProcessingReceipt.model_validate_json(
+                    json.dumps(receipts[0].content["receipt"])
+                )
+                if len(receipts) == 1
+                else None
+            )
+            current_attempt = next(
+                decode_persisted_conflict_generation(value, ConflictClarificationAttempt)
+                for record in current
+                if record.memory_id
+                == "semantic_ingestion:conflict-authority:clarification-attempt-member:"
+                f"{result_members[0].attempt_digest}"
+                for record_type, value, _ in (decode_conflict_authority_record(record),)
+                if record_type == "clarification_attempt_member"
+            )
+            if (
+                len(transactions) != 1
+                or receipt is None
+                or len(work_generations) != 1
+                or len(work_members) != 1
+                or len(result_members) != 1
+                or attempt_members
+                or transition.resulting_attention.status.value
+                != ("resolved" if transition.reason.value == "accepted" else "open")
+                or receipt.conflict_id != transition.conflict_id
+                or receipt.conflict_revision != transition.resulting_attention.conflict_revision
+                or receipt.proposal_digest != transition.proposal_digest
+                or receipt.processing_operation_id != transition.processing_operation_id
+                or receipt.committed_outcome != transition.reason.value
+                or result_members[0].outcome.value != transition.reason.value
+                or result_members[0].downstream_receipt_digest != receipt.receipt_digest
+                or result_members[0].attempt_digest != current_attempt.attempt_digest
+                or result_members[0].processing_operation_id != receipt.processing_operation_id
+                or work_members[0].owner_token is not None
+                or work_members[0].lease_expires_at is not None
+                or work_members[0].downstream_receipt_digest != receipt.receipt_digest
+                or work_members[0].predecessor_work_digest is None
+                or work_members[0].processing_operation_id != receipt.processing_operation_id
+                or work_generations[0].predecessor_work_digest
+                != work_members[0].predecessor_work_digest
+                or work_generations[0].work != work_members[0]
+                or work_generations[0].attempt is not None
+                or work_generations[0].attempt_result != result_members[0]
+                or work_generations[0].transition is not None
+            ):
+                raise ValueError
+            if transition.reason.value == "accepted" and not any(
+                record.source_kind == "semantic_ingestion_event_batch"
+                for record in complete_write
+            ):
+                raise ValueError
+            if transition.reason.value != "accepted" and any(
+                record.source_kind == "semantic_ingestion_event_batch"
+                for record in complete_write
+            ):
+                raise ValueError
+        except (IndexError, KeyError, StopIteration, TypeError, ValueError) as exc:
+            raise SemanticWriterAdmissionError(
+                "semantic clarification completion closure is invalid"
+            ) from exc
+    if (
+        # Projection publication supplies the ordinary conflict closure.  A
+        # clarification lifecycle edge is independently complete: it carries
+        # its own pointer/history/head CAS and must not be routed through the
+        # resolver-authority administration capability.
+        not projection_records
+        and not any(record_type == "clarification_transition" for record_type in record_types)
+        or not set(record_types) <= allowed_types
+        or len(heads) != (1 if immutable_coordinates else 0)
+        or record_types.count("pointer_history") != len(immutable_coordinates)
+        or record_types.count("active_pointer")
+        != len(immutable_coordinates)
+        or record_types.count("active_pointer")
+        != len(
+            {
+                record.memory_id
+                for record in records
+                if record.content.get("authority_record_type") == "active_pointer"
+            }
+        )
+        or (
+            immutable_coordinates
+            and (
+                tuple(sorted(immutable_coordinates))
+                != tuple(
+                    range(
+                        min(immutable_coordinates),
+                        max(immutable_coordinates) + 1,
+                    )
+                )
+                or heads[0].last_record_coordinate != max(immutable_coordinates)
+            )
+        )
+    ):
+        raise SemanticWriterAdmissionError(
+            "semantic conflict authority closure is invalid"
+        )
+    at = server_now.astimezone(UTC)
+    current_by_id = {record.memory_id: record for record in current}
+    for record_type, value, _ in decoded:
+        if record_type not in {"introduction", "transition"} or not isinstance(
+            value, dict
+        ):
+            continue
+        if (
+            record_type == "transition"
+            and value.get("reason") == "projection_resolved"
+        ):
+            continue
+        display = value.get("display")
+        if not isinstance(display, dict):
+            raise SemanticWriterAdmissionError(
+                "semantic conflict resolver closure is invalid"
+            )
+        authority_id = (
+            "semantic_ingestion:conflict-authority:resolver:"
+            f"{display.get('authority_record_id')}"
+        )
+        pointer_id = (
+            "semantic_ingestion:conflict-authority:resolver-pointer:"
+            f"{value.get('scope', {}).get('tenant_partition_id')}:"
+            f"{display.get('renderer_schema')}"
+        )
+        authority_record = current_by_id.get(authority_id)
+        pointer_record = current_by_id.get(pointer_id)
+        if authority_record is None or pointer_record is None:
+            raise SemanticWriterAdmissionError(
+                "semantic conflict resolver closure is absent"
+            )
+        try:
+            authority = SemanticConflictResolverAuthority.model_validate(
+                decode_conflict_authority_record(authority_record)[1]
+            )
+            pointer = ActiveSemanticConflictResolverAuthority.model_validate(
+                decode_conflict_authority_record(pointer_record)[1]
+            )
+        except (ProjectionHistoryError, ValueError) as exc:
+            raise SemanticWriterAdmissionError(
+                "semantic conflict resolver closure is corrupt"
+            ) from exc
+        if (
+            authority.status != "active"
+            or not authority.valid_from <= at < authority.valid_until
+            or authority.authority_record_id != display.get("authority_record_id")
+            or authority.authority_record_digest
+            != display.get("authority_record_digest")
+            or authority.valid_until != display.get("authority_valid_until")
+            or pointer.authority_record_id != authority.authority_record_id
+            or pointer.authority_record_digest != authority.authority_record_digest
+            or pointer.pointer_digest != display.get("authority_pointer_digest")
+        ):
+            raise SemanticWriterAdmissionError(
+                "semantic conflict resolver closure is stale or expired"
+            )
+
+
+def _validate_projection_namespace_records(
+    records: list[CanonicalMemoryRecord],
+) -> None:
+    for record in records:
+        if (
+            record.source_kind not in _SEMANTIC_PROJECTION_SOURCE_KINDS
+            or not record.memory_id.startswith("semantic_projection:")
+            or record.content.get("projection_authority_kind")
+            not in {
+                "certificate",
+                "generation",
+                "history_entry",
+                "active_pointer",
+                "projection",
+                "decay_command",
+                "migration_plan",
+                "migration_catch_up",
+                "migration_command",
+                "migration_result",
+                "migration_cutover",
+            }
+        ):
+            raise SemanticWriterAdmissionError("semantic projection namespace or source kind is invalid")
+
+
+def _is_atomic_projection_publication_write(
+    records: tuple[CanonicalMemoryRecord, ...],
+    projection_records: list[CanonicalMemoryRecord],
+) -> bool:
+    envelopes = tuple(
+        record
+        for record in records
+        if record.source_kind == "semantic_ingestion_projection_publication"
+    )
+    non_projection = tuple(
+        record for record in records if record not in projection_records
+    )
+    replay_kinds = {
+        "semantic_ingestion_replay_authority",
+        "semantic_ingestion_checkpoint_lifecycle",
+        "semantic_ingestion_event_schema_registry_history",
+    }
+    if (
+        len(envelopes) != 1
+        or len(non_projection) != 1 + len(replay_kinds)
+        or {record.source_kind for record in non_projection if record not in envelopes}
+        != replay_kinds
+    ):
+        return False
+    envelope = envelopes[0]
+    expected_fields = {
+        "semantic_ingestion_kind",
+        "publication_kind",
+        "projection_kind",
+        "repository_id",
+        "operation_id",
+        "authority_coordinate_digest",
+        "policy_snapshot_digest",
+        "active_policy_fingerprint",
+        "complete_read_set_digest",
+        "writer_epoch",
+        "certificate_digest",
+        "generation_digest",
+        "pointer_digest",
+        "pointer_publication_kind",
+        "envelope_digest",
+    }
+    content = envelope.content
+    if (
+        set(content) != expected_fields
+        or content.get("semantic_ingestion_kind") != "projection_publication"
+        or content.get("publication_kind")
+        not in {
+            "trust_decay_schedule",
+            "trust_decay_threshold",
+            "temporal_policy_migration",
+            "trust_policy_migration",
+        }
+        or content.get("projection_kind") not in {"temporal", "trust"}
+        or content.get("pointer_publication_kind")
+        not in {"projection_commit", "migration_cutover"}
+        or not isinstance(content.get("writer_epoch"), int)
+        or content["writer_epoch"] < 1
+    ):
+        return False
+    digest_fields = (
+        "authority_coordinate_digest",
+        "policy_snapshot_digest",
+        "active_policy_fingerprint",
+        "complete_read_set_digest",
+        "certificate_digest",
+        "generation_digest",
+        "pointer_digest",
+        "envelope_digest",
+    )
+    if any(
+        not isinstance(content.get(field), str)
+        or len(content[field]) != 64
+        or any(character not in "0123456789abcdef" for character in content[field])
+        for field in digest_fields
+    ):
+        return False
+    envelope_body = {key: value for key, value in content.items() if key != "envelope_digest"}
+    if (
+        content["envelope_digest"] != sha256(encode_typed_value(envelope_body)).hexdigest()
+        or envelope.memory_id
+        != "semantic_ingestion:projection-publication:"
+        + sha256(str(content["operation_id"]).encode()).hexdigest()
+        or envelope.domain != MemoryDomain.EXECUTION
+        or envelope.status != CommitStatus.COMMITTED
+        or envelope.visibility != MemoryRecordVisibility.INTERNAL_CONTROL
+        or envelope.text
+    ):
+        return False
+    projection_kind = content["projection_kind"]
+    if any(
+        not record.source_kind.startswith(f"semantic_projection_{projection_kind}_")
+        for record in projection_records
+    ):
+        return False
+    by_kind: dict[str, list[CanonicalMemoryRecord]] = {}
+    for record in projection_records:
+        authority_kind = record.content.get("projection_authority_kind")
+        if not isinstance(authority_kind, str):
+            return False
+        by_kind.setdefault(authority_kind, []).append(record)
+    if any(len(by_kind.get(kind, ())) != 1 for kind in ("certificate", "generation", "history_entry", "active_pointer")):
+        return False
+    try:
+        certificate = decode_typed_value(
+            bytes.fromhex(str(by_kind["certificate"][0].content["canonical_hex"]))
+        )
+        generation = decode_typed_value(
+            bytes.fromhex(str(by_kind["generation"][0].content["canonical_hex"]))
+        )
+        pointer = decode_typed_value(
+            bytes.fromhex(str(by_kind["active_pointer"][0].content["canonical_hex"]))
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
+    if not all(isinstance(value, dict) for value in (certificate, generation, pointer)):
+        return False
+    assert isinstance(certificate, dict)
+    assert isinstance(generation, dict)
+    assert isinstance(pointer, dict)
+    policy_field = (
+        "temporal_policy_fingerprint"
+        if projection_kind == "temporal"
+        else "trust_policy_fingerprint"
+    )
+    certificate_policy = certificate.get(
+        policy_field,
+        certificate.get("pending_policy_fingerprint"),
+    )
+    return bool(
+        certificate.get("certificate_digest") == content["certificate_digest"]
+        and generation.get("generation_digest") == content["generation_digest"]
+        and pointer.get("pointer_digest") == content["pointer_digest"]
+        and pointer.get("generation_digest") == content["generation_digest"]
+        and pointer.get("publication_certificate_digest")
+        == content["certificate_digest"]
+        and pointer.get("publication_kind") == content["pointer_publication_kind"]
+        and pointer.get("writer_epoch") == content["writer_epoch"]
+        and pointer.get("policy_fingerprint") == content["active_policy_fingerprint"]
+        and generation.get(policy_field) == content["active_policy_fingerprint"]
+        and certificate_policy == content["active_policy_fingerprint"]
+    )
+
+
+def _is_atomic_projection_migration_progress_write(
+    records: tuple[CanonicalMemoryRecord, ...],
+    projection_records: list[CanonicalMemoryRecord],
+) -> bool:
+    envelopes = tuple(
+        record
+        for record in records
+        if record.source_kind == "semantic_ingestion_projection_publication"
+        and record.content.get("semantic_ingestion_kind")
+        == "projection_migration_progress"
+    )
+    if len(envelopes) != 1 or len(records) != len(projection_records) + 1:
+        return False
+    envelope = envelopes[0]
+    content = envelope.content
+    expected_fields = {
+        "semantic_ingestion_kind",
+        "publication_kind",
+        "projection_kind",
+        "repository_id",
+        "operation_id",
+        "migration_plan_digest",
+        "catch_up_entry_digests",
+        "result_digests",
+        "writer_epoch",
+        "progress_digest",
+        "envelope_digest",
+    }
+    if (
+        set(content) != expected_fields
+        or content.get("publication_kind")
+        not in {
+            "temporal_policy_migration_progress",
+            "trust_policy_migration_progress",
+        }
+        or content.get("projection_kind") not in {"temporal", "trust"}
+        or not isinstance(content.get("writer_epoch"), int)
+        or content["writer_epoch"] < 1
+        or not isinstance(content.get("catch_up_entry_digests"), (list, tuple))
+        or not isinstance(content.get("result_digests"), (list, tuple))
+    ):
+        return False
+    digest_fields = ("migration_plan_digest", "progress_digest", "envelope_digest")
+    digest_sequences = ("catch_up_entry_digests", "result_digests")
+    if any(not _is_lower_hex_digest(content.get(field)) for field in digest_fields):
+        return False
+    if any(
+        tuple(content[field]) != tuple(sorted(set(content[field])))
+        or any(not _is_lower_hex_digest(value) for value in content[field])
+        for field in digest_sequences
+    ):
+        return False
+    envelope_body = {
+        key: value for key, value in content.items() if key != "envelope_digest"
+    }
+    progress_body = {
+        "migration_kind": content["projection_kind"],
+        "migration_plan_digest": content["migration_plan_digest"],
+        "catch_up_entry_digests": tuple(content["catch_up_entry_digests"]),
+        "result_digests": tuple(content["result_digests"]),
+        "writer_epoch": content["writer_epoch"],
+    }
+    if (
+        content["envelope_digest"]
+        != sha256(encode_typed_value(envelope_body)).hexdigest()
+        or content["progress_digest"]
+        != sha256(
+            b"memorii.policy-migration-plan.v1\0"
+            + encode_typed_value(progress_body)
+        ).hexdigest()
+        or envelope.memory_id
+        != "semantic_ingestion:projection-publication:"
+        + sha256(str(content["operation_id"]).encode()).hexdigest()
+        or envelope.domain != MemoryDomain.EXECUTION
+        or envelope.status != CommitStatus.COMMITTED
+        or envelope.visibility != MemoryRecordVisibility.INTERNAL_CONTROL
+        or envelope.text
+    ):
+        return False
+    projection_kind = content["projection_kind"]
+    if any(
+        record.source_kind
+        != f"semantic_projection_{projection_kind}_{record.content.get('projection_authority_kind')}"
+        for record in projection_records
+    ):
+        return False
+    by_kind: dict[str, list[dict[str, object]]] = {}
+    for record in projection_records:
+        authority_kind = record.content.get("projection_authority_kind")
+        if authority_kind not in {
+            "migration_plan",
+            "migration_catch_up",
+            "migration_command",
+            "migration_result",
+            "decay_command",
+        }:
+            return False
+        try:
+            raw = bytes.fromhex(str(record.content["canonical_hex"]))
+            value = decode_typed_value(raw)
+        except (KeyError, TypeError, ValueError):
+            return False
+        if not isinstance(value, dict):
+            return False
+        if authority_kind == "decay_command":
+            command_digest = value.get("command_digest")
+            if (
+                set(record.content)
+                != {"projection_authority_kind", "canonical_hex", "authority_digest"}
+                or not _is_lower_hex_digest(command_digest)
+                or record.content.get("authority_digest") != sha256(raw).hexdigest()
+                or not record.memory_id.endswith(f":{command_digest}")
+            ):
+                return False
+            by_kind.setdefault(str(authority_kind), []).append(value)
+            continue
+        digest_field = {
+            "migration_plan": "plan_digest",
+            "migration_catch_up": "entry_digest",
+            "migration_command": "command_digest",
+            "migration_result": "result_digest",
+        }[str(authority_kind)]
+        authority_digest = value.get(digest_field)
+        if (
+            not _is_lower_hex_digest(authority_digest)
+            or record.content.get("authority_digest") != authority_digest
+            or not record.memory_id.endswith(f":{authority_digest}")
+        ):
+            return False
+        by_kind.setdefault(str(authority_kind), []).append(value)
+    plans = by_kind.get("migration_plan", [])
+    if len(plans) != 1:
+        return False
+    plan = plans[0]
+    catch_up = by_kind.get("migration_catch_up", [])
+    results = by_kind.get("migration_result", [])
+    commands = by_kind.get("decay_command", [])
+    migration_commands = by_kind.get("migration_command", [])
+    expected_command_values: list[str] = []
+    for item in results:
+        raw_digests = item.get("decay_command_digests", ())
+        if not isinstance(raw_digests, (list, tuple)):
+            return False
+        expected_command_values.extend(str(digest) for digest in raw_digests)
+    expected_commands = tuple(sorted(expected_command_values))
+    raw_plan_slots = plan.get("slot_plans", ())
+    if not isinstance(raw_plan_slots, (list, tuple)) or any(
+        not isinstance(item, dict) for item in raw_plan_slots
+    ):
+        return False
+    expected_migration_work_items = (
+        {
+            *(str(item.get("slot_plan_digest")) for item in raw_plan_slots),
+            *(str(item.get("entry_digest")) for item in catch_up),
+        }
+        if projection_kind == "temporal"
+        else set()
+    )
+    return bool(
+        plan.get("migration_kind") == projection_kind
+        and plan.get("plan_digest") == content["migration_plan_digest"]
+        and plan.get("writer_epoch") == content["writer_epoch"]
+        and all(
+            item.get("migration_plan_digest") == content["migration_plan_digest"]
+            for item in (*catch_up, *results)
+        )
+        and tuple(sorted(str(item.get("entry_digest")) for item in catch_up))
+        == tuple(content["catch_up_entry_digests"])
+        and tuple(sorted(str(item.get("result_digest")) for item in results))
+        == tuple(content["result_digests"])
+        and tuple(sorted(str(item.get("command_digest")) for item in commands))
+        == expected_commands
+        and {
+            str(item.get("migration_work_item_digest"))
+            for item in migration_commands
+        }
+        == expected_migration_work_items
+        and len(migration_commands) == len(expected_migration_work_items)
+        and all(
+            item.get("migration_plan_digest") == content["migration_plan_digest"]
+            and item.get("migration_kind") == "temporal"
+            for item in migration_commands
+        )
+        and all(
+            item.get("migration_kind") != "temporal"
+            or item.get("status") != "committed"
+            or item.get("command_digest")
+            in {
+                command.get("command_digest") for command in migration_commands
+            }
+            for item in results
+        )
+    )
+
+
+def _is_lower_hex_digest(value: object) -> bool:
+    return bool(
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _is_atomic_clarification_projection_write(
+    records: tuple[CanonicalMemoryRecord, ...],
+    projection_records: list[CanonicalMemoryRecord],
+) -> bool:
+    if (
+        not projection_records
+        and len(records) == 1
+        and records[0].source_kind == "semantic_ingestion_conflict_clarification_context"
+        and records[0].memory_id.startswith("semantic_ingestion:clarification:context:")
+    ):
+        return True
+    required = {
+        "semantic_ingestion_conflict_clarification_transaction",
+        "semantic_ingestion_conflict_clarification_receipt",
+        "semantic_ingestion_conflict_clarification_recovery_authority",
+        "semantic_ingestion_event_batch",
+        "semantic_ingestion_replay_state",
+        "semantic_ingestion_replay_authority",
+        "semantic_ingestion_checkpoint_lifecycle",
+        "semantic_ingestion_event_schema_registry_history",
+    }
+    optional = {
+        "semantic_ingestion_reference_integrity",
+        "semantic_ingestion_graph_identity_reservation",
+    }
+    non_projection = tuple(record for record in records if record not in projection_records)
+    kinds = {record.source_kind for record in non_projection}
+    singleton_records = tuple(
+        record
+        for record in non_projection
+        if record.source_kind != "semantic_ingestion_graph_identity_reservation"
+    )
+    reservation_ids = tuple(
+        record.memory_id
+        for record in non_projection
+        if record.source_kind == "semantic_ingestion_graph_identity_reservation"
+    )
+    return (
+        required.issubset(kinds)
+        and kinds.issubset(required | optional)
+        and len(singleton_records)
+        == len({record.source_kind for record in singleton_records})
+        and reservation_ids == tuple(sorted(set(reservation_ids)))
+    )
+
+
+def _is_atomic_clarification_terminal_pair(
+    records: tuple[CanonicalMemoryRecord, ...],
+) -> bool:
+    """Recognize the exact no-projection clarification transaction closure."""
+
+    from memorii.core.memory_evolution.conflict_attention import (
+        ConflictClarificationProcessingReceipt,
+    )
+
+    if len(records) != 2:
+        return False
+    by_kind = {record.source_kind: record for record in records}
+    if set(by_kind) != {
+        "semantic_ingestion_conflict_clarification_transaction",
+        "semantic_ingestion_conflict_clarification_receipt",
+    }:
+        return False
+    transaction_record = by_kind["semantic_ingestion_conflict_clarification_transaction"]
+    receipt_record = by_kind["semantic_ingestion_conflict_clarification_receipt"]
+    if (
+        set(transaction_record.content)
+        != {
+            "semantic_ingestion_kind",
+            "semantic_transaction_id",
+            "semantic_transaction_digest",
+            "transaction",
+        }
+        or set(receipt_record.content)
+        != {"semantic_ingestion_kind", "receipt"}
+        or
+        transaction_record.content.get("semantic_ingestion_kind")
+        != "conflict_clarification_transaction"
+        or receipt_record.content.get("semantic_ingestion_kind")
+        != "conflict_clarification_processing_receipt"
+    ):
+        return False
+    body = transaction_record.content.get("transaction")
+    try:
+        receipt = ConflictClarificationProcessingReceipt.model_validate_json(
+            json.dumps(
+                receipt_record.content["receipt"],
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
+    if not isinstance(body, dict):
+        return False
+    if set(body) != {
+        "processing_operation_id",
+        "conflict_id",
+        "conflict_revision",
+        "resulting_conflict_revision",
+        "proposal_digest",
+        "source_user_event_id",
+        "source_user_event_digest",
+        "policy_fingerprint",
+        "committed_outcome",
+        "semantic_result_digest",
+        "semantic_terminal_hex",
+        "graph_delta_hex",
+        "graph_delta_digest",
+        "semantic_event_batch_id",
+        "semantic_event_batch_digest",
+        "graph_revision_before",
+        "graph_revision_after",
+        "semantic_recovery_authority_generation",
+        "semantic_recovery_authority_id",
+        "clarification_cas_input_digest",
+    }:
+        return False
+    processing_operation_id = body.get("processing_operation_id")
+    committed_outcome = body.get("committed_outcome")
+    transaction_id = transaction_record.content.get("semantic_transaction_id")
+    transaction_digest = transaction_record.content.get("semantic_transaction_digest")
+    if (
+        not isinstance(processing_operation_id, str)
+        or not processing_operation_id
+        or committed_outcome not in {"rejected", "insufficient"}
+        or transaction_id != f"clarification-{processing_operation_id}"
+        or transaction_digest != sha256(encode_typed_value(body)).hexdigest()
+        or transaction_record.memory_id
+        != f"semantic_ingestion:clarification:transaction:{processing_operation_id}"
+        or receipt_record.memory_id
+        != f"semantic_ingestion:clarification:receipt:{processing_operation_id}"
+    ):
+        return False
+    return (
+        receipt.processing_operation_id == processing_operation_id
+        and receipt.semantic_transaction_id == transaction_id
+        and receipt.semantic_transaction_digest == transaction_digest
+        and receipt.conflict_id == body.get("conflict_id")
+        and receipt.conflict_revision == body.get("resulting_conflict_revision")
+        and receipt.proposal_digest == body.get("proposal_digest")
+        and receipt.policy_fingerprint == body.get("policy_fingerprint")
+        and receipt.semantic_result_digest == body.get("semantic_result_digest")
+        and receipt.committed_outcome == committed_outcome
+        and isinstance(body.get("source_user_event_id"), str)
+        and bool(body["source_user_event_id"])
+        and _is_lower_hex_digest(body.get("source_user_event_digest"))
+        and (
+            body.get("clarification_cas_input_digest") is None
+            or _is_lower_hex_digest(body.get("clarification_cas_input_digest"))
+        )
+    )
+
+
+def _validate_replay_authority_closure(
+    records: list[CanonicalMemoryRecord],
+) -> None:
+    required = {
+        "semantic_ingestion_event_batch",
+        "semantic_ingestion_replay_state",
+        "semantic_ingestion_replay_authority",
+        "semantic_ingestion_checkpoint_lifecycle",
+        "semantic_ingestion_event_schema_registry_history",
+    }
+    optional = {
+        "semantic_ingestion_reference_integrity",
+        "semantic_ingestion_graph_identity_reservation",
+    }
+    kinds = {record.source_kind for record in records}
+    singleton_records = tuple(
+        record
+        for record in records
+        if record.source_kind != "semantic_ingestion_graph_identity_reservation"
+    )
+    reservation_ids = tuple(
+        record.memory_id
+        for record in records
+        if record.source_kind == "semantic_ingestion_graph_identity_reservation"
+    )
+    if (
+        not required.issubset(kinds)
+        or not kinds.issubset(required | optional)
+        or len(singleton_records) != len({record.source_kind for record in singleton_records})
+        or reservation_ids != tuple(sorted(set(reservation_ids)))
+    ):
+        raise SemanticWriterAdmissionError("semantic replay authority closure is incomplete")
+
+
+def _validate_non_event_replay_authority_closure(
+    records: list[CanonicalMemoryRecord],
+) -> None:
+    required = {
+        "semantic_ingestion_replay_authority",
+        "semantic_ingestion_checkpoint_lifecycle",
+        "semantic_ingestion_event_schema_registry_history",
+    }
+    if len(records) != len(required) or {record.source_kind for record in records} != required:
+        raise SemanticWriterAdmissionError("semantic checkpoint authority closure is incomplete")
+
+
+def _is_semantic_integrity_incident_write(
+    records: list[CanonicalMemoryRecord],
+) -> bool:
+    kinds = tuple(sorted(record.source_kind for record in records))
+    return kinds == (
+        "semantic_ingestion_replay_integrity_attention",
+        "semantic_ingestion_replay_integrity_control",
+    ) and all(record.memory_id.startswith("semantic_ingestion:event-authority:integrity-") for record in records)
+
+
+def _is_reference_integrity_bootstrap_write(records: list[CanonicalMemoryRecord]) -> bool:
+    return (
+        len(records) == 1
+        and records[0].source_kind == "semantic_ingestion_reference_integrity"
+        and records[0].memory_id == "semantic_ingestion:reference-integrity:ledger"
+        and records[0].content.get("semantic_ingestion_kind") == "reference_integrity_ledger"
+    )
+
+
+def _is_accepted_identity_operation_write(records: list[CanonicalMemoryRecord]) -> bool:
+    plans = tuple(
+        record
+        for record in records
+        if record.source_kind == "semantic_ingestion_accepted_identity_operation"
+    )
+    reservations = tuple(record for record in records if record not in plans)
+    if (
+        len(plans) != 1
+        or not plans[0].memory_id.startswith("semantic_ingestion:accepted-identity:")
+        or plans[0].content.get("semantic_ingestion_kind")
+        != "accepted_identity_operation"
+    ):
+        return False
+    operation_id = plans[0].content.get("operation_id")
+    return all(
+        record.source_kind == "semantic_ingestion_graph_identity_reservation"
+        and record.memory_id.startswith("semantic_ingestion:graph-reservation:")
+        and record.content.get("semantic_ingestion_kind")
+        == "graph_identity_reservation"
+        and record.content.get("operation_id") == operation_id
+        for record in reservations
+    )
+
+
+def _is_semantic_clean_recovery_write(
+    records: list[CanonicalMemoryRecord],
+) -> bool:
+    if not records or any(semantic_control_class(record) not in {"recovery", "replay_authority"} for record in records):
+        return False
+    kinds = tuple(sorted(record.source_kind for record in records))
+    if kinds == ("semantic_ingestion_clean_recovery_request",):
+        return records[0].content.get("semantic_ingestion_kind") == "clean_recovery_request"
+    if kinds == (
+        "semantic_ingestion_clean_generation",
+        "semantic_ingestion_clean_generation_status",
+    ):
+        request_digests = {record.content.get("request_digest") for record in records}
+        return len(request_digests) == 1 and None not in request_digests
+    required = {
+        "semantic_ingestion_clean_generation_status",
+        "semantic_ingestion_replay_authority",
+        "semantic_ingestion_replay_state",
+    }
+    observed = {record.source_kind for record in records}
+    allowed = required | {
+        "semantic_ingestion_event_batch",
+        "semantic_ingestion_retained_corrupt_event_batch_slot",
+    }
+    return (
+        required <= observed
+        and observed <= allowed
+        and all(sum(record.source_kind == required_kind for record in records) == 1 for required_kind in required)
+        and any(record.source_kind == "semantic_ingestion_event_batch" for record in records)
+        and next(
+            record for record in records if record.source_kind == "semantic_ingestion_clean_generation_status"
+        ).content.get("status")
+        == "activated"
+    )
+
+
+def _is_prepared_source_publication_write(
+    records: list[CanonicalMemoryRecord],
+) -> bool:
+    """Allow only the isolated Step-2 authority publication before learned work."""
+    if len(records) != 1:
+        return False
+    record = records[0]
+    if record.source_kind != "semantic_ingestion_prepared_source":
+        return False
+    content = record.content
+    source_id = content.get("source_id")
+    source_digest = content.get("source_digest")
+    if (
+        not isinstance(source_id, str)
+        or not isinstance(source_digest, str)
+        or record.memory_id
+        != "semantic_ingestion:prepared_source:" + sha256(source_id.encode("utf-8")).hexdigest()
+    ):
+        return False
+    # The atomic-store owner validates and encodes the complete closed
+    # PreparedSource before it builds this sealed record.
+    return isinstance(content.get("prepared_source_wire"), str) and isinstance(
+        content.get("preparation_fingerprint"), str
+    )
+
+
+def _is_bootstrap_authority_terminal_write(records: list[CanonicalMemoryRecord]) -> bool:
+    """Allow exactly one sealed bootstrap terminal, never a generic side write."""
+    if len(records) != 1:
+        return False
+    record = records[0]
+    if record.source_kind != "semantic_ingestion_bootstrap_authority_unavailable":
+        return False
+    terminal = record.content.get("terminal")
+    if not isinstance(terminal, dict):
+        return False
+    source_id = terminal.get("source_id")
+    source_digest = terminal.get("source_digest")
+    kind = terminal.get("kind")
+    if (
+        not isinstance(source_id, str)
+        or not isinstance(source_digest, str)
+        or kind not in {"retained_pending", "prepared_published"}
+        or record.memory_id
+        != "semantic_ingestion:bootstrap-authority-unavailable:"
+        + sha256(source_id.encode("utf-8")).hexdigest()
+    ):
+        return False
+    required = {
+        "kind", "source_id", "source_digest", "authority_pin_digest",
+        "release_evidence_digest", "bootstrap_language_evidence_digest",
+        "delivery_identity", "operation_fence_binding", "reason", "terminal_digest",
+    }
+    if kind == "prepared_published":
+        required |= {"prepared_generation", "prepared_source_digest"}
+    return set(terminal) == required
+
+
+def _is_bootstrap_v3_recovery_claim_write(
+    records: list[CanonicalMemoryRecord], current: tuple[CanonicalMemoryRecord, ...]
+) -> bool:
+    """Permit a live renewal or an expired ready-snapshot reclaim only."""
+    from memorii.core.semantic_ingestion.contracts import BootstrapRecoveryClaimV3
+
+    if len(records) != 1:
+        return False
+    record = records[0]
+    if record.source_kind != "semantic_ingestion_bootstrap_v3_recovery_index":
+        return False
+    previous = next((item for item in current if item.memory_id == record.memory_id), None)
+    if previous is None or previous.source_kind != record.source_kind:
+        return False
+    before, after = previous.content, record.content
+    if before.get("state") != "claimed" or after.get("state") != "claimed":
+        return False
+    claim_names = set(BootstrapRecoveryClaimV3.model_fields)
+    if set(after) != set(before) or not claim_names.issubset(after):
+        return False
+    try:
+        old = BootstrapRecoveryClaimV3.model_validate_json(json.dumps({name: before[name] for name in claim_names}))
+        new = BootstrapRecoveryClaimV3.model_validate_json(json.dumps({name: after[name] for name in claim_names}))
+    except (KeyError, TypeError, ValueError):
+        return False
+    # A live renewal retains its nonce and advances exactly once.  An expired
+    # claim may mint a new nonce only against the same sealed ready snapshot;
+    # this is the bounded reclaim path after the predecessor has advanced.
+    changed = {
+        "issued_server_time", "expires_server_time", "issued_monotonic_tick",
+        "expires_monotonic_tick", "renewal_count", "claim_nonce", "claim_digest",
+    }
+    renewal = (
+        new.claim_nonce == old.claim_nonce
+        and new.renewal_count == old.renewal_count + 1
+    )
+    reclaim = (
+        new.claim_nonce != old.claim_nonce
+        and new.renewal_count == 0
+        and (
+            new.issued_server_time >= old.expires_server_time
+            or new.issued_monotonic_tick >= old.expires_monotonic_tick
+        )
+    )
+    return (
+        all(after[name] == before[name] for name in set(after) - changed)
+        and new.recovery_key_digest == old.recovery_key_digest
+        and new.control_snapshot == old.control_snapshot
+        and (renewal or reclaim)
+        and new.expires_server_time > new.issued_server_time
+        and new.expires_monotonic_tick > new.issued_monotonic_tick
+        and new.renewal_count <= new.max_claim_renewals
+    )
+
+
+def _is_bootstrap_v3_ready_claim_write(
+    records: list[CanonicalMemoryRecord], current: tuple[CanonicalMemoryRecord, ...]
+) -> bool:
+    """Recognize the V3 probe's one control-and-claim linearization.
+
+    Unlike a renewal, the first claim advances the preplanning control to the
+    snapshot carried by the claim.  It must therefore be authorized as one
+    atomic closure rather than treated as a cross-operation generation write.
+    """
+    from memorii.core.semantic_ingestion.contracts import BootstrapRecoveryClaimV3
+
+    if len(records) != 2:
+        return False
+    control = next(
+        (record for record in records if record.content.get("semantic_ingestion_kind") == "preplanning_operation_control"),
+        None,
+    )
+    index = next(
+        (record for record in records if record.source_kind == "semantic_ingestion_bootstrap_v3_recovery_index"),
+        None,
+    )
+    if control is None or index is None:
+        return False
+    previous = next((record for record in current if record.memory_id == index.memory_id), None)
+    if previous is None or previous.content.get("state") != "unclaimed":
+        return False
+    content = index.content
+    claim_names = set(BootstrapRecoveryClaimV3.model_fields)
+    if (
+        content.get("state") != "claimed" or content.get("schema_version") != 3
+        or not claim_names.issubset(content)
+        or set(content) != set(previous.content) | claim_names
+    ):
+        return False
+    try:
+        claim = BootstrapRecoveryClaimV3.model_validate_json(
+            json.dumps({name: content[name] for name in claim_names})
+        )
+        next_control = control.content["control"]
+        snapshot = claim.control_snapshot.control_record
+        return (
+            control.content.get("semantic_ingestion_kind") == "preplanning_operation_control"
+            and snapshot.recovery_key_digest == previous.content["recovery_key_digest"]
+            and snapshot.handoff_marker_digest == previous.content["handoff_marker_digest"]
+            and snapshot.predecessor_operation_generation
+            == previous.content["predecessor_operation_generation"]
+            and snapshot.predecessor_artifact_generation
+            == previous.content["predecessor_artifact_generation"]
+            and snapshot.predecessor_control_digest == previous.content["predecessor_control_digest"]
+            and next_control["generation"] == snapshot.operation_generation
+            and next_control["operation_fence"]["binding_digest"] == snapshot.operation_fence_digest
+            and next_control["writer_binding"] == snapshot.writer_commit_binding.model_dump(mode="json")
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
+def _is_bootstrap_v3_publish_consume_write(
+    records: list[CanonicalMemoryRecord], current: tuple[CanonicalMemoryRecord, ...]
+) -> bool:
+    """Admit only the claimed V3 snapshot's single generation-three consume CAS."""
+    from memorii.core.semantic_ingestion.contracts import (
+        BootstrapRecoveryClaimV3,
+        BootstrapRecoveryControlSnapshotV3,
+    )
+
+    controls = [
+        record for record in records
+        if record.content.get("semantic_ingestion_kind") == "preplanning_operation_control"
+    ]
+    indexes = [
+        record for record in records
+        if record.source_kind == "semantic_ingestion_bootstrap_v3_recovery_index"
+    ]
+    manifests = [
+        record for record in records
+        if record.content.get("semantic_ingestion_kind") == "generation_manifest"
+    ]
+    members = [
+        record for record in records
+        if record.content.get("semantic_ingestion_kind") == "generation_member"
+    ]
+    if len(controls) != 1 or len(indexes) != 1 or len(manifests) != 1 or not members:
+        return False
+    control, found = controls[0], indexes[0]
+    before = next((record for record in current if record.memory_id == found.memory_id), None)
+    if before is None or before.content.get("state") != "claimed":
+        return False
+    try:
+        claim_values = {
+            name: before.content[name]
+            for name in BootstrapRecoveryClaimV3.model_fields
+        }
+        claim = BootstrapRecoveryClaimV3.model_validate_json(json.dumps(claim_values))
+        snapshot = BootstrapRecoveryControlSnapshotV3.model_validate_json(
+            json.dumps(before.content["control_snapshot"])
+        )
+        next_control = control.content["control"]
+        manifest = manifests[0].content
+        expected_found = {
+            "schema_version", "kind", "state", "recovery_key_digest",
+            "consumed_claim_digest", "recovery_control_snapshot_digest",
+            "predecessor_operation_generation", "predecessor_artifact_generation",
+            "publication_operation_generation", "publication_artifact_generation",
+            "namespace_id", "atomic_request_digest", "result_digest",
+            "provenance_manifest_digest",
+        }
+        if (
+            set(found.content) != expected_found
+            or found.content["schema_version"] != 3
+            or found.content["kind"] != "found" or found.content["state"] != "found"
+            or found.content["recovery_key_digest"] != claim.recovery_key_digest
+            or found.content["consumed_claim_digest"] != claim.claim_digest
+            or found.content["recovery_control_snapshot_digest"] != snapshot.snapshot_digest
+            or found.content["predecessor_operation_generation"]
+            != snapshot.control_record.predecessor_operation_generation
+            or found.content["predecessor_artifact_generation"]
+            != snapshot.control_record.predecessor_artifact_generation
+            or next_control["generation"] != snapshot.control_record.operation_generation + 1
+            or found.content["publication_operation_generation"] != next_control["generation"]
+            or found.content["publication_artifact_generation"] != next_control["generation"]
+            or next_control["operation_fence"]["binding_digest"] != claim.operation_fence_digest
+            or manifest.get("generation") != next_control["generation"]
+        ):
+            return False
+        manifest_members = manifest.get("members")
+        member_ids = {record.content.get("member", {}).get("member_id") for record in members}
+        return (
+            isinstance(manifest_members, (list, tuple))
+            and {item.get("member_id") for item in manifest_members if isinstance(item, dict)} == member_ids
+            and len(member_ids) == len(members)
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
+def _is_bootstrap_handoff_write(
+    records: list[CanonicalMemoryRecord],
+    control: CanonicalMemoryRecord,
+    binding: SemanticWriterCommitBinding,
+) -> bool:
+    """Recognize the one marker-plus-recovery bootstrap bridge atomically."""
+    markers = [record for record in records if record.source_kind == "semantic_ingestion_bootstrap_handoff_marker"]
+    recoveries = [
+        record
+        for record in records
+        if record.source_kind == "semantic_ingestion_bootstrap_v3_recovery_index"
+    ]
+    preplanning = [
+        record
+        for record in records
+        if record.source_kind.startswith("semantic_ingestion_preplanning")
+    ]
+    if len(markers) != 1 or len(recoveries) != 1 or len(preplanning) != 4 or len(records) != 6:
+        return False
+    marker = markers[0]
+    value = marker.content.get("marker")
+    if not isinstance(value, dict) or value.get("writer_commit_binding") != binding.model_dump(mode="json"):
+        return False
+    recovery = recoveries[0].content
+    if not isinstance(recovery, dict):
+        return False
+    pending = value.get("pending_operation_id")
+    control_value = control.content.get("control")
+    return (
+        isinstance(pending, str)
+        and isinstance(control_value, dict)
+        and pending == control_value.get("operation_fence", {}).get("operation_fence_id")
+        and marker.memory_id.startswith("semantic_ingestion:bootstrap-handoff:")
+        and recoveries[0].memory_id
+        == "semantic_ingestion:bootstrap-v3-recovery:" + str(value.get("recovery_key_digest"))
+        and recovery.get("schema_version") == 3
+        and recovery.get("state") == "unclaimed"
+        and recovery.get("recovery_key_digest") == value.get("recovery_key_digest")
+        and recovery.get("operation_fence_digest")
+        == control_value.get("operation_fence", {}).get("binding_digest")
+        and recovery.get("handoff_marker_digest") == value.get("marker_digest")
+        and recovery.get("predecessor_operation_generation") == control_value.get("generation")
+        and recovery.get("predecessor_artifact_generation") == control_value.get("generation")
+        and recovery.get("predecessor_control_digest") == value.get("expected_predecessor_control_digest")
+    )
 
 
 def _validate_initial_preplanning_generation(
@@ -649,9 +2740,11 @@ def _validate_atomic_admission_records(
     fence: OperationFenceBinding,
     binding: SemanticWriterCommitBinding,
 ) -> None:
-    sources = [record for record in records if record.source_kind in {
-        "semantic_ingestion_source", "semantic_ingestion_metadata_poor_snapshot"
-    }]
+    sources = [
+        record
+        for record in records
+        if record.source_kind in {"semantic_ingestion_source", "semantic_ingestion_metadata_poor_snapshot"}
+    ]
     indexes = [record for record in records if record.source_kind == "semantic_ingestion_admission_index"]
     profile_kinds = {
         "semantic_ingestion_profile_selection",
@@ -670,6 +2763,31 @@ def _validate_atomic_admission_records(
         or index.content.get("writer_admission_digest") != binding.admission_digest
     ):
         raise SemanticWriterAdmissionError("atomic admission index binding is mismatched")
+
+
+def _is_atomic_admission_only_write(
+    records: list[CanonicalMemoryRecord],
+    binding: SemanticWriterCommitBinding,
+) -> bool:
+    """Permit exactly the five retained Step-1 records before bootstrap handoff."""
+    index = next(
+        (
+            record
+            for record in records
+            if record.source_kind == "semantic_ingestion_admission_index"
+        ),
+        None,
+    )
+    if index is None:
+        return False
+    try:
+        fence = OperationFenceBinding.model_validate(
+            index.content["operation_fence_binding"]
+        )
+        _validate_atomic_admission_records(records, fence, binding)
+    except (KeyError, TypeError, ValueError, SemanticWriterAdmissionError):
+        return False
+    return True
 
 
 def _admission_digest(
@@ -741,6 +2859,7 @@ def _record(
     timestamp: datetime,
     *,
     migration_activation_digest: str | None = None,
+    policy_activation_digest: str | None = None,
     draining: bool = False,
 ) -> CanonicalMemoryRecord:
     return CanonicalMemoryRecord(
@@ -757,6 +2876,11 @@ def _record(
                 "manifest_digest": manifest.manifest_digest,
             },
             "migration_activation_digest": migration_activation_digest,
+            **(
+                {"policy_activation_digest": policy_activation_digest}
+                if policy_activation_digest is not None
+                else {}
+            ),
             "draining": draining,
         },
         status=CommitStatus.COMMITTED,
@@ -797,6 +2921,638 @@ def _migration_records(
         )
         for kind, digest, value in values
     )
+
+
+def _is_bootstrap_graph_v3_authority_write(
+    governed: list[CanonicalMemoryRecord], current: tuple[CanonicalMemoryRecord, ...],
+) -> bool:
+    """Admit only one exact pre-epoch authority record and its reverse index."""
+    if len(governed) == 1 and governed[0].source_kind == "semantic_ingestion_bootstrap_canonical_identity_authority_v3":
+        try:
+            from memorii.core.semantic_ingestion.contracts import (
+                BootstrapCanonicalIdentityBindingAllocationReloadV3,
+                decode_semantic_contract,
+                encode_semantic_contract,
+            )
+            record = governed[0]
+            raw = bytes.fromhex(record.content["canonical_hex"])
+            reload = decode_semantic_contract(raw, BootstrapCanonicalIdentityBindingAllocationReloadV3)
+            return (
+                encode_semantic_contract(reload) == raw
+                and record.memory_id == "semantic_ingestion:bootstrap-graph-v3:canonical-identity-authority:" + reload.reload_digest
+                and record.content.get("semantic_ingestion_kind") == "bootstrap_canonical_identity_authority_v3"
+                and record.content.get("reload_digest") == reload.reload_digest
+                and record.memory_id not in {item.memory_id for item in current}
+            )
+        except (KeyError, TypeError, ValueError):
+            return False
+    expected = {
+        "semantic_ingestion_bootstrap_graph_v3_pre_epoch_authority",
+        "semantic_ingestion_bootstrap_graph_v3_authority_index",
+    }
+    if len(governed) != 2 or {item.source_kind for item in governed} != expected:
+        return False
+    try:
+        from memorii.core.semantic_ingestion.contracts import (
+            BootstrapGraphTransactionAuthorityReloadV3,
+            decode_semantic_contract,
+            encode_semantic_contract,
+        )
+
+        authority = next(
+            item for item in governed
+            if item.source_kind == "semantic_ingestion_bootstrap_graph_v3_pre_epoch_authority"
+        )
+        index = next(
+            item for item in governed
+            if item.source_kind == "semantic_ingestion_bootstrap_graph_v3_authority_index"
+        )
+        raw = bytes.fromhex(authority.content["canonical_hex"])
+        reload = decode_semantic_contract(raw, BootstrapGraphTransactionAuthorityReloadV3)
+        projection = reload.publication_core.authority_projection
+        projection_digest = projection.authority_projection_digest
+        recovery_key_digest = reload.publication_receipt.recovery_key_digest
+        authority_id = "semantic_ingestion:bootstrap-graph-v3:authority:" + projection_digest
+        index_id = (
+            "semantic_ingestion:bootstrap-graph-v3:authority-index:"
+            + recovery_key_digest + ":" + projection_digest
+        )
+        current_ids = {item.memory_id for item in current}
+        return (
+            encode_semantic_contract(reload) == raw
+            and authority.memory_id == authority_id
+            and authority.content.get("semantic_ingestion_kind")
+            == "bootstrap_graph_v3_pre_epoch_authority"
+            and authority.content.get("projection_digest") == projection_digest
+            and index.memory_id == index_id
+            and index.content.get("semantic_ingestion_kind")
+            == "bootstrap_graph_v3_pre_epoch_authority_index"
+            and index.content.get("recovery_key_digest") == recovery_key_digest
+            and index.content.get("projection_digest") == projection_digest
+            and index.content.get("authority_record_id") == authority_id
+            and authority_id not in current_ids
+            and index_id not in current_ids
+        )
+    except (KeyError, StopIteration, TypeError, ValueError):
+        return False
+
+
+def _is_bootstrap_graph_v3_epoch_transition_write(
+    governed: list[CanonicalMemoryRecord], current: tuple[CanonicalMemoryRecord, ...],
+) -> bool:
+    """Admit only the sealed epoch/head/transition append closure."""
+    expected = {
+        "semantic_ingestion_bootstrap_graph_v3_epoch",
+        "semantic_ingestion_bootstrap_graph_v3_epoch_head",
+        "semantic_ingestion_bootstrap_graph_v3_epoch_transition",
+    }
+    if len(governed) != 3 or {item.source_kind for item in governed} != expected:
+        return False
+    try:
+        epoch_record = next(item for item in governed if item.source_kind.endswith("_epoch"))
+        head = next(item for item in governed if item.source_kind.endswith("_epoch_head"))
+        transition = next(item for item in governed if item.source_kind.endswith("_epoch_transition"))
+        epoch = epoch_record.content["epoch"]
+        request = transition.content["transition"]
+        # The atomic owner validates the decoded request, current control,
+        # lease and writer before emitting these records. Admission checks the
+        # immutable three-record join without reinterpreting wire enums.
+        return (
+            epoch_record.content.get("semantic_ingestion_kind") == "bootstrap_graph_v3_epoch"
+            and head.content.get("semantic_ingestion_kind") == "bootstrap_graph_v3_epoch_head"
+            and transition.content.get("semantic_ingestion_kind") == "bootstrap_graph_v3_epoch_transition"
+            and transition.content.get("epoch") == epoch
+            and head.content.get("epoch_digest") == epoch.get("epoch_digest")
+            and head.content.get("request_core_digest") == epoch.get("request_core_digest")
+            and request.get("transition_digest") == transition.content.get("transition_digest")
+        )
+    except (KeyError, StopIteration, TypeError, ValueError):
+        return False
+
+
+def _is_bootstrap_graph_v3_checkpoint_write(
+    governed: list[CanonicalMemoryRecord], current: tuple[CanonicalMemoryRecord, ...],
+) -> bool:
+    """Admit the dedicated graph checkpoint closure before generic generations.
+
+    Its member and manifest grammar is intentionally distinct from the legacy
+    generation grammar, so it must not be interpreted as an ambient operation
+    generation write.
+    """
+    kinds = [item.content.get("semantic_ingestion_kind") for item in governed]
+    retry_count = kinds.count("bootstrap_graph_v3_retry_index")
+    retry_recovery_count = kinds.count(
+        "bootstrap_graph_v3_retry_recovery_locator"
+    )
+    if (
+        len(governed) < 4
+        or kinds.count("bootstrap_graph_v3_manifest") != 1
+        or kinds.count("bootstrap_graph_v3_idempotency") != 1
+        or retry_count not in {0, 1}
+        or retry_recovery_count not in {0, 1}
+        or kinds.count("bootstrap_graph_v3_member")
+        != len(governed) - 3 - retry_count - retry_recovery_count
+        or any(
+            kind not in {
+                "bootstrap_graph_v3_member", "bootstrap_graph_v3_manifest",
+                "bootstrap_graph_v3_idempotency", "bootstrap_graph_v3_retry_index",
+                "bootstrap_graph_v3_retry_recovery_locator",
+                "preplanning_operation_control",
+            }
+            for kind in kinds
+        )
+    ):
+        return False
+    try:
+        import json
+
+        from memorii.core.semantic_ingestion.contracts import (
+            BootstrapGraphRetryRecoveryLocatorV3,
+        )
+
+        manifest = next(item for item in governed if item.content.get("semantic_ingestion_kind") == "bootstrap_graph_v3_manifest")
+        index = next(item for item in governed if item.content.get("semantic_ingestion_kind") == "bootstrap_graph_v3_idempotency")
+        control = next(item for item in governed if item.content.get("semantic_ingestion_kind") == "preplanning_operation_control")
+        request = manifest.content["request"]
+        retry = next(
+            (item for item in governed if item.content.get("semantic_ingestion_kind") == "bootstrap_graph_v3_retry_index"),
+            None,
+        )
+        retry_recovery_record = next(
+            (
+                item
+                for item in governed
+                if item.content.get("semantic_ingestion_kind")
+                == "bootstrap_graph_v3_retry_recovery_locator"
+            ),
+            None,
+        )
+        retry_recovery = (
+            None
+            if retry_recovery_record is None
+            else BootstrapGraphRetryRecoveryLocatorV3.model_validate_json(
+                json.dumps(retry_recovery_record.content["locator"])
+            )
+        )
+        members = [item.content["member"] for item in governed if item.content.get("semantic_ingestion_kind") == "bootstrap_graph_v3_member"]
+        expected_members = request["members"]
+        if (
+            members != expected_members
+            or index.content.get("request_write_digest") != request.get("write_digest")
+            or index.content.get("request_digest") != request.get("request_digest")
+            or index.content.get("publication_operation_generation")
+            != request["predecessor_generation"]["operation_generation"] + 1
+            or index.content.get("publication_artifact_generation")
+            != request["predecessor_generation"]["artifact_generation"] + 1
+            or control.content["control"].get("generation")
+            != request["predecessor_generation"]["operation_generation"] + 1
+            or (retry is not None) != (request.get("kind") == "bootstrap_graph_retry_checkpoint")
+            or (retry_recovery is not None)
+            != (request.get("kind") == "bootstrap_graph_retry_checkpoint")
+            or (
+                retry is not None
+                and (
+                    retry.content.get("request_digest") != request.get("request_digest")
+                    or retry.content.get("write_digest") != request.get("write_digest")
+                )
+            )
+            or (
+                retry_recovery is not None
+                and (
+                    retry_recovery_record is None
+                    or retry_recovery_record.source_kind
+                    != "semantic_ingestion_bootstrap_graph_v3_retry_recovery_locator"
+                    or retry_recovery_record.memory_id
+                    != (
+                        "semantic_ingestion:bootstrap-graph-v3:retry-recovery:"
+                        + request["operation_fence_binding"]["binding_digest"]
+                    )
+                    or retry_recovery.request_digest != request.get("request_digest")
+                    or retry_recovery.checkpoint_write_digest
+                    != request.get("write_digest")
+                    or retry_recovery.checkpoint_manifest_id != manifest.memory_id
+                    or retry_recovery.operation_fence_binding_digest
+                    != request["operation_fence_binding"]["binding_digest"]
+                    or retry_recovery.normalization_replay_digest
+                    != request.get("normalization_replay_digest")
+                    or retry_recovery.normalization_result_digest
+                    != request.get("normalization_result_digest")
+                    or retry_recovery.checkpoint_request.model_dump(mode="json")
+                    != request
+                )
+            )
+        ):
+            return False
+        prior = next((item.content.get("control") for item in current if item.memory_id == control.memory_id), None)
+        predecessor = request["predecessor_generation"]
+        return (
+            isinstance(prior, dict)
+            and predecessor.get("operation_generation") == prior.get("generation")
+            and predecessor.get("artifact_generation") == prior.get("generation")
+            and request["predecessor_generation"]["operation_generation"] == prior.get("generation")
+            and request["predecessor_generation"]["artifact_generation"] == prior.get("generation")
+            and request.get("operation_fence_binding", {}).get("binding_digest")
+            == prior.get("operation_fence", {}).get("binding_digest")
+        )
+    except (KeyError, StopIteration, TypeError, ValueError):
+        return False
+
+
+def _is_bootstrap_graph_v3_group_commit_write(
+    governed: list[CanonicalMemoryRecord], current: tuple[CanonicalMemoryRecord, ...],
+) -> bool:
+    """Admit only the complete native group-commit CAS closure."""
+    from memorii.core.semantic_ingestion.contracts import (
+        BootstrapGraphGroupCommitReloadV3,
+        BootstrapGraphGroupCommitRequestV3,
+        BootstrapGraphOperationCommitResultV3,
+        decode_semantic_contract,
+        encode_semantic_contract,
+    )
+    from memorii.core.semantic_ingestion.event_replay import (
+        SemanticMemoryEventBatch,
+        decode_semantic_replay_state,
+    )
+
+    kinds = [item.content.get("semantic_ingestion_kind") for item in governed]
+    if (
+        kinds.count("preplanning_operation_control") != 1
+        or kinds.count("bootstrap_graph_v3_group_commit_primary") != 1
+        or any(
+            kind not in {
+                "preplanning_operation_control",
+                "bootstrap_graph_v3_group_commit_primary",
+                "bootstrap_graph_v3_group_commit_fanout",
+                "bootstrap_graph_v3_group_commit_effect",
+                "semantic_event_batch",
+                "semantic_replay_state",
+                "reference_integrity_ledger",
+            }
+            for kind in kinds
+        )
+    ):
+        return False
+    try:
+        control_record = next(
+            item
+            for item in governed
+            if item.content.get("semantic_ingestion_kind")
+            == "preplanning_operation_control"
+        )
+        primary = next(
+            item
+            for item in governed
+            if item.content.get("semantic_ingestion_kind")
+            == "bootstrap_graph_v3_group_commit_primary"
+        )
+        request_raw = bytes.fromhex(primary.content["request_hex"])
+        reload_raw = bytes.fromhex(primary.content["reload_hex"])
+        request = decode_semantic_contract(
+            request_raw, BootstrapGraphGroupCommitRequestV3
+        )
+        reload = decode_semantic_contract(
+            reload_raw, BootstrapGraphGroupCommitReloadV3
+        )
+        if (
+            encode_semantic_contract(request) != request_raw
+            or encode_semantic_contract(reload) != reload_raw
+            or reload.source_operation_id != request.source_operation_id
+            or reload.transaction_group_id != request.transaction_group_id
+            or reload.operation_ids != request.operation_ids
+            or reload.request_ctv_digest != request.request_ctv_digest
+        ):
+            return False
+
+        operation_ids = request.operation_ids
+        fanouts = [
+            item
+            for item in governed
+            if item.content.get("semantic_ingestion_kind")
+            == "bootstrap_graph_v3_group_commit_fanout"
+        ]
+        effects = [
+            item
+            for item in governed
+            if item.content.get("semantic_ingestion_kind")
+            == "bootstrap_graph_v3_group_commit_effect"
+        ]
+        if len(fanouts) != len(operation_ids):
+            return False
+
+        primary_key = encode_typed_value(
+            (
+                request.source_operation_id,
+                request.transaction_group_id,
+                operation_ids,
+                request.request_ctv_digest,
+            )
+        )
+        expected_primary_id = (
+            "semantic_ingestion:bootstrap-graph-v3:group-commit:"
+            + sha256(primary_key).hexdigest()
+        )
+        if primary.memory_id != expected_primary_id:
+            return False
+
+        fanout_by_operation = {
+            item.content.get("member_operation_id"): item for item in fanouts
+        }
+        if (
+            tuple(fanout_by_operation) != operation_ids
+        ):
+            return False
+        effect_by_coordinate = {
+            (item.content.get("operation_id"), item.content.get("kind")): item
+            for item in effects
+        }
+        if len(effect_by_coordinate) != len(effects):
+            return False
+        result_by_operation = {
+            item.operation_id: item
+            for item in reload.persisted_result.core.ordered_operation_results
+        }
+        if tuple(result_by_operation) != operation_ids:
+            return False
+        canonical_event_records = [
+            item
+            for item in governed
+            if item.content.get("semantic_ingestion_kind") == "semantic_event_batch"
+        ]
+        canonical_replay_records = [
+            item
+            for item in governed
+            if item.content.get("semantic_ingestion_kind") == "semantic_replay_state"
+        ]
+        canonical_reference_records = [
+            item
+            for item in governed
+            if item.content.get("semantic_ingestion_kind")
+            == "reference_integrity_ledger"
+        ]
+        committed = reload.persisted_result.core.disposition == "committed"
+        if (
+            len(canonical_event_records) != (1 if committed else 0)
+            or len(canonical_replay_records) != (1 if committed else 0)
+            or len(canonical_reference_records) != (1 if committed else 0)
+        ):
+            return False
+        for operation_id in operation_ids:
+            fanout = fanout_by_operation[operation_id]
+            expected_fanout_key = encode_typed_value(
+                (
+                    request.source_operation_id,
+                    request.transaction_group_id,
+                    operation_id,
+                    request.request_ctv_digest,
+                )
+            )
+            if (
+                fanout.memory_id
+                != "semantic_ingestion:bootstrap-graph-v3:group-commit-fanout:"
+                + sha256(expected_fanout_key).hexdigest()
+                or fanout.content.get("source_operation_id")
+                != request.source_operation_id
+                or fanout.content.get("transaction_group_id")
+                != request.transaction_group_id
+                or tuple(fanout.content.get("operation_ids", ())) != operation_ids
+                or fanout.content.get("request_ctv_digest")
+                != request.request_ctv_digest
+                or fanout.content.get("primary_id") != expected_primary_id
+                or fanout.content.get("reload_digest") != reload.reload_digest
+            ):
+                return False
+            result_effect = effect_by_coordinate.get((operation_id, "result"))
+            observation_effect = effect_by_coordinate.get(
+                (operation_id, "observation_delta")
+            )
+            if result_effect is None or observation_effect is None:
+                return False
+            effect = result_effect
+            payload = bytes.fromhex(effect.content["payload_hex"])
+            result = decode_semantic_contract(
+                payload, BootstrapGraphOperationCommitResultV3
+            )
+            if (
+                encode_semantic_contract(result) != payload
+                or result != result_by_operation[operation_id]
+                or effect.content.get("primary_id") != expected_primary_id
+                or effect.content.get("kind") != "result"
+                or effect.content.get("payload_digest")
+                != sha256(payload).hexdigest()
+                or effect.content.get("carrier_digest") != result.result_digest
+            ):
+                return False
+            expected_effect_kinds = {"result", "observation_delta"}
+            if result.final_status == "accepted":
+                expected_effect_kinds.update({"graph_delta", "event_batch"})
+            actual_effect_kinds = {
+                kind
+                for candidate_operation_id, kind in effect_by_coordinate
+                if candidate_operation_id == operation_id
+            }
+            if actual_effect_kinds != expected_effect_kinds:
+                return False
+            expected_digests = {
+                "graph_delta": result.graph_delta_digest,
+                "event_batch": result.event_batch_digest,
+                "observation_delta": result.observation_delta_digest,
+            }
+            for kind in expected_effect_kinds - {"result"}:
+                carrier = effect_by_coordinate[(operation_id, kind)]
+                carrier_payload = bytes.fromhex(carrier.content["payload_hex"])
+                if (
+                    carrier.content.get("primary_id") != expected_primary_id
+                    or carrier.content.get("payload_digest")
+                    != sha256(carrier_payload).hexdigest()
+                    or carrier.content.get("carrier_digest")
+                    != expected_digests[kind]
+                ):
+                    return False
+
+        if committed:
+            batch_raw = bytes.fromhex(canonical_event_records[0].content["canonical_hex"])
+            state_raw = bytes.fromhex(canonical_replay_records[0].content["canonical_hex"])
+            batch_envelope = decode_typed_value(batch_raw)
+            if (
+                not isinstance(batch_envelope, dict)
+                or batch_envelope.get("schema")
+                != "memorii.semantic-memory-event-batch-envelope.v1"
+            ):
+                return False
+            batch = SemanticMemoryEventBatch.model_validate(
+                batch_envelope.get("payload")
+            )
+            state = decode_semantic_replay_state(state_raw)
+            from memorii.core.memory_evolution.reference_integrity import (
+                ReferenceEdgeLedgerSnapshot,
+                validate_reference_integrity_converse,
+            )
+
+            reference_snapshot = ReferenceEdgeLedgerSnapshot.model_validate(
+                decode_typed_value(bytes.fromhex(
+                    canonical_reference_records[0].content["canonical_hex"]
+                ))
+            )
+            validate_reference_integrity_converse(reference_snapshot, state)
+            expected_record_digests = tuple(sorted(
+                record["record_digest"]
+                for operation_id in operation_ids
+                for record in decode_typed_value(bytes.fromhex(
+                    effect_by_coordinate[(operation_id, "graph_delta")].content[
+                        "payload_hex"
+                    ]
+                ))
+            ))
+            batch_record_digests = tuple(sorted(
+                event.payload.record_digest for event in batch.events
+            ))
+            if (
+                batch.transaction_group_id != request.transaction_group_id
+                or batch.operation_fence_id
+                != request.operation_fence_binding.operation_fence_id
+                or batch.source_id != request.operation_fence_binding.source_id
+                or batch.writer_epoch
+                != request.writer_commit_binding.expected_writer_epoch
+                or batch_record_digests != expected_record_digests
+                or state.last_event_batch_digest != batch.event_batch_digest
+                or state.graph_revision
+                != reload.persisted_result.core.graph_revision_after
+                or canonical_event_records[0].content.get("event_batch_digest")
+                != batch.event_batch_digest
+                or canonical_replay_records[0].content.get("state_digest")
+                != state.state_digest
+                or canonical_reference_records[0].content.get("ledger_digest")
+                != reference_snapshot.ledger_digest
+            ):
+                return False
+
+        proposed_control = control_record.content["control"]
+        prior = next(
+            (
+                item.content.get("control")
+                for item in current
+                if item.memory_id == control_record.memory_id
+            ),
+            None,
+        )
+        successor = reload.successor_generation
+        # The prior control body is untyped persisted JSON (dict[str, Any]);
+        # bind the generation lookup once so the arithmetic below checks the
+        # exact same value the boolean chain compares.
+        prior_generation: Any = prior.get("generation") if isinstance(prior, dict) else None
+        return (
+            isinstance(prior, dict)
+            and request.expected_generation.operation_generation
+            == prior_generation
+            and request.expected_generation.artifact_generation
+            == prior_generation
+            and proposed_control.get("generation") == prior_generation + 1
+            and successor.operation_generation == proposed_control.get("generation")
+            and successor.artifact_generation == proposed_control.get("generation")
+            and proposed_control.get("last_request_digest")
+            == request.request_ctv_digest
+            and proposed_control.get("graph_revision")
+            == reload.persisted_result.core.graph_revision_after
+            and proposed_control.get("observation_revision")
+            == reload.persisted_result.core.observation_revision_after
+            and tuple(proposed_control.get("group_result_digests", ()))
+            == (*tuple(prior.get("group_result_digests", ())), reload.persisted_result.result_digest)
+        )
+    except (KeyError, StopIteration, TypeError, ValueError):
+        return False
+
+
+def _is_bootstrap_graph_v3_terminal_write(
+    governed: list[CanonicalMemoryRecord], current: tuple[CanonicalMemoryRecord, ...],
+) -> bool:
+    """Admit only the complete V3 terminal publication closure."""
+    kinds = [item.content.get("semantic_ingestion_kind") for item in governed]
+    fixed = {
+        "preplanning_operation_control",
+        "bootstrap_graph_v3_terminal_manifest",
+        "bootstrap_graph_v3_terminal_control",
+        "bootstrap_graph_v3_terminal_identity",
+    }
+    if (
+        len(governed) < 8
+        or any(kinds.count(kind) != 1 for kind in fixed)
+        or kinds.count("bootstrap_graph_v3_terminal_locator") != 3
+        or kinds.count("bootstrap_graph_v3_member") != len(governed) - len(fixed) - 3
+        or any(
+            kind not in fixed | {
+                "bootstrap_graph_v3_member", "bootstrap_graph_v3_terminal_locator",
+            }
+            for kind in kinds
+        )
+    ):
+        return False
+    try:
+        control_record = next(
+            item for item in governed
+            if item.content.get("semantic_ingestion_kind") == "preplanning_operation_control"
+        )
+        manifest = next(
+            item for item in governed
+            if item.content.get("semantic_ingestion_kind") == "bootstrap_graph_v3_terminal_manifest"
+        ).content
+        terminal = next(
+            item for item in governed
+            if item.content.get("semantic_ingestion_kind") == "bootstrap_graph_v3_terminal_control"
+        ).content["terminal_control"]
+        identity = next(
+            item for item in governed
+            if item.content.get("semantic_ingestion_kind") == "bootstrap_graph_v3_terminal_identity"
+        ).content["identity"]
+        locator = next(
+            item for item in governed
+            if item.content.get("semantic_ingestion_kind") == "bootstrap_graph_v3_terminal_locator"
+            and "handoff_digest" in item.content
+        ).content
+        request_index = next(
+            item for item in governed
+            if item.content.get("semantic_ingestion_kind") == "bootstrap_graph_v3_terminal_locator"
+            and "coordinator_request_digest" in item.content
+        ).content
+        recovery_index = next(
+            item for item in governed
+            if item.content.get("semantic_ingestion_kind") == "bootstrap_graph_v3_terminal_locator"
+            and "normalization_recovery_key_digest" in item.content
+        ).content
+        members = tuple(
+            item.content["member"] for item in governed
+            if item.content.get("semantic_ingestion_kind") == "bootstrap_graph_v3_member"
+        )
+        control = control_record.content["control"]
+        prior = next(
+            (item.content.get("control") for item in current if item.memory_id == control_record.memory_id),
+            None,
+        )
+        return (
+            isinstance(prior, dict)
+            and control.get("generation") == prior.get("generation", -1) + 1
+            and control.get("state") == "terminal"
+            and control.get("lease") is None
+            and manifest.get("members") == members
+            and terminal.get("state") == "terminal_published"
+            and terminal.get("publication_operation_generation") == control.get("generation")
+            and terminal.get("publication_artifact_generation") == control.get("generation")
+            and identity.get("member_manifest_digest") == manifest.get("manifest_digest")
+            and identity.get("terminal_control_digest") == terminal.get("terminal_control_digest")
+            and identity.get("locator_digest") == terminal.get("locator_digest")
+            and locator.get("locator_digest") == terminal.get("locator_digest")
+            and locator.get("reload", {}).get("final_write_identity") == identity
+            and locator.get("reload", {}).get("terminal_control") == terminal
+            and request_index.get("locator_digest") == terminal.get("locator_digest")
+            and request_index.get("reload") == locator.get("reload")
+            and request_index.get("coordinator_request_digest")
+            == terminal.get("request_digest")
+            and recovery_index.get("locator_digest") == terminal.get("locator_digest")
+            and recovery_index.get("reload") == locator.get("reload")
+            and recovery_index.get("normalization_replay_digest")
+            == identity.get("normalization_replay_digest")
+        )
+    except (KeyError, StopIteration, TypeError, ValueError):
+        return False
 
 
 def _from_record(record: CanonicalMemoryRecord) -> tuple[SemanticWriterAdmission, SemanticRecordOwnershipManifest]:

@@ -1,0 +1,56 @@
+{
+  "artifact_kind": "graph_dependent_transaction_coordinator_design_candidate_identity",
+  "schema_version": 1,
+  "created_at": "2026-08-09",
+  "review_mode": "full",
+  "git_head": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "branch": "semantic-indexing-m4",
+  "pre_identity_dirty_tree_status_sha256": "7b3eafd0355145a828a418cbeb5a0f3c55ddd5c20a538088b7f4bb111cdddd74",
+  "pre_identity_dirty_tree_binary_diff_sha256": "91d3993cc8809f64d5156e7db58d0e7bd3552ead39eff2159f54280342d307cd",
+  "reviewed_artifacts": [
+    {
+      "path": "docs/design/semantic_ingestion_architecture.md",
+      "sha256": "770b6c60272e8e985ec8b21a16b6c1e02f6df9675f2cfbf207d025cf053b0149"
+    },
+    {
+      "path": "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md",
+      "sha256": "4286bfe7fdea2a8971cca8792f2e93917226227b0cc78d0a697fdafc8c5d9f74"
+    },
+    {
+      "path": "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json",
+      "sha256": "3cba90adbcf1e694465bef18ecddd8536070fa42b0e56c6a177ee13087bc53c5"
+    }
+  ],
+  "parent_reviews": [
+    "docs/reviews/semantic-ingestion-graph-dependent-transaction-coordinator/full-review-2026-08-09.md",
+    "docs/reviews/semantic-ingestion-graph-dependent-transaction-coordinator/full-review-remediation-1-2026-08-09.md",
+    "docs/reviews/semantic-ingestion-graph-dependent-transaction-coordinator/full-review-remediation-2-2026-08-09.md"
+  ],
+  "parent_review_outcome": "changes_required",
+  "remediated_findings": [
+    "DREV-001",
+    "DREV-002",
+    "DREV-003",
+    "DREV-004",
+    "DREV-005",
+    "DREV-006",
+    "DREV-007",
+    "DREV-008",
+    "DREV-009",
+    "DREV-010",
+    "DREV-011",
+    "DREV-012",
+    "DREV-013"
+  ],
+  "scope": "M3.1 Steps 5-8 graph-dependent transaction coordinator design only",
+  "exclusions": [
+    "production implementation",
+    "M4 conflict presentation and clarification semantics",
+    "terminal persistence performance",
+    "externally signed production activation",
+    "unrelated dirty-tree artifacts"
+  ],
+  "production_mapping_expected_counts": [1, 1, 4, 0, 0, 0, 0, 0, 1, 4, 1],
+  "production_mapping_status": "reproduced",
+  "candidate_status": "frozen_for_full_review"
+}

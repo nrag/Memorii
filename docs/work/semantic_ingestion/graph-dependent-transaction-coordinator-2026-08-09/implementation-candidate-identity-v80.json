@@ -1,0 +1,36 @@
+{
+  "artifact_kind": "implementation_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_v3_m31_review_ready_active_state",
+  "semantic_predecessor": "design-candidate-identity-v76.json",
+  "implementation_predecessor": "implementation-candidate-identity-v79.json",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree_stable",
+  "status_list_sha256": "710e24d2bdc5ebad3e092c313c77421a1de87bbd941f3b5c2f75f644ca14aa0e",
+  "delta_scope": [
+    "retain the v78 runtime persistence composition and verification bytes unchanged",
+    "retain the v79 active resume and parent-index correction",
+    "supersede the completed pre-freeze action in the active M3.1 implementation packet",
+    "state one exact current action for v80 review reconciliation and branch-gate audit"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "83a9fe92adde7cb45072c8d2b8aa43c0eaa68df456df0c4aab35f9002af14364",
+    "docs/work/semantic_ingestion/implementation.plan.md": "49cfde5ede82d3f23f47197aa1954829997a197c4f6130e34792ef60a10ace74",
+    "docs/work/semantic_ingestion/resume.md": "c26d4fa1e68516d9288a70aff67677ee42fb7ce9a918b3ccc094aa45b3aedadc",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/implementation.plan.md": "95090d1ffc540db3cea8d422cf2a0476f95dd7453ea37a8bd24513014f75f5f0",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "838d36c8e8865ea9610e8a9bf5b60e855c342005062f1e475f9cf62b7a8baf98",
+    "docs/work/semantic_ingestion/bootstrap-graph-authority-unavailable-2026-08-11/debug.plan.md": "b9e435febd05c620e94a498553a5ac16d7c90abd23244bbcd9fb679afce6e15b",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/implementation-candidate-identity-v79.json": "4bb0028c75025dea4a585991902d1dcdf6783450e07f6d34041977e52c9329c1"
+  },
+  "evidence": [
+    "v78 test review reports empty validated P1/P2 blockers and changes-required arrays",
+    "v79 specification delta review confirms resume and parent index alignment and identifies only the stale active implementation next action",
+    "v80 updates that one action and the candidate references without production or test changes",
+    "two stable artifact and status-list identity passes",
+    "JSON parsing and git diff check passed"
+  ],
+  "evidence_maturity": "governance_delta_frozen_for_targeted_review",
+  "remaining_validated_p1_p2": [],
+  "remaining_blocks_approval": [],
+  "remaining_changes_required": []
+}

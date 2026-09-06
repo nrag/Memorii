@@ -1,0 +1,28 @@
+{
+  "schema": "memorii.semantic-ingestion.canonical-evidence.thin-fixture-grammar.v3",
+  "purpose": "exact positive AST/dataflow grammar for every runner module and function body",
+  "modules": {
+    "canonical_evidence_performance_runner.py": {
+      "top_level_imports": ["__future__.annotations"],
+      "top_level_definitions": ["_execute_declared_cell"],
+      "top_level_assignments": ["CAPTURE_ENTRYPOINT = '_execute_declared_cell'"],
+      "cell_function_signature": "FunctionDef _execute_declared_cell(cell, factory, root_constructor, operation) with no decorators, annotations, return annotation, type parameters, defaults, keyword-only/default/variadic parameters, function or assignment type comment, module type ignore, async form, yield, or metadata beyond this exact signature",
+      "cell_template": [
+        "authority = factory(host_bootstrap_capability=cell['host_bootstrap_capability'], host_bootstrap_material_verifier=cell['host_bootstrap_material_verifier'], server_time=cell['server_time'])",
+        "service = root_constructor(verified_production_host_authority=authority)",
+        "result = service.sync_event(operation=operation, content=cell['content'], operation_id=cell['operation_identity'], authenticated_host_ingress=cell['authenticated_host_ingress'])",
+        "return result"
+      ],
+      "prohibitions": [
+        "If", "For", "While", "Try", "With", "comprehension", "lambda", "getattr", "setattr",
+        "attribute_assignment", "subscript_assignment", "authority_alias", "factory_alias",
+        "unknown_expression", "extra_side_effect", "direct_terminal", "fabricated_definition",
+        "decorator", "parameter_annotation", "return_annotation", "type_parameters",
+        "default_argument", "keyword_default", "async_function", "generator", "type_comment"
+      ],
+      "module_rule": "The module contains only its docstring, future import, exact cell function, and declarative entrypoint assignment. It has no main, helper, class, import-time call, terminal, side effect, or evidence value.",
+      "receipt_trace_rule": "Only a production result may leave the cell template. Receipt and trace serialization is child-owned after in-process opaque-object identity/type validation; fixture code cannot create, recompute, mutate, serialize, or otherwise fabricate either value."
+    }
+  },
+      "rejection": "Any omitted or replaced factory source/call, cell-sourced authority, alias, branch (including if False), loop, exception/context block, second or zero sync_event call, direct terminal call, fabricated class/function/receipt/trace, unknown expression, assignment, import, module side effect, dataflow edge, FunctionDef decorator, parameter or return annotation, type parameter, default or keyword default, variadic or keyword-only parameter, function or assignment type comment, module type ignore, async form, generator/yield, or metadata outside the exact declared signature anywhere fails closed."
+}

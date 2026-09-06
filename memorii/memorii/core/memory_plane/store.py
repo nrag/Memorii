@@ -3,20 +3,77 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 import tempfile
 from collections.abc import Callable
 from contextlib import AbstractContextManager
 from pathlib import Path
+from secrets import token_bytes
 from threading import RLock
-from typing import Annotated, Literal, Protocol
+from typing import Annotated, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from memorii.core.memory_plane.file_lock import locked_file
 from memorii.core.memory_plane.models import CanonicalMemoryRecord, MemoryRecordFence
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
+
+SEMANTIC_CHECKPOINT_SECRET_PURPOSE = "semantic-ingestion-replay-checkpoint-signing"
+_SEMANTIC_CHECKPOINT_KEY_ID = "semantic-ingestion-checkpoint-key"
+_SEMANTIC_CHECKPOINT_SIGNATURE_DOMAIN = b"memorii.semantic-replay-checkpoint-signature.v1\0"
+
+
+@runtime_checkable
+class CheckpointSignatureAuthority(Protocol):
+    """Opaque backend-owned signer/verifier without raw-key access."""
+
+    @property
+    def key_id(self) -> str: ...
+
+    @property
+    def public_key_fingerprint(self) -> str: ...
+
+    def sign_checkpoint_digest(self, checkpoint_digest: str) -> str: ...
+
+    def verify_checkpoint_signature(
+        self,
+        checkpoint_digest: str,
+        signature: str,
+    ) -> bool: ...
+
+
+class _BackendCheckpointSignatureAuthority:
+    __slots__ = ("_secret",)
+
+    def __init__(self, secret: bytes) -> None:
+        self._secret = secret
+
+    @property
+    def key_id(self) -> str:
+        return _SEMANTIC_CHECKPOINT_KEY_ID
+
+    @property
+    def public_key_fingerprint(self) -> str:
+        return hashlib.sha256(self._secret).hexdigest()
+
+    def sign_checkpoint_digest(self, checkpoint_digest: str) -> str:
+        return hmac.new(
+            self._secret,
+            _SEMANTIC_CHECKPOINT_SIGNATURE_DOMAIN + checkpoint_digest.encode("ascii"),
+            hashlib.sha256,
+        ).hexdigest()
+
+    def verify_checkpoint_signature(
+        self,
+        checkpoint_digest: str,
+        signature: str,
+    ) -> bool:
+        return hmac.compare_digest(
+            self.sign_checkpoint_digest(checkpoint_digest),
+            signature,
+        )
 
 
 class MemoryPlaneRevisionConflictError(RuntimeError):
@@ -104,6 +161,11 @@ class _PersistedBatch(BaseModel):
 
 
 class MemoryPlaneStore(Protocol):
+    @property
+    def durable(self) -> bool: ...
+
+    def load_or_create_protected_secret(self, *, purpose: str, length: int) -> bytes: ...
+
     def write_records(
         self, records: tuple[CanonicalMemoryRecord, ...], *, authorization: MemoryPlaneWriteAuthorization | None = None
     ) -> int: ...
@@ -155,6 +217,56 @@ class InMemoryMemoryPlaneStore:
         self._revision = 0
         self._lock = RLock()
         self._governed_write_policy: GovernedWritePolicy | None = None
+        self._protected_secrets: dict[str, bytes] = {}
+        self._checkpoint_signature_owner: object | None = None
+        self._checkpoint_signature_authority: _BackendCheckpointSignatureAuthority | None = None
+
+    @property
+    def durable(self) -> bool:
+        return False
+
+    def load_or_create_protected_secret(self, *, purpose: str, length: int) -> bytes:
+        if purpose == SEMANTIC_CHECKPOINT_SECRET_PURPOSE:
+            raise PermissionError("checkpoint signing material is backend-private")
+        return self._load_or_create_protected_secret(
+            purpose=purpose,
+            length=length,
+        )
+
+    def _load_or_create_protected_secret(
+        self,
+        *,
+        purpose: str,
+        length: int,
+    ) -> bytes:
+        if not purpose or length < 32:
+            raise ValueError("protected secret purpose or length is invalid")
+        with self._lock:
+            secret = self._protected_secrets.get(purpose)
+            if secret is None:
+                secret = token_bytes(length)
+                self._protected_secrets[purpose] = secret
+            if len(secret) != length:
+                raise MemoryPlaneCorruptionError("protected secret length changed")
+            return bytes(secret)
+
+    def _claim_semantic_checkpoint_signature_authority(
+        self,
+        *,
+        owner: object,
+    ) -> CheckpointSignatureAuthority:
+        with self._lock:
+            if self._checkpoint_signature_owner is None:
+                self._checkpoint_signature_owner = owner
+            elif self._checkpoint_signature_owner is not owner:
+                raise PermissionError("checkpoint signing authority is already owned")
+            if self._checkpoint_signature_authority is None:
+                secret = self._load_or_create_protected_secret(
+                    purpose=SEMANTIC_CHECKPOINT_SECRET_PURPOSE,
+                    length=32,
+                )
+                self._checkpoint_signature_authority = _BackendCheckpointSignatureAuthority(secret)
+            return self._checkpoint_signature_authority
 
     def install_governed_write_policy(self, policy: GovernedWritePolicy) -> None:
         self._governed_write_policy = policy
@@ -259,6 +371,82 @@ class JsonlMemoryPlaneStore:
         self._lock_path = self._base_path / "memory_records.lock"
         self._base_path.mkdir(parents=True, exist_ok=True)
         self._governed_write_policy: GovernedWritePolicy | None = None
+        self._checkpoint_signature_owner: object | None = None
+        self._checkpoint_signature_authority: _BackendCheckpointSignatureAuthority | None = None
+        # Repeated control-plane reads happen under the existing file lock.
+        # Cache only a fully validated snapshot and key it to identity metadata
+        # so a second store handle's replace is observed immediately.
+        self._validated_batches: list[_PersistedBatch] | None = None
+        self._validated_batches_identity: tuple[int, int, int, int] | None = None
+        self._materialized_records: dict[str, CanonicalMemoryRecord] | None = None
+        self._materialized_records_identity: tuple[int, int, int, int] | None = None
+
+    @property
+    def durable(self) -> bool:
+        return True
+
+    def load_or_create_protected_secret(self, *, purpose: str, length: int) -> bytes:
+        if purpose == SEMANTIC_CHECKPOINT_SECRET_PURPOSE:
+            raise PermissionError("checkpoint signing material is backend-private")
+        return self._load_or_create_protected_secret(
+            purpose=purpose,
+            length=length,
+        )
+
+    def _load_or_create_protected_secret(
+        self,
+        *,
+        purpose: str,
+        length: int,
+    ) -> bytes:
+        if not purpose or length < 32:
+            raise ValueError("protected secret purpose or length is invalid")
+        protected = self._base_path / ".protected"
+        secret_path = protected / f"{hashlib.sha256(purpose.encode('utf-8')).hexdigest()}.key"
+        with self._locked(exclusive=True):
+            protected.mkdir(mode=0o700, parents=True, exist_ok=True)
+            os.chmod(protected, 0o700)
+            if secret_path.exists():
+                try:
+                    mode = secret_path.stat().st_mode & 0o777
+                    secret = secret_path.read_bytes()
+                except OSError as exc:
+                    raise MemoryPlaneCorruptionError("protected secret is unreadable") from exc
+                if mode & 0o077 or len(secret) != length:
+                    raise MemoryPlaneCorruptionError("protected secret permissions or length are invalid")
+                return secret
+            secret = token_bytes(length)
+            descriptor = os.open(
+                secret_path,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                0o600,
+            )
+            try:
+                written = os.write(descriptor, secret)
+                if written != len(secret):
+                    raise OSError("partial protected-secret write")
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+            _fsync_directory(protected)
+            return secret
+
+    def _claim_semantic_checkpoint_signature_authority(
+        self,
+        *,
+        owner: object,
+    ) -> CheckpointSignatureAuthority:
+        if self._checkpoint_signature_owner is None:
+            self._checkpoint_signature_owner = owner
+        elif self._checkpoint_signature_owner is not owner:
+            raise PermissionError("checkpoint signing authority is already owned")
+        if self._checkpoint_signature_authority is None:
+            secret = self._load_or_create_protected_secret(
+                purpose=SEMANTIC_CHECKPOINT_SECRET_PURPOSE,
+                length=32,
+            )
+            self._checkpoint_signature_authority = _BackendCheckpointSignatureAuthority(secret)
+        return self._checkpoint_signature_authority
 
     def install_governed_write_policy(self, policy: GovernedWritePolicy) -> None:
         self._governed_write_policy = policy
@@ -283,11 +471,11 @@ class JsonlMemoryPlaneStore:
         self, records: tuple[CanonicalMemoryRecord, ...], *, authorization: MemoryPlaneWriteAuthorization | None = None
     ) -> int:
         with self._locked(exclusive=True):
-            batches = self._read_batches_unlocked()
+            batches, current_records = self._current_records_unlocked()
             _validate_governed_write(
                 self._governed_write_policy,
                 records,
-                tuple(_records_from_batches(batches).values()),
+                tuple(current_records.values()),
                 authorization,
             )
             next_revision = batches[-1].revision + 1 if batches else 1
@@ -322,18 +510,18 @@ class JsonlMemoryPlaneStore:
         with self._locked(exclusive=True):
             if transaction_precondition is not None:
                 transaction_precondition()
-            batches = self._read_batches_unlocked()
+            batches, current_records = self._current_records_unlocked()
             actual_revision = batches[-1].revision if batches else 0
             actual_data_revision = batches[-1].data_revision if batches else 0
             if expected_revision is not None and expected_revision != actual_data_revision:
                 raise MemoryPlaneRevisionConflictError(
                     f"memory-plane revision changed: expected {expected_revision}, actual {actual_data_revision}"
                 )
-            _validate_preconditions(_records_from_batches(batches), preconditions)
+            _validate_preconditions(current_records, preconditions)
             _validate_governed_write(
                 self._governed_write_policy,
                 records,
-                tuple(_records_from_batches(batches).values()),
+                tuple(current_records.values()),
                 authorization,
             )
             next_revision = actual_revision + 1
@@ -352,14 +540,15 @@ class JsonlMemoryPlaneStore:
 
     def read_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]:
         with self._locked(exclusive=False):
-            batches = self._read_batches_unlocked()
-            latest_by_id = _records_from_batches(batches)
+            batches, latest_by_id = self._current_records_unlocked()
             revision = batches[-1].data_revision if batches else 0
             return revision, tuple(_clone_record(record) for record in latest_by_id.values())
 
     def get_record(self, memory_id: str) -> CanonicalMemoryRecord | None:
-        _, records = self.read_snapshot()
-        return next((record for record in records if record.memory_id == memory_id), None)
+        with self._locked(exclusive=False):
+            _, latest_by_id = self._current_records_unlocked()
+            record = latest_by_id.get(memory_id)
+            return _clone_record(record) if record is not None else None
 
     def list_records(
         self,
@@ -369,16 +558,40 @@ class JsonlMemoryPlaneStore:
         source_kind: str | None = None,
     ) -> list[CanonicalMemoryRecord]:
         domain_set = set(domains) if domains is not None else None
-        _, records = self.read_snapshot()
-        return [
-            item
-            for item in records
-            if (status is None or item.status == status)
-            and (domain_set is None or item.domain in domain_set)
-            and (source_kind is None or item.source_kind == source_kind)
-        ]
+        with self._locked(exclusive=False):
+            _, latest_by_id = self._current_records_unlocked()
+            return [
+                _clone_record(item)
+                for item in latest_by_id.values()
+                if (status is None or item.status == status)
+                and (domain_set is None or item.domain in domain_set)
+                and (source_kind is None or item.source_kind == source_kind)
+            ]
+
+    def _current_records_unlocked(self) -> tuple[list[_PersistedBatch], dict[str, CanonicalMemoryRecord]]:
+        try:
+            batches = self._read_batches_unlocked()
+            identity = self._validated_batches_identity
+            if self._materialized_records is not None and self._materialized_records_identity == identity:
+                return batches, self._materialized_records
+            latest_by_id = _records_from_batches(batches)
+        except BaseException:
+            self._validated_batches = None
+            self._validated_batches_identity = None
+            self._materialized_records = None
+            self._materialized_records_identity = None
+            raise
+        self._materialized_records = latest_by_id
+        self._materialized_records_identity = identity
+        return batches, latest_by_id
 
     def _read_batches_unlocked(self) -> list[_PersistedBatch]:
+        identity = self._records_identity_unlocked()
+        if (
+            self._validated_batches is not None
+            and self._validated_batches_identity == identity
+        ):
+            return self._validated_batches
         batches: list[_PersistedBatch] = []
         expected_revision = 1
         for line_number, line in enumerate(self._iter_jsonl_lines_unlocked(), start=1):
@@ -398,7 +611,20 @@ class JsonlMemoryPlaneStore:
                 )
             batches.append(batch)
             expected_revision += 1
+        # Never cache an exception or incomplete tail: only this fully
+        # parsed, checksum-validated sequence is reusable under the lock.
+        self._validated_batches = batches
+        self._validated_batches_identity = identity
         return batches
+
+    def _records_identity_unlocked(self) -> tuple[int, int, int, int] | None:
+        if not self._records_path.exists():
+            return None
+        try:
+            stat = self._records_path.stat()
+        except OSError as exc:
+            raise MemoryPlaneCorruptionError("cannot stat memory-plane log") from exc
+        return (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns)
 
     def _iter_jsonl_lines_unlocked(self) -> list[str]:
         if not self._records_path.exists():
@@ -412,6 +638,8 @@ class JsonlMemoryPlaneStore:
         return [line for line in content.splitlines() if line.strip()]
 
     def _replace_batches(self, batches: list[_PersistedBatch]) -> None:
+        detached_batches = [batch.model_copy(deep=True) for batch in batches]
+        materialized_records = _records_from_batches(detached_batches)
         descriptor, temporary_name = tempfile.mkstemp(
             dir=self._base_path,
             prefix=f".{self._records_path.name}.",
@@ -420,15 +648,27 @@ class JsonlMemoryPlaneStore:
         temporary_path = Path(temporary_name)
         try:
             with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-                for batch in batches:
+                for batch in detached_batches:
                     handle.write(batch.model_dump_json())
                     handle.write("\n")
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(temporary_path, self._records_path)
             _fsync_directory(self._base_path)
+            # Serialize and cache the same detached value graph so caller
+            # mutation cannot diverge same-handle reads from durable bytes.
+            # Refresh identity after replace so subsequent local reads reuse
+            # the already prepared map, while other handles detect the inode.
+            self._validated_batches = detached_batches
+            self._validated_batches_identity = self._records_identity_unlocked()
+            self._materialized_records = materialized_records
+            self._materialized_records_identity = self._validated_batches_identity
         except BaseException:
             temporary_path.unlink(missing_ok=True)
+            self._validated_batches = None
+            self._validated_batches_identity = None
+            self._materialized_records = None
+            self._materialized_records_identity = None
             raise
 
     def _locked(self, *, exclusive: bool) -> AbstractContextManager[None]:
@@ -448,32 +688,15 @@ def _validate_governed_write(
     if policy is not None:
         policy.validate(records, current, authorization)
         return
+    from memorii.core.memory_plane.semantic_control import (
+        SEMANTIC_PUBLIC_NON_AUTHORITY_SOURCE_KINDS,
+        is_semantic_control_record,
+    )
+
+    writer_exists = any(existing.memory_id == "semantic_ingestion:writer_admission:current" for existing in current)
     if any(
-        record.source_kind == "semantic_ingestion_writer_admission"
-        or (
-            record.source_kind in {
-                "semantic_ingestion_source",
-                "semantic_ingestion_metadata_poor_snapshot",
-                "semantic_ingestion_admission_index",
-                "semantic_ingestion_profile_selection",
-                "semantic_ingestion_profile_verification",
-                "semantic_ingestion_profile_outcome",
-                "semantic_ingestion_legacy_delivery_record",
-            }
-            and any(existing.memory_id == "semantic_ingestion:writer_admission:current" for existing in current)
-        )
-        or record.source_kind.startswith("semantic_ingestion_preplanning")
-        or record.source_kind.startswith("semantic_ingestion_generation")
-        or record.source_kind == "semantic_ingestion_authorization_authority"
-        or record.source_kind.startswith("semantic_ingestion_migration")
-        or record.source_kind == "semantic_ingestion_migrated_target"
-        or record.memory_id == "semantic_ingestion:writer_admission:current"
-        or record.memory_id.startswith("semantic_ingestion:operation:")
-        or record.memory_id.startswith("semantic_ingestion:artifact:")
-        or record.memory_id.startswith("semantic_ingestion:generation:")
-        or record.memory_id.startswith("semantic_ingestion:authorization:")
-        or record.memory_id.startswith("semantic_ingestion:migration:")
-        or record.memory_id.startswith("semantic_ingestion:migrated:")
+        is_semantic_control_record(record)
+        and not (not writer_exists and record.source_kind in SEMANTIC_PUBLIC_NON_AUTHORITY_SOURCE_KINDS)
         for record in records
     ):
         raise MemoryPlaneGovernedWritePolicyRequiredError(

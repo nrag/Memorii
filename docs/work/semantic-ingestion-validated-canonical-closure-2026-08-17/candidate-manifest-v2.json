@@ -1,0 +1,159 @@
+{
+  "candidate_kind": "memorii_build_design",
+  "candidate_version": 2,
+  "frozen_on": "2026-08-17",
+  "governing_prior_candidate_lock": "4b2af56947b56b006c5aa45b715fe95834c44b059665787f74c87fe49d6d0245",
+  "production_code_changed": false,
+  "requirements": {
+    "VCC-R01": "specified_and_executably_supported",
+    "VCC-R02": "specified_and_executably_supported",
+    "VCC-R03": "specified_and_executably_supported",
+    "VCC-R04": "specified_and_executably_supported",
+    "VCC-R05": "specified_and_executably_supported",
+    "VCC-R06": "specified_and_executably_supported",
+    "VCC-R07": "specified_and_executably_supported",
+    "VCC-R08": "specified_and_executably_supported",
+    "VCC-R09": "specified_and_executably_supported",
+    "VCC-R10": "specified_and_executably_supported",
+    "VCC-R11": "specified_and_executably_supported",
+    "VCC-R12": "specified_and_executably_supported"
+  },
+  "schema": "memorii.design-candidate-manifest.v1",
+  "scope": "validated canonical closure for semantic-ingestion duplicate canonical reconstruction and digest elimination",
+  "tests_changed": false,
+  "tracked_files": [
+    {
+      "path": "docs/design/semantic_ingestion_validated_canonical_closure.md",
+      "role": "canonical_design",
+      "sha256": "1ff6e62ececfbfc774ee6fc4777effc70eddcd526dbaac482b723fe7761ec2d7"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-entrypoint-bindings-v1.md",
+      "role": "normative_production_binding_addendum",
+      "sha256": "5b0d82d18cdf3aa11ea448c0183ae877d334b82f1a0cf1f4ccf019e809b9dda9"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/preflight-review-v1.md",
+      "role": "implementation_readiness_preflight",
+      "sha256": "5076072ca189305f01d391a2163fc48278113c73958cca31b407a1356f008a1d"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-canonical-evidence-production-performance-2026-08-16/evidence/pbd-exp-010-mandatory-validation-floor-census-v1.json",
+      "role": "frozen_validation_floor_input",
+      "sha256": "a88a73f5d2f597532761aea0c061e96984ee3f09c777e22a0a94b27013c5dcc5"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-canonical-evidence-production-performance-2026-08-16/evidence/pbd_exp_005_pipeline_duplicate_step2.py",
+      "role": "frozen_production_reference_harness",
+      "sha256": "46eb75927c2d15c3131552542299cf384b65093919fd2ff184ad3ba234dc8a91"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/vcc_exp_001_member_span_inventory.py",
+      "role": "executable_evidence_program",
+      "sha256": "cea4db694f4f1683669aa869b9762197149fddf1aeb96e5303d4b3cf8fa3aba3"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/vcc-exp-001-member-span-inventory-v1.json",
+      "role": "measured_evidence",
+      "sha256": "e82ca696278c7a22e0ff6aea6967240c9dfda53698900b500d6f1f55818cee7e"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/vcc_exp_001b_full_path_inventory.py",
+      "role": "executable_evidence_program",
+      "sha256": "cfa6681f718f6865ee32c9d3b17b5283b15ab938be70d189f3c91d3290cee7f8"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/vcc-exp-001b-full-path-inventory-v2.json",
+      "role": "measured_evidence",
+      "sha256": "5dddd53d0c39beb677178f451df7cbbbf8321def3e83c99098914a65e9eae6ed"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/vcc-exp-001b-structural-reconciliation-v1.json",
+      "role": "measured_evidence",
+      "sha256": "bf4e1de7c332e9a24edf86d66ac43e0d25afd646ef034adfcf47337c979aab98"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/vcc-exp-001b-current-validation-floor-run-v1.json",
+      "role": "measured_evidence",
+      "sha256": "f3aea2572a9270fba0dd6a9cf106ec9d2cb2a9d9bddeffaf92ca6633c51df95a"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/vcc_exp_002_digest_reduction_counterfactual.py",
+      "role": "executable_evidence_program",
+      "sha256": "7195708f09c223517eba649023f9227163cb0da7610437bdbe0225da5d85ffe2"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/vcc-exp-002-digest-reduction-counterfactual-v1.json",
+      "role": "measured_evidence",
+      "sha256": "158dbb14598c1b0073182ca7832a2e452866cbed0bf52ce798af5ac91136b41b"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/vcc_exp_003_security_capacity_attacks.py",
+      "role": "executable_evidence_program",
+      "sha256": "56a8f536d792d26c8ec4a24fa3b8c0ea873dd6b77a84b63cb3e64ae5f8ee9ae8"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/vcc-exp-003-security-capacity-attacks-v1.json",
+      "role": "measured_evidence",
+      "sha256": "2a001807be4f9d43808ded292dce6e3bb102499cebb998f0af10c08d683414f4"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/vcc_exp_003b_compact_index_capacity.py",
+      "role": "executable_evidence_program",
+      "sha256": "b11a94f878768006dbfcedff17553ba60e74504e256cc7cc793815f3de4511f4"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/vcc-exp-003b-compact-index-capacity-v1.json",
+      "role": "measured_evidence",
+      "sha256": "cbd69fc9f8ccf8b9e5fc9e1a4e980ad34c3d393b62fe0ddb4283628825c8631a"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/vcc_exp_004_rollback_equivalence.py",
+      "role": "executable_evidence_program",
+      "sha256": "6c481414521d4c017bdcdfd29c6fb584c3bf1188a59d202ffff42666d0d2c051"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/vcc-exp-004-rollback-equivalence-v1.json",
+      "role": "measured_evidence",
+      "sha256": "c0c138844c5b4099a934a4049cc7470a943c1a383153858e6caf42e5f9ae24d4"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/blocker-remediation-v1.md",
+      "role": "normative_blocker_remediation",
+      "sha256": "52e94e534aadd4c9acc046829f24af11aae9e7ccc0816eb4e79935fcf323da63"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/vcc_exp_005_owner_codec_span_feasibility.py",
+      "role": "executable_owner_codec_feasibility",
+      "sha256": "3395ae11e7072ae90513bfdfaf0eefe3db3581dd8ff5f329688ec2222ad5054e"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/vcc-exp-005-owner-codec-span-feasibility-v1.json",
+      "role": "measured_owner_codec_feasibility",
+      "sha256": "891cb549a88fc7c01519a842c0b52861433b11b422b47f523e5132df993ffc0a"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-entrypoint-bindings-v2.json",
+      "role": "normative_production_binding_ledger",
+      "sha256": "881ddfd2742344d2ca7163dc71f291c39fb4a79928c8567f64d65e13fe4c00ca"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/validate_production_entrypoint_bindings_v2.py",
+      "role": "production_binding_validator",
+      "sha256": "6f9b5709693ac4b0dac6d53ab9f545996df164b87ea7398dd96714ac17e2a2d4"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-entrypoint-bindings-v2-validation.json",
+      "role": "production_binding_validation_result",
+      "sha256": "02e3174d1da59c141c42837f0e5e9767aeb0107a45ead021564501993790b3ea"
+    },
+    {
+      "path": "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/validate_candidate_manifest_v2.py",
+      "role": "candidate_manifest_validator",
+      "sha256": "4ceb9b434f1e45340fb918f5a576ad2e1f2672fc2c7480c42a72b2e7342994ee"
+    }
+  ],
+  "work_id": "semantic-ingestion-validated-canonical-closure-2026-08-17",
+  "parent_candidate_lock": "722a0a933ff9dd34591e310ad58b01b2f04c9b519725c0136b23f139615ee1db",
+  "review_scope": "targeted remediation for VCC-DREV-001 and VCC-DREV-008; VCC-DREV-002 through VCC-DREV-010 remain open"
+}

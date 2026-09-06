@@ -1,0 +1,34 @@
+{
+  "check_count": 16,
+  "checks": {
+    "capability_sealed_only": true,
+    "close_blocks_new_leases": true,
+    "concurrent_exact_release": true,
+    "concurrent_process_limit": true,
+    "disabled_allocates_nothing": true,
+    "exact_limit_seals": true,
+    "foreign_scope_rejected": true,
+    "forged_capability_rejected": true,
+    "lease_drain_exact_release": true,
+    "metric_fields_exact": true,
+    "metrics_content_free": true,
+    "over_limit_rejects_before_capability": true,
+    "sink_unavailability_isolated": true,
+    "stale_generation_rejected": true,
+    "terminal_metrics_once": true,
+    "transitions_unique": true
+  },
+  "ci_enforcement_claimed": false,
+  "contract_schema": "memorii.canonical-closure-operation-contract.v1",
+  "evidence_maturity": "locally_verified_reference_model",
+  "limits": {
+    "member_paths_per_operation": 32768,
+    "operation_reserved_bytes": 16777216,
+    "process_reserved_bytes": 67108864,
+    "root_bytes": 2097152,
+    "roots_per_operation": 512
+  },
+  "passed": true,
+  "production_implementation_claimed": false,
+  "schema": "memorii.canonical-closure-lifecycle-reference-result.v1"
+}

@@ -1,0 +1,276 @@
+{
+  "baseline_bootstrap_handoff_median_seconds": 0.5191844189976109,
+  "captured_encode_bootstrap_handoff_median_seconds": 0.484803108003689,
+  "captured_encode_handoff_reduction_fraction": 0.0662217696368892,
+  "certifies_m3_1": false,
+  "counterfactual_boundary": "Non-implementable causal upper bound: exact bytes captured at bootstrap publication are reused only for the later handoff encode in the same reference process. No trust or production authority is inferred from this result.",
+  "decision": "BOOTSTRAP_HANDOFF_CHILDREN_AND_ENCODING_DISCRIMINATED",
+  "evidence_stage": "reference_only_diagnostic",
+  "experiment": "PBD-EXP-002",
+  "leading_safe_reference_child": "bootstrap_publication",
+  "manifest": {
+    "child_timeout_seconds": 120,
+    "order": [
+      {
+        "mode": "captured_handoff_encode",
+        "ordinal": 0,
+        "sample": 0
+      },
+      {
+        "mode": "captured_handoff_encode",
+        "ordinal": 1,
+        "sample": 1
+      },
+      {
+        "mode": "safe_reference",
+        "ordinal": 2,
+        "sample": 2
+      },
+      {
+        "mode": "safe_reference",
+        "ordinal": 3,
+        "sample": 1
+      },
+      {
+        "mode": "safe_reference",
+        "ordinal": 4,
+        "sample": 0
+      },
+      {
+        "mode": "captured_handoff_encode",
+        "ordinal": 5,
+        "sample": 2
+      }
+    ],
+    "random_seed": 20260817,
+    "samples_per_mode": 3,
+    "script_sha256": "66b945f9d5c92135949252f84d0f373d35dab6943fe30ee6b78fa9266f649a0f"
+  },
+  "median_exclusive_seconds": {
+    "captured_handoff_encode": {
+      "atomic_writer_handoff": 0.12999033399682958,
+      "bootstrap_handoff_parent": 0.006803791024140082,
+      "bootstrap_publication": 0.1700534429983236,
+      "handoff_canonical_encode": 5.790003342553973e-06,
+      "observation_reload": 0.027952289005042985,
+      "preparation": 0.08650434199807933,
+      "published_value_validation": 0.05961538999690674,
+      "release_assertions": 0.001560437995067332,
+      "writer_admission_read": 0.004130676003114786
+    },
+    "safe_reference": {
+      "atomic_writer_handoff": 0.130238465993898,
+      "bootstrap_handoff_parent": 0.006742604004102759,
+      "bootstrap_publication": 0.17341584999667248,
+      "handoff_canonical_encode": 0.017516152001917362,
+      "observation_reload": 0.027521085998159833,
+      "preparation": 0.09040117599943187,
+      "published_value_validation": 0.06017505299678305,
+      "release_assertions": 0.0015801199988345616,
+      "writer_admission_read": 0.004227300996717531
+    }
+  },
+  "output_sha256": "ae485a5f913853b4e99c138713621bd5713cc4313a339280e154d751527485ef",
+  "production_implementation_changed": false,
+  "runs": [
+    {
+      "bootstrap_handoff_seconds": 0.4842988529999275,
+      "capture_calls": 1,
+      "content_validation_calls": 833,
+      "elapsed_seconds": 0.9693885949964169,
+      "exclusive_seconds": {
+        "atomic_writer_handoff": 0.12999033399682958,
+        "bootstrap_handoff_parent": 0.006681838000076823,
+        "bootstrap_publication": 0.1700534429983236,
+        "handoff_canonical_encode": 5.521003913599998e-06,
+        "observation_reload": 0.026281948004907463,
+        "preparation": 0.08634832599636866,
+        "published_value_validation": 0.059380309998232406,
+        "release_assertions": 0.0014264569981605746,
+        "writer_admission_read": 0.004130676003114786
+      },
+      "instrumented_calls": {
+        "atomic_writer_handoff": 1,
+        "bootstrap_handoff_parent": 1,
+        "bootstrap_publication": 1,
+        "handoff_canonical_encode": 1,
+        "observation_reload": 1,
+        "preparation": 1,
+        "published_value_validation": 1,
+        "release_assertions": 2,
+        "writer_admission_read": 3
+      },
+      "mode": "captured_handoff_encode",
+      "ordinal": 0,
+      "output_sha256": "ae485a5f913853b4e99c138713621bd5713cc4313a339280e154d751527485ef",
+      "reuse_calls": 1,
+      "sample": 0
+    },
+    {
+      "bootstrap_handoff_seconds": 0.484803108003689,
+      "capture_calls": 1,
+      "content_validation_calls": 833,
+      "elapsed_seconds": 0.9659698459945503,
+      "exclusive_seconds": {
+        "atomic_writer_handoff": 0.12900570199417416,
+        "bootstrap_handoff_parent": 0.006803791024140082,
+        "bootstrap_publication": 0.16856922099395888,
+        "handoff_canonical_encode": 5.790003342553973e-06,
+        "observation_reload": 0.029053922997263726,
+        "preparation": 0.08650434199807933,
+        "published_value_validation": 0.05961538999690674,
+        "release_assertions": 0.001560437995067332,
+        "writer_admission_read": 0.0036845110007561743
+      },
+      "instrumented_calls": {
+        "atomic_writer_handoff": 1,
+        "bootstrap_handoff_parent": 1,
+        "bootstrap_publication": 1,
+        "handoff_canonical_encode": 1,
+        "observation_reload": 1,
+        "preparation": 1,
+        "published_value_validation": 1,
+        "release_assertions": 2,
+        "writer_admission_read": 3
+      },
+      "mode": "captured_handoff_encode",
+      "ordinal": 1,
+      "output_sha256": "ae485a5f913853b4e99c138713621bd5713cc4313a339280e154d751527485ef",
+      "reuse_calls": 1,
+      "sample": 1
+    },
+    {
+      "bootstrap_handoff_seconds": 0.6117020070014405,
+      "capture_calls": 0,
+      "content_validation_calls": 833,
+      "elapsed_seconds": 1.1818232599980547,
+      "exclusive_seconds": {
+        "atomic_writer_handoff": 0.14190084300207673,
+        "bootstrap_handoff_parent": 0.006583900016266853,
+        "bootstrap_publication": 0.17341584999667248,
+        "handoff_canonical_encode": 0.017588280999916606,
+        "observation_reload": 0.027394236996769905,
+        "preparation": 0.17900661499879789,
+        "published_value_validation": 0.06000485999538796,
+        "release_assertions": 0.0015801199988345616,
+        "writer_admission_read": 0.004227300996717531
+      },
+      "instrumented_calls": {
+        "atomic_writer_handoff": 1,
+        "bootstrap_handoff_parent": 1,
+        "bootstrap_publication": 1,
+        "handoff_canonical_encode": 1,
+        "observation_reload": 1,
+        "preparation": 1,
+        "published_value_validation": 1,
+        "release_assertions": 2,
+        "writer_admission_read": 3
+      },
+      "mode": "safe_reference",
+      "ordinal": 2,
+      "output_sha256": "ae485a5f913853b4e99c138713621bd5713cc4313a339280e154d751527485ef",
+      "reuse_calls": 0,
+      "sample": 2
+    },
+    {
+      "bootstrap_handoff_seconds": 0.5014608859928558,
+      "capture_calls": 0,
+      "content_validation_calls": 833,
+      "elapsed_seconds": 0.9928280749954865,
+      "exclusive_seconds": {
+        "atomic_writer_handoff": 0.12916396600485314,
+        "bootstrap_handoff_parent": 0.00702727598400088,
+        "bootstrap_publication": 0.168529195994779,
+        "handoff_canonical_encode": 0.017126942999311723,
+        "observation_reload": 0.027896175000933,
+        "preparation": 0.08541908200277248,
+        "published_value_validation": 0.06017505299678305,
+        "release_assertions": 0.0016603430049144663,
+        "writer_admission_read": 0.004462852004508022
+      },
+      "instrumented_calls": {
+        "atomic_writer_handoff": 1,
+        "bootstrap_handoff_parent": 1,
+        "bootstrap_publication": 1,
+        "handoff_canonical_encode": 1,
+        "observation_reload": 1,
+        "preparation": 1,
+        "published_value_validation": 1,
+        "release_assertions": 2,
+        "writer_admission_read": 3
+      },
+      "mode": "safe_reference",
+      "ordinal": 3,
+      "output_sha256": "ae485a5f913853b4e99c138713621bd5713cc4313a339280e154d751527485ef",
+      "reuse_calls": 0,
+      "sample": 1
+    },
+    {
+      "bootstrap_handoff_seconds": 0.5191844189976109,
+      "capture_calls": 0,
+      "content_validation_calls": 833,
+      "elapsed_seconds": 1.008371187002922,
+      "exclusive_seconds": {
+        "atomic_writer_handoff": 0.130238465993898,
+        "bootstrap_handoff_parent": 0.006742604004102759,
+        "bootstrap_publication": 0.17825031199754449,
+        "handoff_canonical_encode": 0.017516152001917362,
+        "observation_reload": 0.027521085998159833,
+        "preparation": 0.09040117599943187,
+        "published_value_validation": 0.06302690899610752,
+        "release_assertions": 0.0013240650005172938,
+        "writer_admission_read": 0.004163649005931802
+      },
+      "instrumented_calls": {
+        "atomic_writer_handoff": 1,
+        "bootstrap_handoff_parent": 1,
+        "bootstrap_publication": 1,
+        "handoff_canonical_encode": 1,
+        "observation_reload": 1,
+        "preparation": 1,
+        "published_value_validation": 1,
+        "release_assertions": 2,
+        "writer_admission_read": 3
+      },
+      "mode": "safe_reference",
+      "ordinal": 4,
+      "output_sha256": "ae485a5f913853b4e99c138713621bd5713cc4313a339280e154d751527485ef",
+      "reuse_calls": 0,
+      "sample": 0
+    },
+    {
+      "bootstrap_handoff_seconds": 0.5279636699997354,
+      "capture_calls": 1,
+      "content_validation_calls": 833,
+      "elapsed_seconds": 1.0984001619945047,
+      "exclusive_seconds": {
+        "atomic_writer_handoff": 0.13913898300233996,
+        "bootstrap_handoff_parent": 0.008697492987266742,
+        "bootstrap_publication": 0.18685021700366633,
+        "handoff_canonical_encode": 8.777002221904695e-06,
+        "observation_reload": 0.027952289005042985,
+        "preparation": 0.08931872199900681,
+        "published_value_validation": 0.06923012200422818,
+        "release_assertions": 0.0017968760002986528,
+        "writer_admission_read": 0.00497019099566387
+      },
+      "instrumented_calls": {
+        "atomic_writer_handoff": 1,
+        "bootstrap_handoff_parent": 1,
+        "bootstrap_publication": 1,
+        "handoff_canonical_encode": 1,
+        "observation_reload": 1,
+        "preparation": 1,
+        "published_value_validation": 1,
+        "release_assertions": 2,
+        "writer_admission_read": 3
+      },
+      "mode": "captured_handoff_encode",
+      "ordinal": 5,
+      "output_sha256": "ae485a5f913853b4e99c138713621bd5713cc4313a339280e154d751527485ef",
+      "reuse_calls": 1,
+      "sample": 2
+    }
+  ],
+  "schema": "memorii.semantic-ingestion.production-performance.bootstrap-handoff.v1"
+}

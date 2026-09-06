@@ -1,0 +1,16 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_transaction_v3_unrelated_conflict_coverage",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree",
+  "status_list_sha256": "d36afb1bdbefd3e55387371e638e0709d8c0d36d10e82027b8323785c63c7850",
+  "review_scope": ["GTC-R09 unrelated-conflict positive oracle", "closed 344-tuple coverage universe"],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "e80af9612b6ad8d07ba122d1bd977b21f1bd202d03206ea8b6626dce95bb9fcc",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "e615946baf97df0bcf196c285a08f9bcbb6da5485e9c33713040b6edc2224076",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "cc131531ff73fe7093095ab34144c169deb27a2d66b866d1a14b6952bb5bfedf"
+  },
+  "checks": ["git diff --check", "binding JSON parse", "43x4x2 coverage assertion"],
+  "evidence_maturity": "specified_and_derivable_only"
+}

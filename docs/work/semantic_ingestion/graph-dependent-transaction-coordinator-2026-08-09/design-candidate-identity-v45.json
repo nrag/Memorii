@@ -1,0 +1,29 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_transaction_v3_native_local_adapter_closure",
+  "semantic_predecessor": "design-candidate-identity-v44.json",
+  "semantic_change_from_predecessor": "replace unsourced synthetic V3 planning/effect fields with native graph-planning artifacts, typed reservation authority, store-issued effect receipts, and mandatory built-in local adapters",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree_stable",
+  "status_list_sha256": "bb1099a6a89ed650c8c2c6c570659a7f343324af1a23d55860beeeeb6a2bb176",
+  "review_scope": [
+    "built-in local V3 compiler authorizer executor composition",
+    "native deterministic field-source algorithm and removed synthetic pre-CAS fields",
+    "typed reservation none/use authority and store-issued atomic effect receipt",
+    "four-root absence migration rollback and attack/test closure"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "e6d8de08e20f0599384538ea05a8b65e9ea6d05fa63f2ebca475c1ede6d14c33",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "03ad3374607cceb3b4665f2bf2a4bf4bcc1ff07a4ca7b0c97601be24e0b0b7aa",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "b513099edabfc063f4ad690cd1128adea504bf7605d7fa59cf4c94c55e379a84"
+  },
+  "checks": [
+    "git diff --check",
+    "binding and candidate JSON parse",
+    "native contract adapter absence and four-root anchors",
+    "stable status and artifact identity pass one",
+    "stable status and artifact identity pass two"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

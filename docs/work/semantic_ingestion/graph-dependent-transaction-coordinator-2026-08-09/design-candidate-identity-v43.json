@@ -1,0 +1,28 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_transaction_v3_epoch_zero_typed_authority_receipt",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree",
+  "status_list_sha256": "2c4765e6b18e0c0bdec5fe48e90300a6b472d68c104f5235b37f4f6df3881635",
+  "review_scope": [
+    "exact typed store-reloaded pre-epoch authority receipt in epoch-zero transition request and persisted epoch",
+    "transition and epoch CTV field order and pre-CAS receipt successor projection replay authorization joins",
+    "projection publish reload before epoch-zero call order and receipt mutation attacks",
+    "design-only evidence maturity and implementation obligations"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "d1aabea4249f0b9d811a1193c321d8acef43afe679108bcc4ec9fe3a571ee62c",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "27631173c1b689a095583de7215c9e61e289cdb1eba09d1f77912d32338be25c",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "18f8ca92bc55284af69af16dfc7c161d0d9ca5419b19d22eb860b4acf157b2dc"
+  },
+  "checks": [
+    "git diff --check",
+    "binding and candidate JSON parse",
+    "definitive epoch and transition typed-receipt field assertions",
+    "CTV and pre-CAS join inventory assertions",
+    "omission substitution cross-generation stale digest-only and post-epoch attack assertions",
+    "two exact artifact and status identity passes"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

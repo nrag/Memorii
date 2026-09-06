@@ -1,0 +1,52 @@
+{
+  "schema": "memorii.production-entrypoint-bindings.v6",
+  "candidate_manifest": "candidate-manifest-v6.json",
+  "oracle": "production-owner-oracle-v3.json",
+  "triggers": {
+    "direct_sync": "memorii/memorii/core/provider/service.py::ProviderMemoryService.sync_event",
+    "hermes_sync": "memorii/memorii/integrations/hermes_provider.py::HermesMemoryProvider.sync_event",
+    "hermes_session_end": "memorii/memorii/integrations/hermes_provider.py::HermesMemoryProvider.on_session_end",
+    "hermes_pre_compress": "memorii/memorii/integrations/hermes_provider.py::HermesMemoryProvider.on_pre_compress",
+    "hermes_delegation": "memorii/memorii/integrations/hermes_provider.py::HermesMemoryProvider.on_delegation"
+  },
+  "composition_roots": {
+    "provider_factory": "memorii/memorii/core/provider/factory.py::build_provider_memory_service_from_env",
+    "filesystem_bundle": "memorii/memorii/core/filesystem_storage/bundle.py::FilesystemStorageBundle.build_provider_memory_service",
+    "filesystem_factory": "memorii/memorii/core/filesystem_storage/bundle.py::build_filesystem_provider",
+    "hermes_constructor": "memorii/memorii/integrations/hermes_provider.py::HermesMemoryProvider.__init__"
+  },
+  "excluded_roots": {"capture_child": "memorii/memorii/core/semantic_ingestion/production_capture.py::_capture_child"},
+  "edges": [
+    ["hermes_sync_edge", "memorii/memorii/integrations/hermes_provider.py", "HermesMemoryProvider.sync_event", "self._service.sync_event", ["operation", "content", "operation_id", "authenticated_host_ingress"], "memorii/memorii/core/provider/service.py", "ProviderMemoryService.sync_event", "field:ProviderMemoryService"],
+    ["hermes_session_edge", "memorii/memorii/integrations/hermes_provider.py", "HermesMemoryProvider.on_session_end", "self._service.sync_event", ["operation", "content", "operation_id", "authenticated_host_ingress"], "memorii/memorii/core/provider/service.py", "ProviderMemoryService.sync_event", "field:ProviderMemoryService"],
+    ["hermes_pre_edge", "memorii/memorii/integrations/hermes_provider.py", "HermesMemoryProvider.on_pre_compress", "self._service.sync_event", ["operation", "content", "operation_id", "authenticated_host_ingress"], "memorii/memorii/core/provider/service.py", "ProviderMemoryService.sync_event", "field:ProviderMemoryService"],
+    ["hermes_delegation_edge", "memorii/memorii/integrations/hermes_provider.py", "HermesMemoryProvider.on_delegation", "self._service.sync_event", ["operation", "content", "operation_id", "authenticated_host_ingress"], "memorii/memorii/core/provider/service.py", "ProviderMemoryService.sync_event", "field:ProviderMemoryService"],
+    ["sync_arena", "memorii/memorii/core/provider/service.py", "ProviderMemoryService.sync_event", "CanonicalEvidenceArena", [], "memorii/memorii/core/semantic_ingestion/canonical_evidence_arena.py", "CanonicalEvidenceArena.__init__", "import:CanonicalEvidenceArena"],
+    ["sync_ingest", "memorii/memorii/core/provider/service.py", "ProviderMemoryService.sync_event", "self._ingest_event", ["authenticated_host_ingress", "canonical_evidence_arena", "arena_nonce"], "memorii/memorii/core/provider/service.py", "ProviderMemoryService._ingest_event", "self_method", {"canonical_evidence_arena": "canonical_evidence_arena", "arena_nonce": "canonical_evidence_arena.nonce"}],
+    ["ingest_nonce", "memorii/memorii/core/provider/service.py", "ProviderMemoryService._ingest_event", "canonical_evidence_arena.require_active_nonce", [], "memorii/memorii/core/semantic_ingestion/canonical_evidence_arena.py", "CanonicalEvidenceArena.require_active_nonce", "parameter:CanonicalEvidenceArena"],
+    ["ingest_delegate", "memorii/memorii/core/provider/service.py", "ProviderMemoryService._ingest_event", "self._provider_ingestion.ingest", ["authenticated_ingress", "canonical_evidence_arena", "arena_nonce"], "memorii/memorii/core/provider/ingestion.py", "ProviderIngestionCoordinator.ingest", "field:ProviderIngestionCoordinator", {"canonical_evidence_arena": "canonical_evidence_arena", "arena_nonce": "arena_nonce"}],
+    ["semantic_encode", "memorii/memorii/core/semantic_ingestion/contracts.py", "encode_semantic_contract", "encode_typed_value", [], "memorii/memorii/core/memory_evolution/ingestion_contracts.py", "encode_typed_value", "import:encode_typed_value"],
+    ["codec_normalize", "memorii/memorii/core/memory_evolution/ingestion_contracts.py", "encode_typed_value", "_normalized_typed_json", ["check"], "memorii/memorii/core/memory_evolution/ingestion_contracts.py", "_normalized_typed_json", "same_module"],
+    ["codec_json", "memorii/memorii/core/memory_evolution/ingestion_contracts.py", "encode_typed_value", "_json", ["check"], "memorii/memorii/core/memory_evolution/ingestion_contracts.py", "_json", "same_module"],
+    ["persist_terminal", "memorii/memorii/core/provider/ingestion.py", "ProviderIngestionCoordinator._persist_semantic_terminal", "self._semantic_terminal_persistence.persist", ["fence", "terminal", "authorization_verifier"], "memorii/memorii/core/semantic_ingestion/persistence.py", "SemanticTerminalPersistenceService.persist", "field:SemanticTerminalPersistenceService"],
+    ["store_group", "memorii/memorii/core/semantic_ingestion/persistence.py", "SemanticTerminalPersistenceService.persist", "self._store.persist_terminal_group", [], "memorii/memorii/core/memory_evolution/atomic_store.py", "SemanticIngestionAtomicStore.persist_terminal_group", "field:SemanticIngestionAtomicStore"],
+    ["store_finalize", "memorii/memorii/core/semantic_ingestion/persistence.py", "SemanticTerminalPersistenceService.persist", "self._store.finalize_source", [], "memorii/memorii/core/memory_evolution/atomic_store.py", "SemanticIngestionAtomicStore.finalize_source", "field:SemanticIngestionAtomicStore"],
+    ["factory_service", "memorii/memorii/core/provider/factory.py", "build_provider_memory_service_from_env", "ProviderMemoryService", ["verified_production_host_authority"], "memorii/memorii/core/provider/service.py", "ProviderMemoryService.__init__", "import:ProviderMemoryService"],
+    ["bundle_factory", "memorii/memorii/core/filesystem_storage/bundle.py", "FilesystemStorageBundle.build_provider_memory_service", "build_provider_memory_service_from_env", ["verified_production_host_authority"], "memorii/memorii/core/provider/factory.py", "build_provider_memory_service_from_env", "import:build_provider_memory_service_from_env"],
+    ["filesystem_bundle", "memorii/memorii/core/filesystem_storage/bundle.py", "build_filesystem_provider", "FilesystemStorageBundle.from_root", ["storage_root"], "memorii/memorii/core/filesystem_storage/bundle.py", "FilesystemStorageBundle.from_root", "same_class" ]
+  ],
+  "rows": {
+    "VCC-R01": {"segments": [["hermes_sync_edge", "sync_ingest", "ingest_delegate"], ["hermes_session_edge", "sync_ingest", "ingest_delegate"], ["hermes_pre_edge", "sync_ingest", "ingest_delegate"], ["hermes_delegation_edge", "sync_ingest", "ingest_delegate"]], "outcome": "conditional_durable"},
+    "VCC-R02": {"segments": [["semantic_encode", "codec_normalize"], ["semantic_encode", "codec_json"]], "outcome": "pure_no_write"},
+    "VCC-R03": {"segments": [["ingest_delegate"]], "outcome": "admission_branch", "runtime_bridge": "admission_writer_transition"},
+    "VCC-R04": {"segments": [["codec_normalize"], ["codec_json"]], "outcome": "pure_no_write"},
+    "VCC-R05": {"segments": [["ingest_delegate"]], "outcome": "conditional_normalization", "runtime_bridge": "normalization_noncommit_and_success"},
+    "VCC-R06": {"segments": [["ingest_delegate"]], "outcome": "conditional_handoff", "runtime_bridge": "writer_handoff_authority"},
+    "VCC-R07": {"segments": [["hermes_sync_edge", "sync_ingest", "ingest_nonce"], ["persist_terminal"]], "outcome": "conditional_durable", "runtime_bridge": "ingest_to_terminal_persistence"},
+    "VCC-R08": {"segments": [["sync_arena"]], "outcome": "cache_state_only_no_durable_write"},
+    "VCC-R09": {"segments": [["persist_terminal", "store_group"], ["persist_terminal", "store_finalize"]], "outcome": "durable_terminal_write"},
+    "VCC-R10": {"segments": [["factory_service"], ["bundle_factory", "factory_service"], ["filesystem_bundle"]], "outcome": "construction_no_write"},
+    "VCC-R11": {"segments": [], "outcome": "planned_observability", "runtime_bridge": "content_free_metrics"},
+    "VCC-R12": {"segments": [["sync_arena"], ["sync_ingest"]], "outcome": "current_always_allocated", "runtime_bridge": "planned_mode_selection"}
+  }
+}

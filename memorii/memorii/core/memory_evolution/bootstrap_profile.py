@@ -7,13 +7,14 @@ module contains no root, credential, network client, or writer-safe preplanning 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
 from hashlib import sha256
 from importlib import import_module
 from importlib.metadata import PackageNotFoundError, entry_points, packages_distributions, version
 from importlib.util import find_spec
 from pathlib import Path
-from typing import Annotated, Literal, Protocol, cast
+from typing import TYPE_CHECKING, Annotated, Literal, Protocol, TypedDict, Unpack, cast
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
@@ -25,6 +26,9 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     encode_typed_value,
     serialize_artifact,
 )
+
+if TYPE_CHECKING:
+    from memorii.core.semantic_ingestion.contracts import TextPreparationPolicy
 
 _DIGEST = Field(pattern=r"^[0-9a-f]{64}$")
 _CTV_PROFILE_ID = "semantic_ingestion_typed_value"
@@ -74,6 +78,7 @@ class BootstrapProfileTrustAnchor(BaseModel):
 class BootstrapProfileReleaseMetadata(BaseModel):
     coordinate: BootstrapProfileCoordinate
     bootstrap_profile_trust_anchor_digest: str = _DIGEST
+    signed_release_digest: str = _DIGEST
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -84,6 +89,232 @@ class BootstrapTrustRootProvider(Protocol):
     def verify_active_release(self, metadata: BootstrapProfileReleaseMetadata) -> bool: ...
 
 
+class HostVerifiedBootstrapReleaseEvidence(BaseModel):
+    """Host-only proof of the externally rooted, active V1 release chain."""
+
+    coordinate: BootstrapProfileCoordinate
+    signed_release_digest: str = _DIGEST
+    bootstrap_anchor_digest: str = _DIGEST
+    external_root_digest: str = _DIGEST
+    active_lifecycle_snapshot_digest: str = _DIGEST
+    lifecycle_state: Literal["active"]
+    trust_domain: Literal["production", "scenario_test"]
+    verified_at: datetime
+    evidence_digest: str = _DIGEST
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def validate_evidence(self) -> HostVerifiedBootstrapReleaseEvidence:
+        if self.verified_at.utcoffset() is None:
+            raise ValueError("bootstrap release evidence time must be timezone-aware")
+        if self.evidence_digest != _domain_digest(
+            b"memorii.semantic_ingestion.host_verified_bootstrap_release_evidence.v1",
+            self.model_dump(mode="python", exclude={"evidence_digest"}),
+        ):
+            raise ValueError("bootstrap release evidence digest mismatch")
+        return self
+
+
+class CurrentBootstrapReleaseAssertion(BaseModel):
+    """Ephemeral use-time proof; callers must never serialize this value."""
+
+    coordinate: BootstrapProfileCoordinate
+    signed_release_digest: str = _DIGEST
+    bootstrap_anchor_digest: str = _DIGEST
+    active_lifecycle_snapshot_digest: str = _DIGEST
+    assertion_phase: Literal["prepared_publication", "pre_handoff_retry", "writer_handoff"]
+    assertion_nonce: str = Field(min_length=1)
+    assertion_digest: str = _DIGEST
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def validate_assertion(self) -> CurrentBootstrapReleaseAssertion:
+        if self.assertion_digest != _domain_digest(
+            b"memorii.semantic_ingestion.current_bootstrap_release_assertion.v1",
+            self.model_dump(mode="python", exclude={"assertion_digest"}),
+        ):
+            raise ValueError("bootstrap release assertion digest mismatch")
+        return self
+
+
+class CurrentBootstrapReleaseVerifier(Protocol):
+    """Host-owned current-release authority.
+
+    ``assert_current`` is invoked from the memory-plane transaction
+    precondition at every state-changing bootstrap write.  Hosts must
+    linearize that call with their release revocation state; the assertion is
+    deliberately ephemeral and is never persisted as a substitute for that
+    live check.
+    """
+
+    def assert_current(
+        self,
+        *,
+        authorization: object,
+        release_evidence: HostVerifiedBootstrapReleaseEvidence,
+        assertion_phase: Literal["prepared_publication", "pre_handoff_retry", "writer_handoff"],
+    ) -> CurrentBootstrapReleaseAssertion: ...
+
+
+class _AuthenticatedLanguageEvidenceCreateValues(TypedDict):
+    source_id: str
+    source_digest: str
+    original_text_digest: str
+    delivery_principal_binding_digest: str
+    segment_governance_set_digest: str
+    governance_carrier_artifact_digest: str
+    segment_governance_carriers_digest: str
+    message_admission_carriers_digest: str
+    language_declaration: str | None
+    language_evidence_kind: Literal["authenticated_host_declaration", "missing", "untrusted", "mismatched"]
+    language_evidence_trust: Literal["trusted", "missing", "untrusted", "mismatched"]
+    language_governance_agreement: Literal["agrees", "missing", "disagrees"]
+
+
+class BootstrapAuthenticatedLanguageEvidence(BaseModel):
+    """Immutable Step-1 proof; current session authority is deliberately absent."""
+
+    source_id: str = Field(min_length=1)
+    source_digest: str = _DIGEST
+    original_text_digest: str = _DIGEST
+    delivery_principal_binding_digest: str = _DIGEST
+    segment_governance_set_digest: str = _DIGEST
+    governance_carrier_artifact_digest: str = _DIGEST
+    segment_governance_carriers_digest: str = _DIGEST
+    message_admission_carriers_digest: str = _DIGEST
+    language_declaration: str | None
+    language_evidence_kind: Literal["authenticated_host_declaration", "missing", "untrusted", "mismatched"]
+    language_evidence_trust: Literal["trusted", "missing", "untrusted", "mismatched"]
+    language_governance_agreement: Literal["agrees", "missing", "disagrees"]
+    evidence_digest: str = _DIGEST
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def validate_evidence(self) -> BootstrapAuthenticatedLanguageEvidence:
+        body = self.model_dump(mode="python", exclude={"evidence_digest"})
+        if self.evidence_digest != _domain_digest(
+            b"memorii.semantic_ingestion.bootstrap_authenticated_language_evidence.v1", body
+        ):
+            raise ValueError("bootstrap language evidence digest mismatch")
+        return self
+
+    @classmethod
+    def create(
+        cls, **body: Unpack[_AuthenticatedLanguageEvidenceCreateValues]
+    ) -> BootstrapAuthenticatedLanguageEvidence:
+        return cls(
+            **body,
+            evidence_digest=_domain_digest(
+                b"memorii.semantic_ingestion.bootstrap_authenticated_language_evidence.v1", body
+            ),
+        )
+
+
+class _AdmissionPinCreateValues(TypedDict):
+    coordinate: BootstrapProfileCoordinate
+    profile_digest: str
+    release_evidence_digest: str
+    bootstrap_language_evidence_digest: str
+    source_id: str
+    source_digest: str
+    operation_fence_binding_digest: str
+
+
+class BootstrapAdmissionPin(BaseModel):
+    """Persisted V1 authority selected at admission, never a current assertion."""
+
+    coordinate: BootstrapProfileCoordinate
+    profile_digest: str = _DIGEST
+    release_evidence_digest: str = _DIGEST
+    bootstrap_language_evidence_digest: str = _DIGEST
+    source_id: str = Field(min_length=1)
+    source_digest: str = _DIGEST
+    operation_fence_binding_digest: str = _DIGEST
+    pin_digest: str = _DIGEST
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def validate_pin(self) -> BootstrapAdmissionPin:
+        body = self.model_dump(mode="python", exclude={"pin_digest"})
+        if self.pin_digest != _domain_digest(
+            b"memorii.semantic_ingestion.bootstrap_admission_pin.v1", body
+        ):
+            raise ValueError("bootstrap admission pin digest mismatch")
+        return self
+
+    @classmethod
+    def create(cls, **body: Unpack[_AdmissionPinCreateValues]) -> BootstrapAdmissionPin:
+        digest_body = cls.model_construct(
+            **body, pin_digest="0" * 64
+        ).model_dump(mode="python", exclude={"pin_digest"})
+        return cls(
+            **body,
+            pin_digest=_domain_digest(
+                b"memorii.semantic_ingestion.bootstrap_admission_pin.v1",
+                digest_body,
+            ),
+        )
+
+
+class _SegmentGrammarProofCreateValues(TypedDict):
+    source_id: str
+    segment_id: str
+    language_evidence_tuple: tuple[
+        Literal["en"],
+        Literal["authenticated_host_declaration"],
+        Literal["trusted"],
+        Literal["agrees"],
+    ]
+    bootstrap_language_evidence_digest: str
+    corpus_case_id: str
+    normalized_segment_digest: str
+
+
+class BootstrapSegmentGrammarProof(BaseModel):
+    """One deterministic corpus match bound to one prepared route."""
+
+    source_id: str = Field(min_length=1)
+    segment_id: str = Field(min_length=1)
+    language_evidence_tuple: tuple[
+        Literal["en"],
+        Literal["authenticated_host_declaration"],
+        Literal["trusted"],
+        Literal["agrees"],
+    ]
+    bootstrap_language_evidence_digest: str = _DIGEST
+    corpus_case_id: str = Field(min_length=1)
+    normalized_segment_digest: str = _DIGEST
+    proof_digest: str = _DIGEST
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def validate_proof(self) -> BootstrapSegmentGrammarProof:
+        if self.language_evidence_tuple != (
+            "en", "authenticated_host_declaration", "trusted", "agrees"
+        ):
+            raise ValueError("bootstrap grammar proof language evidence is not the V1 route")
+        body = self.model_dump(mode="python", exclude={"proof_digest"})
+        if self.proof_digest != _domain_digest(
+            b"memorii.semantic_ingestion.bootstrap_segment_grammar_proof.v1", body
+        ):
+            raise ValueError("bootstrap segment grammar proof digest mismatch")
+        return self
+
+    @classmethod
+    def create(cls, **body: Unpack[_SegmentGrammarProofCreateValues]) -> BootstrapSegmentGrammarProof:
+        return cls(
+            **body,
+            proof_digest=_domain_digest(
+                b"memorii.semantic_ingestion.bootstrap_segment_grammar_proof.v1", body
+            ),
+        )
+
+
 @dataclass(frozen=True)
 class HostVerifiedBootstrapMaterial:
     """Atomic result returned only after the host verifies its external release root."""
@@ -91,14 +322,41 @@ class HostVerifiedBootstrapMaterial:
     release_metadata: BootstrapProfileReleaseMetadata
     trust_anchor: BootstrapProfileTrustAnchor
     artifact_payloads: BootstrapProfileArtifactPayloads
+    release_evidence: HostVerifiedBootstrapReleaseEvidence
     authenticated_ingress_resolver: object
     profile_enabled: bool
+    trust_domain: Literal["production", "scenario_test"] = "production"
+
+
+@dataclass(frozen=True)
+class HostBootstrapMaterialPresentation:
+    """Opaque host presentation awaiting external trust-domain verification.
+
+    This is deliberately separate from the local runtime capability: a
+    capability can carry release bytes, but it cannot authenticate those bytes
+    for the provider composition root.
+    """
+
+    material: HostVerifiedBootstrapMaterial
+    authentication_proof: object
+
+
+class HostBootstrapMaterialVerifier(Protocol):
+    """Host-owned verifier for release root, lifecycle, and trust domain."""
+
+    def verify(
+        self,
+        *,
+        presentation: HostBootstrapMaterialPresentation,
+        required_trust_domain: Literal["production", "scenario_test"],
+        server_time: datetime,
+    ) -> HostVerifiedBootstrapMaterial | None: ...
 
 
 class HostSemanticIngestionCapability(Protocol):
     """Opaque host boundary; core cannot read bundled authority before verification."""
 
-    def load_verified_bootstrap_material(self) -> HostVerifiedBootstrapMaterial | None: ...
+    def load_bootstrap_material_presentation(self) -> HostBootstrapMaterialPresentation | None: ...
 
 HostBootstrapCapability = HostSemanticIngestionCapability
 
@@ -256,6 +514,12 @@ class BootstrapLocalProfileManifest(BaseModel):
     compiler_symbol: Literal["memorii.core.memory_evolution.semantic_compilation.SemanticIngestionCompiler"]
     validator_symbol: Literal["memorii.core.memory_evolution.validation.MemoryEvolutionValidator"]
     service_symbol: Literal["memorii.core.memory_evolution.service.MemoryEvolutionService"]
+    source_normalizer_symbol: Literal["memorii.core.memory_evolution.source_admission.ProviderEventNormalizer"]
+    scope_authorizer_symbol: Literal["memorii.core.memory_evolution.source_governance.require_complete_scope_authorization"]
+    preparation_service_symbol: Literal["memorii.core.semantic_ingestion.source_preparation.TextPreparationService"]
+    local_analyzer_symbol: Literal["memorii.core.semantic_ingestion.local_analyzer.ProductionLocalSemanticAnalyzer"]
+    preparation_policy: TextPreparationPolicy
+    declared_language: Literal["en"]
     grammar_capability_manifest_digest: str = _DIGEST
     grammar_corpus_digest: str = _DIGEST
     component_root_digest: str = _DIGEST
@@ -267,6 +531,8 @@ class BootstrapLocalProfileManifest(BaseModel):
 
     @model_validator(mode="after")
     def validate_manifest(self) -> BootstrapLocalProfileManifest:
+        if self.preparation_policy.supported_languages != (self.declared_language,):
+            raise ValueError("bootstrap preparation policy must authorize only its declared language")
         keys = tuple((item.module_path, item.qualified_symbol) for item in self.component_fingerprints)
         if keys != tuple(sorted(set(keys))):
             raise ValueError("component fingerprints must be ordered and unique")
@@ -274,7 +540,11 @@ class BootstrapLocalProfileManifest(BaseModel):
             ("memorii.core.memory_evolution.extraction", "EnglishRuleMemoryExtractor"),
             ("memorii.core.memory_evolution.semantic_compilation", "SemanticIngestionCompiler"),
             ("memorii.core.memory_evolution.service", "MemoryEvolutionService"),
+            ("memorii.core.memory_evolution.source_admission", "ProviderEventNormalizer"),
+            ("memorii.core.memory_evolution.source_governance", "require_complete_scope_authorization"),
             ("memorii.core.memory_evolution.validation", "MemoryEvolutionValidator"),
+            ("memorii.core.semantic_ingestion.local_analyzer", "ProductionLocalSemanticAnalyzer"),
+            ("memorii.core.semantic_ingestion.source_preparation", "TextPreparationService"),
         )
         if keys != required_keys:
             raise ValueError("bootstrap component inventory is incomplete or substituted")
@@ -343,6 +613,7 @@ class VerifiedBootstrapProfile(BaseModel):
     coordinate: BootstrapProfileCoordinate
     enabled: bool
     artifacts: BootstrapProfileArtifacts
+    release_evidence: HostVerifiedBootstrapReleaseEvidence
     selection_digest: str = _DIGEST
     verification_digest: str = _DIGEST
 
@@ -352,11 +623,18 @@ class VerifiedBootstrapProfile(BaseModel):
 def verify_bootstrap_profile(material: HostVerifiedBootstrapMaterial) -> VerifiedBootstrapProfile:
     """Verify the externally rooted release and complete local artifact graph."""
 
+    _bootstrap_manifest_model()
     anchor = material.trust_anchor
     metadata = material.release_metadata
+    release_evidence = material.release_evidence
     if not (
         metadata.coordinate == anchor.coordinate == BOOTSTRAP_COORDINATE
         and metadata.bootstrap_profile_trust_anchor_digest == anchor.trust_anchor_digest
+        and release_evidence.coordinate == metadata.coordinate
+        and release_evidence.signed_release_digest == metadata.signed_release_digest
+        and release_evidence.bootstrap_anchor_digest == anchor.trust_anchor_digest
+        and release_evidence.lifecycle_state == "active"
+        and release_evidence.trust_domain == material.trust_domain
     ):
         raise BootstrapProfileVerificationError(BootstrapUnavailableReason.INVALID_MANIFEST)
     payloads = material.artifact_payloads
@@ -445,6 +723,9 @@ def verify_bootstrap_profile(material: HostVerifiedBootstrapMaterial) -> Verifie
                 "grammar": grammar.manifest_digest,
                 "corpus": corpus.corpus_digest,
                 "components": profile.component_root_digest,
+                "signed_release": release_evidence.signed_release_digest,
+                "release_evidence": release_evidence.evidence_digest,
+                "trust_domain": release_evidence.trust_domain,
             }
         )
     ).hexdigest()
@@ -452,6 +733,7 @@ def verify_bootstrap_profile(material: HostVerifiedBootstrapMaterial) -> Verifie
         coordinate=BOOTSTRAP_COORDINATE,
         enabled=material.profile_enabled,
         artifacts=artifacts,
+        release_evidence=release_evidence,
         selection_digest=selection_digest,
         verification_digest=verification_digest,
     )
@@ -632,6 +914,7 @@ def build_bootstrap_profile_artifacts(
 ) -> BootstrapProfileArtifacts:
     """Build content-addressed artifacts for release tooling and deterministic tests."""
 
+    TextPreparationPolicy = _bootstrap_manifest_model()
     corpus_fields = {
         "schema_id": "memorii.semantic_ingestion.bootstrap_grammar_corpus",
         "schema_version": 1,
@@ -656,7 +939,11 @@ def build_bootstrap_profile_artifacts(
         ("memorii.core.memory_evolution.extraction", "EnglishRuleMemoryExtractor"),
         ("memorii.core.memory_evolution.semantic_compilation", "SemanticIngestionCompiler"),
         ("memorii.core.memory_evolution.service", "MemoryEvolutionService"),
+        ("memorii.core.memory_evolution.source_admission", "ProviderEventNormalizer"),
+        ("memorii.core.memory_evolution.source_governance", "require_complete_scope_authorization"),
         ("memorii.core.memory_evolution.validation", "MemoryEvolutionValidator"),
+        ("memorii.core.semantic_ingestion.local_analyzer", "ProductionLocalSemanticAnalyzer"),
+        ("memorii.core.semantic_ingestion.source_preparation", "TextPreparationService"),
     )
     fingerprints: list[ComponentSymbolFingerprint] = []
     for module_path, qualified_symbol in symbols:
@@ -685,6 +972,12 @@ def build_bootstrap_profile_artifacts(
         )
     ordered = tuple(fingerprints)
     component_root_digest = _component_root(BOOTSTRAP_COORDINATE, ordered)
+    preparation_policy = TextPreparationPolicy.create(
+        max_segment_characters=4096,
+        supported_languages=("en",),
+        segmentation_algorithm="memorii.semantic-ingestion.safe-sentence-first-paragraph-bounded.v1",
+        context_window_algorithm="memorii.semantic-ingestion.owned-partition-whole-boundary-context.v1",
+    )
     profile_fields = {
         "schema_id": "memorii.semantic_ingestion.bootstrap_local_profile_manifest",
         "schema_version": 1,
@@ -693,6 +986,12 @@ def build_bootstrap_profile_artifacts(
         "compiler_symbol": "memorii.core.memory_evolution.semantic_compilation.SemanticIngestionCompiler",
         "validator_symbol": "memorii.core.memory_evolution.validation.MemoryEvolutionValidator",
         "service_symbol": "memorii.core.memory_evolution.service.MemoryEvolutionService",
+        "source_normalizer_symbol": "memorii.core.memory_evolution.source_admission.ProviderEventNormalizer",
+        "scope_authorizer_symbol": "memorii.core.memory_evolution.source_governance.require_complete_scope_authorization",
+        "preparation_service_symbol": "memorii.core.semantic_ingestion.source_preparation.TextPreparationService",
+        "local_analyzer_symbol": "memorii.core.semantic_ingestion.local_analyzer.ProductionLocalSemanticAnalyzer",
+        "preparation_policy": preparation_policy.model_dump(mode="python"),
+        "declared_language": "en",
         "grammar_capability_manifest_digest": grammar.manifest_digest,
         "grammar_corpus_digest": corpus.corpus_digest,
         "component_root_digest": component_root_digest,
@@ -724,3 +1023,18 @@ def build_bootstrap_trust_anchor(artifacts: BootstrapProfileArtifacts) -> Bootst
         **fields,
         trust_anchor_digest=sha256(encode_typed_value(fields)).hexdigest(),
     )
+
+
+def _bootstrap_manifest_model():
+    """Resolve the preparation contract only after package initialization.
+
+    ``memory_evolution`` is imported by semantic-ingestion package setup, so an
+    eager contract import would make bootstrap verification circular.
+    """
+
+    from memorii.core.semantic_ingestion.contracts import TextPreparationPolicy
+
+    BootstrapLocalProfileManifest.model_rebuild(
+        _types_namespace={"TextPreparationPolicy": TextPreparationPolicy}
+    )
+    return TextPreparationPolicy

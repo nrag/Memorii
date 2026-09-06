@@ -1,0 +1,33 @@
+{
+  "artifact_kind": "implementation_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_v3_builtin_native_group_commit_closure",
+  "semantic_predecessor": "design-candidate-identity-v76.json",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree_stable",
+  "status_list_sha256": "710e24d2bdc5ebad3e092c313c77421a1de87bbd941f3b5c2f75f644ca14aa0e",
+  "review_scope": [
+    "built-in graph composition without an injected test authority in direct factory filesystem and Hermes roots",
+    "persisted execution-policy projection into GraphDependentExecutionPolicyReferenceV3",
+    "strict writer admission of the exact two-record pre-epoch graph authority closure",
+    "native group-commit reload through checkpoint terminal publication and recovery",
+    "memory and independent JSONL post-effect lost-ack recovery without duplicate group commit"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "83a9fe92adde7cb45072c8d2b8aa43c0eaa68df456df0c4aab35f9002af14364",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/implementation.plan.md": "fa825b042d29b4b2c89162efa1bb61efefed97d958f98c5b52a45191a52257fb",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "5d230fce15bd1ba7a355d89ac5f113ce77a6eb3ea7cbb2fd8e55448ab66e9ed2",
+    "docs/work/semantic_ingestion/bootstrap-graph-authority-unavailable-2026-08-11/debug.plan.md": "b9e435febd05c620e94a498553a5ac16d7c90abd23244bbcd9fb679afce6e15b"
+  },
+  "evidence": [
+    "direct no-injection ordinary fact: 1 passed in 177.73s",
+    "factory no-injection ordinary fact: 1 passed in 229.55s",
+    "filesystem no-injection ordinary fact: 1 passed in 230.93s",
+    "Hermes no-injection ordinary fact: 1 passed in 229.24s",
+    "independent JSONL post-group-commit checkpoint-ack recovery: 1 passed in 187.96s",
+    "independent-process JSONL lost-ack recovery: 1 passed in 196.74s",
+    "selector manifest validator: 11 passed in 5.78s",
+    "scoped Ruff JSON parsing and git diff check passed"
+  ],
+  "evidence_maturity": "implemented_and_focused_verified"
+}

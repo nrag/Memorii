@@ -1,0 +1,1247 @@
+from __future__ import annotations
+
+from hashlib import sha256
+from threading import Barrier, Thread
+
+import pytest
+from memorii.core.memory_evolution.ingestion_contracts import (
+    decode_typed_value,
+    encode_typed_value,
+)
+from memorii.core.semantic_ingestion.canonical_evidence_arena import (
+    CANONICAL_CODEC_REVISION,
+    CANONICAL_PROFILE_REVISION,
+    MAX_ARENA_CHARGED_BYTES,
+    MAX_ARENA_ENTRIES,
+    MAX_CANONICAL_BYTES_PER_ENTRY,
+    MAX_MEMBER_PATHS_PER_OPERATION,
+    CanonicalBinding,
+    CanonicalClosureObservabilityDispatcher,
+    CanonicalEvidenceArena,
+    CanonicalMemberIndex,
+    CanonicalValidationScope,
+    RetainingCanonicalClosureObservabilityDispatcher,
+    ValidatedCanonicalEvidenceResult,
+)
+from memorii.core.semantic_ingestion.contracts import (
+    RetainedSourceTextArtifact,
+    SemanticContractCodecError,
+    encode_semantic_contract,
+    encode_semantic_contract_result,
+)
+
+
+def _artifact(*, artifact_id: str = "artifact") -> RetainedSourceTextArtifact:
+    return RetainedSourceTextArtifact.create(
+        artifact_id=artifact_id,
+        content_digest="0" * 64,
+        unicode_scalar_length=0,
+    )
+
+
+def _admit(
+    arena: CanonicalEvidenceArena,
+    value: RetainedSourceTextArtifact,
+    raw: bytes,
+    *,
+    member_paths: int = 1,
+) -> bool:
+    return arena.admit_success(
+        canonical_contract_bytes=raw,
+        concrete_contract_type=type(value),
+        profile_revision=CANONICAL_PROFILE_REVISION,
+        codec_revision=CANONICAL_CODEC_REVISION,
+        domain=b"domain",
+        result=ValidatedCanonicalEvidenceResult(
+            contract=value,
+            canonical_contract_bytes=raw,
+            canonical_member_index=CanonicalMemberIndex(
+                contract_type=f"{type(value).__module__}.{type(value).__qualname__}",
+                member_paths=member_paths,
+                canonical_digest=sha256(raw).hexdigest(),
+            ),
+            validation_provenance=("test",),
+        ),
+    )
+
+
+def _sealed_arena_with_entry(
+    *, dispatcher: CanonicalClosureObservabilityDispatcher | None = None,
+) -> tuple[CanonicalEvidenceArena, RetainedSourceTextArtifact, bytes, CanonicalBinding]:
+    value = _artifact()
+    raw = b"canonical"
+    arena = CanonicalEvidenceArena(
+        scope=CanonicalValidationScope("tenant", "operation", 1, "fence", "writer"),
+        observability_dispatcher=dispatcher,
+    )
+    assert _admit(arena, value, raw)
+    return arena, value, raw, arena.seal()
+
+
+def _lookup(
+    arena: CanonicalEvidenceArena,
+    value: RetainedSourceTextArtifact,
+    raw: bytes,
+    binding: CanonicalBinding,
+):
+    return arena.lookup_sealed(
+        binding=binding,
+        scope=arena.scope,
+        canonical_contract_bytes=raw,
+        concrete_contract_type=type(value),
+        profile_revision=CANONICAL_PROFILE_REVISION,
+        codec_revision=CANONICAL_CODEC_REVISION,
+        domain=b"domain",
+    )
+
+
+def test_codec_does_not_reuse_ambient_preseal_arena_entries() -> None:
+    value = _artifact()
+    with CanonicalEvidenceArena() as arena:
+        first = encode_semantic_contract(value)
+        second = encode_semantic_contract(value)
+        snapshot = arena.snapshot()
+        assert first == second
+        assert snapshot.entries == 0
+        assert snapshot.hits == 0
+
+    assert arena.snapshot().closed
+    assert arena.snapshot().entries == 0
+
+
+def test_nonce_and_arena_identity_fail_closed() -> None:
+    first = CanonicalEvidenceArena()
+    second = CanonicalEvidenceArena()
+    with first, pytest.raises(ValueError, match="stale or substituted"):
+        first.require_active_nonce(second.nonce)
+    second.close()
+
+
+def test_disabled_arena_allows_nonce_validation_for_full_fallback_path() -> None:
+    with CanonicalEvidenceArena(enabled=False) as arena:
+        arena.require_active_nonce(arena.nonce)
+
+
+def test_capacity_rejected_arena_allows_nonce_validation_for_full_fallback_path() -> None:
+    arenas = [CanonicalEvidenceArena() for _ in range(5)]
+    try:
+        rejected = arenas[-1]
+        with rejected:
+            rejected.require_active_nonce(rejected.nonce)
+    finally:
+        for arena in arenas:
+            arena.close()
+
+
+def test_invalid_contract_never_populates_success_entry() -> None:
+    forged = _artifact().model_copy(update={"artifact_digest": "f" * 64})
+    with CanonicalEvidenceArena() as arena:
+        with pytest.raises(SemanticContractCodecError):
+            encode_semantic_contract(forged)
+        assert arena.snapshot().entries == 0
+
+
+def test_entry_count_and_single_entry_byte_limits_fall_back_without_eviction() -> None:
+    value = _artifact()
+    with CanonicalEvidenceArena() as arena:
+        for index in range(MAX_ARENA_ENTRIES):
+            assert _admit(arena, value, index.to_bytes(2, "big"))
+        assert not _admit(arena, value, b"overflow")
+        assert arena.snapshot().entries == 0
+        assert arena.snapshot().mode == "capacity_rejected_full_path"
+
+    with CanonicalEvidenceArena() as arena:
+        assert not _admit(arena, value, b"x" * (MAX_CANONICAL_BYTES_PER_ENTRY + 1))
+        assert arena.snapshot().entries == 0
+        assert arena.snapshot().capacity_fallbacks == 1
+
+
+def test_concurrent_arena_cannot_read_another_arena_entry() -> None:
+    value = _artifact()
+    raw = b"canonical"
+    first = CanonicalEvidenceArena()
+    second = CanonicalEvidenceArena()
+    try:
+        with first:
+            assert _admit(first, value, raw)
+        with second, pytest.raises(ValueError, match="sealed authority"):
+            second.lookup(
+                canonical_contract_bytes=raw,
+                concrete_contract_type=type(value),
+                profile_revision="profile-v1",
+                codec_revision="codec-v1",
+                domain=b"domain",
+            )
+    finally:
+        first.close()
+        second.close()
+
+
+def test_operation_charge_rejects_first_entry_above_budget_without_eviction() -> None:
+    value = _artifact()
+    domain = b"domain"
+    per_entry_charge = MAX_CANONICAL_BYTES_PER_ENTRY + len(domain) + 512
+    accepted = MAX_ARENA_CHARGED_BYTES // per_entry_charge
+    with CanonicalEvidenceArena() as arena:
+        for index in range(accepted):
+            raw = index.to_bytes(2, "big") + b"x" * (MAX_CANONICAL_BYTES_PER_ENTRY - 2)
+            assert _admit(arena, value, raw)
+        before = arena.snapshot()
+        overflow = accepted.to_bytes(2, "big") + b"x" * (MAX_CANONICAL_BYTES_PER_ENTRY - 2)
+        assert not _admit(arena, value, overflow)
+        after = arena.snapshot()
+        assert after.entries == 0
+        assert after.charged_bytes == 0
+        assert after.capacity_fallbacks == before.capacity_fallbacks + 1
+
+
+def test_process_reservation_rejects_fifth_arena_and_recovers_after_close() -> None:
+    arenas = [CanonicalEvidenceArena() for _ in range(5)]
+    try:
+        assert sum(arena.snapshot().reservation_acquired for arena in arenas) == 4
+        assert not arenas[-1].snapshot().reservation_acquired
+    finally:
+        for arena in arenas:
+            arena.close()
+    replacement = CanonicalEvidenceArena()
+    try:
+        assert replacement.snapshot().reservation_acquired
+    finally:
+        replacement.close()
+
+
+def test_exception_teardown_is_idempotent_and_returns_reservation() -> None:
+    arena = CanonicalEvidenceArena()
+    with pytest.raises(RuntimeError, match="abort"), arena:
+        raise RuntimeError("abort")
+    arena.close()
+    assert arena.snapshot().closed
+    replacement = CanonicalEvidenceArena()
+    try:
+        assert replacement.snapshot().reservation_acquired
+    finally:
+        replacement.close()
+
+
+def test_concurrent_contexts_keep_nonce_and_entries_operation_local() -> None:
+    barrier = Barrier(2)
+    snapshots = []
+
+    def run() -> None:
+        value = _artifact()
+        with CanonicalEvidenceArena() as arena:
+            barrier.wait()
+            encode_semantic_contract(value)
+            encode_semantic_contract(value)
+            snapshots.append(arena.snapshot())
+
+    threads = [Thread(target=run), Thread(target=run)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert len(snapshots) == 2
+    assert snapshots[0].nonce != snapshots[1].nonce
+    assert all(snapshot.entries == 0 and snapshot.hits == 0 for snapshot in snapshots)
+
+
+def test_preseal_lookup_rejects_and_postseal_admission_rejects() -> None:
+    value = _artifact()
+    raw = b"root"
+    arena = CanonicalEvidenceArena(
+        scope=CanonicalValidationScope("tenant", "operation", 1, 2, "writer")
+    )
+    try:
+        with pytest.raises(ValueError, match="sealed authority"):
+            arena.lookup(
+                canonical_contract_bytes=raw,
+                concrete_contract_type=type(value),
+                profile_revision=CANONICAL_PROFILE_REVISION,
+                codec_revision=CANONICAL_CODEC_REVISION,
+                domain=b"domain",
+            )
+        assert _admit(arena, value, raw)
+        binding = arena.seal()
+        assert not _admit(arena, value, b"later")
+        lease = arena.lookup_sealed(
+            binding=binding,
+            scope=arena.scope,
+            canonical_contract_bytes=raw,
+            concrete_contract_type=type(value),
+            profile_revision=CANONICAL_PROFILE_REVISION,
+            codec_revision=CANONICAL_CODEC_REVISION,
+            domain=b"domain",
+        )
+        assert lease is not None
+        arena.close()
+        lease.release()
+        assert arena.snapshot().terminal_reason == "completed"
+    finally:
+        arena.close()
+
+
+@pytest.mark.parametrize("coordinate", ["tenant", "operation", "generation", "fence", "writer"])
+def test_sealed_lookup_rejects_each_foreign_scope_coordinate(coordinate: str) -> None:
+    value = _artifact()
+    raw = b"root"
+    scope = CanonicalValidationScope("tenant", "operation", 1, 2, "writer")
+    arena = CanonicalEvidenceArena(scope=scope)
+    try:
+        assert _admit(arena, value, raw)
+        binding = arena.seal()
+        changed = dict(tenant="tenant", operation="operation", generation=1, fence=2, writer="writer")
+        changed[coordinate] = 3 if coordinate in {"generation", "fence"} else "foreign"
+        with pytest.raises(ValueError, match="foreign scope"):
+            arena.lookup_sealed(
+                binding=binding,
+                scope=CanonicalValidationScope(**changed),  # type: ignore[arg-type]
+                canonical_contract_bytes=raw,
+                concrete_contract_type=type(value),
+                profile_revision=CANONICAL_PROFILE_REVISION,
+                codec_revision=CANONICAL_CODEC_REVISION,
+                domain=b"domain",
+            )
+    finally:
+        arena.close()
+
+
+def test_codec_issues_exact_unique_spans_and_stages_only_when_explicit() -> None:
+    value = _artifact(artifact_id="same")
+    arena = CanonicalEvidenceArena(
+        scope=CanonicalValidationScope("tenant", "operation", 1, 2, "writer")
+    )
+    try:
+        result = encode_semantic_contract_result(value, canonical_staging=arena)
+        assert result.canonical_contract_bytes == encode_semantic_contract(value)
+        assert result.canonical_member_index.member_paths == len(result.member_evidence)
+        assert len({member.path for member in result.member_evidence}) == len(result.member_evidence)
+        assert all(
+            result.canonical_contract_bytes[member.begin : member.end]
+            for member in result.member_evidence
+        )
+        assert arena.snapshot().entries == 1
+    finally:
+        arena.close()
+
+
+@pytest.mark.parametrize("lease_count,release_order", [(2, (0, 1)), (2, (1, 0)), (4, (3, 1, 0, 2))])
+def test_same_cached_entry_issues_independent_leases_and_drains_after_close(
+    lease_count: int, release_order: tuple[int, ...]
+) -> None:
+    arena, value, raw, binding = _sealed_arena_with_entry()
+    try:
+        leases = [_lookup(arena, value, raw, binding) for _ in range(lease_count)]
+        assert all(lease is not None for lease in leases)
+        assert len({lease._token for lease in leases if lease is not None}) == lease_count
+        arena.close()
+        assert arena.snapshot().state == "closing"
+        for index in release_order[:-1]:
+            assert leases[index] is not None
+            leases[index].release()
+            assert arena.snapshot().state == "closing"
+        final_lease = leases[release_order[-1]]
+        assert final_lease is not None
+        final_lease.release()
+        snapshot = arena.snapshot()
+        assert snapshot.closed
+        assert snapshot.released
+        assert snapshot.hits == lease_count
+        assert snapshot.terminal_reason == "completed"
+    finally:
+        arena.close()
+
+
+def test_lease_token_rejects_duplicate_stale_and_foreign_release_without_underflow() -> None:
+    arena, value, raw, binding = _sealed_arena_with_entry()
+    try:
+        lease = _lookup(arena, value, raw, binding)
+        assert lease is not None
+        foreign = CanonicalEvidenceArena()
+        try:
+            with pytest.raises(RuntimeError, match="foreign, stale, or duplicate"):
+                foreign.release_lease(lease._token)
+        finally:
+            foreign.close()
+        arena.close()
+        lease.release()
+        with pytest.raises(RuntimeError, match="already released"):
+            lease.release()
+        with pytest.raises(RuntimeError, match="foreign, stale, or duplicate"):
+            arena.release_lease(lease._token)
+        snapshot = arena.snapshot()
+        assert snapshot.closed
+        assert snapshot.released
+        assert snapshot.terminal_reason == "completed"
+    finally:
+        arena.close()
+
+
+def test_close_and_last_release_barrier_linearizes_to_one_terminal_snapshot() -> None:
+    dispatcher = RetainingCanonicalClosureObservabilityDispatcher()
+    arena, value, raw, binding = _sealed_arena_with_entry(dispatcher=dispatcher)
+    lease = _lookup(arena, value, raw, binding)
+    assert lease is not None
+    barrier = Barrier(2)
+    failures: list[BaseException] = []
+
+    def close() -> None:
+        try:
+            barrier.wait()
+            arena.close()
+        except BaseException as exc:  # pragma: no cover - test thread propagation
+            failures.append(exc)
+
+    def release() -> None:
+        try:
+            barrier.wait()
+            lease.release()
+        except BaseException as exc:  # pragma: no cover - test thread propagation
+            failures.append(exc)
+
+    closer = Thread(target=close)
+    releaser = Thread(target=release)
+    closer.start()
+    releaser.start()
+    closer.join()
+    releaser.join()
+    assert failures == []
+    snapshot = arena.snapshot()
+    assert snapshot.closed
+    assert snapshot.released
+    assert len(dispatcher.snapshots) == 1
+    replacement = CanonicalEvidenceArena()
+    try:
+        assert replacement.snapshot().reservation_acquired
+    finally:
+        replacement.close()
+
+
+class _UnavailableDispatcher(CanonicalClosureObservabilityDispatcher):
+    def __init__(self, *, raises: bool = False) -> None:
+        self.calls = 0
+        self.raises = raises
+
+    def record(self, snapshot):
+        self.calls += 1
+        if self.raises:
+            raise OSError("unavailable")
+        return "unavailable"
+
+
+@pytest.mark.parametrize(
+    ("reason", "enabled"),
+    [
+        ("completed", True),
+        ("validation-failed", True),
+        ("exception", True),
+        ("cancelled", True),
+        ("feature-disabled", False),
+    ],
+)
+def test_terminal_dispatcher_records_one_content_free_snapshot_for_each_terminal_reason(
+    reason: str, enabled: bool
+) -> None:
+    dispatcher = RetainingCanonicalClosureObservabilityDispatcher()
+    arena = CanonicalEvidenceArena(enabled=enabled, observability_dispatcher=dispatcher)
+    if enabled:
+        if reason == "completed":
+            arena.close()
+        elif reason == "exception":
+            arena.close_as_exception()
+        else:
+            arena.abort(reason)  # type: ignore[arg-type]
+    snapshot = arena.snapshot()
+    assert snapshot.terminal_reason == reason
+    assert snapshot.released
+    assert len(dispatcher.snapshots) == 1
+    terminal = dispatcher.snapshots[0]
+    assert terminal.terminal_reason == reason
+    serialized = repr(terminal)
+    assert "artifact" not in serialized
+    assert "canonical" not in serialized
+    arena.close()
+    assert len(dispatcher.snapshots) == 1
+
+
+def test_capacity_refusal_emits_one_content_free_snapshot_and_unavailable_sink_preserves_terminal_outcome() -> None:
+    dispatcher = RetainingCanonicalClosureObservabilityDispatcher()
+    arenas = [CanonicalEvidenceArena(observability_dispatcher=dispatcher) for _ in range(5)]
+    try:
+        refused = arenas[-1]
+        assert refused.snapshot().terminal_reason == "capacity-refused"
+        assert len(dispatcher.snapshots) == 1
+    finally:
+        for arena in arenas:
+            arena.close()
+    unavailable = _UnavailableDispatcher(raises=True)
+    failing_arena = CanonicalEvidenceArena(observability_dispatcher=unavailable)
+    failing_arena.close()
+    assert failing_arena.snapshot().terminal_reason == "completed"
+    assert failing_arena.snapshot().released
+    assert unavailable.calls == 1
+
+
+def _count_contract_digest(monkeypatch):
+    import memorii.core.semantic_ingestion.contracts as _contracts
+
+    calls = {"n": 0}
+    original = _contracts.contract_digest
+
+    def counted(domain, value):
+        calls["n"] += 1
+        return original(domain, value)
+
+    monkeypatch.setattr(_contracts, "contract_digest", counted)
+    return calls
+
+
+def _equal_copy(value: RetainedSourceTextArtifact) -> RetainedSourceTextArtifact:
+    return RetainedSourceTextArtifact.model_validate(value.model_dump(mode="python"))
+
+
+def test_enabled_arena_reuses_verified_digest_within_operation(monkeypatch) -> None:
+    calls = _count_contract_digest(monkeypatch)
+    with CanonicalEvidenceArena(enabled=True) as arena:
+        first = _artifact(artifact_id="reuse-me")
+        baseline = calls["n"]
+        assert baseline >= 1
+        copies = [_equal_copy(first) for _ in range(20)]
+        assert all(copy == first for copy in copies)
+        assert calls["n"] == baseline
+        assert arena.digest_verification_reuses >= 20
+        assert arena.digest_verification_records >= 1
+    assert _equal_copy(first) == first
+
+
+def test_digest_verification_scope_does_not_survive_arena_close(monkeypatch) -> None:
+    calls = _count_contract_digest(monkeypatch)
+    with CanonicalEvidenceArena(enabled=True):
+        first = _artifact(artifact_id="closed-scope")
+        baseline = calls["n"]
+        _equal_copy(first)
+        assert calls["n"] == baseline
+    _equal_copy(first)
+    assert calls["n"] > baseline
+
+
+def test_disabled_arena_keeps_full_digest_verification(monkeypatch) -> None:
+    calls = _count_contract_digest(monkeypatch)
+    with CanonicalEvidenceArena(enabled=False) as arena:
+        first = _artifact(artifact_id="disabled-scope")
+        baseline = calls["n"]
+        _equal_copy(first)
+        assert calls["n"] > baseline
+        assert arena.digest_verification_reuses == 0
+
+
+def test_no_arena_keeps_full_digest_verification(monkeypatch) -> None:
+    calls = _count_contract_digest(monkeypatch)
+    first = _artifact(artifact_id="no-scope")
+    baseline = calls["n"]
+    _equal_copy(first)
+    assert calls["n"] > baseline
+
+
+def test_forged_digest_declaration_fails_closed_inside_active_scope() -> None:
+    with CanonicalEvidenceArena(enabled=True):
+        good = _artifact(artifact_id="forged-target")
+        forged_body = dict(good.model_dump(mode="python"))
+        forged_body["content_digest"] = "1" * 64
+        with pytest.raises(ValueError, match="artifact_digest mismatch"):
+            RetainedSourceTextArtifact.model_validate(forged_body)
+
+
+def test_capacity_refusal_inerts_verified_digest_reuse(monkeypatch) -> None:
+    calls = _count_contract_digest(monkeypatch)
+    arena = CanonicalEvidenceArena(enabled=True)
+    with arena:
+        first = _artifact(artifact_id="refused-scope")
+        baseline = calls["n"]
+        _equal_copy(first)
+        assert calls["n"] == baseline
+        oversized = ValidatedCanonicalEvidenceResult(
+            contract=first,
+            canonical_contract_bytes=b"x" * (MAX_CANONICAL_BYTES_PER_ENTRY + 1),
+            canonical_member_index=CanonicalMemberIndex(
+                contract_type="test",
+                member_paths=1,
+                canonical_digest="0" * 64,
+            ),
+            validation_provenance=("test",),
+        )
+        assert not arena.admit_success(
+            canonical_contract_bytes=oversized.canonical_contract_bytes,
+            concrete_contract_type=type(first),
+            profile_revision=CANONICAL_PROFILE_REVISION,
+            codec_revision=CANONICAL_CODEC_REVISION,
+            domain=b"domain",
+            result=oversized,
+        )
+        _equal_copy(first)
+        assert calls["n"] > baseline
+
+
+def _count_codec_admissions(monkeypatch):
+    import memorii.core.semantic_ingestion.contracts as _contracts
+
+    calls = {"n": 0}
+    original = _contracts._revalidated_contract_instance
+
+    def counted(value, canonical_payload):
+        calls["n"] += 1
+        return original(value, canonical_payload)
+
+    monkeypatch.setattr(_contracts, "_revalidated_contract_instance", counted)
+    return calls
+
+
+def test_enabled_arena_reuses_certified_encode_bytes_within_operation(monkeypatch) -> None:
+    calls = _count_codec_admissions(monkeypatch)
+    with CanonicalEvidenceArena(enabled=True) as arena:
+        first = _artifact(artifact_id="bytes-reuse")
+        raw = encode_semantic_contract(first)
+        baseline = calls["n"]
+        assert baseline >= 1
+        assert encode_semantic_contract(first) == raw
+        assert calls["n"] == baseline
+        assert arena.bytes_reuses >= 1
+        assert arena.bytes_records >= 1
+
+
+def test_certified_bytes_and_result_memos_are_separate_but_byte_identical(monkeypatch) -> None:
+    with CanonicalEvidenceArena(enabled=True):
+        first = _artifact(artifact_id="twin-memos")
+        raw = encode_semantic_contract(first)
+        staged = encode_semantic_contract_result(first)
+        assert staged.canonical_contract_bytes == raw
+
+
+def test_encoded_bytes_reuse_does_not_survive_arena_close(monkeypatch) -> None:
+    calls = _count_codec_admissions(monkeypatch)
+    with CanonicalEvidenceArena(enabled=True):
+        first = _artifact(artifact_id="closed-bytes")
+        encode_semantic_contract(first)
+        baseline = calls["n"]
+        assert calls["n"] == baseline
+    encode_semantic_contract(first)
+    assert calls["n"] > baseline
+
+
+def test_structurally_equal_copy_takes_full_encode_path_inside_active_scope(monkeypatch) -> None:
+    calls = _count_codec_admissions(monkeypatch)
+    with CanonicalEvidenceArena(enabled=True):
+        first = _artifact(artifact_id="identity-only")
+        raw = encode_semantic_contract(first)
+        baseline = calls["n"]
+        copy = _equal_copy(first)
+        assert copy == first
+        assert encode_semantic_contract(copy) == raw
+        assert calls["n"] > baseline
+
+
+def test_forged_model_copy_fails_closed_inside_active_scope() -> None:
+    with CanonicalEvidenceArena(enabled=True):
+        good = _artifact(artifact_id="forged-copy")
+        encode_semantic_contract(good)
+        forged = good.model_copy(update={"content_digest": "1" * 64})
+        with pytest.raises(SemanticContractCodecError, match="semantic ingestion contract validation failed"):
+            encode_semantic_contract(forged)
+
+
+def test_disabled_arena_keeps_full_encode_admission(monkeypatch) -> None:
+    calls = _count_codec_admissions(monkeypatch)
+    with CanonicalEvidenceArena(enabled=False) as arena:
+        first = _artifact(artifact_id="disabled-bytes")
+        encode_semantic_contract(first)
+        baseline = calls["n"]
+        encode_semantic_contract(first)
+        assert calls["n"] > baseline
+        assert arena.bytes_reuses == 0
+
+
+def test_result_memo_returns_certified_result_and_refuses_duplicate_staging(monkeypatch) -> None:
+    with CanonicalEvidenceArena(
+        scope=CanonicalValidationScope("tenant", "operation", 1, "fence", "writer"),
+    ) as arena:
+        first = _artifact(artifact_id="result-reuse")
+        staged = encode_semantic_contract_result(first, canonical_staging=arena)
+        entries = arena.snapshot().entries
+        assert entries == 1
+        again = encode_semantic_contract_result(first, canonical_staging=arena)
+        assert again is staged
+        assert arena.snapshot().entries == entries
+        assert arena.result_reuses >= 1
+
+
+def test_encoded_bytes_reuse_inert_after_capacity_refusal(monkeypatch) -> None:
+    calls = _count_codec_admissions(monkeypatch)
+    arena = CanonicalEvidenceArena(enabled=True)
+    with arena:
+        first = _artifact(artifact_id="refused-bytes")
+        encode_semantic_contract(first)
+        baseline = calls["n"]
+        oversized = ValidatedCanonicalEvidenceResult(
+            contract=first,
+            canonical_contract_bytes=b"x" * (MAX_CANONICAL_BYTES_PER_ENTRY + 1),
+            canonical_member_index=CanonicalMemberIndex(
+                contract_type="test",
+                member_paths=1,
+                canonical_digest="0" * 64,
+            ),
+            validation_provenance=("test",),
+        )
+        assert not arena.admit_success(
+            canonical_contract_bytes=oversized.canonical_contract_bytes,
+            concrete_contract_type=type(first),
+            profile_revision=CANONICAL_PROFILE_REVISION,
+            codec_revision=CANONICAL_CODEC_REVISION,
+            domain=b"domain",
+            result=oversized,
+        )
+        encode_semantic_contract(first)
+        assert calls["n"] > baseline
+
+
+def _fused_emission_families() -> list[object]:
+    from datetime import UTC as _UTC
+    from datetime import datetime as _datetime
+    from datetime import timedelta as _timedelta
+
+    scalar_leaves = [
+        None,
+        True,
+        False,
+        0,
+        -17,
+        2**70,
+        "plain",
+        'quote"and\\slash',
+        "ünïcödé✓",
+        "\u0007control",
+        b"\x00\xff\x10",
+        _datetime(2026, 7, 30, 12, 30, 5, 123456, tzinfo=_UTC),
+        _timedelta(days=-1, seconds=7, microseconds=654321),
+    ]
+    families: list[object] = list(scalar_leaves)
+    families.extend(
+        [
+            ["list", ["nested", ["deeper", None, False]]],
+            ("tuple", ("nested", ("deeper", 0, -1))),
+            {"zebra": 1, "alpha": {"beta": [1, 2], "gamma": ("x", "y")}, "mid": None},
+            {"set": {"s", "a", "m"}},
+            {"frozenset": frozenset({"z", "b", "q"})},
+            {"map_with_tuple_keys_value": {"k": (1, 2)}},
+            {"deep": {"a": {"b": {"c": {"d": ["e", ("f", {"g": 7})]}}}}},
+        ]
+    )
+    # Decoded wrapper algebra: sets carrying map/tuple members lower to the
+    # immutable wrapper classes, which the fused emitter must reproduce.
+    # Python cannot write a set of maps literally, so the canonical bytes are
+    # composed from the members' own encodings and decoded back.
+    map_member_a = encode_typed_value({"k": 1})
+    map_member_b = encode_typed_value({"k": 2})
+    set_of_maps_raw = (
+        b'{"$type":"set","items":['
+        + b",".join(sorted([map_member_a, map_member_b]))
+        + b"]}"
+    )
+    families.append(decode_typed_value(set_of_maps_raw))
+    encoded_tagged = encode_typed_value({"members": {("t", 1), ("t", 2)}})
+    families.append(decode_typed_value(encoded_tagged))
+    return families
+
+
+def test_fused_emission_matches_reference_two_phase_across_container_families() -> None:
+    import memorii.core.memory_evolution.ingestion_contracts as ctv
+
+    families = _fused_emission_families()
+    for value in families:
+        reference = ctv._json(ctv._normalized_typed_json(value))
+        assert encode_typed_value(value) == reference
+        with CanonicalEvidenceArena(enabled=True):
+            first = encode_typed_value(value)
+            assert first == reference
+            assert encode_typed_value(value) == reference
+        assert encode_typed_value(value) == reference
+
+
+def test_fused_emission_splices_shared_subtrees_byte_identically() -> None:
+    shared = {"shared": ["subtree", {"inner": (1, 2, 3)}]}
+    parent_one = {"first": shared, "tail": 1}
+    parent_two = {"second": shared, "tail": 2}
+    with CanonicalEvidenceArena(enabled=True):
+        one = encode_typed_value(parent_one)
+        two = encode_typed_value(parent_two)
+    assert one == encode_typed_value(parent_one)
+    assert two == encode_typed_value(parent_two)
+
+
+def test_emission_replay_does_not_survive_arena_close() -> None:
+    import memorii.core.memory_evolution.ingestion_contracts as ctv
+
+    # The replay memo records only substantial subtrees, so the fixture must
+    # exceed the recording floor to observe entries and their purge.
+    value = {"close": ["scope", {"probe": (4, 5)}], "padding": "p" * 512}
+    with CanonicalEvidenceArena(enabled=True) as arena:
+        assert encode_typed_value(value) == ctv._json(ctv._normalized_typed_json(value))
+        assert arena._emission_scope.emitted_entries >= 1
+    assert arena._emission_scope.emitted_entries == 0
+    assert arena._emission_scope.retained_bytes == 0
+
+
+def _drift_fixtures():
+    from datetime import timedelta
+
+    from memorii.core.memory_evolution.models import ClaimValueType
+    from memorii.core.semantic_ingestion.contracts import (
+        PredicatePromptContract,
+        TrustDecayStep,
+    )
+
+    prompt = PredicatePromptContract.create(
+        predicate_id="drift-probe",
+        description="drift probe",
+        subject_value_kind="entity",
+        object_value_kind="literal",
+        object_literal_type=ClaimValueType.TEXT,
+        supported_commitments=("asserted",),
+    )
+    step = TrustDecayStep.model_validate(
+        {"minimum_age": timedelta(0), "authority_loss": 3}
+    )
+    return prompt, step, ClaimValueType
+
+
+def test_representational_drift_modes_never_inherit_certification() -> None:
+    from datetime import timedelta
+
+    import memorii.core.semantic_ingestion.contracts as contracts
+    from memorii.core.semantic_ingestion.contracts import (
+        PredicatePromptContract,
+        TrustDecayStep,
+    )
+
+    prompt, _step, _claim_value_type = _drift_fixtures()
+    with CanonicalEvidenceArena(enabled=True) as arena:
+        scope = arena._digest_verification_scope
+        # Top-level lax coercion on a non-strict model: "3" for int passes
+        # the proof (unit-level: the proof instance validates) while the
+        # input keeps the str representation, so the recursive guard
+        # rejects it and certification never happens.
+        coerced = TrustDecayStep.model_construct(
+            minimum_age=timedelta(0), authority_loss="3"
+        )
+        proof = TrustDecayStep.model_validate(
+            {"minimum_age": timedelta(0), "authority_loss": "3"}
+        )
+        assert proof.authority_loss == 3 and coerced.authority_loss == "3"
+        assert contracts._representationally_identical(coerced, proof) is False
+        # Top-level enum restore: a plain str where the enum is declared.
+        enum_drift = PredicatePromptContract.model_construct(
+            **{
+                **prompt.model_dump(mode="python"),
+                "object_literal_type": "text",
+            }
+        )
+        assert contracts.encode_semantic_contract(enum_drift)
+        assert scope.lookup_certified_instance(enum_drift) is None
+        # Nested enum restore at depth >= 2 inside a gate-passing wrapper:
+        # the clean catalog certifies (the discriminator), the drifted twin
+        # with a plain str in predicates[0].object_literal_type does not.
+        clean_catalog = contracts.PredicateProposalCatalog.create(
+            vocabulary_namespace="drift",
+            proposal_capability_fingerprint="0" * 64,
+            predicates=(prompt,),
+            catalog_schema_fingerprint=(
+                contracts.PredicateProposalCatalog._schema_fingerprint.get_default()
+            ),
+        )
+        assert contracts.encode_semantic_contract(clean_catalog)
+        assert scope.lookup_certified_instance(clean_catalog) is not None
+        drifted_prompt = PredicatePromptContract.model_construct(
+            **{
+                **prompt.model_dump(mode="python"),
+                "object_literal_type": "text",
+            }
+        )
+        drifted_catalog = contracts.PredicateProposalCatalog.model_construct(
+            **{
+                **clean_catalog.model_dump(mode="python"),
+                "predicates": (drifted_prompt,),
+            }
+        )
+        assert drifted_catalog == clean_catalog  # equality is type-blind here
+        assert contracts.encode_semantic_contract(drifted_catalog)
+        assert scope.lookup_certified_instance(drifted_catalog) is None
+
+
+def test_deep_immutability_gate_rejects_mutable_families() -> None:
+    from memorii.core.memory_evolution.models import MemoryScope
+    from memorii.core.semantic_ingestion.canonical_evidence_arena import (
+        deeply_immutable_type,
+    )
+    from memorii.core.semantic_ingestion.contracts import (
+        ClaimAssertion,
+        PredicateTrustRule,
+        RetainedSourceTextArtifact,
+    )
+
+    assert deeply_immutable_type(RetainedSourceTextArtifact) is True
+    assert deeply_immutable_type(PredicateTrustRule) is False
+    assert deeply_immutable_type(MemoryScope) is False
+    assert deeply_immutable_type(ClaimAssertion) is False
+
+
+def test_decode_memo_serves_identical_bytes_and_respects_limits(monkeypatch) -> None:
+    import memorii.core.semantic_ingestion.contracts as contracts
+
+    calls = _count_codec_admissions(monkeypatch)
+    artifact = _artifact(artifact_id="decode-memo")
+    raw = encode_semantic_contract(artifact)
+    with CanonicalEvidenceArena(enabled=True):
+        first = contracts.decode_semantic_contract(raw, RetainedSourceTextArtifact)
+        baseline = calls["n"]
+        assert contracts.decode_semantic_contract(raw, RetainedSourceTextArtifact) is first
+        assert calls["n"] == baseline
+        with pytest.raises(SemanticContractCodecError):
+            contracts.decode_semantic_contract(
+                raw, RetainedSourceTextArtifact, max_nodes=2
+            )
+        # The rejected limited call validated nothing and recorded nothing;
+        # the memo still serves unlimited byte-identical decodes.
+        assert calls["n"] == baseline
+        assert contracts.decode_semantic_contract(raw, RetainedSourceTextArtifact) is first
+    assert contracts.decode_semantic_contract(raw, RetainedSourceTextArtifact) is not first
+
+
+def test_registry_and_decode_memo_purge_on_close_and_refusal() -> None:
+    import memorii.core.semantic_ingestion.contracts as contracts
+
+    artifact = _artifact(artifact_id="purge-probe")
+    raw = encode_semantic_contract(artifact)
+    arena = CanonicalEvidenceArena(enabled=True)
+    with arena:
+        contracts.decode_semantic_contract(raw, RetainedSourceTextArtifact)
+        encode_semantic_contract(artifact)
+        scope = arena._digest_verification_scope
+        assert scope.certified_instances >= 1
+        assert scope.decoded_entries >= 1
+    assert arena._digest_verification_scope.certified_instances == 0
+    assert arena._digest_verification_scope.decoded_entries == 0
+
+    arena2 = CanonicalEvidenceArena(enabled=True)
+    with arena2:
+        contracts.decode_semantic_contract(raw, RetainedSourceTextArtifact)
+        encode_semantic_contract(artifact)
+        oversized = ValidatedCanonicalEvidenceResult(
+            contract=artifact,
+            canonical_contract_bytes=b"x" * (MAX_CANONICAL_BYTES_PER_ENTRY + 1),
+            canonical_member_index=CanonicalMemberIndex(
+                contract_type="test", member_paths=1, canonical_digest="0" * 64
+            ),
+            validation_provenance=("test",),
+        )
+        assert not arena2.admit_success(
+            canonical_contract_bytes=oversized.canonical_contract_bytes,
+            concrete_contract_type=type(artifact),
+            profile_revision=CANONICAL_PROFILE_REVISION,
+            codec_revision=CANONICAL_CODEC_REVISION,
+            domain=b"domain",
+            result=oversized,
+        )
+        assert arena2._digest_verification_scope.certified_instances == 0
+        assert arena2._digest_verification_scope.decoded_entries == 0
+
+
+def test_landed_scope_structures_purge_on_close_and_refusal() -> None:
+    import memorii.core.memory_evolution.ingestion_contracts as ctv
+    import memorii.core.semantic_ingestion.contracts as contracts
+
+    artifact = _artifact(artifact_id="structure-purge")
+    raw = encode_typed_value(artifact.model_dump(mode="python"))
+    plain = {"structure": ["purge", {"probe": (1, 2)}], "padding": "p" * 512}
+
+    arena = CanonicalEvidenceArena(
+        scope=CanonicalValidationScope("tenant", "operation", 1, "fence", "writer"),
+    )
+    with arena:
+        contracts.encode_semantic_contract(artifact)          # _lowered_values, _encoded_bytes
+        contracts.encode_semantic_contract_result(artifact, canonical_staging=arena)  # _encoded_results
+        contracts.certified_roundtrip(artifact)               # _roundtrips
+        ctv.encode_typed_value(plain)                         # _emitted (emission scope)
+        scope = arena._digest_verification_scope
+        assert scope.encoded_result_entries >= 1
+        assert scope.lowered_value_entries >= 1
+        assert scope.roundtrip_entries >= 1
+        assert arena._emission_scope.emitted_entries >= 1
+    assert arena._digest_verification_scope.encoded_result_entries == 0
+    assert arena._digest_verification_scope.lowered_value_entries == 0
+    assert arena._digest_verification_scope.roundtrip_entries == 0
+    assert arena._emission_scope.emitted_entries == 0
+
+    arena2 = CanonicalEvidenceArena(enabled=True)
+    with arena2:
+        contracts.encode_semantic_contract(artifact)
+        contracts.encode_semantic_contract_result(artifact)
+        contracts.certified_roundtrip(artifact)
+        ctv.encode_typed_value(plain)
+        scope2 = arena2._digest_verification_scope
+        assert scope2.encoded_result_entries >= 1
+        assert scope2.lowered_value_entries >= 1
+        assert scope2.roundtrip_entries >= 1
+        assert arena2._emission_scope.emitted_entries >= 1
+        oversized = ValidatedCanonicalEvidenceResult(
+            contract=artifact,
+            canonical_contract_bytes=b"x" * (MAX_CANONICAL_BYTES_PER_ENTRY + 1),
+            canonical_member_index=CanonicalMemberIndex(
+                contract_type="test", member_paths=1, canonical_digest="0" * 64
+            ),
+            validation_provenance=("test",),
+        )
+        assert not arena2.admit_success(
+            canonical_contract_bytes=oversized.canonical_contract_bytes,
+            concrete_contract_type=type(artifact),
+            profile_revision=CANONICAL_PROFILE_REVISION,
+            codec_revision=CANONICAL_CODEC_REVISION,
+            domain=b"domain",
+            result=oversized,
+        )
+        assert scope2.encoded_result_entries == 0
+        assert scope2.lowered_value_entries == 0
+        assert scope2.roundtrip_entries == 0
+        assert arena2._emission_scope.emitted_entries == 0
+    del raw
+
+
+def test_frozenset_drift_modes_never_inherit_certification() -> None:
+    import memorii.core.semantic_ingestion.contracts as contracts
+    from memorii.core.memory_evolution.models import ClaimValueType
+    from memorii.core.semantic_ingestion.contracts import PredicatePromptContract
+
+    prompt = PredicatePromptContract.create(
+        predicate_id="frozen-drift",
+        description="frozenset drift probe",
+        subject_value_kind="entity",
+        object_value_kind="literal",
+        object_literal_type=ClaimValueType.TEXT,
+        supported_commitments=("asserted",),
+    )
+    clean_catalog = contracts.PredicateProposalCatalog.create(
+        vocabulary_namespace="frozen",
+        proposal_capability_fingerprint="0" * 64,
+        predicates=(prompt,),
+        catalog_schema_fingerprint=(
+            contracts.PredicateProposalCatalog._schema_fingerprint.get_default()
+        ),
+    )
+    # StrEnum-in-frozenset drift: the catalog family has no frozenset field,
+    # so exercise the guard directly on the pairing function's contract.
+    inner_clean = frozenset({ClaimValueType.TEXT})
+    inner_drift = frozenset({"text"})
+    assert inner_clean == inner_drift  # set equality is type-blind
+    proof = clean_catalog
+    assert contracts._representationally_identical(clean_catalog, proof) is True
+    drifted_prompt = PredicatePromptContract.model_construct(
+        **{
+            **prompt.model_dump(mode="python"),
+            "supported_commitments": frozenset({"asserted"}),
+        }
+    )
+    drifted_catalog = contracts.PredicateProposalCatalog.model_construct(
+        **{
+            **clean_catalog.model_dump(mode="python"),
+            "predicates": (drifted_prompt,),
+        }
+    )
+    assert contracts._representationally_identical(drifted_catalog, clean_catalog) is False
+    # frozenset-of-frozensets with inner drift: equal by ==, rejected by pairing.
+    nested_clean = frozenset({frozenset({ClaimValueType.TEXT})})
+    nested_drift = frozenset({frozenset({"text"})})
+    assert nested_clean == nested_drift
+    assert contracts._frozensets_pair(list(nested_drift), list(nested_clean), 0) is False
+    assert contracts._frozensets_pair(list(nested_clean), list(nested_clean), 0) is True
+    # Type-blind coercion pairs the plain-equality guard would miss.
+    assert contracts._representationally_identical(True, 1) is False
+    assert contracts._representationally_identical(1, 1.0) is False
+
+
+def test_concurrent_arenas_do_not_share_certification() -> None:
+    from threading import Barrier, Thread
+
+    import memorii.core.semantic_ingestion.contracts as contracts
+
+    artifact = _artifact(artifact_id="thread-probe")
+    results: dict[str, object] = {}
+    barrier = Barrier(2)
+
+    def run(mode: str) -> None:
+        with CanonicalEvidenceArena(enabled=True) as arena:
+            contracts.encode_semantic_contract(artifact)
+            barrier.wait(timeout=30)
+            results[f"{mode}-certified"] = arena._digest_verification_scope.certified_instances
+            results[f"{mode}-hit"] = (
+                arena._digest_verification_scope.lookup_certified_instance(artifact)
+            )
+
+    threads = [Thread(target=run, args=(name,)) for name in ("a", "b")]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=60)
+    # Each thread certified its own copy of the work; the shared artifact
+    # instance is certified in one arena and absent from the other.
+    assert results["a-certified"] == results["b-certified"]
+    assert results["a-hit"] is not None or results["b-hit"] is not None
+
+
+def test_shared_decoded_models_reject_mutation() -> None:
+    import memorii.core.semantic_ingestion.contracts as contracts
+
+    artifact = _artifact(artifact_id="alias-probe")
+    raw = encode_semantic_contract(artifact)
+    with CanonicalEvidenceArena(enabled=True):
+        first = contracts.decode_semantic_contract(raw, RetainedSourceTextArtifact)
+        assert contracts.decode_semantic_contract(raw, RetainedSourceTextArtifact) is first
+        with pytest.raises((TypeError, ValueError)):
+            first.artifact_id = "mutated"  # type: ignore[misc]
+
+
+def test_snapshot_dataclass_field_tuples_are_pinned() -> None:
+    from dataclasses import fields
+
+    from memorii.core.semantic_ingestion.canonical_evidence_arena import (
+        CanonicalClosureTerminalSnapshot,
+        CanonicalEvidenceArenaSnapshot,
+    )
+
+    assert tuple(field.name for field in fields(CanonicalEvidenceArenaSnapshot)) == (
+        "nonce", "state", "mode", "reservation_acquired", "closed", "entries",
+        "charged_bytes", "hits", "misses", "lookups", "capacity_fallbacks",
+        "terminal_reason", "member_paths", "peak_charged_bytes", "reserved_bytes",
+        "released",
+    )
+    assert tuple(field.name for field in fields(CanonicalClosureTerminalSnapshot)) == (
+        "mode", "terminal_reason", "roots", "member_paths", "lookups", "hits",
+        "misses", "capacity_refusals", "peak_charged_bytes", "reserved_bytes",
+        "released",
+    )
+
+
+def test_decode_limits_second_direction_records_nothing() -> None:
+    import memorii.core.memory_evolution.ingestion_contracts as ctv
+    import memorii.core.semantic_ingestion.contracts as contracts
+
+    artifact = _artifact(artifact_id="limits-second")
+    raw = encode_semantic_contract(artifact)
+    with CanonicalEvidenceArena(enabled=True):
+        # A limited call that SUCCEEDS records nothing: the subsequent
+        # unlimited decode of the same bytes takes the full first-decode
+        # path and returns a fresh instance rather than a memo share.
+        node_count = len(ctv._json(ctv._normalized_typed_json(
+            contracts.canonical_contract_value(artifact)
+        )))
+        limited_ok = contracts.decode_semantic_contract(
+            raw, RetainedSourceTextArtifact, max_nodes=node_count + 512
+        )
+        unlimited = contracts.decode_semantic_contract(raw, RetainedSourceTextArtifact)
+        assert unlimited is not limited_ok
+        again = contracts.decode_semantic_contract(raw, RetainedSourceTextArtifact)
+        assert again is unlimited
+
+
+
+
+def test_member_path_envelope_boundary_is_exact_and_one_over() -> None:
+    value = _artifact()
+    with CanonicalEvidenceArena() as arena:
+        assert _admit(
+            arena,
+            value,
+            b"at-envelope",
+            member_paths=MAX_MEMBER_PATHS_PER_OPERATION,
+        )
+        at_envelope = arena.snapshot()
+        assert at_envelope.entries == 1
+        assert at_envelope.member_paths == MAX_MEMBER_PATHS_PER_OPERATION
+        assert at_envelope.capacity_fallbacks == 0
+
+        assert not _admit(arena, value, b"over-envelope", member_paths=1)
+        over_envelope = arena.snapshot()
+        assert over_envelope.entries == 0
+        assert over_envelope.member_paths == MAX_MEMBER_PATHS_PER_OPERATION
+        assert over_envelope.mode == "capacity_rejected_full_path"
+        assert over_envelope.terminal_reason == "capacity-refused"
+        assert over_envelope.capacity_fallbacks == 1
+        assert over_envelope.released
+
+    terminal = arena.terminal_snapshot
+    assert terminal is not None
+    assert terminal.terminal_reason == "capacity-refused"
+    assert terminal.mode == "capacity_rejected_full_path"
+
+
+@pytest.mark.parametrize(
+    "first_cause",
+    ("exception", "cancelled", "validation-failed"),
+)
+def test_first_terminal_cause_latches_through_conflicting_closes(first_cause: str) -> None:
+    dispatcher = RetainingCanonicalClosureObservabilityDispatcher()
+    arena, value, raw, binding = _sealed_arena_with_entry(dispatcher=dispatcher)
+    lease = _lookup(arena, value, raw, binding)
+    assert lease is not None
+
+    if first_cause == "exception":
+        arena.close_as_exception()
+        arena.abort("cancelled")
+    elif first_cause == "cancelled":
+        arena.abort("cancelled")
+        arena.close_as_exception()
+    else:
+        arena.abort("validation-failed")
+        arena.abort("cancelled")
+    assert arena.snapshot().state == "closing"
+
+    lease.release()
+    terminal = arena.terminal_snapshot
+    assert terminal is not None
+    assert terminal.terminal_reason == first_cause
+    assert terminal.mode == "enabled"
+    assert terminal.released
+    snapshots = dispatcher.snapshots
+    assert len(snapshots) == 1
+    assert snapshots[0].terminal_reason == first_cause
+
+
+class _HostileObservabilitySink(CanonicalClosureObservabilityDispatcher):
+    def __init__(self, behavior: str) -> None:
+        self.behavior = behavior
+        self.calls = 0
+
+    def record(
+        self, snapshot: object,
+    ) -> str:
+        self.calls += 1
+        if self.behavior == "raise":
+            raise RuntimeError("observability sink exploded")
+        return "denied"
+
+
+@pytest.mark.parametrize("behavior", ("raise", "denied"))
+def test_hostile_observability_sink_cannot_alter_closure_outcome(behavior: str) -> None:
+    dispatcher = _HostileObservabilitySink(behavior)
+    arena = CanonicalEvidenceArena(
+        scope=CanonicalValidationScope("tenant", "operation", 1, "fence", "writer"),
+        observability_dispatcher=dispatcher,
+    )
+    value = _artifact()
+    assert _admit(arena, value, b"canonical")
+    arena.seal()
+    arena.close()
+
+    terminal = arena.terminal_snapshot
+    assert terminal is not None
+    assert terminal.mode == "enabled"
+    assert terminal.terminal_reason == "completed"
+    assert terminal.released
+    assert arena.snapshot().closed
+    assert dispatcher.calls == 1

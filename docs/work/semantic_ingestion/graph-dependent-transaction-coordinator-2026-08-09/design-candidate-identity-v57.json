@@ -1,0 +1,31 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_v3_acyclic_authority_native_identity_coverage_binding",
+  "semantic_predecessor": "design-candidate-identity-v56.json",
+  "semantic_change_from_predecessor": "remove prepublication replay cycle, replace generic identity arm with retained native carrier, and bind each operation to exact covered or unresolved event disposition",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree_stable",
+  "status_list_sha256": "527b3877e043ac67fba3f707acc62f0d16a78683763111255b6ae27750bf3309",
+  "review_scope": [
+    "acyclic recovery-key and normalization-core prepublication identity",
+    "postpublication atomic-write generation and replay reload wrapper",
+    "native retained-carrier graph-free identity planning input",
+    "operation-specific covered and unresolved event disposition binding",
+    "lost-ack identity staging coverage reverse-join and obsolete-shape tests"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "aa4d779788cb72948d7036404481b8ec2a8bf0ef5286898c5dd471dc45641aab",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "a460ee3d2cb01401952a4d343f4be9ac0a2be22fd54d5e5dcbf0e4ea23979306",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "f07ecf872ad6cce560610308d5554d597c2b21a507375eb93f2a262849430e0b"
+  },
+  "checks": [
+    "git diff --check",
+    "binding and candidate JSON parse",
+    "exactly one active identity input and semantic authority reload declaration",
+    "acyclic core replay native identity and coverage binding anchors",
+    "stable status and artifact identity pass one",
+    "stable status and artifact identity pass two"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

@@ -1,0 +1,15 @@
+{
+  "expected_mutation_count": 5,
+  "failures": [],
+  "mutation_count": 5,
+  "mutation_results": {
+    "authority_forwarding": true,
+    "omitted_root": true,
+    "omitted_trigger": true,
+    "pre_resolution_order": true,
+    "unrelated_fake_count": true
+  },
+  "passed": true,
+  "read_only_input": true,
+  "schema": "memorii.production-entrypoint-bindings-validation.v14"
+}

@@ -1,0 +1,67 @@
+{
+  "format": "memorii.implementation-candidate-freeze.v1",
+  "created": "2026-08-09",
+  "candidate_scope": "full dirty-tree M3 semantic-ingestion implementation candidate",
+  "review_scope": {
+    "requirements": ["SIA-R02", "SIA-R04", "SIA-R05", "SIA-R06", "SIA-R07", "SIA-R09", "SIA-R12"],
+    "included": [
+      "bootstrap V1 source admission, preparation, current-release verification, provider/Hermes/filesystem composition, and source/group plan repository boundaries",
+      "scenario runtime and multi-segment protected ambiguity corrections",
+      "CTV authority regeneration and dependent exact pins"
+    ],
+    "excluded": [
+      "M4 event-history implementation",
+      "terminal-persistence serialization optimization, duration recapture, seven-shard topology, and hosted PR-gate timing evidence"
+    ]
+  },
+  "revision": {
+    "head_commit": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+    "branch": "semantic-indexing-m4",
+    "tree_state": "dirty-local",
+    "status_command": "git status --porcelain=v1 -- . ':(exclude)docs/work/semantic_ingestion/m3-candidate-freeze-2026-08-09.json'",
+    "status_sha256": "2d7431ef2e036fc1dd4faa7db27a682d3a96c27dcefe1ecd7782f706d2e8c050",
+    "binary_diff_command": "git diff --no-ext-diff --binary HEAD -- . ':(exclude)docs/work/semantic_ingestion/m3-candidate-freeze-2026-08-09.json'",
+    "binary_diff_sha256": "be65494a7a13ca2e0aaea1eceec881355bfb424e7d9ccfbb5762c3004febfbde",
+    "path_manifest_command": "sort the union of `git diff --name-only HEAD` and `git ls-files --others --exclude-standard`, excluding this identity; encode each path as {path,state,sha256,bytes} with canonical compact JSON",
+    "path_count": 78,
+    "path_manifest_sha256": "abfba746e87c293cf0c34e3434d03836b9afd342df40ea896ff291c82218d268",
+    "self_exclusion": "This identity file is excluded from its status, diff, and path-manifest inputs; adding it therefore cannot alter the recorded candidate identity."
+  },
+  "authority_chain": {
+    "design_sha256": "786c9f22c33db76bb16518cfa6da57ae95084b126e36d6462d6cd122d75fa17e",
+    "registry_sha256": "8c5ad6e6260c793472ddbc2df8637230fbb5d5b28405b0b558ac4491c945d37e",
+    "ctv_authority_sha256": "fe5778f0518f198ebe44e239460a8fac2a747cac58c7c94c0b3dfb148fae1ab2",
+    "ctv_validator_sha256": "317133f2e92ad8032968314b3f16ff1b08b031c93c0ebcd3bbd789a876de5d6d",
+    "ctv_checker_sha256": "e2c35870a99e587f34cbffc701f42587520ee015009cd51647367da56716c732",
+    "ctv_internal_redacted_design_sha256": "3de7063aeffeb5442434e1d50b8d5bff641a766c5140e4496aa38dd7c4fe6c0d"
+  },
+  "evidence": [
+    {
+      "command": "python3.12 -I docs/design/semantic_ingestion/traceability_golden_vectors/validate_ctv_binding_authority_v2.py --design docs/design/semantic_ingestion_architecture.md --registry docs/design/semantic_ingestion/traceability_registry/registry-v1.json --authority docs/design/semantic_ingestion/traceability_golden_vectors/ctv-binding-authority-v2.json --write --self-test",
+      "result": "pass"
+    },
+    {
+      "command": "python3.12 -I docs/design/semantic_ingestion/traceability_golden_vectors/check_ctv_binding_authority_v2.py with every authority_chain SHA-256 argument above",
+      "result": "pass"
+    },
+    {
+      "command": "cd memorii && ../.venv/bin/python -m pytest tests/unit/tools/test_ctv_binding_authority_pr_gate.py tests/unit/tools/test_semantic_ingestion_ctv_reference_compiler.py -p no:cacheprovider -q",
+      "result": "pass"
+    },
+    {
+      "command": "git diff --check",
+      "result": "pass"
+    }
+  ],
+  "limitations": [
+    "This is a local dirty-tree freeze, not clean-worktree or hosted-CI evidence.",
+    "The terminal-persistence performance WorkPlan owns serialization profiling, current timing inventory, seven-shard recapture, and hosted PR topology; none is claimed here.",
+    "The CTV authority does not substitute for unreconstructed scenario manifests, spools, bootstrap anchor artifacts, or signed production authority.",
+    "Identity hygiene did not complete: its existing allowlist validation stopped at `legacy rejection exception requires an exact rejecting test proof`. This is recorded for reviewer triage rather than hidden as a pass.",
+    "The legacy pipeline lacks sealed graph/planning inputs for a complete transaction group plan and intentionally does not fabricate them."
+  ],
+  "freeze": {
+    "state": "frozen-for-independent-review",
+    "next_action": "Run the M3 specification, correctness, and test review cohort against this exact identity; any remediation must create a new identity before another whole-candidate review."
+  }
+}

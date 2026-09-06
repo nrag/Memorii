@@ -1,0 +1,57 @@
+{
+  "format": "memorii.debug-candidate-identity.v1",
+  "created": "2026-08-19",
+  "revision": {
+    "base_commit": "b9daf00a0e6956e51106756f1baaf23190c688bb",
+    "head_commit": "b9daf00a0e6956e51106756f1baaf23190c688bb",
+    "tree_state": "dirty-local-scoped",
+    "status_command": "git status --porcelain=v1 -z --untracked-files=all",
+    "status_sha256_excluding_identity": "92aba5c9669cf17f38e6d65fc6d7e0cf5e9360542d5e1c4785b892ef8d5eea65",
+    "status_entry_count_excluding_identity": 239,
+    "changed_paths_sha256_excluding_identity": "47cbbd07e7835f5214b2e7e8a77e86b48f73f0139ce328234cdf2a643c828d23",
+    "changed_path_entry_count_excluding_identity": 239,
+    "binary_diff_sha256": "5806ec337979d7769c1d1fa9cbd37ca075da32decd2fcf4cfad4298444cc323e",
+    "staged_binary_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "identity_self_exclusion": "This untracked identity file is excluded from status and path hashes to avoid a self-referential dirty-tree cycle."
+  },
+  "scope": {
+    "statement": "This candidate freezes only the writer-admission preservation correction and V3 replay/reopen fixture-contract correction from the linked debugging WorkPlan. It does not approve the parent recovery/reconciliation implementation, fresh-owner propagation, other replay families, performance acceptance, CI, or unrelated dirty-tree changes.",
+    "path_sha256": {
+      "memorii/memorii/core/provider/service.py": "06e23776fe63348deb503806516a3580b1ccbd274aa881e497e2d91f13ef50f4",
+      "memorii/tests/unit/core/semantic_ingestion/test_semantic_provider_composition.py": "c978cba7583ed1da43a74467e4a33e1d0b6429ec17eefc0d95bf6ba718377050",
+      "memorii/tests/unit/core/semantic_ingestion/test_bootstrap_recovery_replay_v3.py": "1e6be9cad5306aaf39cc887926f285745e1bf2df7c46ec0717709a534e0063cf",
+      "memorii/tests/unit/core/semantic_ingestion/test_bootstrap_v3_recovery_reopen.py": "4ef595dde0805654f5d2ff2e4ff5f25096e5c794ff1fe71469867fdb363254bb",
+      "docs/work/semantic-ingestion-recovery-reconcile-baseline-debug-2026-08-18/debug.plan.md": "049661561e631b38a0715c9bb08d9a5c0cd4eaead675f497c73172c3ecba7cc2"
+    }
+  },
+  "focused_evidence": [
+    {
+      "command": "PYTHONPATH=memorii .venv/bin/python3.12 -W error -m pytest memorii/tests/unit/core/semantic_ingestion/test_semantic_provider_composition.py::test_profileless_service_preserves_existing_durable_writer_at_ingress_and_reconcile memorii/tests/unit/core/semantic_ingestion/test_semantic_provider_composition.py::test_profileless_service_creates_default_writer_once_at_first_ingress memorii/tests/unit/core/semantic_ingestion/test_semantic_provider_composition.py::test_profileless_service_fails_closed_for_corrupt_durable_writer -p no:cacheprovider",
+      "result": "3 passed in 5.35s"
+    },
+    {
+      "command": "PYTHONPATH=memorii .venv/bin/python3.12 -W error -m pytest memorii/tests/unit/core/semantic_ingestion/test_bootstrap_recovery_replay_v3.py -p no:cacheprovider",
+      "result": "4 passed in 239.56s"
+    },
+    {
+      "command": "PYTHONPATH=memorii .venv/bin/python3.12 -W error -m pytest memorii/tests/unit/core/semantic_ingestion/test_bootstrap_v3_recovery_reopen.py -p no:cacheprovider",
+      "result": "The first four cases passed in 197.36s before a manual interruption; the remaining test_jsonl_fresh_provider_reopens_v3_found_without_reinvoking_any_lane then passed in 121.22s under a hard 600-second subprocess bound."
+    },
+    {
+      "command": ".venv/bin/ruff check memorii/memorii/core/provider/service.py memorii/tests/unit/core/semantic_ingestion/test_semantic_provider_composition.py memorii/tests/unit/core/semantic_ingestion/test_bootstrap_recovery_replay_v3.py memorii/tests/unit/core/semantic_ingestion/test_bootstrap_v3_recovery_reopen.py && git diff --check",
+      "result": "passed"
+    }
+  ],
+  "closure_record": {
+    "status": "review_pending",
+    "revision_bound": true,
+    "root_cause": "Fallback provider writer ownership attempted evidence-only initialization despite an existing durable writer admission. Independently, V3 Found/reload tests expected a graph recovery result while supplying the abstaining proposal default, which correctly produces no operation inputs and remains claimed.",
+    "correction": "Fallback ownership validates and preserves an existing durable admission, creates the existing evidence-only default only when no record exists, and fails closed for corrupt records. Found/consumed fixture cases use the existing complete Atlas/Bob proposal; explicit abstention coverage asserts claimed/no replay. The obsolete execution_plan outage test and its test-only forcing fixtures were removed.",
+    "remaining_validated_p1_p2": [],
+    "remaining_preconditions": [
+      "Independent debug closure review of this candidate.",
+      "Parent recovery/reconciliation fresh-owner propagation remains partial and requires its own production-entrypoint evidence.",
+      "Cumulative canonical closure performance measurement remains deferred to parent VCC-R01 acceptance."
+    ]
+  }
+}

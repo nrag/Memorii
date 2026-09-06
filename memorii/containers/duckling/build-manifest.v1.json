@@ -1,0 +1,16 @@
+{
+  "schema": "memorii.semantic-ingestion.duckling-sidecar-build.v1",
+  "source_repository": "https://github.com/facebook/duckling.git",
+  "source_commit": "59a13ff87b1aa8be6b93d387244f8636b26185c5",
+  "ruleset_version": "duckling-59a13ff87b1aa8be6b93d387244f8636b26185c5",
+  "license": "MIT",
+  "builder_base_image": "debian:bookworm@sha256:813017f3d62be4b5891a7acca6a01bdcd4b8513daa81b1ab99d3a50385b26931",
+  "runtime_base_image": "debian:bookworm-slim@sha256:abd67ffcfa541b485a3dff59865ab629aa048a6c613e639d36e7456b0b229241",
+  "stack_version": "3.9.3",
+  "stack_linux_x86_64_tar_sha256": "bc45cf6e1d00910348dcceb510a469056f6d9c63997230f901c22cf997598b05",
+  "build_dependencies": ["build-essential", "libgmp-dev", "libpcre3-dev", "zlib1g-dev"],
+  "runtime_dependencies": ["libgmp10", "libpcre3", "zlib1g"],
+  "runtime_network": "disabled-required",
+  "produced_image_digest": null,
+  "produced_image_digest_status": "unverified-until-local-build-attestation"
+}

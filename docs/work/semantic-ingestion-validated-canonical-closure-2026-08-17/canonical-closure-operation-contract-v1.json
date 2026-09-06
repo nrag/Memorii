@@ -1,0 +1,14 @@
+{
+  "schema": "memorii.canonical-closure-operation-contract.v1",
+  "owners": {"composition": "ProviderMemoryService", "lifecycle": "CanonicalClosureScopeOwner", "reservation": "CanonicalClosureReservationCoordinator", "observability": "CanonicalClosureObservabilityDispatcher"},
+  "limits": {"roots_per_operation": 512, "root_bytes": 2097152, "member_paths_per_operation": 32768, "operation_reserved_bytes": 16777216, "process_reserved_bytes": 67108864},
+  "states": ["new", "disabled", "reserved", "staging", "sealed", "closing", "rejected", "closed"],
+  "transitions": [["new", "select_disabled", "disabled"], ["new", "reserve_succeeded", "reserved"], ["new", "reserve_refused", "rejected"], ["reserved", "begin_staging", "staging"], ["staging", "seal", "sealed"], ["staging", "capacity_refused", "rejected"], ["reserved", "abort", "closed"], ["staging", "abort", "closed"], ["sealed", "close_without_leases", "closed"], ["sealed", "close_with_leases", "closing"], ["closing", "last_lease_released", "closed"]],
+  "capability": {"exposed_states": ["sealed"], "scope_fields": ["tenant", "operation", "generation", "fence", "writer"], "threat_model": "unconstructible through public, persisted, adapter, provider, prompt, or model-controlled surfaces; arbitrary trusted-process code execution is excluded"},
+  "metrics": {
+    "emission": "exactly_once_at_terminal_transition",
+    "allowed_fields": ["mode", "terminal_reason", "roots", "member_paths", "lookups", "hits", "misses", "capacity_refusals", "peak_charged_bytes", "reserved_bytes", "released"],
+    "forbidden_content": ["canonical_bytes", "value", "path", "digest", "binding", "profile", "schema", "type", "domain", "tenant", "operation", "generation", "fence", "writer", "capability", "exception_message"],
+    "failure_policy": "sink returns recorded or unavailable; unavailability cannot change validation, persistence, replay, durable state, or public outcome"
+  }
+}

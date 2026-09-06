@@ -1,0 +1,45 @@
+{
+  "artifact_kind": "graph_dependent_transaction_coordinator_design_candidate_identity",
+  "schema_version": 1,
+  "created_at": "2026-08-09",
+  "review_mode": "full",
+  "git_head": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "branch": "semantic-indexing-m4",
+  "pre_identity_dirty_tree_status_sha256": "7b3eafd0355145a828a418cbeb5a0f3c55ddd5c20a538088b7f4bb111cdddd74",
+  "pre_identity_dirty_tree_binary_diff_sha256": "67ca46cb173a55c7839c20305b52efd4887dcc91362b8d85e84d52b67ee31253",
+  "reviewed_artifacts": [
+    {
+      "path": "docs/design/semantic_ingestion_architecture.md",
+      "sha256": "1eb05737588ada0178074e08b1450efbca70dd4cdbffdc6893b932a53a583b96"
+    },
+    {
+      "path": "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md",
+      "sha256": "28f8d0ced95f6711bc8ca84b1fbba415c7b808b0cea98abdd7baf61fa15137d4"
+    },
+    {
+      "path": "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json",
+      "sha256": "3cba90adbcf1e694465bef18ecddd8536070fa42b0e56c6a177ee13087bc53c5"
+    }
+  ],
+  "parent_review": "docs/reviews/semantic-ingestion-graph-dependent-transaction-coordinator/full-review-2026-08-09.md",
+  "parent_review_outcome": "changes_required",
+  "remediated_findings": [
+    "DREV-001",
+    "DREV-002",
+    "DREV-003",
+    "DREV-004",
+    "DREV-005",
+    "DREV-006"
+  ],
+  "scope": "M3.1 Steps 5-8 graph-dependent transaction coordinator design only",
+  "exclusions": [
+    "production implementation",
+    "M4 conflict presentation and clarification semantics",
+    "terminal persistence performance",
+    "externally signed production activation",
+    "unrelated dirty-tree artifacts"
+  ],
+  "production_mapping_expected_counts": [1, 1, 4, 0, 0, 0, 0, 0, 1, 4, 1],
+  "production_mapping_status": "reproduced",
+  "candidate_status": "frozen_for_full_review"
+}

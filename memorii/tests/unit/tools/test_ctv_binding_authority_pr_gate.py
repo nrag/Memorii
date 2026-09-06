@@ -30,14 +30,14 @@ STRUCTURAL_CHECKER = VECTORS / "check_cgs_structural_contract_v1.py"
 SEMANTIC_EXPECTED = {
     "fixture": "d3c1dce10624365647cbb00926f63b6deabe681e51a138bc3de88d7c60faef69",
     "validator": "46bbda1afb6ccbec5a49ea668752c19a7b1354b94515a33365191cee01745edb",
-    "checker": "1d618a7e8072cf2a5c95258538bee4ad0fe2646000e0ac4127fc380c9444ab22",
+    "checker": "59bebd19ab0040bf538697e45e0e5a77ae03eb5ce675160d22b813be575cbadf",
 }
-STRUCTURAL_CHECKER_SHA256 = "3f5ba86e4cc26b7c6b0d518fb8a073ebf7db68a2858afada78dd242b699c826e"
+STRUCTURAL_CHECKER_SHA256 = "d670812cd8ca60b5c8e652730692b5970494d0205540f2d353eefe7b832ddfae"
 EXPECTED = {
-    "design": "2923340bc6417d516983714e5fe69b7bab0f2257652d28a043cfb273b53aaed3",
-    "registry": "8c5ad6e6260c793472ddbc2df8637230fbb5d5b28405b0b558ac4491c945d37e",
-    "authority": "c4fbd524c6b7c20795f42977aed458248754c04a0b9635ef0dd3e366bd829b0e",
-    "validator": "826541e7864583bbe3c32e3f153c008f07a881f33d38861237dfac80d9f3657e",
+    "design": "b469653e3ef92e9cc1bf45e797a2c7dff8eac4d9ee792ad94ada3a54bfbe05da",
+    "registry": "70143b278e0fd72886362f4174c726c9ecf877b1e288d3dd2c196a78f385413e",
+    "authority": "272617544ee6531f995f797f323b576bc4070282ff1dd2cd12e49cfb0c492f3b",
+    "validator": "3066e6ffb015823283e57945863c22d4ecf32164c52ae8199eb1535c7798f145",
     "checker": "e2c35870a99e587f34cbffc701f42587520ee015009cd51647367da56716c732",
 }
 
@@ -256,8 +256,18 @@ def test_pr_workflow_structurally_runs_complete_matrix_and_exact_pinned_checker(
     gate_job = jobs["ctv-binding-authority-pr-gate"]
     exact_job = jobs["ctv-binding-authority-exact"]
     unit_job = jobs["unit-tests"]
+    replay_job = jobs["equal-version-replay-decision"]
     acceptance_job = jobs["semantic-ingestion-acceptance"]
     generation_job = jobs["semantic-ingestion-generation"]
+    assert replay_job["name"] == "Equal Version Replay Decision"
+    assert replay_job["timeout-minutes"] == "5"
+    replay_steps = replay_job["steps"]
+    assert replay_steps[1]["with"]["python-version"] == "3.12"
+    assert replay_steps[2]["run"] == "python3.12 -m pip install 'pytest>=8,<10'"
+    assert "python3.12 -m pytest -W error" in replay_steps[3]["run"]
+    assert "memorii/tests/unit/tools/test_equal_version_replay_decision.py" in replay_steps[3]["run"]
+    assert "equal-version-replay-decision" in unit_job["needs"]
+    assert unit_job["steps"][0]["env"]["REPLAY_DECISION_RESULT"] == "${{ needs.equal-version-replay-decision.result }}"
     scenario_job = jobs["semantic-ingestion-scenario"]
     assert isinstance(compiler_job, dict)
     assert isinstance(gate_job, dict)
@@ -274,12 +284,22 @@ def test_pr_workflow_structurally_runs_complete_matrix_and_exact_pinned_checker(
     assert scenario_job["timeout-minutes"] == "15"
     assert unit_job["name"] == "Unit Tests"
     assert unit_job["needs"] == [
+        "equal-version-replay-decision",
         "static-analysis",
         "package-smoke",
         "provider-compatibility",
         "unit-test-shards",
         "unit-timing-inventory",
+        "semantic-terminal-persistence",
+        "semantic-terminal-persistence-timing-inventory",
     ]
+    unit_result_env = unit_job["steps"][0]["env"]
+    assert unit_result_env["TERMINAL_RESULT"] == "${{ needs.semantic-terminal-persistence.result }}"
+    assert unit_result_env["TERMINAL_TIMING_RESULT"] == (
+        "${{ needs.semantic-terminal-persistence-timing-inventory.result }}"
+    )
+    assert 'test "$TERMINAL_RESULT" = success' in unit_job["steps"][0]["run"]
+    assert 'test "$TERMINAL_TIMING_RESULT" = success' in unit_job["steps"][0]["run"]
     for job in (compiler_job, gate_job, exact_job):
         assert job["runs-on"] == "ubuntu-latest"
         assert job["timeout-minutes"] == "5"

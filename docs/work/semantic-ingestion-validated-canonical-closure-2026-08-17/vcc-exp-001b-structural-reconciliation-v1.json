@@ -1,0 +1,19 @@
+{
+  "schema": "memorii.semantic-ingestion.vcc-exp-001b.structural-reconciliation.v1",
+  "experiment": "VCC-EXP-001B",
+  "evidence_stage": "reference_only_full_production_fixture",
+  "production_implementation_changed": false,
+  "tests_changed": false,
+  "frozen_census_sha256": "a88a73f5d2f597532761aea0c061e96984ee3f09c777e22a0a94b27013c5dcc5",
+  "current_census_sha256": "f3aea2572a9270fba0dd6a9cf106ec9d2cb2a9d9bddeffaf92ca6633c51df95a",
+  "stable_exact_identity_matches": 131,
+  "operation_bound_identity_coordinates": 107,
+  "structural_identity_multiset_equal": true,
+  "frozen_structural_rows": 238,
+  "current_structural_rows": 238,
+  "boundary_events_equal": true,
+  "mandatory_root_families_equal": true,
+  "validation_counts_equal": true,
+  "identity_contract": "Stable values require exact cross-run content identity. Fresh operation-bound values require exact within-operation content identity and cross-run equality of family, canonical size, classification, validation contexts/count, boundary roles, parent-root memberships, and in-process role; their content digests must differ when operation inputs differ.",
+  "decision": "VCC-EXP-001B closes under the operation-aware identity contract; requiring cross-run digest equality for fresh operation-bound values would violate their binding."
+}

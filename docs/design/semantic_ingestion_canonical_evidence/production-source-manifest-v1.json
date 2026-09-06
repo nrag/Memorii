@@ -1,0 +1,132 @@
+{
+  "schema": "memorii.semantic-ingestion.canonical-evidence.production-sources.v4",
+  "capture_status": "implemented_unvalidated_authority_sources",
+  "sources": [
+    {
+      "path": "memorii/memorii/core/semantic_ingestion/production_authority.py",
+      "sha256": "394cb372058b398d2a1e56e5cf7ce356905335a9aa85bf4df95c8e5b4fd39805"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/bootstrap_profile.py",
+      "sha256": "f5c937d276709be573c68731dba9fc581a64dc95d2162683cb436f8a90c85cd6"
+    },
+    {
+      "path": "memorii/memorii/core/provider/service.py",
+      "sha256": "846b487d1b2ebc37f02b377ec2f37b291b71dd1cb1b68480d6545eeb8d9ab831"
+    },
+    {
+      "path": "memorii/memorii/core/provider/factory.py",
+      "sha256": "1987d2d6b78e52ef46ab4294394f3d6421dbe6bcbd54fd8cb0c8f9d5842b605d"
+    },
+    {
+      "path": "memorii/memorii/core/filesystem_storage/bundle.py",
+      "sha256": "91c7676ede308ad1f33d27504a7cf328f0a6ed55194b6aeab701503207fa989d"
+    },
+    {
+      "path": "memorii/memorii/integrations/hermes_provider.py",
+      "sha256": "36f72ec99822bf7d6ca49f3ec25a4addc472f722b6b3a43d18598e1218565648"
+    },
+    {
+      "path": "memorii/memorii/core/provider/ingestion.py",
+      "sha256": "f0d8abe952d6ef2d1ae9eb74b240529a25509534c39caa24051a950003cf128e"
+    },
+    {
+      "path": "memorii/memorii/core/semantic_ingestion/canonical_evidence_arena.py",
+      "sha256": "379fe056ad6d9b171851a6e596f4c9ca879920c8fa337239a9fee406baddabb9"
+    },
+    {
+      "path": "memorii/memorii/core/semantic_ingestion/contracts.py",
+      "sha256": "2139897d7091d8d519ca60a77be0d04aaf86d20f82741f2426fa47b31ececd9a"
+    }
+  ],
+  "source_frames": [
+    {
+      "symbol": "memorii.core.semantic_ingestion.production_authority.build_verified_production_host_authority",
+      "path": "memorii/memorii/core/semantic_ingestion/production_authority.py",
+      "sha256": "394cb372058b398d2a1e56e5cf7ce356905335a9aa85bf4df95c8e5b4fd39805"
+    },
+    {
+      "symbol": "memorii.core.memory_evolution.bootstrap_profile.HostBootstrapMaterialVerifier.verify",
+      "path": "memorii/memorii/core/memory_evolution/bootstrap_profile.py",
+      "sha256": "f5c937d276709be573c68731dba9fc581a64dc95d2162683cb436f8a90c85cd6"
+    },
+    {
+      "symbol": "memorii.core.provider.service.ProviderMemoryService.__init__",
+      "path": "memorii/memorii/core/provider/service.py",
+      "sha256": "846b487d1b2ebc37f02b377ec2f37b291b71dd1cb1b68480d6545eeb8d9ab831"
+    },
+    {
+      "symbol": "memorii.core.provider.factory.build_provider_memory_service_from_env",
+      "path": "memorii/memorii/core/provider/factory.py",
+      "sha256": "1987d2d6b78e52ef46ab4294394f3d6421dbe6bcbd54fd8cb0c8f9d5842b605d"
+    },
+    {
+      "symbol": "memorii.core.filesystem_storage.bundle.build_filesystem_provider",
+      "path": "memorii/memorii/core/filesystem_storage/bundle.py",
+      "sha256": "91c7676ede308ad1f33d27504a7cf328f0a6ed55194b6aeab701503207fa989d"
+    },
+    {
+      "symbol": "memorii.integrations.hermes_provider.HermesMemoryProvider.__init__",
+      "path": "memorii/memorii/integrations/hermes_provider.py",
+      "sha256": "36f72ec99822bf7d6ca49f3ec25a4addc472f722b6b3a43d18598e1218565648"
+    },
+    {
+      "symbol": "memorii.core.provider.service.ProviderMemoryService.sync_event",
+      "path": "memorii/memorii/core/provider/service.py",
+      "sha256": "846b487d1b2ebc37f02b377ec2f37b291b71dd1cb1b68480d6545eeb8d9ab831"
+    },
+    {
+      "symbol": "memorii.core.provider.service.ProviderMemoryService._ingest_event",
+      "path": "memorii/memorii/core/provider/service.py",
+      "sha256": "846b487d1b2ebc37f02b377ec2f37b291b71dd1cb1b68480d6545eeb8d9ab831"
+    },
+    {
+      "symbol": "memorii.core.provider.ingestion.ProviderIngestionCoordinator.ingest",
+      "path": "memorii/memorii/core/provider/ingestion.py",
+      "sha256": "f0d8abe952d6ef2d1ae9eb74b240529a25509534c39caa24051a950003cf128e"
+    },
+    {
+      "symbol": "memorii.core.provider.ingestion.ProviderIngestionCoordinator._run_semantic_ingestion",
+      "path": "memorii/memorii/core/provider/ingestion.py",
+      "sha256": "f0d8abe952d6ef2d1ae9eb74b240529a25509534c39caa24051a950003cf128e"
+    },
+    {
+      "symbol": "memorii.core.semantic_ingestion.canonical_evidence_arena.CanonicalEvidenceArena",
+      "path": "memorii/memorii/core/semantic_ingestion/canonical_evidence_arena.py",
+      "sha256": "379fe056ad6d9b171851a6e596f4c9ca879920c8fa337239a9fee406baddabb9"
+    },
+    {
+      "symbol": "memorii.core.semantic_ingestion.contracts.encode_semantic_contract",
+      "path": "memorii/memorii/core/semantic_ingestion/contracts.py",
+      "sha256": "2139897d7091d8d519ca60a77be0d04aaf86d20f82741f2426fa47b31ececd9a"
+    }
+  ],
+  "capture_ready_transition": {
+    "required_symbols": [
+      "memorii.core.semantic_ingestion.production_authority.build_verified_production_host_authority",
+      "memorii.core.memory_evolution.bootstrap_profile.HostBootstrapMaterialVerifier.verify",
+      "memorii.core.provider.service.ProviderMemoryService.__init__",
+      "memorii.core.provider.factory.build_provider_memory_service_from_env",
+      "memorii.core.filesystem_storage.bundle.build_filesystem_provider",
+      "memorii.integrations.hermes_provider.HermesMemoryProvider.__init__",
+      "memorii.core.provider.service.ProviderMemoryService.sync_event",
+      "memorii.core.provider.service.ProviderMemoryService._ingest_event",
+      "memorii.core.provider.ingestion.ProviderIngestionCoordinator.ingest",
+      "memorii.core.provider.ingestion.ProviderIngestionCoordinator._run_semantic_ingestion",
+      "memorii.core.semantic_ingestion.canonical_evidence_arena.CanonicalEvidenceArena",
+      "memorii.core.semantic_ingestion.contracts.encode_semantic_contract"
+    ],
+    "required_paths": [
+      "memorii/memorii/core/semantic_ingestion/production_authority.py",
+      "memorii/memorii/core/memory_evolution/bootstrap_profile.py",
+      "memorii/memorii/core/provider/service.py",
+      "memorii/memorii/core/provider/factory.py",
+      "memorii/memorii/core/filesystem_storage/bundle.py",
+      "memorii/memorii/integrations/hermes_provider.py",
+      "memorii/memorii/core/provider/ingestion.py",
+      "memorii/memorii/core/semantic_ingestion/canonical_evidence_arena.py",
+      "memorii/memorii/core/semantic_ingestion/contracts.py"
+    ],
+    "rule": "capture_ready is legal only when source_frames has exactly one entry per required symbol, sources has exactly one entry per required path, every source_frames symbol/path/SHA-256 exactly equals source_frame_map and its prehashed source entry, and every required source path is referenced; duplicate, omission, extra, wrong-owner, sentinel, fake-digest, or all-symbols-to-one-source entries reject before Python"
+  }
+}

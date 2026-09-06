@@ -42,10 +42,10 @@ Choose one:
   semantic boundary, and regression impact
 - `targeted`: inspect one named concern; never make whole-design approval claims
 
-For a full or long-running review, create or resume a `design-review` WorkPlan
-at `docs/work/<work-id>/design-review.plan.md`. Record target path, baseline,
-mode, scope, governing sources, exclusions, report location, budget, and exactly
-one next action.
+For a full or long-running review, create or resume an `investigation` WorkPlan
+at `docs/work/<work-id>/design-review.plan.md` with an explicit design-review
+completion contract. Record target path, baseline, mode, scope, governing
+sources, exclusions, report location, budget, and exactly one next action.
 
 Write immutable reports under `docs/reviews/<design-id>/<review-id>.md`.
 
@@ -91,6 +91,10 @@ Identify applicable:
   duplicates, and version behavior
 - canonical owners and trust boundaries
 - authority chain from source bytes to artifacts, implementation, and gates
+- production-entrypoint bindings for each runtime, persistence, transaction,
+  lifecycle, replay, recovery, or integration requirement: trigger,
+  composition root, exact callsite arguments/authority, validation, durable
+  write/read or outcome, and fail-closed absence behavior
 - identity classification for every proposed file, symbol, protocol,
   persisted value, test, fixture, artifact, command, diagnostic, and CI label
 
@@ -135,6 +139,8 @@ Check whether the design:
 - conflicts with production reality
 - requires unstated migration or mixed-version behavior
 - violates a universal Memorii invariant
+- can be reached only through types, helpers, fixtures, or test wiring rather
+  than a concrete production composition root
 
 Do not reject a design merely because implementation is substantial.
 
