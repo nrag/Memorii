@@ -288,17 +288,20 @@ def test_pr_workflow_structurally_runs_complete_matrix_and_exact_pinned_checker(
         "static-analysis",
         "package-smoke",
         "provider-compatibility",
+        "scoped-context-integration",
         "unit-test-shards",
         "unit-timing-inventory",
         "semantic-terminal-persistence",
         "semantic-terminal-persistence-timing-inventory",
     ]
     unit_result_env = unit_job["steps"][0]["env"]
+    assert unit_result_env["SCOPED_CONTEXT_RESULT"] == "${{ needs.scoped-context-integration.result }}"
     assert unit_result_env["TERMINAL_RESULT"] == "${{ needs.semantic-terminal-persistence.result }}"
     assert unit_result_env["TERMINAL_TIMING_RESULT"] == (
         "${{ needs.semantic-terminal-persistence-timing-inventory.result }}"
     )
     assert 'test "$TERMINAL_RESULT" = success' in unit_job["steps"][0]["run"]
+    assert 'test "$SCOPED_CONTEXT_RESULT" = success' in unit_job["steps"][0]["run"]
     assert 'test "$TERMINAL_TIMING_RESULT" = success' in unit_job["steps"][0]["run"]
     for job in (compiler_job, gate_job, exact_job):
         assert job["runs-on"] == "ubuntu-latest"

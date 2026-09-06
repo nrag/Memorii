@@ -9,6 +9,8 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any, Protocol, cast
 
+from pydantic import ValidationError
+
 from memorii.core.decision_state.service import DecisionStateService
 from memorii.core.decision_state.summary import DecisionStateSummary
 from memorii.core.llm_decision.trace import LLMDecisionTraceStore
@@ -103,6 +105,7 @@ from memorii.core.memory_evolution.writer_admission import (
     writer_admission_memory_id,
 )
 from memorii.core.memory_plane import MemoryPlaneService
+from memorii.core.memory_plane.store import MemoryPlaneCorruptionError
 from memorii.core.next_step import NextStepEngine
 from memorii.core.promotion.provider import PromotionAssessmentProvider
 from memorii.core.promotion.rule_provider import RuleBasedPromotionAssessmentProvider
@@ -135,6 +138,13 @@ from memorii.core.provider.tool_schemas import provider_tool_schemas, provider_t
 from memorii.core.provider.tools import ProviderToolCallResult
 from memorii.core.provider.work_state_projection import WorkStateMemoryProjector
 from memorii.core.recall import RecallStateBundle, WorkStateSummary, summarize_work_states
+from memorii.core.scoped_context.authority import ScopedHostReadAuthority
+from memorii.core.scoped_context.contracts import ScopedContextActivation, ScopedContextRequest, ScopedContextStatus
+from memorii.core.scoped_context.service import (
+    ScopedContextAssembler,
+    ScopedSnapshotBackendError,
+    ScopedSnapshotDecodeError,
+)
 from memorii.core.semantic_ingestion.bootstrap_graph_host import BootstrapGraphHostBundleBuilder
 from memorii.core.semantic_ingestion.canonical_evidence_arena import (
     CanonicalEvidenceArena,
@@ -158,6 +168,20 @@ from memorii.core.work_state.selector import WorkStateSelector
 from memorii.core.work_state.service import WorkStateService
 from memorii.domain.enums import SourceModality
 from memorii.stores.base.interfaces import OverlayStore, SolverGraphStore
+
+
+def _scoped_empty(status: ScopedContextStatus) -> ScopedContextActivation:
+    return ScopedContextActivation(
+        status=status,
+        request_task_id=None,
+        request_state_id=None,
+        authority_binding_receipt=None,
+        memory_snapshot_revision=None,
+        mandatory_items=(),
+        optional_items=(),
+        omissions=(),
+        structured_outcome=None,
+    )
 
 
 class ScopedIdentityLineageAuditReader(Protocol):
@@ -233,6 +257,7 @@ class ProviderMemoryService:
         memory_evolution_query_analyzer: QueryAnalyzer | None = None,
         memory_evolution_operation_repository: EvolutionOperationRepository | None = None,
         now_provider: Callable[[], datetime] | None = None,
+        scoped_read_authority: ScopedHostReadAuthority | None = None,
         conflict_attention_repository: ConflictClarificationRepository | None = None,
         conflict_attention_enabled: bool = False,
         conflict_attention_observability_sink: ConflictAttentionObservabilitySink
@@ -255,6 +280,7 @@ class ProviderMemoryService:
         _host_construction: object | None = None,
     ) -> None:
         self._memory_plane = memory_plane or MemoryPlaneService()
+        self._scoped_read_authority = scoped_read_authority
         self._canonical_evidence_requested = canonical_evidence_enabled
         verified_material = None
         verified_ingress_resolver = None
@@ -589,6 +615,41 @@ class ProviderMemoryService:
         self._last_memory_evolution_result: MemoryEvolutionResult | None = None
         self._last_recall_bundle: RecallStateBundle | None = None
         self._last_prefetch_result: ProviderPrefetchResult[ProductionRetrievalDecision] | None = None
+
+    def retrieve_context(
+        self,
+        request: ScopedContextRequest,
+        *,
+        opaque_host_ingress: object,
+    ) -> ScopedContextActivation:
+        """Activate explicit host context from one authority-bound record snapshot."""
+
+        try:
+            request = ScopedContextRequest.model_validate(request.model_dump(mode="python"))
+        except (AttributeError, ValidationError):
+            return _scoped_empty(ScopedContextStatus.INVALID_REQUEST)
+        authority = self._scoped_read_authority
+        if authority is None:
+            return _scoped_empty(ScopedContextStatus.DENIED)
+        grant = authority.resolve(opaque_host_ingress, task_id=request.host_task_id, state_id=request.host_state_id)
+        if grant is None:
+            return _scoped_empty(ScopedContextStatus.DENIED)
+        try:
+            revision, records = self._memory_plane.read_snapshot()
+        except (ScopedSnapshotBackendError, ScopedSnapshotDecodeError, MemoryPlaneCorruptionError, OSError):
+            return _scoped_empty(ScopedContextStatus.UNAVAILABLE)
+        try:
+            activation = ScopedContextAssembler().assemble(request=request, revision=revision, records=records, grant=grant)
+        except ScopedSnapshotDecodeError:
+            return _scoped_empty(ScopedContextStatus.UNAVAILABLE)
+        receipt = authority.authorize_release(grant)
+        if receipt is None:
+            return _scoped_empty(ScopedContextStatus.DENIED)
+        if activation.status not in {ScopedContextStatus.COMPLETE, ScopedContextStatus.PARTIAL_OPTIONAL}:
+            return activation
+        return ScopedContextActivation.model_validate(
+            activation.model_dump(mode="python") | {"authority_binding_receipt": receipt}
+        )
 
     def _ensure_writer_admission_record(self) -> None:
         if not self._owns_writer_admission_record:
