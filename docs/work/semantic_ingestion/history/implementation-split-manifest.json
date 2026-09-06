@@ -1,6 +1,6 @@
 {
   "format": "memorii.workplan-split-manifest.v2",
-  "bundle_sha256": "c8e754b7bdbd27b0be95d968f0c84d32bf30cde49ba96cbd1f73a63affc713f6",
+  "bundle_sha256": "53dd6d9eaddf597c5cec0600dcb55ed641239930bb9f11b27d43016c10ff6fad",
   "candidate_identity": "docs/work/semantic_ingestion/history/implementation-split-review-identity.json",
   "canonical_path": "docs/work/semantic_ingestion/implementation.plan.md",
   "archive": {
@@ -75,11 +75,11 @@
     },
     {
       "path": "docs/work/semantic_ingestion/implementation.plan.md",
-      "sha256": "ef04ff47728ec7d98248dc04d8a82aa7c70e31720d3bd3968e2e2d3a4dd0effe"
+      "sha256": "7f5a24797664b50b969d778222e0724a02c0a2784f0e5759c20be18fdcdbbad8"
     },
     {
       "path": "docs/work/semantic_ingestion/resume.md",
-      "sha256": "aeee170d57f2153317e89c58ef0eec6f87d592eb1bcf28012260c9f52e7a272f"
+      "sha256": "2911c7e45ac145305e24e78984dd3d49f451b774810176f02d6b3682191b59a4"
     },
     {
       "path": "docs/work/semantic_ingestion/conflict-authority-proof-failures-2026-08-04/debug.plan.md",
@@ -87,7 +87,7 @@
     },
     {
       "path": "docs/work/semantic_ingestion/m4-closure-2026-09-04/implementation.plan.md",
-      "sha256": "6b0fe266b1b28422a7c7570ef1ee9c3a416660d2fed8e59782564b56e3cf6b43"
+      "sha256": "283a0a8380e684a76b5f4415b99d8b2662fc2a4626c4914d000c47a28d80554a"
     },
     {
       "path": "docs/work/semantic_ingestion/history/implementation-through-2026-08-04.md",
@@ -111,11 +111,11 @@
     },
     {
       "path": "docs/work/semantic_ingestion/milestones/m3-semantic-pipeline.plan.md",
-      "sha256": "4296a8989f33164c58779ef15c3fd51b04a44edaeeb0c6c27b99e5bbd09bf710"
+      "sha256": "bd3ffce307668a6cd5a6309f7d731bc071049afc6b7192b34dd542b0fa800d5b"
     },
     {
       "path": "docs/work/semantic_ingestion/milestones/m4-event-history.plan.md",
-      "sha256": "bf8f01ef28feb35a1464b1f0c20471415a644f329fc8f22e51540902e5a4f5ae"
+      "sha256": "c463270c33ca3f5d08b654b573b2c9e25a72abf6b774dbe1b6ac9df2f7e029f3"
     },
     {
       "path": "docs/work/semantic_ingestion/milestones/m5-deployment-acceptance.plan.md",
@@ -173,7 +173,7 @@
     {
       "id": "m3",
       "path": "docs/work/semantic_ingestion/milestones/m3-semantic-pipeline.plan.md",
-      "status": "active",
+      "status": "complete",
       "requirements": [
         "SIA-R02",
         "SIA-R04",
@@ -187,7 +187,7 @@
     {
       "id": "m4",
       "path": "docs/work/semantic_ingestion/milestones/m4-event-history.plan.md",
-      "status": "active",
+      "status": "complete",
       "requirements": [
         "SIA-R10",
         "SIA-R18"
@@ -287,23 +287,23 @@
     },
     {
       "owner": "docs/work/semantic_ingestion/resume.md",
-      "literal": "## Exact Next Action",
+      "literal": "## Closure Result",
       "expected_count": 1
     },
     {
       "owner": "docs/work/semantic_ingestion/milestones/m4-event-history.plan.md",
-      "literal": "## Current Exact Next Action",
+      "literal": "## Final Candidate History And Closure Preconditions",
       "expected_count": 1
     },
     {
       "owner": "docs/work/semantic_ingestion/m4-closure-2026-09-04/implementation.plan.md",
-      "literal": "## Exact Next Action",
+      "literal": "## Outcome And Retrospective",
       "expected_count": 1
     }
   ],
   "obligations": [
     {
-      "id": "active-m4-status",
+      "id": "completed-m4-status",
       "detail_owner": "docs/work/semantic_ingestion/milestones/m4-event-history.plan.md",
       "summary_owners": [
         "docs/work/semantic_ingestion/implementation.plan.md",
@@ -312,11 +312,11 @@
       "required_literals": [
         {
           "owner": "docs/work/semantic_ingestion/milestones/m4-event-history.plan.md",
-          "literal": "- Status: active"
+          "literal": "- Status: complete at candidate"
         },
         {
           "owner": "docs/work/semantic_ingestion/implementation.plan.md",
-          "literal": "- M4: active."
+          "literal": "- M4: complete at shared candidate"
         }
       ],
       "archive_anchors": [
@@ -350,7 +350,7 @@
       ]
     },
     {
-      "id": "m4-closure-arrays",
+      "id": "m4-final-closure-arrays",
       "detail_owner": "docs/work/semantic_ingestion/milestones/m4-event-history.plan.md",
       "summary_owners": [
         "docs/work/semantic_ingestion/implementation.plan.md"
@@ -358,15 +358,15 @@
       "required_literals": [
         {
           "owner": "docs/work/semantic_ingestion/milestones/m4-event-history.plan.md",
-          "literal": "remaining_validated_p1_p2: [semantic-conflict-introduction-unreachable]"
+          "literal": "remaining_validated_p1_p2: []"
         },
         {
           "owner": "docs/work/semantic_ingestion/milestones/m4-event-history.plan.md",
-          "literal": "remaining_blocks_approval: [semantic-conflict-introduction-authority]"
+          "literal": "remaining_blocks_approval: []"
         },
         {
           "owner": "docs/work/semantic_ingestion/milestones/m4-event-history.plan.md",
-          "literal": "remaining_changes_required: [semantic-conflict-introduction-unreachable]"
+          "literal": "remaining_changes_required: []"
         }
       ],
       "archive_anchors": [
@@ -375,7 +375,7 @@
       ]
     },
     {
-      "id": "current-next-action",
+      "id": "completed-m3-m4-outcome",
       "detail_owner": "docs/work/semantic_ingestion/implementation.plan.md",
       "summary_owners": [
         "docs/work/semantic_ingestion/resume.md"
@@ -383,11 +383,11 @@
       "required_literals": [
         {
           "owner": "docs/work/semantic_ingestion/implementation.plan.md",
-          "literal": "Push the timing-corrected frozen shared M3.1/M4 candidate"
+          "literal": "No M3.1/M4 action remains"
         },
         {
           "owner": "docs/work/semantic_ingestion/resume.md",
-          "literal": "freeze and push the shard-timing-corrected shared"
+          "literal": "M3.1 and M4 are complete at"
         }
       ],
       "archive_anchors": [
@@ -428,7 +428,7 @@
         },
         {
           "owner": "docs/work/semantic_ingestion/implementation.plan.md",
-          "literal": "empty final approval arrays"
+          "literal": "new revision-bound closure records"
         }
       ],
       "archive_anchors": [
@@ -449,7 +449,7 @@
         },
         {
           "owner": "docs/work/semantic_ingestion/implementation.plan.md",
-          "literal": "M5\nactivation claims remain limited"
+          "literal": "M5 activation claims remain limited"
         }
       ],
       "archive_anchors": [

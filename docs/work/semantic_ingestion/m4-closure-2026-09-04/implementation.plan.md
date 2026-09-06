@@ -2,8 +2,8 @@
 
 - Work ID: semantic_ingestion_m3_1_m4_completion_2026_09_04
 - Work type: implementation
-- Status: active; candidates through `7174670` are superseded and the bounded
-  hosted full-suite test/fixture correction is under final local verification
+- Status: complete at candidate
+  `58ec5cc5a1e463a934681facc81630c956c2197b`
 - Coordinator: Codex main thread
 - Created: 2026-09-04
 - Last updated: 2026-09-06
@@ -222,10 +222,10 @@ Confirmed findings at plan creation:
 
 | ID | Product priority | Approval disposition | Finding type | Owner | Status |
 | --- | --- | --- | --- | --- | --- |
-| replan-delivery-identity | P2 | changes_required | runtime behavior / persistence lineage | linked debugging WorkPlan | corrected locally; final candidate review pending |
-| overbroad-stale-replay-catch | P2 | changes_required | failure behavior / integrity | linked debugging WorkPlan | corrected locally; final candidate review pending |
-| m3-candidate-identity-not-reproducible | Not applicable | changes_required | governance / evidence | dual closure operation | open |
-| m4-closure-evidence-incomplete | Not applicable | changes_required | verification / governance | dual closure operation | open |
+| replan-delivery-identity | P2 | changes_required | runtime behavior / persistence lineage | linked debugging WorkPlan | corrected and closed by final exact-candidate review |
+| overbroad-stale-replay-catch | P2 | changes_required | failure behavior / integrity | linked debugging WorkPlan | corrected and closed by final exact-candidate review |
+| m3-candidate-identity-not-reproducible | Not applicable | changes_required | governance / evidence | dual closure operation | resolved by clean replacement commit `58ec5cc` |
+| m4-closure-evidence-incomplete | Not applicable | changes_required | verification / governance | dual closure operation | resolved by exact-SHA hosted run `34042442561` and final review |
 | m4-cross-module-private-import | Not applicable | changes_required | architecture / gate hygiene | dual closure operation | corrected locally; exact 302-case gate passes |
 | corrupt-checkpoint-treated-as-absence | P2 | changes_required | runtime behavior / persisted recovery | dual closure operation | corrected locally; direct/public memory and JSONL proof passes |
 
@@ -261,6 +261,9 @@ not claim live-provider or agent-system quality unless independently obtained.
 | Replan repository/state machine | `worker` / Terra-class | sole writer | coordinator resume checkpoint | complete; 31 focused tests pass |
 | Replan coordinator/provider wiring | `worker` / Terra-class | sole writer | Operation 1 review | blocked before edit by unowned persisted bridge |
 | V3 replan boundary decision review | `architect-reviewer` / high | read-only | coordinator blocker disposition | complete; design delta required |
+| Final candidate specification audit | `spec_auditor` / Terra-class | read-only | dual milestone closure | complete; all final arrays empty at `58ec5cc` |
+| Final candidate correctness review | `correctness_reviewer` / Terra-class | read-only | dual milestone closure | complete; all final arrays empty at `58ec5cc` |
+| Final candidate test review | `test_reviewer` / Terra-class | read-only | dual milestone closure | complete; all final arrays empty at `58ec5cc` |
 
 ## Review Log
 
@@ -551,6 +554,32 @@ bounded contract/repository/coordinator slice.
   formerly failing selector passes in 108.87s. Final correctness review also
   found four stale source hashes in the v14 production-entrypoint ledger; the
   generated ledger is refreshed and its five mutation checks pass.
+- 2026-09-06: Replacement candidate
+  `58ec5cc5a1e463a934681facc81630c956c2197b`, tree
+  `f66c7abf1f391b59fd8ea28f52576f301e3261f6`, was frozen clean and pushed to
+  `semantic-indexing-m4`. The formerly failing independent-process filesystem
+  selector passes locally in 108.87s; independent correctness and test review
+  reproduced it in 105.74s and 116.00s respectively. Both reviews report no
+  remaining local P1/P2 or changes-required finding and retain only the
+  predefined exact-SHA hosted evidence blocker. Hosted run `34042442561`
+  executes the exact candidate SHA.
+- 2026-09-06: Exact-SHA PR Gates run `34042442561` completed successfully on
+  `58ec5cc` with all 47 jobs green. All eight graph root/backend receipts, their
+  aggregate, the Semantic Ingestion umbrella, every unit and terminal shard and
+  aggregate, acceptance, scenario, generation, projection history, static/type,
+  package, CTV, and benchmark gates passed. PR #116 also reports CodeQL green.
+- 2026-09-06: Final specification, correctness, and test reviewers reconciled
+  the exact candidate, hosted run, tree digest, and merge base. Each returned
+  `remaining_validated_p1_p2: []`, `remaining_blocks_approval: []`, and
+  `remaining_changes_required: []`. M3.1 and M4 therefore satisfy their shared
+  completion contract at `58ec5cc`; later packet edits are documentation-only
+  closure records and do not alter the reviewed or tested tree.
+- 2026-09-06: The indexed WorkPlan manifest and pin were refreshed for the
+  completed M3/M4 statuses, closure headings, current obligation literals, and
+  packet hashes. Structural verification with historical candidate checking
+  disabled and the adversarial self-test both pass. The manifest's original
+  2026-08-04 dirty-tree identity remains preserved as migration evidence; the
+  M3.1/M4 implementation candidate authority is the clean Git commit above.
 
 ## Decision Log
 
@@ -570,10 +599,8 @@ bounded contract/repository/coordinator slice.
 
 ## Blockers And Limits
 
-No external or scope blocker. The bounded evidence/harness correction must be
-frozen and pass exact-SHA hosted CI, including all eight graph receipts and
-their aggregate. M5 activation and live agent-system certification remain out
-of scope.
+No M3.1/M4 blocker remains. M5 activation and live agent-system certification
+remain out of scope and are not implied by this closure.
 
 ## Latest Bridge Evidence
 
@@ -590,9 +617,71 @@ of scope.
 - The complete cross-root/backend selector matrix remains Operation 4 evidence;
   no final M3.1/M4 completion claim is made from these focused results alone.
 
-## Exact Next Action
+## Outcome And Retrospective
 
-Freeze and push the bounded ledger and JSONL physical-CAS harness correction,
-then require exact-SHA hosted checks plus whole-candidate specification,
-correctness, and test reviews before clearing either milestone's closure
-arrays.
+M3.1 and M4 close together at the same clean implementation candidate. The
+final correction changed only the generated production-entrypoint binding
+ledger, physical-CAS proof harness, focused test, and coordination packets; it
+did not change production runtime code relative to `966cd15`. Exact-SHA hosted
+execution and three independent reviews closed the last verification and
+governance blockers without expanding into M5.
+
+### Revision-Bound Closure Record
+
+```yaml
+base_revision: 2a7a55e2f1ea265a5c7f824db1a38ce07cd9fb93
+reviewed_revision: 58ec5cc5a1e463a934681facc81630c956c2197b
+tested_revision: 58ec5cc5a1e463a934681facc81630c956c2197b
+tested_tree_digest: f66c7abf1f391b59fd8ea28f52576f301e3261f6
+tree_state: clean committed candidate; later coordination-record-only closure artifacts are self-excluded
+changed_surface_inventory_complete: true
+scope_delta_resolved: true
+authority_chains_complete: true
+required_local_jobs:
+  - repaired independent-process filesystem graph selector
+  - production-entrypoint v14 ledger validation and five mutation probes
+  - static and shard contract checks
+  - configured Pyright, Ruff, compilation, and diff hygiene
+passed_local_jobs:
+  - repaired filesystem selector passed in 108.87s; independent reviewers reproduced it in 105.74s and 116.00s
+  - production-entrypoint v14 ledger passed all five mutation probes
+  - static and shard contracts passed 29 of 29 checks
+  - configured Pyright reported 0 errors and 0 warnings; Ruff, compilation, and diff hygiene passed
+historical_local_evidence:
+  - earlier stabilization trees passed the broad acceptance, generation, scenario, projection-history, replay, source-progress, CTV, workflow, and canonical-evidence families
+  - this historical local evidence is regression context, not exact-candidate certification
+hosted_exact_sha_jobs:
+  - all eight graph root/backend receipt jobs and their aggregate
+  - semantic-ingestion acceptance, generation, scenario, projection-history, and umbrella jobs
+  - all unit and terminal-persistence shards and aggregates
+  - static analysis, package smoke, CTV, benchmark, and CodeQL checks
+known_local_failures: []
+failure_exclusions: []
+workflow_identities:
+  - PR Gates at .github/workflows/pr-gates.yml
+  - CodeQL check rollup for PR 116
+ci_event: pull_request
+ci_executed_sha: 58ec5cc5a1e463a934681facc81630c956c2197b
+ci_executed_ref: semantic-indexing-m4 at PR 116
+remaining_validated_p1_p2: []
+remaining_blocks_approval: []
+remaining_changes_required: []
+local_ci_parity: deterministic job owners passed locally; GitHub-only receipt and timing aggregation passed in the hosted run
+acceptance_gate_inventory:
+  - eight Bootstrap Graph Transaction Boundary jobs
+  - Bootstrap Graph Transaction Boundary Aggregate
+  - Semantic Ingestion Generation Closure
+  - Semantic Ingestion Scenario Authority
+  - Semantic Ingestion Acceptance
+  - Semantic Projection History
+  - Semantic Ingestion
+  - Unit Tests and timing inventory
+  - Semantic Terminal Persistence shards and timing inventory
+  - Static Analysis, Package Smoke, CTV gates, benchmark gates, and CodeQL
+github_run_urls:
+  - https://github.com/nrag/Memorii/actions/runs/34042442561
+pr_head_sha: 58ec5cc5a1e463a934681facc81630c956c2197b
+pr_base_sha: 2a7a55e2f1ea265a5c7f824db1a38ce07cd9fb93
+merge_base_sha: 2a7a55e2f1ea265a5c7f824db1a38ce07cd9fb93
+required_checks_green: true
+```

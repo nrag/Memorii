@@ -6,8 +6,8 @@
 - Active linked debugging WorkPlan: `docs/work/semantic_ingestion/conflict-authority-proof-failures-2026-08-04/debug.plan.md` (sole detailed owner of the two replan defects)
 - Approved bridge design WorkPlan: `docs/work/semantic_ingestion/bootstrap-v3-source-progress-bridge-2026-09-04/design.plan.md`
 - Active bridge implementation WorkPlan: `docs/work/semantic_ingestion/bootstrap-v3-source-progress-bridge-2026-09-04/implementation.plan.md`
-- Status: active candidate replacement after candidate `7174670` hosted gates
-  exposed stale pre-correction test and fixture assumptions
+- Status: M3.1 and M4 complete at candidate
+  `58ec5cc5a1e463a934681facc81630c956c2197b`
 - Coordinator: Codex main thread
 - Last updated: 2026-09-06
 - Superseded candidate: `48c6dc5ab3438684b6476b0919a17774c8bdc92b`
@@ -17,7 +17,13 @@
 - Superseded candidate: `21432be0de10e459f17ea768607ef66e0beb4c08`
 - Superseded candidate: `53b536388759c8a935c772e4edfebd888a7682e0`
 - Superseded candidate: `71746709ddd8e4da491b1b840052682297e0efe1`
-- Current tree state: bounded correction pending replacement freeze
+- Superseded candidate: `966cd15dd15566c1d6659a85d4d6aa763c9dce53`
+- Current candidate: `58ec5cc5a1e463a934681facc81630c956c2197b`
+- Current candidate tree: `f66c7abf1f391b59fd8ea28f52576f301e3261f6`
+- Current hosted run: `https://github.com/nrag/Memorii/actions/runs/34042442561`
+- Current tree state: candidate commit was clean and pushed; later
+  coordination-record-only edits record closure state without changing the
+  tested candidate
 
 ## Objective
 
@@ -28,8 +34,8 @@ independent review evidence.
 
 ## Current State
 
-- M3.1 implementation remains present, but its v82 identity is not
-  reproducible from its declared base and cannot support final closure.
+- M3.1's historical v82 identity remains non-reproducible and superseded. Its
+  replacement closure is reproducible at clean candidate `58ec5cc`.
 - M4 conflict-attention composition and replay/history passed 414 of 415 tests
   on the first final-tree run. The only failure was a stale architecture hash
   in the equal-version decision artifact; after correction, the complete
@@ -45,8 +51,9 @@ independent review evidence.
   backends (232 selected cases total). Progress/recovery is 18/18, the selector
   contract is 11/11, and the complete acceptance file is 200/200 under
   warnings-as-errors.
-- Replacement candidate freeze, exact-SHA hosted execution, and final
-  independent closure review remain pending after the active bounded rerun.
+- Replacement candidate `58ec5cc` is frozen and pushed. Exact-SHA hosted run
+  `34042442561` passed all 47 jobs, and all three final reviewers returned empty
+  approval arrays.
 - Review of `48c6dc5` found four bounded closure defects. The replacement tree
   now preserves exact replay-error identity, performs fresh target-aware
   preflight before one unrelated late-CAS retry, proves the real public
@@ -60,8 +67,8 @@ independent review evidence.
   and is not a closure blocker here because M5 activation and agent-system
   quality are expressly excluded from this M3.1/M4 operation.
 - The selector metadata correction changed the manifest digest, so the prior
-  eight local receipts are historical. Exact-SHA hosted CI must regenerate and
-  aggregate all eight replacement root/backend receipts before closure.
+  eight local receipts remain historical. Exact-SHA hosted CI regenerated and
+  aggregated all eight replacement root/backend receipts successfully.
 - Candidate `04a7303` review correction is locally green: the physical-CAS
   disjoint accepted winner takes one typed successor in memory and independent
   JSONL, with both backends asserting disjoint materialized record intents;
@@ -147,11 +154,11 @@ independent review evidence.
 5. Freeze one clean identity, obtain exact-SHA hosted checks and three-role
    review, then record both closure decisions.
 
-Full acceptance matrices, gates, and stop rules are in the active completion
-WorkPlan. Historical evidence remains under the milestone packets and archive.
+Full acceptance matrices, gates, and closure records are in the completed
+completion WorkPlan. Historical evidence remains under the milestone packets
+and archive.
 
-## Exact Next Action
+## Closure Result
 
-Freeze and push the bounded ledger and physical-CAS harness correction, then
-obtain exact-SHA hosted execution and clean independent specification,
-correctness, and test review.
+M3.1 and M4 are complete at `58ec5cc`. No action remains in this operation.
+M5 is separate scope and stays pending until explicitly authorized.

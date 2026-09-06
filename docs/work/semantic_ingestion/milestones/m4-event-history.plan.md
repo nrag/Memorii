@@ -1,9 +1,8 @@
 # Event History, Replay, Trust, And Identity Milestone
 
 - Parent WorkPlan: `docs/work/semantic_ingestion/implementation.plan.md`
-- Status: active; candidates through `21432be` are superseded and the bounded
-  read-set/owned-prefix correction is locally green pending one final freeze,
-  hosted run, and independent review
+- Status: complete at candidate
+  `58ec5cc5a1e463a934681facc81630c956c2197b`
 - Requirements: SIA-R10, SIA-R18
 - Active linked debugging WorkPlan: `docs/work/semantic_ingestion/conflict-authority-proof-failures-2026-08-04/debug.plan.md`
 - Approved linked design: `docs/work/semantic_ingestion/semantic-conflict-introduction-authority-2026-08-04/design.plan.md`
@@ -110,12 +109,14 @@ passing runs alone.
 - Frozen specification, correctness, and test reviews leave no remaining
   validated P1/P2 or approval-required finding.
 
-## Current Exact Next Action
+## Final Candidate History And Closure Preconditions
 
-Freeze the timing-corrected replacement, then run the exact-SHA hosted checks
-and whole-candidate reviews without adding scope. The first final-tree run passed
-414 tests and found only a stale architecture hash; after its correction the
-complete 415-case family passed under warnings-as-errors in 2142.04s.
+Exact-SHA hosted run `34042442561` completed successfully at candidate
+`58ec5cc`. Every required check is green and all three final reviewer approval
+arrays are empty.
+The first final-tree run passed 414 tests and found only a stale architecture
+hash; after its correction the complete 415-case family passed under
+warnings-as-errors in 2142.04s.
 
 Candidate `e13df701` is superseded because that preflight did not carry the
 complete sealed `GraphReadSet` and the clarification JSONL case reopened only
@@ -147,9 +148,81 @@ stale test expectations for exact replay errors and fixture authority. The
 tests now preserve the reviewed error identity and coordinator/host refresh
 ownership rather than restoring retired wrappers or test-only runtime behavior.
 
+Candidate `966cd15` is superseded only for verification operability. Its hosted
+run cleared 44 jobs but the independent-process filesystem shard exposed a
+process-local harness mutex and incoherent outer timeout. Candidate `58ec5cc`
+uses two filesystem services over one JSONL store, leaves physical JSONL CAS as
+the ordering authority, and passes the formerly failing selector locally and
+in two independent reviewer reproductions. Its exact-SHA hosted run is
+`34042442561`.
+
 ## Delegation And Review Gate
 
-Use the root resume packet plus this file and the linked debug plan. One
-Terra-class writer owns overlapping edits; Spark roles handle distinct mapping
-or triage. Do not launch the full Terra reviewer cohort until the candidate
-freeze gate in `.agents/PLANS.md` is satisfied.
+Use the root resume packet plus this file and the linked debug plan. The final
+Terra reviewer cohort completed after the candidate freeze gate and returned
+empty approval arrays.
+
+## 2026-09-06 Revision-Bound Closure
+
+The milestone is complete at the shared clean candidate after exact-SHA hosted
+verification and final specification, correctness, and test review. The
+administrative closure delta changes coordination records only and does not
+alter the reviewed or tested candidate tree.
+
+```yaml
+base_revision: 2a7a55e2f1ea265a5c7f824db1a38ce07cd9fb93
+reviewed_revision: 58ec5cc5a1e463a934681facc81630c956c2197b
+tested_revision: 58ec5cc5a1e463a934681facc81630c956c2197b
+tested_tree_digest: f66c7abf1f391b59fd8ea28f52576f301e3261f6
+tree_state: clean committed candidate; later coordination-record-only closure artifacts are self-excluded
+changed_surface_inventory_complete: true
+scope_delta_resolved: true
+authority_chains_complete: true
+required_local_jobs:
+  - repaired independent-process filesystem graph selector
+  - production-entrypoint v14 ledger validation and five mutation probes
+  - static and shard contract checks
+  - configured Pyright, Ruff, compilation, and diff hygiene
+passed_local_jobs:
+  - repaired filesystem selector passed in 108.87s; independent reviewers reproduced it in 105.74s and 116.00s
+  - production-entrypoint v14 ledger passed all five mutation probes
+  - static and shard contracts passed 29 of 29 checks
+  - configured Pyright reported 0 errors and 0 warnings; Ruff, compilation, and diff hygiene passed
+historical_local_evidence:
+  - earlier stabilization trees passed the broad acceptance, generation, scenario, projection-history, replay, source-progress, CTV, workflow, and canonical-evidence families
+  - this historical local evidence is regression context, not exact-candidate certification
+hosted_exact_sha_jobs:
+  - all eight graph root/backend receipt jobs and their aggregate
+  - semantic-ingestion acceptance, generation, scenario, projection-history, and umbrella jobs
+  - all unit and terminal-persistence shards and aggregates
+  - static analysis, package smoke, CTV, benchmark, and CodeQL checks
+known_local_failures: []
+failure_exclusions: []
+workflow_identities:
+  - PR Gates at .github/workflows/pr-gates.yml
+  - CodeQL check rollup for PR 116
+ci_event: pull_request
+ci_executed_sha: 58ec5cc5a1e463a934681facc81630c956c2197b
+ci_executed_ref: semantic-indexing-m4 at PR 116
+remaining_validated_p1_p2: []
+remaining_blocks_approval: []
+remaining_changes_required: []
+local_ci_parity: deterministic job owners passed locally; GitHub-only receipt and timing aggregation passed in the hosted run
+acceptance_gate_inventory:
+  - eight Bootstrap Graph Transaction Boundary jobs
+  - Bootstrap Graph Transaction Boundary Aggregate
+  - Semantic Ingestion Generation Closure
+  - Semantic Ingestion Scenario Authority
+  - Semantic Ingestion Acceptance
+  - Semantic Projection History
+  - Semantic Ingestion
+  - Unit Tests and timing inventory
+  - Semantic Terminal Persistence shards and timing inventory
+  - Static Analysis, Package Smoke, CTV gates, benchmark gates, and CodeQL
+github_run_urls:
+  - https://github.com/nrag/Memorii/actions/runs/34042442561
+pr_head_sha: 58ec5cc5a1e463a934681facc81630c956c2197b
+pr_base_sha: 2a7a55e2f1ea265a5c7f824db1a38ce07cd9fb93
+merge_base_sha: 2a7a55e2f1ea265a5c7f824db1a38ce07cd9fb93
+required_checks_green: true
+```

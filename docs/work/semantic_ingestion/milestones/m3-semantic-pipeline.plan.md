@@ -1,9 +1,8 @@
 # Candidate-To-Terminal Semantic Pipeline Milestone
 
 - Parent WorkPlan: `docs/work/semantic_ingestion/implementation.plan.md`
-- Status: active; candidates `e13df701`, `04a7303`, `223e0cba`, and `21432be` are
-  superseded, and the bounded replacement correction is locally green pending
-  one final freeze, hosted run, and independent review
+- Status: complete at candidate
+  `58ec5cc5a1e463a934681facc81630c956c2197b`
 - Requirements: SIA-R02, SIA-R04, SIA-R05, SIA-R06, SIA-R07, SIA-R09, SIA-R12
 - Historical authority: archive headings `M3 - Candidate-to-terminal semantic pipeline`, the M3 closure increments, `M3 Administrative Completion`, and `Post-completion hosted-CI remediation`
 
@@ -1413,10 +1412,11 @@ The two mutually exclusive scope alternatives requiring a user decision are:
    current non-fabricating terminal behavior and cannot claim that accepted
    terminals are graph-plan-authorized.
 
-## Current Exact Next Action
+## Final Candidate History And Closure Preconditions
 
-Freeze the timing-corrected locally green replacement, run its exact-SHA hosted
-matrix, and review the shared candidate.
+Exact-SHA hosted run `34042442561` completed successfully at candidate
+`58ec5cc`. All eight graph receipts, their aggregate, and every other required
+check are green; all three final reviewer approval arrays are empty.
 The prior M3.1 four-root transaction,
 recovery, reopen, and append-only lineage matrix is locally green: 29 exact
 cases for each of four roots on memory and independent JSONL, with all eight
@@ -1433,6 +1433,14 @@ Candidate `7174670` is superseded because hosted full-suite tests retained old
 generic replay-error, synthetic snapshot, generic conflict, and graph-activation
 fixture assumptions. Their bounded correction changes test authority only; the
 reviewed M3.1 runtime remains unchanged.
+
+Candidate `966cd15` is superseded only for verification operability. Its hosted
+run cleared 44 jobs but the independent-process filesystem shard exposed a
+process-local harness mutex and incoherent outer timeout. Candidate `58ec5cc`
+uses two filesystem services over one JSONL store, leaves physical JSONL CAS as
+the ordering authority, and passes the formerly failing selector locally and
+in two independent reviewer reproductions. Its exact-SHA hosted run is
+`34042442561`.
 
 Candidate `223e0cba` is superseded because its stronger store check exposed a
 multi-group successor defect: the first owned replacement effect advanced the
@@ -1670,6 +1678,70 @@ root/backend receipts before the closure arrays can be cleared.
   fails closed (`1 passed in 15.30s`), and scoped compile/Ruff validation of
   the coordinator, repository, host, source-normalization, capability, and
   all four composition roots passes. The existing normal-fact and JSONL
-  recovery selectors require more than the interactive command window; their
-  revision-bound execution remains the next evidence step, not a new design
-  or implementation blocker.
+  recovery selectors require more than the interactive command window; that
+  historical limitation is superseded by the final exact-SHA hosted evidence.
+
+## 2026-09-06 Revision-Bound Closure
+
+The milestone is complete at the shared clean candidate after exact-SHA hosted
+verification and final specification, correctness, and test review. The
+administrative closure delta changes coordination records only and does not
+alter the reviewed or tested candidate tree.
+
+```yaml
+base_revision: 2a7a55e2f1ea265a5c7f824db1a38ce07cd9fb93
+reviewed_revision: 58ec5cc5a1e463a934681facc81630c956c2197b
+tested_revision: 58ec5cc5a1e463a934681facc81630c956c2197b
+tested_tree_digest: f66c7abf1f391b59fd8ea28f52576f301e3261f6
+tree_state: clean committed candidate; later coordination-record-only closure artifacts are self-excluded
+changed_surface_inventory_complete: true
+scope_delta_resolved: true
+authority_chains_complete: true
+required_local_jobs:
+  - repaired independent-process filesystem graph selector
+  - production-entrypoint v14 ledger validation and five mutation probes
+  - static and shard contract checks
+  - configured Pyright, Ruff, compilation, and diff hygiene
+passed_local_jobs:
+  - repaired filesystem selector passed in 108.87s; independent reviewers reproduced it in 105.74s and 116.00s
+  - production-entrypoint v14 ledger passed all five mutation probes
+  - static and shard contracts passed 29 of 29 checks
+  - configured Pyright reported 0 errors and 0 warnings; Ruff, compilation, and diff hygiene passed
+historical_local_evidence:
+  - earlier stabilization trees passed the broad acceptance, generation, scenario, projection-history, replay, source-progress, CTV, workflow, and canonical-evidence families
+  - this historical local evidence is regression context, not exact-candidate certification
+hosted_exact_sha_jobs:
+  - all eight graph root/backend receipt jobs and their aggregate
+  - semantic-ingestion acceptance, generation, scenario, projection-history, and umbrella jobs
+  - all unit and terminal-persistence shards and aggregates
+  - static analysis, package smoke, CTV, benchmark, and CodeQL checks
+known_local_failures: []
+failure_exclusions: []
+workflow_identities:
+  - PR Gates at .github/workflows/pr-gates.yml
+  - CodeQL check rollup for PR 116
+ci_event: pull_request
+ci_executed_sha: 58ec5cc5a1e463a934681facc81630c956c2197b
+ci_executed_ref: semantic-indexing-m4 at PR 116
+remaining_validated_p1_p2: []
+remaining_blocks_approval: []
+remaining_changes_required: []
+local_ci_parity: deterministic job owners passed locally; GitHub-only receipt and timing aggregation passed in the hosted run
+acceptance_gate_inventory:
+  - eight Bootstrap Graph Transaction Boundary jobs
+  - Bootstrap Graph Transaction Boundary Aggregate
+  - Semantic Ingestion Generation Closure
+  - Semantic Ingestion Scenario Authority
+  - Semantic Ingestion Acceptance
+  - Semantic Projection History
+  - Semantic Ingestion
+  - Unit Tests and timing inventory
+  - Semantic Terminal Persistence shards and timing inventory
+  - Static Analysis, Package Smoke, CTV gates, benchmark gates, and CodeQL
+github_run_urls:
+  - https://github.com/nrag/Memorii/actions/runs/34042442561
+pr_head_sha: 58ec5cc5a1e463a934681facc81630c956c2197b
+pr_base_sha: 2a7a55e2f1ea265a5c7f824db1a38ce07cd9fb93
+merge_base_sha: 2a7a55e2f1ea265a5c7f824db1a38ce07cd9fb93
+required_checks_green: true
+```
