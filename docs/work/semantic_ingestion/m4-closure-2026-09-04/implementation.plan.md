@@ -8,7 +8,7 @@
 - Created: 2026-09-04
 - Last updated: 2026-09-06
 - Parent WorkPlan: `docs/work/semantic_ingestion/implementation.plan.md`
-- Active milestone packets: `docs/work/semantic_ingestion/milestones/m3-semantic-pipeline.plan.md`; `docs/work/semantic_ingestion/milestones/m4-event-history.plan.md`
+- Completed milestone closure packets: `docs/work/semantic_ingestion/milestones/m3-semantic-pipeline.plan.md`; `docs/work/semantic_ingestion/milestones/m4-event-history.plan.md`
 - Linked debugging WorkPlan: `docs/work/semantic_ingestion/conflict-authority-proof-failures-2026-08-04/debug.plan.md`
 - Linked bridge design WorkPlan: `docs/work/semantic_ingestion/bootstrap-v3-source-progress-bridge-2026-09-04/design.plan.md`
 - Linked bridge implementation WorkPlan: `docs/work/semantic_ingestion/bootstrap-v3-source-progress-bridge-2026-09-04/implementation.plan.md`
@@ -25,18 +25,19 @@ plan and attempt lineage, exact unaffected group bytes, and fail-closed error
 semantics. Then finish byte-equivalent replay/history proof and revalidate the
 shared M3.1 transaction path before recording either milestone as complete.
 
-## Why Both Milestones Are Active
+## Historical Rationale: Why Both Milestones Were Active
 
-The 2026-09-04 closure audit found that the recorded M3.1 candidate identity is
-not reproducible and that current M4 replanning changes the delivery identity
+This contemporaneous 2026-09-04 rationale is retained for auditability. The
+closure audit found that the recorded M3.1 candidate identity was not
+reproducible and that then-current M4 replanning changed the delivery identity
 instead of extending the original operation's plan lineage. The implementation
-already present for M3.1 remains useful, but its administrative closure is
-reopened until a replacement identity and revision-bound evidence exist.
+already present for M3.1 remained useful, but its administrative closure was
+reopened until a replacement identity and revision-bound evidence existed.
 
-M4 remains active because the replan behavior and exception boundary contain
+M4 remained active because the replan behavior and exception boundary contained
 two confirmed P2 defects and because replay/history and final closure evidence
-have not been completed. The linked debugging WorkPlan is the sole detailed
-owner of those two product defects. This implementation WorkPlan owns their
+had not been completed. The linked debugging WorkPlan was the sole detailed
+owner of those two product defects. This implementation WorkPlan owned their
 dependency, the remaining replay/history work, and coordinated final closure.
 
 ## Completion Contract
@@ -114,8 +115,8 @@ Excluded:
 | 1 | Replan failure-family correction | Existing linked debugging WorkPlan | Before/after discriminator; original delivery retained; one admission; exact subgroup reuse; dedicated stale signal; sibling failures remain closed | none | complete locally; retained-attempt, typed related-conflict, fail-closed sibling, disjoint accepted-winner successor, and outside-read-set execution-write proofs pass |
 | 2 | Conflict-attention composition reconciliation | This implementation WorkPlan | Existing provider/factory/filesystem/cache/composite/Hermes paths pass after the replan correction; opt-in and cursor/rotation behavior stay closed | operation 1 | complete locally; included in the final 415-case M4 family |
 | 3 | Replay and history closure | This implementation WorkPlan | Genesis/checkpoint byte equivalence for every active schema; permutations, duplicates, corruption, late arrival, trust decay, rekey/merge/split, and migration races pass in memory and real JSONL reopen | operation 2 | complete locally; final 415-case family passed under `-W error` in 2142.04s |
-| 4 | Shared M3.1 regression closure | This implementation WorkPlan | Four production roots pass accepted effect, exact retry, restart, lease reclaim, lost acknowledgement, lineage, and independent reopen against the final tree | operation 3 | prior full local matrix complete; replacement selector contract and affected roots are green, and exact hosted receipts must be regenerated for the replacement manifest |
-| 5 | Dual milestone candidate freeze and review | This implementation WorkPlan | Reproducible clean identity; complete local gates; exact-SHA hosted checks; three-role whole-candidate review; empty closure arrays | operation 4 | in_progress |
+| 4 | Shared M3.1 regression closure | This implementation WorkPlan | Four production roots pass accepted effect, exact retry, restart, lease reclaim, lost acknowledgement, lineage, and independent reopen against the final tree | operation 3 | complete; exact-SHA hosted run `34042442561` passed all 47 jobs for candidate `58ec5cc5a1e463a934681facc81630c956c2197b`, including all eight graph root/backend receipts and their aggregate |
+| 5 | Dual milestone candidate freeze and review | This implementation WorkPlan | Reproducible clean identity; complete local gates; exact-SHA hosted checks; three-role whole-candidate review; empty closure arrays | operation 4 | complete; candidate `58ec5cc5a1e463a934681facc81630c956c2197b`, hosted run `34042442561`, and final specification/correctness/test reviews record `remaining_validated_p1_p2: []`, `remaining_blocks_approval: []`, and `remaining_changes_required: []` |
 
 Do not begin operation 2 until the debugging WorkPlan is complete. Do not freeze
 or review a candidate between operations 1 through 4; their shared surfaces
@@ -256,11 +257,11 @@ not claim live-provider or agent-system quality unless independently obtained.
 | --- | --- | --- | --- | --- |
 | Operation 1 matrix challenge | `test_reviewer` / Terra-class | read-only | sole writer task packet | complete; changes required to make proof discriminating |
 | Replan production binding preflight | `code-mapper` / Spark-class | read-only | sole writer and later reviewers | complete; original-fence API is not wired at the provider boundary |
-| Replan failure-family containment | `worker` / Terra-class | sole writer | Operation 1 completion | partial: typed signal and original identity retained; durable resume still missing |
+| Replan failure-family containment | `worker` / Terra-class | sole writer | Operation 1 completion | historical partial: typed signal and original identity retained; final disposition superseded/resolved by the later bridge, persisted-contract, repository/state-machine, and final-candidate work |
 | Replan persisted contracts | `worker` / Terra-class | sole writer | repository/state-machine checkpoint | complete; 29 focused tests pass |
 | Replan repository/state machine | `worker` / Terra-class | sole writer | coordinator resume checkpoint | complete; 31 focused tests pass |
-| Replan coordinator/provider wiring | `worker` / Terra-class | sole writer | Operation 1 review | blocked before edit by unowned persisted bridge |
-| V3 replan boundary decision review | `architect-reviewer` / high | read-only | coordinator blocker disposition | complete; design delta required |
+| Replan coordinator/provider wiring | `worker` / Terra-class | sole writer | Operation 1 review | historical blocked-before-edit disposition: unowned persisted bridge; superseded/resolved by the later bridge, persisted-contract, repository/state-machine, and final-candidate work |
+| V3 replan boundary decision review | `architect-reviewer` / high | read-only | coordinator blocker disposition | historical complete disposition: design delta required; superseded/resolved by the approved bridge and later contracts/state-machine/final-candidate work |
 | Final candidate specification audit | `spec_auditor` / Terra-class | read-only | dual milestone closure | complete; all final arrays empty at `58ec5cc` |
 | Final candidate correctness review | `correctness_reviewer` / Terra-class | read-only | dual milestone closure | complete; all final arrays empty at `58ec5cc` |
 | Final candidate test review | `test_reviewer` / Terra-class | read-only | dual milestone closure | complete; all final arrays empty at `58ec5cc` |
@@ -580,6 +581,11 @@ bounded contract/repository/coordinator slice.
   disabled and the adversarial self-test both pass. The manifest's original
   2026-08-04 dirty-tree identity remains preserved as migration evidence; the
   M3.1/M4 implementation candidate authority is the clean Git commit above.
+- 2026-09-06: Documentation reconciliation clarified that the M3.1/M4 packets
+  are completed, the former active-state rationale and partial/blocked
+  delegation dispositions are historical, and operations 4 and 5 are complete
+  on exact candidate `58ec5cc` and hosted run `34042442561`; this record does
+  not alter product scope, implementation evidence, candidate identity, or M5.
 
 ## Decision Log
 

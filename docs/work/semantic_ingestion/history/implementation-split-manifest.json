@@ -1,6 +1,6 @@
 {
   "format": "memorii.workplan-split-manifest.v2",
-  "bundle_sha256": "53dd6d9eaddf597c5cec0600dcb55ed641239930bb9f11b27d43016c10ff6fad",
+  "bundle_sha256": "a2674841c615282cd223edaf71ef1b6ae215e8250253d3ee5ab5d08a360141a6",
   "candidate_identity": "docs/work/semantic_ingestion/history/implementation-split-review-identity.json",
   "canonical_path": "docs/work/semantic_ingestion/implementation.plan.md",
   "archive": {
@@ -87,7 +87,7 @@
     },
     {
       "path": "docs/work/semantic_ingestion/m4-closure-2026-09-04/implementation.plan.md",
-      "sha256": "283a0a8380e684a76b5f4415b99d8b2662fc2a4626c4914d000c47a28d80554a"
+      "sha256": "22e82c52d1726ee2db8bbe381001c249e6f188d4fb99101ad833ab03af6bc727"
     },
     {
       "path": "docs/work/semantic_ingestion/history/implementation-through-2026-08-04.md",
