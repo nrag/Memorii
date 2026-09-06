@@ -139,11 +139,11 @@
         },
         "memorii.core.provider.ingestion.ProviderIngestionCoordinator.ingest": {
           "path": "memorii/memorii/core/provider/ingestion.py",
-          "sha256": "f02eb0a26028a551cfd88585b82f21ff48598bc9521a18f92182c486022d0885"
+          "sha256": "f0d8abe952d6ef2d1ae9eb74b240529a25509534c39caa24051a950003cf128e"
         },
         "memorii.core.provider.ingestion.ProviderIngestionCoordinator._run_semantic_ingestion": {
           "path": "memorii/memorii/core/provider/ingestion.py",
-          "sha256": "f02eb0a26028a551cfd88585b82f21ff48598bc9521a18f92182c486022d0885"
+          "sha256": "f0d8abe952d6ef2d1ae9eb74b240529a25509534c39caa24051a950003cf128e"
         },
         "memorii.core.semantic_ingestion.canonical_evidence_arena.CanonicalEvidenceArena": {
           "path": "memorii/memorii/core/semantic_ingestion/canonical_evidence_arena.py",

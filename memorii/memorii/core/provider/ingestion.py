@@ -92,6 +92,7 @@ from memorii.core.semantic_ingestion.contracts import (
     contract_digest,
     encode_semantic_contract_result,
 )
+from memorii.core.semantic_ingestion.event_replay import SemanticEventReplayError
 from memorii.core.semantic_ingestion.persistence import (
     SemanticAuthorizationReadSetError,
     SemanticIngestionLeaseSession,
@@ -1301,6 +1302,8 @@ class ProviderIngestionCoordinator:
                         if replay is not None
                         else None
                     )
+                except SemanticEventReplayError:
+                    raise
                 except (AttributeError, TypeError, ValueError, PreplanningStoreError):
                     graph_reload = None
                 if graph_reload is not None:
@@ -1325,6 +1328,8 @@ class ProviderIngestionCoordinator:
                         if replay is not None
                         else None
                     )
+                except SemanticEventReplayError:
+                    raise
                 except (AttributeError, TypeError, ValueError, PreplanningStoreError):
                     return SemanticTerminalOutcome.create(
                         operation_id=operation_id,
@@ -1365,6 +1370,8 @@ class ProviderIngestionCoordinator:
                         if replay is not None
                         else None
                     )
+                except SemanticEventReplayError:
+                    raise
                 except (AttributeError, TypeError, ValueError, PreplanningStoreError):
                     graph_result = None
                 if isinstance(
@@ -1507,6 +1514,8 @@ class ProviderIngestionCoordinator:
                     if replay is not None
                     else None
                 )
+            except SemanticEventReplayError:
+                raise
             except (AttributeError, TypeError, ValueError, PreplanningStoreError):
                 graph_result = None
             if isinstance(

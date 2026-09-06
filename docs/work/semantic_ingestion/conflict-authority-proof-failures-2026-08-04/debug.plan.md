@@ -2,10 +2,11 @@
 
 - Work ID: semantic_conflict_authority_proof_failures
 - Work type: debugging
-- Status: blocked by linked M3.1 production target-planner prerequisite
+- Status: under-review; final-candidate corrections and local affected families
+  are green
 - Coordinator: Codex main thread
 - Created: 2026-08-04
-- Last updated: 2026-09-04
+- Last updated: 2026-09-06
 - Parent WorkPlan: `docs/work/semantic_ingestion/implementation.plan.md`
 - Related WorkPlans: `docs/work/semantic_ingestion/semantic-conflict-introduction-authority-2026-08-04/design.plan.md`; `docs/work/semantic_ingestion/testing.plan.md`
 - Canonical inputs: `docs/design/conflict_attention.md`; `docs/design/semantic_ingestion_architecture.md`; `docs/design/event_model.md`; seven-node verification map
@@ -645,7 +646,7 @@ replan closure and intermediate progress contracts, a typed replan-or-reload
 repository operation, and a coordinator resume entrypoint that reuses the
 existing successor compilation/authority/lineage machinery.
 
-## Exact Next Action
+## Superseded Next Action
 
 Execute slice 1 of the approved native bridge implementation at
 `docs/work/semantic_ingestion/bootstrap-v3-source-progress-bridge-2026-09-04/implementation.plan.md`.
@@ -697,6 +698,49 @@ M3 closure work may begin before the native contract and assembler slice passes.
   replan-or-reload persistence protocol, then prove graph successor reuse,
   restart, concurrency, and real-emitter failure families. This partial retry
   correction does not close Operation 1 or M3.1/M4.
+
+### 2026-09-05 frozen-candidate review reopening
+
+- Candidate `48c6dc5ab3438684b6476b0919a17774c8bdc92b` was rejected by
+  final independent review without reopening product scope.
+- Confirmed P2 runtime findings: provider graph recovery catches replay and
+  integrity failures too broadly; a post-preflight group-CAS conflict becomes
+  generic durable retry instead of target-aware rebase or typed related
+  conflict.
+- Confirmed P2 verification finding: the special related-conflict vector races
+  two ordinary ingestions and does not prove that an accepted clarification
+  committed through its normal lifecycle stales the already-planned original
+  fence.
+- Confirmed governance findings: special-row outcome metadata is not bound to
+  observed execution, canonical eight-cell production receipts remain
+  unvalidated, and linked closure packets retain obsolete blocked/active state.
+- The obsolete exact-SHA PR-gate run was cancelled. Its successful CodeQL run
+  remains historical evidence only and cannot certify the replacement.
+
+### 2026-09-05 review correction
+
+- Replay corruption now preserves the exact `SemanticEventReplayError` through
+  atomic-store, graph-coordinator, and provider recovery boundaries instead of
+  being downgraded to a success-shaped retry or generic store error.
+- A post-preflight group-CAS conflict first reloads the exact primary. When no
+  primary exists it reruns the complete target/read-set preflight from fresh
+  replay state, returns the typed related-conflict signal for an overlapping
+  winner, and retries an unrelated revision at most once.
+- The public `memorii_resolve_conflict` race now commits an accepted
+  clarification through the normal lifecycle while a real V3 source is paused
+  at group CAS. Memory and independently reopened JSONL prove one admission,
+  no second normalization, the original fence, and six typed progress images
+  split between predecessor and successor (`2 passed in 232.77s`).
+- Unsupported selector effect/call counters were removed rather than promoted
+  as evidence. The exact selector/topology/non-disclosure contract remains and
+  passes (`11 passed in 6.37s`). The canonical source/binding lock is repinned;
+  positive external activation remains the separately scoped M5 obligation.
+
+## Exact Next Action
+
+Finish the replacement local gate run, freeze and push the shared M3.1/M4
+candidate, and obtain exact-SHA hosted checks plus independent specification,
+correctness, and test review before recording this debugging operation complete.
 
 - Contracts checkpoint: added the closed persisted replan closure, final-result
   and successor-authority unions, policy/counter references, intermediate

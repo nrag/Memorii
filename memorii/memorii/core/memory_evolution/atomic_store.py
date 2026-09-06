@@ -5085,6 +5085,7 @@ class SemanticIngestionAtomicStore:
             ProjectionHistoryError,
         )
         from memorii.core.semantic_ingestion.event_replay import (
+            SemanticEventReplayError,
             SemanticReplayAuthorityAggregate,
             decode_event_schema_registry_history,
             decode_replay_checkpoint_lifecycle,
@@ -5126,6 +5127,8 @@ class SemanticIngestionAtomicStore:
             lifecycle = decode_replay_checkpoint_lifecycle(bytes.fromhex(lifecycle_hex))
             aggregate = decode_semantic_replay_authority(bytes.fromhex(aggregate_hex))
             history = decode_event_schema_registry_history(bytes.fromhex(history_hex))
+        except SemanticEventReplayError:
+            raise
         except (KeyError, TypeError, ValueError) as exc:
             raise PreplanningStoreError("semantic replay authority closure is corrupt") from exc
         current_lifecycle = self._checkpoint_resume_authority.lifecycle
@@ -5173,6 +5176,8 @@ class SemanticIngestionAtomicStore:
                     projection_history_verifier=self._projection_history,
                     semantic_conflict_verifier=self._projection_history,
                 )
+            except SemanticEventReplayError:
+                raise
             except ValueError as exc:
                 raise PreplanningStoreError("semantic replay aggregate checkpoint is invalid") from exc
             if checkpoint_state != reconstructed:
@@ -5292,8 +5297,8 @@ class SemanticIngestionAtomicStore:
                 for values in member_dependencies.values():
                     dependencies.update(values)
                 last_complete_generation[operation_fence_id] = generation
-        except SemanticEventReplayError as exc:
-            raise PreplanningStoreError("semantic replay member authority is corrupt") from exc
+        except SemanticEventReplayError:
+            raise
         return reconstruct_semantic_replay_authority(
             repository_id=_SEMANTIC_EVENT_REPOSITORY_ID,
             graph_state=graph_state,
@@ -7931,12 +7936,12 @@ class SemanticIngestionAtomicStore:
                 batches=batches,
                 registry_history=self._event_schema_registry_history,
             )
-        except SemanticEventReplayError as exc:
+        except SemanticEventReplayError:
             self._semantic_integrity_incident_reporter(
                 tuple(batch.source_event_batch_digest for batch in batches)
                 or (sha256(b"semantic-event-authority-empty-corruption").hexdigest(),)
             )
-            raise PreplanningStoreError("semantic event batch authority cannot be replayed") from exc
+            raise
         return tuple(batches)
 
     def semantic_replay_state(self) -> SemanticReplayState:
@@ -11333,7 +11338,7 @@ class SemanticIngestionAtomicStore:
         if existing is not None:
             return _bootstrap_graph_v3_group_commit_reload_from_record(existing, request)
 
-        def write() -> BootstrapGraphGroupCommitReloadV3:
+        def write(*, retried_after_cas_conflict: bool = False) -> BootstrapGraphGroupCommitReloadV3:
             control_record = self._required_control_record(request.operation_fence_binding)
             control = _control_from_record(control_record)
             if (
@@ -11710,9 +11715,17 @@ class SemanticIngestionAtomicStore:
                 )
             except MemoryPlaneRevisionConflictError as exc:
                 found = self._memory_plane.get_record(primary_id)
-                if found is None:
-                    raise PreplanningStoreError("bootstrap graph group commit CAS conflicted") from exc
-                return _bootstrap_graph_v3_group_commit_reload_from_record(found, request)
+                if found is not None:
+                    return _bootstrap_graph_v3_group_commit_reload_from_record(found, request)
+                if retried_after_cas_conflict:
+                    raise PreplanningStoreError(
+                        "bootstrap graph group commit CAS conflicted"
+                    ) from exc
+                # Re-enter the complete target/read-set preflight on fresh
+                # replay state. An overlapping winner becomes the existing
+                # typed related-conflict signal; an unrelated revision is
+                # safely rebuilt and retried once.
+                return write(retried_after_cas_conflict=True)
             return reload
 
         if self._semantic_integrity_linearization is None:
@@ -12509,7 +12522,9 @@ class SemanticIngestionAtomicStore:
                 event_members[0].canonical_payload,
                 registry_history=self._event_schema_registry_history,
             )
-        except (SemanticContractCodecError, SemanticEventReplayError) as exc:
+        except SemanticEventReplayError:
+            raise
+        except SemanticContractCodecError as exc:
             raise PreplanningStoreError(
                 "canonical semantic event batch is invalid"
             ) from exc
@@ -12623,8 +12638,8 @@ class SemanticIngestionAtomicStore:
                     registry_history=self._event_schema_registry_history,
                     initial_state=next_state,
                 )
-        except SemanticEventReplayError as exc:
-            raise PreplanningStoreError("canonical semantic event batch is invalid") from exc
+        except SemanticEventReplayError:
+            raise
 
         tracked_kinds = {
             "observation_delta",

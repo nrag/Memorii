@@ -43,6 +43,7 @@ from memorii.core.semantic_ingestion.contracts import (
     contract_digest,
     decode_bootstrap_graph_atomic_member_payload_v3,
 )
+from memorii.core.semantic_ingestion.event_replay import SemanticEventReplayError
 
 
 class BootstrapGraphPlanCompilerPortV3(Protocol):
@@ -569,6 +570,8 @@ class BootstrapGraphDependentCoordinatorV3:
                     observed_graph_revision=exc.observed_graph_revision,
                     operation_fence_binding_digest=epoch.operation_fence_binding.binding_digest,
                 )
+            except SemanticEventReplayError:
+                raise
             except (PreplanningStoreError, ValueError):
                 reason = "storage_retry"
                 return self._post_effect_retry(

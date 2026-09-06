@@ -2,10 +2,11 @@
 
 - Work ID: bootstrap_v3_source_progress_bridge_implementation_2026_09_04
 - Work type: implementation
-- Status: blocked; production-root acceptance exposed a pre-existing M3.1 target-planner gap
+- Status: under-review; target-planner prerequisite and native bridge are
+  implemented, with shared-candidate review pending
 - Coordinator: Codex main thread
 - Created: 2026-09-04
-- Last updated: 2026-09-04
+- Last updated: 2026-09-06
 - Parent completion WorkPlan: `docs/work/semantic_ingestion/m4-closure-2026-09-04/implementation.plan.md`
 - Approved design WorkPlan: `docs/work/semantic_ingestion/bootstrap-v3-source-progress-bridge-2026-09-04/design.plan.md`
 - Frozen architecture SHA-256: `f7937f2871e07ca36cf58710d8ae6288f4f49f7f238ba468be5a49c4487e04f0`
@@ -246,14 +247,9 @@ third attempt.
 
 ## Exact Next Action
 
-Do not weaken or re-fixture the failing production-root proof. Move the
-design-specified `BuiltInBootstrapGraphTargetMaterializationPlannerV3` from its
-current fail-closed stub to the separately bounded M3.1 implementation operation,
-including its canonical identity, target-resolution, planning-record, and
-accepted fact materialization contract. Then rerun this exact two-ingestion
-race: B must commit real entity/fact effects and advance graph revision; A must
-observe the typed group conflict and append exactly one successor. This bridge
-operation may not absorb that multi-arm M3.1 implementation.
+Freeze this completed bridge with the shared M3.1/M4 candidate and obtain the
+required exact-SHA hosted checks and independent specification, correctness,
+and test review. Do not add another bridge or expand into M5 activation.
 
 ## Independent Review Round 2
 
@@ -284,3 +280,14 @@ operation may not absorb that multi-arm M3.1 implementation.
   candidate_identity_not_frozen]`;
   `remaining_changes_required: [production_target_planner_accepted_fact_path,
   real_public_root_related_conflict_proof]`.
+
+## Superseding Resolution 2026-09-06
+
+The separately bounded target-materialization operation implemented the real
+accepted fact path, and the native V3 bridge now executes through the public
+root. The final correction additionally proves an accepted clarification
+staling an already-planned source through public `memorii_resolve_conflict` in
+memory and independently reopened JSONL, with one admission, no
+renormalization, original-fence reuse, and exact typed successor progress. The
+older blocked state and review arrays above are historical and superseded;
+their removal remains gated only on the shared frozen-candidate review.

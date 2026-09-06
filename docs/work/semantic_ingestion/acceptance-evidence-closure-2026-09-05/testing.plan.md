@@ -2,11 +2,11 @@
 
 - Work ID: semantic_ingestion_acceptance_evidence_closure_2026_09_05
 - Work type: testing
-- Status: locally complete; immutable candidate review and hosted execution
-  remain parent-owned
+- Status: under-review; locally complete with immutable candidate review and
+  hosted execution remaining parent-owned
 - Coordinator: Codex main thread
 - Created: 2026-09-05
-- Last updated: 2026-09-05
+- Last updated: 2026-09-06
 - Parent WorkPlan: `docs/work/semantic_ingestion/m4-closure-2026-09-04/implementation.plan.md`
 - Related WorkPlans: `docs/work/semantic_ingestion/milestones/m4-event-history.plan.md`; `docs/work/semantic_ingestion/testing.plan.md`
 - Canonical inputs: `docs/design/semantic_ingestion_architecture.md`; `docs/design/semantic_ingestion/traceability_registry/registry-v1.json`; `.github/workflows/pr-gates.yml`

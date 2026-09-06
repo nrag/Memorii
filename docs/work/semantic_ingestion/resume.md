@@ -6,13 +6,13 @@
 - Active linked debugging WorkPlan: `docs/work/semantic_ingestion/conflict-authority-proof-failures-2026-08-04/debug.plan.md` (sole detailed owner of the two replan defects)
 - Approved bridge design WorkPlan: `docs/work/semantic_ingestion/bootstrap-v3-source-progress-bridge-2026-09-04/design.plan.md`
 - Active bridge implementation WorkPlan: `docs/work/semantic_ingestion/bootstrap-v3-source-progress-bridge-2026-09-04/implementation.plan.md`
-- Status: M3.1 local execution and acceptance evidence and the corrected M4
-  415-case family are green; only immutable candidate, hosted, and independent-
-  review closure remains
+- Status: final-candidate corrections and replacement local affected gates are
+  green; immutable candidate, hosted checks, and independent review closure
+  remain
 - Coordinator: Codex main thread
-- Last updated: 2026-09-05
-- Current reviewed HEAD: `821b0bc7fd47ca0c55a18ccebb4b1628fa13689b`
-- Tree state at plan creation: clean
+- Last updated: 2026-09-06
+- Superseded candidate: `48c6dc5ab3438684b6476b0919a17774c8bdc92b`
+- Current tree state: bounded correction pending replacement freeze
 
 ## Objective
 
@@ -42,6 +42,21 @@ independent review evidence.
   warnings-as-errors.
 - Clean candidate freeze, exact-SHA hosted execution, and final independent
   closure review remain pending after the active M4 rerun.
+- Review of `48c6dc5` found four bounded closure defects. The replacement tree
+  now preserves exact replay-error identity, performs fresh target-aware
+  preflight before one unrelated late-CAS retry, proves the real public
+  clarification race in memory and independently reopened JSONL, and removes
+  selector outcome counters that were never measured.
+- The corrected public race passes both backends (`2 passed in 232.77s`) and
+  the selector ownership contract passes (`11 passed in 6.37s`). Canonical
+  source/binding evidence is repinned under candidate-lock SHA-256
+  `95729d40afe69f0e58a1ebc97d53445e7c8ed3c95437c8109f34db4542e4c422`.
+- Positive external production activation remains `implemented_unvalidated`
+  and is not a closure blocker here because M5 activation and agent-system
+  quality are expressly excluded from this M3.1/M4 operation.
+- The selector metadata correction changed the manifest digest, so the prior
+  eight local receipts are historical. Exact-SHA hosted CI must regenerate and
+  aggregate all eight replacement root/backend receipts before closure.
 
 ## Governing Decisions
 
@@ -65,6 +80,6 @@ WorkPlan. Historical evidence remains under the milestone packets and archive.
 
 ## Exact Next Action
 
-Push the frozen exact candidate and run hosted checks plus the required
-whole-candidate specification, correctness, and test reviews; do not add
-product scope.
+Finish the replacement local gates, reconcile and pin the active packets,
+freeze and push the shared M3.1/M4 candidate, then obtain exact-SHA hosted
+execution and clean independent specification, correctness, and test review.

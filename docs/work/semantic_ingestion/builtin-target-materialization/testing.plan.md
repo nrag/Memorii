@@ -2,10 +2,11 @@
 
 - Work ID: builtin_target_materialization_verification
 - Work type: testing
-- Status: active
+- Status: under-review; verification is locally complete and shared-candidate
+  review is pending
 - Coordinator: Codex main thread
 - Created: 2026-09-04
-- Last updated: 2026-09-05
+- Last updated: 2026-09-06
 - Parent WorkPlan: `docs/work/semantic_ingestion/builtin-target-materialization/implementation.plan.md`
 - Related WorkPlans: `docs/work/semantic_ingestion/bootstrap-v3-source-progress-bridge-2026-09-04/implementation.plan.md`
 - Canonical inputs: the parent implementation WorkPlan; `docs/design/semantic_ingestion_architecture.md` Sections 4.8.2.17 through 4.8.2.20; current CI workflows and transaction selector manifests
@@ -118,9 +119,8 @@ here.
 
 ## Exact Next Action
 
-Obtain a focused test-review disposition for the pending multi-group retention
-proof without changing the accepted-fact race oracle or expanding into deferred
-conflict-attention/replay work.
+Freeze the verified fact path and public clarification race with the shared
+M3.1/M4 candidate, then obtain exact-SHA hosted and independent test review.
 
 ## Current Evidence
 
@@ -164,3 +164,13 @@ conflict-attention/replay work.
 - Gate finding: the transaction selector's related-conflict oracle still says
   one CAS/one effect while the binding requires three/two/two. Update and
   regenerate it only after production accepted materialization exists.
+
+## Superseding Resolution 2026-09-06
+
+The selector no longer asserts unmeasured CAS/effect counters; it owns only
+the exact 232 selectors, 384 requirement tuples, topology, and
+non-disclosure contract, which passes 11 tests. The parent exact matrix passed
+all eight root/backend shards, and the accepted-clarification race passes in
+memory and independently reopened JSONL with direct assertions over admission,
+normalization, fence, and typed progress lineage. The prior gate finding is
+resolved without inventing measurement evidence.

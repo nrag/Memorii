@@ -1,6 +1,6 @@
 {
   "format": "memorii.workplan-split-manifest.v2",
-  "bundle_sha256": "404f2437e28834df3c8192dbfad0839f0e0c9bc8744e7d4c52bc9efbcb53eeb6",
+  "bundle_sha256": "bf5444fd4b201954724f6ed40ec9a4f080867e8d5893fbf41ca986413a12f997",
   "candidate_identity": "docs/work/semantic_ingestion/history/implementation-split-review-identity.json",
   "canonical_path": "docs/work/semantic_ingestion/implementation.plan.md",
   "archive": {
@@ -79,15 +79,15 @@
     },
     {
       "path": "docs/work/semantic_ingestion/resume.md",
-      "sha256": "7943c38198c37d759363df50a237caea0a253bfbbd0399da031017fa36ab68ea"
+      "sha256": "06bf7c6bafd93fb3a59627c542f13e1a74c3938b6b1b84ca39d2506d4c2a27b2"
     },
     {
       "path": "docs/work/semantic_ingestion/conflict-authority-proof-failures-2026-08-04/debug.plan.md",
-      "sha256": "cc3b5e82fee4426a1c811ac8edeebec8dcb1f1cc0afd4e41df4aab573d93e3b6"
+      "sha256": "bbf8dac43e287bfccf82dc878df980d3e980d20b6ff6d87a3683184d5d1c69c2"
     },
     {
       "path": "docs/work/semantic_ingestion/m4-closure-2026-09-04/implementation.plan.md",
-      "sha256": "5e9a1b06d598f4ff781f6a57ef48ccce66c5ded6c3419187ad392cd8471a7bf5"
+      "sha256": "1fa4b305a9917cbe670ca3ba49cd104e422d6bf63c5472e2ee2a40e6741b9e22"
     },
     {
       "path": "docs/work/semantic_ingestion/history/implementation-through-2026-08-04.md",
@@ -111,11 +111,11 @@
     },
     {
       "path": "docs/work/semantic_ingestion/milestones/m3-semantic-pipeline.plan.md",
-      "sha256": "0af44f82c94159189f69457493d79da3f2935253768bb95f1634e4716357d956"
+      "sha256": "02e874e1ffdcb2004f98e37aecb48edb68e84bf9c2e813daec3ee6663eb31bc1"
     },
     {
       "path": "docs/work/semantic_ingestion/milestones/m4-event-history.plan.md",
-      "sha256": "a303eb0b83b1578ec21ac4a43470063057f9ef81a6122b0300ccd1043b6f2cc4"
+      "sha256": "e5c173c6e2ed92ad1c1608b2c10251aaa5b2e70325192909484d3ffce749f48c"
     },
     {
       "path": "docs/work/semantic_ingestion/milestones/m5-deployment-acceptance.plan.md",
@@ -173,7 +173,7 @@
     {
       "id": "m3",
       "path": "docs/work/semantic_ingestion/milestones/m3-semantic-pipeline.plan.md",
-      "status": "active",
+      "status": "under-review",
       "requirements": [
         "SIA-R02",
         "SIA-R04",
@@ -187,7 +187,7 @@
     {
       "id": "m4",
       "path": "docs/work/semantic_ingestion/milestones/m4-event-history.plan.md",
-      "status": "active",
+      "status": "under-review",
       "requirements": [
         "SIA-R10",
         "SIA-R18"
@@ -312,7 +312,7 @@
       "required_literals": [
         {
           "owner": "docs/work/semantic_ingestion/milestones/m4-event-history.plan.md",
-          "literal": "- Status: active"
+          "literal": "- Status: under-review"
         },
         {
           "owner": "docs/work/semantic_ingestion/implementation.plan.md",
@@ -383,11 +383,11 @@
       "required_literals": [
         {
           "owner": "docs/work/semantic_ingestion/implementation.plan.md",
-          "literal": "Freeze one shared M3.1/M4 candidate"
+          "literal": "Push the frozen shared M3.1/M4 candidate"
         },
         {
           "owner": "docs/work/semantic_ingestion/resume.md",
-          "literal": "Freeze the exact candidate"
+          "literal": "freeze and push the shared M3.1/M4 candidate"
         }
       ],
       "archive_anchors": [

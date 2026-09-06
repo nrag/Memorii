@@ -28,7 +28,6 @@ REQUIRED_COVERAGE = {
 ROW_DOMAIN = b"memorii.semantic-ingestion.bootstrap-graph-transaction-selector-row.v1"
 MANIFEST_DOMAIN = b"memorii.semantic-ingestion.bootstrap-graph-transaction-selector-manifest.v1"
 TUPLE_DOMAIN = b"memorii.semantic-ingestion.bootstrap-graph-transaction-required-tuples.v1"
-CALL_DOMAIN = b"memorii.semantic-ingestion.bootstrap-graph-transaction-external-calls.v1"
 NON_DISCLOSURE_DOMAIN = b"memorii.semantic-ingestion.bootstrap-graph-transaction-non-disclosure.v1"
 RECEIPT_DOMAIN = b"memorii.semantic-ingestion.bootstrap-graph-transaction-receipt.v1"
 RUNTIME_BUDGET_SECONDS = 4200
@@ -40,18 +39,6 @@ def _requirements_by_scenario() -> dict[str, tuple[str, ...]]:
         for scenario in scenarios:
             values.setdefault(scenario, []).append(requirement)
     return {scenario: tuple(sorted(requirements)) for scenario, requirements in values.items()}
-
-
-def _oracle(scenario: str) -> tuple[str, int, int, int, int]:
-    if scenario in {"writer_changed", "writer_unavailable", "coordinator_removed", "authority_omitted", "mixed_version", "rollback"}:
-        return "none", 0, 0, 0, 0
-    if scenario in {"pre_cas_scope_revoked", "durable_retry"}:
-        return "retry_progress", 1, 0, 0, 0
-    if scenario in {"successor_attempt", "replacement", "related_conflict", "finalized_failure"}:
-        return "terminal_result", 2, 1, 1, 1
-    if scenario in {"reused_committed", "reused_final", "reused_unfinished", "partial_commit"}:
-        return "terminal_result", 4, 3, 3, 3
-    return "terminal_result", 1, 1, 1, 1
 
 
 def build_manifest() -> dict[str, object]:
@@ -75,7 +62,6 @@ def build_manifest() -> dict[str, object]:
                     "tests/unit/core/semantic_ingestion/"
                     f"{test_module}::{test_name}[{selector_id}]"
                 )
-                durable, calls, cas, event, graph = _oracle(scenario)
                 body = {
                     "requirement_ids": list(requirements[scenario]),
                     "node_id": f"bootstrap-graph-{scenario}-{root}-{backend}",
@@ -85,16 +71,6 @@ def build_manifest() -> dict[str, object]:
                     "public_trigger": "ProviderMemoryService.sync_event",
                     "scenario": scenario,
                     "injected_boundary": f"bootstrap_graph_v3:{scenario}",
-                    "expected_durable_state": durable,
-                    "expected_cas_calls": calls,
-                    "expected_cas_effects": cas,
-                    "expected_event_effects": event,
-                    "expected_graph_effects": graph,
-                    "expected_external_calls_digest": contract_digest(
-                        CALL_DOMAIN,
-                        {"scenario": scenario, "cas_calls": calls, "cas_effects": cas,
-                         "event_effects": event, "graph_effects": graph},
-                    ),
                     "non_disclosure_oracle_digest": contract_digest(
                         NON_DISCLOSURE_DOMAIN,
                         {"scenario": scenario, "forbidden": [

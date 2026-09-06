@@ -22,6 +22,7 @@ from memorii.core.provider.models import ProviderOperation
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.semantic_ingestion import contracts as semantic_contracts
 from memorii.core.semantic_ingestion.bootstrap_graph_host import (
+    BootstrapGraphHostBundle,
     BootstrapGraphHostBundleBuilder,
 )
 from memorii.core.semantic_ingestion.contracts import (
@@ -32,6 +33,7 @@ from memorii.core.semantic_ingestion.contracts import (
     ProviderSemanticProposal,
     decode_semantic_contract,
 )
+from memorii.core.semantic_ingestion.event_replay import SemanticEventReplayError
 from memorii.domain.enums import CommitStatus, MemoryDomain
 from memorii.integrations.hermes_provider import (
     HermesMemoryProvider as _ProductionHermesMemoryProvider,
@@ -121,7 +123,9 @@ def test_all_normal_roots_install_builtin_graph_host_without_injection(
     assert not hasattr(runtime.bootstrap_graph_host_bundle, "authority_provider")
 
 
-def test_identical_two_ingestion_group_cas_race_rebases_without_replan() -> None:
+def test_identical_two_ingestion_group_cas_race_rebases_without_replan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """An identical concurrent write does not create a false related conflict."""
     race_timeout_seconds = 120
     plane = MemoryPlaneService()
@@ -130,9 +134,29 @@ def test_identical_two_ingestion_group_cas_race_rebases_without_replan() -> None
     second_ready = Event()
     release_second = Event()
     calls: list[str] = []
-    cas_attempts: list[str] = []
+    conditional_attempts: list[str] = []
 
-    def pause_a(_group_id: str) -> None:
+    real_conditional_write = plane.conditionally_write_records
+
+    def scheduled_conditional_write(
+        records, *, preconditions, authorization, **kwargs,
+    ):
+        group_primary = next((
+            record for record in records
+            if record.source_kind
+            == "semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+        ), None)
+        if group_primary is not None:
+            conditional_attempts.append(group_primary.memory_id)
+            pause_group_write()
+        return real_conditional_write(
+            records,
+            preconditions=preconditions,
+            authorization=authorization,
+            **kwargs,
+        )
+
+    def pause_group_write() -> None:
         if not paused.is_set():
             paused.set()
             assert release_first.wait(timeout=race_timeout_seconds), "test did not release A"
@@ -141,7 +165,13 @@ def test_identical_two_ingestion_group_cas_race_rebases_without_replan() -> None
             second_ready.set()
             assert release_second.wait(timeout=race_timeout_seconds), "test did not release B"
 
-    def build_service(*, calls: list[str], before_cas=None) -> ProviderMemoryService:
+    monkeypatch.setattr(
+        plane,
+        "conditionally_write_records",
+        scheduled_conditional_write,
+    )
+
+    def build_service(*, calls: list[str]) -> ProviderMemoryService:
         normalization, _ = _v3_normalization_host_builder(
             proposal=ProviderSemanticProposal(
                 mentions=(
@@ -167,13 +197,15 @@ def test_identical_two_ingestion_group_cas_race_rebases_without_replan() -> None
                     authority_provider=DeterministicBootstrapGraphAuthorityProviderV3(
                         successful_calls=calls,
                         accepted_materialization=True,
-                        before_compare_and_swap=before_cas,
-                        cas_attempts=cas_attempts,
                 )
             ),
         )
 
-    service = build_service(calls=calls, before_cas=pause_a)
+    service = build_service(calls=calls)
+    # Independent stores/processes do not share this in-process lock. Disable
+    # it here so both writers can pass preflight before the backend CAS orders
+    # them, which is the race this test owns.
+    service._semantic_atomic_store._semantic_integrity_linearization = None
     ingress = _host_ingress()
     with ThreadPoolExecutor(max_workers=2) as executor:
         first = executor.submit(
@@ -206,7 +238,7 @@ def test_identical_two_ingestion_group_cas_race_rebases_without_replan() -> None
 
     assert first_result.blocked_reasons["semantic_ingestion"] == "source_only"
     assert second_result.blocked_reasons["semantic_ingestion"] == "source_only"
-    assert len(cas_attempts) == 2
+    assert len(conditional_attempts) == 3
     assert len(calls) == 2
     admissions = plane.list_records(source_kind="semantic_ingestion_admission_index")
     assert len(admissions) == 2
@@ -390,6 +422,46 @@ def test_builtin_root_rejects_substituted_reduction_snapshot_before_effect(
     assert (
         service._semantic_atomic_store.semantic_replay_state().graph_revision
         == graph_revision_before
+    )
+
+
+def test_builtin_root_propagates_semantic_replay_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    proposal = graph_fact_proposal()
+    normalization, _ = _v3_normalization_host_builder(proposal=proposal)
+    service = provider_service(
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=_built_in_local_capability(),
+        host_bootstrap_material_verifier=(
+            DeterministicTestHostBootstrapMaterialVerifier()
+        ),
+        source_normalization_host_bundle_builder=normalization,
+    )
+    failure = SemanticEventReplayError("injected graph replay integrity failure")
+
+    def fail_execute(_self, *, request):
+        del request
+        raise failure
+
+    monkeypatch.setattr(BootstrapGraphHostBundle, "execute", fail_execute)
+
+    with pytest.raises(SemanticEventReplayError) as caught:
+        service.sync_event(
+            operation=ProviderOperation.CHAT_USER_TURN,
+            content="Atlas owner is Bob.",
+            operation_id="graph-replay-integrity-failure",
+            task_id="task:one",
+            user_id="user:alice",
+            authenticated_host_ingress=_host_ingress(),
+        )
+
+    assert caught.value is failure
+    assert len(service._memory_plane.list_records(
+        source_kind="semantic_ingestion_admission_index"
+    )) == 1
+    assert not service._memory_plane.list_records(
+        source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
     )
 
 

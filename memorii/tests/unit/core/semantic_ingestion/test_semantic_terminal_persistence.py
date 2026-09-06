@@ -823,13 +823,18 @@ def _commit_claimed_accepted_clarification(
     terminal_kwargs: dict | None = None,
 ):
     """Commit the accepted answer for an already-claimed canonical work."""
+    terminal_values = dict(terminal_kwargs or {})
+    terminal_values.setdefault(
+        "subject_logical_entity_id", "entity:clarification"
+    )
+    terminal_values.setdefault(
+        "subject_entity_revision_id", "entity-revision:clarification:v1"
+    )
     terminal = accepted_terminal(
         operation_id=claim.work.processing_operation_id,
         source_id=claim.proposal.source_user_event_id,
         source_digest=claim.proposal.source_user_event_digest,
-        subject_logical_entity_id="entity:clarification",
-        subject_entity_revision_id="entity-revision:clarification:v1",
-        **(terminal_kwargs or {}),
+        **terminal_values,
     )
     terminal = _with_claim_record_version(
         terminal, record_version=max(record_version, 2)
@@ -2848,8 +2853,15 @@ def test_completed_clarification_retained_authority_corruption_fails_closed(
             clarification_cas=cas,
         )
     assert tuple(corrupt_plane.list_records()) == corrupt_before
-    with pytest.raises(PreplanningStoreError):
-        corrupt_store.semantic_replay_authority()
+    if mutation == "divergent_replay_aggregate":
+        with pytest.raises(
+            SemanticEventReplayError,
+            match="semantic replay authority validation failed",
+        ):
+            corrupt_store.semantic_replay_authority()
+    else:
+        with pytest.raises(PreplanningStoreError):
+            corrupt_store.semantic_replay_authority()
     assert tuple(corrupt_plane.list_records()) == corrupt_before
     # Queue authority is independent from the replay aggregate, so only the
     # two queue mutations are expected to fail the projection-history reader.

@@ -2,7 +2,7 @@
   "schema": "memorii.semantic-ingestion.canonical-evidence.candidate-lock.v9",
   "immutable_path": "docs/design/semantic_ingestion_canonical_evidence/candidate-lock-v1.json",
   "algorithm": "sha256",
-  "supersedes": "0731a9ef2753a8fd3908af27901f3def58de91db2c443d6b83bc159e4eddbdaf",
+  "supersedes": "e84f4bd801d6f44d34f7c300adae4d83bedcb36df7154d2a19f02b4696347d95",
   "scope": "frozen design and every runner/validator/pre-import consumed authority, concrete pre-capture schedule, post-capture result-binding schema, terminal durable-effect receipt contract, execution lock, and result-lock schema; excludes this lock and WorkPlans",
   "artifacts": {
     "design": {
@@ -15,7 +15,7 @@
     },
     "binding_map": {
       "path": "docs/design/semantic_ingestion_canonical_evidence/production-entrypoint-bindings-v1.json",
-      "sha256": "2bd1b7ba27cac9424a21d0a3315df11791ee757cd8206567b49d868ca48f3aec"
+      "sha256": "101c52ad9a7ebcf94810f7ca3865c228651a030561a18ea4903bd280dda770b2"
     },
     "performance_schema": {
       "path": "docs/design/semantic_ingestion_canonical_evidence/performance-run-schema-v1.json",
@@ -31,7 +31,7 @@
     },
     "production_sources": {
       "path": "docs/design/semantic_ingestion_canonical_evidence/production-source-manifest-v1.json",
-      "sha256": "ee88fd9c0c038ccc83e5449152062619507c620cf461cd01e793f2f9cd4f7713"
+      "sha256": "6a4ddec0de8ba8873ded9c573cb88678ab793f07375e6d28296c44eb5e3be05b"
     },
     "event_schema": {
       "path": "docs/design/semantic_ingestion_canonical_evidence/event-schema-v1.json",

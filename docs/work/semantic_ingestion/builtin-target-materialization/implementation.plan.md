@@ -2,10 +2,11 @@
 
 - Work ID: builtin_target_materialization_implementation
 - Work type: implementation
-- Status: active
+- Status: under-review; implementation and complete parent-owned root matrix
+  are green, with shared-candidate review pending
 - Coordinator: Codex main thread
 - Created: 2026-09-04
-- Last updated: 2026-09-05
+- Last updated: 2026-09-06
 - Parent WorkPlan: `docs/work/semantic_ingestion/implementation.plan.md`
 - Related WorkPlans: `docs/work/semantic_ingestion/bootstrap-v3-source-progress-bridge-2026-09-04/implementation.plan.md`; `docs/work/semantic_ingestion/builtin-target-materialization/testing.plan.md`; `docs/work/semantic_ingestion/group-commit-storage-retry/debug-001.plan.md`
 - Canonical inputs: `docs/design/semantic_ingestion_architecture.md` Sections 4.8.2.17 through 4.8.2.20; `docs/design/memorii_spec.md`; `docs/design/memorii_storage_details.md`; `docs/design/event_model.md`; `docs/IMPLEMENTATION_RULES.md`
@@ -244,9 +245,9 @@ plan and prove the direct production-root related-conflict race.
 
 ## Exact Next Action
 
-Obtain a focused test-review disposition for the pending multi-group retention
-proof before using this direct evidence as broader bridge evidence; do not
-expand this fact-only slice into deferred conflict-attention or replay work.
+Freeze this bounded fact-path implementation with the shared M3.1/M4 candidate
+and obtain exact-SHA hosted checks plus independent specification,
+correctness, and test review; do not expand the fact-only scope.
 
 ## Active Schema And Persistence Evidence
 
@@ -279,3 +280,13 @@ expand this fact-only slice into deferred conflict-attention or replay work.
 - `test_bootstrap_normalization_v3_grammar.py` and
   `test_source_normalization_authority_contracts.py`: 6 passed. Focused Ruff
   and `py_compile` passed for changed production modules.
+
+## Superseding Resolution 2026-09-06
+
+The complete parent-owned exact selector matrix subsequently passed all 232
+public-root/backend cases, including direct, factory, filesystem, and Hermes
+over memory and independent JSONL. The real public clarification race now
+provides the missing target-aware overlapping-winner proof without a fixture
+authority or a second source admission. Earlier pending-review and
+non-success notes are preserved as history and no longer describe current
+behavior.

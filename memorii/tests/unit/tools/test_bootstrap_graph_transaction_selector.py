@@ -33,7 +33,7 @@ def _committed_manifest() -> dict[str, object]:
     return json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
 
 
-def test_committed_manifest_is_exact_generated_384_tuple_inventory() -> None:
+def test_committed_manifest_is_exact_generated_232_selector_384_tuple_inventory() -> None:
     manifest = _committed_manifest()
 
     validate_manifest(manifest)

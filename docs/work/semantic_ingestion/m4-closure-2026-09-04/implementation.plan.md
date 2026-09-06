@@ -2,11 +2,12 @@
 
 - Work ID: semantic_ingestion_m3_1_m4_completion_2026_09_04
 - Work type: implementation
-- Status: active; Operations 1 through 4 are locally green, candidate freeze,
-  hosted checks, and final independent review remain
+- Status: under-review; final-candidate corrections and replacement local
+  affected gates are green, while candidate freeze, hosted checks, and final
+  independent review remain
 - Coordinator: Codex main thread
 - Created: 2026-09-04
-- Last updated: 2026-09-05
+- Last updated: 2026-09-06
 - Parent WorkPlan: `docs/work/semantic_ingestion/implementation.plan.md`
 - Active milestone packets: `docs/work/semantic_ingestion/milestones/m3-semantic-pipeline.plan.md`; `docs/work/semantic_ingestion/milestones/m4-event-history.plan.md`
 - Linked debugging WorkPlan: `docs/work/semantic_ingestion/conflict-authority-proof-failures-2026-08-04/debug.plan.md`
@@ -114,7 +115,7 @@ Excluded:
 | 1 | Replan failure-family correction | Existing linked debugging WorkPlan | Before/after discriminator; original delivery retained; one admission; exact subgroup reuse; dedicated stale signal; sibling failures remain closed | none | complete locally; retained-attempt, typed related-conflict, and fail-closed sibling proof pass; identical concurrent writes separately prove no false successor |
 | 2 | Conflict-attention composition reconciliation | This implementation WorkPlan | Existing provider/factory/filesystem/cache/composite/Hermes paths pass after the replan correction; opt-in and cursor/rotation behavior stay closed | operation 1 | complete locally; included in the final 415-case M4 family |
 | 3 | Replay and history closure | This implementation WorkPlan | Genesis/checkpoint byte equivalence for every active schema; permutations, duplicates, corruption, late arrival, trust decay, rekey/merge/split, and migration races pass in memory and real JSONL reopen | operation 2 | complete locally; final 415-case family passed under `-W error` in 2142.04s |
-| 4 | Shared M3.1 regression closure | This implementation WorkPlan | Four production roots pass accepted effect, exact retry, restart, lease reclaim, lost acknowledgement, lineage, and independent reopen against the final tree | operation 3 | complete locally; 8 exact-selector receipts cover 232 cases across four roots and two backends, and the receipt union validates |
+| 4 | Shared M3.1 regression closure | This implementation WorkPlan | Four production roots pass accepted effect, exact retry, restart, lease reclaim, lost acknowledgement, lineage, and independent reopen against the final tree | operation 3 | prior full local matrix complete; replacement selector contract and affected roots are green, and exact hosted receipts must be regenerated for the replacement manifest |
 | 5 | Dual milestone candidate freeze and review | This implementation WorkPlan | Reproducible clean identity; complete local gates; exact-SHA hosted checks; three-role whole-candidate review; empty closure arrays | operation 4 | in_progress |
 
 Do not begin operation 2 until the debugging WorkPlan is complete. Do not freeze
@@ -361,6 +362,69 @@ bounded contract/repository/coordinator slice.
   digest chain. The fail-closed lock resolver and canonical-evidence adversarial
   self-test pass; the resulting candidate-lock SHA-256 is
   `e84f4bd801d6f44d34f7c300adae4d83bedcb36df7154d2a19f02b4696347d95`.
+- 2026-09-05: Whole-candidate review rejected candidate `48c6dc5` because
+  replay-integrity errors were still converted at broad exception boundaries,
+  the late group-CAS path did not rerun the complete target-aware preflight,
+  the public clarification-versus-planned-source race lacked real memory and
+  independent-JSONL proof, and the selector manifest claimed counters it did
+  not measure. The candidate is superseded and its hosted cancellation is not
+  closure evidence.
+- 2026-09-05: The bounded corrections now preserve the exact
+  `SemanticEventReplayError`, reload the exact primary or rerun the complete
+  target-aware preflight before one unrelated-CAS retry, and retain the typed
+  related-conflict outcome for an overlapping winner. The public
+  `memorii_resolve_conflict` race passes for memory and independently reopened
+  JSONL with one admission, no renormalization, the original fence, and the
+  exact typed successor lineage (`2 passed in 232.77s`). Selector outcome
+  fields that were not measured were removed; its exact 232-selector/384-tuple
+  ownership contract passes (`11 passed in 6.37s`).
+- 2026-09-05: The canonical evidence source/binding chain is repinned to the
+  corrected production source. Candidate-lock SHA-256 is
+  `95729d40afe69f0e58a1ebc97d53445e7c8ed3c95437c8109f34db4542e4c422`;
+  the canonical artifact adversarial validator passes. The canonical
+  production capture remains honestly `implemented_unvalidated`: positive
+  external activation belongs to the expressly excluded M5 operation and is
+  not promoted as M3.1/M4 evidence.
+- 2026-09-06: The replacement-tree complete semantic-ingestion acceptance file
+  passes all 200 tests under warnings-as-errors in 569.71s. Configured Pyright
+  reports 0 errors/0 warnings, identity hygiene passes, scoped Ruff and
+  compilation pass, diff hygiene is clean, and the canonical-evidence
+  adversarial self-test passes.
+- 2026-09-06: The replacement-tree projection/history and semantic-ingestion
+  integration family passes all 97 tests under warnings-as-errors in 725.17s.
+  This reruns the exact 87-case projection owner plus the 10 process/replay
+  integration cases after the replay-error and late-CAS corrections.
+- 2026-09-06: The affected public-root concurrency and failure-identity
+  discriminator passes all 11 parameterized cases (`33 deselected`) under
+  warnings-as-errors in 459.06s. It covers identical-write rebase without a
+  false successor, exact replay-error propagation, unrelated-write retry, and
+  the typed related-conflict successor.
+- 2026-09-06: Removing unsupported selector outcome metadata intentionally
+  changed the selector manifest digest. The earlier eight local receipts remain
+  truthful historical execution evidence but cannot validate the replacement
+  manifest. The exact eight replacement receipts and their 232-selector union
+  are therefore required from exact-SHA hosted CI before closure.
+- 2026-09-06: The broad 185-case conflict-attention collection reached 140
+  passes before being stopped after the new JSONL clarification race exceeded
+  its 60-second pre-CAS test wait while the terminal suite was running in
+  parallel. The same two-backend proof had passed in 232.77s, so the bound was
+  below its observed per-backend setup cost under load rather than a product
+  assertion. The race now uses one explicit 300-second harness bound and is
+  green for both memory and JSONL under the concurrent local load (`2 passed in
+  331.40s`); no production behavior or expected outcome changed.
+- 2026-09-06: The exhaustive terminal run exposed two obsolete assertions in
+  the memory/JSONL divergent-replay-aggregate cases: they expected a generic
+  `PreplanningStoreError` from the direct replay-authority API, while the
+  reviewed correction deliberately preserves `SemanticEventReplayError`.
+  Both executions failed on the required exact typed error after 34 earlier
+  passes. The test now distinguishes replay corruption from missing retained
+  records and asserts the typed error and message; the complete eight-case
+  corruption family passes under warnings-as-errors in 393.70s.
+- 2026-09-06: The indexed WorkPlan bundle and its adversarial self-test pass
+  structural verification. Its historical dirty-tree review identity remains
+  preserved as migration evidence and is deliberately excluded from candidate
+  validation; the replacement identity is the clean immutable Git commit that
+  follows this final packet state, not a rewrite of the historical identity.
 
 ## Decision Log
 
@@ -401,6 +465,7 @@ green. M5 activation and live agent-system certification remain out of scope.
 
 ## Exact Next Action
 
-Push the frozen immutable candidate revision and run the required exact-SHA
-hosted checks and whole-candidate specification, correctness, and test reviews
-before clearing either milestone's closure arrays.
+Finish the replacement local gate run, reconcile and pin all active packets,
+freeze and push one clean replacement candidate, then require exact-SHA hosted
+checks and whole-candidate specification, correctness, and test reviews before
+clearing either milestone's closure arrays.

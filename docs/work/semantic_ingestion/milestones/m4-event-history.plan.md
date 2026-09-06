@@ -1,8 +1,8 @@
 # Event History, Replay, Trust, And Identity Milestone
 
 - Parent WorkPlan: `docs/work/semantic_ingestion/implementation.plan.md`
-- Status: active (local correction and 415-case family green; immutable
-  candidate, hosted checks, and whole-candidate review remain)
+- Status: under-review (replacement correction and affected local families
+  green; immutable candidate, hosted checks, and whole-candidate review remain)
 - Requirements: SIA-R10, SIA-R18
 - Active linked debugging WorkPlan: `docs/work/semantic_ingestion/conflict-authority-proof-failures-2026-08-04/debug.plan.md`
 - Approved linked design: `docs/work/semantic_ingestion/semantic-conflict-introduction-authority-2026-08-04/design.plan.md`
@@ -113,6 +113,12 @@ Freeze the shared M3.1/M4 candidate and run the exact-SHA hosted checks and
 whole-candidate reviews without adding scope. The first final-tree run passed
 414 tests and found only a stale architecture hash; after its correction the
 complete 415-case family passed under warnings-as-errors in 2142.04s.
+
+The superseded `48c6dc5` review correction preserves exact replay-integrity
+errors, reruns the full target-aware preflight after a late CAS conflict, and
+proves the public accepted-clarification winner against an already-planned V3
+source in memory and independently reopened JSONL. Positive external
+activation remains an M5 obligation, not an M4 closure dependency.
 
 ## Delegation And Review Gate
 

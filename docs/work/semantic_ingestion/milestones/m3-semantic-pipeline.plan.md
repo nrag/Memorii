@@ -1,8 +1,8 @@
 # Candidate-To-Terminal Semantic Pipeline Milestone
 
 - Parent WorkPlan: `docs/work/semantic_ingestion/implementation.plan.md`
-- Status: active (local M3.1 matrix green; coordinated immutable M3.1/M4
-  candidate, hosted checks, and final review pending)
+- Status: under-review (replacement correction and local M3.1 evidence green;
+  coordinated immutable candidate, hosted checks, and final review pending)
 - Requirements: SIA-R02, SIA-R04, SIA-R05, SIA-R06, SIA-R07, SIA-R09, SIA-R12
 - Historical authority: archive headings `M3 - Candidate-to-terminal semantic pipeline`, the M3 closure increments, `M3 Administrative Completion`, and `Post-completion hosted-CI remediation`
 
@@ -1418,8 +1418,19 @@ Follow the coordinated completion operation through the active final M4 rerun,
 then freeze and review the shared candidate. The M3.1 four-root transaction,
 recovery, reopen, and append-only lineage matrix is locally green: 29 exact
 cases for each of four roots on memory and independent JSONL, with all eight
-receipts and their 232-selector union validated. No separate M3.1 feature work
-or scope expansion is authorized before candidate review.
+ receipts and their 232-selector union validated. No separate M3.1 feature work
+ or scope expansion is authorized before candidate review.
+
+The superseded `48c6dc5` review correction preserves exact replay-error
+identity, reruns target-aware preflight on late CAS conflict, and adds the real
+public accepted-clarification race in memory and independently reopened JSONL.
+Finish the replacement freeze, hosted matrix, and whole-candidate review; no
+new M3.1 behavior is pending.
+
+Because removal of unsupported selector outcome counters changed the manifest
+digest, the prior eight local receipts are historical rather than replacement-
+candidate receipts. Exact-SHA hosted CI must regenerate and validate all eight
+root/backend receipts before the closure arrays can be cleared.
 
 ## 2026-09-05 Coordinated Local Closure Evidence
 

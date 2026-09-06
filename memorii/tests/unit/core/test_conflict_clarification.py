@@ -557,8 +557,10 @@ class _SourceVerifier:
         self.canonical_source_bytes: bytes | None = None
         self.canonical_source_digest: str | None = None
 
-    def bind(self, service: ProviderMemoryService) -> None:
-        record = service._memory_plane.get_record("tx:user-event")
+    def bind(
+        self, service: ProviderMemoryService, *, memory_id: str = "tx:user-event"
+    ) -> None:
+        record = service._memory_plane.get_record(memory_id)
         if record is None:
             records = tuple(
                 value
@@ -637,7 +639,12 @@ class _SeededConflict:
         self.candidate_ids = candidate_ids
 
 
-def _seed_canonical_conflict(service: ProviderMemoryService, now: datetime) -> _SeededConflict:
+def _seed_canonical_conflict(
+    service: ProviderMemoryService,
+    now: datetime,
+    *,
+    scope_ids: frozenset[str] = frozenset({"user:user"}),
+) -> _SeededConflict:
     """Create one real OPEN canonical conflict on the service's own plane.
 
     The canonical resolution door reads conflict state from the plane's
@@ -699,42 +706,43 @@ def _seed_canonical_conflict(service: ProviderMemoryService, now: datetime) -> _
             graph_schema_fingerprint="schema",
         )
     binding = writers.commit_binding(current)
-    plan = build_migration_plan(
-        migration_plan_id="clarification-tests:verified",
-        source_writer_epoch=current.writer_epoch,
-        legacy_snapshot_token=hashlib.sha256(encode_typed_value(())).hexdigest(),
-        entries=(),
-    )
-    checkpoint_values = {
-        "migration_plan_id": plan.migration_plan_id,
-        "plan_digest": plan.plan_digest,
-        "completed_entry_digests": (),
-        "target_generation": current.writer_epoch,
-    }
-    from memorii.core.memory_evolution.delivery_coordinate_migration import (
-        DeliveryCoordinateMigrationCheckpoint,
-    )
-    checkpoint = DeliveryCoordinateMigrationCheckpoint(
-        **checkpoint_values,
-        checkpoint_digest=hashlib.sha256(
-            encode_typed_value(checkpoint_values)
-        ).hexdigest(),
-    )
-    certificate = certify_migration(
-        plan, checkpoint, independent_verifier_fingerprint="clarification-tests"
-    )
-    writers.transition(
-        expected=binding,
-        admission_id="clarification-tests:verified",
-        runtime_mode="verified_semantic",
-        writer_implementation_fingerprint="writer:verified",
-        graph_schema_fingerprint="schema",
-        migration_activation=activate_migration(plan, certificate),
-        migration_plan=plan,
-        migration_checkpoint=checkpoint,
-        migration_certificate=certificate,
-        target_records=(),
-    )
+    if current.active_runtime_mode != "verified_semantic":
+        plan = build_migration_plan(
+            migration_plan_id="clarification-tests:verified",
+            source_writer_epoch=current.writer_epoch,
+            legacy_snapshot_token=hashlib.sha256(encode_typed_value(())).hexdigest(),
+            entries=(),
+        )
+        checkpoint_values = {
+            "migration_plan_id": plan.migration_plan_id,
+            "plan_digest": plan.plan_digest,
+            "completed_entry_digests": (),
+            "target_generation": current.writer_epoch,
+        }
+        from memorii.core.memory_evolution.delivery_coordinate_migration import (
+            DeliveryCoordinateMigrationCheckpoint,
+        )
+        checkpoint = DeliveryCoordinateMigrationCheckpoint(
+            **checkpoint_values,
+            checkpoint_digest=hashlib.sha256(
+                encode_typed_value(checkpoint_values)
+            ).hexdigest(),
+        )
+        certificate = certify_migration(
+            plan, checkpoint, independent_verifier_fingerprint="clarification-tests"
+        )
+        writers.transition(
+            expected=binding,
+            admission_id="clarification-tests:verified",
+            runtime_mode="verified_semantic",
+            writer_implementation_fingerprint="writer:verified",
+            graph_schema_fingerprint="schema",
+            migration_activation=activate_migration(plan, certificate),
+            migration_plan=plan,
+            migration_checkpoint=checkpoint,
+            migration_certificate=certificate,
+            target_records=(),
+        )
     binding = writers.commit_binding(writers.current())
     # The service's construction already installed the governed write policy
     # over this plane, so the admission handoff must go through the atomic
@@ -742,7 +750,7 @@ def _seed_canonical_conflict(service: ProviderMemoryService, now: datetime) -> _
     admission, _admission_fence = handoff(
         plane,
         coordinate="clarification-canonical-admission",
-        scope_ids=frozenset({"user:user"}),
+        scope_ids=scope_ids,
         atomic_store=store,
         writer_binding=binding,
     )
@@ -753,17 +761,22 @@ def _seed_canonical_conflict(service: ProviderMemoryService, now: datetime) -> _
     # projection history has no conflict resolver; the host composition the
     # fixtures emulate installs one before any contest can publish.
     store._projection_history._semantic_conflict_authority_resolver = resolver
-    runtime = build_authorized_local_semantic_runtime(
-        authorization_bytes=b"clarification-tests-authorization",
-        authorization_verifier=_AuthorizationVerifier(),
-        policy_provider=_PolicyProvider("works_for"),
-        writer_admission=writers,
-        atomic_store=store,
-        bootstrap_profile=None,
-    )
-    resolver.install(
-        writers, writers._claim_conflict_authority_administration(owner=runtime)
-    )
+    runtime = service._provider_ingestion._semantic_runtime
+    if runtime is None:
+        runtime = build_authorized_local_semantic_runtime(
+            authorization_bytes=b"clarification-tests-authorization",
+            authorization_verifier=_AuthorizationVerifier(),
+            policy_provider=_PolicyProvider("works_for"),
+            writer_admission=writers,
+            atomic_store=store,
+            bootstrap_profile=None,
+        )
+        administration_grant = writers._claim_conflict_authority_administration(
+            owner=runtime
+        )
+    else:
+        administration_grant = runtime.conflict_authority_administration_grant()
+    resolver.install(writers, administration_grant)
     repository = SemanticAuthorizationAuthorityRepository(
         atomic_store=store,
         writer_binding_provider=lambda: binding,
@@ -779,7 +792,7 @@ def _seed_canonical_conflict(service: ProviderMemoryService, now: datetime) -> _
     _, first_fence = handoff(
         plane,
         coordinate="clarification-canonical-first",
-        scope_ids=frozenset({"user:user"}),
+        scope_ids=scope_ids,
         atomic_store=store,
         writer_binding=binding,
     )
@@ -797,7 +810,7 @@ def _seed_canonical_conflict(service: ProviderMemoryService, now: datetime) -> _
     _, contested_fence = handoff(
         plane,
         coordinate="clarification-canonical-contest",
-        scope_ids=frozenset({"user:user"}),
+        scope_ids=scope_ids,
         atomic_store=store,
         writer_binding=binding,
     )
@@ -848,6 +861,302 @@ def _sync_and_bind_user_source(
         authenticated_host_ingress=host,
     )
     verifier.bind(service)
+
+
+@pytest.mark.parametrize("backend", ("memory", "jsonl"))
+def test_public_accepted_clarification_stales_planned_v3_source_on_original_fence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    backend: str,
+) -> None:
+    """A real clarification winner forces one typed V3 successor, not reingestion."""
+    race_timeout_seconds = 300
+    import importlib as _importlib
+    import sys as _sys
+
+    from memorii.core.memory_plane import JsonlMemoryPlaneStore, MemoryPlaneService
+    from memorii.core.semantic_ingestion.contracts import (
+        BootstrapGraphPlanAtomicWriteRequestV3,
+        ProviderEntityObject,
+        ProviderFact,
+        ProviderMention,
+        ProviderSemanticProposal,
+        decode_bootstrap_graph_atomic_member_payload_v3,
+    )
+    from tests.unit.core.semantic_ingestion.bootstrap_graph_production_roots_support import (
+        provider_service,
+    )
+    from tests.unit.core.semantic_ingestion.test_semantic_provider_composition import (
+        TEST_NOW,
+        DeterministicTestHostBootstrapMaterialVerifier,
+        _built_in_local_capability,
+        _host_ingress,
+        _v3_normalization_host_builder,
+    )
+
+    support_dir = str(Path(__file__).parent / "semantic_ingestion")
+    if support_dir not in _sys.path:
+        _sys.path.insert(0, support_dir)
+    commit_claimed = _importlib.import_module(
+        "test_semantic_terminal_persistence"
+    )._commit_claimed_accepted_clarification
+
+    assertion = "Atlas owner is Bob."
+    proposal = ProviderSemanticProposal(
+        mentions=(
+            ProviderMention(
+                local_id="atlas",
+                mention_quote="Atlas",
+                mention_context_quote=assertion,
+            ),
+            ProviderMention(
+                local_id="bob",
+                mention_quote="Bob",
+                mention_context_quote=assertion,
+            ),
+        ),
+        facts=(
+            ProviderFact(
+                local_id="owner",
+                predicate_id="owner_is",
+                subject_entity_ref="atlas",
+                object=ProviderEntityObject(entity_ref="bob"),
+                assertion_quote=assertion,
+                predicate_anchor_quote="owner",
+                polarity="positive",
+                commitment="asserted",
+            ),
+        ),
+        abstained=False,
+    )
+    normalization, normalization_calls = _v3_normalization_host_builder(
+        proposal=proposal
+    )
+    plane_path = tmp_path / "plane"
+    plane = (
+        MemoryPlaneService(record_store=JsonlMemoryPlaneStore(plane_path))
+        if backend == "jsonl"
+        else MemoryPlaneService()
+    )
+    clock = _Clock()
+    clock.now = TEST_NOW
+    repository = _repository(tmp_path / f"conflicts-{backend}.jsonl", clock)
+    source = _SourceVerifier()
+    captured_request = []
+    accepted_receipts = []
+
+    def canonical_commit(
+        proposal, *, processing_operation_id, policy_fingerprint, current_claim
+    ):
+        del proposal, processing_operation_id, policy_fingerprint
+        assert len(captured_request) == 1
+        intents = tuple(
+            intent
+            for operation in captured_request[0].ordered_operation_inputs
+            for intent in operation.reduction.effect_materialization.record_intents
+            if intent.record_kind == "entity_revision"
+        )
+        assert len(intents) == 2, tuple(
+            {
+                "status": operation.reduction.native_terminal.status,
+                "reasons": operation.reduction.native_terminal.reason_codes,
+                "targets": tuple(
+                    (target.record_kind, target.record_id)
+                    for target in operation.reduction.native_compilation.resolved_graph_targets
+                ),
+                "intents": tuple(
+                    (intent.record_kind, intent.record_id)
+                    for intent in operation.reduction.effect_materialization.record_intents
+                ),
+            }
+            for operation in captured_request[0].ordered_operation_inputs
+        )
+        entities = tuple(
+            intent.canonical_after_record.planning_record for intent in intents
+        )
+        receipt, _, _ = commit_claimed(
+            service._semantic_atomic_store,
+            current_claim,
+            service._semantic_atomic_store.build_conflict_clarification_cas_input(
+                current_claim
+            ),
+            terminal_kwargs={
+                "subject_logical_entity_id": entities[0]["logical_entity_id"],
+                "subject_entity_revision_id": entities[0]["entity_revision_id"],
+                "object_logical_entity_id": entities[1]["logical_entity_id"],
+                "object_entity_revision_id": entities[1]["entity_revision_id"],
+                "valid_start": clock.now,
+                "valid_end": clock.now + timedelta(days=30),
+            },
+        )
+        accepted_receipts.append(receipt)
+        return receipt
+
+    service = provider_service(
+        memory_plane=plane,
+        conflict_attention_repository=repository,
+        conflict_attention_enabled=True,
+        source_user_event_verifier=source,
+        conflict_clarification_pipeline=_Pipeline(canonical_commit=canonical_commit),
+        now_provider=lambda: clock.now,
+        host_bootstrap_capability=_built_in_local_capability(),
+        host_bootstrap_material_verifier=(
+            DeterministicTestHostBootstrapMaterialVerifier()
+        ),
+        source_normalization_host_bundle_builder=normalization,
+    )
+    host = _host_ingress()
+    bootstrap_source = service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="unstructured",
+        operation_id="clarification-user-event",
+        role="user",
+        task_id="task:one",
+        user_id="user:alice",
+        authenticated_host_ingress=host,
+    )
+    assert bootstrap_source.blocked_reasons["semantic_ingestion"] == "source_only"
+    seeded = _seed_canonical_conflict(
+        service,
+        clock.now,
+        scope_ids=frozenset({"task:task:one", "user:user:alice"}),
+    )
+    clarification_sources = tuple(
+        record
+        for record in plane.list_records(source_kind="semantic_ingestion_source")
+        if not record.memory_id.startswith("tx:clarification-canonical-")
+    )
+    assert len(clarification_sources) == 1
+    source.bind(service, memory_id=clarification_sources[0].memory_id)
+    atomic = service._semantic_atomic_store
+    atomic._semantic_integrity_linearization = None
+    real_group_commit = atomic.commit_or_reload_bootstrap_graph_group_v3
+
+    def capture_group_commit(*, request):
+        if request.source_operation_id == "clarification-race-source":
+            captured_request.append(request)
+        return real_group_commit(request=request)
+
+    monkeypatch.setattr(
+        atomic, "commit_or_reload_bootstrap_graph_group_v3", capture_group_commit
+    )
+    entered_group_cas = Event()
+    release_group_cas = Event()
+    conditional_attempts = []
+    real_conditional_write = plane.conditionally_write_records
+
+    def pause_first_group_cas(records, *, preconditions, authorization, **kwargs):
+        primary = next(
+            (
+                record
+                for record in records
+                if record.source_kind
+                == "semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+            ),
+            None,
+        )
+        if primary is not None:
+            conditional_attempts.append(primary.memory_id)
+            if len(conditional_attempts) == 1:
+                entered_group_cas.set()
+                assert release_group_cas.wait(timeout=race_timeout_seconds)
+        return real_conditional_write(
+            records,
+            preconditions=preconditions,
+            authorization=authorization,
+            **kwargs,
+        )
+
+    monkeypatch.setattr(plane, "conditionally_write_records", pause_first_group_cas)
+    admissions_before = len(
+        plane.list_records(source_kind="semantic_ingestion_admission_index")
+    )
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        ingestion = executor.submit(
+            service.sync_event,
+            operation=ProviderOperation.CHAT_USER_TURN,
+            content=assertion,
+            operation_id="clarification-race-source",
+            role="user",
+            task_id="task:race",
+            user_id="user:alice",
+            authenticated_host_ingress=host,
+        )
+        if not entered_group_cas.wait(timeout=race_timeout_seconds):
+            early = ingestion.result(timeout=race_timeout_seconds)
+            raise AssertionError(
+                "ingestion did not reach the group CAS: "
+                f"blocked={early.blocked_reasons!r}, "
+                f"normalization_calls={normalization_calls!r}, "
+                f"group_primaries={len(plane.list_records(source_kind='semantic_ingestion_bootstrap_graph_v3_group_commit_primary'))}"
+            )
+        assert len(captured_request) == 1
+        proposal_calls_at_stale_cas = normalization_calls["proposal"]
+        try:
+            resolved = service.handle_tool_call_with_attention(
+                "memorii_resolve_conflict",
+                {
+                    "conflict_id": seeded.conflict_id,
+                    "expected_conflict_revision": seeded.conflict_revision,
+                    "operation_id": "clarification-winner",
+                    "action": "select",
+                    "selected_candidate_ids": [seeded.candidate_ids[0]],
+                    "validity_intervals": [],
+                    "source_user_event_id": "clarification-user-event",
+                },
+                authenticated_host_ingress=host,
+            )
+        finally:
+            release_group_cas.set()
+        assert resolved.legacy_result.ok is True
+        assert resolved.legacy_result.result["outcome"] == "submitted"
+        assert len(accepted_receipts) == 1
+        result = ingestion.result(timeout=race_timeout_seconds)
+
+    assert result.blocked_reasons["semantic_ingestion"] == "source_only"
+    assert normalization_calls["proposal"] == proposal_calls_at_stale_cas
+    assert len(conditional_attempts) == 2
+    assert len(
+        plane.list_records(source_kind="semantic_ingestion_admission_index")
+    ) == admissions_before + 1
+
+    evidence_plane = (
+        MemoryPlaneService(record_store=JsonlMemoryPlaneStore(plane_path))
+        if backend == "jsonl"
+        else plane
+    )
+    progress = []
+    for record in evidence_plane.list_records(
+        source_kind="semantic_ingestion_bootstrap_graph_v3_manifest"
+    ):
+        if "request" not in record.content:
+            continue
+        request = BootstrapGraphPlanAtomicWriteRequestV3.model_validate_json(
+            json.dumps(record.content.get("request"))
+        )
+        member = next(
+            (item for item in request.members if item.member_id == "source-progress"),
+            None,
+        )
+        if member is None:
+            continue
+        decoded = decode_bootstrap_graph_atomic_member_payload_v3(
+            kind=member.kind, raw=member.canonical_payload
+        )
+        if decoded["operation_id"] == "clarification-race-source":
+            progress.append(decoded)
+    assert tuple(item["kind"] for item in progress) == (
+        "plan_published",
+        "attempt_published",
+        "planned",
+        "plan_published",
+        "attempt_published",
+        "planned",
+    )
+    assert len({item["operation_fence_binding_digest"] for item in progress}) == 1
+    assert all(item["predecessor_progress_reference"] is None for item in progress[:3])
+    assert all(item["predecessor_progress_reference"] is not None for item in progress[3:])
+    assert all(item["replan_closure_reference"] is not None for item in progress[3:])
 
 
 def test_failed_receipt_writes_nothing_corrected_retry_commits_and_exact_retry_skips_verifiers(tmp_path: Path) -> None:
