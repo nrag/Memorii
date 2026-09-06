@@ -250,7 +250,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     if: always()
-    needs: [equal-version-replay-decision, static-analysis, package-smoke, provider-compatibility, unit-test-shards, unit-timing-inventory, semantic-terminal-persistence, semantic-terminal-persistence-timing-inventory]
+    needs: [equal-version-replay-decision, static-analysis, package-smoke, provider-compatibility, scoped-context-integration, unit-test-shards, unit-timing-inventory, semantic-terminal-persistence, semantic-terminal-persistence-timing-inventory]
 
     steps:
       - name: Require every unit-test dependency
@@ -259,6 +259,7 @@ jobs:
           STATIC_RESULT: ${{ needs.static-analysis.result }}
           PACKAGE_RESULT: ${{ needs.package-smoke.result }}
           COMPATIBILITY_RESULT: ${{ needs.provider-compatibility.result }}
+          SCOPED_CONTEXT_RESULT: ${{ needs.scoped-context-integration.result }}
           SHARD_RESULT: ${{ needs.unit-test-shards.result }}
           TIMING_RESULT: ${{ needs.unit-timing-inventory.result }}
           TERMINAL_RESULT: ${{ needs.semantic-terminal-persistence.result }}
@@ -268,10 +269,38 @@ jobs:
           && test "$STATIC_RESULT" = success
           && test "$PACKAGE_RESULT" = success
           && test "$COMPATIBILITY_RESULT" = success
+          && test "$SCOPED_CONTEXT_RESULT" = success
           && test "$SHARD_RESULT" = success
           && test "$TIMING_RESULT" = success
           && test "$TERMINAL_RESULT" = success
           && test "$TERMINAL_TIMING_RESULT" = success
+
+  scoped-context-integration:
+    name: Scoped Context Integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: memorii/pyproject.toml
+
+      - name: Install package and test dependencies
+        working-directory: memorii
+        run: pip install -e '.[local,dev]'
+
+      - name: Run scoped-context composition roots
+        working-directory: memorii
+        run: >-
+          pytest -W error
+          tests/integration/test_scoped_context_production_binding.py
+          -p no:cacheprovider
 
   semantic-terminal-persistence:
     name: Semantic Terminal Persistence Shard ${{ matrix.shard }}

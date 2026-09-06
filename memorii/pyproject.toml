@@ -90,6 +90,7 @@ include = [
   "memorii/core/memory_evolution",
   "memorii/core/memory_plane",
   "memorii/core/provider",
+  "memorii/core/scoped_context",
   "memorii/core/promotion",
   "memorii/core/benchmark/memory_evolution_sim",
   "memorii/core/benchmark/memory_evolution_runtime",

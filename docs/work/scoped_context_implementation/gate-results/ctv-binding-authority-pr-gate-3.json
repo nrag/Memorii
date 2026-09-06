@@ -1,0 +1,18 @@
+{
+  "name": "ctv-binding-authority-pr-gate-3",
+  "argv": [
+    "bash",
+    "-e",
+    "-o",
+    "pipefail",
+    "-c",
+    "python3.12 -m pytest -W error tests/unit/tools/test_ctv_binding_authority_pr_gate.py -p no:cacheprovider"
+  ],
+  "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii",
+  "exit_status": 0,
+  "elapsed_seconds": 202.411,
+  "log_sha256": "737bad4637a08d87dee7af24a6b47bdf5a4dcaf7e5076f66270c545247473ee2",
+  "source_revision_label": "b4f6c24b091a28bd3d1f65102c742478fc7276b3",
+  "candidate_manifest_sha256": "5310e597dde8d610d8345f63d0f9839f94d062526f00bb4b3d1e6f29424817bb",
+  "evidence": "local working-tree execution only"
+}

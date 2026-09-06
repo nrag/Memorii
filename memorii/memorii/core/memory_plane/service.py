@@ -162,6 +162,11 @@ class MemoryPlaneService:
     def get_record(self, memory_id: str) -> CanonicalMemoryRecord | None:
         return self._record_store().get_record(memory_id)
 
+    def read_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]:
+        """Return one detached canonical snapshot for a read-only consumer."""
+
+        return self._record_store().read_snapshot()
+
     def stage_record(
         self,
         record: CanonicalMemoryRecord,

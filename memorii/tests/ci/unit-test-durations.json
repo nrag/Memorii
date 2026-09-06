@@ -1,6 +1,15 @@
 {
   "schema_version": 1,
   "tests": {
+    "tests/unit/core/test_scoped_context_activation.py::test_malformed_owned_snapshot_payload_is_unavailable": 0.03,
+    "tests/unit/core/test_scoped_context_activation.py::test_missing_optional_provenance_is_reported_with_capped_identifiers": 0.02,
+    "tests/unit/core/test_scoped_context_activation.py::test_optional_byte_budget_omits_whole_ranked_records": 0.03,
+    "tests/unit/core/test_scoped_context_activation.py::test_request_and_failure_envelopes_reject_blank_identity_and_empty_echo": 0.004,
+    "tests/unit/core/test_scoped_context_activation.py::test_revoked_handle_denies_without_record_disclosure": 0.02,
+    "tests/unit/core/test_scoped_context_activation.py::test_scoped_context_releases_authorized_snapshot_items": 0.02,
+    "tests/unit/core/test_scoped_context_activation.py::test_scoped_context_requires_authority_before_snapshot": 0.08,
+    "tests/unit/core/test_scoped_context_activation.py::test_snapshot_corruption_is_typed_unavailable": 0.02,
+    "tests/unit/core/test_scoped_context_activation.py::test_snapshot_structured_answer_uses_real_current_and_historical_claims": 0.1,
     "tests/unit/core/benchmark/test_baselines.py::test_all_required_baselines_present": 0.001,
     "tests/unit/core/benchmark/test_baselines.py::test_baseline_comparison_contains_all_baselines": 0.082,
     "tests/unit/core/benchmark/test_baselines.py::test_baseline_skip_is_explicitly_reported": 0.076,

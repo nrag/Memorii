@@ -1,0 +1,386 @@
+{
+  "candidate": "candidate.json",
+  "complete": true,
+  "results": [
+    {
+      "name": "benchmark-artifact-0",
+      "argv": [
+        "bash",
+        "-c",
+        "if [ \"$BENCHMARK_SUITE\" = memory_evolution_runtime_v1 ]; then\n  runner=(python -m tests.support.run_memory_evolution_runtime_benchmark)\nelse\n  runner=(python -m memorii.tools.run_eval)\nfi\n\"${runner[@]}\" \\\n  --suite \"$BENCHMARK_SUITE\" \\\n  --mode \"$BENCHMARK_MODE\" \\\n  --dry-run \\\n  --fail-on-benchmark-failure \\\n  --storage-root /private/tmp/scoped-context-gates/artifact-0 \\\n  --sim-profile \"$BENCHMARK_PROFILE\" \\\n  --sim-scenario-count \"$BENCHMARK_COUNT\" \\\n  --sim-noise-rate 0.35 \\\n  --seed 7 \\\n  $BENCHMARK_EXTRA\npython -m memorii.tools.validate_benchmark_artifacts \\\n  --root /private/tmp/scoped-context-gates/artifact-0/benchmark_runs \\\n  --suite \"$BENCHMARK_SUITE\"\n"
+      ],
+      "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii",
+      "exit_status": 0,
+      "elapsed_seconds": 18.417,
+      "log_sha256": "79d4c9bff5af6ad522552ab8787110a94cf63a3c4cea8913baffa6baafab4682",
+      "source_revision_label": "b4f6c24b091a28bd3d1f65102c742478fc7276b3",
+      "evidence": "local working-tree execution only"
+    },
+    {
+      "name": "benchmark-artifact-1",
+      "argv": [
+        "bash",
+        "-c",
+        "if [ \"$BENCHMARK_SUITE\" = memory_evolution_runtime_v1 ]; then\n  runner=(python -m tests.support.run_memory_evolution_runtime_benchmark)\nelse\n  runner=(python -m memorii.tools.run_eval)\nfi\n\"${runner[@]}\" \\\n  --suite \"$BENCHMARK_SUITE\" \\\n  --mode \"$BENCHMARK_MODE\" \\\n  --dry-run \\\n  --fail-on-benchmark-failure \\\n  --storage-root /private/tmp/scoped-context-gates/artifact-1 \\\n  --sim-profile \"$BENCHMARK_PROFILE\" \\\n  --sim-scenario-count \"$BENCHMARK_COUNT\" \\\n  --sim-noise-rate 0.35 \\\n  --seed 7 \\\n  $BENCHMARK_EXTRA\npython -m memorii.tools.validate_benchmark_artifacts \\\n  --root /private/tmp/scoped-context-gates/artifact-1/benchmark_runs \\\n  --suite \"$BENCHMARK_SUITE\"\n"
+      ],
+      "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii",
+      "exit_status": 0,
+      "elapsed_seconds": 19.49,
+      "log_sha256": "23283b6e837839e865036516b266b409779d13ab0eef902efcfb029a0a55610e",
+      "source_revision_label": "b4f6c24b091a28bd3d1f65102c742478fc7276b3",
+      "evidence": "local working-tree execution only"
+    },
+    {
+      "name": "benchmark-artifact-2",
+      "argv": [
+        "bash",
+        "-c",
+        "if [ \"$BENCHMARK_SUITE\" = memory_evolution_runtime_v1 ]; then\n  runner=(python -m tests.support.run_memory_evolution_runtime_benchmark)\nelse\n  runner=(python -m memorii.tools.run_eval)\nfi\n\"${runner[@]}\" \\\n  --suite \"$BENCHMARK_SUITE\" \\\n  --mode \"$BENCHMARK_MODE\" \\\n  --dry-run \\\n  --fail-on-benchmark-failure \\\n  --storage-root /private/tmp/scoped-context-gates/artifact-2 \\\n  --sim-profile \"$BENCHMARK_PROFILE\" \\\n  --sim-scenario-count \"$BENCHMARK_COUNT\" \\\n  --sim-noise-rate 0.35 \\\n  --seed 7 \\\n  $BENCHMARK_EXTRA\npython -m memorii.tools.validate_benchmark_artifacts \\\n  --root /private/tmp/scoped-context-gates/artifact-2/benchmark_runs \\\n  --suite \"$BENCHMARK_SUITE\"\n"
+      ],
+      "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii",
+      "exit_status": 0,
+      "elapsed_seconds": 18.038,
+      "log_sha256": "3367c43c52ac8309b3939e20c1099efa11020b1078718061d136409fa0c70c11",
+      "source_revision_label": "b4f6c24b091a28bd3d1f65102c742478fc7276b3",
+      "evidence": "local working-tree execution only"
+    },
+    {
+      "name": "benchmark-artifact-3",
+      "argv": [
+        "bash",
+        "-c",
+        "if [ \"$BENCHMARK_SUITE\" = memory_evolution_runtime_v1 ]; then\n  runner=(python -m tests.support.run_memory_evolution_runtime_benchmark)\nelse\n  runner=(python -m memorii.tools.run_eval)\nfi\n\"${runner[@]}\" \\\n  --suite \"$BENCHMARK_SUITE\" \\\n  --mode \"$BENCHMARK_MODE\" \\\n  --dry-run \\\n  --fail-on-benchmark-failure \\\n  --storage-root /private/tmp/scoped-context-gates/artifact-3 \\\n  --sim-profile \"$BENCHMARK_PROFILE\" \\\n  --sim-scenario-count \"$BENCHMARK_COUNT\" \\\n  --sim-noise-rate 0.35 \\\n  --seed 7 \\\n  $BENCHMARK_EXTRA\npython -m memorii.tools.validate_benchmark_artifacts \\\n  --root /private/tmp/scoped-context-gates/artifact-3/benchmark_runs \\\n  --suite \"$BENCHMARK_SUITE\"\n"
+      ],
+      "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii",
+      "exit_status": 0,
+      "elapsed_seconds": 19.618,
+      "log_sha256": "79feed0d595b803a5cee53fc85832ffe97c8149f1c4aaa96f3af3d5525b09f70",
+      "source_revision_label": "b4f6c24b091a28bd3d1f65102c742478fc7276b3",
+      "evidence": "local working-tree execution only"
+    },
+    {
+      "name": "benchmark-artifact-4",
+      "argv": [
+        "bash",
+        "-c",
+        "if [ \"$BENCHMARK_SUITE\" = memory_evolution_runtime_v1 ]; then\n  runner=(python -m tests.support.run_memory_evolution_runtime_benchmark)\nelse\n  runner=(python -m memorii.tools.run_eval)\nfi\n\"${runner[@]}\" \\\n  --suite \"$BENCHMARK_SUITE\" \\\n  --mode \"$BENCHMARK_MODE\" \\\n  --dry-run \\\n  --fail-on-benchmark-failure \\\n  --storage-root /private/tmp/scoped-context-gates/artifact-4 \\\n  --sim-profile \"$BENCHMARK_PROFILE\" \\\n  --sim-scenario-count \"$BENCHMARK_COUNT\" \\\n  --sim-noise-rate 0.35 \\\n  --seed 7 \\\n  $BENCHMARK_EXTRA\npython -m memorii.tools.validate_benchmark_artifacts \\\n  --root /private/tmp/scoped-context-gates/artifact-4/benchmark_runs \\\n  --suite \"$BENCHMARK_SUITE\"\n"
+      ],
+      "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii",
+      "exit_status": 0,
+      "elapsed_seconds": 78.936,
+      "log_sha256": "335427db0186da5ea8901bb4df6b7521c0aa28cf23f6ab4725b891deb7a046ea",
+      "source_revision_label": "b4f6c24b091a28bd3d1f65102c742478fc7276b3",
+      "evidence": "local working-tree execution only"
+    },
+    {
+      "name": "benchmark-artifact-5",
+      "argv": [
+        "bash",
+        "-c",
+        "if [ \"$BENCHMARK_SUITE\" = memory_evolution_runtime_v1 ]; then\n  runner=(python -m tests.support.run_memory_evolution_runtime_benchmark)\nelse\n  runner=(python -m memorii.tools.run_eval)\nfi\n\"${runner[@]}\" \\\n  --suite \"$BENCHMARK_SUITE\" \\\n  --mode \"$BENCHMARK_MODE\" \\\n  --dry-run \\\n  --fail-on-benchmark-failure \\\n  --storage-root /private/tmp/scoped-context-gates/artifact-5 \\\n  --sim-profile \"$BENCHMARK_PROFILE\" \\\n  --sim-scenario-count \"$BENCHMARK_COUNT\" \\\n  --sim-noise-rate 0.35 \\\n  --seed 7 \\\n  $BENCHMARK_EXTRA\npython -m memorii.tools.validate_benchmark_artifacts \\\n  --root /private/tmp/scoped-context-gates/artifact-5/benchmark_runs \\\n  --suite \"$BENCHMARK_SUITE\"\n"
+      ],
+      "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii",
+      "exit_status": 0,
+      "elapsed_seconds": 152.084,
+      "log_sha256": "3ff92a77142d3b8a9a12b3671663789dd0198cbb46c4f46d8688629f5ba75bba",
+      "source_revision_label": "b4f6c24b091a28bd3d1f65102c742478fc7276b3",
+      "evidence": "local working-tree execution only"
+    },
+    {
+      "name": "benchmark-artifact-6",
+      "argv": [
+        "bash",
+        "-c",
+        "if [ \"$BENCHMARK_SUITE\" = memory_evolution_runtime_v1 ]; then\n  runner=(python -m tests.support.run_memory_evolution_runtime_benchmark)\nelse\n  runner=(python -m memorii.tools.run_eval)\nfi\n\"${runner[@]}\" \\\n  --suite \"$BENCHMARK_SUITE\" \\\n  --mode \"$BENCHMARK_MODE\" \\\n  --dry-run \\\n  --fail-on-benchmark-failure \\\n  --storage-root /private/tmp/scoped-context-gates/artifact-6 \\\n  --sim-profile \"$BENCHMARK_PROFILE\" \\\n  --sim-scenario-count \"$BENCHMARK_COUNT\" \\\n  --sim-noise-rate 0.35 \\\n  --seed 7 \\\n  $BENCHMARK_EXTRA\npython -m memorii.tools.validate_benchmark_artifacts \\\n  --root /private/tmp/scoped-context-gates/artifact-6/benchmark_runs \\\n  --suite \"$BENCHMARK_SUITE\"\n"
+      ],
+      "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii",
+      "exit_status": 0,
+      "elapsed_seconds": 21.993,
+      "log_sha256": "e5e796ca22593cf087d5ed3fb4eb9fe3a54696795e8665b3d6bc356a1a32a727",
+      "source_revision_label": "b4f6c24b091a28bd3d1f65102c742478fc7276b3",
+      "evidence": "local working-tree execution only"
+    },
+    {
+      "name": "benchmark-artifact-7",
+      "argv": [
+        "bash",
+        "-c",
+        "if [ \"$BENCHMARK_SUITE\" = memory_evolution_runtime_v1 ]; then\n  runner=(python -m tests.support.run_memory_evolution_runtime_benchmark)\nelse\n  runner=(python -m memorii.tools.run_eval)\nfi\n\"${runner[@]}\" \\\n  --suite \"$BENCHMARK_SUITE\" \\\n  --mode \"$BENCHMARK_MODE\" \\\n  --dry-run \\\n  --fail-on-benchmark-failure \\\n  --storage-root /private/tmp/scoped-context-gates/artifact-7 \\\n  --sim-profile \"$BENCHMARK_PROFILE\" \\\n  --sim-scenario-count \"$BENCHMARK_COUNT\" \\\n  --sim-noise-rate 0.35 \\\n  --seed 7 \\\n  $BENCHMARK_EXTRA\npython -m memorii.tools.validate_benchmark_artifacts \\\n  --root /private/tmp/scoped-context-gates/artifact-7/benchmark_runs \\\n  --suite \"$BENCHMARK_SUITE\"\n"
+      ],
+      "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii",
+      "exit_status": 0,
+      "elapsed_seconds": 22.264,
+      "log_sha256": "88492f0a6512c32146aba1faf0331eee61a753f3799d17a209c900dbcb63c136",
+      "source_revision_label": "b4f6c24b091a28bd3d1f65102c742478fc7276b3",
+      "evidence": "local working-tree execution only"
+    },
+    {
+      "name": "benchmark-contract-tests-3",
+      "argv": [
+        "bash",
+        "-c",
+        "pytest -W error tests/unit/core/benchmark/test_memory_evolution_public_contracts.py tests/unit/core/benchmark/test_memory_evolution_architecture.py tests/unit/core/benchmark/test_memory_evolution_oracle.py tests/unit/core/benchmark/test_memory_evolution_runtime_alignment.py tests/unit/core/benchmark/test_memory_evolution_runtime_execution_state.py tests/unit/core/benchmark/test_memory_evolution_sim_leakage_contracts.py tests/unit/core/benchmark/test_memory_evolution_sim_judge_contracts.py tests/unit/core/test_memory_evolution_temporal.py tests/unit/core/test_memory_evolution_execution.py tests/unit/core/test_memory_evolution_retrieval.py tests/unit/core/test_calibration_gates.py tests/unit/core/test_calibration.py tests/unit/tools/test_validate_benchmark_artifacts.py -p no:cacheprovider"
+      ],
+      "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii",
+      "exit_status": 0,
+      "elapsed_seconds": 113.935,
+      "log_sha256": "2489a5a91c1d3a0571f3557d6b076dd76c22bbb610f76ce7a30142c203e3c110",
+      "source_revision_label": "b4f6c24b091a28bd3d1f65102c742478fc7276b3",
+      "evidence": "local working-tree execution only"
+    },
+    {
+      "name": "benchmark-contract-tests-4",
+      "argv": [
+        "bash",
+        "-c",
+        "pytest -W error tests/integration/test_benchmark_source_fingerprint.py -p no:cacheprovider"
+      ],
+      "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii",
+      "exit_status": 0,
+      "elapsed_seconds": 177.348,
+      "log_sha256": "0ac6eafcbcff6b924efeeee368c05ba09b9b89f2e9b1dbbd5561e81a32ae0ce4",
+      "source_revision_label": "b4f6c24b091a28bd3d1f65102c742478fc7276b3",
+      "evidence": "local working-tree execution only"
+    },
+    {
+      "name": "package-smoke",
+      "argv": [
+        "bash",
+        "-e",
+        "-o",
+        "pipefail",
+        "-c",
+        "python -m pip wheel . --no-deps --wheel-dir \"${RUNNER_TEMP}/memorii-wheel\"\npython -m pip install --no-deps --target \"${RUNNER_TEMP}/memorii-wheel-site\" \"${RUNNER_TEMP}\"/memorii-wheel/*.whl\ncd \"${RUNNER_TEMP}\"\nPYTHONPATH=\"${RUNNER_TEMP}/memorii-wheel-site\" python -c \"from pathlib import Path; import memorii; root=Path('${RUNNER_TEMP}/memorii-wheel-site').resolve(); assert Path(memorii.__file__).resolve().is_relative_to(root); from memorii.core.memory_evolution.extraction_contracts import MemoryExtractionOutput; from memorii.core.prompts.runtime_manifest import PromptOwner; from memorii.core.prompts.registry import PromptRegistry; PromptRegistry().load('memory_extraction:v1', owner=PromptOwner.LLM_MEMORY_EXTRACTOR, output_model=MemoryExtractionOutput)\"\nPYTHONPATH=\"${RUNNER_TEMP}/memorii-wheel-site\" python -c \"from pathlib import Path; import memorii.core.benchmark.memory_evolution_sim as sim, memorii.core.benchmark.memory_evolution_runtime as runtime, memorii.tools.run_benchmark as runner; root=Path('${RUNNER_TEMP}/memorii-wheel-site').resolve(); assert all(Path(module.__file__).resolve().is_relative_to(root) for module in (sim, runtime, runner))\"\nPYTHONPATH=\"${RUNNER_TEMP}/memorii-wheel-site\" python -c \"from importlib.util import find_spec; removed=('memorii.core.promotion.models', 'memorii.core.promotion.legacy_models', 'memorii.core.promotion.lifecycle_models', 'memorii.core.prompts.manifest', 'memorii.core.prompts.schema_compatibility'); assert all(find_spec(module) is None for module in removed)\"\nPYTHONPATH=\"${RUNNER_TEMP}/memorii-wheel-site\" python -m memorii.tools.run_eval --suite memory_evolution_sim_v1 --mode llm --dry-run --storage-root \"${RUNNER_TEMP}/memorii-wheel-benchmark\" --sim-profile long_horizon --sim-scenario-count 1 --sim-min-events 5 --sim-max-events 10 --sim-noise-rate 0.35 --seed 7\nPYTHONPATH=\"${RUNNER_TEMP}/memorii-wheel-site\" python -m memorii.tools.validate_benchmark_artifacts --root \"${RUNNER_TEMP}/memorii-wheel-benchmark/benchmark_runs\" --suite memory_evolution_sim_v1\n"
+      ],
+      "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii",
+      "exit_status": 0,
+      "elapsed_seconds": 45.272,
+      "log_sha256": "f06f7376c37519f5e99a98915e2812679b18f669c7fe2d558596bd140ec2c960",
+      "source_revision_label": "b4f6c24b091a28bd3d1f65102c742478fc7276b3",
+      "evidence": "local working-tree execution only"
+    },
+    {
+      "name": "provider-compatibility-4",
+      "argv": [
+        "bash",
+        "-c",
+        "pytest -W error tests/unit/core/semantic_ingestion/test_provider_compatibility.py tests/integration/semantic_ingestion/test_provider_compatibility_recapture.py -p no:cacheprovider"
+      ],
+      "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii",
+      "exit_status": 0,
+      "elapsed_seconds": 24.65,
+      "log_sha256": "a785b4542d0f82fe380bb5dee58804e9e4f9caf263ea66773804524f2cc71e5b",
+      "source_revision_label": "b4f6c24b091a28bd3d1f65102c742478fc7276b3",
+      "evidence": "local working-tree execution only"
+    },
+    {
+      "name": "scoped-context-integration-3",
+      "argv": [
+        "bash",
+        "-c",
+        "pytest -W error tests/integration/test_scoped_context_production_binding.py -p no:cacheprovider"
+      ],
+      "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii",
+      "exit_status": 0,
+      "elapsed_seconds": 25.305,
+      "log_sha256": "73316504f220d9bc305a23b5223b6f866ccebd465049426743a043c215d783d0",
+      "source_revision_label": "b4f6c24b091a28bd3d1f65102c742478fc7276b3",
+      "evidence": "local working-tree execution only"
+    },
+    {
+      "name": "static-analysis-3",
+      "argv": [
+        "bash",
+        "-c",
+        "ruff check memorii tests"
+      ],
+      "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii",
+      "exit_status": 0,
+      "elapsed_seconds": 0.201,
+      "log_sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+      "source_revision_label": "b4f6c24b091a28bd3d1f65102c742478fc7276b3",
+      "evidence": "local working-tree execution only"
+    },
+    {
+      "name": "static-analysis-4",
+      "argv": [
+        "bash",
+        "-c",
+        "python -m memorii.tools.identity_hygiene --root .. --allowlist ../.agents/identity_hygiene_allowlist.json"
+      ],
+      "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii",
+      "exit_status": 0,
+      "elapsed_seconds": 35.564,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_revision_label": "b4f6c24b091a28bd3d1f65102c742478fc7276b3",
+      "evidence": "local working-tree execution only"
+    },
+    {
+      "name": "static-analysis-5",
+      "argv": [
+        "bash",
+        "-c",
+        "pyright --pythonpath \"$(python -c 'import sys; print(sys.executable)')\""
+      ],
+      "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii",
+      "exit_status": 0,
+      "elapsed_seconds": 47.201,
+      "log_sha256": "6d88a1b220adb7a3d62092b6e38431f0b3fe8babe9864fab90e5849766260332",
+      "source_revision_label": "b4f6c24b091a28bd3d1f65102c742478fc7276b3",
+      "evidence": "local working-tree execution only"
+    },
+    {
+      "name": "unit-shard-0",
+      "argv": [
+        "/Users/nandaraghunathan/Code/Memorii/Memorii/.venv/bin/python",
+        "-m",
+        "memorii.tools.test_shards",
+        "run",
+        "--config",
+        "tests/ci/unit-shards.json",
+        "--index",
+        "0",
+        "--timing-output",
+        "/private/tmp/scoped-context-gates/unit-shard-timings/unit-shard-0-timings.json"
+      ],
+      "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii",
+      "exit_status": 0,
+      "elapsed_seconds": 484.505,
+      "log_sha256": "c2c40565c65365eced452afdbcac1c52a55347286971507fc3f2e6b074e9b184",
+      "source_revision_label": "b4f6c24b091a28bd3d1f65102c742478fc7276b3",
+      "evidence": "local working-tree execution only"
+    },
+    {
+      "name": "unit-shard-1",
+      "argv": [
+        "/Users/nandaraghunathan/Code/Memorii/Memorii/.venv/bin/python",
+        "-m",
+        "memorii.tools.test_shards",
+        "run",
+        "--config",
+        "tests/ci/unit-shards.json",
+        "--index",
+        "1",
+        "--timing-output",
+        "/private/tmp/scoped-context-gates/unit-shard-timings/unit-shard-1-timings.json"
+      ],
+      "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii",
+      "exit_status": 0,
+      "elapsed_seconds": 906.678,
+      "log_sha256": "6739b88c4b82f5c0b7b49332eb4e89ab98e827492e8feb1520c833797e5b74a6",
+      "source_revision_label": "b4f6c24b091a28bd3d1f65102c742478fc7276b3",
+      "evidence": "local working-tree execution only"
+    },
+    {
+      "name": "unit-shard-2",
+      "argv": [
+        "/Users/nandaraghunathan/Code/Memorii/Memorii/.venv/bin/python",
+        "-m",
+        "memorii.tools.test_shards",
+        "run",
+        "--config",
+        "tests/ci/unit-shards.json",
+        "--index",
+        "2",
+        "--timing-output",
+        "/private/tmp/scoped-context-gates/unit-shard-timings/unit-shard-2-timings.json"
+      ],
+      "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii",
+      "exit_status": 0,
+      "elapsed_seconds": 876.761,
+      "log_sha256": "fea46f6888bbcd9eeeb1b9ac8b22fcb564145a8465db7b9f7f5f64793fee805e",
+      "source_revision_label": "b4f6c24b091a28bd3d1f65102c742478fc7276b3",
+      "evidence": "local working-tree execution only"
+    },
+    {
+      "name": "unit-shard-3",
+      "argv": [
+        "/Users/nandaraghunathan/Code/Memorii/Memorii/.venv/bin/python",
+        "-m",
+        "memorii.tools.test_shards",
+        "run",
+        "--config",
+        "tests/ci/unit-shards.json",
+        "--index",
+        "3",
+        "--timing-output",
+        "/private/tmp/scoped-context-gates/unit-shard-timings/unit-shard-3-timings.json"
+      ],
+      "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii",
+      "exit_status": 0,
+      "elapsed_seconds": 1385.247,
+      "log_sha256": "19919c864e158cf2e86871582e3cc79201f39e598ef7ff34f8ab9622404646f9",
+      "source_revision_label": "b4f6c24b091a28bd3d1f65102c742478fc7276b3",
+      "evidence": "local working-tree execution only"
+    },
+    {
+      "name": "unit-shard-4",
+      "argv": [
+        "/Users/nandaraghunathan/Code/Memorii/Memorii/.venv/bin/python",
+        "-m",
+        "memorii.tools.test_shards",
+        "run",
+        "--config",
+        "tests/ci/unit-shards.json",
+        "--index",
+        "4",
+        "--timing-output",
+        "/private/tmp/scoped-context-gates/unit-shard-timings/unit-shard-4-timings.json"
+      ],
+      "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii",
+      "exit_status": 0,
+      "elapsed_seconds": 819.204,
+      "log_sha256": "2bf9f01c2dcb9cba65ae662a691722cec929833dc30010d38a9ee224e33a9f1b",
+      "source_revision_label": "b4f6c24b091a28bd3d1f65102c742478fc7276b3",
+      "evidence": "local working-tree execution only"
+    },
+    {
+      "name": "unit-shard-5",
+      "argv": [
+        "/Users/nandaraghunathan/Code/Memorii/Memorii/.venv/bin/python",
+        "-m",
+        "memorii.tools.test_shards",
+        "run",
+        "--config",
+        "tests/ci/unit-shards.json",
+        "--index",
+        "5",
+        "--timing-output",
+        "/private/tmp/scoped-context-gates/unit-shard-timings/unit-shard-5-timings.json"
+      ],
+      "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii",
+      "exit_status": 1,
+      "elapsed_seconds": 849.428,
+      "log_sha256": "6d6ef3e14dbea57184afc2aac607fff248d98a16f0d93eb7359b86e363490f59",
+      "source_revision_label": "b4f6c24b091a28bd3d1f65102c742478fc7276b3",
+      "evidence": "local working-tree execution only"
+    },
+    {
+      "name": "unit-shard-plan",
+      "argv": [
+        "/Users/nandaraghunathan/Code/Memorii/Memorii/.venv/bin/python",
+        "-m",
+        "memorii.tools.test_shards",
+        "verify",
+        "--config",
+        "tests/ci/unit-shards.json"
+      ],
+      "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii",
+      "exit_status": 0,
+      "elapsed_seconds": 13.09,
+      "log_sha256": "b85d130f214895585b3cd5b76ca5d6c6aa9201b312e83ca8a1aa873c6320c7c3",
+      "source_revision_label": "b4f6c24b091a28bd3d1f65102c742478fc7276b3",
+      "evidence": "local working-tree execution only"
+    }
+  ],
+  "pending": [],
+  "limits": "local candidate only; initial package wrapper false success invalidated and exact fail-fast rerun passed; no live provider/agent evaluation",
+  "known_failure": {
+    "job": "unit-shard-5",
+    "node": "tests/unit/tools/test_ctv_binding_authority_pr_gate.py::test_pr_workflow_structurally_runs_complete_matrix_and_exact_pinned_checker",
+    "classification": "Not applicable / changes_required / workflow contract conformance",
+    "cause": "exact required-job expectation not refreshed for additive scoped-context-integration",
+    "action": "preserve exact assertion, include new job and rerun full owning shard5; no baseline exclusion"
+  },
+  "timing_merge": "not run because shard5 failed"
+}
