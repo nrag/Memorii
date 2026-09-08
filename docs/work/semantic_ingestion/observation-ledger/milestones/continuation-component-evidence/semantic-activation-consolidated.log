@@ -1,0 +1,7 @@
+
+============================= slowest 10 durations =============================
+0.02s setup    tests/integration/test_activated_provider_ledger.py::test_activated_provider_ingests_and_reopens_global_ledger
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! KeyboardInterrupt !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+/Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/typed_value_model_codec.py:403: KeyboardInterrupt
+(to show a full traceback on KeyboardInterrupt use --full-trace)
+no tests ran in 159.16s (0:02:39)
