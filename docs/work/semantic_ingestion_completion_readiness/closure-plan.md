@@ -211,6 +211,62 @@ visible and must precede any actual capability acceptance claim.
 
 ## All 23 Requirement Allocation
 
+### Consolidated Completion Campaign (2026-09-08)
+
+User objective: reduce the eight open requirements to fewer than three through
+one coordinated production completion effort. Target all seven rows other than
+R14 for engineering closure, and complete R14's engineering integration too;
+retain R14 as open if independently qualifying policy/data measurements remain
+unavailable. This is a target, not a status change or permission to weaken any
+row's existing acceptance contract. Actual production signatures remain deferred.
+
+The recent sequencing concentrated on R17/R19 components while the monitor and
+whole-host packages stayed paused. Replace that sequencing with the dependency
+order below. Commits remain incremental and reviewable, but a component commit
+is not the stopping point for this campaign.
+
+| Order | Complete production outcome | Requirements advanced | Exit evidence |
+| --- | --- | --- | --- |
+| 1 | Resolve acceptance issue-time/key-history ordering, bounded public byte entry and closed artifact shapes; resolve ingestion-time continuation coordinates through linked successor design operations | R14,R15,R16,R17 | Approved determinate contracts and executable boundary proof; preserve rejected design history and existing graph cursor bytes |
+| 2A | Implement capability monitoring and atomic lifecycle/registry transitions using the completed authority/configuration path | R08,R15,R16,R19 | Production trigger handles freshness, outage, breach, demotion, in-flight races and explicit reactivation; deterministic clock/CAS evidence |
+| 2B | Finish activated ledger failure paths, checkpoint authority, real detached scoped observation/retrieval, ingestion-time pagination and independent structural comparison | R03,R17,R19 | Ordinary provider APIs exercise every supported stream, scope isolation, authorization/revocation, pagination, restart, lost acknowledgement, contention and noncommitting outcomes; comparator detects incorrect structure independently |
+| 3 | Assemble release/runtime configuration, complete bundle/profile validation and wire monitor, registry, ledger and observation owners through every supported host root | R08,R13,R16,R19 | Direct/factory/filesystem/Hermes, local/no-network and authorized-root matrix; installed release preparation/sign/verify with isolated test keys; invalid configuration fails closed |
+| 4 | Assemble the held-context statistical evaluator/CLI and independent evaluation path | R14 | Approved authority checks precede independent numeric evaluation; complete policy/cell coverage, adversarial inputs and reproducible results; no invented thresholds or quality claims |
+| 5 | Freeze one integrated candidate, regenerate all affected authority/package artifacts, run consolidated gates and independent whole-scope review, and publish portable evidence | R03 plus all eight | Exact candidate, host proof, CI identity, full regression/acceptance crosswalk and retained artifacts; every row closed against its own original criteria |
+
+Workstreams2A and2B may overlap only after their respective contracts are ready
+and file ownership is disjoint. A single writer owns shared provider, factory,
+registry and atomic-store integration. Focused checks accompany risky changes;
+the broad consolidated pass and three-role integrated review follow complete
+production wiring. Confirmed corrections receive affected delta checks rather
+than restarting every review after each component edit.
+
+Requirement closure targets:
+
+- R03: portable exact-candidate evidence and complete requirement/owner/gate map.
+- R08: all supported host, local/no-network and authority-boundary behaviors.
+- R13: complete configured release preparation/assembly/sign/verify integration;
+  actual production keys and signatures remain release-only.
+- R14: corrected authority, held-context evaluator and CLI; substantive approved
+  policy/data and qualifying measurements remain explicit if unavailable.
+- R15: live production monitor and atomic capability transition lifecycle.
+- R16: complete bundle/profile verification on publication, activation and use.
+- R17: durable ledger/checkpoint, authenticated scoped observation/retrieval and
+  independent structural comparison, including failure families.
+- R19: all these owners reached through ordinary supported host composition.
+
+Progress reporting must name rows closed, concrete production behavior added,
+and exact remaining blockers. Do not count test totals or helper approvals as
+row closure. Intermediate expected count remains8 while shared implementation
+is underway; the integrated acceptance pass targets0-2 open, ideally only R14's
+external quality evidence. If more than two rows still lack required evidence,
+report the target missed and continue the authorized engineering work; do not
+relabel partial work to meet the count.
+
+Exactly one campaign next action: create the linked bounded successor design
+packets for acceptance authority and ingestion-time continuation, mapping each
+existing rejection to a determinate contract and proof before implementation.
+
 Updated 2026-09-08 against the implementation packets and recorded local
 evidence at baseline `8785d9f3a2bb237e579da1242efbd0c8be31d7e2` plus the authorized
 working-tree changes. These are engineering progress labels, not release or
