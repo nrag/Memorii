@@ -1,0 +1,11 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.12.14, pytest-9.0.3, pluggy-1.6.0
+rootdir: /Users/nandaraghunathan/Code/Memorii/Memorii/memorii
+configfile: pyproject.toml
+plugins: xdist-3.8.0, anyio-4.13.0
+collected 20 items
+
+tests/unit/tools/test_ctv_binding_authority_pr_gate.py ................. [ 85%]
+...                                                                      [100%]
+
+======================== 20 passed in 201.68s (0:03:21) ========================

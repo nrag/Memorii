@@ -1,0 +1,24 @@
+Processing ./.
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Getting requirements to build wheel: started
+  Getting requirements to build wheel: finished with status 'done'
+  Preparing metadata (pyproject.toml): started
+  Preparing metadata (pyproject.toml): finished with status 'done'
+Building wheels for collected packages: memorii
+  Building wheel for memorii (pyproject.toml): started
+  Building wheel for memorii (pyproject.toml): finished with status 'done'
+  Created wheel for memorii: filename=memorii-0.1.0-py3-none-any.whl size=1566382 sha256=68736056f6c315ebc36dcf158ee5d93968c0b2d01fa20cbc18bae991297517c0
+  Stored in directory: /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/pip-ephem-wheel-cache-w7qvppuj/wheels/56/2e/1d/dc6c83b09f60c99b83ccfd3c28d4342303e9bf67887c698c54
+Successfully built memorii
+
+[notice] A new release of pip is available: 26.1 -> 26.2.1
+[notice] To update, run: pip install --upgrade pip
+Processing /private/tmp/scoped-context-final-gates/memorii-wheel/memorii-0.1.0-py3-none-any.whl
+Installing collected packages: memorii
+Successfully installed memorii-0.1.0
+
+[notice] A new release of pip is available: 26.1 -> 26.2.1
+[notice] To update, run: pip install --upgrade pip
+suite=memory_evolution_sim_v1 mode=llm systems=memorii profile=long_horizon scenarios=1 events=10 checkpoints=1 passed=1 failed=0 llm_calls=0 artifacts=/private/tmp/scoped-context-final-gates/memorii-wheel-benchmark/benchmark_runs/memory_evolution_sim_v1/llm/bench-a0eb95e20cee29c6-rep0
+validated benchmark reports under /private/tmp/scoped-context-final-gates/memorii-wheel-benchmark/benchmark_runs
