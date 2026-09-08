@@ -69,6 +69,10 @@ class TypedValueModelCodecError(ValueError):
     """A validated body cannot be joined to or represented by its native model."""
 
 
+class TypedValueModelCodecCapacityError(TypedValueModelCodecError):
+    """A protected encoder resource ceiling was exceeded."""
+
+
 @dataclass(frozen=True)
 class MaterializedTypedValueModel:
     """A native value plus the exact validated body needed for lossless reencoding.
@@ -185,7 +189,7 @@ def materialize_typed_value_model(
     _verify_publication_join(body.entry, registry, publication)
     schema, optionals, numerics, _ = _roles_for_entry(registry, body.entry)
     if len(body.raw_bytes) > maximum_bytes:
-        raise TypedValueModelCodecError("typed_value_model_codec_bytes_limit_exceeded")
+        raise TypedValueModelCodecCapacityError("typed_value_model_codec_bytes_limit_exceeded")
     fields = _decode_model(
         body.tree,
         schema,
@@ -529,9 +533,9 @@ class _BoundedWriter:
     def node(self, depth: int) -> None:
         self._nodes += 1
         if self._nodes > self._maximum_nodes:
-            raise TypedValueModelCodecError("typed_value_model_codec_nodes_limit_exceeded")
+            raise TypedValueModelCodecCapacityError("typed_value_model_codec_nodes_limit_exceeded")
         if depth > self._maximum_depth:
-            raise TypedValueModelCodecError("typed_value_model_codec_depth_limit_exceeded")
+            raise TypedValueModelCodecCapacityError("typed_value_model_codec_depth_limit_exceeded")
 
     def write(self, value: bytes) -> None:
         self.require_bytes(len(value))
@@ -540,7 +544,7 @@ class _BoundedWriter:
 
     def require_bytes(self, count: int) -> None:
         if count < 0 or self._bytes + count > self._maximum_bytes:
-            raise TypedValueModelCodecError("typed_value_model_codec_bytes_limit_exceeded")
+            raise TypedValueModelCodecCapacityError("typed_value_model_codec_bytes_limit_exceeded")
 
     @property
     def remaining_bytes(self) -> int:
@@ -860,7 +864,7 @@ def _json_string_byte_iter(value: str) -> Iterable[int]:
 
 def _require_collection_capacity(writer: _BoundedWriter, count: int) -> None:
     if count > writer.remaining_nodes:
-        raise TypedValueModelCodecError("typed_value_model_codec_nodes_limit_exceeded")
+        raise TypedValueModelCodecCapacityError("typed_value_model_codec_nodes_limit_exceeded")
 
 
 def _sorted_bounded_set_members(
@@ -899,9 +903,9 @@ def _require_tree_limits(value: object, maximum_nodes: int, maximum_depth: int) 
         current, depth = pending.pop()
         nodes += 1
         if nodes > maximum_nodes:
-            raise TypedValueModelCodecError("typed_value_model_codec_nodes_limit_exceeded")
+            raise TypedValueModelCodecCapacityError("typed_value_model_codec_nodes_limit_exceeded")
         if depth > maximum_depth:
-            raise TypedValueModelCodecError("typed_value_model_codec_depth_limit_exceeded")
+            raise TypedValueModelCodecCapacityError("typed_value_model_codec_depth_limit_exceeded")
         if isinstance(current, Mapping):
             pending.extend((item, depth + 1) for item in current.values())
         elif isinstance(current, (list, tuple, set, frozenset)):

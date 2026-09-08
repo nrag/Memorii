@@ -1,5 +1,5 @@
 {
-  "status": "CONSTRUCTION_SELECTION_CHECKPOINT_DELTA_UNDER_REVIEW",
+  "status": "CONSTRUCTION_SELECTION_INGESTION_TIME_CURSOR_DELTA_UNDER_REVIEW",
   "basis": "Original32-file finite native/validation closure plus protected reader, immutable history and registered artifact integrity owner; explicit selection, no runtime discovery or generated declarations; fixed non-authorizing observation checkpoint constructor added explicitly",
   "source_package_root": "memorii",
   "shared_files": [
@@ -203,6 +203,7 @@
     "memorii.semantic_ingestion.observation.IngestionObservationDelta.v1",
     "memorii.semantic_ingestion.observation.IngestionObservationRecordMutation.v1",
     "memorii.semantic_ingestion.observation.IngestionObservationReplayCheckpoint.v1",
+    "memorii.semantic_ingestion.observation.IngestionTimeAttestationCursorPayload.v1",
     "memorii.semantic_ingestion.observation.IngestionTimeAttestationPage.v1",
     "memorii.semantic_ingestion.observation.IngestionTimeAttestationRequest.v1",
     "memorii.semantic_ingestion.observation.IngestionTimeAttestationRequestCoordinates.v1",

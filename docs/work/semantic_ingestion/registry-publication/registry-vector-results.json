@@ -1,9 +1,9 @@
 {
   "status": "LOCAL_VECTOR_PARITY",
   "vector_count": 58,
-  "full_publication_entries": 179,
-  "full_publication_role_count": 1255,
-  "manifest_sha256": "c98657ca076871e9155b3753ed44409745c0c0016eb28a2e4c66fd353549ffee",
+  "full_publication_entries": 180,
+  "full_publication_role_count": 1262,
+  "manifest_sha256": "69f40b7addb44b679f6194af1c95a22ad55f73aac0e68751d8d5e504fe747c95",
   "results": [
     {
       "name": "valid_complete_package",

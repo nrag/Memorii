@@ -124,6 +124,52 @@ class IngestionTimeAttestationRequest(IngestionTimeAttestationRequestCoordinates
     cursor: str | None
 
 
+class IngestionTimeAttestationCursorPayload(_ClosedPublicContract):
+    """Signed continuation coordinates for the ingestion-time endpoint only."""
+
+    schema_version: Literal[1]
+    stream_position: int = Field(ge=0)
+    preceding_attestation_kind: Literal[
+        "source_retention", "transaction_group_commit"
+    ] | None
+    preceding_attestation_id: Identifier | None
+    preceding_attestation_digest: Digest | None
+    request: IngestionTimeAttestationRequestCoordinates
+    page_policy_revision: Identifier
+    page_policy_digest: Digest
+    caller_context_digest: Digest
+    authorization_decision_digest: Digest
+    authorization_expires_at: datetime
+    cohort_digest: Digest
+    snapshot_token: Identifier
+    snapshot_write_revision: int = Field(ge=0)
+    signature: Annotated[str, Field(pattern=r"^[0-9a-f]{128}$")]
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_boolean_integers(cls, value: object) -> object:
+        if isinstance(value, Mapping) and any(
+            isinstance(value.get(field), bool)
+            for field in ("schema_version", "stream_position", "snapshot_write_revision")
+        ):
+            raise ValueError("ingestion-time cursor integer must be an integer literal")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_predecessor(self) -> IngestionTimeAttestationCursorPayload:
+        _utc(self.authorization_expires_at, label="ingestion-time cursor authorization expiry")
+        predecessor = (
+            self.preceding_attestation_kind,
+            self.preceding_attestation_id,
+            self.preceding_attestation_digest,
+        )
+        if self.stream_position == 0 and any(value is not None for value in predecessor):
+            raise ValueError("position-zero ingestion-time cursor has a predecessor")
+        if self.stream_position > 0 and any(value is None for value in predecessor):
+            raise ValueError("positive ingestion-time cursor lacks a predecessor")
+        return self
+
+
 def _validate_snapshot_coordinates(
     *,
     authorization_decision: GraphObservationAuthorizationDecision,
@@ -342,7 +388,8 @@ __all__ = [
     "AuthenticatedGraphObservationContext", "GraphObservationAuthorizationDecision",
     "GraphObservationPagePolicySnapshot", "GraphObservationRequestCoordinates",
     "IngestionTimeAttestationRequestCoordinates", "GraphObservationRequest",
-    "IngestionTimeAttestationRequest", "GraphRecordObservationSnapshot",
+    "IngestionTimeAttestationRequest", "IngestionTimeAttestationCursorPayload",
+    "GraphRecordObservationSnapshot",
     "IngestionTimeObservationSnapshot", "GraphObservationSnapshot", "GraphObservationPage",
     "IngestionTimeAttestationPage", "GraphObservationResponse", "IngestionTimeAttestationResponse",
 ]

@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.SemanticReplayCheckpoint.v1","implementation_source_digest":"57dbbd32c9c42b5a65b2c2e639ba4a018b7842a1d5bc1cd92aa51bc4b2e926d5","role":"decoder","schema_id":"SemanticReplayCheckpoint","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.SemanticReplayCheckpoint.v1","implementation_source_digest":"7ace904ad35e1a6fc0e5f488f31b488462d2191f00a9374f90f2f60fe1d972fc","role":"decoder","schema_id":"SemanticReplayCheckpoint","schema_version":"1","typed_root_kind":"model"}

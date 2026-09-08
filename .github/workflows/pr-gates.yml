@@ -104,9 +104,9 @@ jobs:
           --registry docs/design/semantic_ingestion/traceability_registry/registry-v1.json
           --authority docs/design/semantic_ingestion/traceability_golden_vectors/ctv-binding-authority-v2.json
           --validator docs/design/semantic_ingestion/traceability_golden_vectors/validate_ctv_binding_authority_v2.py
-          --expected-design-sha256 69140e58d650fbe9f59d69de2da06d846b6c4a9040256d82d29fced76e918e79
+          --expected-design-sha256 a7770e627e2dc627c772b8c54dd5998ce83c1baf43079a210056826b5ebce626
           --expected-registry-sha256 70143b278e0fd72886362f4174c726c9ecf877b1e288d3dd2c196a78f385413e
-          --expected-authority-sha256 653119939fa33484e4f16da25d332590202408dc9ed1b75daf9954c45183dd43
+          --expected-authority-sha256 f0b03bbe49fc2ca905ccc029ff04bd2ae6c2f3156c49e34382f8387b4ca4eff5
           --expected-validator-sha256 3066e6ffb015823283e57945863c22d4ecf32164c52ae8199eb1535c7798f145
           --expected-checker-sha256 e2c35870a99e587f34cbffc701f42587520ee015009cd51647367da56716c732
 
@@ -117,7 +117,7 @@ jobs:
           --matrix docs/design/semantic_ingestion/traceability_golden_vectors/cgs_verification_attack_matrix-v1.json
           --fixture docs/design/semantic_ingestion/traceability_golden_vectors/lifecycle-root-signer-provenance-witness-v1.json
           --validator docs/design/semantic_ingestion/traceability_golden_vectors/validate_lifecycle_root_signer_provenance_v1.py
-          --expected-checker-sha256 58f81fe028a4a89cb30f43bc1a88779a5567652eb11075785e7fe7e232228938
+          --expected-checker-sha256 d5036cf9426886cd47665c29b77de14a2acbcc7649d2fb8bb0c0e0d78aada8f0
           --self-test
 
       - name: Verify structural manifest contract
@@ -129,7 +129,7 @@ jobs:
           --matrix docs/design/semantic_ingestion/traceability_golden_vectors/cgs_verification_attack_matrix-v1.json
           --prototype docs/design/semantic_ingestion/traceability_golden_vectors/cgs_structural_manifest_prototype.py
           --vector docs/design/semantic_ingestion/traceability_golden_vectors/cgs-structural-manifest-prototype-v1.json
-          --expected-checker-sha256 f05835dcbf0dc319855e34f79b6b051371ced0ce40f6d345fd78a729d62e7825
+          --expected-checker-sha256 f5c5ecafc804a96c7bd3e5c3717a87e8386e4cbc78334cede097b37caeebaaf7
           --self-test
 
   static-analysis:
@@ -312,7 +312,7 @@ jobs:
         run: pip install -e '.[local,dev]'
       - name: Verify durable activation and recovery
         working-directory: memorii
-        run: python -W error -m pytest tests/integration/test_activated_provider_ledger.py tests/integration/test_observation_ledger_activation.py tests/integration/test_observation_ledger_artifacts.py tests/integration/test_observation_terminal_intent.py tests/integration/test_observation_ledger_replay.py tests/integration/test_bootstrap_group_observation.py tests/integration/test_registered_observation_cursor.py tests/integration/test_native_projection_evidence.py tests/integration/test_graph_observation_paging.py -p no:cacheprovider -q --durations=10 --junitxml=observation-ledger-activation.xml
+        run: python -W error -m pytest tests/integration/test_activated_provider_ledger.py tests/integration/test_observation_ledger_activation.py tests/integration/test_observation_ledger_artifacts.py tests/integration/test_observation_terminal_intent.py tests/integration/test_observation_ledger_replay.py tests/integration/test_bootstrap_group_observation.py tests/integration/test_registered_observation_cursor.py tests/integration/test_native_projection_evidence.py tests/integration/test_graph_observation_paging.py tests/integration/test_ingestion_time_paging.py -p no:cacheprovider -q --durations=10 --junitxml=observation-ledger-activation.xml
       - name: Retain activation test results
         if: always()
         uses: actions/upload-artifact@v4

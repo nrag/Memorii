@@ -9,6 +9,8 @@ from memorii.core.memory_evolution.graph_observation_paging import (
     AuthenticatedGraphObservationPagingRuntime,
     GraphObservationCohortInput,
     GraphObservationPagingError,
+    ObservationRetentionBudget,
+    VerifiedGraphObservationAuthorization,
 )
 from memorii.core.memory_evolution.graph_observation_public_contracts import (
     AuthenticatedGraphObservationContext,
@@ -71,13 +73,11 @@ def test_registered_pages_reauthorize_and_fence_request_and_full_write_revision(
             calls.append("context")
             return context
 
-        def current_policy(self, **kwargs):
-            calls.append("policy")
-            return policy
-
         def authorize(self, **kwargs):
             calls.append("authorize")
-            return None if denied else decision
+            return None if denied else VerifiedGraphObservationAuthorization(
+                decision=decision, page_policy=policy, authorized_scope=MemoryScope(user_id="user"),
+            )
 
         def graph_observation_input(self, *, snapshot, **kwargs):
             calls.append("cohort")
@@ -100,12 +100,17 @@ def test_registered_pages_reauthorize_and_fence_request_and_full_write_revision(
     authority = Authority()
     key = Ed25519PrivateKey.generate()
     runtime = AuthenticatedGraphObservationPagingRuntime(
-        memory_plane=plane, context_resolver=authority, current_policy_provider=authority,
+        memory_plane=plane, context_resolver=authority,
         authorizer=authority, cohort_provider=authority, protected_clock=authority,
         registry_history=history, registry_publication=history.publications[0],
         cursor_signing_key=key,
         cursor_verification_key=TrustedTypedValueArtifactVerificationKey(key.public_key().public_bytes_raw()),
         reader_limits=limits, correlation_token_factory=lambda: "correlation",
+        retention_budget=ObservationRetentionBudget(
+            maximum_stream_records=10, maximum_snapshot_bytes=100_000,
+            maximum_retained_snapshots=10, maximum_retained_bytes=1_000_000,
+            maximum_tenant_snapshots=10, maximum_tenant_bytes=1_000_000,
+        ),
     )
     request = GraphObservationRequest(
         scope_constraint=MemoryScope(user_id="user"),
@@ -116,19 +121,19 @@ def test_registered_pages_reauthorize_and_fence_request_and_full_write_revision(
     )
     first = runtime.observe_graph(host_ingress="trusted", request=request)
     assert isinstance(first, GraphObservationPage) and first.next_cursor is not None
-    assert calls == ["context", "policy", "authorize", "cohort"]
+    assert calls == ["context", "authorize", "cohort"]
     continuation = request.model_copy(update={"cursor": first.next_cursor})
+    changed_request = continuation.model_copy(update={"expected_observation_revision": "other"})
+    assert runtime.observe_graph(host_ingress="trusted", request=changed_request).reason == "invalid_cursor"
     calls.clear()
     second = runtime.observe_graph(host_ingress="trusted", request=continuation)
     assert isinstance(second, GraphObservationPage) and second.next_cursor is None
     assert [item.primary_key for item in (*first.records, *second.records)] == ["entity-1", "entity-2"]
-    assert calls == ["context", "policy", "authorize"]
-    changed_scope = continuation.model_copy(update={"scope_constraint": MemoryScope(user_id="other")})
-    assert runtime.observe_graph(host_ingress="trusted", request=changed_scope).reason == "stale_cursor"
+    assert calls == ["context", "authorize"]
     denied = True
     calls.clear()
-    assert runtime.observe_graph(host_ingress="trusted", request=continuation.model_copy(update={"cursor": "malformed"})).reason == "denied"
-    assert calls == ["context", "policy", "authorize"]
+    assert runtime.observe_graph(host_ingress="trusted", request=continuation.model_copy(update={"cursor": "malformed"})).reason == "revoked_access"
+    assert calls == ["context", "authorize"]
     denied = False
     plane.write_records((CanonicalMemoryRecord(
         memory_id="unrelated", domain=MemoryDomain.EXECUTION, text="write", content={},

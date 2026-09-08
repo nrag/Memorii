@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.ProvenanceStreamRecord.v1","implementation_source_digest":"a9fbfdfc79e5e0d829f7e9096caa808cd0b1f1b9883e44489cb1df16f86e0d59","role":"decoder","schema_id":"ProvenanceStreamRecord","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.ProvenanceStreamRecord.v1","implementation_source_digest":"78f37022ce24c767ba9dd882f12324b6dcd4038eea8fb3fda0bd664cf68f36a0","role":"decoder","schema_id":"ProvenanceStreamRecord","schema_version":"1","typed_root_kind":"model"}

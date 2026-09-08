@@ -1,0 +1,17 @@
+{
+  "base": "d17466d529500f7a0a5a789e97b4b175602dda90",
+  "scope": "Bounded registered cursor and retention component review; full detached cohort, persistence, provider integration remain incomplete. No milestone closure requested. Corrective delta: expected capacity errors, first-page revision failure, validation-time expiry and policy-age expiry; no broader integration approval.",
+  "files": {
+    "docs/design/semantic_ingestion_observation.md": "e3c7a7da188a0fbbc446faaa583a1402bc3e101907843cbf58428726a6ecbbea",
+    "docs/design/semantic_ingestion_architecture.md": "a7770e627e2dc627c772b8c54dd5998ce83c1baf43079a210056826b5ebce626",
+    ".github/workflows/pr-gates.yml": "2f4b991aa92a7fbd9608d7bcd719a38b4a237fff0e83b621f12cbd32cee121fc",
+    "memorii/memorii/core/memory_evolution/graph_observation_paging.py": "b5e04e6ad5227fc364fcf496b52fae096769b8c5266541d1078a2b4b624cdd4b",
+    "memorii/memorii/core/memory_evolution/graph_observation_public_contracts.py": "d77d5800c0e29b967cd3847560d0db20d2f637ac66523ed76fd9ec3b31116b2b",
+    "memorii/memorii/core/memory_evolution/observation_activation_runtime.py": "74c0df255948b563e28a5358563455b55e147fdbe171f360467b35adb8f614ec",
+    "memorii/memorii/core/memory_evolution/ingestion_contracts.py": "b42193c91f723c4bcdb3f62fa5330511d94f0f3246e659eb87056c9a10ea0966",
+    "memorii/tests/integration/test_graph_observation_paging.py": "ae7c738493ae27f8f81365dc42f3410059a3860367809aed056617b8c847ea3d",
+    "memorii/tests/integration/test_ingestion_time_paging.py": "d00b06cc9edfb9c588ae882d49058372ddc6d4001d64caab5cfd45bbdce204a2",
+    "memorii/tests/unit/core/memory_evolution/test_graph_observation_public_contracts.py": "c7f0c8ceed98dc61512e725b4bf5990675285e9f2eee17957abede45fc018282",
+    "memorii/memorii/core/memory_evolution/typed_value_model_codec.py": "26e43eda3da306baff0ba3905509bfedb0a4cfb39f905dc943b9101e4978f317"
+  }
+}

@@ -13,6 +13,7 @@ from memorii.core.memory_evolution.graph_observation_public_contracts import (
     GraphObservationPagePolicySnapshot,
     GraphObservationRequestCoordinates,
     GraphRecordObservationSnapshot,
+    IngestionTimeAttestationCursorPayload,
     IngestionTimeAttestationPage,
     IngestionTimeAttestationRequestCoordinates,
     IngestionTimeObservationSnapshot,
@@ -59,6 +60,45 @@ def _decision() -> GraphObservationAuthorizationDecision:
         page_policy_revision="page-policy", page_policy_digest=_digest("page-policy"),
         expires_at=datetime(2026, 9, 7, tzinfo=UTC), decision_digest=_digest("decision"),
     )
+
+
+def test_ingestion_time_cursor_requires_complete_request_and_predecessor_triple() -> None:
+    request = IngestionTimeAttestationRequestCoordinates(
+        scope_constraint=MemoryScope(user_id="user"),
+        cohort_selector=GraphObservationCohortSelector(
+            seed_source_ids=("source",), seed_operation_ids=(),
+            include_referenced_boundary_entities=True,
+        ),
+        expected_graph_revision="graph", expected_observation_revision="observation", total_page_size=1,
+    )
+    common = {
+        "schema_version": 1, "request": request, "page_policy_revision": "page-policy",
+        "page_policy_digest": _digest("page-policy"), "caller_context_digest": _digest("context"),
+        "authorization_decision_digest": _digest("decision"),
+        "authorization_expires_at": datetime(2026, 9, 8, tzinfo=UTC),
+        "cohort_digest": _digest("cohort"), "snapshot_token": "snapshot",
+        "snapshot_write_revision": 2, "signature": "a" * 128,
+    }
+    zero = IngestionTimeAttestationCursorPayload(
+        **common, stream_position=0, preceding_attestation_kind=None,
+        preceding_attestation_id=None, preceding_attestation_digest=None,
+    )
+    assert zero.stream_position == 0
+    positive = IngestionTimeAttestationCursorPayload(
+        **common, stream_position=1, preceding_attestation_kind="source_retention",
+        preceding_attestation_id="attestation", preceding_attestation_digest=_digest("attestation"),
+    )
+    assert positive.preceding_attestation_kind == "source_retention"
+    for replacement in (
+        {"stream_position": True, "preceding_attestation_kind": None,
+         "preceding_attestation_id": None, "preceding_attestation_digest": None},
+        {"stream_position": 0, "preceding_attestation_kind": "source_retention",
+         "preceding_attestation_id": "attestation", "preceding_attestation_digest": _digest("attestation")},
+        {"stream_position": 1, "preceding_attestation_kind": "source_retention",
+         "preceding_attestation_id": None, "preceding_attestation_digest": _digest("attestation")},
+    ):
+        with pytest.raises(ValidationError):
+            IngestionTimeAttestationCursorPayload(**common, **replacement)
 
 
 def test_joined_graph_snapshot_and_page_validate_profile_three_coordinates() -> None:

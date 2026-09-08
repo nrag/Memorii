@@ -2,15 +2,15 @@
   "status": "CONSTRUCTED_DECLARATIONS_NOT_OPERATIONAL_PUBLICATION",
   "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
   "role_counts": {
-    "digest-signature": 179,
-    "enum": 179,
+    "digest-signature": 180,
+    "enum": 180,
     "grammar": 1,
-    "numeric": 179,
-    "optional": 179,
-    "schema": 179,
-    "upcast": 179
+    "numeric": 180,
+    "optional": 180,
+    "schema": 180,
+    "upcast": 180
   },
-  "file_count": 1075,
+  "file_count": 1081,
   "files": [
     {
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/digest-signature/AcceptedClaimIdentity/1.json",
@@ -281,6 +281,11 @@
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/digest-signature/IngestionObservationReplayCheckpoint/1.json",
       "role": "digest-signature",
       "sha256": "17b8a0e3107cd5bc380d7f3940f5358b0c3d30f33f3c457235a38f43f109ef0c"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/digest-signature/IngestionTimeAttestationCursorPayload/1.json",
+      "role": "digest-signature",
+      "sha256": "2c19402c5376111873da9c4dc6ce51e5218c5558d8a11b9ef36606a3fcd40886"
     },
     {
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/digest-signature/IngestionTimeAttestationPage/1.json",
@@ -1176,6 +1181,11 @@
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/enum/IngestionObservationReplayCheckpoint/1.json",
       "role": "enum",
       "sha256": "56954439fcd8a3016b9f88df1e6e0a00d307192643c8eea8ee229a685c07e17b"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/enum/IngestionTimeAttestationCursorPayload/1.json",
+      "role": "enum",
+      "sha256": "291ba1540835e0d7d54dd1408519c1b1d6f1ae3631a4e03a9ceb433c98f1e7b4"
     },
     {
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/enum/IngestionTimeAttestationPage/1.json",
@@ -2078,6 +2088,11 @@
       "sha256": "1ed85e608bae7ab92ba20eea93716fe920383ea06750515db3971f5f96628930"
     },
     {
+      "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/numeric/IngestionTimeAttestationCursorPayload/1.json",
+      "role": "numeric",
+      "sha256": "dfa22f764ae728bb899931138a886e8df97f42cd3d955d9fb69b202dd091fe0c"
+    },
+    {
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/numeric/IngestionTimeAttestationPage/1.json",
       "role": "numeric",
       "sha256": "ef295e705b76f7f2a41a89ca0c5e220298ecbdfd71eddc854c349fd1a4fd80e5"
@@ -2971,6 +2986,11 @@
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/optional/IngestionObservationReplayCheckpoint/1.json",
       "role": "optional",
       "sha256": "119334a8989119b6a91a7c910e19014a4f16aa09c04c26de77b72b15bc622b00"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/optional/IngestionTimeAttestationCursorPayload/1.json",
+      "role": "optional",
+      "sha256": "f54857badf872f74e17c1a286c2fe70e8461c4e90ead0144cf873e40d1b50efa"
     },
     {
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/optional/IngestionTimeAttestationPage/1.json",
@@ -3868,6 +3888,11 @@
       "sha256": "ad38d0adc725d5007e3c88f4953b239e35740f5d1a1e1090afa906b73e4da707"
     },
     {
+      "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/schema/IngestionTimeAttestationCursorPayload/1.json",
+      "role": "schema",
+      "sha256": "3e8a97b688cab3a5614093a625bc4bd59bbbc4f6e84b592b90261f4c6f6b41af"
+    },
+    {
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/schema/IngestionTimeAttestationPage/1.json",
       "role": "schema",
       "sha256": "406f871bc0297eb83a4fc7e89bb9f6e4eb6d03f06c5320d5cbcbca720793e7a4"
@@ -4761,6 +4786,11 @@
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/upcast/IngestionObservationReplayCheckpoint/1.json",
       "role": "upcast",
       "sha256": "aebf98457e3ce3679a9bda7a7fc1838e0998ee02edd02f518f4987d7adc430aa"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/upcast/IngestionTimeAttestationCursorPayload/1.json",
+      "role": "upcast",
+      "sha256": "32399eb0f2d20d4f1c9c7e0ebfa360ef4177328ddf6eace2c30ee71e189e5923"
     },
     {
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/upcast/IngestionTimeAttestationPage/1.json",

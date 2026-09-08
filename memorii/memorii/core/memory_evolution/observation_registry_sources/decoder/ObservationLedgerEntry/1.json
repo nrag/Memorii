@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.ObservationLedgerEntry.v1","implementation_source_digest":"717d559f538675f96097b6a98aadfd702a0739c9e32a0d90dff20dfe6570a5d4","role":"decoder","schema_id":"ObservationLedgerEntry","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.ObservationLedgerEntry.v1","implementation_source_digest":"0b656395d5b5ddb4abbbb26a5baa9c4c7c374a3e2791b5986a05b162005151b3","role":"decoder","schema_id":"ObservationLedgerEntry","schema_version":"1","typed_root_kind":"model"}

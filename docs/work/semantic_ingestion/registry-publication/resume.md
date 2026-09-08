@@ -1,66 +1,30 @@
 # Registry Publication Current Resume
 
-Work type: implementation. Status: paused for dependent ledger activation. Parent: implementation.plan.md and
-../engineering-closure/milestones/05-authenticated-observer-comparator.plan.md.
-HEAD: 191826cd3afb38bf605a337a71d576063b3bae5e; authorized dirty tree. No new commit.
-Preserve unrelated scoped-context evidence and prior semantic-ingestion work.
+Work type: implementation. Status: constructed and locally reproduced; parent
+semantic ingestion closure incomplete. Base d17466d5 on semantic_ingestion_m5.
+Previous resume preserved at archive/resume-37c2022be979d908d3bfb51073e3d83e2ef9f7215e5809f4d21175aacec3b4ec.md.
 
-## Current Evidence
+## Current Construction Evidence
 
-- 77 roots, 179 schemas, 1255 roles, 36 selected source files and 6444 rows.
-- Registry: 6527fda1e7855e951df594781fcb30a78d2c98a9110a0d70f8de40383ff1f3f3.
-- Full independent equality and 58 vectors; manifest:
-  4ff6a2d003c1944dac79f31e5484fcabec845f2e0fdd971936187359c0628a0d.
-- Host configuration verifies before constructing writer/store and shares exact
-  history identity. Five public provider tests pass; corrected bad-pin spy passes.
-  All three bounded runtime/candidate reviews approve their finite scope.
-- Native candidate encoder uses actual source-directed encoding; independent
-  literal oracle and real publication tests pass. No public production caller.
-- Ordinary, root self-digest and cursor Ed25519 integrity checks pass 91 combined
-  integrity/reader tests in 5.93s. Scoped Ruff/Pyright pass. All three bounded
-  reviews approve; historical policy selection proven through two publications.
-  registered-integrity-review.json records exact scope and candidate.
-- Integrity helper calls reader; neither has a reachable public runtime owner.
-  External checkpoint policy still fails closed; no lifecycle/persistence grant.
-- Historical36-source wheel and all1257packaged JSON comparisons/imports passed before activation preparation; new package check remains pending; see runtime-registry-wheel-evidence.json for
-  current byte/import verification. Local no-build-isolation is not CI parity.
-- Earlier 265-test regression is historical before candidate encoding. Seven
-  extra provider-test-file Pyright diagnostics remain unclassified outside
-  configured production scope; do not claim full-file type cleanliness.
+The approved ingestion-time cursor adds one explicit root:78 roots,180 schemas,
+1081 authored roles and1262 total roles. Source-role and decoder-owner inventories
+are current. reproduce_publication.py --refresh-generated rebuilt publication,
+registry and decoder-source declarations. The independent compiler agrees on
+complete output; verify_registry_vectors.py passes58 cases. Exact current
+construction hashes are in independent-output.json, independent-positive-parity.json
+and registry-vector-manifest.json. These are construction identities, not signed
+deployment or capability authority.
 
-## Ownership And Remaining Scope
-
-Checkpoint construction and integrity slices are frozen and independently approved.
-The dependent ledger activation slice is safely blocked by target identity design
-in ../observation-ledger/milestones/activation.plan.md. No writer remains active. Root owns tests, registry
-source/generated refresh and evidence. The36-source package evidence is the
-pre-activation checkpoint; new dependency edits require its later refresh.
-External checkpoint dispatch remains fail-closed until actual protected replay
-and lifecycle authority exists.
+Paging/retention component candidate d19c7bfc93eebd730ff14f0125ee5887d0975cbc5a72008905f28c28244c0729
+passes30 focused contract tests and13 codec/cursor tests, with bounded independent
+reviews. Source declarations, byte/digest/signature validation and protected
+resource failures remain strict. Historical graph cursor schemas stay intact.
+Current portable evidence is under ../observation-ledger/milestones/
+continuation-component-evidence/. Installed-package and actual GitHub CI proof
+for this revision remain outstanding. Prior wheel/activation results are historical.
 
 ## Next Action
 
-Continue the approved target authority implementation in
-../observation-ledger/milestones/target-authority.plan.md, then resume activation CAS.
-
-## Parent Status
-
-All-23 table: 15 baseline-complete, six partial, one blocked (R14), one not
-implemented (R15). Ledger CAS/replay, public authenticated retrieval, independent
-comparison, monitor, final CI and whole-branch review remain open. Actual
-production signing is deferred; no new user decision is needed for this slice.
-
-
-### Protected Target Integration Checkpoint
-
-See ../observation-ledger/target-authority-construction.json for the latest exact
-construction evidence. Target configuration now reaches provider/runtime/writer/
-store; runtime checks current deployment authorization before explicit activation,
-and atomic owner rechecks package authority before the still-unavailable CAS.
-Four target/provider tests pass;14 standalone fresh-process bootstrap cases pass.
-Release preparation and full installed host proof remain open. Five compatibility
-failures were isolated to legacy writer canonical-field omission and corrected;
-../recovery-index-validation/ owns the exact-candidate regression/review record.
-The selected decoder source changed, so reproduction refreshed current publication
-and all58independentvectors passed; older hashes above remain historical evidence.
-No M5 closure, CI success or production signature is claimed.
+Continue the detached cohort/persistence and provider integration work from
+../observation-ledger/milestones/continuation-runtime.plan.md, then capture final
+installed-package/CI authority at its complete integrated revision.

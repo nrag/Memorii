@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.ObservedIdentityTransition.v1","implementation_source_digest":"afc6070195f412179d1fbfe91356aa552ad7fde962afab1aa5ea1477db7d53af","role":"decoder","schema_id":"ObservedIdentityTransition","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.ObservedIdentityTransition.v1","implementation_source_digest":"d5f7227b1252e23a9f28cb3aad3cfb55f5435655099be9fe92ab10a5f55f10c2","role":"decoder","schema_id":"ObservedIdentityTransition","schema_version":"1","typed_root_kind":"model"}

@@ -1,0 +1,18 @@
+{
+  "base": "d17466d529500f7a0a5a789e97b4b175602dda90",
+  "scope": "acceptance authority temporal/closed-byte-entry design, not R14 runtime certification",
+  "files": {
+    "docs/work/semantic_ingestion/acceptance-authority-successor/design.plan.md": "94055dc36d8949e08ec62165188358975ec6b64f670f5a828ebc6a5f103c0260",
+    "docs/work/semantic_ingestion/acceptance-authority-successor/proposal.md": "11c31ed94ac68ee4bef121fbb1f7821085b4fbc6aee8f1e4421e60a6536c7cb6",
+    "docs/work/semantic_ingestion/acceptance-authority-successor/authority_successor_feasibility.py": "34d5b0dbf61a8ddabb855616c21b9d1651eb4d6c3a0661791a4fc322207c2e88",
+    "docs/work/semantic_ingestion/acceptance-authority-successor/test_authority_successor_feasibility.py": "e5a892e5932c36d0673ce044843cbc290e5e54dca4410c6b80d32e0d0c606f6e",
+    "docs/work/semantic_ingestion/acceptance-authority-successor/feasibility.log": "9d50d7aeddf611a4e7960dfe5b0364ba592ce7a3c5b1c91cd277db06afaab9d0",
+    "docs/work/semantic_ingestion/acceptance-authority-successor/ruff.log": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+    "docs/work/semantic_ingestion/acceptance-authority-successor/pyright.log": "6d88a1b220adb7a3d62092b6e38431f0b3fe8babe9864fab90e5849766260332",
+    "docs/design/semantic_ingestion_architecture.md": "a7770e627e2dc627c772b8c54dd5998ce83c1baf43079a210056826b5ebce626",
+    "docs/work/semantic_ingestion/acceptance-authority/proposal.md": "7a63a93dd389e45a7e3f86db65cc89e72c281511794f44bb6274eea9c1c3bf5a",
+    "docs/work/semantic_ingestion/acceptance-authority/authority_feasibility.py": "f46a6bf9e57031ddf417bac5906daeebf729c83c85f22043cc066dc74877d455",
+    "docs/work/semantic_ingestion/acceptance-authority/test_authority_feasibility.py": "ffdc41360160e17a6332c3f4a50a250fd3dd6b102c27afd77c7653fb9d226f85",
+    "docs/work/semantic_ingestion/acceptance-authority/review.md": "ba41e33bdf9b4eb783ba926712dedc56bea967e905722df1b55b43fc569c7d18"
+  }
+}

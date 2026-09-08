@@ -2,16 +2,16 @@
 
 - Work ID: semantic-ingestion-engineering-closure
 - Work type: implementation
-- Status: active observation design under approved separate projection semantics; acceptance-authority prerequisite remains blocked
+- Status: active consolidated closure; continuation design approved, runtime integration active, acceptance-authority issuance-prefix binding unresolved
 - Coordinator: Codex main thread
 - Created: 2026-09-06
-- Last updated: 2026-09-06
+- Last updated: 2026-09-08
 - Parent WorkPlan: `docs/work/semantic_ingestion/implementation.plan.md`
 - Related WorkPlans: `docs/work/semantic_ingestion_completion_readiness/closure-plan.md`
 - Canonical inputs: frozen SIA architecture and closure plan
 - Expected outputs: six bounded implementation packages and fail-closed activation
 - Current resume packet: `docs/work/semantic_ingestion/engineering-closure/resume.md`
-- Active milestone packet: `docs/work/semantic_ingestion/engineering-closure/milestones/05-authenticated-observer-comparator.plan.md`
+- Active milestone packet: `docs/work/semantic_ingestion/observation-ledger/milestones/continuation-runtime.plan.md`
 
 ## Design Baseline, Scope And Constraints
 
@@ -168,11 +168,16 @@ writers finish; no current whole-candidate proof is claimed yet.
 
 ## Next Action
 
-Implement operational registry publication under
-../registry-publication/implementation.plan.md, starting with the closed
-raw-declaration parser and then complete source/decoder publication. Design
-candidate215ab5f272d7b27589da04c9c1dd4a9fa0f1d8f01413d542ea72bffa4c924b9e
-is approved; native ledger/projection/retrieval runtime remains partial.
+Continue detached cohort/persistence integration from the current continuation
+packet and resume.md, preserving the reviewed paging component.
+
+2026-09-08: root owns all code, generation, tests and commits. Read-only
+component reviews cover frozen90c58da62428f3caeab8ee7bca03116a24009d35e97aa705e1d757987a61362c.
+Acceptance successor remains blocked at its correction limit by issuance-prefix
+binding; its56 passing model tests are not approval. Ingestion-time persistence
+is a separate unapproved draft with coordinator readiness findings. Exact
+component evidence and the unchanged eight-open count are in resume.md and the
+closure table. No parent completion or production certification is claimed.
 
 ## Stop And Resume Decision
 

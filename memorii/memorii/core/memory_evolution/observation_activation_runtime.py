@@ -15,12 +15,19 @@ from memorii.core.memory_evolution.graph_effect_contracts import (
     IngestionObservationDelta,
     SourceFinalizationObservationDelta,
 )
+from memorii.core.memory_evolution.graph_ingestion_time_contracts import (
+    SourceRetentionTimeAttestation,
+    TransactionGroupCommitTimeAttestation,
+)
 from memorii.core.memory_evolution.graph_observation_public_contracts import (
     AuthenticatedGraphObservationContext,
     GraphObservationAuthorizationDecision,
     GraphObservationPage,
     GraphObservationPagePolicySnapshot,
     GraphRecordObservationSnapshot,
+    IngestionTimeAttestationCursorPayload,
+    IngestionTimeAttestationPage,
+    IngestionTimeObservationSnapshot,
 )
 from memorii.core.memory_evolution.graph_observation_snapshot_contracts import (
     GraphObservationCohortPreimage,
@@ -51,7 +58,10 @@ from memorii.core.memory_evolution.typed_value_declarations import (
     SelfDigestPolicy,
     SignatureOnlyPolicy,
 )
-from memorii.core.memory_evolution.typed_value_model_codec import encode_typed_value_model_candidate
+from memorii.core.memory_evolution.typed_value_model_codec import (
+    TypedValueModelCodecCapacityError,
+    encode_typed_value_model_candidate,
+)
 from memorii.core.memory_evolution.typed_value_publication import VerifiedTypedValuePublication
 from memorii.core.memory_evolution.typed_value_registry_history import (
     ProtectedTypedValueRegistryHistory,
@@ -83,6 +93,7 @@ _ROOT_TYPES: dict[str, type[BaseModel]] = {
     "ObservationReplayState": ObservationReplayState,
     "GraphRevisionDelta": GraphRevisionDelta,
     "GraphObservationCursorPayload": GraphObservationCursorPayload,
+    "IngestionTimeAttestationCursorPayload": IngestionTimeAttestationCursorPayload,
     "AuthenticatedGraphObservationContext": AuthenticatedGraphObservationContext,
     "GraphObservationAuthorizationDecision": GraphObservationAuthorizationDecision,
     "GraphObservationPagePolicySnapshot": GraphObservationPagePolicySnapshot,
@@ -90,6 +101,10 @@ _ROOT_TYPES: dict[str, type[BaseModel]] = {
     "ResolvedGraphObservationCohort": ResolvedGraphObservationCohort,
     "GraphRecordObservationSnapshot": GraphRecordObservationSnapshot,
     "GraphObservationPage": GraphObservationPage,
+    "IngestionTimeObservationSnapshot": IngestionTimeObservationSnapshot,
+    "IngestionTimeAttestationPage": IngestionTimeAttestationPage,
+    "SourceRetentionTimeAttestation": SourceRetentionTimeAttestation,
+    "TransactionGroupCommitTimeAttestation": TransactionGroupCommitTimeAttestation,
     "BootstrapGraphNativeProjectionPublicationReceiptV3": BootstrapGraphNativeProjectionPublicationReceiptV3,
     "BootstrapGraphNativeReplayAuthorityEvidenceV3": BootstrapGraphNativeReplayAuthorityEvidenceV3,
     "BootstrapGraphNativeReplayCheckpointEvidenceV3": BootstrapGraphNativeReplayCheckpointEvidenceV3,
@@ -223,6 +238,62 @@ def decode_registered_observation_cursor(
     return value
 
 
+def issue_registered_ingestion_time_attestation_cursor(
+    payload: IngestionTimeAttestationCursorPayload,
+    *,
+    history: ProtectedTypedValueRegistryHistory,
+    publication: VerifiedTypedValuePublication,
+    signing_key: Ed25519PrivateKey,
+    verification_key: TrustedTypedValueArtifactVerificationKey,
+    limits: ProtectedTypedValueArtifactReaderLimits,
+) -> str:
+    """Sign one exact selected ingestion-time cursor root."""
+    if type(payload) is not IngestionTimeAttestationCursorPayload:
+        raise ObservationActivationRuntimeError("ingestion-time cursor model is invalid")
+    return _registered_artifact(
+        payload,
+        "IngestionTimeAttestationCursorPayload",
+        history,
+        publication,
+        limits,
+        signing_key=signing_key,
+        verification_key=verification_key,
+    ).decode("utf-8", errors="strict")
+
+
+def decode_registered_ingestion_time_attestation_cursor(
+    cursor: str,
+    *,
+    history: ProtectedTypedValueRegistryHistory,
+    publication: VerifiedTypedValuePublication,
+    verification_key: TrustedTypedValueArtifactVerificationKey,
+    limits: ProtectedTypedValueArtifactReaderLimits,
+) -> IngestionTimeAttestationCursorPayload:
+    """Verify original envelope bytes under the selected ingestion cursor binding."""
+    if type(cursor) is not str or len(cursor) > limits.maximum_envelope_bytes:
+        raise ObservationActivationRuntimeError("ingestion-time cursor wire limit exceeded")
+    try:
+        raw = cursor.encode("utf-8", errors="strict")
+    except UnicodeEncodeError as exc:
+        raise ObservationActivationRuntimeError("ingestion-time cursor is not Unicode scalar text") from exc
+    checked = verify_protected_typed_value_artifact_integrity(
+        raw,
+        history=history,
+        route=TypedValueRegistryReadRoute.INTERNAL_REPLAY,
+        limits=limits,
+        verification_key=verification_key,
+    )
+    selected = _entry(history, "IngestionTimeAttestationCursorPayload", publication)
+    value = checked.materialization.materialized.value
+    if (
+        type(value) is not IngestionTimeAttestationCursorPayload
+        or checked.materialization.checked_artifact.binding != _binding(selected)
+        or not checked.cryptographic_signature_checked
+    ):
+        raise ObservationActivationRuntimeError("ingestion-time cursor binding is substituted")
+    return value
+
+
 def emit_registered_observation_artifact(
     value: BaseModel, *, schema_id: str, history: ProtectedTypedValueRegistryHistory,
     publication: VerifiedTypedValuePublication,
@@ -322,10 +393,19 @@ def _registered_artifact(value: BaseModel, schema_id: str, history: ProtectedTyp
     elif isinstance(policy, OrdinaryPolicy):
         final = value
     elif isinstance(policy, SignatureOnlyPolicy):
-        if (schema_id != "GraphObservationCursorPayload" or signing_key is None
+        expected_signature_authority = {
+            "GraphObservationCursorPayload": (
+                "memorii.graph-observation.cursor.v3", "graph_observation_cursor"
+            ),
+            "IngestionTimeAttestationCursorPayload": (
+                "memorii.ingestion-time-attestation.cursor.v3",
+                "ingestion_time_attestation_cursor",
+            ),
+        }.get(schema_id)
+        if (expected_signature_authority is None or signing_key is None
                 or verification_key is None or policy.signature_field != "signature"
-                or policy.signature_domain != "memorii.graph-observation.cursor.v3"
-                or policy.signature_purpose != "graph_observation_cursor"):
+                or policy.signature_domain != expected_signature_authority[0]
+                or policy.signature_purpose != expected_signature_authority[1]):
             raise ObservationActivationRuntimeError("observation cursor signing authority is invalid")
         message = registered_signature_only_message(materialized.body.tree, binding=binding, policy=policy)
         final = value.model_copy(update={policy.signature_field: signing_key.sign(message).hex()})
@@ -348,6 +428,8 @@ def _registered_artifact(value: BaseModel, schema_id: str, history: ProtectedTyp
         ("canonical_value_digest", sha256(body).hexdigest()),
     ]}
     raw = json.dumps(outer, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    if len(raw) > limits.maximum_envelope_bytes:
+        raise TypedValueModelCodecCapacityError("registered observation envelope exceeds protected capacity")
     verified = validate_registered_artifact(raw, schema_id=schema_id, history=history, limits=limits, verification_key=verification_key)
     if verified != final:
         raise ObservationActivationRuntimeError("registered observation artifact roundtrip is invalid")

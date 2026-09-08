@@ -93,9 +93,9 @@ No parent completion from focused tests or helper approval.
 
 ## Next Action
 
-Complete the activated provider failure-family proofs (lost acknowledgement,
-contention, authorization failure and noncommitting outcomes); active
-packet: `milestones/append-replay.plan.md`.
+Complete both registered paging endpoints and their detached production cohort
+and provider binding in `milestones/continuation-runtime.plan.md`, including the
+pending activated failure-family proofs from `milestones/append-replay.plan.md`.
 
 ## Current Construction Boundary (2026-09-08)
 
@@ -108,8 +108,10 @@ reopen/retry passes1 test1269.55s, consolidated regression passes281 tests1108.5
 and compatibility delta passes160 tests69.31s. Code/spec reviews found no further
 concrete defect; activated failure-family proof remains required. Graph paging has a
 fixture cohort integration test, not a production backend/provider binding.
-Ingestion-time continuation exposes a confirmed cursor/request contract mismatch
-recorded in `retrieval-runtime-map.md`; its wire contract has not been amended.
+Ingestion-time continuation's cursor/request mismatch is resolved by the approved
+`../ingestion-time-continuation/closure.md` amendment, now promoted to the governing
+observation design. Registered runtime and real detached cohort integration are
+active; design approval alone does not close those production requirements.
 R17/R19 and all parent closure claims remain partial. The active packet records
 local checks, bounded independent correction review, and evidence still needed.
 

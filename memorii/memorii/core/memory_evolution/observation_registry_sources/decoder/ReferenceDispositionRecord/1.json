@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.ReferenceDispositionRecord.v1","implementation_source_digest":"8750e719bc55cf9659e0a08991512e88b785e3712688865acbee6d481d70c5d3","role":"decoder","schema_id":"ReferenceDispositionRecord","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.ReferenceDispositionRecord.v1","implementation_source_digest":"adbd45819575824b6a3296649b465e6985cd49a5aed25811c051843cf46331dc","role":"decoder","schema_id":"ReferenceDispositionRecord","schema_version":"1","typed_root_kind":"model"}

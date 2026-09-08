@@ -434,6 +434,14 @@
       "source_file": "memorii/memorii/core/memory_evolution/observation_replay_contracts.py"
     },
     {
+      "schema_id": "IngestionTimeAttestationCursorPayload",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.IngestionTimeAttestationCursorPayload.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_public_contracts",
+      "python_class": "IngestionTimeAttestationCursorPayload",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_public_contracts.py"
+    },
+    {
       "schema_id": "IngestionTimeAttestationPage",
       "schema_version": "1",
       "decoder_id": "memorii.semantic_ingestion.observation.IngestionTimeAttestationPage.v1",
@@ -1434,6 +1442,6 @@
       "source_file": "memorii/memorii/core/semantic_ingestion/contracts.py"
     }
   ],
-  "count": 179,
+  "count": 180,
   "authority": "Normative decoder ID convention plus reviewed existing native class owners; offline reflection only. Runtime must use explicit fixed imports and finite lookup. No implementation hash invented before code exists."
 }

@@ -31871,7 +31871,11 @@ caller-supplied. Denial or authorizer/policy outage returns
 correlation token.
 
 `IngestionTimeAttestationRequest` resolves the same authorized cohort and
-snapshot through a distinct request purpose. Its page contains exactly the
+snapshot through a distinct request purpose. For the operational profile-3
+route, semantic_ingestion_observation.md, Ingestion-Time Cursor And Bounded
+Continuation Retention, supersedes the shared graph-cursor field inventory
+with IngestionTimeAttestationCursorPayload and its complete ingestion-time
+request coordinates; the graph endpoint retains GraphObservationCursorPayload. Its page contains exactly the
 source-retention attestations and committed-group attestations reachable from
 that cohort's accepted source and group results, in canonical
 `(kind, source_id, operation_fence_id, transaction_group_id-or-empty,
@@ -31967,8 +31971,11 @@ membership and temporal relations structurally only after validating the
 complete cursor chain.
 
 Every page request reauthorizes the authenticated caller context against the
-current production policy before cohort lookup. The opaque cursor must decode
-and verify as one `GraphObservationCursorPayload`. It binds cursor schema,
+current production policy before cohort lookup. For graph observation, the opaque
+cursor must decode and verify as one `GraphObservationCursorPayload`. Operational
+profile-3 ingestion-time continuation instead uses the distinct registered cursor
+and endpoint failure dispatch in semantic_ingestion_observation.md. Both endpoints
+use that amendment's shared protected retention budget. It binds cursor schema,
 exact next stream position, the complete preceding triple or three nulls at
 position zero, requested total page size, page-policy revision, caller-context
 digest, authorization decision/expiry, cohort/snapshot/revisions, and view/time

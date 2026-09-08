@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.ClaimAssertion.v1","implementation_source_digest":"ed36723f095f2c9ae14db25eae1699c560240575cc4e0ba3d142285c61e84151","role":"decoder","schema_id":"ClaimAssertion","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.ClaimAssertion.v1","implementation_source_digest":"4aa4c3eab840421d1c66abeea1b3a659dffeef192fcab7ad6f148d73ada72ac1","role":"decoder","schema_id":"ClaimAssertion","schema_version":"1","typed_root_kind":"model"}

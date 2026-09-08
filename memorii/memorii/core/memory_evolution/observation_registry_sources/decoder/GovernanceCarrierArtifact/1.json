@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.GovernanceCarrierArtifact.v1","implementation_source_digest":"ec33665c74300f93f51b65636881bdb9bba3039d7665668c10807406a6fe745a","role":"decoder","schema_id":"GovernanceCarrierArtifact","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.GovernanceCarrierArtifact.v1","implementation_source_digest":"b5ede428d13b7a523e23c3931a10f6ca8c783bf5464bdedd22c423f0bd6b57e3","role":"decoder","schema_id":"GovernanceCarrierArtifact","schema_version":"1","typed_root_kind":"model"}
