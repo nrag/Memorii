@@ -1,0 +1,12 @@
+{
+  "scope": "Bounded production/acceptance witness ownership amendment",
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "files": {
+    "docs/design/semantic_ingestion_architecture.md": "69140e58d650fbe9f59d69de2da06d846b6c4a9040256d82d29fced76e918e79",
+    "docs/design/semantic_ingestion_observation.md": "d46aa5c3bb57552fed82dbfe76df476ad4f6d776f48535da180f379871560e63",
+    "memorii/memorii/core/memory_evolution/graph_ingestion_time_contracts.py": "e841b9ae5513af4a3143374502763e652003b5fe5249980e908ce72bc96cec29",
+    "docs/work/semantic_ingestion/time-witness-boundary/proposal.md": "b48fd9e93d43b2a75fd555f911f973d666d60ee3e5680731ca7f84bc4207fa76"
+  },
+  "tree": "authorized dirty tree; reviewed files frozen; unrelated source draft writer active",
+  "feasibility": "Current production model search finds witness only in new core definition and offline draft inventory; public union already consists only of two attestations."
+}

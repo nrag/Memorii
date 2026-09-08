@@ -95,11 +95,14 @@ class MemoryPlaneUnitOfWork:
         records: tuple[CanonicalMemoryRecord, ...],
         *,
         expected_revision: int | None,
+        expected_write_revision: int | None = None,
         preconditions: tuple[MemoryPlanePrecondition, ...] = (),
         authorization: MemoryPlaneWriteAuthorization | None = None,
         transaction_precondition: Callable[[], None] | None = None,
     ) -> int:
         self._ensure_open()
+        if expected_write_revision is not None:
+            raise RuntimeError("write-revision guards require the root memory-plane store")
         if transaction_precondition is not None:
             raise RuntimeError("transaction preconditions require the root memory-plane store")
         self._set_authorization(authorization)
@@ -114,6 +117,9 @@ class MemoryPlaneUnitOfWork:
 
     def read_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]:
         return self._base_revision, tuple(record.model_copy(deep=True) for record in self._current_records().values())
+
+    def read_write_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]:
+        raise RuntimeError("write snapshots require the root memory-plane store")
 
     def get_record(self, memory_id: str) -> CanonicalMemoryRecord | None:
         record = self._pending.get(memory_id, self._records.get(memory_id))

@@ -193,12 +193,15 @@ class MemoryPlaneStore(Protocol):
         records: tuple[CanonicalMemoryRecord, ...],
         *,
         expected_revision: int | None,
+        expected_write_revision: int | None = None,
         preconditions: tuple[MemoryPlanePrecondition, ...] = (),
         authorization: MemoryPlaneWriteAuthorization | None = None,
         transaction_precondition: Callable[[], None] | None = None,
     ) -> int: ...
 
     def read_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]: ...
+
+    def read_write_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]: ...
 
     def get_record(self, memory_id: str) -> CanonicalMemoryRecord | None: ...
 
@@ -215,6 +218,7 @@ class InMemoryMemoryPlaneStore:
     def __init__(self) -> None:
         self._records: dict[str, CanonicalMemoryRecord] = {}
         self._revision = 0
+        self._write_revision = 0
         self._lock = RLock()
         self._governed_write_policy: GovernedWritePolicy | None = None
         self._protected_secrets: dict[str, bytes] = {}
@@ -302,16 +306,23 @@ class InMemoryMemoryPlaneStore:
         records: tuple[CanonicalMemoryRecord, ...],
         *,
         expected_revision: int | None,
+        expected_write_revision: int | None = None,
         preconditions: tuple[MemoryPlanePrecondition, ...] = (),
         authorization: MemoryPlaneWriteAuthorization | None = None,
         transaction_precondition: Callable[[], None] | None = None,
     ) -> int:
         with self._lock:
+            _validate_expected_write_revision(expected_write_revision)
             if transaction_precondition is not None:
                 transaction_precondition()
             if expected_revision is not None and expected_revision != self._revision:
                 raise MemoryPlaneRevisionConflictError(
                     f"memory-plane revision changed: expected {expected_revision}, actual {self._revision}"
+                )
+            if expected_write_revision is not None and expected_write_revision != self._write_revision:
+                raise MemoryPlaneRevisionConflictError(
+                    "memory-plane write revision changed: "
+                    f"expected {expected_write_revision}, actual {self._write_revision}"
                 )
             return self._apply_locked(records, preconditions=preconditions, authorization=authorization)
 
@@ -335,11 +346,16 @@ class InMemoryMemoryPlaneStore:
         self._records = updated
         if _contains_runtime_context(records):
             self._revision += 1
+        self._write_revision += 1
         return self._revision
 
     def read_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]:
         with self._lock:
             return self._revision, tuple(_clone_record(record) for record in self._records.values())
+
+    def read_write_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]:
+        with self._lock:
+            return self._write_revision, tuple(_clone_record(record) for record in self._records.values())
 
     def get_record(self, memory_id: str) -> CanonicalMemoryRecord | None:
         with self._lock:
@@ -362,6 +378,49 @@ class InMemoryMemoryPlaneStore:
                 and (domain_set is None or item.domain in domain_set)
                 and (source_kind is None or item.source_kind == source_kind)
             ]
+
+
+class ReadOnlyMemoryPlaneSnapshotStore(InMemoryMemoryPlaneStore):
+    """Detached inventory for canonical readers that must never consult live state."""
+
+    def __init__(self, *, write_revision: int, records: tuple[CanonicalMemoryRecord, ...]) -> None:
+        if type(write_revision) is not int or write_revision < 0:
+            raise ValueError("snapshot write revision must be a nonnegative integer")
+        if len({record.memory_id for record in records}) != len(records):
+            raise MemoryPlaneCorruptionError("snapshot contains duplicate record identities")
+        super().__init__()
+        self._records = {record.memory_id: _clone_record(record) for record in records}
+        self._write_revision = write_revision
+
+    def revision(self) -> int:
+        raise PermissionError("detached inventory has no data-revision authority")
+
+    def read_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]:
+        raise PermissionError("detached inventory has no data-revision authority")
+
+    def write_records(
+        self, records: tuple[CanonicalMemoryRecord, ...], *,
+        authorization: MemoryPlaneWriteAuthorization | None = None,
+    ) -> int:
+        raise PermissionError("detached memory-plane snapshot is read-only")
+
+    def apply_batch(
+        self, records: tuple[CanonicalMemoryRecord, ...], *,
+        expected_revision: int | None, expected_write_revision: int | None = None,
+        preconditions: tuple[MemoryPlanePrecondition, ...] = (),
+        authorization: MemoryPlaneWriteAuthorization | None = None,
+        transaction_precondition: Callable[[], None] | None = None,
+    ) -> int:
+        raise PermissionError("detached memory-plane snapshot is read-only")
+
+    def install_governed_write_policy(self, policy: GovernedWritePolicy) -> None:
+        raise PermissionError("detached memory-plane snapshot has no writer authority")
+
+    def load_or_create_protected_secret(self, *, purpose: str, length: int) -> bytes:
+        raise PermissionError("detached memory-plane snapshot has no secret authority")
+
+    def _claim_semantic_checkpoint_signature_authority(self, *, owner: object):
+        raise PermissionError("detached memory-plane snapshot has no signing authority")
 
 
 class JsonlMemoryPlaneStore:
@@ -503,11 +562,13 @@ class JsonlMemoryPlaneStore:
         records: tuple[CanonicalMemoryRecord, ...],
         *,
         expected_revision: int | None,
+        expected_write_revision: int | None = None,
         preconditions: tuple[MemoryPlanePrecondition, ...] = (),
         authorization: MemoryPlaneWriteAuthorization | None = None,
         transaction_precondition: Callable[[], None] | None = None,
     ) -> int:
         with self._locked(exclusive=True):
+            _validate_expected_write_revision(expected_write_revision)
             if transaction_precondition is not None:
                 transaction_precondition()
             batches, current_records = self._current_records_unlocked()
@@ -516,6 +577,11 @@ class JsonlMemoryPlaneStore:
             if expected_revision is not None and expected_revision != actual_data_revision:
                 raise MemoryPlaneRevisionConflictError(
                     f"memory-plane revision changed: expected {expected_revision}, actual {actual_data_revision}"
+                )
+            if expected_write_revision is not None and expected_write_revision != actual_revision:
+                raise MemoryPlaneRevisionConflictError(
+                    "memory-plane write revision changed: "
+                    f"expected {expected_write_revision}, actual {actual_revision}"
                 )
             _validate_preconditions(current_records, preconditions)
             _validate_governed_write(
@@ -542,6 +608,12 @@ class JsonlMemoryPlaneStore:
         with self._locked(exclusive=False):
             batches, latest_by_id = self._current_records_unlocked()
             revision = batches[-1].data_revision if batches else 0
+            return revision, tuple(_clone_record(record) for record in latest_by_id.values())
+
+    def read_write_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]:
+        with self._locked(exclusive=False):
+            batches, latest_by_id = self._current_records_unlocked()
+            revision = batches[-1].revision if batches else 0
             return revision, tuple(_clone_record(record) for record in latest_by_id.values())
 
     def get_record(self, memory_id: str) -> CanonicalMemoryRecord | None:
@@ -728,6 +800,15 @@ def _batch_checksum(
 
 def _contains_runtime_context(records: tuple[CanonicalMemoryRecord, ...]) -> bool:
     return any(record.visibility == MemoryRecordVisibility.RUNTIME_CONTEXT for record in records)
+
+
+def _validate_expected_write_revision(expected_write_revision: int | None) -> None:
+    if expected_write_revision is None:
+        return
+    if type(expected_write_revision) is not int:
+        raise ValueError("expected write revision must be a nonnegative integer")
+    if expected_write_revision < 0:
+        raise ValueError("expected write revision must be a nonnegative integer")
 
 
 def _records_from_batches(batches: list[_PersistedBatch]) -> dict[str, CanonicalMemoryRecord]:

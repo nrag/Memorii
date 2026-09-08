@@ -1,0 +1,1 @@
+{"decoder_id":"memorii.semantic_ingestion.observation.SemanticMemoryEventBatch.v1","implementation_source_digest":"d24ec6b25927b05dc1277442bef61cfd7dc15b2bdced09d257e2a76788cfd8fa","role":"decoder","schema_id":"SemanticMemoryEventBatch","schema_version":"1","typed_root_kind":"model"}

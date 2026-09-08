@@ -1,0 +1,23 @@
+{
+  "status": "FROZEN_BOUNDED_INTEGRITY_CANDIDATE",
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "tree": "authorized dirty tree",
+  "scope": "Ordinary, root self-digest and Ed25519 cursor signature checks after raw protected reader, before later lifecycle/persistence authorization. External checkpoint fails closed pending fixed context constructor. No production root caller.",
+  "files": {
+    "memorii/memorii/core/memory_evolution/typed_value_artifact_integrity.py": "189a434ae333f15d147cc6193be34574d6afa5d6658606ea830cdd23891bcc68",
+    "memorii/tests/unit/core/memory_evolution/test_typed_value_artifact_integrity.py": "35b6a47bff653b145f9316366d8faf8cc3b3323c66d4f5001fdc31a7bbbfb9c8",
+    "docs/work/semantic_ingestion/registry-publication/registered-integrity-readiness.md": "0c447214a765bbc92b229588249234f5381218fd04065fb1c569926d18c2c7fe"
+  },
+  "test_command": "../.venv/bin/python -W error -m pytest tests/unit/core/memory_evolution/test_typed_value_artifact_integrity.py tests/unit/core/memory_evolution/test_typed_value_artifact_reader.py -p no:cacheprovider -q",
+  "test_result": "90 passed in5.49s",
+  "pyright": "Configured two-file explicit check:0errors0warnings",
+  "ruff": "Worker scoped two-file pass; root finalcheck pending",
+  "source_selection": "35files explicitly selected; generatedrefresh pending",
+  "exclusions": [
+    "checkpoint context constructor",
+    "key lifecycle/read/write authorization",
+    "ledger activation and persistence",
+    "public observation API",
+    "whole registry/parent closure"
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "test_path": "memorii/tests/integration/test_observation_ledger_activation.py",
+  "workflow": ".github/workflows/pr-gates.yml",
+  "job": "observation-ledger-activation",
+  "aggregate": "unit-tests",
+  "cwd": "memorii",
+  "command": "python -W error -m pytest tests/integration/test_observation_ledger_activation.py tests/integration/test_observation_ledger_artifacts.py tests/integration/test_observation_terminal_intent.py tests/integration/test_observation_ledger_replay.py tests/integration/test_bootstrap_group_observation.py tests/integration/test_registered_observation_cursor.py tests/integration/test_native_projection_evidence.py tests/integration/test_graph_observation_paging.py -p no:cacheprovider -q --durations=10 --junitxml=observation-ledger-activation.xml",
+  "local_python": "3.12.14",
+  "ci_python": "3.11",
+  "ci_only": [
+    "ubuntu-latest",
+    "actions/checkout@v4",
+    "actions/setup-python@v5",
+    "actions/upload-artifact@v4"
+  ],
+  "ci_observed": false,
+  "overlap": "Not selected by unit shards or package-smoke",
+  "additional_test_paths": [
+    "memorii/tests/integration/test_observation_ledger_artifacts.py",
+    "memorii/tests/integration/test_observation_terminal_intent.py",
+    "memorii/tests/integration/test_observation_ledger_replay.py",
+    "memorii/tests/integration/test_bootstrap_group_observation.py",
+    "memorii/tests/integration/test_registered_observation_cursor.py",
+    "memorii/tests/integration/test_native_projection_evidence.py",
+    "memorii/tests/integration/test_graph_observation_paging.py"
+  ]
+}

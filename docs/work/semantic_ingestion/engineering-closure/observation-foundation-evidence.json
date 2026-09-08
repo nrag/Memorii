@@ -1,0 +1,33 @@
+{
+  "scope": "Unintegrated authenticated observation authority/cursor foundation; not R17/API closure",
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "tree": "authorized dirty working tree",
+  "files": {
+    "memorii/memorii/core/memory_evolution/graph_observation_contracts.py": "f2749a0b312b03f4f29833fd3adec0f110166b2271bb39cf088aac616f2406a8",
+    "memorii/memorii/core/memory_evolution/graph_observation_authority.py": "d098bb9d41655ff98d809db0dbe78c3a996479a168506f90e77c7a562ce4f82a",
+    "memorii/memorii/core/memory_evolution/graph_observation_cursor.py": "be0b09d45b4fe26143ae22a54b9371308924a8f3558adfd261b2f04617b130f5",
+    "memorii/tests/unit/core/memory_evolution/test_graph_observation_foundation.py": "dffb50913959ba5b315b896373061fa8ca67e95f0d28d3aea22e7d696431a80c"
+  },
+  "tests": {
+    "command": "../.venv/bin/python -W error -m pytest tests/unit/core/memory_evolution/test_graph_observation_foundation.py -q -p no:cacheprovider",
+    "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii",
+    "result": "7 passed in 4.32s",
+    "exit_code": 0,
+    "log": "observation-foundation-final.log"
+  },
+  "pyright": {
+    "result": "0 errors, 0 warnings",
+    "exit_code": 0,
+    "log": "observation-foundation-pyright.log"
+  },
+  "identity_gate": {
+    "command": "../.venv/bin/python -m memorii.tools.identity_hygiene --root .. --allowlist ../.agents/identity_hygiene_allowlist.json",
+    "exit_code": 0,
+    "log": "observer-identity.log"
+  },
+  "remaining": [
+    "No production query caller",
+    "Cohort preimage requires actual graph/observation/record/snapshot authority",
+    "Registered schema/profile authority and independent full component review pending"
+  ]
+}

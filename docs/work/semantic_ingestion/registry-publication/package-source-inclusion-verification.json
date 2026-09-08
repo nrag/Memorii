@@ -1,0 +1,13 @@
+{
+  "scope": "Local wheel source-role inclusion and acceptance isolation only; not complete workflow package-smoke or release approval",
+  "command": "../.venv/bin/python -m pip wheel . --no-deps --no-build-isolation --wheel-dir /private/tmp/memorii-observation-wheel",
+  "workflow_difference": "uses installed build dependencies and no build isolation; no GitHub runner/CI claim",
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "tree": "authorized dirty tree",
+  "wheel_sha256": "bab8005183c093c4ccd827c29c7b3c3e7d294c036d51ca73dcc3b3991502801c",
+  "json_file_count": 1257,
+  "exact_source_bytes": true,
+  "acceptance_and_tests_excluded": true,
+  "pyproject_sha256": "87ce96c053d52cde4599d81244fc08ed726fe7718a3058cf8f47ef1e0c342a01",
+  "candidate_sha256": "e20337bd79c7f2b1c582804e74bb6d3e7861326df8e8400e8b2d31f890852d09"
+}

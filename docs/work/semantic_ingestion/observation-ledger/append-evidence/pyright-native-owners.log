@@ -1,0 +1,5 @@
+/Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/semantic_ingestion/bootstrap_graph_projection_publication.py
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/semantic_ingestion/bootstrap_graph_projection_publication.py:290:48 - error: Argument of type "tuple[ProjectionHistoryReplayBinding, ...]" cannot be assigned to parameter "projection_history_replay_bindings" of type "tuple[ProjectionHistoryReplayBinding, ProjectionHistoryReplayBinding]" in function "__init__"
+    "tuple[ProjectionHistoryReplayBinding, ...]" is not assignable to "tuple[ProjectionHistoryReplayBinding, ProjectionHistoryReplayBinding]"
+      Tuple size mismatch; expected 2 but received indeterminate (reportArgumentType)
+1 error, 0 warnings, 0 informations

@@ -1,0 +1,7 @@
+{
+  "before_observation_sha256": "d46aa5c3bb57552fed82dbfe76df476ad4f6d776f48535da180f379871560e63",
+  "after_observation_sha256": "036343853b1880ce4e1c51214c15d671a1d6ea509a8781b141e8c38ea8a8d781",
+  "sia_sha256": "69140e58d650fbe9f59d69de2da06d846b6c4a9040256d82d29fced76e918e79",
+  "candidate_sha256": "578d26e2d51b31dab3cf64019ae293ad7aef83d64acd085ef68099071b84e854",
+  "scope": "Observation inventory ownership correction only; no runtime or signature claim"
+}

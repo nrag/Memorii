@@ -1,6 +1,6 @@
 {
   "format": "memorii.workplan-split-manifest.v2",
-  "bundle_sha256": "a2674841c615282cd223edaf71ef1b6ae215e8250253d3ee5ab5d08a360141a6",
+  "bundle_sha256": "cb69a3ed8f30ed109f4a932df2ed883a66416dc5163a56e11784f4c8844ce090",
   "candidate_identity": "docs/work/semantic_ingestion/history/implementation-split-review-identity.json",
   "canonical_path": "docs/work/semantic_ingestion/implementation.plan.md",
   "archive": {
@@ -55,7 +55,7 @@
     },
     {
       "path": ".agents/scripts/verify_workplan_split.py",
-      "sha256": "b8ceeb2f5c29053774740e587be2cc4038900e28ddd813805425f108233def8f"
+      "sha256": "a591bc3925bda4c139a21aaf03ab368742b865af795e94d73abc46943a249a3d"
     },
     {
       "path": ".agents/skills/implement-design/SKILL.md",
@@ -75,11 +75,11 @@
     },
     {
       "path": "docs/work/semantic_ingestion/implementation.plan.md",
-      "sha256": "7f5a24797664b50b969d778222e0724a02c0a2784f0e5759c20be18fdcdbbad8"
+      "sha256": "41afb3a3b1ab6c9aad9a4ace70d8e822277b0638239114a5a22f304265395e06"
     },
     {
       "path": "docs/work/semantic_ingestion/resume.md",
-      "sha256": "2911c7e45ac145305e24e78984dd3d49f451b774810176f02d6b3682191b59a4"
+      "sha256": "410b73f9690d4e7645cab1c69079f9a9c0ebf0fe838387125b28c3a4071675dd"
     },
     {
       "path": "docs/work/semantic_ingestion/conflict-authority-proof-failures-2026-08-04/debug.plan.md",
@@ -99,7 +99,7 @@
     },
     {
       "path": "docs/work/semantic_ingestion/milestones/m0-proof-compatibility.plan.md",
-      "sha256": "2fb5bf32c3ee3115f305c85d3e1f0a3816e32054b44f838846e07abf50b92d6b"
+      "sha256": "a6271afb5313aede9e3983931d401dffe27607f46bc203c2dc4da3e2bf5e0665"
     },
     {
       "path": "docs/work/semantic_ingestion/milestones/m1-source-admission.plan.md",
@@ -119,7 +119,7 @@
     },
     {
       "path": "docs/work/semantic_ingestion/milestones/m5-deployment-acceptance.plan.md",
-      "sha256": "6882283e9e6102f0a28d8d0d10f0ef2242bec18b6dbe10b3524a663825874e21"
+      "sha256": "0e977efb3aeba0fa2aaa6bf22bc18fa74e1eb6525d953c56235c626a3e964c1b"
     },
     {
       "path": "docs/work/semantic_ingestion/history/implementation-split-manifest.json",
@@ -138,7 +138,7 @@
     {
       "id": "m0",
       "path": "docs/work/semantic_ingestion/milestones/m0-proof-compatibility.plan.md",
-      "status": "blocked",
+      "status": "complete (corrected replacement boundary)",
       "requirements": [
         "SIA-R03",
         "SIA-R13",
@@ -196,7 +196,7 @@
     {
       "id": "m5",
       "path": "docs/work/semantic_ingestion/milestones/m5-deployment-acceptance.plan.md",
-      "status": "pending",
+      "status": "active",
       "requirements": [
         "SIA-R03",
         "SIA-R08",

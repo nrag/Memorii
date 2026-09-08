@@ -1,0 +1,1 @@
+{"fields":[{"field_name":"kind","policy":"required"},{"field_name":"temporal_policy_fingerprint","policy":"required"}],"role":"optional","schema_id":"ObservedSystemRecordedEffectiveTime","schema_version":"1"}

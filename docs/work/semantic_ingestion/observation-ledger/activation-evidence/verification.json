@@ -1,0 +1,23 @@
+{
+  "candidate_sha256": "aefaac2d4c3a655d2be8e3570926f6b0923347f9adefc09eacdacf6663c03b28",
+  "ci_observed": false,
+  "identity_exit_code": 0,
+  "logs": {
+    "focused.log": "ac729d47a0210549ca4ba7df2450b3ecc5632a888e666fac13d0ac6c8dae6617",
+    "identity.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "pyright.log": "6d88a1b220adb7a3d62092b6e38431f0b3fe8babe9864fab90e5849766260332",
+    "ruff.log": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+  },
+  "pyright_exit_code": 0,
+  "python": "3.12.14",
+  "release_closure": false,
+  "ruff_exit_code": 0,
+  "source_pins_unchanged": true,
+  "tests": {
+    "command": ".venv/bin/python -W error -m pytest memorii/tests/integration/test_observation_ledger_activation.py memorii/tests/unit/core/semantic_ingestion/test_semantic_writer_admission.py memorii/tests/unit/core/semantic_ingestion/test_semantic_atomic_store.py memorii/tests/unit/core/semantic_ingestion/test_historical_terminal_persisted_reload.py memorii/tests/unit/core/semantic_ingestion/test_semantic_provider_composition.py -p no:cacheprovider -q",
+    "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii",
+    "duration_seconds": 541.44,
+    "exit_code": 0,
+    "passed": 241
+  }
+}

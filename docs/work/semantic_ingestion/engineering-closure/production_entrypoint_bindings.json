@@ -1,0 +1,191 @@
+{
+  "format": "memorii.production-entrypoint-bindings.v1",
+  "updated": "2026-09-08",
+  "entries": [
+    {
+      "requirement": "R03",
+      "package": "01",
+      "status": "unmapped",
+      "canonical_owner": null,
+      "production_caller": null,
+      "authority": null,
+      "outcome_proof": null
+    },
+    {
+      "requirement": "R08",
+      "package": "02",
+      "status": "unmapped",
+      "canonical_owner": null,
+      "production_caller": null,
+      "authority": null,
+      "outcome_proof": null
+    },
+    {
+      "requirement": "R13",
+      "package": "02",
+      "status": "partial",
+      "canonical_owner": "memorii.tools.semantic_ingestion_signature_verifier.Ed25519SignatureVerifier",
+      "production_caller": "RegisteredApprovalExecutor.from_resolver -> ConfiguredAcceptanceTrustResolver.resolve_registered_execution -> validate_release_candidate -> VerifierHeldTrustMaterial.verify_signature",
+      "authority": "ConfiguredAcceptanceTrustResolver receives immutable externally supplied Ed25519VerificationKeyBinding values and replaces only the composition-held verifier. Candidate artifacts retain signer profile/key references, but cannot provision a trust binding or select its digest domain.",
+      "outcome_proof": "memorii/tests/unit/tools/test_semantic_ingestion_signature_verifier.py verifies RFC 8032, malformed/duplicate bindings, adversarial payload/signatures, and a fully signed canonical current-release chain. test_configured_resolver_executes_signed_current_release constructs RegisteredApprovalExecutor.from_resolver, publishes a coherent signed predecessor, rejects a tampered successor without publication changes, and successfully publishes the valid successor through that executor. The file-fence backend requires explicit test-only opt-in; this is local integration evidence, not operational production certification.",
+      "offline_signing": {
+        "status": "locally_verified_partial",
+        "canonical_owner": "memorii.tools.semantic_ingestion_offline_signing.PemEd25519PrivateKeySigner.sign_preimage",
+        "production_caller": "semantic_ingestion_offline_signing.main -> _sign -> PemEd25519PrivateKeySigner.sign_preimage",
+        "authority": "Independently supplied PEM public key, explicit profile/digest domain/expected digest, and matching private key. No trust or policy is issued.",
+        "outcome_proof": "tests/unit/tools/test_semantic_ingestion_offline_signing.py subprocess sign/verify tests; final candidate review pending",
+        "remaining": "Whole-package verification and host integration. Four-artifact canonical preparation/assembly passes 14 API and subprocess integration tests in tests/integration/test_semantic_ingestion_release_signing.py."
+      },
+      "lifecycle_signing": {
+        "status": "locally_verified_partial",
+        "canonical_owner": "memorii.tools.semantic_ingestion_traceability_release.assemble_current_lifecycle_detached_signatures",
+        "production_caller": "semantic_ingestion_lifecycle_signing.main -> assemble_lifecycle_signatures -> assemble_current_lifecycle_detached_signatures -> Ed25519SignatureVerifier.verify",
+        "authority": "Independently configured trusted PEM bindings; current template coordinates cannot introduce key material. Preparation and assembly do not authorize lifecycle history or activate a release.",
+        "outcome_proof": "tests/integration/test_semantic_ingestion_lifecycle_signing.py signs records before the root, assembles a byte-identical CTV, reaches VerifiedReleaseCandidate for ordinary and threshold-recovery chains, rejects same-length signature tampering at both stages, and exercises CLI signature indices and exclusive outputs. Fourteen focused tests pass; exact hashes and run distinctions are in signing-local-evidence.json.",
+        "remaining": "Final independent package review and whole-host composition."
+      }
+    },
+    {
+      "requirement": "R14",
+      "package": "03",
+      "status": "unmapped",
+      "canonical_owner": null,
+      "production_caller": null,
+      "authority": null,
+      "outcome_proof": null
+    },
+    {
+      "requirement": "R15",
+      "package": "04",
+      "status": "unmapped",
+      "canonical_owner": null,
+      "production_caller": null,
+      "authority": null,
+      "outcome_proof": null
+    },
+    {
+      "requirement": "R16",
+      "package": "02",
+      "status": "unmapped",
+      "canonical_owner": null,
+      "production_caller": null,
+      "authority": null,
+      "outcome_proof": null
+    },
+    {
+      "requirement": "R17",
+      "package": "05",
+      "status": "partial",
+      "canonical_owner": "SemanticIngestionAtomicStore.persist_bootstrap_graph_terminal_v3 / _reload_bootstrap_graph_terminal_exact_v3",
+      "production_caller": "ProviderIngestionCoordinator -> BootstrapGraphHostBundle -> BootstrapGraphTransactionCoordinatorV3 -> DeterministicBootstrapGraphTerminalPreparationV3.prepare -> BootstrapGraphArtifactAssemblerV3.build_terminal_publication_request -> AtomicStoreBootstrapGraphTerminalRepositoryV3.persist_and_reload",
+      "authority": "Retained admitted source, canonical terminal outcome, complete fence/scopes/delivery/lease/writer bindings and current epoch/generation. Server derives observation ID, successor and schema fingerprint; atomic store independently validates coordinates against current control and canonical result before one CAS.",
+      "outcome_proof": "Native source finalization: exact before/after public reproducer; 22 lost-ack/restart/normal-root cases pass; historical captured V1 bytes and persisted reload, stale/substituted/missing member cases pass; zero-group failed terminal passes. Evidence in terminal-publication/source-candidate.json and debug-001.plan.md. Independent closure review pending.",
+      "remaining": "Group observation persistence, authenticated scoped query/pagination, independent structural comparator and final required gates remain unfinished.",
+      "binding_map": "source-finalization-integration-map.md",
+      "bounded_source_closure": "docs/work/semantic_ingestion/terminal-publication/closure.md; source candidate89907b04b2a9888ad6b708c859c3db1bde359dfb029dc24eed03a7780b80c9a5 independently approved. This historical bounded proof does not certify later group edits.",
+      "shared_observation_ledger": {
+        "status": "design_in_progress",
+        "design": "docs/work/semantic_ingestion/observation-ledger/design.plan.md",
+        "runtime_boundaries": [
+          {
+            "behavior": "shared group/source append and exact reload",
+            "status": "absent",
+            "production_caller": null,
+            "production_caller_count": 0
+          },
+          {
+            "behavior": "writer activation and legacy-write fencing",
+            "status": "absent",
+            "production_caller": null,
+            "production_caller_count": 0
+          },
+          {
+            "behavior": "genesis observation replay",
+            "status": "absent",
+            "production_caller": null,
+            "production_caller_count": 0
+          },
+          {
+            "behavior": "authenticated observation checkpoint and tail replay",
+            "status": "absent",
+            "production_caller": null,
+            "production_caller_count": 0
+          },
+          {
+            "behavior": "consistent authenticated graph/reference/observation snapshot",
+            "status": "absent",
+            "production_caller": null,
+            "production_caller_count": 0
+          }
+        ],
+        "evidence": "19 nonproduction ordering/DAG-model checks and targeted independent test consultation; not real store CAS or checkpoint trust. Source-local revision heads do not satisfy shared-ledger API authority."
+      },
+      "native_policy_retention": {
+        "status": "locally verified; independent evidence delta review pending",
+        "canonical_owner": "BootstrapNativePlanningConstructionAuthorityV3; SemanticIngestionAtomicStore native group request codec",
+        "production_caller": "SourceNormalizationStage -> built-in graph builder -> artifact assembler -> AtomicStoreBootstrapGraphRepositoryV3.commit_or_reload",
+        "production_caller_count": 1,
+        "authority": "Exact source-supplied SemanticArbitrationPolicyBundle nested in ordered_operation_inputs.reduction.native_compilation.operation_input.planning_construction_authority; validation matches every temporal/trust closure, effective-time coordinate and predicate trust rule",
+        "write": "commit_or_reload_bootstrap_graph_group_v3 persists complete request_hex in immutable primary in group CAS",
+        "read": "_bootstrap_graph_v3_group_commit_request_from_record -> decode_semantic_contract(BootstrapGraphGroupCommitRequestV3)",
+        "proof": "tests-persisted-reload.log:4 passed67.53s, single public JSONL sync then reopened native group request decode and exact bundle bytes; legacy shape/tuple guards/policy coordinates. No projection or ledger closure.",
+        "exclusions": [
+          "native projection publication",
+          "shared observation ledger",
+          "authenticated retrieval",
+          "parent M5 closure"
+        ]
+      },
+      "protected_registry_composition": {
+        "status": "locally_verified_bounded_review_approved",
+        "canonical_owner": "verify_configured_typed_value_registry_history",
+        "production_caller": "ProviderMemoryService.__init__ -> BuiltInLocalHostSemanticIngestionCapability.build_semantic_ingestion_runtime -> verify_configured_typed_value_registry_history",
+        "production_caller_count": 1,
+        "authority": "Explicit host-owned immutable raw publications, source roots, parse limits and independently supplied pins. Same verified history object passed to paired writer/atomic store and authorized runtime. Omitted/different references and configured verification errors fail closed. Registry presence conveys no writer activation.",
+        "outcome": "Verified immutable history held by composed owners, or construction raises before writer creation. No artifact persistence/read path yet.",
+        "proof": "registry-publication/runtime-candidate-encoding-candidate.json:5 real-package/provider/direct-custom consistency tests passed; registry_composition_map queries verified by coordinator.",
+        "remaining": "Configured verifier has one reachable constructor callsite. Integrity helper invokes protected reader, but integrity/candidate encoding lack reachable public runtime owners. Checkpoint context, ledger, replay and public retrieval integration remain open.",
+        "registered_integrity": {
+          "owner": "verify_protected_typed_value_artifact_integrity",
+          "reachable_public_runtime_callers": 0,
+          "helper_reader_callsites": 1,
+          "proof": "registered-integrity-candidate.json and registered-integrity-review.json; 91 focused tests passed; ordinary/self-digest/cursor only",
+          "authority": "Integrity and cursor cryptography only; no lifecycle, key eligibility, activation, replay or persistence grant; external checkpoint fails closed"
+        }
+      },
+      "observation_activation": {
+        "status": "durable_activation_locally_verified_bounded_code_review_complete",
+        "entrypoint": "ProviderMemoryService.activate_observation_ledger -> AuthorizedSemanticIngestionRuntime.activate_observation_ledger -> SemanticIngestionAtomicStore.activate_observation_ledger",
+        "outcome": "Runtime revalidates deployment authorization; atomic owner validates target and binding, drains admitted work, validates the detached native inventory, and atomically publishes activation, genesis head and successor admission. Equivalent concurrent requests recover the same committed trio; invalid or incomplete state fails closed.",
+        "proof": "observation-ledger/activation-evidence/final-candidate.json and final-integration.log:24 passed218.82s on corrected activation; initial compatibility241 passed541.44s. Spec, correctness and test delta reviews report no remaining code or coverage defect. Evidence reconciliation only; CI unobserved.",
+        "durable_activation_implemented": true,
+        "design": "docs/design/semantic_ingestion_activation_target.md",
+        "construction_preflight": "docs/work/semantic_ingestion/observation-ledger/target-binding-preflight.md",
+        "reachable_public_runtime_callers": 1,
+        "authority": "Explicit payload-free trusted-host ProviderMemoryService API is the governing external trigger. Runtime revalidates bootstrap/deployment authorization and obtains current binding; atomic owner revalidates protected target/history, drains and validates complete native terminal inventory from a detached snapshot; writer performs the joined activation/genesis/successor CAS under full write revision and exact predecessor/absence conditions.",
+        "production_caller_count": 1,
+        "canonical_owner": "SemanticIngestionAtomicStore.activate_observation_ledger -> SemanticWriterAdmissionStore._activate_observation_ledger",
+        "remaining": "Ledger append/replay, checkpoint authority and authenticated retrieval remain dependent open work. Current release packaging and CI evidence remain outstanding. No parent completion or release approval claimed."
+      }
+    },
+    {
+      "requirement": "R19",
+      "package": "06",
+      "status": "unmapped",
+      "canonical_owner": null,
+      "production_caller": null,
+      "authority": null,
+      "outcome_proof": null
+    },
+    {
+      "requirement": "R17",
+      "status": "partial",
+      "canonical_owner": "observation_activation_prepare.prepare_deployment; observation_activation_launch.main; prepare_observation_activation_target",
+      "production_caller": "operator prepare CLI -> offline pip installation -> protected host launcher -> verify_deployment -> origin guard -> host conversion/factory -> packaged target release prepare/verify",
+      "authority": "Pinned wheel bytes and explicit roots; independently protected bootstrap/configuration/host SHA256; verified deployment facts; protected publication and public-key profile/digest/domain. No runtime request selects these inputs.",
+      "outcome_proof": "release-preparation/run_installed_proof.py and check_installed_rejections.py exercise real installed dependency closure, unsigned manifest/preimage, isolated-key signature acceptance/rejections and retained target resolution. CI package-smoke invokes the complete chain; local evidence only until CI observed. No durable ledger activation.",
+      "removal_signal": "Removing preparation/bootstrap/guard or signature validation breaks offline-wheel and mutation assertions; wrong wheel cannot create environment, modified installed payload cannot execute host sentinel.",
+      "production_caller_count": "one explicit operator launcher and one packaged release prepare adapter"
+    }
+  ]
+}

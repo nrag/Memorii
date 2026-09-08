@@ -1,0 +1,1 @@
+{"decoder_id":"memorii.semantic_ingestion.observation.ObservationSourceSemanticPayload.v1","implementation_source_digest":"887bcdbbd6c912c2eaaec93192ae43428ee4dcf79440caaae43b69a467d43a46","role":"decoder","schema_id":"ObservationSourceSemanticPayload","schema_version":"1","typed_root_kind":"model"}

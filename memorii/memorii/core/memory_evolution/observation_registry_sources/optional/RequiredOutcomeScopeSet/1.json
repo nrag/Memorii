@@ -1,0 +1,1 @@
+{"fields":[{"field_name":"canonical_scope_digests","policy":"required"},{"field_name":"required_scope_set_digest","policy":"required"},{"field_name":"scopes","policy":"required"},{"field_name":"tenant_partition_id","policy":"required"}],"role":"optional","schema_id":"RequiredOutcomeScopeSet","schema_version":"1"}

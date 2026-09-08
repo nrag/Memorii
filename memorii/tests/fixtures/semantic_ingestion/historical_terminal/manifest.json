@@ -1,0 +1,30 @@
+{
+  "source_revision": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "source": "isolated git archive; real direct provider sync; synthetic fixture authority",
+  "files": [
+    {
+      "path": "publication-request.ctv.gz",
+      "sha256": "fb9d46d483a3f201de86ef596d8f422b9f4392fa5b61a1a950c74959cbe04cbe",
+      "uncompressed_sha256": "7b1fb99701233a47437eb34819cda7a7f5691fff3a754de419453f43dc74abef",
+      "uncompressed_bytes": 913788
+    },
+    {
+      "path": "publication-intent.ctv.gz",
+      "sha256": "a6aa2e8d9a6b3f5f23e79053c7dd16133f0f0c36ec16d489f8e7c0e3e045cc86",
+      "uncompressed_sha256": "4e1b3cca5452bf8f1360a7df7f70076a84e007fb8b116b941ccc9ef2e194ecea",
+      "uncompressed_bytes": 5212
+    },
+    {
+      "path": "terminal-reload.ctv.gz",
+      "sha256": "a03b09b9d1ed9ccf08338398d716055067676c739bafe758a2a16643c2d771c0",
+      "uncompressed_sha256": "439cd592a8ec3dae853198d80409809a9a67d96c2c413ed01235c81d36253d57",
+      "uncompressed_bytes": 27502
+    },
+    {
+      "path": "memory-records.json.gz",
+      "sha256": "264bcc88d4f8b81262c554bcf6ed471f30a1bd701318826c5796c032679b39d5",
+      "uncompressed_sha256": "f7b9f40c0c551b8d9a3b16b4f0c918e8bbc099c58dad2dc6d8f6664e495098d4",
+      "uncompressed_bytes": 8829769
+    }
+  ]
+}

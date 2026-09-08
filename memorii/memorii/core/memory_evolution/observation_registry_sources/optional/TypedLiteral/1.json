@@ -1,0 +1,1 @@
+{"fields":[{"field_name":"canonical_value","policy":"required"},{"field_name":"literal_digest","policy":"required"},{"field_name":"literal_type","policy":"required"},{"field_name":"unit","policy":"required_nullable"}],"role":"optional","schema_id":"TypedLiteral","schema_version":"1"}

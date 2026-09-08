@@ -1,0 +1,10 @@
+{
+  "scope": "bounded test matrix review only, before test implementation; no implementation closure requested",
+  "files": {
+    "docs/work/semantic_ingestion/activation-deployment-tests/testing.plan.md": "30165b2263eea88c504847f9c6a86aecbe8339f5e1b6b8e1647dba4baad70f96",
+    "docs/design/semantic_ingestion_activation_target.md": "ad69f8ed9f115a4493cce99614b77bac37e6eb10c246c0601c360750ef7f0912",
+    "docs/work/semantic_ingestion/activation-target-identity/verification.md": "8c7c88d5908081f927bab563f09d4b32fa1287246857d076641adebd83d6c45c"
+  },
+  "evidence": "Normative matrix and current workflow owner inventory; no executable new bootstrap test exists yet.",
+  "candidate_identity": "7dc50d57e23a555ee627f54770455762146528ed33874d834031c584a10b341a"
+}

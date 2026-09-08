@@ -1,0 +1,79 @@
+{
+  "status": "LOCAL_REAL_WHEEL_PREPARATION_VERIFIED",
+  "distributions": 21,
+  "installed_files": 5632,
+  "package_files": 1772,
+  "manifest_sha256": "44fe0bad4e9dcf7cdd69dd9d9ca2b4289cc7fbd678b11259bb93430a5fba95df",
+  "environment_digest": "59be525c392d92d46dc01f436f8a1b673e1cff3d07e627891a43e8c94c2e7e4e",
+  "wheel_sha256": "427ab5a9f0321f0142d977991b69f56b119decf9c9a0b6ab20d1cb9c8cdacf1b",
+  "valid_signature_accepted": true,
+  "corrupt_signature_rejected": true,
+  "wrong_profile_rejected": true,
+  "wrong_public_key_rejected": true,
+  "wrong_digest_rejected": true,
+  "wrong_domain_rejected": true,
+  "modified_manifest_rejected": true,
+  "retained_target_resolved": true,
+  "production_signature": false,
+  "ledger_activated": false,
+  "ci_claim": false,
+  "candidate_sha256": "0c75be24918302760a7e91c091896b786cf5d28187947d0b6d37a41a5ab88039",
+  "command": [
+    "/Users/nandaraghunathan/Code/Memorii/Memorii/.venv/bin/python",
+    "-I",
+    "-S",
+    "-X",
+    "pycache_prefix=/private/tmp/memorii-activation-proof-frozen/cache",
+    "/Users/nandaraghunathan/Code/Memorii/Memorii/tools/observation_activation_launch.py",
+    "--bootstrap",
+    "/private/tmp/memorii-activation-prepared-final/observation_activation_bootstrap.py",
+    "--bootstrap-sha256",
+    "abc6c5397078cf5c907a3c7b5002f6fbb1a19f1a2e2d4b663cb90b3dc8bf31f2",
+    "--configuration",
+    "/private/tmp/memorii-activation-prepared-final/deployment_configuration.py",
+    "--configuration-sha256",
+    "42c7d5adda888a54f82fd1697cd5f9b24d360e96ff0af6dcfd0728e404e08ae5",
+    "--host",
+    "/private/tmp/memorii-activation-proof-frozen/host.py",
+    "--host-sha256",
+    "091cfe52f13cfbf15ff7b2ff12fd9b7e89f2f2247e37098b5d71b4549a8ac10b"
+  ],
+  "protected_module_pins": {
+    "bootstrap": {
+      "path": "/private/tmp/memorii-activation-prepared-final/observation_activation_bootstrap.py",
+      "sha256": "abc6c5397078cf5c907a3c7b5002f6fbb1a19f1a2e2d4b663cb90b3dc8bf31f2"
+    },
+    "configuration": {
+      "path": "/private/tmp/memorii-activation-prepared-final/deployment_configuration.py",
+      "sha256": "42c7d5adda888a54f82fd1697cd5f9b24d360e96ff0af6dcfd0728e404e08ae5"
+    },
+    "host": {
+      "path": "/private/tmp/memorii-activation-proof-frozen/host.py",
+      "sha256": "091cfe52f13cfbf15ff7b2ff12fd9b7e89f2f2247e37098b5d71b4549a8ac10b"
+    }
+  },
+  "process_log_sha256": "93382b322df872a05a7f7696d28871b3e7da682d697a1d50f9409cf068f0ebd3",
+  "wheel_inputs": {
+    "annotated_types-0.7.0-py3-none-any.whl": "1f02e8b43a8fbbc3f3e0d4f0f4bfc8131bcb4eebe8849b8e5c773f3a1c582a53",
+    "attrs-26.1.0-py3-none-any.whl": "c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309",
+    "cffi-2.1.1-cp312-cp312-macosx_10_15_x86_64.whl": "c8c69575568085ba0b1b10c0249d779a214aea6f6522e949a0fc9fb0fcb449d0",
+    "cryptography-50.0.1-cp312-abi3-macosx_10_12_x86_64.whl": "aa25a0542393a61650c7c4eb269512dc8181fc8afe79f85f059d06a7a73bab73",
+    "joblib-1.5.3-py3-none-any.whl": "5fc3c5039fc5ca8c0276333a188bbd59d6b7ab37fe6632daa76bc7f9ec18e713",
+    "jsonschema-4.26.0-py3-none-any.whl": "d489f15263b8d200f8387e64b4c3a75f06629559fb73deb8fdfb525f2dab50ce",
+    "jsonschema_specifications-2025.9.1-py3-none-any.whl": "98802fee3a11ee76ecaca44429fda8a41bff98b00a0f2838151b113f210cc6fe",
+    "memorii-0.1.0-py3-none-any.whl": "427ab5a9f0321f0142d977991b69f56b119decf9c9a0b6ab20d1cb9c8cdacf1b",
+    "numpy-1.26.4-cp312-cp312-macosx_10_9_x86_64.whl": "b3ce300f3644fb06443ee2222c2201dd3a89ea6040541412b8fa189341847218",
+    "pycparser-3.0-py3-none-any.whl": "b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992",
+    "pydantic-2.13.4-py3-none-any.whl": "45a282cde31d808236fd7ea9d919b128653c8b38b393d1c4ab335c62924d9aba",
+    "pydantic_core-2.46.4-cp312-cp312-macosx_10_12_x86_64.whl": "3245406455a5d98187ec35530fd772b1d799b26667980872c8d4614991e2c4a2",
+    "pyicu-2.16.2-cp312-cp312-macosx_26_0_x86_64.whl": "60317c983d94a8cb826522867fa9397a7ad20ad5e9f9f9fc5c859299b393aca6",
+    "pyyaml-6.0.3-cp312-cp312-macosx_10_13_x86_64.whl": "7f047e29dcae44602496db43be01ad42fc6f1cc0d8cd6c83d342306c32270196",
+    "referencing-0.37.0-py3-none-any.whl": "381329a9f99628c9069361716891d34ad94af76e461dcb0335825aecc7692231",
+    "rpds_py-0.30.0-cp312-cp312-macosx_10_12_x86_64.whl": "a161f20d9a43006833cd7068375a94d035714d73a172b681d8881820600abfad",
+    "scikit_learn-1.8.0-cp312-cp312-macosx_10_13_x86_64.whl": "5fb63362b5a7ddab88e52b6dbb47dac3fd7dafeee740dc6c8d8a446ddedade8e",
+    "scipy-1.17.1-cp312-cp312-macosx_14_0_x86_64.whl": "c80be5ede8f3f8eded4eff73cc99a25c388ce98e555b17d31da05287015ffa5b",
+    "threadpoolctl-3.6.0-py3-none-any.whl": "43a0b8fd5a2928500110039e43a5eed8480b918967083ea48dc3ab9f13c4a7fb",
+    "typing_extensions-4.15.0-py3-none-any.whl": "f0fa19c6845758ab08074a0cfa8b7aecb71c999ca73d62883bc25cc018c4e548",
+    "typing_inspection-0.4.2-py3-none-any.whl": "4ed1cacbdc298c220f1bd249ed5287caa16f34d44ef4e9c3d0cbad5b521545e7"
+  }
+}

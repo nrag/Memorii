@@ -1,0 +1,203 @@
+ M .agents/scripts/verify_workplan_split.py
+ M .github/workflows/pr-gates.yml
+ M .gitignore
+ M docs/design/semantic_ingestion/traceability_golden_vectors/cgs-structural-manifest-prototype-v1.json
+ M docs/design/semantic_ingestion/traceability_golden_vectors/check_cgs_structural_contract_v1.py
+ M docs/design/semantic_ingestion/traceability_golden_vectors/check_lifecycle_root_signer_provenance_v1.py
+ M docs/design/semantic_ingestion/traceability_golden_vectors/ctv-binding-authority-v2.json
+ M docs/design/semantic_ingestion_architecture.md
+ M docs/work/semantic_ingestion/history/implementation-split-manifest.json
+ M docs/work/semantic_ingestion/history/implementation-split-manifest.json.sha256
+ M docs/work/semantic_ingestion/implementation.plan.md
+ M docs/work/semantic_ingestion/milestones/m0-proof-compatibility.plan.md
+ M docs/work/semantic_ingestion/milestones/m5-deployment-acceptance.plan.md
+ M docs/work/semantic_ingestion/resume.md
+ M memorii/memorii/core/memory_evolution/atomic_store.py
+ M memorii/memorii/core/memory_evolution/bootstrap_graph_planning.py
+ M memorii/memorii/core/memory_evolution/graph_effect_contracts.py
+ M memorii/memorii/core/memory_evolution/ingestion_contracts.py
+ M memorii/memorii/core/memory_evolution/writer_admission.py
+ M memorii/memorii/core/memory_plane/semantic_control.py
+ M memorii/memorii/core/memory_plane/service.py
+ M memorii/memorii/core/memory_plane/store.py
+ M memorii/memorii/core/memory_plane/unit_of_work.py
+ M memorii/memorii/core/provider/service.py
+ M memorii/memorii/core/semantic_ingestion/bootstrap_graph_artifact_assembler.py
+ M memorii/memorii/core/semantic_ingestion/bootstrap_graph_terminal_preparation.py
+ M memorii/memorii/core/semantic_ingestion/bootstrap_native_reducer.py
+ M memorii/memorii/core/semantic_ingestion/capability.py
+ M memorii/memorii/core/semantic_ingestion/contracts.py
+ M memorii/memorii/core/semantic_ingestion/source_normalization_stage.py
+ M memorii/memorii/tools/semantic_ingestion_traceability_release.py
+ M memorii/memorii/tools/semantic_ingestion_trust_resolver.py
+ M memorii/pyproject.toml
+ M memorii/tests/acceptance/semantic_ingestion/test_sia_requirements.py
+ M memorii/tests/fixtures/semantic_ingestion/current_release_chain.py
+ M memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_artifact_assembler.py
+ M memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_atomic_member_native_codec.py
+ M memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_post_effect_recovery.py
+ M memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_root_composition.py
+ M memorii/tests/unit/core/semantic_ingestion/test_semantic_atomic_store.py
+ M memorii/tests/unit/core/semantic_ingestion/test_semantic_provider_composition.py
+?? acceptance/
+?? docs/design/semantic_ingestion_activation_target.md
+?? docs/design/semantic_ingestion_observation.md
+?? docs/development/observation_activation_deployment.md
+?? docs/development/observation_activation_preparation.md
+?? docs/work/scoped_context_implementation/evidence-retention.json
+?? docs/work/scoped_context_implementation/gate-results-delta/delta-identity.log
+?? docs/work/scoped_context_implementation/gate-results-delta/delta-package.log
+?? docs/work/scoped_context_implementation/gate-results-delta/delta-pyright.log
+?? docs/work/scoped_context_implementation/gate-results-delta/delta-ruff.log
+?? docs/work/scoped_context_implementation/gate-results-delta/delta-scoped-tests.log
+?? docs/work/scoped_context_implementation/gate-results-delta/delta-source-fingerprint.log
+?? docs/work/scoped_context_implementation/gate-results-initial/benchmark-artifact-0.log
+?? docs/work/scoped_context_implementation/gate-results-initial/benchmark-artifact-1.log
+?? docs/work/scoped_context_implementation/gate-results-initial/benchmark-artifact-2.log
+?? docs/work/scoped_context_implementation/gate-results-initial/benchmark-artifact-3.log
+?? docs/work/scoped_context_implementation/gate-results-initial/benchmark-artifact-4.log
+?? docs/work/scoped_context_implementation/gate-results-initial/benchmark-artifact-5.log
+?? docs/work/scoped_context_implementation/gate-results-initial/benchmark-artifact-6.log
+?? docs/work/scoped_context_implementation/gate-results-initial/benchmark-artifact-7.log
+?? docs/work/scoped_context_implementation/gate-results-initial/benchmark-contract-tests-3.log
+?? docs/work/scoped_context_implementation/gate-results-initial/benchmark-contract-tests-4.log
+?? docs/work/scoped_context_implementation/gate-results-initial/package-smoke.log
+?? docs/work/scoped_context_implementation/gate-results-initial/provider-compatibility-4.log
+?? docs/work/scoped_context_implementation/gate-results-initial/scoped-context-integration-3.log
+?? docs/work/scoped_context_implementation/gate-results-initial/static-analysis-3.log
+?? docs/work/scoped_context_implementation/gate-results-initial/static-analysis-4.log
+?? docs/work/scoped_context_implementation/gate-results-initial/static-analysis-5.log
+?? docs/work/scoped_context_implementation/gate-results-initial/unit-shard-0.log
+?? docs/work/scoped_context_implementation/gate-results-initial/unit-shard-1.log
+?? docs/work/scoped_context_implementation/gate-results-initial/unit-shard-2.log
+?? docs/work/scoped_context_implementation/gate-results-initial/unit-shard-3.log
+?? docs/work/scoped_context_implementation/gate-results-initial/unit-shard-4.log
+?? docs/work/scoped_context_implementation/gate-results-initial/unit-shard-5.log
+?? docs/work/scoped_context_implementation/gate-results-initial/unit-shard-plan.log
+?? docs/work/scoped_context_implementation/gate-results/benchmark-artifact-0.log
+?? docs/work/scoped_context_implementation/gate-results/benchmark-artifact-1.log
+?? docs/work/scoped_context_implementation/gate-results/benchmark-artifact-2.log
+?? docs/work/scoped_context_implementation/gate-results/benchmark-artifact-3.log
+?? docs/work/scoped_context_implementation/gate-results/benchmark-artifact-4.log
+?? docs/work/scoped_context_implementation/gate-results/benchmark-artifact-5.log
+?? docs/work/scoped_context_implementation/gate-results/benchmark-artifact-6.log
+?? docs/work/scoped_context_implementation/gate-results/benchmark-artifact-7.log
+?? docs/work/scoped_context_implementation/gate-results/benchmark-contract-tests-3.log
+?? docs/work/scoped_context_implementation/gate-results/benchmark-contract-tests-4.log
+?? docs/work/scoped_context_implementation/gate-results/ctv-binding-authority-pr-gate-3.log
+?? docs/work/scoped_context_implementation/gate-results/package-smoke.log
+?? docs/work/scoped_context_implementation/gate-results/provider-compatibility-4.log
+?? docs/work/scoped_context_implementation/gate-results/scoped-context-integration-3.log
+?? docs/work/scoped_context_implementation/gate-results/static-analysis-3.log
+?? docs/work/scoped_context_implementation/gate-results/static-analysis-4.log
+?? docs/work/scoped_context_implementation/gate-results/static-analysis-5.log
+?? docs/work/scoped_context_implementation/gate-results/unit-shard-5.log
+?? docs/work/scoped_context_implementation/gate-results/unit-shard-plan.log
+?? docs/work/scoped_context_implementation/gate-results/unit-timing-merge.log
+?? docs/work/scoped_context_implementation/history/12af0746befae66bc5927447562bf9e522d5b8ef0c471c15ceff9d402597f08c.md
+?? docs/work/scoped_context_implementation/verify_retained_evidence.py
+?? docs/work/semantic_ingestion/acceptance-authority/
+?? docs/work/semantic_ingestion/acceptance-numeric-boundary/
+?? docs/work/semantic_ingestion/acceptance-numeric-contract/
+?? docs/work/semantic_ingestion/activation-deployment-tests/
+?? docs/work/semantic_ingestion/activation-target-identity/
+?? docs/work/semantic_ingestion/coordination-identity/
+?? docs/work/semantic_ingestion/engineering-closure/
+?? docs/work/semantic_ingestion/native-policy-retention/
+?? docs/work/semantic_ingestion/numeric-wrapper-wire/
+?? docs/work/semantic_ingestion/observation-ledger/
+?? docs/work/semantic_ingestion/recovery-index-validation/
+?? docs/work/semantic_ingestion/registry-publication/
+?? docs/work/semantic_ingestion/snapshot-revision/
+?? docs/work/semantic_ingestion/statistical-acceptance/
+?? docs/work/semantic_ingestion/terminal-publication/
+?? docs/work/semantic_ingestion/time-witness-boundary/
+?? docs/work/semantic_ingestion_closure_review/
+?? docs/work/semantic_ingestion_completion_readiness/
+?? memorii/memorii/core/memory_evolution/graph_ingestion_observation_records.py
+?? memorii/memorii/core/memory_evolution/graph_ingestion_time_contracts.py
+?? memorii/memorii/core/memory_evolution/graph_observation_authority.py
+?? memorii/memorii/core/memory_evolution/graph_observation_contracts.py
+?? memorii/memorii/core/memory_evolution/graph_observation_cursor.py
+?? memorii/memorii/core/memory_evolution/graph_observation_public_contracts.py
+?? memorii/memorii/core/memory_evolution/graph_observation_records.py
+?? memorii/memorii/core/memory_evolution/graph_observation_snapshot_contracts.py
+?? memorii/memorii/core/memory_evolution/graph_observation_streams.py
+?? memorii/memorii/core/memory_evolution/observation_activation_configuration.py
+?? memorii/memorii/core/memory_evolution/observation_activation_package.py
+?? memorii/memorii/core/memory_evolution/observation_activation_preparation.py
+?? memorii/memorii/core/memory_evolution/observation_activation_runtime.py
+?? memorii/memorii/core/memory_evolution/observation_activation_target.py
+?? memorii/memorii/core/memory_evolution/observation_checkpoint_integrity.py
+?? memorii/memorii/core/memory_evolution/observation_ledger_contracts.py
+?? memorii/memorii/core/memory_evolution/observation_persistence.py
+?? memorii/memorii/core/memory_evolution/observation_registry_sources/
+?? memorii/memorii/core/memory_evolution/observation_replay_contracts.py
+?? memorii/memorii/core/memory_evolution/typed_numeric_values.py
+?? memorii/memorii/core/memory_evolution/typed_value_artifact_integrity.py
+?? memorii/memorii/core/memory_evolution/typed_value_artifact_reader.py
+?? memorii/memorii/core/memory_evolution/typed_value_body_validation.py
+?? memorii/memorii/core/memory_evolution/typed_value_declarations.py
+?? memorii/memorii/core/memory_evolution/typed_value_decoder_sources.py
+?? memorii/memorii/core/memory_evolution/typed_value_model_codec.py
+?? memorii/memorii/core/memory_evolution/typed_value_publication.py
+?? memorii/memorii/core/memory_evolution/typed_value_publication_authoring.py
+?? memorii/memorii/core/memory_evolution/typed_value_registry_compilation.py
+?? memorii/memorii/core/memory_evolution/typed_value_registry_configuration.py
+?? memorii/memorii/core/memory_evolution/typed_value_registry_history.py
+?? memorii/memorii/core/semantic_ingestion/bootstrap_graph_projection_publication.py
+?? memorii/memorii/tools/semantic_ingestion_activation_target_release.py
+?? memorii/memorii/tools/semantic_ingestion_lifecycle_signing.py
+?? memorii/memorii/tools/semantic_ingestion_observation_source_draft.py
+?? memorii/memorii/tools/semantic_ingestion_offline_signing.py
+?? memorii/memorii/tools/semantic_ingestion_release_signing.py
+?? memorii/memorii/tools/semantic_ingestion_signature_verifier.py
+?? memorii/tests/fixtures/semantic_ingestion/historical_terminal/
+?? memorii/tests/fixtures/semantic_ingestion/observation_artifact.json
+?? memorii/tests/integration/test_native_policy_persisted_reload.py
+?? memorii/tests/integration/test_observation_activation_bootstrap.py
+?? memorii/tests/integration/test_observation_activation_release_tools.py
+?? memorii/tests/integration/test_observation_ledger_activation.py
+?? memorii/tests/integration/test_semantic_ingestion_lifecycle_signing.py
+?? memorii/tests/integration/test_semantic_ingestion_release_signing.py
+?? memorii/tests/unit/acceptance/
+?? memorii/tests/unit/core/memory_evolution/test_graph_ingestion_observation_records.py
+?? memorii/tests/unit/core/memory_evolution/test_graph_ingestion_time_contracts.py
+?? memorii/tests/unit/core/memory_evolution/test_graph_observation_foundation.py
+?? memorii/tests/unit/core/memory_evolution/test_graph_observation_public_contracts.py
+?? memorii/tests/unit/core/memory_evolution/test_graph_observation_records.py
+?? memorii/tests/unit/core/memory_evolution/test_graph_observation_snapshot_contracts.py
+?? memorii/tests/unit/core/memory_evolution/test_graph_observation_streams.py
+?? memorii/tests/unit/core/memory_evolution/test_native_observation_decoders.py
+?? memorii/tests/unit/core/memory_evolution/test_observation_activation_configuration.py
+?? memorii/tests/unit/core/memory_evolution/test_observation_activation_package.py
+?? memorii/tests/unit/core/memory_evolution/test_observation_activation_preparation.py
+?? memorii/tests/unit/core/memory_evolution/test_observation_activation_target.py
+?? memorii/tests/unit/core/memory_evolution/test_observation_checkpoint_integrity.py
+?? memorii/tests/unit/core/memory_evolution/test_observation_ledger_contracts.py
+?? memorii/tests/unit/core/memory_evolution/test_observation_persistence.py
+?? memorii/tests/unit/core/memory_evolution/test_observation_record_contracts.py
+?? memorii/tests/unit/core/memory_evolution/test_observation_replay_contracts.py
+?? memorii/tests/unit/core/memory_evolution/test_typed_numeric_values.py
+?? memorii/tests/unit/core/memory_evolution/test_typed_value_artifact_integrity.py
+?? memorii/tests/unit/core/memory_evolution/test_typed_value_artifact_reader.py
+?? memorii/tests/unit/core/memory_evolution/test_typed_value_body_validation.py
+?? memorii/tests/unit/core/memory_evolution/test_typed_value_declarations.py
+?? memorii/tests/unit/core/memory_evolution/test_typed_value_decoder_sources.py
+?? memorii/tests/unit/core/memory_evolution/test_typed_value_model_candidate_encoding.py
+?? memorii/tests/unit/core/memory_evolution/test_typed_value_model_codec.py
+?? memorii/tests/unit/core/memory_evolution/test_typed_value_model_emission.py
+?? memorii/tests/unit/core/memory_evolution/test_typed_value_publication.py
+?? memorii/tests/unit/core/memory_evolution/test_typed_value_publication_authoring.py
+?? memorii/tests/unit/core/memory_evolution/test_typed_value_registry_compilation.py
+?? memorii/tests/unit/core/memory_evolution/test_typed_value_registry_history.py
+?? memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_observation_retention.py
+?? memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_projection_publication.py
+?? memorii/tests/unit/core/semantic_ingestion/test_historical_terminal_compatibility.py
+?? memorii/tests/unit/core/semantic_ingestion/test_historical_terminal_persisted_reload.py
+?? memorii/tests/unit/core/semantic_ingestion/test_native_policy_retention.py
+?? memorii/tests/unit/core/test_memory_plane_write_snapshot.py
+?? memorii/tests/unit/tools/test_semantic_ingestion_observation_source_draft.py
+?? memorii/tests/unit/tools/test_semantic_ingestion_offline_signing.py
+?? memorii/tests/unit/tools/test_semantic_ingestion_signature_verifier.py
+?? tools/

@@ -4216,6 +4216,24 @@ class ProjectionHistoryRepository:
         ):
             raise ProjectionHistoryError("stale_materialized_projection")
 
+    def validate_retained_checkpoint_bindings(
+        self, bindings: tuple[ProjectionHistoryReplayBinding, ...], *, graph_revision: str,
+    ) -> None:
+        """Verify immutable historical prefixes without comparing them to today's tip."""
+        if tuple(binding.projection_kind for binding in bindings) != ("temporal", "trust"):
+            raise ProjectionHistoryError("projection_history_integrity_error")
+        for binding in bindings:
+            loaded = self._load_kind(binding.projection_kind)
+            positions = tuple(index for index, entry in enumerate(loaded.entries)
+                              if entry.pointer.pointer_digest == binding.active_pointer_digest)
+            if len(positions) != 1:
+                raise ProjectionHistoryError("projection_history_integrity_error")
+            prefix = loaded.entries[:positions[0] + 1]
+            generation = loaded.generations.get(binding.generation_digest)
+            if (self._binding(binding.projection_kind, prefix) != binding
+                    or generation is None or generation.base_graph_revision != graph_revision):
+                raise ProjectionHistoryError("projection_history_integrity_error")
+
     def _require_publication_authority(
         self,
         capability: object | None,

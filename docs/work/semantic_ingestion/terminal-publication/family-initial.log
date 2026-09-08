@@ -1,0 +1,329 @@
+bringing up nodes...
+bringing up nodes...
+
+.........FF.FF
+=================================== FAILURES ===================================
+_ test_terminal_cas_ack_failure_reloads_finalized_state_without_duplicate_effect[False] _
+[gw1] darwin -- Python 3.12.14 /Users/nandaraghunathan/Code/Memorii/Memorii/.venv/bin/python
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1093a2fc0>
+tmp_path = PosixPath('/private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/pytest-of-nandaraghunathan/pytest-994/popen-gw1/test_terminal_cas_ack_failure_0')
+persistent = False
+
+    @pytest.mark.parametrize("persistent", (False, True))
+    def test_terminal_cas_ack_failure_reloads_finalized_state_without_duplicate_effect(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path, persistent: bool,
+    ) -> None:
+        storage = tmp_path / "jsonl" if persistent else None
+        calls: list[str] = []
+        service, plane = _graph_service(storage=storage, executor_calls=calls)
+        atomic = service._semantic_atomic_store
+        original = atomic.persist_bootstrap_graph_terminal_v3
+        injected = False
+    
+        def fail_after_terminal_cas(*, request):
+            nonlocal injected
+            reload = original(request=request)
+            if not injected:
+                injected = True
+                raise PreplanningStoreError("injected terminal acknowledgement failure")
+            return reload
+    
+        monkeypatch.setattr(atomic, "persist_bootstrap_graph_terminal_v3", fail_after_terminal_cas)
+        first = _sync(service, operation_id="post-effect-terminal-cas")
+    
+        assert injected
+        assert first.blocked_reasons["semantic_ingestion"] == "source_only"
+        assert len(calls) == 1
+        assert len(plane.list_records(
+            source_kind="semantic_ingestion_bootstrap_graph_v3_terminal_locator"
+        )) == 3
+>       _assert_source_finalization_observation(plane)
+
+tests/unit/core/semantic_ingestion/test_bootstrap_graph_post_effect_recovery.py:514: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+plane = <memorii.core.memory_plane.service.MemoryPlaneService object at 0x1093a14c0>
+
+    def _assert_source_finalization_observation(plane: MemoryPlaneService) -> None:
+        """Prove the public terminal path sealed its source-only observation in CAS."""
+        locator = next(
+            record for record in plane.list_records(
+                source_kind="semantic_ingestion_bootstrap_graph_v3_terminal_locator"
+            ) if record.content.get("semantic_ingestion_kind")
+            == "bootstrap_graph_v3_terminal_locator"
+        )
+        reload = BootstrapGraphTerminalReloadV3.model_validate(
+            locator.content["reload"], strict=False
+        )
+        observation = reload.source_finalization_observation_delta
+        assert reload.terminal_member_schema_version == 2
+        assert observation is not None
+        assert observation.source_outcome == reload.canonical_source_result.canonical_source_result
+        members = [
+            record.content["member"]
+            for record in plane.list_records(
+                source_kind="semantic_ingestion_bootstrap_graph_v3_member"
+            )
+            if record.content["member"]["kind"]
+            == "bootstrap_graph_source_finalization_observation_delta"
+        ]
+        assert len(members) == 1
+>       control = next(
+            record.content["control"]
+            for record in plane.list_records(source_kind="preplanning_operation_control")
+            if record.content["control"].get("state") == "terminal"
+        )
+E       StopIteration
+
+tests/unit/core/semantic_ingestion/test_bootstrap_graph_post_effect_recovery.py:163: StopIteration
+_ test_terminal_cas_ack_failure_reloads_finalized_state_without_duplicate_effect[True] _
+[gw2] darwin -- Python 3.12.14 /Users/nandaraghunathan/Code/Memorii/Memorii/.venv/bin/python
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x105f2bb00>
+tmp_path = PosixPath('/private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/pytest-of-nandaraghunathan/pytest-994/popen-gw2/test_terminal_cas_ack_failure_0')
+persistent = True
+
+    @pytest.mark.parametrize("persistent", (False, True))
+    def test_terminal_cas_ack_failure_reloads_finalized_state_without_duplicate_effect(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path, persistent: bool,
+    ) -> None:
+        storage = tmp_path / "jsonl" if persistent else None
+        calls: list[str] = []
+        service, plane = _graph_service(storage=storage, executor_calls=calls)
+        atomic = service._semantic_atomic_store
+        original = atomic.persist_bootstrap_graph_terminal_v3
+        injected = False
+    
+        def fail_after_terminal_cas(*, request):
+            nonlocal injected
+            reload = original(request=request)
+            if not injected:
+                injected = True
+                raise PreplanningStoreError("injected terminal acknowledgement failure")
+            return reload
+    
+        monkeypatch.setattr(atomic, "persist_bootstrap_graph_terminal_v3", fail_after_terminal_cas)
+        first = _sync(service, operation_id="post-effect-terminal-cas")
+    
+        assert injected
+        assert first.blocked_reasons["semantic_ingestion"] == "source_only"
+        assert len(calls) == 1
+        assert len(plane.list_records(
+            source_kind="semantic_ingestion_bootstrap_graph_v3_terminal_locator"
+        )) == 3
+>       _assert_source_finalization_observation(plane)
+
+tests/unit/core/semantic_ingestion/test_bootstrap_graph_post_effect_recovery.py:514: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+plane = <memorii.core.memory_plane.service.MemoryPlaneService object at 0x108e35b50>
+
+    def _assert_source_finalization_observation(plane: MemoryPlaneService) -> None:
+        """Prove the public terminal path sealed its source-only observation in CAS."""
+        locator = next(
+            record for record in plane.list_records(
+                source_kind="semantic_ingestion_bootstrap_graph_v3_terminal_locator"
+            ) if record.content.get("semantic_ingestion_kind")
+            == "bootstrap_graph_v3_terminal_locator"
+        )
+        reload = BootstrapGraphTerminalReloadV3.model_validate(
+            locator.content["reload"], strict=False
+        )
+        observation = reload.source_finalization_observation_delta
+        assert reload.terminal_member_schema_version == 2
+        assert observation is not None
+        assert observation.source_outcome == reload.canonical_source_result.canonical_source_result
+        members = [
+            record.content["member"]
+            for record in plane.list_records(
+                source_kind="semantic_ingestion_bootstrap_graph_v3_member"
+            )
+            if record.content["member"]["kind"]
+            == "bootstrap_graph_source_finalization_observation_delta"
+        ]
+        assert len(members) == 1
+>       control = next(
+            record.content["control"]
+            for record in plane.list_records(source_kind="preplanning_operation_control")
+            if record.content["control"].get("state") == "terminal"
+        )
+E       StopIteration
+
+tests/unit/core/semantic_ingestion/test_bootstrap_graph_post_effect_recovery.py:163: StopIteration
+_ test_builtin_terminal_ack_loss_reloads_exact_terminal_without_duplicate_group[direct-False] _
+[gw3] darwin -- Python 3.12.14 /Users/nandaraghunathan/Code/Memorii/Memorii/.venv/bin/python
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c2d8aa0>
+tmp_path = PosixPath('/private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/pytest-of-nandaraghunathan/pytest-994/popen-gw3/test_builtin_terminal_ack_loss0')
+root = 'direct', persistent = False
+
+    @pytest.mark.parametrize("persistent", (False, True))
+    @pytest.mark.parametrize("root", ("direct", "factory", "filesystem", "hermes"))
+    def test_builtin_terminal_ack_loss_reloads_exact_terminal_without_duplicate_group(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path, root: str, persistent: bool,
+    ) -> None:
+        storage = tmp_path / root / "builtin-terminal-ack" if persistent else None
+        filesystem_root = tmp_path / root / "filesystem-terminal-ack"
+        service, plane = _graph_service(
+            storage=storage, executor_calls=[], built_in=True, root=root,
+            filesystem_root=filesystem_root,
+        )
+        atomic = service._semantic_atomic_store
+        original = atomic.persist_bootstrap_graph_terminal_v3
+        injected = False
+    
+        def fail_after_terminal_cas(*, request):
+            nonlocal injected
+            reload = original(request=request)
+            if not injected:
+                injected = True
+                raise PreplanningStoreError("injected built-in terminal acknowledgement loss")
+            return reload
+    
+        monkeypatch.setattr(
+            atomic, "persist_bootstrap_graph_terminal_v3", fail_after_terminal_cas
+        )
+        first = _sync(service, operation_id="builtin-terminal-ack")
+        assert injected
+        assert first.blocked_reasons["semantic_ingestion"] == "source_only"
+        before_terminal = _terminal_reload_identities(plane)
+        before_group = tuple(
+            record.memory_id
+            for record in plane.list_records(
+                source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+            )
+        )
+        assert len(before_terminal) == 3
+        assert len(before_group) == 1
+>       _assert_source_finalization_observation(plane)
+
+tests/unit/core/semantic_ingestion/test_bootstrap_graph_post_effect_recovery.py:569: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+plane = <memorii.core.memory_plane.service.MemoryPlaneService object at 0x10c2d9640>
+
+    def _assert_source_finalization_observation(plane: MemoryPlaneService) -> None:
+        """Prove the public terminal path sealed its source-only observation in CAS."""
+        locator = next(
+            record for record in plane.list_records(
+                source_kind="semantic_ingestion_bootstrap_graph_v3_terminal_locator"
+            ) if record.content.get("semantic_ingestion_kind")
+            == "bootstrap_graph_v3_terminal_locator"
+        )
+        reload = BootstrapGraphTerminalReloadV3.model_validate(
+            locator.content["reload"], strict=False
+        )
+        observation = reload.source_finalization_observation_delta
+        assert reload.terminal_member_schema_version == 2
+        assert observation is not None
+        assert observation.source_outcome == reload.canonical_source_result.canonical_source_result
+        members = [
+            record.content["member"]
+            for record in plane.list_records(
+                source_kind="semantic_ingestion_bootstrap_graph_v3_member"
+            )
+            if record.content["member"]["kind"]
+            == "bootstrap_graph_source_finalization_observation_delta"
+        ]
+        assert len(members) == 1
+>       control = next(
+            record.content["control"]
+            for record in plane.list_records(source_kind="preplanning_operation_control")
+            if record.content["control"].get("state") == "terminal"
+        )
+E       StopIteration
+
+tests/unit/core/semantic_ingestion/test_bootstrap_graph_post_effect_recovery.py:163: StopIteration
+_ test_builtin_terminal_ack_loss_reloads_exact_terminal_without_duplicate_group[factory-True] _
+[gw0] darwin -- Python 3.12.14 /Users/nandaraghunathan/Code/Memorii/Memorii/.venv/bin/python
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x103f08170>
+tmp_path = PosixPath('/private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/pytest-of-nandaraghunathan/pytest-994/popen-gw0/test_builtin_terminal_ack_loss0')
+root = 'factory', persistent = True
+
+    @pytest.mark.parametrize("persistent", (False, True))
+    @pytest.mark.parametrize("root", ("direct", "factory", "filesystem", "hermes"))
+    def test_builtin_terminal_ack_loss_reloads_exact_terminal_without_duplicate_group(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path, root: str, persistent: bool,
+    ) -> None:
+        storage = tmp_path / root / "builtin-terminal-ack" if persistent else None
+        filesystem_root = tmp_path / root / "filesystem-terminal-ack"
+        service, plane = _graph_service(
+            storage=storage, executor_calls=[], built_in=True, root=root,
+            filesystem_root=filesystem_root,
+        )
+        atomic = service._semantic_atomic_store
+        original = atomic.persist_bootstrap_graph_terminal_v3
+        injected = False
+    
+        def fail_after_terminal_cas(*, request):
+            nonlocal injected
+            reload = original(request=request)
+            if not injected:
+                injected = True
+                raise PreplanningStoreError("injected built-in terminal acknowledgement loss")
+            return reload
+    
+        monkeypatch.setattr(
+            atomic, "persist_bootstrap_graph_terminal_v3", fail_after_terminal_cas
+        )
+        first = _sync(service, operation_id="builtin-terminal-ack")
+        assert injected
+        assert first.blocked_reasons["semantic_ingestion"] == "source_only"
+        before_terminal = _terminal_reload_identities(plane)
+        before_group = tuple(
+            record.memory_id
+            for record in plane.list_records(
+                source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+            )
+        )
+        assert len(before_terminal) == 3
+        assert len(before_group) == 1
+>       _assert_source_finalization_observation(plane)
+
+tests/unit/core/semantic_ingestion/test_bootstrap_graph_post_effect_recovery.py:569: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+plane = <memorii.core.memory_plane.service.MemoryPlaneService object at 0x109dea360>
+
+    def _assert_source_finalization_observation(plane: MemoryPlaneService) -> None:
+        """Prove the public terminal path sealed its source-only observation in CAS."""
+        locator = next(
+            record for record in plane.list_records(
+                source_kind="semantic_ingestion_bootstrap_graph_v3_terminal_locator"
+            ) if record.content.get("semantic_ingestion_kind")
+            == "bootstrap_graph_v3_terminal_locator"
+        )
+        reload = BootstrapGraphTerminalReloadV3.model_validate(
+            locator.content["reload"], strict=False
+        )
+        observation = reload.source_finalization_observation_delta
+        assert reload.terminal_member_schema_version == 2
+        assert observation is not None
+        assert observation.source_outcome == reload.canonical_source_result.canonical_source_result
+        members = [
+            record.content["member"]
+            for record in plane.list_records(
+                source_kind="semantic_ingestion_bootstrap_graph_v3_member"
+            )
+            if record.content["member"]["kind"]
+            == "bootstrap_graph_source_finalization_observation_delta"
+        ]
+        assert len(members) == 1
+>       control = next(
+            record.content["control"]
+            for record in plane.list_records(source_kind="preplanning_operation_control")
+            if record.content["control"].get("state") == "terminal"
+        )
+E       StopIteration
+
+tests/unit/core/semantic_ingestion/test_bootstrap_graph_post_effect_recovery.py:163: StopIteration
+=========================== short test summary info ============================
+FAILED tests/unit/core/semantic_ingestion/test_bootstrap_graph_post_effect_recovery.py::test_terminal_cas_ack_failure_reloads_finalized_state_without_duplicate_effect[False]
+FAILED tests/unit/core/semantic_ingestion/test_bootstrap_graph_post_effect_recovery.py::test_terminal_cas_ack_failure_reloads_finalized_state_without_duplicate_effect[True]
+FAILED tests/unit/core/semantic_ingestion/test_bootstrap_graph_post_effect_recovery.py::test_builtin_terminal_ack_loss_reloads_exact_terminal_without_duplicate_group[direct-False]
+FAILED tests/unit/core/semantic_ingestion/test_bootstrap_graph_post_effect_recovery.py::test_builtin_terminal_ack_loss_reloads_exact_terminal_without_duplicate_group[factory-True]
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 4 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!! xdist.dsession.Interrupted: stopping after 1 failures !!!!!!!!!!!!!
+4 failed, 10 passed in 301.75s (0:05:01)

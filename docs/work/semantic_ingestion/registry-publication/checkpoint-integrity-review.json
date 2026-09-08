@@ -1,0 +1,18 @@
+{
+  "status": "BOUNDED_CHECKPOINT_HELPER_APPROVED",
+  "candidate_sha256": "d7bed9ba555771431f55e797cf08840336386b6e6b6f8f2ff3fedc464f87fdca",
+  "reviews": {
+    "spec_auditor": "approved; fixed constructor and signature policy conform",
+    "correctness_reviewer": "approved; no confirmed findings",
+    "test_reviewer": "approved; complete bounded matrix including real forwarding spy and independent oracle"
+  },
+  "remaining_validated_p1_p2": [],
+  "remaining_blocks_approval": [],
+  "remaining_changes_required": [],
+  "exclusions": [
+    "trusted full replay/lifecycle/key eligibility/clock",
+    "activation and checkpoint CAS publication",
+    "raw external dispatch and public observation",
+    "parentR17/R19 and overall registry completion"
+  ]
+}

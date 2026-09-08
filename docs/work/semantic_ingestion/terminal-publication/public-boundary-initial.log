@@ -1,0 +1,131 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.12.14, pytest-9.0.3, pluggy-1.6.0 -- /Users/nandaraghunathan/Code/Memorii/Memorii/.venv/bin/python
+rootdir: /Users/nandaraghunathan/Code/Memorii/Memorii/memorii
+configfile: pyproject.toml
+plugins: xdist-3.8.0, anyio-4.13.0
+created: 4/4 workers
+4 workers [8 items]
+
+scheduling tests via LoadScheduling
+
+tests/unit/core/semantic_ingestion/test_bootstrap_graph_post_effect_recovery.py::test_post_group_terminal_authority_substitution_writes_no_source_terminal[lease] 
+tests/unit/core/semantic_ingestion/test_bootstrap_graph_root_composition.py::test_filesystem_root_rejects_persisted_source_observation_member_corruption[member_digest-0000000000000000000000000000000000000000000000000000000000000000] 
+tests/unit/core/semantic_ingestion/test_bootstrap_graph_root_composition.py::test_public_root_publishes_source_finalization_in_one_terminal_cas 
+tests/unit/core/semantic_ingestion/test_bootstrap_graph_post_effect_recovery.py::test_post_group_terminal_authority_substitution_writes_no_source_terminal[scope] 
+[gw0] [ 12%] PASSED tests/unit/core/semantic_ingestion/test_bootstrap_graph_root_composition.py::test_public_root_publishes_source_finalization_in_one_terminal_cas 
+tests/unit/core/semantic_ingestion/test_bootstrap_graph_root_composition.py::test_filesystem_root_rejects_persisted_source_observation_member_corruption[canonical_payload-corrupt-source-observation] 
+[gw1] [ 25%] FAILED tests/unit/core/semantic_ingestion/test_bootstrap_graph_root_composition.py::test_filesystem_root_rejects_persisted_source_observation_member_corruption[member_digest-0000000000000000000000000000000000000000000000000000000000000000] 
+[gw2] [ 37%] PASSED tests/unit/core/semantic_ingestion/test_bootstrap_graph_post_effect_recovery.py::test_post_group_terminal_authority_substitution_writes_no_source_terminal[scope] 
+tests/unit/core/semantic_ingestion/test_bootstrap_graph_post_effect_recovery.py::test_post_group_terminal_authority_substitution_writes_no_source_terminal[fence] 
+[gw3] [ 50%] PASSED tests/unit/core/semantic_ingestion/test_bootstrap_graph_post_effect_recovery.py::test_post_group_terminal_authority_substitution_writes_no_source_terminal[lease] 
+tests/unit/core/semantic_ingestion/test_bootstrap_graph_post_effect_recovery.py::test_post_group_terminal_authority_substitution_writes_no_source_terminal[writer] 
+[gw0] [ 62%] FAILED tests/unit/core/semantic_ingestion/test_bootstrap_graph_root_composition.py::test_filesystem_root_rejects_persisted_source_observation_member_corruption[canonical_payload-corrupt-source-observation] 
+[gw2] [ 75%] PASSED tests/unit/core/semantic_ingestion/test_bootstrap_graph_post_effect_recovery.py::test_post_group_terminal_authority_substitution_writes_no_source_terminal[fence] 
+[gw3] [ 87%] PASSED tests/unit/core/semantic_ingestion/test_bootstrap_graph_post_effect_recovery.py::test_post_group_terminal_authority_substitution_writes_no_source_terminal[writer] 
+
+=================================== FAILURES ===================================
+_ test_filesystem_root_rejects_persisted_source_observation_member_corruption[member_digest-0000000000000000000000000000000000000000000000000000000000000000] _
+[gw1] darwin -- Python 3.12.14 /Users/nandaraghunathan/Code/Memorii/Memorii/.venv/bin/python
+
+tmp_path = PosixPath('/private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/pytest-of-nandaraghunathan/pytest-996/popen-gw1/test_filesystem_root_rejects_p0')
+field = 'member_digest'
+replacement = '0000000000000000000000000000000000000000000000000000000000000000'
+
+    @pytest.mark.parametrize(
+        ("field", "replacement"),
+        (
+            ("canonical_payload", b"corrupt-source-observation"),
+            ("member_digest", "0" * 64),
+        ),
+    )
+    def test_filesystem_root_rejects_persisted_source_observation_member_corruption(
+        tmp_path, field: str, replacement: object,
+    ) -> None:
+        """A reopened public root cannot replace a tampered V2 terminal."""
+        storage_root = tmp_path / f"source-observation-{field}"
+        proposal = graph_fact_proposal()
+        first_normalization, _first_lanes = _v3_normalization_host_builder(
+            proposal=proposal
+        )
+        first_calls: list[str] = []
+        first = build_filesystem_provider(
+            storage_root,
+            now_provider=lambda: TEST_NOW,
+            host_bootstrap_capability=_built_in_local_capability(),
+            host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+            source_normalization_host_bundle_builder=first_normalization,
+            bootstrap_graph_host_bundle_builder=BootstrapGraphHostBundleBuilder(
+                authority_provider=DeterministicBootstrapGraphAuthorityProviderV3(
+                    successful_calls=first_calls,
+                )
+            ),
+        )
+        ingress = _host_ingress()
+        first_result = first.sync_event(
+            operation=ProviderOperation.CHAT_USER_TURN,
+            content="Atlas owner is Bob.", operation_id=f"source-observation-{field}",
+            task_id="task:one", user_id="user:alice", authenticated_host_ingress=ingress,
+        )
+        assert first_result.blocked_reasons["semantic_ingestion"] == "source_only"
+        plane = first._memory_plane
+        backend = plane._record_store
+>       assert isinstance(backend, JsonlMemoryPlaneStore)
+E       assert False
+E        +  where False = isinstance(_record_store, JsonlMemoryPlaneStore)
+
+tests/unit/core/semantic_ingestion/test_bootstrap_graph_root_composition.py:712: AssertionError
+_ test_filesystem_root_rejects_persisted_source_observation_member_corruption[canonical_payload-corrupt-source-observation] _
+[gw0] darwin -- Python 3.12.14 /Users/nandaraghunathan/Code/Memorii/Memorii/.venv/bin/python
+
+tmp_path = PosixPath('/private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/pytest-of-nandaraghunathan/pytest-996/popen-gw0/test_filesystem_root_rejects_p0')
+field = 'canonical_payload', replacement = b'corrupt-source-observation'
+
+    @pytest.mark.parametrize(
+        ("field", "replacement"),
+        (
+            ("canonical_payload", b"corrupt-source-observation"),
+            ("member_digest", "0" * 64),
+        ),
+    )
+    def test_filesystem_root_rejects_persisted_source_observation_member_corruption(
+        tmp_path, field: str, replacement: object,
+    ) -> None:
+        """A reopened public root cannot replace a tampered V2 terminal."""
+        storage_root = tmp_path / f"source-observation-{field}"
+        proposal = graph_fact_proposal()
+        first_normalization, _first_lanes = _v3_normalization_host_builder(
+            proposal=proposal
+        )
+        first_calls: list[str] = []
+        first = build_filesystem_provider(
+            storage_root,
+            now_provider=lambda: TEST_NOW,
+            host_bootstrap_capability=_built_in_local_capability(),
+            host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+            source_normalization_host_bundle_builder=first_normalization,
+            bootstrap_graph_host_bundle_builder=BootstrapGraphHostBundleBuilder(
+                authority_provider=DeterministicBootstrapGraphAuthorityProviderV3(
+                    successful_calls=first_calls,
+                )
+            ),
+        )
+        ingress = _host_ingress()
+        first_result = first.sync_event(
+            operation=ProviderOperation.CHAT_USER_TURN,
+            content="Atlas owner is Bob.", operation_id=f"source-observation-{field}",
+            task_id="task:one", user_id="user:alice", authenticated_host_ingress=ingress,
+        )
+        assert first_result.blocked_reasons["semantic_ingestion"] == "source_only"
+        plane = first._memory_plane
+        backend = plane._record_store
+>       assert isinstance(backend, JsonlMemoryPlaneStore)
+E       assert False
+E        +  where False = isinstance(_record_store, JsonlMemoryPlaneStore)
+
+tests/unit/core/semantic_ingestion/test_bootstrap_graph_root_composition.py:712: AssertionError
+=========================== short test summary info ============================
+FAILED tests/unit/core/semantic_ingestion/test_bootstrap_graph_root_composition.py::test_filesystem_root_rejects_persisted_source_observation_member_corruption[member_digest-0000000000000000000000000000000000000000000000000000000000000000]
+FAILED tests/unit/core/semantic_ingestion/test_bootstrap_graph_root_composition.py::test_filesystem_root_rejects_persisted_source_observation_member_corruption[canonical_payload-corrupt-source-observation]
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 2 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!! xdist.dsession.Interrupted: stopping after 1 failures !!!!!!!!!!!!!
+==================== 2 failed, 5 passed in 84.52s (0:01:24) ====================

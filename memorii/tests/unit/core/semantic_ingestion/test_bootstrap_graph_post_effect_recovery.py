@@ -136,6 +136,40 @@ def _terminal_reload_identities(plane: MemoryPlaneService) -> tuple[tuple[str, s
     ))
 
 
+def _assert_source_finalization_observation(plane: MemoryPlaneService) -> None:
+    """Prove the public terminal path sealed its source-only observation in CAS."""
+    locator = next(
+        record for record in plane.list_records(
+            source_kind="semantic_ingestion_bootstrap_graph_v3_terminal_locator"
+        ) if record.content.get("semantic_ingestion_kind")
+        == "bootstrap_graph_v3_terminal_locator"
+    )
+    reload = BootstrapGraphTerminalReloadV3.model_validate(
+        locator.content["reload"], strict=False
+    )
+    observation = reload.source_finalization_observation_delta
+    assert reload.terminal_member_schema_version == 2
+    assert observation is not None
+    assert observation.source_outcome == reload.canonical_source_result.canonical_source_result
+    members = [
+        record.content["member"]
+        for record in plane.list_records(
+            source_kind="semantic_ingestion_bootstrap_graph_v3_member"
+        )
+        if record.content["member"]["kind"]
+        == "bootstrap_graph_source_finalization_observation_delta"
+    ]
+    assert len(members) == 1
+    control = next(
+        record.content["control"]
+        for record in plane.list_records(
+            source_kind="semantic_ingestion_preplanning_control"
+        )
+        if record.content["control"].get("state") == "terminal"
+    )
+    assert control["observation_revision"] == observation.observation_revision_after
+
+
 def _accepted_effect_identity(
     service: ProviderMemoryService, plane: MemoryPlaneService,
 ) -> tuple[object, ...]:
@@ -205,14 +239,13 @@ def test_terminal_reload_rejects_absent_repository_group_primary(
     terminal_reload = BootstrapGraphTerminalReloadV3.model_validate(
         locator.content["reload"], strict=False
     )
-    get_record = plane.get_record
+    read_write_snapshot = plane.read_write_snapshot
 
-    def hide_group_primary(memory_id: str):
-        if memory_id == primary.memory_id:
-            return None
-        return get_record(memory_id)
+    def hide_group_primary():
+        revision, records = read_write_snapshot()
+        return revision, tuple(record for record in records if record.memory_id != primary.memory_id)
 
-    monkeypatch.setattr(plane, "get_record", hide_group_primary)
+    monkeypatch.setattr(plane, "read_write_snapshot", hide_group_primary)
     with pytest.raises(
         PreplanningStoreError,
         match="transaction result is not repository-owned",
@@ -230,6 +263,221 @@ def test_terminal_reload_rejects_absent_repository_group_primary(
                 group_request.operation_fence_binding
             ),
         )
+
+
+def test_terminal_reload_rejects_absent_source_finalization_observation_member(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, plane = _graph_service(
+        storage=None, executor_calls=[], built_in=True
+    )
+    _sync(service, operation_id="terminal-missing-source-finalization-observation")
+    locator = next(
+        record for record in plane.list_records(
+            source_kind="semantic_ingestion_bootstrap_graph_v3_terminal_locator"
+        ) if record.content.get("semantic_ingestion_kind")
+        == "bootstrap_graph_v3_terminal_locator"
+    )
+    terminal_reload = BootstrapGraphTerminalReloadV3.model_validate(
+        locator.content["reload"], strict=False
+    )
+    source_member = next(
+        record for record in plane.list_records(
+            source_kind="semantic_ingestion_bootstrap_graph_v3_member"
+        ) if record.content["member"]["kind"]
+        == "bootstrap_graph_source_finalization_observation_delta"
+    )
+    read_write_snapshot = plane.read_write_snapshot
+
+    def hide_source_observation():
+        revision, records = read_write_snapshot()
+        return revision, tuple(record for record in records if record.memory_id != source_member.memory_id)
+
+    monkeypatch.setattr(plane, "read_write_snapshot", hide_source_observation)
+    primary = plane.list_records(
+        source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+    )[0]
+    request = decode_semantic_contract(
+        bytes.fromhex(primary.content["request_hex"]), BootstrapGraphGroupCommitRequestV3
+    )
+    with pytest.raises(
+        PreplanningStoreError,
+        match="bootstrap graph terminal member closure is incomplete",
+    ):
+        service._semantic_atomic_store._reload_bootstrap_graph_terminal_exact_v3(
+            locator_digest=terminal_reload.atomic_write_locator_digest,
+            expected_reload=terminal_reload,
+            expected_delivery_principal_binding_digest=(
+                terminal_reload.delivery_principal_binding_digest
+            ),
+            expected_required_scope_set_digest=(
+                terminal_reload.required_scope_set_digest
+            ),
+            expected_operation_fence_binding=request.operation_fence_binding,
+        )
+
+
+def test_stale_source_observation_predecessor_rejects_terminal_cas_without_write(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, plane = _graph_service(
+        storage=None, executor_calls=[], built_in=True
+    )
+    atomic = service._semantic_atomic_store
+    original = atomic.persist_bootstrap_graph_terminal_v3
+
+    def persist_with_stale_observation(*, request):
+        observation = request.source_finalization_observation_delta
+        assert observation is not None
+        return original(request=request.model_copy(update={
+            "source_finalization_observation_delta": observation.model_copy(update={
+                "observation_revision_before": "stale-predecessor",
+            }),
+        }))
+
+    monkeypatch.setattr(
+        atomic, "persist_bootstrap_graph_terminal_v3", persist_with_stale_observation
+    )
+    result = _sync(service, operation_id="terminal-stale-source-observation")
+    assert result.blocked_reasons["semantic_ingestion"] == (
+        "graph_transaction_authority_unavailable"
+    )
+    assert not plane.list_records(
+        source_kind="semantic_ingestion_bootstrap_graph_v3_terminal_locator"
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement"),
+    (
+        ("observation_delta_id", "0" * 64),
+        ("observation_revision_after", "rehashed-successor"),
+        ("observation_schema_fingerprint", "1" * 64),
+    ),
+)
+def test_rehashed_source_observation_coordinates_reject_terminal_cas(
+    monkeypatch: pytest.MonkeyPatch, field: str, replacement: str,
+) -> None:
+    service, plane = _graph_service(
+        storage=None, executor_calls=[], built_in=True
+    )
+    atomic = service._semantic_atomic_store
+    original = atomic.persist_bootstrap_graph_terminal_v3
+
+    def persist_with_rehashed_source_observation(*, request):
+        observation = request.source_finalization_observation_delta
+        assert observation is not None
+        return original(request=request.model_copy(update={
+            "source_finalization_observation_delta": observation.model_copy(
+                update={field: replacement}
+            ),
+        }))
+
+    monkeypatch.setattr(
+        atomic, "persist_bootstrap_graph_terminal_v3",
+        persist_with_rehashed_source_observation,
+    )
+    result = _sync(service, operation_id=f"terminal-rehashed-{field}")
+    assert result.blocked_reasons["semantic_ingestion"] == (
+        "graph_transaction_authority_unavailable"
+    )
+    assert not plane.list_records(
+        source_kind="semantic_ingestion_bootstrap_graph_v3_terminal_locator"
+    )
+
+
+def test_rehashed_source_outcome_rejects_terminal_cas(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, plane = _graph_service(
+        storage=None, executor_calls=[], built_in=True
+    )
+    atomic = service._semantic_atomic_store
+    original = atomic.persist_bootstrap_graph_terminal_v3
+
+    def persist_with_rehashed_source_outcome(*, request):
+        observation = request.source_finalization_observation_delta
+        assert observation is not None
+        return original(request=request.model_copy(update={
+            "source_finalization_observation_delta": observation.model_copy(update={
+                "source_outcome": observation.source_outcome.model_copy(update={
+                    "source_id": "tampered-source",
+                }),
+            }),
+        }))
+
+    monkeypatch.setattr(
+        atomic, "persist_bootstrap_graph_terminal_v3",
+        persist_with_rehashed_source_outcome,
+    )
+    result = _sync(service, operation_id="terminal-rehashed-source-outcome")
+    assert result.blocked_reasons["semantic_ingestion"] == (
+        "graph_transaction_authority_unavailable"
+    )
+    assert not plane.list_records(
+        source_kind="semantic_ingestion_bootstrap_graph_v3_terminal_locator"
+    )
+
+
+@pytest.mark.parametrize("authority", ("scope", "fence", "lease", "writer"))
+def test_post_group_terminal_authority_substitution_writes_no_source_terminal(
+    monkeypatch: pytest.MonkeyPatch, authority: str,
+) -> None:
+    """The terminal owner rejects each retained authority after a real group CAS."""
+    service, plane = _graph_service(
+        storage=None, executor_calls=[], built_in=True
+    )
+    atomic = service._semantic_atomic_store
+    original = atomic.persist_bootstrap_graph_terminal_v3
+
+    def persist_with_substituted_authority(*, request):
+        assert plane.list_records(
+            source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+        )
+        if authority == "scope":
+            request = request.model_copy(update={
+                "required_outcome_scopes": request.required_outcome_scopes.model_copy(
+                    update={"required_scope_set_digest": "0" * 64}
+                ),
+            })
+        elif authority == "fence":
+            request = request.model_copy(update={
+                "operation_fence_binding": request.operation_fence_binding.model_copy(
+                    update={"binding_digest": "0" * 64}
+                ),
+            })
+        elif authority == "lease":
+            request = request.model_copy(update={
+                "operation_lease_binding": request.operation_lease_binding.model_copy(
+                    update={"binding_digest": "0" * 64}
+                ),
+            })
+        else:
+            request = request.model_copy(update={
+                "writer_commit_binding": request.writer_commit_binding.model_copy(
+                    update={"admission_digest": "0" * 64}
+                ),
+            })
+        return original(request=request)
+
+    monkeypatch.setattr(
+        atomic, "persist_bootstrap_graph_terminal_v3", persist_with_substituted_authority,
+    )
+    result = _sync(service, operation_id=f"terminal-substituted-{authority}")
+
+    assert result.blocked_reasons["semantic_ingestion"] == (
+        "graph_transaction_authority_unavailable"
+    )
+    assert not plane.list_records(
+        source_kind="semantic_ingestion_bootstrap_graph_v3_terminal_locator"
+    )
+    assert not [
+        record for record in plane.list_records(
+            source_kind="semantic_ingestion_bootstrap_graph_v3_member"
+        )
+        if record.content["member"]["kind"]
+        == "bootstrap_graph_source_finalization_observation_delta"
+    ]
 
 
 @pytest.mark.parametrize("persistent", (False, True))
@@ -324,6 +572,7 @@ def test_terminal_cas_ack_failure_reloads_finalized_state_without_duplicate_effe
     assert len(plane.list_records(
         source_kind="semantic_ingestion_bootstrap_graph_v3_terminal_locator"
     )) == 3
+    _assert_source_finalization_observation(plane)
     before_reopen = _terminal_reload_identities(plane)
 
     reopened_calls: list[str] = []
@@ -337,6 +586,7 @@ def test_terminal_cas_ack_failure_reloads_finalized_state_without_duplicate_effe
     assert repeated == first
     assert reopened_calls == []
     assert _terminal_reload_identities(reopened_plane) == before_reopen
+    _assert_source_finalization_observation(reopened_plane)
 
 
 @pytest.mark.parametrize("persistent", (False, True))
@@ -377,6 +627,7 @@ def test_builtin_terminal_ack_loss_reloads_exact_terminal_without_duplicate_grou
     )
     assert len(before_terminal) == 3
     assert len(before_group) == 1
+    _assert_source_finalization_observation(plane)
     accepted_effect_before = _accepted_effect_identity(service, plane)
 
     reopened, reopened_plane = (
@@ -400,6 +651,7 @@ def test_builtin_terminal_ack_loss_reloads_exact_terminal_without_duplicate_grou
     assert _accepted_effect_identity(reopened, reopened_plane) == (
         accepted_effect_before
     )
+    _assert_source_finalization_observation(reopened_plane)
 
 
 @pytest.mark.parametrize("persistent", (False, True))

@@ -1,0 +1,25 @@
+{
+  "status": "complete_bounded_release_preparation",
+  "candidate_sha256": "0c75be24918302760a7e91c091896b786cf5d28187947d0b6d37a41a5ab88039",
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "scope": "Offline wheel deployment, protected bootstrap/host conversion, target preparation and signature verification only",
+  "remaining_findings": [],
+  "evidence": {
+    "proof.json": "108e71ac2c2903ea115dd210e1bc8028f4791fbdaff61ce36d770cfc33ea0f4f",
+    "installed-rejections.json": "c050281919729e1e8e1eeb35a343e40764368a9e65c3a207ea35341eda9188e8",
+    "focused-tests.log": "5c4aa8124f172d58761be54a011b88c7081b29d6602b4cf87334ac3ed8946d4f",
+    "final-operator-tests.log": "ab00e0077f3120daf18c1dd9503446975a856dd3c7c087a3f65c754021310c25",
+    "typecheck.log": "6d88a1b220adb7a3d62092b6e38431f0b3fe8babe9864fab90e5849766260332",
+    "final-tools-typecheck.log": "6d88a1b220adb7a3d62092b6e38431f0b3fe8babe9864fab90e5849766260332",
+    "review.md": "efb7f643293e22a36d92a8eb7b90ca05df5f72e5dcf066c15c57e1c50ea1898e",
+    "prepared-evidence.tar.gz": "52a7bc6c226281028bf292ba896cb91115af0753057453d177e2cf2e4a91b009",
+    "process.log": "93382b322df872a05a7f7696d28871b3e7da682d697a1d50f9409cf068f0ebd3",
+    "invocation.json": "075956071775fdce4f592106627ff3055d9dca5f8e937cb6bcf6d24387f10f3d"
+  },
+  "ci_wired": true,
+  "ci_execution_observed": false,
+  "production_signed": false,
+  "ledger_activated": false,
+  "parent_requirement_R17": "partial",
+  "next_action": "Implement durable observation ledger activation CAS using the prepared and verified target context."
+}

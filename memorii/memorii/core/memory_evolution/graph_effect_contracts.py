@@ -18,9 +18,11 @@ if TYPE_CHECKING:
         GovernanceCarrierArtifact,
         MessageAdmissionCarrierSet,
         MessageAdmissionIdentity,
+        OperationTemporalDecisionBinding,
         RequiredOutcomeScopeSet,
         SegmentGovernanceBinding,
         SegmentGovernanceCarrierSet,
+        SourceSpanReference,
     )
 
 _DIGEST = r"^[0-9a-f]{64}$"
@@ -112,8 +114,12 @@ class GraphRevisionDelta(_Addressed):
             or self.operation_ids != tuple(sorted(set(self.operation_ids)))
             or self.segment_governance_bindings
             != tuple(sorted(self.segment_governance_bindings, key=lambda item: item.binding_digest))
+            or len({item.binding_digest for item in self.segment_governance_bindings})
+            != len(self.segment_governance_bindings)
             or self.message_admission_identities
             != tuple(sorted(self.message_admission_identities, key=lambda item: item.message_admission_key_digest))
+            or len({item.message_admission_key_digest for item in self.message_admission_identities})
+            != len(self.message_admission_identities)
             or self.record_changes
             != tuple(sorted(self.record_changes, key=lambda item: (item.record_kind, item.record_id, item.mutation_digest)))
             or any(binding.source_id not in self.source_ids for binding in self.segment_governance_bindings)
@@ -265,12 +271,188 @@ class CanonicalSourceTerminalOutcomeRecord(_Addressed):
         return self
 
 
-CanonicalIngestionObservationRecord: TypeAlias = CanonicalSourceTerminalOutcomeRecord
+IngestionObservationRecordKind: TypeAlias = Literal[
+    "source_introduction",
+    "operation_introduction",
+    "operation_terminal_outcome",
+    "source_terminal_outcome",
+]
+
+
+class CanonicalSourceIntroductionRecord(_Addressed):
+    """Append-only source-mention introduction for the observation ledger."""
+
+    ingestion_record_kind: Literal["source_introduction"]
+    introduction_id: str = Field(min_length=1)
+    source_id: str = Field(min_length=1)
+    source_digest: str = Field(pattern=_DIGEST)
+    delivery_principal_binding_digest: str = Field(pattern=_DIGEST)
+    delivery_key_digest: str = Field(pattern=_DIGEST)
+    segment_governance: SegmentGovernanceBinding
+    message_admission_identity: MessageAdmissionIdentity | None
+    governance_carrier_artifact: GovernanceCarrierArtifact
+    mention_span: SourceSpanReference
+    entity_revision_id: str = Field(min_length=1)
+    logical_entity_id: str = Field(min_length=1)
+    independently_asserted_type_evidence_ids: tuple[str, ...]
+    operation_id: str = Field(min_length=1)
+    operation_fence_id: str = Field(min_length=1)
+    record_digest: str = Field(pattern=_DIGEST)
+    _digest_domain = b"memorii.semantic-ingestion.canonical-source-introduction-record.v1"
+    _digest_field = "record_digest"
+
+    @model_validator(mode="after")
+    def validate_record(self) -> CanonicalSourceIntroductionRecord:
+        artifact = self.governance_carrier_artifact
+        if (
+            self.segment_governance.source_id != self.source_id
+            or self.mention_span.source_id != self.source_id
+            or artifact.segment_governance.source_id != self.source_id
+            or artifact.message_admissions.source_id != self.source_id
+            or self.segment_governance not in artifact.segment_governance.bindings
+            or (
+                self.message_admission_identity is not None
+                and (
+                    self.message_admission_identity not in artifact.message_admissions.identities
+                    or self.message_admission_identity.segment_governance_binding_digest
+                    != self.segment_governance.binding_digest
+                )
+            )
+            or self.independently_asserted_type_evidence_ids
+            != tuple(sorted(set(self.independently_asserted_type_evidence_ids)))
+            or self.record_digest != _contract_digest(
+                self._digest_domain, self.model_dump(mode="python", exclude={"record_digest"})
+            )
+        ):
+            raise ValueError("canonical source introduction closure is invalid")
+        return self
+
+
+class CanonicalOperationIntroductionRecord(_Addressed):
+    """Append-only operation introduction with its governed source coordinates."""
+
+    ingestion_record_kind: Literal["operation_introduction"]
+    introduction_id: str = Field(min_length=1)
+    operation_id: str = Field(min_length=1)
+    source_id: str = Field(min_length=1)
+    source_digest: str = Field(pattern=_DIGEST)
+    delivery_principal_binding_digest: str = Field(pattern=_DIGEST)
+    delivery_key_digest: str = Field(pattern=_DIGEST)
+    segment_governance_bindings: tuple[SegmentGovernanceBinding, ...]
+    message_admission_identities: tuple[MessageAdmissionIdentity, ...]
+    governance_carrier_artifact: GovernanceCarrierArtifact
+    operation_fence_id: str = Field(min_length=1)
+    transaction_group_id: str = Field(min_length=1)
+    operation_kind: str = Field(min_length=1)
+    predicate_id: str | None = Field(default=None, min_length=1)
+    owned_source_spans: tuple[SourceSpanReference, ...]
+    record_digest: str = Field(pattern=_DIGEST)
+    _digest_domain = b"memorii.semantic-ingestion.canonical-operation-introduction-record.v1"
+    _digest_field = "record_digest"
+
+    @model_validator(mode="after")
+    def validate_record(self) -> CanonicalOperationIntroductionRecord:
+        artifact = self.governance_carrier_artifact
+        binding_digests = {binding.binding_digest for binding in self.segment_governance_bindings}
+        if (
+            artifact.segment_governance.source_id != self.source_id
+            or artifact.message_admissions.source_id != self.source_id
+            or any(binding.source_id != self.source_id for binding in self.segment_governance_bindings)
+            or any(binding not in artifact.segment_governance.bindings for binding in self.segment_governance_bindings)
+            or any(identity not in artifact.message_admissions.identities for identity in self.message_admission_identities)
+            or any(
+                identity.segment_governance_binding_digest not in binding_digests
+                for identity in self.message_admission_identities
+            )
+            or any(span.source_id != self.source_id for span in self.owned_source_spans)
+            or self.segment_governance_bindings
+            != tuple(sorted(self.segment_governance_bindings, key=lambda item: item.binding_digest))
+            or len({item.binding_digest for item in self.segment_governance_bindings})
+            != len(self.segment_governance_bindings)
+            or self.message_admission_identities
+            != tuple(sorted(self.message_admission_identities, key=lambda item: item.message_admission_key_digest))
+            or len({item.message_admission_key_digest for item in self.message_admission_identities})
+            != len(self.message_admission_identities)
+            or self.record_digest != _contract_digest(
+                self._digest_domain, self.model_dump(mode="python", exclude={"record_digest"})
+            )
+        ):
+            raise ValueError("canonical operation introduction closure is invalid")
+        return self
+
+
+class CanonicalOperationTerminalOutcomeRecord(_Addressed):
+    """Append-only terminal result for one governed semantic operation."""
+
+    ingestion_record_kind: Literal["operation_terminal_outcome"]
+    outcome_id: str = Field(min_length=1)
+    operation_id: str = Field(min_length=1)
+    source_id: str = Field(min_length=1)
+    source_digest: str = Field(pattern=_DIGEST)
+    delivery_principal_binding_digest: str = Field(pattern=_DIGEST)
+    delivery_key_digest: str = Field(pattern=_DIGEST)
+    segment_governance_bindings: tuple[SegmentGovernanceBinding, ...]
+    message_admission_identities: tuple[MessageAdmissionIdentity, ...]
+    governance_carrier_artifact: GovernanceCarrierArtifact
+    operation_fence_id: str = Field(min_length=1)
+    transaction_group_id: str = Field(min_length=1)
+    final_status: Literal["committed", "evidence_only", "rejected", "unresolved", "failed"]
+    retry_disposition: Literal["terminal"]
+    graph_revision_delta_digest: str | None = Field(default=None, pattern=_DIGEST)
+    temporal_decision_bindings: tuple[OperationTemporalDecisionBinding, ...]
+    authorizing_plan_lineage_entry_digest: str = Field(pattern=_DIGEST)
+    execution_manifest_digest: str = Field(pattern=_DIGEST)
+    reason_codes: tuple[str, ...]
+    record_digest: str = Field(pattern=_DIGEST)
+    _digest_domain = b"memorii.semantic-ingestion.canonical-operation-terminal-outcome-record.v1"
+    _digest_field = "record_digest"
+
+    @model_validator(mode="after")
+    def validate_record(self) -> CanonicalOperationTerminalOutcomeRecord:
+        artifact = self.governance_carrier_artifact
+        binding_digests = {binding.binding_digest for binding in self.segment_governance_bindings}
+        if (
+            artifact.segment_governance.source_id != self.source_id
+            or artifact.message_admissions.source_id != self.source_id
+            or any(binding.source_id != self.source_id for binding in self.segment_governance_bindings)
+            or any(binding not in artifact.segment_governance.bindings for binding in self.segment_governance_bindings)
+            or any(identity not in artifact.message_admissions.identities for identity in self.message_admission_identities)
+            or any(
+                identity.segment_governance_binding_digest not in binding_digests
+                for identity in self.message_admission_identities
+            )
+            or any(binding.operation_id != self.operation_id for binding in self.temporal_decision_bindings)
+            or self.segment_governance_bindings
+            != tuple(sorted(self.segment_governance_bindings, key=lambda item: item.binding_digest))
+            or len({item.binding_digest for item in self.segment_governance_bindings})
+            != len(self.segment_governance_bindings)
+            or self.message_admission_identities
+            != tuple(sorted(self.message_admission_identities, key=lambda item: item.message_admission_key_digest))
+            or len({item.message_admission_key_digest for item in self.message_admission_identities})
+            != len(self.message_admission_identities)
+            or len({item.binding_digest for item in self.temporal_decision_bindings})
+            != len(self.temporal_decision_bindings)
+            or (self.final_status == "committed") != (self.graph_revision_delta_digest is not None)
+            or self.record_digest != _contract_digest(
+                self._digest_domain, self.model_dump(mode="python", exclude={"record_digest"})
+            )
+        ):
+            raise ValueError("canonical operation terminal outcome closure is invalid")
+        return self
+
+
+CanonicalIngestionObservationRecord: TypeAlias = Annotated[
+    CanonicalSourceIntroductionRecord
+    | CanonicalOperationIntroductionRecord
+    | CanonicalOperationTerminalOutcomeRecord
+    | CanonicalSourceTerminalOutcomeRecord,
+    Field(discriminator="ingestion_record_kind"),
+]
 
 
 class IngestionObservationRecordMutation(_Addressed):
     mutation_kind: Literal["create"]
-    ingestion_record_kind: Literal["source_terminal_outcome"]
+    ingestion_record_kind: IngestionObservationRecordKind
     record_id: str = Field(min_length=1)
     record_version: Literal[1]
     record: CanonicalIngestionObservationRecord
@@ -281,8 +463,14 @@ class IngestionObservationRecordMutation(_Addressed):
 
     @model_validator(mode="after")
     def validate_mutation(self) -> IngestionObservationRecordMutation:
+        record_id = (
+            self.record.introduction_id
+            if isinstance(self.record, (CanonicalSourceIntroductionRecord, CanonicalOperationIntroductionRecord))
+            else self.record.outcome_id
+        )
         if (
-            self.record_id != self.record.outcome_id
+            self.ingestion_record_kind != self.record.ingestion_record_kind
+            or self.record_id != record_id
             or self.record_digest != self.record.record_digest
             or self.mutation_digest != _contract_digest(
                 self._digest_domain, self.model_dump(mode="python", exclude={"mutation_digest"})
@@ -315,14 +503,68 @@ class IngestionObservationDelta(_Addressed):
 
     @model_validator(mode="after")
     def validate_delta(self) -> IngestionObservationDelta:
+        records = tuple(mutation.record for mutation in self.record_mutations)
+        new_records = tuple(
+            record
+            for record in records
+            if not isinstance(record, CanonicalSourceTerminalOutcomeRecord)
+        )
+        operation_introductions = tuple(
+            record for record in new_records if isinstance(record, CanonicalOperationIntroductionRecord)
+        )
+        operation_outcomes = tuple(
+            record for record in new_records if isinstance(record, CanonicalOperationTerminalOutcomeRecord)
+        )
         if (
             not self.operation_ids or not self.record_mutations
             or self.operation_ids != tuple(sorted(set(self.operation_ids)))
+            or len({mutation.record_id for mutation in self.record_mutations}) != len(self.record_mutations)
             or self.segment_governance_bindings
             != tuple(sorted(self.segment_governance_bindings, key=lambda item: item.binding_digest))
             or self.message_admission_identities
             != tuple(sorted(self.message_admission_identities, key=lambda item: item.message_admission_key_digest))
             or (self.terminal_status == "committed") != (self.graph_revision_delta_digest is not None)
+            or any(
+                record.source_id != self.source_id
+                or record.source_digest != self.source_digest
+                or record.operation_fence_id != self.operation_fence_id
+                or record.governance_carrier_artifact != self.governance_carrier_artifact
+                for record in records
+            )
+            or any(
+                record.transaction_group_id != self.transaction_group_id
+                or record.operation_id not in self.operation_ids
+                for record in (*operation_introductions, *operation_outcomes)
+            )
+            or any(
+                record.final_status == "committed"
+                and (
+                    self.terminal_status != "committed"
+                    or record.graph_revision_delta_digest != self.graph_revision_delta_digest
+                )
+                for record in operation_outcomes
+            )
+            or any(
+                record.operation_id not in self.operation_ids
+                for record in new_records
+                if isinstance(record, CanonicalSourceIntroductionRecord)
+            )
+            or (
+                bool(new_records)
+                and (
+                    tuple(sorted(record.operation_id for record in operation_introductions))
+                    != self.operation_ids
+                    or tuple(sorted(record.operation_id for record in operation_outcomes))
+                    != self.operation_ids
+                    or (
+                        self.terminal_status != "committed"
+                        and any(
+                            isinstance(record, CanonicalSourceIntroductionRecord)
+                            for record in new_records
+                        )
+                    )
+                )
+            )
             or self.delta_digest != _contract_digest(
                 self._digest_domain, self.model_dump(mode="python", exclude={"delta_digest"})
             )
@@ -331,9 +573,63 @@ class IngestionObservationDelta(_Addressed):
         return self
 
 
+class SourceFinalizationObservationDelta(_Addressed):
+    """The one final source observation, bound to its terminal source result."""
+
+    kind: Literal["source_finalization"]
+    observation_delta_id: str = Field(min_length=1)
+    observation_revision_before: str = Field(min_length=1)
+    observation_revision_after: str = Field(min_length=1)
+    source_id: str = Field(min_length=1)
+    source_digest: str = Field(pattern=_DIGEST)
+    delivery_principal_binding_digest: str = Field(pattern=_DIGEST)
+    delivery_key_digest: str = Field(pattern=_DIGEST)
+    segment_governance_carriers: SegmentGovernanceCarrierSet
+    message_admission_carriers: MessageAdmissionCarrierSet
+    governance_carrier_artifact: GovernanceCarrierArtifact
+    required_outcome_scopes: RequiredOutcomeScopeSet
+    operation_fence_id: str = Field(min_length=1)
+    operation_ids: tuple[str, ...]
+    source_outcome: CanonicalSourceTerminalOutcomeRecord
+    observation_schema_fingerprint: str = Field(pattern=_DIGEST)
+    delta_digest: str = Field(pattern=_DIGEST)
+    _digest_domain = b"memorii.semantic-ingestion.source-finalization-observation-delta.v1"
+    _digest_field = "delta_digest"
+
+    @model_validator(mode="after")
+    def validate_delta(self) -> SourceFinalizationObservationDelta:
+        outcome = self.source_outcome
+        if (
+            self.source_id != outcome.source_id
+            or self.source_digest != outcome.source_digest
+            or self.delivery_principal_binding_digest != outcome.delivery_principal_binding_digest
+            or self.delivery_key_digest != outcome.delivery_key_digest
+            or self.segment_governance_carriers != outcome.segment_governance_carriers
+            or self.message_admission_carriers != outcome.message_admission_carriers
+            or self.governance_carrier_artifact != outcome.governance_carrier_artifact
+            or self.required_outcome_scopes != outcome.required_outcome_scopes
+            or self.operation_fence_id != outcome.operation_fence_id
+            or self.operation_ids != outcome.operation_ids
+            or self.operation_ids != tuple(sorted(set(self.operation_ids)))
+            or self.delta_digest != _contract_digest(
+                self._digest_domain, self.model_dump(mode="python", exclude={"delta_digest"})
+            )
+        ):
+            raise ValueError("source finalization observation delta closure is invalid")
+        return self
+
+
+CanonicalIngestionObservationDelta: TypeAlias = Annotated[
+    IngestionObservationDelta | SourceFinalizationObservationDelta,
+    Field(discriminator="kind"),
+]
+
+
 GraphEffectCodec = TypeAdapter(
     Annotated[
-        GraphRevisionDelta | CanonicalSourceTerminalOutcomeRecord | IngestionObservationDelta,
+        GraphRevisionDelta
+        | CanonicalIngestionObservationRecord
+        | CanonicalIngestionObservationDelta,
         Field(discriminator=None),
     ]
 )
@@ -347,9 +643,11 @@ def rebuild_graph_effect_contracts() -> None:
         GovernanceCarrierArtifact,
         MessageAdmissionCarrierSet,
         MessageAdmissionIdentity,
+        OperationTemporalDecisionBinding,
         RequiredOutcomeScopeSet,
         SegmentGovernanceBinding,
         SegmentGovernanceCarrierSet,
+        SourceSpanReference,
     )
 
     namespace = {
@@ -359,23 +657,33 @@ def rebuild_graph_effect_contracts() -> None:
         "GovernanceCarrierArtifact": GovernanceCarrierArtifact,
         "MessageAdmissionCarrierSet": MessageAdmissionCarrierSet,
         "MessageAdmissionIdentity": MessageAdmissionIdentity,
+        "OperationTemporalDecisionBinding": OperationTemporalDecisionBinding,
         "RequiredOutcomeScopeSet": RequiredOutcomeScopeSet,
         "SegmentGovernanceBinding": SegmentGovernanceBinding,
         "SegmentGovernanceCarrierSet": SegmentGovernanceCarrierSet,
+        "SourceSpanReference": SourceSpanReference,
     }
     for model in (
         GraphRecordMutation,
         GraphRevisionDelta,
         CanonicalSourceTerminalOutcomeCore,
         CanonicalSourceTerminalOutcomeRecord,
+        CanonicalSourceIntroductionRecord,
+        CanonicalOperationIntroductionRecord,
+        CanonicalOperationTerminalOutcomeRecord,
         IngestionObservationRecordMutation,
         IngestionObservationDelta,
+        SourceFinalizationObservationDelta,
     ):
         model.model_rebuild(_types_namespace=namespace)
 
 
 __all__ = [
     "CanonicalIngestionObservationRecord",
+    "CanonicalIngestionObservationDelta",
+    "CanonicalOperationIntroductionRecord",
+    "CanonicalOperationTerminalOutcomeRecord",
+    "CanonicalSourceIntroductionRecord",
     "CanonicalSourceTerminalOutcomeCore",
     "CanonicalSourceTerminalOutcomeRecord",
     "GraphEffectCodec",
@@ -383,6 +691,8 @@ __all__ = [
     "GraphRecordMutation",
     "GraphRevisionDelta",
     "IngestionObservationDelta",
+    "IngestionObservationRecordKind",
     "IngestionObservationRecordMutation",
+    "SourceFinalizationObservationDelta",
     "rebuild_graph_effect_contracts",
 ]

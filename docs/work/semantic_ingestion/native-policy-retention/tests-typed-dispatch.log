@@ -1,0 +1,41 @@
+
+==================================== ERRORS ====================================
+_ ERROR collecting tests/unit/core/semantic_ingestion/test_native_policy_retention.py _
+tests/unit/core/semantic_ingestion/test_native_policy_retention.py:9: in <module>
+    from memorii.core.memory_evolution.ingestion_contracts import (
+memorii/core/memory_evolution/__init__.py:97: in <module>
+    from memorii.core.memory_evolution.identity_lineage import (
+memorii/core/memory_evolution/identity_lineage.py:35: in <module>
+    from memorii.core.memory_evolution.transaction_coordinator import (
+memorii/core/memory_evolution/transaction_coordinator.py:14: in <module>
+    from memorii.core.memory_evolution.reference_integrity import ReferenceEdgeLedgerSnapshot
+memorii/core/memory_evolution/reference_integrity.py:26: in <module>
+    from memorii.core.semantic_ingestion.contracts import (
+memorii/core/semantic_ingestion/__init__.py:16: in <module>
+    from memorii.core.semantic_ingestion.authorization import (
+memorii/core/semantic_ingestion/authorization.py:20: in <module>
+    from memorii.core.semantic_ingestion.contracts import SemanticAuthorizationReadSet
+memorii/core/semantic_ingestion/contracts.py:3480: in <module>
+    CANONICAL_INGESTION_EXECUTION_GRAPH = IngestionExecutionGraph.create()
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+memorii/core/semantic_ingestion/contracts.py:3475: in create
+    stages = _ingestion_stage_specs()
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+memorii/core/semantic_ingestion/contracts.py:3442: in _ingestion_stage_specs
+    return tuple(
+memorii/core/semantic_ingestion/contracts.py:3448: in <genexpr>
+    dependencies=_canonical_values(
+memorii/core/semantic_ingestion/contracts.py:2277: in _canonical_values
+    return tuple(sorted(values, key=lambda value: encode_typed_value(canonical_contract_value(value))))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+memorii/core/semantic_ingestion/contracts.py:2277: in <lambda>
+    return tuple(sorted(values, key=lambda value: encode_typed_value(canonical_contract_value(value))))
+                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+memorii/core/semantic_ingestion/contracts.py:135: in canonical_contract_value
+    if isinstance(value, _ContentAddressedContract)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^
+E   NameError: name '_ContentAddressedContract' is not defined
+=========================== short test summary info ============================
+ERROR tests/unit/core/semantic_ingestion/test_native_policy_retention.py - Na...
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 error in 3.51s

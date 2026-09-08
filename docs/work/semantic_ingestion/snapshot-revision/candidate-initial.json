@@ -1,0 +1,48 @@
+{
+  "scope": "Full-write snapshot primitive only; parent observation ledger and M5 remain partial",
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "tree": "authorized dirty working tree",
+  "files": {
+    "memorii/memorii/core/memory_plane/store.py": "2422fbdb07feb325ae12fbc8c17f25412361d3dbb523fc054465ecd02079aced",
+    "memorii/memorii/core/memory_plane/service.py": "5aa962338fb93c1fd6d16824a0eca80f1091bf421a2045f949fc0f2ab21558a2",
+    "memorii/memorii/core/memory_plane/unit_of_work.py": "a9f25afbb2cf3a0e9ecec6a671b49b29751eb808c4a33f1ee6a0ed51d9399bd4",
+    "memorii/tests/unit/core/test_memory_plane_write_snapshot.py": "47a6bd380087b4a0fe189a70e9ba1b62192fa951001cdc929ce6ac0a8e348587"
+  },
+  "contract": "../observation-ledger/replay-snapshot-contract.md#snapshot-ownership-and-activation-preconditions",
+  "validation": {
+    "pytest": {
+      "command": "../.venv/bin/python -W error -m pytest tests/unit/core/test_memory_plane_write_snapshot.py tests/unit/core/test_memory_plane_store_contract.py tests/unit/core/test_jsonl_memory_plane_store.py tests/unit/core/test_memory_plane_visibility.py tests/unit/core/test_memory_plane_convergence.py -q -p no:cacheprovider",
+      "cwd": "memorii",
+      "exit_code": 0,
+      "result": "54 passed in 6.85s"
+    },
+    "pyright": {
+      "exit_code": 0,
+      "result": "0 errors, 0 warnings, 0 informations",
+      "pythonpath": "../.venv/bin/python",
+      "files": [
+        "memorii/memorii/core/memory_plane/store.py",
+        "memorii/memorii/core/memory_plane/service.py",
+        "memorii/memorii/core/memory_plane/unit_of_work.py",
+        "memorii/tests/unit/core/test_memory_plane_write_snapshot.py"
+      ]
+    },
+    "ruff": {
+      "exit_code": 0,
+      "result": "All checks passed!"
+    }
+  },
+  "review_status": "frozen_for_bounded_review",
+  "production_binding": {
+    "MemoryPlaneService.read_write_snapshot": "MemoryPlaneStore.read_write_snapshot on canonical built-in backend",
+    "MemoryPlaneService.conditionally_write_records": "MemoryPlaneStore.apply_batch expected_write_revision only when requested",
+    "MemoryPlaneUnitOfWork": "explicitly rejects root-only capability; ordinary commit uses original batch path"
+  },
+  "exclusions": [
+    "ledger activation and checkpoint consumers",
+    "operational profile registry",
+    "authenticated observation endpoint",
+    "full branch or CI certification"
+  ],
+  "candidate_digest": "e2be54cd6f53e74025893ec3b1b063721980cd13be6754825bd8d1b08e04e95f"
+}

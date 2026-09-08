@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import tempfile
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
@@ -365,6 +366,8 @@ def _approval_inputs(
     activate_recovery_roots: bool = True,
     bootstrap_expires_at: str | None = None,
     release_issued_at: str | None = None,
+    signature_signer: Callable[[str, str, bytes], bytes] | None = None,
+    key_digests: tuple[str, str, str, str, str] | None = None,
 ) -> dict[str, object]:
     # Reuse the closed current-CTV chain fixture so registered execution tests
     # exercise authorization semantics instead of the retired flat transport.
@@ -464,6 +467,8 @@ def _approval_inputs(
         activate_recovery_roots=activate_recovery_roots,
         bootstrap_expires_at=bootstrap_expires_at,
         release_issued_at=release_issued_at,
+        signature_signer=signature_signer,
+        key_digests=key_digests,
     )
     provisional_lifecycle, _ = _typed_body(provisional["lifecycle"])  # type: ignore[arg-type]
     provisional_release, _ = _typed_body(provisional["release"])  # type: ignore[arg-type]
@@ -508,6 +513,8 @@ def _approval_inputs(
         activate_recovery_roots=activate_recovery_roots,
         bootstrap_expires_at=bootstrap_expires_at,
         release_issued_at=release_issued_at,
+        signature_signer=signature_signer,
+        key_digests=key_digests,
     )
     chain = bind_chain_to_generation(
         chain,
@@ -761,13 +768,14 @@ def _approval_inputs(
         "generation_manifest_digest": manifest_body["generation_manifest_digest"],
         "signer_coordinate": generation_signer,
     })
-    generation_signature = sha256(
-        str(generation_signer["signature_profile_id"]).encode()
-        + b"\0"
-        + str(generation_signer["key_or_certificate_digest"]).encode()
-        + b"\0"
-        + generation_preimage
-    ).hexdigest()
+    chain_sign = chain["sign"]
+    if not callable(chain_sign):
+        raise AssertionError("current approval fixture signer is unavailable")
+    generation_signature = chain_sign(
+        str(generation_signer["signature_profile_id"]),
+        str(generation_signer["key_or_certificate_digest"]),
+        generation_preimage,
+    ).hex()
     manifest_body.update({
         "signer_coordinate": generation_signer,
         "signature": generation_signature,
@@ -793,13 +801,11 @@ def _approval_inputs(
         "active_pointer_digest": pointer_digest,
         "signer_coordinate": pointer_signer,
     })
-    pointer_signature = sha256(
-        str(pointer_signer["signature_profile_id"]).encode()
-        + b"\0"
-        + str(pointer_signer["key_or_certificate_digest"]).encode()
-        + b"\0"
-        + pointer_preimage
-    ).digest()
+    pointer_signature = chain_sign(
+        str(pointer_signer["signature_profile_id"]),
+        str(pointer_signer["key_or_certificate_digest"]),
+        pointer_preimage,
+    )
     pointer_bytes = serialize_artifact(
         {
             **pointer_body,
@@ -829,6 +835,9 @@ def _approval_inputs(
         "lifecycle_artifact": chain["lifecycle"],
         "release_artifact": release_bytes,
         "active_pointer_artifact": pointer_bytes,
+        "pointer_history_artifact": next(
+            raw for coordinate, raw in member_bytes.items() if "/pointer_history/" in coordinate
+        ),
         "release_history_artifact": chain["history"],
         "historical_release_artifacts": (),
         "generation_manifest_bytes": manifest,
@@ -1135,8 +1144,13 @@ def _threshold_recovery_inputs(group_id: str) -> dict[str, object]:
     return _approval_inputs(group_id, threshold_recovery=True)
 
 
-def _successor_inputs(group_id: str) -> dict[str, object]:
-    inputs = _approval_inputs(group_id)
+def _successor_inputs(
+    group_id: str,
+    *,
+    signature_signer: Callable[[str, str, bytes], bytes] | None = None,
+    key_digests: tuple[str, str, str, str, str] | None = None,
+) -> dict[str, object]:
+    inputs = _approval_inputs(group_id, signature_signer=signature_signer, key_digests=key_digests)
     from tests.fixtures.semantic_ingestion.current_release_chain import (
         bind_chain_to_generation,
         current_chain_successor,
@@ -1272,7 +1286,9 @@ def _approve(inputs: dict[str, object]) -> dict[str, object]:
         return _registered_call(inputs, authority)
 
 
-def _registered_call(inputs: dict[str, object], authority: AcceptanceTrustStore) -> dict[str, object]:
+def _registered_call(
+    inputs: dict[str, object], authority: AcceptanceTrustStore, *, executor: RegisteredApprovalExecutor | None = None
+) -> dict[str, object]:
     required = ("registry_bytes", "group_id", "report_bytes", "artifacts", "implementation_revision", "implementation_tree_digest", "environment_observation_bytes", "bootstrap_artifact", "recovery_artifact", "lifecycle_artifact", "release_artifact", "active_pointer_artifact", "release_history_artifact", "historical_release_artifacts", "now")
     if any(name not in inputs for name in required):
         raise AssertionError("acceptance fixture is incomplete")
@@ -1283,7 +1299,7 @@ def _registered_call(inputs: dict[str, object], authority: AcceptanceTrustStore)
                 "independent_generation_verifier"
             ],
         )
-    return RegisteredApprovalExecutor(authority).execute(
+    return (RegisteredApprovalExecutor(authority) if executor is None else executor).execute(
         registry_bytes=inputs["registry_bytes"], group_id=inputs["group_id"], report_bytes=inputs["report_bytes"],
         artifacts=inputs["artifacts"], implementation_revision=inputs["implementation_revision"],
         implementation_tree_digest=inputs["implementation_tree_digest"],

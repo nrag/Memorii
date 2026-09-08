@@ -1,0 +1,29 @@
+{
+  "scope": "Native policy retention plus typed field-name result validation only; no projection publication or M5 closure",
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "tree": "authorized dirty tree, no writer on reviewed code/test/SIA",
+  "files": {
+    "memorii/memorii/core/semantic_ingestion/contracts.py": "a3872301b872898dcbaa0d6079ab7f3198463cb29cd42cdee396769ad8d134a9",
+    "memorii/memorii/core/semantic_ingestion/source_normalization_stage.py": "0ca159b05501ab6a23a697a2c0ea9075096f347b3fe12d23cc91fb049552002d",
+    "memorii/tests/unit/core/semantic_ingestion/test_native_policy_retention.py": "39b334b91db468cfb94a854189b38ae55e22f56aa0a7883b3c2b33ad59432167",
+    "memorii/tests/fixtures/semantic_ingestion/historical_terminal/native-planning-authority-without-policy-bundle.ctv": "65d321a60ed5e3352ed076feacd02514aabd2dd2a3504332d16f53b7bd6f0ce4",
+    "docs/design/semantic_ingestion_architecture.md": "69140e58d650fbe9f59d69de2da06d846b6c4a9040256d82d29fced76e918e79",
+    "docs/work/semantic_ingestion/observation-ledger/entrypoint-preflight.md": "9106ad8f31dfe599c8e8f5352024a21e9ee5a545fea76ea14530f0ad63e12e54"
+  },
+  "candidate_digest": "bad11616bfd6989870d6bb5f25053e6cf22265b9295179bdaffc222992aa165d",
+  "requirements": "native-policy-retention/implementation.plan.md; SIA4.8.2.26 exact policy retention, validated coordinate binding, historical absence omission and bytes",
+  "binding": "entrypoint-preflight.md; native group ordered_operation_inputs.reduction.native_compilation.operation_input",
+  "evidence": {
+    "tests": "6 passed in 67.31s: tests-final-compatibility.log",
+    "ruff": "ruff-final.log pass",
+    "configured_pyright": "pyright-repository.log pass before tuple guard (final configured gate pending)",
+    "forced_pyright": "280 baseline diagnostics, identical clean merge-base reproduction in type-baseline-comparison.json",
+    "source_gates": "Root currently executing final exact three gates after legitimate generated refresh; not code-review substitute"
+  },
+  "exclusions": [
+    "Shared registry/ledger/retrieval implementation",
+    "new immutable projection publication receipt",
+    "full branch and CI approval"
+  ],
+  "review_status": "frozen for bounded code review"
+}

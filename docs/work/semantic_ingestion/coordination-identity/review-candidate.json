@@ -1,0 +1,12 @@
+{
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "scope": "current coordination identity v2 repair only; v1 unchanged",
+  "files": {
+    ".agents/scripts/verify_workplan_split.py": "a591bc3925bda4c139a21aaf03ab368742b865af795e94d73abc46943a249a3d",
+    "docs/work/semantic_ingestion/coordination-identity/testing.plan.md": "f759495573a214a04808ff65dfe0844d27fa30c5e38f3c2885c22ad59e64400f",
+    "docs/work/semantic_ingestion/history/implementation-split-manifest.json": "c56242b8b2ffcbf0948334c0c406f8fc45c9c447d0210cf74fc72808c6a27499",
+    "docs/work/semantic_ingestion/history/implementation-split-manifest.json.sha256": "953d2d8572fea22a9183e2bded754b8a3a63e6634ce906a70177b5cce63bd203"
+  },
+  "checks": "coordinator verify(...verify_candidate=False)+self_test passed; worker Ruff/diff passed",
+  "other_writers": "Crypto integration and offline signing own disjoint files; all listed files frozen."
+}

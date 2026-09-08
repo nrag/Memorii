@@ -1,0 +1,71 @@
+{
+  "status": "locally_verified_construction_not_milestone_closure",
+  "date": "2026-09-08",
+  "integration_tests": 52,
+  "focused_regression_tests": 29,
+  "independent_registry_vectors": 58,
+  "type_check": "passed",
+  "bounded_correctness_correction_review": "no_remaining_findings_in_reviewed_seams",
+  "ci_observed": false,
+  "remaining": [
+    "activated writer transaction grammar and production append/recovery proof",
+    "concrete detached retrieval backend and provider composition",
+    "ingestion-time cursor design correction",
+    "checkpoint publication authority",
+    "installed release package and final closure review"
+  ],
+  "files": [
+    {
+      "path": "memorii/memorii/core/memory_evolution/atomic_store.py",
+      "sha256": "327373ddfb4050c86624f11441c0bfb2e1fbb905020ed3b4c965db6c46fbeed0"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/bootstrap_group_observation.py",
+      "sha256": "e87f32b0dbce5bde47605d18a579250ecf29b929241a2d68f60c32dc2340e6f7"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/observation_activation_runtime.py",
+      "sha256": "7cd933e7c13687a4f1e43d4d719ad92f7c2d9797012b6c0e8dc4e803b7c09741"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/graph_observation_paging.py",
+      "sha256": "26e2c75c64066333cd980981681a0cee5226479bd3d2546332f6991886f50243"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/projection_history.py",
+      "sha256": "524d09f8fcab2eed0872232853566ddd8b594207d420ef4ab2c9a87d3d9fd3a4"
+    },
+    {
+      "path": "memorii/memorii/core/memory_plane/store.py",
+      "sha256": "c7ee0c44f9d343b2498a29f8ac900df1ef809974775863d08282c326d9a3a1b9"
+    },
+    {
+      "path": "memorii/memorii/core/semantic_ingestion/bootstrap_graph_projection_publication.py",
+      "sha256": "28ddeaa59ddbb9630130b27db82d6fa742eaedb0403395ec7d4050d72b1d6acf"
+    },
+    {
+      "path": ".github/workflows/pr-gates.yml",
+      "sha256": "d4e904723ad08e7399e937549f815975f4bda401ebfcf0927806bc4abc59b0bb"
+    },
+    {
+      "path": "docs/work/semantic_ingestion/observation-ledger/append-evidence/integration-paging-candidate.log",
+      "sha256": "a6e41f6ce8776c04ee25e24b3d386355e1dac00729dab12d61c4dbc8dd1aab28"
+    },
+    {
+      "path": "docs/work/semantic_ingestion/observation-ledger/append-evidence/snapshot-recovery-regression.log",
+      "sha256": "57ff67c93c7e77caaa76a361f019f5d5813c4e61c25f1e5caa611c44e56e252c"
+    },
+    {
+      "path": "docs/work/semantic_ingestion/observation-ledger/append-evidence/pyright-paging-candidate.log",
+      "sha256": "6d88a1b220adb7a3d62092b6e38431f0b3fe8babe9864fab90e5849766260332"
+    },
+    {
+      "path": "docs/work/semantic_ingestion/observation-ledger/append-evidence/registry-refresh.log",
+      "sha256": "246df0bc329f2966804145914c0b942342b3bde673903bddd99171154c90bc89"
+    },
+    {
+      "path": "docs/work/semantic_ingestion/observation-ledger/append-evidence/registry-vectors.log",
+      "sha256": "1db452fc7a1307233d4d0c836d0b08310a1d2846141ab760187c023f1467e2fc"
+    }
+  ]
+}

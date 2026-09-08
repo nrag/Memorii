@@ -1,0 +1,1439 @@
+{
+  "status": "REVIEW_ONLY_STATIC_CONSTRUCTION_INVENTORY_NOT_PUBLICATION",
+  "entries": [
+    {
+      "schema_id": "AcceptedClaimIdentity",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.AcceptedClaimIdentity.v1",
+      "python_module": "memorii.core.memory_evolution.semantic_state",
+      "python_class": "AcceptedClaimIdentity",
+      "source_file": "memorii/memorii/core/memory_evolution/semantic_state.py"
+    },
+    {
+      "schema_id": "AcceptedTemporalEvidence",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.AcceptedTemporalEvidence.v1",
+      "python_module": "memorii.core.semantic_ingestion.contracts",
+      "python_class": "AcceptedTemporalEvidence",
+      "source_file": "memorii/memorii/core/semantic_ingestion/contracts.py"
+    },
+    {
+      "schema_id": "ActionRevision",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ActionRevision.v1",
+      "python_module": "memorii.core.semantic_ingestion.contracts",
+      "python_class": "ActionRevision",
+      "source_file": "memorii/memorii/core/semantic_ingestion/contracts.py"
+    },
+    {
+      "schema_id": "ActionRevisionStreamRecord",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ActionRevisionStreamRecord.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_streams",
+      "python_class": "ActionRevisionStreamRecord",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_streams.py"
+    },
+    {
+      "schema_id": "ActiveTemporalProjectionPointer",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ActiveTemporalProjectionPointer.v1",
+      "python_module": "memorii.core.memory_evolution.semantic_state",
+      "python_class": "ActiveTemporalProjectionPointer",
+      "source_file": "memorii/memorii/core/memory_evolution/semantic_state.py"
+    },
+    {
+      "schema_id": "ActiveTrustProjectionPointer",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ActiveTrustProjectionPointer.v1",
+      "python_module": "memorii.core.memory_evolution.semantic_state",
+      "python_class": "ActiveTrustProjectionPointer",
+      "source_file": "memorii/memorii/core/memory_evolution/semantic_state.py"
+    },
+    {
+      "schema_id": "AliasRevision",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.AliasRevision.v1",
+      "python_module": "memorii.core.memory_evolution.graph_records",
+      "python_class": "AliasRevision",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_records.py"
+    },
+    {
+      "schema_id": "AliasRevisionStreamRecord",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.AliasRevisionStreamRecord.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_streams",
+      "python_class": "AliasRevisionStreamRecord",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_streams.py"
+    },
+    {
+      "schema_id": "AuthenticatedDocumentTimeReference",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.AuthenticatedDocumentTimeReference.v1",
+      "python_module": "memorii.core.semantic_ingestion.contracts",
+      "python_class": "AuthenticatedDocumentTimeReference",
+      "source_file": "memorii/memorii/core/semantic_ingestion/contracts.py"
+    },
+    {
+      "schema_id": "AuthenticatedEventTimeReference",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.AuthenticatedEventTimeReference.v1",
+      "python_module": "memorii.core.semantic_ingestion.contracts",
+      "python_class": "AuthenticatedEventTimeReference",
+      "source_file": "memorii/memorii/core/semantic_ingestion/contracts.py"
+    },
+    {
+      "schema_id": "AuthenticatedGraphObservationContext",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.AuthenticatedGraphObservationContext.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_public_contracts",
+      "python_class": "AuthenticatedGraphObservationContext",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_public_contracts.py"
+    },
+    {
+      "schema_id": "AuthenticatedSourceIntervalEvidence",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.AuthenticatedSourceIntervalEvidence.v1",
+      "python_module": "memorii.core.semantic_ingestion.contracts",
+      "python_class": "AuthenticatedSourceIntervalEvidence",
+      "source_file": "memorii/memorii/core/semantic_ingestion/contracts.py"
+    },
+    {
+      "schema_id": "BootstrapGraphNativeProjectionPublicationReceiptV3",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.BootstrapGraphNativeProjectionPublicationReceiptV3.v1",
+      "python_module": "memorii.core.semantic_ingestion.bootstrap_graph_projection_publication",
+      "python_class": "BootstrapGraphNativeProjectionPublicationReceiptV3",
+      "source_file": "memorii/memorii/core/semantic_ingestion/bootstrap_graph_projection_publication.py"
+    },
+    {
+      "schema_id": "BootstrapGraphNativeReplayAuthorityEvidenceV3",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.BootstrapGraphNativeReplayAuthorityEvidenceV3.v1",
+      "python_module": "memorii.core.semantic_ingestion.bootstrap_graph_projection_publication",
+      "python_class": "BootstrapGraphNativeReplayAuthorityEvidenceV3",
+      "source_file": "memorii/memorii/core/semantic_ingestion/bootstrap_graph_projection_publication.py"
+    },
+    {
+      "schema_id": "BootstrapGraphNativeReplayCheckpointEvidenceV3",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.BootstrapGraphNativeReplayCheckpointEvidenceV3.v1",
+      "python_module": "memorii.core.semantic_ingestion.bootstrap_graph_projection_publication",
+      "python_class": "BootstrapGraphNativeReplayCheckpointEvidenceV3",
+      "source_file": "memorii/memorii/core/semantic_ingestion/bootstrap_graph_projection_publication.py"
+    },
+    {
+      "schema_id": "CanonicalEntityRevisionRef",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.CanonicalEntityRevisionRef.v1",
+      "python_module": "memorii.core.memory_evolution.graph_records",
+      "python_class": "CanonicalEntityRevisionRef",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_records.py"
+    },
+    {
+      "schema_id": "CanonicalOperationIntroductionRecord",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.CanonicalOperationIntroductionRecord.v1",
+      "python_module": "memorii.core.memory_evolution.graph_effect_contracts",
+      "python_class": "CanonicalOperationIntroductionRecord",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_effect_contracts.py"
+    },
+    {
+      "schema_id": "CanonicalOperationTerminalOutcomeRecord",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.CanonicalOperationTerminalOutcomeRecord.v1",
+      "python_module": "memorii.core.memory_evolution.graph_effect_contracts",
+      "python_class": "CanonicalOperationTerminalOutcomeRecord",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_effect_contracts.py"
+    },
+    {
+      "schema_id": "CanonicalSourceIntroductionRecord",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.CanonicalSourceIntroductionRecord.v1",
+      "python_module": "memorii.core.memory_evolution.graph_effect_contracts",
+      "python_class": "CanonicalSourceIntroductionRecord",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_effect_contracts.py"
+    },
+    {
+      "schema_id": "CanonicalSourceTerminalOutcomeCore",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.CanonicalSourceTerminalOutcomeCore.v1",
+      "python_module": "memorii.core.memory_evolution.graph_effect_contracts",
+      "python_class": "CanonicalSourceTerminalOutcomeCore",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_effect_contracts.py"
+    },
+    {
+      "schema_id": "CanonicalSourceTerminalOutcomeRecord",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.CanonicalSourceTerminalOutcomeRecord.v1",
+      "python_module": "memorii.core.memory_evolution.graph_effect_contracts",
+      "python_class": "CanonicalSourceTerminalOutcomeRecord",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_effect_contracts.py"
+    },
+    {
+      "schema_id": "CitationRecord",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.CitationRecord.v1",
+      "python_module": "memorii.core.memory_evolution.graph_records",
+      "python_class": "CitationRecord",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_records.py"
+    },
+    {
+      "schema_id": "CitationStreamRecord",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.CitationStreamRecord.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_streams",
+      "python_class": "CitationStreamRecord",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_streams.py"
+    },
+    {
+      "schema_id": "ClaimAssertion",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ClaimAssertion.v1",
+      "python_module": "memorii.core.semantic_ingestion.contracts",
+      "python_class": "ClaimAssertion",
+      "source_file": "memorii/memorii/core/semantic_ingestion/contracts.py"
+    },
+    {
+      "schema_id": "ClaimAssertionStreamRecord",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ClaimAssertionStreamRecord.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_streams",
+      "python_class": "ClaimAssertionStreamRecord",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_streams.py"
+    },
+    {
+      "schema_id": "ClaimProjection",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ClaimProjection.v1",
+      "python_module": "memorii.core.memory_evolution.graph_records",
+      "python_class": "ClaimProjection",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_records.py"
+    },
+    {
+      "schema_id": "CommittedMemoryRecordSnapshot",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.CommittedMemoryRecordSnapshot.v1",
+      "python_module": "memorii.core.semantic_ingestion.event_replay",
+      "python_class": "CommittedMemoryRecordSnapshot",
+      "source_file": "memorii/memorii/core/semantic_ingestion/event_replay.py"
+    },
+    {
+      "schema_id": "CompiledIdentityLineageTransition",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.CompiledIdentityLineageTransition.v1",
+      "python_module": "memorii.core.memory_evolution.semantic_state",
+      "python_class": "CompiledIdentityLineageTransition",
+      "source_file": "memorii/memorii/core/memory_evolution/semantic_state.py"
+    },
+    {
+      "schema_id": "EntityRevision",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.EntityRevision.v1",
+      "python_module": "memorii.core.memory_evolution.graph_records",
+      "python_class": "EntityRevision",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_records.py"
+    },
+    {
+      "schema_id": "EntityRevisionStreamRecord",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.EntityRevisionStreamRecord.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_streams",
+      "python_class": "EntityRevisionStreamRecord",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_streams.py"
+    },
+    {
+      "schema_id": "EnvelopeFieldTextArtifactMappingProof",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.EnvelopeFieldTextArtifactMappingProof.v1",
+      "python_module": "memorii.core.semantic_ingestion.contracts",
+      "python_class": "EnvelopeFieldTextArtifactMappingProof",
+      "source_file": "memorii/memorii/core/semantic_ingestion/contracts.py"
+    },
+    {
+      "schema_id": "EventBatchLogPosition",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.EventBatchLogPosition.v1",
+      "python_module": "memorii.core.semantic_ingestion.event_replay",
+      "python_class": "EventBatchLogPosition",
+      "source_file": "memorii/memorii/core/semantic_ingestion/event_replay.py"
+    },
+    {
+      "schema_id": "EventProvenance",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.EventProvenance.v1",
+      "python_module": "memorii.core.semantic_ingestion.event_replay",
+      "python_class": "EventProvenance",
+      "source_file": "memorii/memorii/core/semantic_ingestion/event_replay.py"
+    },
+    {
+      "schema_id": "GovernanceCarrierArtifact",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.GovernanceCarrierArtifact.v1",
+      "python_module": "memorii.core.semantic_ingestion.contracts",
+      "python_class": "GovernanceCarrierArtifact",
+      "source_file": "memorii/memorii/core/semantic_ingestion/contracts.py"
+    },
+    {
+      "schema_id": "GraphObservationAuthorizationDecision",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.GraphObservationAuthorizationDecision.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_public_contracts",
+      "python_class": "GraphObservationAuthorizationDecision",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_public_contracts.py"
+    },
+    {
+      "schema_id": "GraphObservationCohortPreimage",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.GraphObservationCohortPreimage.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_snapshot_contracts",
+      "python_class": "GraphObservationCohortPreimage",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_snapshot_contracts.py"
+    },
+    {
+      "schema_id": "GraphObservationCohortSelector",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.GraphObservationCohortSelector.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_contracts",
+      "python_class": "GraphObservationCohortSelector",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_contracts.py"
+    },
+    {
+      "schema_id": "GraphObservationCursorPayload",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.GraphObservationCursorPayload.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_snapshot_contracts",
+      "python_class": "GraphObservationCursorPayload",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_snapshot_contracts.py"
+    },
+    {
+      "schema_id": "GraphObservationFailure",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.GraphObservationFailure.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_contracts",
+      "python_class": "GraphObservationFailure",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_contracts.py"
+    },
+    {
+      "schema_id": "GraphObservationPage",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.GraphObservationPage.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_public_contracts",
+      "python_class": "GraphObservationPage",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_public_contracts.py"
+    },
+    {
+      "schema_id": "GraphObservationPagePolicySnapshot",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.GraphObservationPagePolicySnapshot.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_public_contracts",
+      "python_class": "GraphObservationPagePolicySnapshot",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_public_contracts.py"
+    },
+    {
+      "schema_id": "GraphObservationRecordKey",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.GraphObservationRecordKey.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_snapshot_contracts",
+      "python_class": "GraphObservationRecordKey",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_snapshot_contracts.py"
+    },
+    {
+      "schema_id": "GraphObservationRequest",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.GraphObservationRequest.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_public_contracts",
+      "python_class": "GraphObservationRequest",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_public_contracts.py"
+    },
+    {
+      "schema_id": "GraphObservationRequestCoordinates",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.GraphObservationRequestCoordinates.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_public_contracts",
+      "python_class": "GraphObservationRequestCoordinates",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_public_contracts.py"
+    },
+    {
+      "schema_id": "GraphRecordMutation",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.GraphRecordMutation.v1",
+      "python_module": "memorii.core.memory_evolution.graph_effect_contracts",
+      "python_class": "GraphRecordMutation",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_effect_contracts.py"
+    },
+    {
+      "schema_id": "GraphRecordObservationSnapshot",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.GraphRecordObservationSnapshot.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_public_contracts",
+      "python_class": "GraphRecordObservationSnapshot",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_public_contracts.py"
+    },
+    {
+      "schema_id": "GraphRevisionDelta",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.GraphRevisionDelta.v1",
+      "python_module": "memorii.core.memory_evolution.graph_effect_contracts",
+      "python_class": "GraphRevisionDelta",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_effect_contracts.py"
+    },
+    {
+      "schema_id": "GroundedMentionRef",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.GroundedMentionRef.v1",
+      "python_module": "memorii.core.memory_evolution.graph_records",
+      "python_class": "GroundedMentionRef",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_records.py"
+    },
+    {
+      "schema_id": "IdentityLineageRecord",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.IdentityLineageRecord.v1",
+      "python_module": "memorii.core.semantic_ingestion.contracts",
+      "python_class": "IdentityLineageRecord",
+      "source_file": "memorii/memorii/core/semantic_ingestion/contracts.py"
+    },
+    {
+      "schema_id": "IdentityTransitionStreamRecord",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.IdentityTransitionStreamRecord.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_streams",
+      "python_class": "IdentityTransitionStreamRecord",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_streams.py"
+    },
+    {
+      "schema_id": "ImmutableAssertionEntityRef",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ImmutableAssertionEntityRef.v1",
+      "python_module": "memorii.core.memory_evolution.semantic_state",
+      "python_class": "ImmutableAssertionEntityRef",
+      "source_file": "memorii/memorii/core/memory_evolution/semantic_state.py"
+    },
+    {
+      "schema_id": "IngestionObservationDelta",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.IngestionObservationDelta.v1",
+      "python_module": "memorii.core.memory_evolution.graph_effect_contracts",
+      "python_class": "IngestionObservationDelta",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_effect_contracts.py"
+    },
+    {
+      "schema_id": "IngestionObservationRecordMutation",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.IngestionObservationRecordMutation.v1",
+      "python_module": "memorii.core.memory_evolution.graph_effect_contracts",
+      "python_class": "IngestionObservationRecordMutation",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_effect_contracts.py"
+    },
+    {
+      "schema_id": "IngestionObservationReplayCheckpoint",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.IngestionObservationReplayCheckpoint.v1",
+      "python_module": "memorii.core.memory_evolution.observation_replay_contracts",
+      "python_class": "IngestionObservationReplayCheckpoint",
+      "source_file": "memorii/memorii/core/memory_evolution/observation_replay_contracts.py"
+    },
+    {
+      "schema_id": "IngestionTimeAttestationPage",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.IngestionTimeAttestationPage.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_public_contracts",
+      "python_class": "IngestionTimeAttestationPage",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_public_contracts.py"
+    },
+    {
+      "schema_id": "IngestionTimeAttestationRequest",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.IngestionTimeAttestationRequest.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_public_contracts",
+      "python_class": "IngestionTimeAttestationRequest",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_public_contracts.py"
+    },
+    {
+      "schema_id": "IngestionTimeAttestationRequestCoordinates",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.IngestionTimeAttestationRequestCoordinates.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_public_contracts",
+      "python_class": "IngestionTimeAttestationRequestCoordinates",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_public_contracts.py"
+    },
+    {
+      "schema_id": "IngestionTimeObservationSnapshot",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.IngestionTimeObservationSnapshot.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_public_contracts",
+      "python_class": "IngestionTimeObservationSnapshot",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_public_contracts.py"
+    },
+    {
+      "schema_id": "LineageEntityIdentity",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.LineageEntityIdentity.v1",
+      "python_module": "memorii.core.memory_evolution.semantic_state",
+      "python_class": "LineageEntityIdentity",
+      "source_file": "memorii/memorii/core/memory_evolution/semantic_state.py"
+    },
+    {
+      "schema_id": "LineageEvidenceReference",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.LineageEvidenceReference.v1",
+      "python_module": "memorii.core.memory_evolution.semantic_state",
+      "python_class": "LineageEvidenceReference",
+      "source_file": "memorii/memorii/core/memory_evolution/semantic_state.py"
+    },
+    {
+      "schema_id": "LineageReferenceDisposition",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.LineageReferenceDisposition.v1",
+      "python_module": "memorii.core.memory_evolution.semantic_state",
+      "python_class": "LineageReferenceDisposition",
+      "source_file": "memorii/memorii/core/memory_evolution/semantic_state.py"
+    },
+    {
+      "schema_id": "LineageReverseReference",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.LineageReverseReference.v1",
+      "python_module": "memorii.core.memory_evolution.semantic_state",
+      "python_class": "LineageReverseReference",
+      "source_file": "memorii/memorii/core/memory_evolution/semantic_state.py"
+    },
+    {
+      "schema_id": "MemoryEventMetadata",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.MemoryEventMetadata.v1",
+      "python_module": "memorii.core.semantic_ingestion.event_replay",
+      "python_class": "MemoryEventMetadata",
+      "source_file": "memorii/memorii/core/semantic_ingestion/event_replay.py"
+    },
+    {
+      "schema_id": "MemoryScope",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.MemoryScope.v1",
+      "python_module": "memorii.core.memory_evolution.models",
+      "python_class": "MemoryScope",
+      "source_file": "memorii/memorii/core/memory_evolution/models.py"
+    },
+    {
+      "schema_id": "MessageAdmissionCarrierSet",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.MessageAdmissionCarrierSet.v1",
+      "python_module": "memorii.core.semantic_ingestion.contracts",
+      "python_class": "MessageAdmissionCarrierSet",
+      "source_file": "memorii/memorii/core/semantic_ingestion/contracts.py"
+    },
+    {
+      "schema_id": "MessageAdmissionIdentity",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.MessageAdmissionIdentity.v1",
+      "python_module": "memorii.core.semantic_ingestion.contracts",
+      "python_class": "MessageAdmissionIdentity",
+      "source_file": "memorii/memorii/core/semantic_ingestion/contracts.py"
+    },
+    {
+      "schema_id": "ObservationCheckpointBundle",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ObservationCheckpointBundle.v1",
+      "python_module": "memorii.core.memory_evolution.observation_replay_contracts",
+      "python_class": "ObservationCheckpointBundle",
+      "source_file": "memorii/memorii/core/memory_evolution/observation_replay_contracts.py"
+    },
+    {
+      "schema_id": "ObservationCheckpointLifecycle",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ObservationCheckpointLifecycle.v1",
+      "python_module": "memorii.core.memory_evolution.observation_replay_contracts",
+      "python_class": "ObservationCheckpointLifecycle",
+      "source_file": "memorii/memorii/core/memory_evolution/observation_replay_contracts.py"
+    },
+    {
+      "schema_id": "ObservationCheckpointPublicationReceipt",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ObservationCheckpointPublicationReceipt.v1",
+      "python_module": "memorii.core.memory_evolution.observation_replay_contracts",
+      "python_class": "ObservationCheckpointPublicationReceipt",
+      "source_file": "memorii/memorii/core/memory_evolution/observation_replay_contracts.py"
+    },
+    {
+      "schema_id": "ObservationCheckpointSigningPreimage",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ObservationCheckpointSigningPreimage.v1",
+      "python_module": "memorii.core.memory_evolution.observation_replay_contracts",
+      "python_class": "ObservationCheckpointSigningPreimage",
+      "source_file": "memorii/memorii/core/memory_evolution/observation_replay_contracts.py"
+    },
+    {
+      "schema_id": "ObservationGroupResultLocator",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ObservationGroupResultLocator.v1",
+      "python_module": "memorii.core.memory_evolution.observation_ledger_contracts",
+      "python_class": "ObservationGroupResultLocator",
+      "source_file": "memorii/memorii/core/memory_evolution/observation_ledger_contracts.py"
+    },
+    {
+      "schema_id": "ObservationGroupSemanticPayload",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ObservationGroupSemanticPayload.v1",
+      "python_module": "memorii.core.memory_evolution.observation_ledger_contracts",
+      "python_class": "ObservationGroupSemanticPayload",
+      "source_file": "memorii/memorii/core/memory_evolution/observation_ledger_contracts.py"
+    },
+    {
+      "schema_id": "ObservationLedgerActivation",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ObservationLedgerActivation.v1",
+      "python_module": "memorii.core.memory_evolution.observation_ledger_contracts",
+      "python_class": "ObservationLedgerActivation",
+      "source_file": "memorii/memorii/core/memory_evolution/observation_ledger_contracts.py"
+    },
+    {
+      "schema_id": "ObservationLedgerEntry",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ObservationLedgerEntry.v1",
+      "python_module": "memorii.core.memory_evolution.observation_ledger_contracts",
+      "python_class": "ObservationLedgerEntry",
+      "source_file": "memorii/memorii/core/memory_evolution/observation_ledger_contracts.py"
+    },
+    {
+      "schema_id": "ObservationLedgerHead",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ObservationLedgerHead.v1",
+      "python_module": "memorii.core.memory_evolution.observation_ledger_contracts",
+      "python_class": "ObservationLedgerHead",
+      "source_file": "memorii/memorii/core/memory_evolution/observation_ledger_contracts.py"
+    },
+    {
+      "schema_id": "ObservationReplayState",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ObservationReplayState.v1",
+      "python_module": "memorii.core.memory_evolution.observation_replay_contracts",
+      "python_class": "ObservationReplayState",
+      "source_file": "memorii/memorii/core/memory_evolution/observation_replay_contracts.py"
+    },
+    {
+      "schema_id": "ObservationSourceResultLocator",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ObservationSourceResultLocator.v1",
+      "python_module": "memorii.core.memory_evolution.observation_ledger_contracts",
+      "python_class": "ObservationSourceResultLocator",
+      "source_file": "memorii/memorii/core/memory_evolution/observation_ledger_contracts.py"
+    },
+    {
+      "schema_id": "ObservationSourceSemanticPayload",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ObservationSourceSemanticPayload.v1",
+      "python_module": "memorii.core.memory_evolution.observation_ledger_contracts",
+      "python_class": "ObservationSourceSemanticPayload",
+      "source_file": "memorii/memorii/core/memory_evolution/observation_ledger_contracts.py"
+    },
+    {
+      "schema_id": "ObservedActionRevision",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ObservedActionRevision.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_records",
+      "python_class": "ObservedActionRevision",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_records.py"
+    },
+    {
+      "schema_id": "ObservedActionRoleBinding",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ObservedActionRoleBinding.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_records",
+      "python_class": "ObservedActionRoleBinding",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_records.py"
+    },
+    {
+      "schema_id": "ObservedAliasRevision",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ObservedAliasRevision.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_records",
+      "python_class": "ObservedAliasRevision",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_records.py"
+    },
+    {
+      "schema_id": "ObservedAssertionEntityReference",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ObservedAssertionEntityReference.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_records",
+      "python_class": "ObservedAssertionEntityReference",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_records.py"
+    },
+    {
+      "schema_id": "ObservedAuthenticatedReferenceEffectiveTime",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ObservedAuthenticatedReferenceEffectiveTime.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_records",
+      "python_class": "ObservedAuthenticatedReferenceEffectiveTime",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_records.py"
+    },
+    {
+      "schema_id": "ObservedCertifiedTextEffectiveTime",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ObservedCertifiedTextEffectiveTime.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_records",
+      "python_class": "ObservedCertifiedTextEffectiveTime",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_records.py"
+    },
+    {
+      "schema_id": "ObservedCitationRecord",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ObservedCitationRecord.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_records",
+      "python_class": "ObservedCitationRecord",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_records.py"
+    },
+    {
+      "schema_id": "ObservedClaimAssertion",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ObservedClaimAssertion.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_records",
+      "python_class": "ObservedClaimAssertion",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_records.py"
+    },
+    {
+      "schema_id": "ObservedEntityReference",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ObservedEntityReference.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_records",
+      "python_class": "ObservedEntityReference",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_records.py"
+    },
+    {
+      "schema_id": "ObservedEntityRevision",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ObservedEntityRevision.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_records",
+      "python_class": "ObservedEntityRevision",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_records.py"
+    },
+    {
+      "schema_id": "ObservedIdentityTransition",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ObservedIdentityTransition.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_records",
+      "python_class": "ObservedIdentityTransition",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_records.py"
+    },
+    {
+      "schema_id": "ObservedOperationIntroduction",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ObservedOperationIntroduction.v1",
+      "python_module": "memorii.core.memory_evolution.graph_ingestion_observation_records",
+      "python_class": "ObservedOperationIntroduction",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_ingestion_observation_records.py"
+    },
+    {
+      "schema_id": "ObservedOperationTerminalOutcome",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ObservedOperationTerminalOutcome.v1",
+      "python_module": "memorii.core.memory_evolution.graph_ingestion_observation_records",
+      "python_class": "ObservedOperationTerminalOutcome",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_ingestion_observation_records.py"
+    },
+    {
+      "schema_id": "ObservedProvenanceRecord",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ObservedProvenanceRecord.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_records",
+      "python_class": "ObservedProvenanceRecord",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_records.py"
+    },
+    {
+      "schema_id": "ObservedReferenceDisposition",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ObservedReferenceDisposition.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_records",
+      "python_class": "ObservedReferenceDisposition",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_records.py"
+    },
+    {
+      "schema_id": "ObservedRelation",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ObservedRelation.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_records",
+      "python_class": "ObservedRelation",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_records.py"
+    },
+    {
+      "schema_id": "ObservedSourceIntroduction",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ObservedSourceIntroduction.v1",
+      "python_module": "memorii.core.memory_evolution.graph_ingestion_observation_records",
+      "python_class": "ObservedSourceIntroduction",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_ingestion_observation_records.py"
+    },
+    {
+      "schema_id": "ObservedSourceOutcomeConsistencyAssessment",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ObservedSourceOutcomeConsistencyAssessment.v1",
+      "python_module": "memorii.core.memory_evolution.graph_ingestion_observation_records",
+      "python_class": "ObservedSourceOutcomeConsistencyAssessment",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_ingestion_observation_records.py"
+    },
+    {
+      "schema_id": "ObservedSourceTerminalOutcome",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ObservedSourceTerminalOutcome.v1",
+      "python_module": "memorii.core.memory_evolution.graph_ingestion_observation_records",
+      "python_class": "ObservedSourceTerminalOutcome",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_ingestion_observation_records.py"
+    },
+    {
+      "schema_id": "ObservedSystemRecordedEffectiveTime",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ObservedSystemRecordedEffectiveTime.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_records",
+      "python_class": "ObservedSystemRecordedEffectiveTime",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_records.py"
+    },
+    {
+      "schema_id": "ObservedTemporalClaimProjection",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ObservedTemporalClaimProjection.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_records",
+      "python_class": "ObservedTemporalClaimProjection",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_records.py"
+    },
+    {
+      "schema_id": "ObservedTemporalTransition",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ObservedTemporalTransition.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_records",
+      "python_class": "ObservedTemporalTransition",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_records.py"
+    },
+    {
+      "schema_id": "ObservedTrustClaimProjection",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ObservedTrustClaimProjection.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_records",
+      "python_class": "ObservedTrustClaimProjection",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_records.py"
+    },
+    {
+      "schema_id": "ObservedTypeEvidence",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ObservedTypeEvidence.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_records",
+      "python_class": "ObservedTypeEvidence",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_records.py"
+    },
+    {
+      "schema_id": "OperationIntroductionStreamRecord",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.OperationIntroductionStreamRecord.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_streams",
+      "python_class": "OperationIntroductionStreamRecord",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_streams.py"
+    },
+    {
+      "schema_id": "OperationTemporalAttachmentBinding",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.OperationTemporalAttachmentBinding.v1",
+      "python_module": "memorii.core.semantic_ingestion.contracts",
+      "python_class": "OperationTemporalAttachmentBinding",
+      "source_file": "memorii/memorii/core/semantic_ingestion/contracts.py"
+    },
+    {
+      "schema_id": "OperationTemporalDecisionBinding",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.OperationTemporalDecisionBinding.v1",
+      "python_module": "memorii.core.semantic_ingestion.contracts",
+      "python_class": "OperationTemporalDecisionBinding",
+      "source_file": "memorii/memorii/core/semantic_ingestion/contracts.py"
+    },
+    {
+      "schema_id": "OperationTerminalOutcomeStreamRecord",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.OperationTerminalOutcomeStreamRecord.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_streams",
+      "python_class": "OperationTerminalOutcomeStreamRecord",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_streams.py"
+    },
+    {
+      "schema_id": "PredicateStateRule",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.PredicateStateRule.v1",
+      "python_module": "memorii.core.memory_evolution.semantic_state",
+      "python_class": "PredicateStateRule",
+      "source_file": "memorii/memorii/core/memory_evolution/semantic_state.py"
+    },
+    {
+      "schema_id": "PredicateTrustRule",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.PredicateTrustRule.v1",
+      "python_module": "memorii.core.semantic_ingestion.contracts",
+      "python_class": "PredicateTrustRule",
+      "source_file": "memorii/memorii/core/semantic_ingestion/contracts.py"
+    },
+    {
+      "schema_id": "ProjectionEvidenceRecord",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ProjectionEvidenceRecord.v1",
+      "python_module": "memorii.core.memory_evolution.semantic_state",
+      "python_class": "ProjectionEvidenceRecord",
+      "source_file": "memorii/memorii/core/memory_evolution/semantic_state.py"
+    },
+    {
+      "schema_id": "ProjectionHistoryReplayBinding",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ProjectionHistoryReplayBinding.v1",
+      "python_module": "memorii.core.memory_evolution.projection_binding",
+      "python_class": "ProjectionHistoryReplayBinding",
+      "source_file": "memorii/memorii/core/memory_evolution/projection_binding.py"
+    },
+    {
+      "schema_id": "ProjectionTextSpan",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ProjectionTextSpan.v1",
+      "python_module": "memorii.core.semantic_ingestion.contracts",
+      "python_class": "ProjectionTextSpan",
+      "source_file": "memorii/memorii/core/semantic_ingestion/contracts.py"
+    },
+    {
+      "schema_id": "ProvenanceRecord",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ProvenanceRecord.v1",
+      "python_module": "memorii.core.memory_evolution.graph_records",
+      "python_class": "ProvenanceRecord",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_records.py"
+    },
+    {
+      "schema_id": "ProvenanceStreamRecord",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ProvenanceStreamRecord.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_streams",
+      "python_class": "ProvenanceStreamRecord",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_streams.py"
+    },
+    {
+      "schema_id": "ReferenceDispositionRecord",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ReferenceDispositionRecord.v1",
+      "python_module": "memorii.core.memory_evolution.graph_records",
+      "python_class": "ReferenceDispositionRecord",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_records.py"
+    },
+    {
+      "schema_id": "ReferenceDispositionStreamRecord",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ReferenceDispositionStreamRecord.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_streams",
+      "python_class": "ReferenceDispositionStreamRecord",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_streams.py"
+    },
+    {
+      "schema_id": "ReferenceEdgeLedgerEntry",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ReferenceEdgeLedgerEntry.v1",
+      "python_module": "memorii.core.memory_evolution.reference_integrity",
+      "python_class": "ReferenceEdgeLedgerEntry",
+      "source_file": "memorii/memorii/core/memory_evolution/reference_integrity.py"
+    },
+    {
+      "schema_id": "ReferenceTarget",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ReferenceTarget.v1",
+      "python_module": "memorii.core.memory_evolution.reference_integrity",
+      "python_class": "ReferenceTarget",
+      "source_file": "memorii/memorii/core/memory_evolution/reference_integrity.py"
+    },
+    {
+      "schema_id": "RelationRevision",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.RelationRevision.v1",
+      "python_module": "memorii.core.memory_evolution.graph_records",
+      "python_class": "RelationRevision",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_records.py"
+    },
+    {
+      "schema_id": "RelationStreamRecord",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.RelationStreamRecord.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_streams",
+      "python_class": "RelationStreamRecord",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_streams.py"
+    },
+    {
+      "schema_id": "RequiredOutcomeScopeSet",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.RequiredOutcomeScopeSet.v1",
+      "python_module": "memorii.core.semantic_ingestion.contracts",
+      "python_class": "RequiredOutcomeScopeSet",
+      "source_file": "memorii/memorii/core/semantic_ingestion/contracts.py"
+    },
+    {
+      "schema_id": "ResolvedGraphObservationCohort",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ResolvedGraphObservationCohort.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_snapshot_contracts",
+      "python_class": "ResolvedGraphObservationCohort",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_snapshot_contracts.py"
+    },
+    {
+      "schema_id": "RetainedSourceTextArtifact",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.RetainedSourceTextArtifact.v1",
+      "python_module": "memorii.core.semantic_ingestion.contracts",
+      "python_class": "RetainedSourceTextArtifact",
+      "source_file": "memorii/memorii/core/semantic_ingestion/contracts.py"
+    },
+    {
+      "schema_id": "RetainedSourceTextSpan",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.RetainedSourceTextSpan.v1",
+      "python_module": "memorii.core.semantic_ingestion.contracts",
+      "python_class": "RetainedSourceTextSpan",
+      "source_file": "memorii/memorii/core/semantic_ingestion/contracts.py"
+    },
+    {
+      "schema_id": "SegmentGovernanceBinding",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.SegmentGovernanceBinding.v1",
+      "python_module": "memorii.core.semantic_ingestion.contracts",
+      "python_class": "SegmentGovernanceBinding",
+      "source_file": "memorii/memorii/core/semantic_ingestion/contracts.py"
+    },
+    {
+      "schema_id": "SegmentGovernanceCarrierSet",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.SegmentGovernanceCarrierSet.v1",
+      "python_module": "memorii.core.semantic_ingestion.contracts",
+      "python_class": "SegmentGovernanceCarrierSet",
+      "source_file": "memorii/memorii/core/semantic_ingestion/contracts.py"
+    },
+    {
+      "schema_id": "SegmentLocalTextArtifact",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.SegmentLocalTextArtifact.v1",
+      "python_module": "memorii.core.semantic_ingestion.contracts",
+      "python_class": "SegmentLocalTextArtifact",
+      "source_file": "memorii/memorii/core/semantic_ingestion/contracts.py"
+    },
+    {
+      "schema_id": "SegmentLocalTextSpan",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.SegmentLocalTextSpan.v1",
+      "python_module": "memorii.core.semantic_ingestion.contracts",
+      "python_class": "SegmentLocalTextSpan",
+      "source_file": "memorii/memorii/core/semantic_ingestion/contracts.py"
+    },
+    {
+      "schema_id": "SemanticAssertionKey",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.SemanticAssertionKey.v1",
+      "python_module": "memorii.core.memory_evolution.semantic_state",
+      "python_class": "SemanticAssertionKey",
+      "source_file": "memorii/memorii/core/memory_evolution/semantic_state.py"
+    },
+    {
+      "schema_id": "SemanticClaimSlotKey",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.SemanticClaimSlotKey.v1",
+      "python_module": "memorii.core.memory_evolution.semantic_state",
+      "python_class": "SemanticClaimSlotKey",
+      "source_file": "memorii/memorii/core/memory_evolution/semantic_state.py"
+    },
+    {
+      "schema_id": "SemanticClaimValueKey",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.SemanticClaimValueKey.v1",
+      "python_module": "memorii.core.memory_evolution.semantic_state",
+      "python_class": "SemanticClaimValueKey",
+      "source_file": "memorii/memorii/core/memory_evolution/semantic_state.py"
+    },
+    {
+      "schema_id": "SemanticConflictReplayBinding",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.SemanticConflictReplayBinding.v1",
+      "python_module": "memorii.core.memory_evolution.conflict_attention",
+      "python_class": "SemanticConflictReplayBinding",
+      "source_file": "memorii/memorii/core/memory_evolution/conflict_attention.py"
+    },
+    {
+      "schema_id": "SemanticEventBinding",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.SemanticEventBinding.v1",
+      "python_module": "memorii.core.semantic_ingestion.event_replay",
+      "python_class": "SemanticEventBinding",
+      "source_file": "memorii/memorii/core/semantic_ingestion/event_replay.py"
+    },
+    {
+      "schema_id": "SemanticGraphDelta",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.SemanticGraphDelta.v1",
+      "python_module": "memorii.core.semantic_ingestion.contracts",
+      "python_class": "SemanticGraphDelta",
+      "source_file": "memorii/memorii/core/semantic_ingestion/contracts.py"
+    },
+    {
+      "schema_id": "SemanticMaterializedMemoryRecord",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.SemanticMaterializedMemoryRecord.v1",
+      "python_module": "memorii.core.semantic_ingestion.event_replay",
+      "python_class": "SemanticMaterializedMemoryRecord",
+      "source_file": "memorii/memorii/core/semantic_ingestion/event_replay.py"
+    },
+    {
+      "schema_id": "SemanticMemoryEvent",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.SemanticMemoryEvent.v1",
+      "python_module": "memorii.core.semantic_ingestion.event_replay",
+      "python_class": "SemanticMemoryEvent",
+      "source_file": "memorii/memorii/core/semantic_ingestion/event_replay.py"
+    },
+    {
+      "schema_id": "SemanticMemoryEventBatch",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.SemanticMemoryEventBatch.v1",
+      "python_module": "memorii.core.semantic_ingestion.event_replay",
+      "python_class": "SemanticMemoryEventBatch",
+      "source_file": "memorii/memorii/core/semantic_ingestion/event_replay.py"
+    },
+    {
+      "schema_id": "SemanticMemoryEventPayload",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.SemanticMemoryEventPayload.v1",
+      "python_module": "memorii.core.semantic_ingestion.event_replay",
+      "python_class": "SemanticMemoryEventPayload",
+      "source_file": "memorii/memorii/core/semantic_ingestion/event_replay.py"
+    },
+    {
+      "schema_id": "SemanticProjectionTextArtifact",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.SemanticProjectionTextArtifact.v1",
+      "python_module": "memorii.core.semantic_ingestion.contracts",
+      "python_class": "SemanticProjectionTextArtifact",
+      "source_file": "memorii/memorii/core/semantic_ingestion/contracts.py"
+    },
+    {
+      "schema_id": "SemanticReplayAuthorityAggregate",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.SemanticReplayAuthorityAggregate.v1",
+      "python_module": "memorii.core.semantic_ingestion.event_replay",
+      "python_class": "SemanticReplayAuthorityAggregate",
+      "source_file": "memorii/memorii/core/semantic_ingestion/event_replay.py"
+    },
+    {
+      "schema_id": "SemanticReplayAuthorityMemberBinding",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.SemanticReplayAuthorityMemberBinding.v1",
+      "python_module": "memorii.core.semantic_ingestion.event_replay",
+      "python_class": "SemanticReplayAuthorityMemberBinding",
+      "source_file": "memorii/memorii/core/semantic_ingestion/event_replay.py"
+    },
+    {
+      "schema_id": "SemanticReplayCheckpoint",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.SemanticReplayCheckpoint.v1",
+      "python_module": "memorii.core.semantic_ingestion.event_replay",
+      "python_class": "SemanticReplayCheckpoint",
+      "source_file": "memorii/memorii/core/semantic_ingestion/event_replay.py"
+    },
+    {
+      "schema_id": "SemanticReplayCheckpointBundle",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.SemanticReplayCheckpointBundle.v1",
+      "python_module": "memorii.core.semantic_ingestion.event_replay",
+      "python_class": "SemanticReplayCheckpointBundle",
+      "source_file": "memorii/memorii/core/semantic_ingestion/event_replay.py"
+    },
+    {
+      "schema_id": "SemanticReplayState",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.SemanticReplayState.v1",
+      "python_module": "memorii.core.semantic_ingestion.event_replay",
+      "python_class": "SemanticReplayState",
+      "source_file": "memorii/memorii/core/semantic_ingestion/event_replay.py"
+    },
+    {
+      "schema_id": "SemanticTerminalBindingSet",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.SemanticTerminalBindingSet.v1",
+      "python_module": "memorii.core.semantic_ingestion.contracts",
+      "python_class": "SemanticTerminalBindingSet",
+      "source_file": "memorii/memorii/core/semantic_ingestion/contracts.py"
+    },
+    {
+      "schema_id": "SnapshotGraphRecord",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.SnapshotGraphRecord.v1",
+      "python_module": "memorii.core.memory_evolution.graph_records",
+      "python_class": "SnapshotGraphRecord",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_records.py"
+    },
+    {
+      "schema_id": "SourceAuthority",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.SourceAuthority.v1",
+      "python_module": "memorii.core.memory_evolution.graph_records",
+      "python_class": "SourceAuthority",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_records.py"
+    },
+    {
+      "schema_id": "SourceAuthorityEvidence",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.SourceAuthorityEvidence.v1",
+      "python_module": "memorii.core.semantic_ingestion.contracts",
+      "python_class": "SourceAuthorityEvidence",
+      "source_file": "memorii/memorii/core/semantic_ingestion/contracts.py"
+    },
+    {
+      "schema_id": "SourceFinalizationObservationDelta",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.SourceFinalizationObservationDelta.v1",
+      "python_module": "memorii.core.memory_evolution.graph_effect_contracts",
+      "python_class": "SourceFinalizationObservationDelta",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_effect_contracts.py"
+    },
+    {
+      "schema_id": "SourceIntroductionStreamRecord",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.SourceIntroductionStreamRecord.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_streams",
+      "python_class": "SourceIntroductionStreamRecord",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_streams.py"
+    },
+    {
+      "schema_id": "SourceObservationIntent",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.SourceObservationIntent.v1",
+      "python_module": "memorii.core.memory_evolution.observation_ledger_contracts",
+      "python_class": "SourceObservationIntent",
+      "source_file": "memorii/memorii/core/memory_evolution/observation_ledger_contracts.py"
+    },
+    {
+      "schema_id": "SourceRetentionTimeAttestation",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.SourceRetentionTimeAttestation.v1",
+      "python_module": "memorii.core.memory_evolution.graph_ingestion_time_contracts",
+      "python_class": "SourceRetentionTimeAttestation",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_ingestion_time_contracts.py"
+    },
+    {
+      "schema_id": "SourceSpan",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.SourceSpan.v1",
+      "python_module": "memorii.core.semantic_ingestion.contracts",
+      "python_class": "SourceSpan",
+      "source_file": "memorii/memorii/core/semantic_ingestion/contracts.py"
+    },
+    {
+      "schema_id": "SourceSpanReference",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.SourceSpanReference.v1",
+      "python_module": "memorii.core.semantic_ingestion.contracts",
+      "python_class": "SourceSpanReference",
+      "source_file": "memorii/memorii/core/semantic_ingestion/contracts.py"
+    },
+    {
+      "schema_id": "SourceTerminalOutcomeStreamRecord",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.SourceTerminalOutcomeStreamRecord.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_streams",
+      "python_class": "SourceTerminalOutcomeStreamRecord",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_streams.py"
+    },
+    {
+      "schema_id": "TemporalClaimProjectionStreamRecord",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.TemporalClaimProjectionStreamRecord.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_streams",
+      "python_class": "TemporalClaimProjectionStreamRecord",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_streams.py"
+    },
+    {
+      "schema_id": "TemporalEvidenceCandidate",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.TemporalEvidenceCandidate.v1",
+      "python_module": "memorii.core.semantic_ingestion.contracts",
+      "python_class": "TemporalEvidenceCandidate",
+      "source_file": "memorii/memorii/core/semantic_ingestion/contracts.py"
+    },
+    {
+      "schema_id": "TemporalEvidenceDecisionClosure",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.TemporalEvidenceDecisionClosure.v1",
+      "python_module": "memorii.core.semantic_ingestion.contracts",
+      "python_class": "TemporalEvidenceDecisionClosure",
+      "source_file": "memorii/memorii/core/semantic_ingestion/contracts.py"
+    },
+    {
+      "schema_id": "TemporalPolicyMigrationCertificate",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.TemporalPolicyMigrationCertificate.v1",
+      "python_module": "memorii.core.memory_evolution.semantic_state",
+      "python_class": "TemporalPolicyMigrationCertificate",
+      "source_file": "memorii/memorii/core/memory_evolution/semantic_state.py"
+    },
+    {
+      "schema_id": "TemporalProjectionCommitCertificate",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.TemporalProjectionCommitCertificate.v1",
+      "python_module": "memorii.core.memory_evolution.semantic_state",
+      "python_class": "TemporalProjectionCommitCertificate",
+      "source_file": "memorii/memorii/core/memory_evolution/semantic_state.py"
+    },
+    {
+      "schema_id": "TemporalProjectionGeneration",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.TemporalProjectionGeneration.v1",
+      "python_module": "memorii.core.memory_evolution.semantic_state",
+      "python_class": "TemporalProjectionGeneration",
+      "source_file": "memorii/memorii/core/memory_evolution/semantic_state.py"
+    },
+    {
+      "schema_id": "TemporalProjectionHistoryEntry",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.TemporalProjectionHistoryEntry.v1",
+      "python_module": "memorii.core.memory_evolution.semantic_state",
+      "python_class": "TemporalProjectionHistoryEntry",
+      "source_file": "memorii/memorii/core/memory_evolution/semantic_state.py"
+    },
+    {
+      "schema_id": "TemporalProjectionPublication",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.TemporalProjectionPublication.v1",
+      "python_module": "memorii.core.memory_evolution.projection_history",
+      "python_class": "TemporalProjectionPublication",
+      "source_file": "memorii/memorii/core/memory_evolution/projection_history.py"
+    },
+    {
+      "schema_id": "TemporalProjectionRecord",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.TemporalProjectionRecord.v1",
+      "python_module": "memorii.core.memory_evolution.semantic_state",
+      "python_class": "TemporalProjectionRecord",
+      "source_file": "memorii/memorii/core/memory_evolution/semantic_state.py"
+    },
+    {
+      "schema_id": "TemporalTransitionRecord",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.TemporalTransitionRecord.v1",
+      "python_module": "memorii.core.semantic_ingestion.contracts",
+      "python_class": "TemporalTransitionRecord",
+      "source_file": "memorii/memorii/core/semantic_ingestion/contracts.py"
+    },
+    {
+      "schema_id": "TemporalTransitionStreamRecord",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.TemporalTransitionStreamRecord.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_streams",
+      "python_class": "TemporalTransitionStreamRecord",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_streams.py"
+    },
+    {
+      "schema_id": "TimeInterval",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.TimeInterval.v1",
+      "python_module": "memorii.core.memory_evolution.time_contracts",
+      "python_class": "TimeInterval",
+      "source_file": "memorii/memorii/core/memory_evolution/time_contracts.py"
+    },
+    {
+      "schema_id": "TransactionGroupCommitTimeAttestation",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.TransactionGroupCommitTimeAttestation.v1",
+      "python_module": "memorii.core.memory_evolution.graph_ingestion_time_contracts",
+      "python_class": "TransactionGroupCommitTimeAttestation",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_ingestion_time_contracts.py"
+    },
+    {
+      "schema_id": "TrustClaimProjectionStreamRecord",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.TrustClaimProjectionStreamRecord.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_streams",
+      "python_class": "TrustClaimProjectionStreamRecord",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_streams.py"
+    },
+    {
+      "schema_id": "TrustDecayStep",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.TrustDecayStep.v1",
+      "python_module": "memorii.core.semantic_ingestion.contracts",
+      "python_class": "TrustDecayStep",
+      "source_file": "memorii/memorii/core/semantic_ingestion/contracts.py"
+    },
+    {
+      "schema_id": "TrustPolicyMigrationCertificate",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.TrustPolicyMigrationCertificate.v1",
+      "python_module": "memorii.core.memory_evolution.semantic_state",
+      "python_class": "TrustPolicyMigrationCertificate",
+      "source_file": "memorii/memorii/core/memory_evolution/semantic_state.py"
+    },
+    {
+      "schema_id": "TrustProjectionCommitCertificate",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.TrustProjectionCommitCertificate.v1",
+      "python_module": "memorii.core.memory_evolution.semantic_state",
+      "python_class": "TrustProjectionCommitCertificate",
+      "source_file": "memorii/memorii/core/memory_evolution/semantic_state.py"
+    },
+    {
+      "schema_id": "TrustProjectionGeneration",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.TrustProjectionGeneration.v1",
+      "python_module": "memorii.core.memory_evolution.semantic_state",
+      "python_class": "TrustProjectionGeneration",
+      "source_file": "memorii/memorii/core/memory_evolution/semantic_state.py"
+    },
+    {
+      "schema_id": "TrustProjectionHistoryEntry",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.TrustProjectionHistoryEntry.v1",
+      "python_module": "memorii.core.memory_evolution.semantic_state",
+      "python_class": "TrustProjectionHistoryEntry",
+      "source_file": "memorii/memorii/core/memory_evolution/semantic_state.py"
+    },
+    {
+      "schema_id": "TrustProjectionPublication",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.TrustProjectionPublication.v1",
+      "python_module": "memorii.core.memory_evolution.projection_history",
+      "python_class": "TrustProjectionPublication",
+      "source_file": "memorii/memorii/core/memory_evolution/projection_history.py"
+    },
+    {
+      "schema_id": "TrustProjectionRecord",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.TrustProjectionRecord.v1",
+      "python_module": "memorii.core.memory_evolution.semantic_state",
+      "python_class": "TrustProjectionRecord",
+      "source_file": "memorii/memorii/core/memory_evolution/semantic_state.py"
+    },
+    {
+      "schema_id": "TypeEvidence",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.TypeEvidence.v1",
+      "python_module": "memorii.core.memory_evolution.graph_records",
+      "python_class": "TypeEvidence",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_records.py"
+    },
+    {
+      "schema_id": "TypeEvidenceStreamRecord",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.TypeEvidenceStreamRecord.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_streams",
+      "python_class": "TypeEvidenceStreamRecord",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_streams.py"
+    },
+    {
+      "schema_id": "TypedLiteral",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.TypedLiteral.v1",
+      "python_module": "memorii.core.semantic_ingestion.contracts",
+      "python_class": "TypedLiteral",
+      "source_file": "memorii/memorii/core/semantic_ingestion/contracts.py"
+    },
+    {
+      "schema_id": "VerbatimTextArtifactMappingProof",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.VerbatimTextArtifactMappingProof.v1",
+      "python_module": "memorii.core.semantic_ingestion.contracts",
+      "python_class": "VerbatimTextArtifactMappingProof",
+      "source_file": "memorii/memorii/core/semantic_ingestion/contracts.py"
+    }
+  ],
+  "count": 179,
+  "authority": "Normative decoder ID convention plus reviewed existing native class owners; offline reflection only. Runtime must use explicit fixed imports and finite lookup. No implementation hash invented before code exists."
+}

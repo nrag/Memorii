@@ -1,0 +1,29 @@
+{
+  "scope": "Design only: operational profile registry publication, shared ledger and separate temporal/trust observation; not implementation or M5 closure",
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "tree": "authorized dirty working tree; no writer on frozen design artifacts",
+  "files": {
+    "docs/design/semantic_ingestion_architecture.md": "69140e58d650fbe9f59d69de2da06d846b6c4a9040256d82d29fced76e918e79",
+    "docs/design/semantic_ingestion_observation.md": "2aa7cf1726d2287c1efb9e12afadca0b767b3bff77b6ab87487c713a29e0887c",
+    "docs/work/semantic_ingestion/observation-ledger/readiness.md": "17867bf9916faf3dcc502917ae09811fcc5319e32adad69cac19d653dddde58a",
+    "docs/work/semantic_ingestion/observation-ledger/registry-verification-matrix.md": "c4107c183232f61456913ef33b9475500acf012765d3a52b2c36cb2692dc79a4",
+    "docs/work/semantic_ingestion/observation-ledger/entrypoint-preflight.md": "bae34413f3c1a7495d235f2fbbf01ab6c210378f73f69246ab53e388d861d071",
+    "docs/work/semantic_ingestion/observation-ledger/native-projection-binding.md": "9c88b6db190dfa5810b494241a5ed0a76fa44c9514777e3c64e3bf65e4dd240b"
+  },
+  "candidate_digest": "698874b5b29c9abce7623b3b3c4150639762cdd038f8ccd815521c28eaca2cd3",
+  "readiness": "Current trigger-to-owner plans and Spark preflight are retained; new runtime owners explicitly have zero callers until implementation. Design review uses build-design planned binding contract.",
+  "evidence": [
+    "feasibility.log",
+    "backend-evidence.json",
+    "profile-derivation.json",
+    "independent-profile-derivation.json",
+    "../native-policy-retention/tests-final.log",
+    "../native-policy-retention/compatibility.log"
+  ],
+  "known_gaps": [
+    "SIA source-derived artifact regeneration pending; old recipe generator fails on current schema",
+    "runtime registry and ledger/retrieval implementation absent",
+    "no operational signatures or external statistical acceptance"
+  ],
+  "review_status": "frozen_for_design_review"
+}

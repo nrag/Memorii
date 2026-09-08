@@ -1,0 +1,42 @@
+{
+  "corrections": [
+    "Evidence-only reconciliation of activation outcome and recorded final test timing; production, tests and CI unchanged"
+  ],
+  "evidence": {
+    "ci": "wired, unobserved",
+    "identity": 0,
+    "initial_compatibility_passed": 241,
+    "initial_compatibility_seconds": 541.44,
+    "integration_passed": 24,
+    "integration_seconds": 218.82,
+    "pyright": 0,
+    "python": "3.12.14; CI3.11 not claimed equivalent",
+    "ruff": 0
+  },
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "logs": {
+    "activation-results.xml": "310c4d423595f2776412eaa84c765c4b279686a30cd45690b52cd8742442153e",
+    "correction-identity.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "correction-pyright.log": "6d88a1b220adb7a3d62092b6e38431f0b3fe8babe9864fab90e5849766260332",
+    "correction-ruff.log": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+    "final-integration.log": "6034d3283d6c4a06b8e183e9bbcaed617e968c4c579ecac0685086348da8a0c8"
+  },
+  "parent_candidate_sha256": "8a826f6cc2052cdf2b293560890d888730b0f0984186536801f954cca6b3fb53",
+  "scope": "bounded activation, native inventory, registered trio, repeat recovery and retired grammar; excludes append/retrieval/checkpoints and release certification",
+  "sources": {
+    ".github/workflows/pr-gates.yml": "af2524b2427e40fe10640aa9603a519acf282b28d0b99199ea1dab141f59e958",
+    "docs/design/semantic_ingestion_activation_target.md": "ad69f8ed9f115a4493cce99614b77bac37e6eb10c246c0601c360750ef7f0912",
+    "docs/design/semantic_ingestion_observation.md": "8f2fba74b947eebaf0f91308143bcc67d77c2b8571ea9e6ad7d86b59b006ad6a",
+    "docs/work/semantic_ingestion/engineering-closure/production_entrypoint_bindings.json": "97cdd4dcd3e35d90bb637a51aa031641cfc842a44dbbc317a0b352f314e7d296",
+    "docs/work/semantic_ingestion/observation-ledger-tests/path-to-gate.json": "065dcea0e226144877f19d6cf5740d97f6cb3249df2b0c5a745da56a07c87af8",
+    "docs/work/semantic_ingestion/observation-ledger-tests/testing.plan.md": "a5be01158f8f801be96a9ab6edc4920431ad8e9888803f1e899b294f678be581",
+    "memorii/memorii/core/memory_evolution/atomic_store.py": "78a73cb5d01b98536cc6166e2f9ec42bac16b7ca98af3c0a3b3ef6a5f383c09c",
+    "memorii/memorii/core/memory_evolution/ingestion_contracts.py": "51220579a6f77d8e1451cd0f9bf64b89075facf114ec69c192082845c8c5c172",
+    "memorii/memorii/core/memory_evolution/observation_activation_runtime.py": "78b6def7ede2174a015a1e65b4f74fd5fbf49ca32fd075634fe1d42a5bb6b2db",
+    "memorii/memorii/core/memory_evolution/writer_admission.py": "fd9054d3ffe7e830bef1a2eb6fd321535abd3815fe010a0a545d05d76d9b1600",
+    "memorii/memorii/core/provider/service.py": "744f9ae1401511db9dbb5c9c7b34c30e5769beedbf028f8079e98ea28dae1b63",
+    "memorii/memorii/core/semantic_ingestion/capability.py": "b4bde9eedf777e2f89af1313098ce12c039f965faeeefcc9cd2edc70585379a1",
+    "memorii/tests/integration/test_observation_ledger_activation.py": "fd7f351c0ed8b25145921e0b405d16e6514a31c330b02fd648a12abbe07e8011",
+    "memorii/tests/unit/core/semantic_ingestion/test_semantic_provider_composition.py": "27c2f8d9a89f64d533fe1ff80a818fb53988057fd76ba1b2a0a624dac2ae6fa0"
+  }
+}

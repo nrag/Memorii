@@ -1,0 +1,20 @@
+{
+  "scope": "Local publication authoring/compiler/source verification construction only; no operational publication, independent parity, deployment pins or runtime binding",
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "tree": "authorized dirty tree",
+  "python": "3.12.14",
+  "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii",
+  "command": "../.venv/bin/python -W error -m pytest tests/unit/core/memory_evolution/test_typed_value_publication_authoring.py tests/unit/core/memory_evolution/test_typed_value_publication.py tests/unit/core/memory_evolution/test_typed_value_decoder_sources.py tests/unit/core/memory_evolution/test_typed_value_registry_compilation.py -p no:cacheprovider -q",
+  "exit_status": 0,
+  "result": "60 passed in 5.40s",
+  "files": {
+    "memorii/memorii/core/memory_evolution/typed_value_publication_authoring.py": "c6225070032a821bc6e194f4d9a54f1eececcfc3d53293ed1a45976c6986c3a6",
+    "memorii/memorii/core/memory_evolution/typed_value_publication.py": "63332ab3f7f0b0ff29c18bcd02c294a5813870656937e486e7b8fb205d18f686",
+    "memorii/memorii/core/memory_evolution/typed_value_decoder_sources.py": "cb40643fc845d7c07b54fb84c2a619eb3aa017c9baaa331767308bf006a08cc7",
+    "memorii/memorii/core/memory_evolution/typed_value_registry_compilation.py": "e9213c804f86aa5ab87ff713369c7b30d79854532447634277593f8a1414f9f9",
+    "memorii/tests/unit/core/memory_evolution/test_typed_value_publication_authoring.py": "505f1ae95a98280443421a2dfd07190e6d2cbe62ab03a9a5d4ccc456dc4b74ba",
+    "memorii/tests/unit/core/memory_evolution/test_typed_value_publication.py": "61f334106766fcce1e422124e0d48a193fcc5004c84970add8143dcc11beb555",
+    "memorii/tests/unit/core/memory_evolution/test_typed_value_decoder_sources.py": "2ffe69527bdca3890aeefc0897923dc7fadaf05c21d3f8d4181fe8f786ea3d18",
+    "memorii/tests/unit/core/memory_evolution/test_typed_value_registry_compilation.py": "7d35409502c80a6b4bb1aaee4aa630d9f33418fb13f02766f489d4814631640b"
+  }
+}

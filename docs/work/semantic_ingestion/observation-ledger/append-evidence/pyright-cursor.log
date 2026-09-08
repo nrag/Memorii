@@ -1,0 +1,8 @@
+/Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/atomic_store.py
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/atomic_store.py:15723:11 - error: Argument of type "ProtectedTypedValueArtifactReaderLimits" cannot be assigned to parameter "verification_key" of type "TrustedTypedValueArtifactVerificationKey | None" in function "validate_registered_artifact"
+    Type "ProtectedTypedValueArtifactReaderLimits" is not assignable to type "TrustedTypedValueArtifactVerificationKey | None"
+      "ProtectedTypedValueArtifactReaderLimits" is not assignable to "TrustedTypedValueArtifactVerificationKey"
+      "ProtectedTypedValueArtifactReaderLimits" is not assignable to "None" (reportArgumentType)
+/Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/bootstrap_group_observation.py
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/bootstrap_group_observation.py:390:84 - error: "delta_digest" is not a known attribute of "None" (reportOptionalMemberAccess)
+2 errors, 0 warnings, 0 informations

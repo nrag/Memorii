@@ -1,0 +1,19 @@
+{
+  "scope": "Replay/checkpoint and ingestion-time model construction only",
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "tree": "authorized dirty tree",
+  "command": "../.venv/bin/python -W error -m pytest tests/unit/core/memory_evolution/test_observation_replay_contracts.py tests/unit/core/memory_evolution/test_graph_ingestion_time_contracts.py -q -p no:cacheprovider",
+  "exit_code": 0,
+  "result": "10 passed in 5.96s",
+  "sha256": {
+    "memorii/memorii/core/memory_evolution/observation_replay_contracts.py": "23e17e60f90f681fa6beae6047310f4dfa71e4ab33b1f6ed77f0fa74d7f9f9d9",
+    "memorii/tests/unit/core/memory_evolution/test_observation_replay_contracts.py": "191065abfa553beeec665a0f074116e6e9ca426c6b45e82710cc7544e01e47bd",
+    "memorii/memorii/core/memory_evolution/graph_ingestion_time_contracts.py": "e841b9ae5513af4a3143374502763e652003b5fe5249980e908ce72bc96cec29",
+    "memorii/tests/unit/core/memory_evolution/test_graph_ingestion_time_contracts.py": "ca570d9421249e1ac5cad49f9ae0bc8170cb7f85b6fb4ced78158d1ef9e9adfd"
+  },
+  "limitations": [
+    "No protected self-digest or signature validation",
+    "No replay/signing/CAS/publication runtime",
+    "No public observer or registry binding"
+  ]
+}

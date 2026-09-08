@@ -1,0 +1,9 @@
+{
+  "decision": "accepted",
+  "user_message": "Go ahead",
+  "proposal_sha256": "8a62b3576e395665e4c561d6e38e7695dfa87a3d080e03a5043ca5e8523cf131",
+  "canonical_design_sha256": "a032bbcb5a105f5a32a1bfad6d8345da7003fd718e6011d88743078c9a184bd0",
+  "remaining_validated_p1_p2": [],
+  "scope": "exact two ledger hash preimages only",
+  "implementation": "resumed; no runtime completion claimed"
+}

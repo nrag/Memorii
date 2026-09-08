@@ -1,0 +1,15 @@
+{
+  "scope": "DREV-001 bounded source-exclusion conformance; no publication/runtime closure",
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "tree": "authorized dirty tree",
+  "command": "../.venv/bin/python -W error -m pytest tests/unit/core/memory_evolution/test_typed_value_decoder_sources.py tests/unit/core/memory_evolution/test_typed_value_publication_authoring.py tests/unit/core/memory_evolution/test_typed_value_publication.py -p no:cacheprovider -q",
+  "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii",
+  "result": "36 passed in 5.24s",
+  "exit_status": 0,
+  "candidate_sha256": "e20337bd79c7f2b1c582804e74bb6d3e7861326df8e8400e8b2d31f890852d09",
+  "files": {
+    "memorii/memorii/core/memory_evolution/typed_value_decoder_sources.py": "6e9a5dc789c572991e44e03d7338c6fe8c5abd8b8d64468e0f1ec62593833185",
+    "memorii/tests/unit/core/memory_evolution/test_typed_value_decoder_sources.py": "007fa4179fdc13bbc39fb60d5303271801a36f5531f6e3fcdf4896154c15bc57",
+    "memorii/tests/unit/core/memory_evolution/test_typed_value_publication_authoring.py": "3f18cea86044a2ce56f77d3dd2dde4f35e041657198905331e7b52aaa2b7cf26"
+  }
+}

@@ -1,0 +1,26 @@
+.....F.                                                                  [100%]
+=================================== FAILURES ===================================
+_____ test_cursor_accepts_exact_limits_and_rejects_one_less_and_ctv_limits _____
+
+    def test_cursor_accepts_exact_limits_and_rejects_one_less_and_ctv_limits() -> None:
+        codec, public_key = _cursor_components()
+        cursor = codec.issue(_coordinates())
+        raw = base64.urlsafe_b64decode(cursor.split(".")[1] + "==")
+        exact = GraphObservationCursorDecodeLimits(
+            maximum_wire_characters=len(cursor), maximum_raw_bytes=len(raw), maximum_ctv_nodes=128, maximum_ctv_depth=16,
+        )
+        assert GraphObservationCursorVerifier(GraphObservationCursorVerificationKey(public_key=public_key), exact).decode(cursor).snapshot_token == "snapshot-1"
+        with pytest.raises(GraphObservationCursorError):
+            GraphObservationCursorVerifier(GraphObservationCursorVerificationKey(public_key=public_key), exact.model_copy(update={"maximum_wire_characters": len(cursor) - 1})).decode(cursor)
+        with pytest.raises(GraphObservationCursorError):
+            GraphObservationCursorVerifier(GraphObservationCursorVerificationKey(public_key=public_key), exact.model_copy(update={"maximum_raw_bytes": len(raw) - 1})).decode(cursor)
+        with pytest.raises(GraphObservationCursorError):
+            GraphObservationCursorVerifier(GraphObservationCursorVerificationKey(public_key=public_key), exact.model_copy(update={"maximum_ctv_nodes": 1})).decode(cursor)
+>       with pytest.raises(GraphObservationCursorError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'memorii.core.memory_evolution.graph_observation_cursor.GraphObservationCursorError'>
+
+tests/unit/core/memory_evolution/test_graph_observation_foundation.py:219: Failed
+=========================== short test summary info ============================
+FAILED tests/unit/core/memory_evolution/test_graph_observation_foundation.py::test_cursor_accepts_exact_limits_and_rejects_one_less_and_ctv_limits
+1 failed, 6 passed in 4.54s

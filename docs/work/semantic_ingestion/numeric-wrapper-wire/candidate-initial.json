@@ -1,0 +1,18 @@
+{
+  "files": {
+    "docs/work/semantic_ingestion/numeric-wrapper-wire/feasibility.json": "3c55ace35ddb626190c52636aa6b999a69d5654c5bbde6aefacfbd0364d14fc2",
+    "docs/work/semantic_ingestion/numeric-wrapper-wire/feasibility.py": "7431147549ba666c3623863f1408ad0bed74066d0efd0383c1fb66c63d1882e2",
+    "docs/work/semantic_ingestion/numeric-wrapper-wire/proposal.md": "be23af123b46c9c42b770322a0a70212e235cccb6a20505221a4def5ee3398ac",
+    "docs/work/semantic_ingestion/numeric-wrapper-wire/verification-matrix.md": "be345ac7977540fb6bec9b7813e737be5ea3d50a1e1eafa450b4bed64754ba99"
+  },
+  "focused_check": "feasibility.py exit0: 5 positive,14 negative; scope intentionally lexical/bit-level only",
+  "governing_baseline": {
+    "docs/design/semantic_ingestion_architecture.md": "69140e58d650fbe9f59d69de2da06d846b6c4a9040256d82d29fced76e918e79",
+    "docs/design/semantic_ingestion_observation.md": "7d790c9233b43eb78357cd6df1ed5547beb5e24ec8a2283e655216c90bcf3113"
+  },
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "runtime_status": "Absent protected profile3 body decoder and full source package; explicitly excluded from design readiness claim",
+  "scope": "Bounded persisted numeric wire amendment design; no runtime or publication approval",
+  "tree": "authorized dirty tree; disjoint implementation workers active outside reviewed artifacts",
+  "user_decision": "2026-09-07 existing maps and explicit decimal encoding-policy IDs approved"
+}

@@ -2,9 +2,16 @@ import json
 from hashlib import sha256
 
 import pytest
+from memorii.core.memory_evolution.graph_effect_contracts import (
+    CanonicalSourceTerminalOutcomeCore,
+    CanonicalSourceTerminalOutcomeRecord,
+)
 from memorii.core.memory_evolution.ingestion_contracts import (
     decode_typed_value,
     encode_typed_value,
+)
+from memorii.core.memory_evolution.observation_persistence import (
+    build_source_finalization_observation_delta,
 )
 from memorii.core.provider.models import ProviderOperation
 from memorii.core.semantic_ingestion.contracts import (
@@ -20,6 +27,9 @@ from memorii.core.semantic_ingestion.contracts import (
 )
 from memorii.domain.enums import SourceModality
 from pydantic import BaseModel, ConfigDict
+from tests.fixtures.semantic_ingestion.clean_room_request_fixture import (
+    build_clean_room_proposal_catalogs,
+)
 from tests.unit.core.semantic_ingestion.bootstrap_graph_production_roots_support import (
     graph_fact_proposal,
     provider_service,
@@ -45,9 +55,56 @@ class _RetiredGenericProjection(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+def _source_finalization_delta():
+    material = build_clean_room_proposal_catalogs(
+        source_id="source:native-source-finalization",
+        source_digest=sha256(b"source:native-source-finalization").hexdigest(),
+        source_text="Ada works.", require_text_digest=False,
+    )
+    outcome = CanonicalSourceTerminalOutcomeRecord.create(
+        core=CanonicalSourceTerminalOutcomeCore.create(
+            ingestion_record_kind="source_terminal_outcome",
+            source_id=material.source_id, source_digest=material.source_digest,
+            delivery_principal_binding_digest=sha256(b"principal").hexdigest(),
+            delivery_key_digest=sha256(b"delivery").hexdigest(),
+            segment_governance_carriers=material.governance_carrier_artifact.segment_governance,
+            message_admission_carriers=material.governance_carrier_artifact.message_admissions,
+            governance_carrier_artifact=material.governance_carrier_artifact,
+            required_outcome_scopes=material.governance_carrier_artifact.required_outcome_scopes,
+            operation_fence_id="fence:native-source-finalization",
+            operation_ids=("operation:native-source-finalization",),
+            final_status="evidence_only", group_result_digests=(),
+        ), preparation_fingerprint=material.preparation_fingerprint,
+    )
+    return build_source_finalization_observation_delta(
+        source_outcome=outcome,
+        observation_delta_id="source-finalization:native",
+        observation_revision_before="genesis",
+        observation_revision_after="source-finalization:successor",
+        observation_schema_fingerprint=sha256(b"schema").hexdigest(),
+    )
+
+
+def test_source_finalization_atomic_member_uses_its_native_codec() -> None:
+    delta = _source_finalization_delta()
+    kind = "bootstrap_graph_source_finalization_observation_delta"
+    raw = encode_bootstrap_graph_atomic_member_payload_v3(kind=kind, artifact=delta)
+    assert decode_bootstrap_graph_atomic_member_payload_v3(kind=kind, raw=raw) == (
+        delta.model_dump(mode="python")
+    )
+    with pytest.raises(SemanticContractCodecError):
+        decode_bootstrap_graph_atomic_member_payload_v3(
+            kind="bootstrap_graph_canonical_source_result", raw=raw,
+        )
+    with pytest.raises(SemanticContractCodecError):
+        encode_bootstrap_graph_atomic_member_payload_v3(
+            kind=kind, artifact=_NativeProjection(projection="wrong-artifact"),
+        )
+
+
 def test_each_v3_atomic_member_kind_has_one_qualified_native_codec() -> None:
-    assert len(BOOTSTRAP_GRAPH_V3_ATOMIC_MEMBER_CODECS) == 27
-    assert len(set(BOOTSTRAP_GRAPH_V3_ATOMIC_MEMBER_CODECS.values())) == 27
+    assert len(BOOTSTRAP_GRAPH_V3_ATOMIC_MEMBER_CODECS) == 28
+    assert len(set(BOOTSTRAP_GRAPH_V3_ATOMIC_MEMBER_CODECS.values())) == 28
 
     for kind, codec_key in BOOTSTRAP_GRAPH_V3_ATOMIC_MEMBER_CODECS.items():
         assert codec_key == f"bootstrap_graph_v3/{kind}/native"
@@ -60,6 +117,7 @@ def test_each_v3_atomic_member_kind_has_one_qualified_native_codec() -> None:
             "bootstrap_graph_observed_counters",
             "bootstrap_graph_source_progress",
             "bootstrap_graph_pre_execution_identity_closure",
+            "bootstrap_graph_source_finalization_observation_delta",
         }:
             continue
         payload = encode_bootstrap_graph_atomic_member_payload_v3(

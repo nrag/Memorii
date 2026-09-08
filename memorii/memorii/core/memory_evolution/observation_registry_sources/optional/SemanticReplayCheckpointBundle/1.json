@@ -1,0 +1,1 @@
+{"fields":[{"field_name":"bundle_digest","policy":"required"},{"field_name":"checkpoint","policy":"required"},{"field_name":"materialized_snapshot","policy":"required"},{"field_name":"watermark_batch","policy":"required"}],"role":"optional","schema_id":"SemanticReplayCheckpointBundle","schema_version":"1"}

@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="34" time="231.191" timestamp="2026-09-08T11:47:48.347601-07:00" hostname="Nandas-MacBook-Pro-2.local"><testcase classname="tests.integration.test_observation_ledger_activation" name="test_provider_activation_is_explicit_and_revalidates_configured_authority" time="6.648" /><testcase classname="tests.integration.test_observation_ledger_activation" name="test_activation_waits_for_leased_operation_without_forcing_completion" time="0.282" /><testcase classname="tests.integration.test_observation_ledger_activation" name="test_activation_rescans_after_real_root_write_and_bounds_contention[1]" time="0.499" /><testcase classname="tests.integration.test_observation_ledger_activation" name="test_activation_rescans_after_real_root_write_and_bounds_contention[3]" time="0.747" /><testcase classname="tests.integration.test_observation_ledger_activation" name="test_activated_writer_rejects_legacy_mutation_routes[ordinary]" time="0.203" /><testcase classname="tests.integration.test_observation_ledger_activation" name="test_activated_writer_rejects_legacy_mutation_routes[conditional]" time="0.119" /><testcase classname="tests.integration.test_observation_ledger_activation" name="test_activated_writer_rejects_legacy_mutation_routes[unit_of_work]" time="0.101" /><testcase classname="tests.integration.test_observation_ledger_activation" name="test_activated_writer_rejects_legacy_mutation_routes[atomic]" time="0.102" /><testcase classname="tests.integration.test_observation_ledger_activation" name="test_activation_reload_rejects_incomplete_or_substituted_state[missing_head]" time="0.102" /><testcase classname="tests.integration.test_observation_ledger_activation" name="test_activation_reload_rejects_incomplete_or_substituted_state[head_shape]" time="0.114" /><testcase classname="tests.integration.test_observation_ledger_activation" name="test_activation_reload_rejects_incomplete_or_substituted_state[activation_shape]" time="0.180" /><testcase classname="tests.integration.test_observation_ledger_activation" name="test_activation_reload_rejects_incomplete_or_substituted_state[inventory]" time="0.169" /><testcase classname="tests.integration.test_observation_ledger_activation" name="test_activation_reload_rejects_incomplete_or_substituted_state[forged_binding]" time="0.094" /><testcase classname="tests.integration.test_observation_ledger_activation" name="test_atomic_activation_persists_registered_trio_and_replays_lost_ack" time="0.133" /><testcase classname="tests.integration.test_observation_ledger_activation" name="test_jsonl_activation_reopens_complete_registered_trio" time="0.129" /><testcase classname="tests.integration.test_observation_ledger_activation" name="test_activation_validates_retained_native_terminal_closure[False]" time="6.153" /><testcase classname="tests.integration.test_observation_ledger_activation" name="test_activation_validates_retained_native_terminal_closure[True]" time="0.448" /><testcase classname="tests.integration.test_observation_ledger_activation" name="test_public_concurrent_activation_recovers_winning_jsonl_cutover[_begin_observation_ledger_drain]" time="16.865" /><testcase classname="tests.integration.test_observation_ledger_activation" name="test_public_concurrent_activation_recovers_winning_jsonl_cutover[_activate_observation_ledger]" time="16.608" /><testcase classname="tests.integration.test_observation_ledger_activation" name="test_public_activation_recovers_jsonl_failure_before_or_after_commit[False]" time="16.456" /><testcase classname="tests.integration.test_observation_ledger_activation" name="test_public_activation_recovers_jsonl_failure_before_or_after_commit[True]" time="16.757" /><testcase classname="tests.integration.test_observation_ledger_activation" name="test_public_drain_preserves_live_operation_and_rejects_new_old_epoch_work" time="91.327" /><testcase classname="tests.integration.test_observation_ledger_activation" name="test_public_activation_preserves_captured_jsonl_history_bytes" time="16.922" /><testcase classname="tests.integration.test_observation_ledger_activation" name="test_public_activation_retries_competing_jsonl_drain_fence" time="5.793" /><testcase classname="tests.integration.test_observation_ledger_artifacts" name="test_emission_uses_selected_real_publication_and_self_digest" time="0.020" /><testcase classname="tests.integration.test_observation_ledger_artifacts" name="test_successor_uses_exact_lp5_bytes" time="0.001" /><testcase classname="tests.integration.test_observation_ledger_artifacts" name="test_emitter_rejects_model_and_digest_substitution" time="0.011" /><testcase classname="tests.integration.test_observation_ledger_artifacts" name="test_source_payload_preserves_native_delta_and_commits_complete_binding" time="2.827" /><testcase classname="tests.integration.test_observation_ledger_artifacts" name="test_successor_preserves_identifier_utf8_and_binds_protected_coordinates[predecessor]" time="0.001"><failure message="pydantic_core._pydantic_core.ValidationError: 1 validation error for ObservationLedgerHead&#10;observation_revision&#10;  Input should be a valid string, unable to parse raw data as a unicode string [type=string_unicode, input_value='\ud800', input_type=str]&#10;    For further information visit https://errors.pydantic.dev/2.13/v/string_unicode">predecessor = 'predecessor'
+
+    @pytest.mark.parametrize("predecessor", ["predecessor", "révision:α"])
+    def test_successor_preserves_identifier_utf8_and_binds_protected_coordinates(predecessor):
+        head = ObservationLedgerHead(schema_version=1, repository_id="repo", activation_digest="a" * 64,
+            sequence=1, observation_revision=predecessor, last_delta_id="delta", last_delta_digest="b" * 64,
+            last_entry_digest="c" * 64, head_digest="d" * 64)
+        parts = [b"memorii.observation-ledger.revision.v1", b"repo", b"a" * 64, predecessor.encode("utf-8"), b"e" * 64]
+        expected = sha256(b"".join(len(part).to_bytes(8, "big") + part for part in parts)).hexdigest()
+        assert observation_successor_revision(head, repository_id="repo", activation_digest="a" * 64, payload_digest="e" * 64) == expected
+        with pytest.raises(ObservationActivationRuntimeError):
+            observation_successor_revision(head, repository_id="other", activation_digest="a" * 64, payload_digest="e" * 64)
+        with pytest.raises(ObservationActivationRuntimeError):
+            observation_successor_revision(head, repository_id="repo", activation_digest="b" * 64, payload_digest="e" * 64)
+        with pytest.raises(ObservationActivationRuntimeError):
+&gt;           observation_successor_revision(head.model_copy(update={"observation_revision": chr(0xD800)}), repository_id="repo", activation_digest="a" * 64, payload_digest="e" * 64)
+
+tests/integration/test_observation_ledger_artifacts.py:145: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+head = ObservationLedgerHead(schema_version=1, repository_id='repo', activation_digest='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...ccccccccccccccccccccccccccccccccccccc', head_digest='dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd')
+
+    def observation_successor_revision(
+        head: ObservationLedgerHead, *, repository_id: str, activation_digest: str,
+        payload_digest: str,
+    ) -&gt; str:
+&gt;       head = ObservationLedgerHead.model_validate(head.model_dump(mode="python"))
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for ObservationLedgerHead
+E       observation_revision
+E         Input should be a valid string, unable to parse raw data as a unicode string [type=string_unicode, input_value='\ud800', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.13/v/string_unicode
+
+memorii/core/memory_evolution/observation_activation_runtime.py:213: ValidationError</failure></testcase><testcase classname="tests.integration.test_observation_ledger_artifacts" name="test_successor_preserves_identifier_utf8_and_binds_protected_coordinates[r\xe9vision:\u03b1]" time="0.001"><failure message="pydantic_core._pydantic_core.ValidationError: 1 validation error for ObservationLedgerHead&#10;observation_revision&#10;  Input should be a valid string, unable to parse raw data as a unicode string [type=string_unicode, input_value='\ud800', input_type=str]&#10;    For further information visit https://errors.pydantic.dev/2.13/v/string_unicode">predecessor = 'révision:α'
+
+    @pytest.mark.parametrize("predecessor", ["predecessor", "révision:α"])
+    def test_successor_preserves_identifier_utf8_and_binds_protected_coordinates(predecessor):
+        head = ObservationLedgerHead(schema_version=1, repository_id="repo", activation_digest="a" * 64,
+            sequence=1, observation_revision=predecessor, last_delta_id="delta", last_delta_digest="b" * 64,
+            last_entry_digest="c" * 64, head_digest="d" * 64)
+        parts = [b"memorii.observation-ledger.revision.v1", b"repo", b"a" * 64, predecessor.encode("utf-8"), b"e" * 64]
+        expected = sha256(b"".join(len(part).to_bytes(8, "big") + part for part in parts)).hexdigest()
+        assert observation_successor_revision(head, repository_id="repo", activation_digest="a" * 64, payload_digest="e" * 64) == expected
+        with pytest.raises(ObservationActivationRuntimeError):
+            observation_successor_revision(head, repository_id="other", activation_digest="a" * 64, payload_digest="e" * 64)
+        with pytest.raises(ObservationActivationRuntimeError):
+            observation_successor_revision(head, repository_id="repo", activation_digest="b" * 64, payload_digest="e" * 64)
+        with pytest.raises(ObservationActivationRuntimeError):
+&gt;           observation_successor_revision(head.model_copy(update={"observation_revision": chr(0xD800)}), repository_id="repo", activation_digest="a" * 64, payload_digest="e" * 64)
+
+tests/integration/test_observation_ledger_artifacts.py:145: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+head = ObservationLedgerHead(schema_version=1, repository_id='repo', activation_digest='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...ccccccccccccccccccccccccccccccccccccc', head_digest='dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd')
+
+    def observation_successor_revision(
+        head: ObservationLedgerHead, *, repository_id: str, activation_digest: str,
+        payload_digest: str,
+    ) -&gt; str:
+&gt;       head = ObservationLedgerHead.model_validate(head.model_dump(mode="python"))
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for ObservationLedgerHead
+E       observation_revision
+E         Input should be a valid string, unable to parse raw data as a unicode string [type=string_unicode, input_value='\ud800', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.13/v/string_unicode
+
+memorii/core/memory_evolution/observation_activation_runtime.py:213: ValidationError</failure></testcase><testcase classname="tests.integration.test_observation_ledger_artifacts" name="test_emission_rejects_a_publication_outside_protected_history" time="0.021" /><testcase classname="tests.integration.test_observation_terminal_intent" name="test_versioned_terminal_request_roundtrips_and_omits_other_source_grammar[2]" time="10.501" /><testcase classname="tests.integration.test_observation_terminal_intent" name="test_versioned_terminal_request_roundtrips_and_omits_other_source_grammar[3]" time="10.902" /><testcase classname="tests.integration.test_observation_terminal_intent" name="test_terminal_intent_rejects_preassigned_delta_and_missing_ledger_receipt" time="4.102" /></testsuite></testsuites>

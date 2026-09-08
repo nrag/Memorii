@@ -1,0 +1,67 @@
+{
+  "status": "PROVIDER_TARGET_LOCALLY_VERIFIED_BOOTSTRAP_MECHANICS_LOCALLY_VERIFIED",
+  "design": "docs/design/semantic_ingestion_activation_target.md",
+  "step": "protected target and provider forwarding",
+  "files": {
+    "memorii/memorii/core/memory_evolution/observation_activation_target.py": "8d8c8158f0143b0f2dfca430aed3ee44f7859576752954ace00c2fe63790024d",
+    "memorii/memorii/core/memory_evolution/observation_activation_configuration.py": "2aec6f2cc4263281ee90b8f441810b6992440fca167f85e13db0fe1f861ed5f9",
+    "memorii/memorii/core/memory_evolution/observation_activation_package.py": "0710fa58dac0f39842c2dc072d2a2cb2b2a5fe887f626d9191d56c6bcadb9f0e",
+    "tools/observation_activation_bootstrap.py": "abc6c5397078cf5c907a3c7b5002f6fbb1a19f1a2e2d4b663cb90b3dc8bf31f2",
+    "memorii/memorii/core/provider/service.py": "744f9ae1401511db9dbb5c9c7b34c30e5769beedbf028f8079e98ea28dae1b63",
+    "memorii/memorii/core/semantic_ingestion/capability.py": "b4bde9eedf777e2f89af1313098ce12c039f965faeeefcc9cd2edc70585379a1"
+  },
+  "initial_checks": {
+    "pytest": "9 failed, 5 passed in4.98s",
+    "ruff": "5 diagnostics",
+    "pyright": "1 undefined-helper diagnostic"
+  },
+  "confirmed_corrections": [
+    "Path concrete type handling",
+    "missing ASCII target ID validator",
+    "Ruff defaults/imports",
+    "global locator ownership and ASCII path grammar",
+    "canonical negative cases and bounded resource tests",
+    "Lexical equal/nested anchor rejection",
+    "Original scripts anchor nofollow verification and inode comparison",
+    "Invalid supplied target cannot trigger provider legacy fallback"
+  ],
+  "limitations": [
+    "Bootstrap tested with synthetic installed closure, not full candidate dependency wheels",
+    "Release preparation and typed host conversion/launcher integration remain open",
+    "Activation CAS and authenticated retrieval/comparison unimplemented",
+    "Full branch CI and whole-milestone reviews remain open",
+    "No parent closure or release authorization"
+  ],
+  "latest_checks": {
+    "pytest": "19 passed in4.22s",
+    "ruff": "scoped import corrections passed",
+    "pyright": "core target/integration owners passed; bootstrap and ingestion owner passed after SupportsIndex annotation fix",
+    "identity_hygiene": "exit0",
+    "git_diff_check": "passed",
+    "pytest_helpers": "50 helper cases plus four selected registry cases: 54 passed,37 deselected in16.48s",
+    "pytest_provider_target": "4 passed,41 deselected in19.79s; valid/revalidation and revoked/expired/mutated/outage through provider and direct runtime",
+    "bootstrap": "14 fresh-process cases passed9.55s",
+    "recovery_contracts": "11 passed5.42s",
+    "recovery_public": "final frozen16case suite passed145.85s; independent correctness approval; test-only optional-null delta13passed5.24s and test-review approval",
+    "registry": "source publication refreshed;58independentvectors exit0",
+    "source_gates": "CTV authority, lifecycle signer provenance and structural manifest exact local workflow commands exit0"
+  },
+  "next_action": "Complete installed deployment/release preparation and target authority proof before ledger CAS.",
+  "review_findings": [
+    {
+      "id": "TARGET-ANCHORS",
+      "priority": "Not applicable",
+      "disposition": "changes_required",
+      "type": "security configuration",
+      "classification": "confirmed; corrected with five cases"
+    },
+    {
+      "id": "TARGET-AUTHORIZATION",
+      "priority": "Not applicable",
+      "disposition": "changes_required",
+      "type": "security readiness",
+      "classification": "confirmed; runtime retains verified profile and clock, verifies authorization at activation before writer/atomic access; four tests pass; finite independent delta review still pending",
+      "reviewer_priority": "P2 future-CAS scenario"
+    }
+  ]
+}

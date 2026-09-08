@@ -62,12 +62,31 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     decode_typed_value,
     encode_typed_value,
 )
+from memorii.core.memory_evolution.observation_activation_configuration import (
+    ObservationActivationTargetConfigurationError,
+    VerifiedObservationActivationTarget,
+    resolve_verified_observation_activation_target,
+)
 from memorii.core.memory_evolution.source_admission import DeliveryAuthorizationRequest
 from memorii.core.memory_evolution.source_governance import require_complete_scope_authorization
+from memorii.core.memory_evolution.typed_value_artifact_reader import (
+    ProtectedTypedValueArtifactReaderLimits,
+)
+from memorii.core.memory_evolution.typed_value_body_validation import (
+    ProtectedTypedValueBodyLimits,
+)
+from memorii.core.memory_evolution.typed_value_registry_configuration import (
+    TypedValueRegistryConfigurationError,
+)
+from memorii.core.memory_evolution.typed_value_registry_history import (
+    ProtectedTypedValueRegistryHistory,
+)
 from memorii.core.memory_evolution.writer_admission import (
     SemanticWriterAdmissionError,
     SemanticWriterAdmissionStore,
     SemanticWriterWriteAuthorization,
+    bounded_preplanning_ownership_manifest,
+    writer_admission_memory_id,
 )
 from memorii.core.memory_plane.models import CanonicalMemoryRecord, MemoryRecordFence
 from memorii.core.memory_plane.service import MemoryPlaneService
@@ -113,7 +132,16 @@ if TYPE_CHECKING:
         SemanticConflictAuthorityResolver,
         SemanticConflictClarificationTransition,
     )
+    from memorii.core.memory_evolution.graph_effect_contracts import (
+        CanonicalSourceTerminalOutcomeRecord,
+        SourceFinalizationObservationDelta,
+    )
     from memorii.core.memory_evolution.graph_records import CanonicalGraphRecord
+    from memorii.core.memory_evolution.observation_ledger_contracts import (
+        ObservationLedgerEntry,
+        ObservationLedgerHead,
+        SourceObservationIntent,
+    )
     from memorii.core.memory_evolution.policy_migration import (
         PolicyMigrationRepository,
         PreparedPolicyMigrationProgress,
@@ -139,6 +167,7 @@ if TYPE_CHECKING:
     from memorii.core.semantic_ingestion.canonical_evidence_arena import CanonicalEvidenceLease
     from memorii.core.semantic_ingestion.contracts import (
         BootstrapCanonicalIdentityBindingAllocationReloadV3,
+        BootstrapGraphCanonicalSourceResultV3,
         BootstrapGraphControlEpochAdvancedV3,
         BootstrapGraphControlEpochFoundV3,
         BootstrapGraphControlEpochTransitionRequestV3,
@@ -194,6 +223,26 @@ _SEMANTIC_CHECKPOINT_SIGNATURE_OWNER = object()
 _SEMANTIC_INTEGRITY_GENERATION_DOMAIN = b"memorii.semantic-ingestion.atomic-integrity-generation.v1\0"
 _SEMANTIC_CLEAN_GENERATION_DOMAIN = b"memorii.semantic-ingestion.atomic-clean-generation.v1\0"
 _CLARIFICATION_RECOVERY_BINDING_DOMAIN = b"memorii.semantic-ingestion.clarification-recovery-binding.v1\0"
+
+
+def _activation_record_shape(record: CanonicalMemoryRecord, source_kind: str) -> bool:
+    """The profile artifact authenticates content; the store record shape is separate."""
+    expected_kind = {
+        "semantic_ingestion_observation_ledger_activation": "observation_ledger_activation",
+        "semantic_ingestion_observation_ledger_head": "observation_ledger_head",
+        "semantic_ingestion_observation_ledger_entry": "observation_ledger_entry",
+    }.get(source_kind)
+    return (
+        expected_kind is not None and record.source_kind == source_kind
+        and record.domain is MemoryDomain.EXECUTION
+        and record.text == ""
+        and record.status is CommitStatus.COMMITTED
+        and record.visibility is MemoryRecordVisibility.INTERNAL_CONTROL
+        and record.content.get("semantic_ingestion_kind")
+        == expected_kind
+        and set(record.content) == {"semantic_ingestion_kind", "artifact"}
+        and type(record.content.get("artifact")) is str
+    )
 
 
 class PreplanningStoreError(ValueError):
@@ -273,6 +322,10 @@ class BootstrapGraphRelatedConflictError(PreplanningStoreError):
         self.expected_graph_revision = expected_graph_revision
         self.observed_graph_revision = observed_graph_revision
         super().__init__("bootstrap graph related conflict")
+
+
+class ObservationLedgerContentionError(PreplanningStoreError):
+    """The bounded head rescan budget is exhausted; retain retryable progress."""
 
 
 class _BootstrapAuthorityUnavailableAtCommit(PreplanningStoreError):
@@ -1004,9 +1057,13 @@ class SemanticIngestionAtomicStore:
         writer_admission: SemanticWriterAdmissionStore,
         *,
         max_lease_recoveries: int = 1,
+        activation_max_rescans: int = 3,
         now_provider=lambda: datetime.now(UTC),
         event_schema_registry: SemanticEventSchemaRegistry | None = None,
         event_schema_registry_history: SemanticEventSchemaRegistryHistory | None = None,
+        typed_value_registry_history: ProtectedTypedValueRegistryHistory | None = None,
+        observation_activation_target: VerifiedObservationActivationTarget | None = None,
+        observation_artifact_limits: ProtectedTypedValueArtifactReaderLimits | None = None,
         semantic_freeze_guard: Callable[[SemanticGraphDelta], None] | None = None,
         semantic_integrity_incident_reporter: Callable[[tuple[str, ...]], None] | None = None,
         semantic_integrity_attention_publisher: Callable[[str, datetime], None] | None = None,
@@ -1018,10 +1075,28 @@ class SemanticIngestionAtomicStore:
     ) -> None:
         if max_lease_recoveries < 0:
             raise ValueError("max lease recoveries must be non-negative")
+        if type(activation_max_rescans) is not int or activation_max_rescans <= 0:
+            raise ValueError("activation max rescans must be a positive integer")
         self._memory_plane = memory_plane
         self._writers = writer_admission
+        if typed_value_registry_history is not writer_admission._typed_value_registry_history:
+            raise TypedValueRegistryConfigurationError("atomic store and writer typed value registry histories differ")
+        if observation_activation_target is not writer_admission._observation_activation_target:
+            raise ObservationActivationTargetConfigurationError("atomic store and writer activation targets differ")
+        self._observation_activation_target = observation_activation_target
+        self._typed_value_registry_history = typed_value_registry_history
+        self._observation_artifact_limits = (
+            ProtectedTypedValueArtifactReaderLimits(
+                2 * 1024 * 1024, 64_000, 32,
+                ProtectedTypedValueBodyLimits(2 * 1024 * 1024, 64_000, 80),
+            )
+            if observation_artifact_limits is None else observation_artifact_limits
+        )
+        if type(self._observation_artifact_limits) is not ProtectedTypedValueArtifactReaderLimits:
+            raise ValueError("observation artifact limits are invalid")
         self._write_capability = self._writers._register_atomic_owner()
         self._max_lease_recoveries = max_lease_recoveries
+        self._activation_max_rescans = activation_max_rescans
         self._now = now_provider
         from memorii.core.semantic_ingestion.event_replay import (
             SemanticEventSchemaRegistry,
@@ -1112,6 +1187,301 @@ class SemanticIngestionAtomicStore:
             now_provider=self._now,
             publication_capability=self._write_capability,
         )
+
+    def activate_observation_ledger(
+        self, *, writer_binding: SemanticWriterCommitBinding,
+    ) -> SemanticWriterCommitBinding:
+        """Drain and activate under a full write fence, or verify the same cutover."""
+        from memorii.core.memory_evolution.observation_activation_runtime import (
+            registered_activation_artifact,
+            require_registered_activation_schemas,
+        )
+        from memorii.core.memory_evolution.observation_ledger_contracts import ObservationLedgerActivation
+        target = self._observation_activation_target
+        history = self._typed_value_registry_history
+        if target is None or history is None:
+            raise PreplanningStoreError("observation ledger activation target authority is not configured")
+        if resolve_verified_observation_activation_target(target.configuration, history) != target:
+            raise PreplanningStoreError("observation ledger activation target authority is substituted")
+        try:
+            require_registered_activation_schemas(history, publication=target.publication)
+        except ValueError as exc:
+            raise PreplanningStoreError("observation ledger activation registered schemas are unavailable") from exc
+        _, initial_snapshot = self._memory_plane.read_write_snapshot()
+        recovered = self._reload_observation_ledger_activation(
+            snapshot=initial_snapshot, expected=writer_binding, target=target,
+        )
+        if recovered is not None:
+            return recovered
+        for _ in range(self._activation_max_rescans):
+            try:
+                self._writers._begin_observation_ledger_drain(writer_binding)
+            except (SemanticWriterAdmissionError, MemoryPlaneRevisionConflictError) as exc:
+                _, raced_snapshot = self._memory_plane.read_write_snapshot()
+                recovered = self._reload_observation_ledger_activation(
+                    snapshot=raced_snapshot, expected=writer_binding, target=target,
+                )
+                if recovered is not None:
+                    return recovered
+                if isinstance(exc, MemoryPlaneRevisionConflictError):
+                    continue
+                raise PreplanningStoreError("observation ledger writer drain failed") from exc
+            revision, snapshot = self._memory_plane.read_write_snapshot()
+            recovered = self._reload_observation_ledger_activation(
+                snapshot=snapshot, expected=writer_binding, target=target,
+            )
+            if recovered is not None:
+                return recovered
+            current, manifest, record = self._activation_snapshot_admission(snapshot)
+            if (
+                manifest != bounded_preplanning_ownership_manifest()
+                or self._writers.commit_binding(current) != writer_binding
+                or record.content.get("draining") is not True
+            ):
+                raise PreplanningStoreError("observation ledger writer snapshot is stale or not draining")
+            inventory_digest = self._activation_inventory_digest(snapshot, writer_binding)
+            activation, _ = registered_activation_artifact(ObservationLedgerActivation(
+                schema_version=1, repository_id=_SEMANTIC_EVENT_REPOSITORY_ID,
+                previous_writer_admission_digest=current.admission_digest,
+                target_writer_epoch=current.writer_epoch + 1,
+                writer_implementation_fingerprint=target.identity.writer_fingerprint,
+                observation_schema_fingerprint=target.identity.observation_schema_fingerprint,
+                ledger_codec_fingerprint=target.identity.ledger_codec_fingerprint,
+                legacy_terminal_inventory_digest=inventory_digest, activation_digest="0" * 64,
+            ), history=history, publication=target.publication)
+            try:
+                successor = self._writers._activate_observation_ledger(
+                    expected=writer_binding, activation=activation,
+                    snapshot_revision=revision, snapshot=snapshot,
+                    max_rescans=self._activation_max_rescans,
+                )
+                return self._writers.commit_binding(successor)
+            except MemoryPlaneRevisionConflictError:
+                continue
+            except SemanticWriterAdmissionError as exc:
+                _, raced_snapshot = self._memory_plane.read_write_snapshot()
+                recovered = self._reload_observation_ledger_activation(
+                    snapshot=raced_snapshot, expected=writer_binding, target=target,
+                )
+                if recovered is not None:
+                    return recovered
+                raise PreplanningStoreError("observation ledger activation transaction failed") from exc
+        raise PreplanningStoreError("observation ledger activation snapshot did not stabilize")
+
+    def prepare_source_observation_intent(
+        self, *, source_outcome: CanonicalSourceTerminalOutcomeRecord, writer_binding: SemanticWriterCommitBinding,
+    ) -> SourceObservationIntent | None:
+        """Emit the revision-free schema-3 terminal intent under the selected target.
+
+        The coordinator can seal this intent before terminal CAS, but cannot
+        choose its publication or schema fingerprint.  The terminal writer
+        independently re-emits the same value before using it.
+        """
+        from memorii.core.memory_evolution.graph_effect_contracts import (
+            CanonicalSourceTerminalOutcomeRecord,
+        )
+        from memorii.core.memory_evolution.observation_activation_runtime import (
+            emit_registered_observation_artifact,
+        )
+        from memorii.core.memory_evolution.observation_ledger_contracts import (
+            SourceObservationIntent,
+        )
+
+        if type(source_outcome) is not CanonicalSourceTerminalOutcomeRecord:
+            raise PreplanningStoreError("bootstrap graph source observation outcome is invalid")
+        if writer_binding.activation_digest is None:
+            return None
+        target = self._observation_activation_target
+        history = self._typed_value_registry_history
+        if target is None or history is None or (
+            resolve_verified_observation_activation_target(target.configuration, history)
+            != target
+        ):
+            raise PreplanningStoreError("observation ledger target authority is unavailable")
+        emitted = emit_registered_observation_artifact(
+            SourceObservationIntent(
+                kind="source_finalization",
+                source_outcome=source_outcome,
+                observation_schema_fingerprint=target.identity.observation_schema_fingerprint,
+                intent_digest="0" * 64,
+            ),
+            schema_id="SourceObservationIntent", history=history,
+            publication=target.publication, limits=self._observation_artifact_limits,
+        ).value
+        if type(emitted) is not SourceObservationIntent:
+            raise PreplanningStoreError("registered source observation intent is invalid")
+        return emitted
+
+    def source_observation_intent_factory(self) -> Callable[[CanonicalSourceTerminalOutcomeRecord, SemanticWriterCommitBinding], SourceObservationIntent | None]:
+        """Expose the configured source-intent issuer to built-in composition."""
+        return lambda source_outcome, writer_binding: self.prepare_source_observation_intent(
+            source_outcome=source_outcome, writer_binding=writer_binding,
+        )
+
+    def _activation_snapshot_admission(self, snapshot: tuple[CanonicalMemoryRecord, ...]):
+        from memorii.core.memory_evolution.writer_admission import _from_record
+        records = tuple(record for record in snapshot if record.memory_id == writer_admission_memory_id())
+        if len(records) != 1 or len({record.memory_id for record in snapshot}) != len(snapshot):
+            raise PreplanningStoreError("observation ledger writer snapshot is absent or ambiguous")
+        try:
+            admission, manifest = _from_record(records[0])
+        except SemanticWriterAdmissionError as exc:
+            raise PreplanningStoreError("observation ledger writer snapshot is corrupt") from exc
+        return admission, manifest, records[0]
+
+    def _activation_inventory_digest(
+        self, snapshot: tuple[CanonicalMemoryRecord, ...], predecessor: SemanticWriterCommitBinding,
+        *, active_binding: SemanticWriterCommitBinding | None = None,
+    ) -> str:
+        """Validate native retired closures without performing another store read."""
+        from memorii.core.memory_evolution.observation_activation_runtime import legacy_terminal_inventory_digest
+        from memorii.core.semantic_ingestion.contracts import (
+            BootstrapGraphTerminalReloadV3,
+            rebuild_bootstrap_graph_effect_contracts,
+        )
+        rebuild_bootstrap_graph_effect_contracts()
+        records = {record.memory_id: record for record in snapshot}
+        controls: dict[str, PreplanningOperationControl] = {}
+        active_fences: set[str] = set()
+        active_record_ids: set[str] = set()
+        for record in snapshot:
+            if record.source_kind != "semantic_ingestion_preplanning_control":
+                continue
+            control = _control_from_record(record)
+            fence = control.operation_fence
+            if active_binding is not None and control.writer_binding == active_binding:
+                if record.memory_id not in {_control_id(fence), _legacy_control_id(fence)} or fence.binding_digest in active_fences:
+                    raise PreplanningStoreError("active observation control identity is mismatched")
+                active_fences.add(fence.binding_digest)
+                active_record_ids.add(record.memory_id)
+                continue
+            if (
+                record.memory_id not in {_control_id(fence), _legacy_control_id(fence)}
+                or fence.binding_digest in controls
+                or control.writer_binding.expected_writer_epoch > predecessor.expected_writer_epoch
+                or (control.writer_binding.expected_writer_epoch == predecessor.expected_writer_epoch
+                    and control.writer_binding != predecessor)
+            ):
+                raise PreplanningStoreError("observation ledger legacy control identity is mismatched")
+            if control.state not in {"terminal", "lease_recovery_exhausted"} or control.lease is not None:
+                raise PreplanningStoreError("observation ledger retiring writer is not drained")
+            controls[fence.binding_digest] = control
+        terminal_ids: set[str] = set()
+        terminal_fences: set[str] = set()
+        for record in snapshot:
+            if record.source_kind != "semantic_ingestion_bootstrap_graph_v3_terminal_locator" or not record.memory_id.startswith("semantic_ingestion:bootstrap-graph-v3:terminal-locator:"):
+                continue
+            if record.content.get("semantic_ingestion_kind") != "bootstrap_graph_v3_terminal_locator":
+                raise PreplanningStoreError("observation ledger terminal locator kind is invalid")
+            try:
+                terminal = BootstrapGraphTerminalReloadV3.model_validate(record.content["reload"], strict=False)
+            except (KeyError, TypeError, ValueError) as exc:
+                raise PreplanningStoreError("observation ledger terminal locator is corrupt") from exc
+            control = controls.get(terminal.operation_fence_binding_digest)
+            locator = terminal.atomic_write_locator_digest
+            if terminal.operation_fence_binding_digest in active_fences:
+                if terminal.terminal_member_schema_version != 3:
+                    raise PreplanningStoreError("activated source has a historical terminal grammar")
+                active_record_ids.update((record.memory_id, _bootstrap_graph_v3_terminal_control_id(locator)))
+                continue
+            if (
+                control is None
+                or terminal.operation_fence_binding_digest in terminal_fences
+                or record.memory_id != _bootstrap_graph_v3_terminal_locator_id(locator)
+                or terminal.terminal_control.writer_commit_binding_digest != control.writer_binding.binding_digest
+            ):
+                raise PreplanningStoreError("observation ledger terminal identity is mismatched")
+            self._reload_bootstrap_graph_terminal_exact_v3(
+                locator_digest=locator, expected_reload=terminal,
+                expected_delivery_principal_binding_digest=terminal.delivery_principal_binding_digest,
+                expected_required_scope_set_digest=terminal.required_scope_set_digest,
+                expected_operation_fence_binding=control.operation_fence,
+                expected_operation_lease_binding_digest=control.last_completed_lease_binding_digest,
+                snapshot_records=records,
+            )
+            terminal_ids.add(_bootstrap_graph_v3_terminal_control_id(locator))
+            terminal_fences.add(terminal.operation_fence_binding_digest)
+        if terminal_ids != {record.memory_id for record in snapshot
+                            if record.source_kind == "semantic_ingestion_bootstrap_graph_v3_terminal_control"
+                            and record.memory_id not in active_record_ids}:
+            raise PreplanningStoreError("observation ledger terminal control is orphaned")
+        return legacy_terminal_inventory_digest(tuple(record for record in snapshot if record.memory_id not in active_record_ids))
+
+    def _reload_observation_ledger_activation(
+        self, *, snapshot: tuple[CanonicalMemoryRecord, ...],
+        expected: SemanticWriterCommitBinding, target: VerifiedObservationActivationTarget,
+    ) -> SemanticWriterCommitBinding | None:
+        """Verify the complete cutover from one detached snapshot on every repeat."""
+        from memorii.core.memory_evolution.observation_activation_runtime import (
+            registered_activation_artifact,
+            registered_genesis_head_artifact,
+            validate_registered_artifact,
+        )
+        from memorii.core.memory_evolution.observation_ledger_contracts import (
+            ObservationLedgerActivation,
+            ObservationLedgerHead,
+        )
+        from memorii.core.memory_evolution.writer_admission import (
+            observation_ledger_head_memory_id,
+            observation_ledger_ownership_manifest,
+        )
+        history = self._typed_value_registry_history
+        if history is None:
+            raise PreplanningStoreError("observation ledger registry is unavailable")
+        current, manifest, admission_record = self._activation_snapshot_admission(snapshot)
+        records = {record.memory_id: record for record in snapshot}
+        ledger_records = tuple(record for record in snapshot
+                               if record.source_kind.startswith("semantic_ingestion_observation_ledger_"))
+        if current.activation_digest is None:
+            if ledger_records:
+                raise PreplanningStoreError("observation ledger activation reload is partial or mismatched")
+            return None
+        try:
+            predecessor = SemanticWriterCommitBinding.model_validate(
+                admission_record.content["activation_predecessor_binding"])
+            activation_record = records["semantic_ingestion:observation-ledger:activation:" + current.activation_digest]
+            head_record = records[observation_ledger_head_memory_id(_SEMANTIC_EVENT_REPOSITORY_ID)]
+            if not _activation_record_shape(activation_record, "semantic_ingestion_observation_ledger_activation") or not _activation_record_shape(head_record, "semantic_ingestion_observation_ledger_head"):
+                raise ValueError("activation store shape is invalid")
+            activation = validate_registered_artifact(activation_record.content["artifact"].encode("utf-8"), schema_id="ObservationLedgerActivation", history=history)
+            head = validate_registered_artifact(head_record.content["artifact"].encode("utf-8"), schema_id="ObservationLedgerHead", history=history)
+            if not isinstance(activation, ObservationLedgerActivation) or not isinstance(head, ObservationLedgerHead):
+                raise ValueError("activation schema is invalid")
+            if (
+                manifest != observation_ledger_ownership_manifest()
+                or admission_record.content.get("draining") is not False
+                or expected not in (predecessor, self._writers.commit_binding(current))
+                or predecessor.activation_digest is not None
+                or predecessor.admission_digest != activation.previous_writer_admission_digest
+                or predecessor.expected_writer_epoch + 1 != activation.target_writer_epoch
+                or current.writer_epoch != activation.target_writer_epoch
+                or current.previous_admission_digest != predecessor.admission_digest
+                or current.admission_id != predecessor.admission_id
+                or current.writer_namespace != predecessor.writer_namespace
+                or current.active_runtime_mode != predecessor.runtime_mode
+                or current.accepted_graph_schema_fingerprint != predecessor.graph_schema_fingerprint
+                or current.active_writer_implementation_fingerprint != target.identity.writer_fingerprint
+                or current.activation_digest != activation.activation_digest
+                or activation.repository_id != _SEMANTIC_EVENT_REPOSITORY_ID
+                or activation.writer_implementation_fingerprint != target.identity.writer_fingerprint
+                or activation.observation_schema_fingerprint != target.identity.observation_schema_fingerprint
+                or activation.ledger_codec_fingerprint != target.identity.ledger_codec_fingerprint
+                or activation.legacy_terminal_inventory_digest != self._activation_inventory_digest(
+                    snapshot, predecessor, active_binding=self._writers.commit_binding(current))
+            ):
+                raise ValueError("activation successor or inventory is mismatched")
+            _, activation_raw = registered_activation_artifact(activation, history=history, publication=target.publication)
+            genesis, head_raw = registered_genesis_head_artifact(activation, history=history, publication=target.publication)
+            if activation_record.content["artifact"] != activation_raw.decode("utf-8"):
+                raise ValueError("activation trio is substituted")
+            if head.sequence == 0:
+                if head != genesis or head_record.content["artifact"] != head_raw.decode("utf-8") or len(ledger_records) != 2:
+                    raise ValueError("activation genesis is substituted")
+            else:
+                self._replay_schema3_observation_ledger(snapshot_records=records)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PreplanningStoreError("observation ledger activation reload is partial or mismatched") from exc
+        return self._writers.commit_binding(current)
 
     def publish_prepared_source(
         self, prepared_source: object, *, writer_binding: SemanticWriterCommitBinding
@@ -9051,7 +9421,8 @@ class SemanticIngestionAtomicStore:
             return _bootstrap_graph_v3_epoch_unavailable(request, "stale_epoch")
 
     def _validate_bootstrap_graph_group_result_members_v3(
-        self, members: tuple[BootstrapGraphPlanAtomicMemberV3, ...]
+        self, members: tuple[BootstrapGraphPlanAtomicMemberV3, ...],
+        *, snapshot_records: dict[str, CanonicalMemoryRecord] | None = None,
     ) -> None:
         from memorii.core.semantic_ingestion.contracts import (
             BootstrapNativeGroupCommitTerminalConstructionV3,
@@ -9089,7 +9460,7 @@ class SemanticIngestionAtomicStore:
                     reload.operation_ids,
                     reload.request_ctv_digest,
                 )
-                record = self._memory_plane.get_record(primary_id)
+                record = (self._memory_plane.get_record(primary_id) if snapshot_records is None else snapshot_records.get(primary_id))
                 if record is None:
                     raise ValueError("group commit primary is absent")
                 group_request = _bootstrap_graph_v3_group_commit_request_from_record(
@@ -10760,12 +11131,17 @@ class SemanticIngestionAtomicStore:
         group_result_type: type, canonical_result_type: type, identity_type: type,
         terminal_control_type: type, current_generation_type: type, receipt_type: type,
         reload_type: type, encoder: Callable[[BaseModel], bytes],
+        head_rescans: int = 0,
     ) -> BootstrapGraphTerminalReloadV3:
         intent = request.publication_intent
         locator_id = _bootstrap_graph_v3_terminal_locator_id(intent.locator_digest)
         existing = self._memory_plane.get_record(locator_id)
         if existing is not None:
             return self._reload_bootstrap_graph_terminal_v3(request=request, reload_type=reload_type)
+        if intent.terminal_member_schema_version not in {2, 3}:
+            raise PreplanningStoreError(
+                "bootstrap graph terminal publication requires a source observation grammar"
+            )
 
         # The absent branch is a live mutation: authenticate it before reading
         # the operation control or epoch head, while a found terminal locator
@@ -10795,11 +11171,72 @@ class SemanticIngestionAtomicStore:
             or control.state in {"terminal", "lease_recovery_exhausted"}
         ):
             raise PreplanningStoreError("bootstrap graph terminal generation is stale")
+        source_observation = request.source_finalization_observation_delta
+        if (
+            request.publication_intent.terminal_member_schema_version == 2
+            and (
+                source_observation is None
+                or source_observation.observation_revision_before
+                != control.observation_revision
+            )
+        ):
+            raise PreplanningStoreError(
+                "bootstrap graph source finalization observation predecessor is stale"
+            )
 
+        # First reconstruct the sealed source result.  Schema-3 deliberately
+        # carries no caller-issued delta/revision, so its receipt is assigned
+        # only after this point under the current shared ledger head.
         payloads = _bootstrap_graph_v3_terminal_payloads(
             request=request, group_result_type=group_result_type,
             canonical_result_type=canonical_result_type,
         )
+        canonical_result = payloads["bootstrap_graph_canonical_source_result"][0]
+        ledger_entry_record: CanonicalMemoryRecord | None = None
+        replacement_head_record: CanonicalMemoryRecord | None = None
+        current_head_record: CanonicalMemoryRecord | None = None
+        if intent.terminal_member_schema_version == 3:
+            source_observation, ledger_entry_record, replacement_head_record, current_head_record = (
+                self._assign_source_terminal_observation_ledger_entry(
+                    request=request,
+                    canonical_result=canonical_result,
+                    namespace_id=_control_namespace(control),
+                    generation=control.generation + 1,
+                )
+            )
+            payloads = _bootstrap_graph_v3_terminal_payloads(
+                request=request, group_result_type=group_result_type,
+                canonical_result_type=canonical_result_type,
+                assigned_source_observation=source_observation,
+            )
+        if intent.terminal_member_schema_version == 2 and source_observation is not None:
+            from memorii.core.memory_evolution.observation_persistence import (
+                source_finalization_observation_delta_id,
+                source_finalization_observation_revision,
+                source_finalization_observation_schema_fingerprint,
+            )
+
+            if (
+                source_observation.observation_delta_id
+                != source_finalization_observation_delta_id(
+                    operation_fence_id=request.operation_fence_binding.operation_fence_id,
+                    canonical_source_result_digest=canonical_result.result_digest,
+                )
+                or source_observation.observation_revision_after
+                != source_finalization_observation_revision(
+                    observation_revision_before=(
+                        source_observation.observation_revision_before
+                    ),
+                    canonical_source_result_digest=canonical_result.result_digest,
+                )
+                or source_observation.observation_schema_fingerprint
+                != source_finalization_observation_schema_fingerprint()
+                or source_observation.source_outcome
+                != canonical_result.canonical_source_result
+            ):
+                raise PreplanningStoreError(
+                    "bootstrap graph source finalization observation is substituted"
+                )
         members = _bootstrap_graph_v3_terminal_members(
             request=request, payloads=payloads, member_type=member_type, encoder=encoder,
         )
@@ -10845,7 +11282,6 @@ class SemanticIngestionAtomicStore:
             terminal_control_digest=terminal_control.terminal_control_digest,
             completed_lease_binding_digest=request.operation_lease_binding.binding_digest,
         )
-        canonical_result = payloads["bootstrap_graph_canonical_source_result"][0]
         successor = current_generation_type.create(
             store_identity_digest=sha256(_control_namespace(control).encode()).hexdigest(),
             operation_id=request.operation_fence_binding.operation_id,
@@ -10868,6 +11304,18 @@ class SemanticIngestionAtomicStore:
             handoff_digest=request.handoff.handoff_digest,
             atomic_write_locator_digest=intent.locator_digest, final_write_identity=identity,
             terminal_control=terminal_control, canonical_source_result=canonical_result,
+            source_finalization_observation_delta=source_observation,
+            terminal_member_schema_version=intent.terminal_member_schema_version,
+            **(
+                {
+                    "ledger_entry_id": ledger_entry_record.memory_id,
+                    "ledger_entry_digest": _ledger_entry_from_record(
+                        ledger_entry_record, history=self._typed_value_registry_history,
+                        limits=self._observation_artifact_limits,
+                    ).entry_digest,
+                }
+                if ledger_entry_record is not None else {}
+            ),
             delivery_principal_binding_digest=intent.delivery_principal_binding_digest,
             required_scope_set_digest=intent.required_scope_set_digest,
             operation_fence_binding_digest=intent.operation_fence_binding_digest,
@@ -10898,6 +11346,11 @@ class SemanticIngestionAtomicStore:
             "generation": generation, "last_request_digest": atomic_write_digest,
             "state": "terminal", "lease": None,
             "last_completed_lease_binding_digest": request.operation_lease_binding.binding_digest,
+            **(
+                {"observation_revision": source_observation.observation_revision_after}
+                if source_observation is not None
+                else {}
+            ),
         })
         writer_record = self._writers.require_current(request.writer_commit_binding)
         authorization = self._writers._authorize_atomic(
@@ -10906,7 +11359,9 @@ class SemanticIngestionAtomicStore:
         )
         records = (_control_record(next_control, control_record.timestamp), *member_records,
                    manifest, terminal_record, identity_record, locator_record, request_record,
-                   recovery_record)
+                   recovery_record,
+                   *((ledger_entry_record,) if ledger_entry_record is not None else ()),
+                   *((replacement_head_record,) if replacement_head_record is not None else ()))
         try:
             self._memory_plane.conditionally_write_records(
                 records,
@@ -10914,13 +11369,241 @@ class SemanticIngestionAtomicStore:
                     RecordDigestPrecondition(memory_id=control_record.memory_id, expected_digest=record_digest(control_record)),
                     RecordDigestPrecondition(memory_id=writer_record.memory_id, expected_digest=record_digest(writer_record)),
                     RecordFencePrecondition(memory_id=control_record.memory_id, expected_fence=MemoryRecordFence(execution_token=request.operation_lease_binding.execution_token, ownership_epoch=request.operation_lease_binding.ownership_epoch)),
-                    *(RecordAbsentPrecondition(memory_id=item.memory_id) for item in records[1:]),
+                    *(RecordAbsentPrecondition(memory_id=item.memory_id) for item in records[1:]
+                      if item is not replacement_head_record),
+                    *(
+                        (RecordDigestPrecondition(
+                            memory_id=current_head_record.memory_id,
+                            expected_digest=record_digest(current_head_record),
+                        ),)
+                        if current_head_record is not None else ()
+                    ),
                 ), authorization=authorization,
             )
         except MemoryPlaneRevisionConflictError as exc:
             if self._memory_plane.get_record(locator_id) is None:
+                if current_head_record is not None:
+                    fresh_head = self._memory_plane.get_record(current_head_record.memory_id)
+                    fresh_control = self._memory_plane.get_record(control_record.memory_id)
+                    if (
+                        fresh_head is not None
+                        and record_digest(fresh_head) != record_digest(current_head_record)
+                        and fresh_control == control_record
+                    ):
+                        if head_rescans + 1 >= self._activation_max_rescans:
+                            raise ObservationLedgerContentionError("observation head contention requires retry") from exc
+                        return self._persist_bootstrap_graph_terminal_v3_linearized(
+                            request=request, member_type=member_type, group_result_type=group_result_type,
+                            canonical_result_type=canonical_result_type, identity_type=identity_type,
+                            terminal_control_type=terminal_control_type, current_generation_type=current_generation_type,
+                            receipt_type=receipt_type, reload_type=reload_type, encoder=encoder,
+                            head_rescans=head_rescans + 1,
+                        )
                 raise PreplanningStoreError("bootstrap graph terminal CAS conflicted") from exc
         return self._reload_bootstrap_graph_terminal_v3(request=request, reload_type=reload_type)
+
+    def _load_observation_append_head(self, writer_binding: SemanticWriterCommitBinding):
+        """Verify the complete current prefix before assigning either native delta."""
+        from memorii.core.memory_evolution.observation_activation_runtime import (
+            emit_registered_observation_artifact,
+            validate_registered_artifact,
+        )
+        from memorii.core.memory_evolution.observation_ledger_contracts import (
+            ObservationLedgerActivation,
+            ObservationLedgerHead,
+        )
+        from memorii.core.memory_evolution.writer_admission import observation_ledger_head_memory_id
+
+        target, history = self._observation_activation_target, self._typed_value_registry_history
+        if target is None or history is None or writer_binding.activation_digest is None:
+            raise PreplanningStoreError("schema-3 source terminal requires activated ledger authority")
+        if resolve_verified_observation_activation_target(target.configuration, history) != target:
+            raise PreplanningStoreError("observation ledger target authority is substituted")
+        snapshot = self._memory_plane.read_write_snapshot()[1]
+        if len({record.memory_id for record in snapshot}) != len(snapshot):
+            raise PreplanningStoreError("observation ledger snapshot has duplicate identities")
+        snapshot_records = {record.memory_id: record for record in snapshot}
+        self._replay_schema3_observation_ledger(snapshot_records=snapshot_records)
+        activation_record = snapshot_records.get(
+            "semantic_ingestion:observation-ledger:activation:"
+            + writer_binding.activation_digest
+        )
+        head_id = observation_ledger_head_memory_id(_SEMANTIC_EVENT_REPOSITORY_ID)
+        head_record = snapshot_records.get(head_id)
+        if (
+            activation_record is None or head_record is None
+            or not _activation_record_shape(
+                activation_record, "semantic_ingestion_observation_ledger_activation"
+            )
+            or not _activation_record_shape(
+                head_record, "semantic_ingestion_observation_ledger_head"
+            )
+        ):
+            raise PreplanningStoreError("schema-3 source ledger authority is incomplete")
+        activation = validate_registered_artifact(
+            activation_record.content["artifact"].encode("utf-8"),
+            schema_id="ObservationLedgerActivation", history=history,
+            limits=self._observation_artifact_limits,
+        )
+        head = validate_registered_artifact(
+            head_record.content["artifact"].encode("utf-8"),
+            schema_id="ObservationLedgerHead", history=history,
+            limits=self._observation_artifact_limits,
+        )
+        if (
+            type(activation) is not ObservationLedgerActivation
+            or type(head) is not ObservationLedgerHead
+            or activation.activation_digest != writer_binding.activation_digest
+            or head.repository_id != _SEMANTIC_EVENT_REPOSITORY_ID
+            or head.activation_digest != activation.activation_digest
+            or activation.observation_schema_fingerprint
+            != target.identity.observation_schema_fingerprint
+        ):
+            raise PreplanningStoreError("schema-3 source ledger authority is substituted")
+        selected_activation = emit_registered_observation_artifact(
+            activation, schema_id="ObservationLedgerActivation", history=history,
+            publication=target.publication, limits=self._observation_artifact_limits,
+        )
+        selected_head = emit_registered_observation_artifact(
+            head, schema_id="ObservationLedgerHead", history=history,
+            publication=target.publication, limits=self._observation_artifact_limits,
+        )
+        if (
+            activation_record.content["artifact"].encode("utf-8")
+            != selected_activation.raw
+            or head_record.content["artifact"].encode("utf-8") != selected_head.raw
+        ):
+            raise PreplanningStoreError("schema-3 source ledger publication is substituted")
+        return target, history, activation, head, head_record
+
+    def _assign_source_terminal_observation_ledger_entry(
+        self,
+        *,
+        request: BootstrapGraphTerminalPublicationRequestV3,
+        canonical_result: BootstrapGraphCanonicalSourceResultV3,
+        namespace_id: str,
+        generation: int,
+    ) -> tuple[SourceFinalizationObservationDelta, CanonicalMemoryRecord, CanonicalMemoryRecord, CanonicalMemoryRecord]:
+        """Assign the schema-3 receipt from the verified mutable ledger head."""
+        from memorii.core.memory_evolution.graph_effect_contracts import (
+            CanonicalSourceTerminalOutcomeRecord,
+        )
+        from memorii.core.memory_evolution.observation_activation_runtime import (
+            emit_registered_observation_artifact,
+            observation_successor_revision,
+            registered_semantic_payload,
+            semantic_payload_digest,
+        )
+        from memorii.core.memory_evolution.observation_ledger_contracts import (
+            ObservationLedgerEntry,
+            ObservationLedgerHead,
+            ObservationSourceResultLocator,
+            SourceObservationIntent,
+        )
+        from memorii.core.memory_evolution.observation_persistence import (
+            build_source_finalization_observation_delta,
+            source_finalization_observation_delta_id,
+        )
+
+        target, history, activation, head, head_record = self._load_observation_append_head(
+            request.writer_commit_binding,
+        )
+        source_intent = request.source_observation_intent
+        if type(source_intent) is not SourceObservationIntent:
+            raise PreplanningStoreError("schema-3 source observation intent is absent")
+        expected_intent = emit_registered_observation_artifact(
+            SourceObservationIntent(
+                kind="source_finalization",
+                source_outcome=source_intent.source_outcome,
+                observation_schema_fingerprint=target.identity.observation_schema_fingerprint,
+                intent_digest="0" * 64,
+            ),
+            schema_id="SourceObservationIntent", history=history,
+            publication=target.publication, limits=self._observation_artifact_limits,
+        ).value
+        if (
+            expected_intent != source_intent
+            or source_intent.source_outcome != canonical_result.canonical_source_result
+        ):
+            raise PreplanningStoreError("schema-3 source observation intent is substituted")
+        outcome = canonical_result.canonical_source_result
+        if type(outcome) is not CanonicalSourceTerminalOutcomeRecord:
+            raise PreplanningStoreError("schema-3 canonical source result is invalid")
+        delta_id = source_finalization_observation_delta_id(
+            operation_fence_id=request.operation_fence_binding.operation_fence_id,
+            canonical_source_result_digest=canonical_result.result_digest,
+        )
+        provisional = build_source_finalization_observation_delta(
+            source_outcome=outcome, observation_delta_id=delta_id,
+            observation_revision_before=head.observation_revision,
+            observation_revision_after="0" * 64,
+            observation_schema_fingerprint=activation.observation_schema_fingerprint,
+        )
+        payload = registered_semantic_payload(
+            provisional, history=history, publication=target.publication,
+            limits=self._observation_artifact_limits,
+        )
+        payload_digest = semantic_payload_digest(
+            payload, history=history, publication=target.publication,
+            limits=self._observation_artifact_limits,
+        )
+        delta = build_source_finalization_observation_delta(
+            source_outcome=outcome, observation_delta_id=delta_id,
+            observation_revision_before=head.observation_revision,
+            observation_revision_after=observation_successor_revision(
+                head, repository_id=_SEMANTIC_EVENT_REPOSITORY_ID,
+                activation_digest=activation.activation_digest, payload_digest=payload_digest,
+            ),
+            observation_schema_fingerprint=activation.observation_schema_fingerprint,
+        )
+        locator = ObservationSourceResultLocator(
+            schema_version=1, kind="source_terminal",
+            immutable_record_id=_bootstrap_graph_v3_member_id(
+                namespace_id, generation, "canonical-source-result",
+            ),
+            source_id=outcome.source_id, source_digest=outcome.source_digest,
+            source_operation_id=request.operation_fence_binding.operation_id,
+            operation_fence_id=outcome.operation_fence_id, namespace_id=namespace_id,
+            artifact_generation=generation, member_id="canonical-source-result",
+            publication_request_digest=request.publication_request_digest,
+        )
+        entry = emit_registered_observation_artifact(
+            ObservationLedgerEntry(
+                schema_version=1, repository_id=_SEMANTIC_EVENT_REPOSITORY_ID,
+                activation_digest=activation.activation_digest, sequence=head.sequence + 1,
+                previous_entry_digest=head.last_entry_digest,
+                semantic_payload_digest=payload_digest, delta=delta,
+                result_locator=locator, result_digest=canonical_result.result_digest,
+                entry_digest="0" * 64,
+            ),
+            schema_id="ObservationLedgerEntry", history=history, publication=target.publication,
+            limits=self._observation_artifact_limits,
+        ).value
+        if type(entry) is not ObservationLedgerEntry:
+            raise PreplanningStoreError("schema-3 source ledger entry is invalid")
+        next_head = emit_registered_observation_artifact(
+            ObservationLedgerHead(
+                schema_version=1, repository_id=_SEMANTIC_EVENT_REPOSITORY_ID,
+                activation_digest=activation.activation_digest, sequence=entry.sequence,
+                observation_revision=delta.observation_revision_after,
+                last_delta_id=delta.observation_delta_id, last_delta_digest=delta.delta_digest,
+                last_entry_digest=entry.entry_digest, head_digest="0" * 64,
+            ),
+            schema_id="ObservationLedgerHead", history=history, publication=target.publication,
+            limits=self._observation_artifact_limits,
+        )
+        entry_artifact = emit_registered_observation_artifact(
+            entry, schema_id="ObservationLedgerEntry", history=history,
+            publication=target.publication, limits=self._observation_artifact_limits,
+        )
+        if not isinstance(next_head.value, ObservationLedgerHead):
+            raise PreplanningStoreError("registered source ledger head is invalid")
+        return (
+            delta,
+            _observation_ledger_entry_record(entry, entry_artifact.raw, self._now()),
+            _observation_ledger_head_record(next_head.value, next_head.raw, self._now()),
+            head_record,
+        )
 
     def _reload_bootstrap_graph_terminal_v3(
         self, *, request: BootstrapGraphTerminalPublicationRequestV3, reload_type: type
@@ -10970,14 +11653,26 @@ class SemanticIngestionAtomicStore:
         expected_operation_fence_binding: OperationFenceBinding,
         expected_operation_lease_binding_digest: str | None = None,
         expected_control_epoch_digest: str | None = None,
+        snapshot_records: dict[str, CanonicalMemoryRecord] | None = None,
+        verify_ledger_replay: bool = True,
     ) -> BootstrapGraphTerminalReloadV3:
         """Reload one terminal only after proving its immutable persisted closure."""
+        from memorii.core.memory_evolution.graph_effect_contracts import (
+            SourceFinalizationObservationDelta,
+        )
         from memorii.core.semantic_ingestion.contracts import (
             BootstrapGraphPlanAtomicMemberV3,
             BootstrapGraphTerminalReloadV3,
+            decode_bootstrap_graph_atomic_member_payload_v3,
         )
 
-        index = self._memory_plane.get_record(
+        if snapshot_records is None:
+            snapshot = self._memory_plane.read_write_snapshot()[1]
+            if len({record.memory_id for record in snapshot}) != len(snapshot):
+                raise PreplanningStoreError("bootstrap graph terminal snapshot has duplicate identities")
+            snapshot_records = {record.memory_id: record for record in snapshot}
+        lookup = snapshot_records.get
+        index = lookup(
             _bootstrap_graph_v3_terminal_locator_id(locator_digest)
         )
         if index is None or index.source_kind != "semantic_ingestion_bootstrap_graph_v3_terminal_locator":
@@ -10998,14 +11693,18 @@ class SemanticIngestionAtomicStore:
 
         identity = reload.final_write_identity
         terminal = reload.terminal_control
-        control = _control_from_record(
-            self._required_control_record(expected_operation_fence_binding)
-        )
-        manifest = self._memory_plane.get_record(identity.member_manifest_id)
-        terminal_record = self._memory_plane.get_record(
+        candidates = tuple(snapshot_records[key] for key in {
+            _control_id(expected_operation_fence_binding), _legacy_control_id(expected_operation_fence_binding)
+        } if key in snapshot_records)
+        if len(candidates) != 1:
+            raise PreplanningStoreError("bootstrap graph terminal control is absent or ambiguous")
+        control_record = candidates[0]
+        control = _control_from_record(control_record)
+        manifest = lookup(identity.member_manifest_id)
+        terminal_record = lookup(
             _bootstrap_graph_v3_terminal_control_id(locator_digest)
         )
-        identity_record = self._memory_plane.get_record(
+        identity_record = lookup(
             _bootstrap_graph_v3_terminal_identity_id(locator_digest)
         )
         members_value = () if manifest is None else manifest.content.get("members", ())
@@ -11028,6 +11727,10 @@ class SemanticIngestionAtomicStore:
             "bootstrap_graph_terminal_handoff",
             "bootstrap_graph_canonical_source_result",
         )
+        if reload.terminal_member_schema_version in {2, 3}:
+            expected_kinds += (
+                "bootstrap_graph_source_finalization_observation_delta",
+            )
         kind_order = {kind: offset for offset, kind in enumerate(expected_kinds)}
         member_ids = tuple(member.member_id for member in members)
         member_digests = tuple(member.member_digest for member in members)
@@ -11062,6 +11765,11 @@ class SemanticIngestionAtomicStore:
             or reload.checkpoint_receipt.reload_core_digest != terminal.terminal_control_digest
             or control.state != "terminal"
             or control.last_completed_lease_binding_digest != reload.operation_lease_binding_digest
+            or (
+                reload.source_finalization_observation_delta is not None
+                and control.observation_revision
+                != reload.source_finalization_observation_delta.observation_revision_after
+            )
             or manifest is None
             or manifest.source_kind != "semantic_ingestion_bootstrap_graph_v3_manifest"
             or manifest.content.get("semantic_ingestion_kind") != "bootstrap_graph_v3_terminal_manifest"
@@ -11116,7 +11824,7 @@ class SemanticIngestionAtomicStore:
         ):
             raise PreplanningStoreError("bootstrap graph terminal reload is corrupt or substituted")
         for member, member_value in zip(members, member_values, strict=True):
-            record = self._memory_plane.get_record(
+            record = lookup(
                 _bootstrap_graph_v3_member_id(
                     _control_namespace(control),
                     identity.publication_operation_generation,
@@ -11129,8 +11837,511 @@ class SemanticIngestionAtomicStore:
                 or record.content.get("member") != member_value
             ):
                 raise PreplanningStoreError("bootstrap graph terminal member closure is incomplete")
-        self._validate_bootstrap_graph_group_result_members_v3(members)
+        source_observation_members = tuple(
+            member for member in members
+            if member.kind == "bootstrap_graph_source_finalization_observation_delta"
+        )
+        if reload.terminal_member_schema_version == 2:
+            if len(source_observation_members) != 1:
+                raise PreplanningStoreError(
+                    "bootstrap graph source finalization observation is incomplete"
+                )
+            try:
+                decoded_observation = SourceFinalizationObservationDelta.model_validate(
+                    decode_bootstrap_graph_atomic_member_payload_v3(
+                        kind=source_observation_members[0].kind,
+                        raw=source_observation_members[0].canonical_payload,
+                    ),
+                    strict=False,
+                )
+            except (TypeError, ValueError) as exc:
+                raise PreplanningStoreError(
+                    "bootstrap graph source finalization observation is corrupt"
+                ) from exc
+            if (
+                reload.source_finalization_observation_delta != decoded_observation
+                or decoded_observation.source_outcome
+                != reload.canonical_source_result.canonical_source_result
+                or decoded_observation.observation_revision_after
+                != control.observation_revision
+            ):
+                raise PreplanningStoreError(
+                    "bootstrap graph source finalization observation is substituted"
+                )
+        elif reload.terminal_member_schema_version == 3:
+            if len(source_observation_members) != 1:
+                raise PreplanningStoreError(
+                    "bootstrap graph source finalization observation is incomplete"
+                )
+            try:
+                decoded_observation = SourceFinalizationObservationDelta.model_validate(
+                    decode_bootstrap_graph_atomic_member_payload_v3(
+                        kind=source_observation_members[0].kind,
+                        raw=source_observation_members[0].canonical_payload,
+                    ),
+                    strict=False,
+                )
+                if reload.ledger_entry_id is None or reload.ledger_entry_digest is None:
+                    raise ValueError("ledger receipt is absent")
+                entry_record = lookup(reload.ledger_entry_id)
+                if entry_record is None:
+                    raise ValueError("ledger entry is absent")
+                entry = _ledger_entry_from_record(
+                    entry_record, history=self._typed_value_registry_history,
+                    limits=self._observation_artifact_limits,
+                )
+            except (TypeError, ValueError) as exc:
+                raise PreplanningStoreError(
+                    "bootstrap graph source ledger receipt is corrupt"
+                ) from exc
+            locator = entry.result_locator
+            from memorii.core.memory_evolution.observation_ledger_contracts import (
+                ObservationSourceResultLocator,
+            )
+            if (
+                entry.entry_digest != reload.ledger_entry_digest
+                or entry.delta != decoded_observation
+                or entry.result_digest != reload.canonical_source_result.result_digest
+                or not isinstance(locator, ObservationSourceResultLocator)
+                or locator.immutable_record_id != _bootstrap_graph_v3_member_id(
+                    _control_namespace(control),
+                    identity.publication_operation_generation,
+                    "canonical-source-result",
+                )
+                or locator.source_id != decoded_observation.source_id
+                or locator.source_digest != decoded_observation.source_digest
+                or locator.operation_fence_id != decoded_observation.operation_fence_id
+                or locator.source_operation_id != expected_operation_fence_binding.operation_id
+                or locator.namespace_id != _control_namespace(control)
+                or locator.artifact_generation != identity.publication_artifact_generation
+                or locator.member_id != "canonical-source-result"
+                or locator.publication_request_digest != identity.atomic_write_digest
+                or decoded_observation.source_outcome
+                != reload.canonical_source_result.canonical_source_result
+                or decoded_observation.observation_revision_after
+                != control.observation_revision
+            ):
+                raise PreplanningStoreError("bootstrap graph source ledger receipt is substituted")
+            from memorii.core.memory_evolution.observation_activation_runtime import (
+                emit_registered_observation_artifact,
+            )
+            from memorii.core.memory_evolution.observation_ledger_contracts import SourceObservationIntent
+            from memorii.core.semantic_ingestion.contracts import (
+                BootstrapGraphCanonicalSourceResultV3,
+                BootstrapGraphTerminalPublicationRequestV3,
+                BootstrapNativeGroupCommitTerminalConstructionV3,
+                decode_semantic_contract,
+                encode_semantic_contract,
+            )
+
+            target, history = self._observation_activation_target, self._typed_value_registry_history
+            if target is None or history is None or manifest is None:
+                raise PreplanningStoreError("source terminal intent authority is unavailable")
+            try:
+                retained_raw = bytes.fromhex(manifest.content["publication_request_canonical_hex"])
+                retained = decode_semantic_contract(retained_raw, BootstrapGraphTerminalPublicationRequestV3)
+                expected_intent = emit_registered_observation_artifact(
+                    SourceObservationIntent(
+                        kind="source_finalization", source_outcome=decoded_observation.source_outcome,
+                        observation_schema_fingerprint=target.identity.observation_schema_fingerprint,
+                        intent_digest="0" * 64,
+                    ),
+                    schema_id="SourceObservationIntent", history=history, publication=target.publication,
+                    limits=self._observation_artifact_limits,
+                ).value
+                expected_payloads = _bootstrap_graph_v3_terminal_payloads(
+                    request=retained, group_result_type=BootstrapNativeGroupCommitTerminalConstructionV3,
+                    canonical_result_type=BootstrapGraphCanonicalSourceResultV3,
+                    assigned_source_observation=decoded_observation,
+                )
+                expected_members = _bootstrap_graph_v3_terminal_members(
+                    request=retained, payloads=expected_payloads,
+                    member_type=BootstrapGraphPlanAtomicMemberV3, encoder=encode_semantic_contract,
+                )
+            except (KeyError, TypeError, ValueError) as exc:
+                raise PreplanningStoreError("source terminal sealed intent is corrupt") from exc
+            if (
+                encode_semantic_contract(retained) != retained_raw
+                or retained.publication_intent.terminal_member_schema_version != 3
+                or retained.publication_request_digest != identity.atomic_write_digest
+                or manifest.content.get("publication_request_digest") != retained.publication_request_digest
+                or retained.publication_intent.intent_digest != identity.publication_intent_digest
+                or retained.publication_intent.locator_digest != locator_digest
+                or retained.handoff.handoff_digest != reload.handoff_digest
+                or retained.writer_commit_binding.activation_digest != entry.activation_digest
+                or retained.source_observation_intent != expected_intent
+                or expected_members != members
+                or expected_payloads["bootstrap_graph_canonical_source_result"][0] != reload.canonical_source_result
+            ):
+                raise PreplanningStoreError("source terminal sealed intent or actual members are substituted")
+            if verify_ledger_replay:
+                self._replay_schema3_observation_ledger(snapshot_records=snapshot_records)
+        self._validate_bootstrap_graph_group_result_members_v3(members, snapshot_records=snapshot_records)
         return reload
+
+    def _replay_schema3_observation_ledger(
+        self, *, snapshot_records: dict[str, CanonicalMemoryRecord],
+    ) -> None:
+        """Run the complete prefix verifier against one detached record snapshot."""
+        from memorii.core.memory_evolution.observation_activation_runtime import validate_registered_artifact
+        from memorii.core.memory_evolution.observation_ledger_contracts import ObservationLedgerActivation
+        from memorii.core.memory_evolution.observation_ledger_replay import replay_observation_ledger
+        from memorii.core.memory_evolution.writer_admission import observation_ledger_head_memory_id
+
+        target, history = self._observation_activation_target, self._typed_value_registry_history
+        activation_records = tuple(record for record in snapshot_records.values()
+                                   if record.source_kind == "semantic_ingestion_observation_ledger_activation")
+        head = snapshot_records.get(observation_ledger_head_memory_id(_SEMANTIC_EVENT_REPOSITORY_ID))
+        if (
+            target is None or history is None or len(activation_records) != 1 or head is None
+            or not _activation_record_shape(
+                activation_records[0], "semantic_ingestion_observation_ledger_activation"
+            )
+            or not _activation_record_shape(head, "semantic_ingestion_observation_ledger_head")
+        ):
+            raise PreplanningStoreError("schema-3 observation replay authority is incomplete")
+        if resolve_verified_observation_activation_target(target.configuration, history) != target:
+            raise PreplanningStoreError("observation replay target authority is substituted")
+        if any(key != record.memory_id for key, record in snapshot_records.items()):
+            raise PreplanningStoreError("observation replay snapshot identity is substituted")
+        admission, _, _ = self._activation_snapshot_admission(tuple(snapshot_records.values()))
+        entry_records = tuple(record for record in snapshot_records.values()
+                              if record.source_kind == "semantic_ingestion_observation_ledger_entry")
+        if (
+            len(entry_records) > self._observation_artifact_limits.body_limits.maximum_nodes
+            or any(not _activation_record_shape(record, "semantic_ingestion_observation_ledger_entry") for record in entry_records)
+            or sum(len(record.content["artifact"].encode("utf-8")) for record in entry_records)
+            > self._observation_artifact_limits.maximum_envelope_bytes
+        ):
+            raise PreplanningStoreError("observation replay prefix exceeds protected limits or has invalid records")
+        try:
+            activation = validate_registered_artifact(
+                activation_records[0].content["artifact"].encode("utf-8"),
+                schema_id="ObservationLedgerActivation", history=history,
+                limits=self._observation_artifact_limits,
+            )
+            entries = tuple(sorted(
+                (_ledger_entry_from_record(record, history=history, limits=self._observation_artifact_limits)
+                 for record in entry_records),
+                key=lambda value: value.sequence,
+            ))
+            if type(activation) is not ObservationLedgerActivation:
+                raise ValueError("activation type")
+            if (
+                activation_records[0].memory_id
+                != "semantic_ingestion:observation-ledger:activation:" + activation.activation_digest
+                or admission.activation_digest != activation.activation_digest
+                or admission.writer_epoch != activation.target_writer_epoch
+                or admission.active_writer_implementation_fingerprint != target.identity.writer_fingerprint
+                or activation.writer_implementation_fingerprint != target.identity.writer_fingerprint
+                or activation.observation_schema_fingerprint != target.identity.observation_schema_fingerprint
+                or activation.ledger_codec_fingerprint != target.identity.ledger_codec_fingerprint
+            ):
+                raise ValueError("activation identity")
+            replay_observation_ledger(
+                repository_id=_SEMANTIC_EVENT_REPOSITORY_ID,
+                activation_digest=activation.activation_digest,
+                activation_artifact=activation_records[0].content["artifact"].encode("utf-8"),
+                expected_head_artifact=head.content["artifact"].encode("utf-8"),
+                entry_artifacts=tuple(
+                    snapshot_records[_observation_ledger_entry_memory_id(entry.repository_id, entry.delta.observation_delta_id)]
+                    .content["artifact"].encode("utf-8") for entry in entries
+                ),
+                history=history, publication=target.publication,
+                limits=self._observation_artifact_limits,
+                verify_immutable_result=lambda entry: self._verify_schema3_source_entry_snapshot(
+                    entry=entry, snapshot_records=snapshot_records,
+                ),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PreplanningStoreError("schema-3 observation replay is corrupt") from exc
+
+    def _verify_schema3_source_entry_snapshot(
+        self, *, entry: ObservationLedgerEntry, snapshot_records: dict[str, CanonicalMemoryRecord],
+    ) -> None:
+        """The replay callback proves the immutable terminal member without live reads."""
+        from memorii.core.memory_evolution.graph_effect_contracts import SourceFinalizationObservationDelta
+        from memorii.core.memory_evolution.observation_ledger_contracts import (
+            ObservationLedgerEntry,
+            ObservationSourceResultLocator,
+        )
+        from memorii.core.semantic_ingestion.contracts import BootstrapGraphTerminalReloadV3
+
+        if type(entry) is not ObservationLedgerEntry:
+            raise PreplanningStoreError("schema-3 observation entry type is invalid")
+        if not isinstance(entry.delta, SourceFinalizationObservationDelta):
+            self._verify_native_group_entry_snapshot(entry, snapshot_records=snapshot_records)
+            return
+        locator = entry.result_locator
+        if not isinstance(locator, ObservationSourceResultLocator):
+            raise PreplanningStoreError("schema-3 source result locator is invalid")
+        locators: list[BootstrapGraphTerminalReloadV3] = []
+        for record in snapshot_records.values():
+            if (
+                record.source_kind != "semantic_ingestion_bootstrap_graph_v3_terminal_locator"
+                or "handoff_digest" not in record.content
+            ):
+                continue
+            try:
+                candidate = BootstrapGraphTerminalReloadV3.model_validate(record.content["reload"])
+            except (KeyError, TypeError, ValueError) as exc:
+                raise PreplanningStoreError("schema-3 source terminal locator is corrupt") from exc
+            if candidate.ledger_entry_id == _observation_ledger_entry_memory_id(entry.repository_id, entry.delta.observation_delta_id):
+                locators.append(candidate)
+        if len(locators) != 1:
+            raise PreplanningStoreError("schema-3 source terminal receipt is absent or ambiguous")
+        reload = locators[0]
+        fences = tuple(
+            _control_from_record(record).operation_fence
+            for record in snapshot_records.values()
+            if record.source_kind == "semantic_ingestion_preplanning_control"
+            and _control_from_record(record).operation_fence.binding_digest
+            == reload.operation_fence_binding_digest
+        )
+        if len(fences) != 1:
+            raise PreplanningStoreError("schema-3 source terminal fence is absent or ambiguous")
+        self._reload_bootstrap_graph_terminal_exact_v3(
+            locator_digest=reload.atomic_write_locator_digest,
+            expected_reload=reload,
+            expected_delivery_principal_binding_digest=reload.delivery_principal_binding_digest,
+            expected_required_scope_set_digest=reload.required_scope_set_digest,
+            expected_operation_fence_binding=fences[0],
+            expected_operation_lease_binding_digest=reload.operation_lease_binding_digest,
+            expected_control_epoch_digest=reload.control_epoch_digest,
+            snapshot_records=snapshot_records,
+            verify_ledger_replay=False,
+        )
+
+    def _reload_bootstrap_graph_group_receipt(
+        self, record: CanonicalMemoryRecord, request: BootstrapGraphGroupCommitRequestV3,
+    ) -> BootstrapGraphGroupCommitReloadV3:
+        reload = _bootstrap_graph_v3_group_commit_reload_from_record(record, request)
+        if reload.group_result_schema_version == 2:
+            if reload.ledger_entry_id is None or reload.ledger_entry_digest is None:
+                raise PreplanningStoreError("native group recovery ledger coordinates are absent")
+            snapshot = self._memory_plane.read_write_snapshot()[1]
+            if len({item.memory_id for item in snapshot}) != len(snapshot):
+                raise PreplanningStoreError("native group recovery snapshot contains duplicate identities")
+            records = {item.memory_id: item for item in snapshot}
+            if records.get(record.memory_id) != record:
+                raise PreplanningStoreError("native group primary changed during recovery")
+            self._replay_schema3_observation_ledger(snapshot_records=records)
+            entry_record = records.get(reload.ledger_entry_id)
+            if entry_record is None:
+                raise PreplanningStoreError("native group recovery ledger entry is absent")
+            entry = _ledger_entry_from_record(
+                entry_record, history=self._typed_value_registry_history,
+                limits=self._observation_artifact_limits,
+            )
+            if entry.entry_digest != reload.ledger_entry_digest:
+                raise PreplanningStoreError("native group recovery ledger entry is substituted")
+            self._verify_native_group_entry_snapshot(entry, snapshot_records=records)
+        return reload
+
+    def _verify_native_group_entry_snapshot(
+        self, entry: ObservationLedgerEntry, *, snapshot_records: dict[str, CanonicalMemoryRecord],
+    ) -> None:
+        """Join the immutable group result, audit and native signed checkpoint."""
+        from memorii.core.memory_evolution.bootstrap_group_observation import (
+            build_native_group_observation_delta,
+            build_native_group_observation_records,
+        )
+        from memorii.core.memory_evolution.graph_effect_contracts import GraphRevisionDelta, IngestionObservationDelta
+        from memorii.core.memory_evolution.observation_activation_runtime import (
+            emit_registered_observation_artifact,
+            validate_registered_artifact,
+        )
+        from memorii.core.memory_evolution.observation_ledger_contracts import ObservationGroupResultLocator
+        from memorii.core.memory_evolution.projection_history import ProjectionHistoryRepository
+        from memorii.core.memory_evolution.reference_integrity import ReferenceEdgeLedgerSnapshot
+        from memorii.core.memory_plane.store import ReadOnlyMemoryPlaneSnapshotStore
+        from memorii.core.semantic_ingestion.bootstrap_graph_projection_publication import (
+            BootstrapGraphNativeProjectionPublicationReceiptV3,
+            BootstrapGraphNativeReplayAuthorityEvidenceV3,
+            BootstrapGraphNativeReplayCheckpointEvidenceV3,
+            native_projection_publication_receipt_id,
+            validate_native_projection_publication_evidence_coordinates,
+        )
+        from memorii.core.semantic_ingestion.event_replay import validate_replay_checkpoint
+
+        target, history = self._observation_activation_target, self._typed_value_registry_history
+        locator, delta = entry.result_locator, entry.delta
+        if (target is None or history is None or not isinstance(locator, ObservationGroupResultLocator)
+                or not isinstance(delta, IngestionObservationDelta)):
+            raise PreplanningStoreError("native group ledger authority is invalid")
+        primary = snapshot_records.get(locator.immutable_record_id)
+        if primary is None:
+            raise PreplanningStoreError("native group primary is absent")
+        request = _bootstrap_graph_v3_group_commit_request_from_record(primary)
+        reload = _bootstrap_graph_v3_group_commit_reload_from_record(primary, request)
+        core = reload.persisted_result.core
+        if (
+            primary.memory_id != _bootstrap_graph_v3_group_commit_primary_id(
+                request.source_operation_id, request.transaction_group_id, request.operation_ids, request.request_ctv_digest)
+            or reload.group_result_schema_version != 2 or reload.observation_delta != delta
+            or reload.persisted_result.result_digest != entry.result_digest
+            or reload.ledger_entry_id != _observation_ledger_entry_memory_id(entry.repository_id, delta.observation_delta_id)
+            or reload.ledger_entry_digest != entry.entry_digest
+            or request.writer_commit_binding.activation_digest != entry.activation_digest
+            or locator.source_operation_id != request.source_operation_id
+            or locator.request_ctv_digest != request.request_ctv_digest
+            or locator.source_id != request.operation_fence_binding.source_id
+            or locator.source_digest != request.source_plan_lineage_entry.source_digest
+            or locator.operation_fence_id != request.operation_fence_binding.operation_fence_id
+            or locator.operation_ids != request.operation_ids
+            or locator.transaction_group_id != request.transaction_group_id
+        ):
+            raise PreplanningStoreError("native group immutable result is substituted")
+
+        def artifact(record_id: str, kind: str, schema: str):
+            record = snapshot_records.get(record_id)
+            if (record is None or record.memory_id != record_id
+                    or record.source_kind != "semantic_ingestion_" + kind
+                    or record.visibility != MemoryRecordVisibility.INTERNAL_CONTROL
+                    or record.status != CommitStatus.COMMITTED or record.domain != MemoryDomain.EXECUTION
+                    or set(record.content) != {"semantic_ingestion_kind", "artifact"}
+                    or record.content["semantic_ingestion_kind"] != kind
+                    or not isinstance(record.content["artifact"], str)):
+                raise PreplanningStoreError("native group immutable evidence is absent or malformed")
+            raw = record.content["artifact"].encode("utf-8")
+            value = validate_registered_artifact(raw, schema_id=schema, history=history,
+                                                 limits=self._observation_artifact_limits)
+            selected = emit_registered_observation_artifact(
+                value, schema_id=schema, history=history, publication=target.publication,
+                limits=self._observation_artifact_limits,
+            )
+            if selected.raw != raw:
+                raise PreplanningStoreError("native group evidence publication is substituted")
+            return value
+
+        graph_delta = None
+        materialized = ()
+        receipt = reload.native_projection_publication_receipt
+        graph_record_id = primary.memory_id + ":graph-revision-delta"
+        if core.disposition == "committed":
+            if not isinstance(receipt, BootstrapGraphNativeProjectionPublicationReceiptV3):
+                raise PreplanningStoreError("native group projection receipt is absent")
+            graph_delta = artifact(graph_record_id, "bootstrap_graph_v3_graph_revision_delta", "GraphRevisionDelta")
+            if not isinstance(graph_delta, GraphRevisionDelta) or graph_delta.delta_digest != delta.graph_revision_delta_digest:
+                raise PreplanningStoreError("native group graph audit is substituted")
+            receipt_id = native_projection_publication_receipt_id(receipt.publication_identity_digest)
+            persisted_receipt = artifact(receipt_id, "bootstrap_graph_v3_native_projection_receipt", "BootstrapGraphNativeProjectionPublicationReceiptV3")
+            authority = artifact(receipt.replay_authority_evidence_id, "bootstrap_graph_v3_native_replay_authority_evidence", "BootstrapGraphNativeReplayAuthorityEvidenceV3")
+            checkpoint = artifact(receipt.replay_checkpoint_evidence_id, "bootstrap_graph_v3_native_replay_checkpoint_evidence", "BootstrapGraphNativeReplayCheckpointEvidenceV3")
+            if (persisted_receipt != receipt or not isinstance(authority, BootstrapGraphNativeReplayAuthorityEvidenceV3)
+                    or not isinstance(checkpoint, BootstrapGraphNativeReplayCheckpointEvidenceV3)):
+                raise PreplanningStoreError("native group projection evidence is substituted")
+            validate_native_projection_publication_evidence_coordinates(
+                receipt=receipt, receipt_id=receipt_id, authority_evidence=authority, checkpoint_evidence=checkpoint,
+            )
+            batch = receipt.canonical_event_batch
+            native_event_record = snapshot_records.get(_semantic_event_batch_id(batch.log_position.sequence))
+            expected_event_record = _semantic_event_batch_record(batch, batch.events[0].timestamp)
+            if (native_event_record is None or native_event_record.content != expected_event_record.content
+                    or native_event_record.source_kind != expected_event_record.source_kind
+                    or batch != checkpoint.checkpoint_bundle.watermark_batch
+                    or graph_delta.graph_revision_before != core.graph_revision_before
+                    or graph_delta.graph_revision_after != core.graph_revision_after):
+                raise PreplanningStoreError("native group event evidence is substituted")
+            events = {(event.payload.record_kind, event.payload.record_id): event.payload for event in batch.events}
+            if len(events) != len(batch.events) or set(events) != {(change.record_kind, change.record_id) for change in graph_delta.record_changes}:
+                raise PreplanningStoreError("native group graph mutation closure is incomplete")
+            for change in graph_delta.record_changes:
+                event = events[(change.record_kind, change.record_id)]
+                if (change.after_record.payload != event.entity.record or change.before_digest != event.prior_record_digest
+                        or change.mutation_kind != event.operation or change.after_record_version != event.metadata.version
+                        or change.before_record_version != (None if event.operation == "create" else event.metadata.version - 1)):
+                    raise PreplanningStoreError("native graph audit differs from committed event")
+            reference_record = snapshot_records.get(_reference_integrity_ledger_id())
+            if reference_record is None:
+                raise PreplanningStoreError("native group reference history is absent")
+            reference = ReferenceEdgeLedgerSnapshot.model_validate(decode_typed_value(bytes.fromhex(reference_record.content["canonical_hex"])))
+            expected_edges = tuple(edge for edge in reference.entries
+                                   if edge.operation_id == request.transaction_group_id and edge.graph_revision == core.graph_revision_after)
+            actual_edges = tuple(edge for change in graph_delta.record_changes
+                                 for edge in (*change.reference_edges_added, *change.reference_edges_removed))
+            if ({edge.ledger_entry_digest: edge for edge in expected_edges}
+                    != {edge.ledger_entry_digest: edge for edge in actual_edges}
+                    or len(actual_edges) != len(expected_edges)):
+                raise PreplanningStoreError("native group reference mutation closure is substituted")
+            # Only record reads are used here; the detached adapter exposes no
+            # data-revision or mutation authority to projection validators.
+            plane = MemoryPlaneService(record_store=ReadOnlyMemoryPlaneSnapshotStore(
+                write_revision=0, records=tuple(snapshot_records.values()),
+            ))
+            projections = ProjectionHistoryRepository(plane, repository_id=entry.repository_id, now_provider=self._now)
+            class RetainedProjectionVerifier:
+                def validate_checkpoint_bindings(self, bindings, *, graph_revision):
+                    projections.validate_retained_checkpoint_bindings(bindings, graph_revision=graph_revision)
+            verified_state = validate_replay_checkpoint(
+                checkpoint.checkpoint_bundle, authority=self._checkpoint_resume_authority,
+                projection_history_verifier=RetainedProjectionVerifier(), semantic_conflict_verifier=projections,
+            )
+            if verified_state != authority.aggregate.graph_state:
+                raise PreplanningStoreError("native group checkpoint graph state is substituted")
+            materialized = tuple(event.entity.record for event in events.values())
+        elif receipt is not None or graph_record_id in snapshot_records:
+            raise PreplanningStoreError("noncommitting group contains native graph evidence")
+        audit = build_native_group_observation_records(request=request, graph_revision_delta=graph_delta)
+        reconstructed = build_native_group_observation_delta(
+            request=request, audit=audit, materialized_graph_records=materialized,
+            observation_revision_before=delta.observation_revision_before,
+            observation_revision_after=delta.observation_revision_after,
+            observation_schema_fingerprint=delta.observation_schema_fingerprint,
+        )
+        if reconstructed != delta:
+            raise PreplanningStoreError("native group observation differs from retained request")
+        from memorii.core.memory_evolution.graph_planning import (
+            PlanningCommitValues,
+            materialize_canonical_planning_payload,
+        )
+        committed_at = receipt.canonical_event_batch.events[0].timestamp if receipt is not None else primary.timestamp
+        expected_effects = []
+        expected_results = []
+        expected_materialized = []
+        for item in request.ordered_operation_inputs:
+            materialized_records = ()
+            if item.reduction.native_terminal.status == "accepted":
+                materialized_records = tuple(sorted((
+                    materialize_canonical_planning_payload(
+                        intent.canonical_after_record,
+                        commit_values=PlanningCommitValues(
+                            transaction_group_id=request.transaction_group_id,
+                            graph_revision_before=core.graph_revision_before,
+                            graph_revision_after=core.graph_revision_after, committed_at=committed_at,
+                        ), authorizing_transaction_group_id=request.transaction_group_id,
+                    ) for intent in item.reduction.effect_materialization.record_intents
+                ), key=lambda record: (record.record_kind, record.record_digest)))
+            operation_result, effects = _bootstrap_graph_operation_effects(
+                request=request, item=item, materialized_records=materialized_records,
+                primary_id=primary.memory_id, before_graph=core.graph_revision_before, after_graph=core.graph_revision_after,
+                before_observation=core.observation_revision_before, after_observation=core.observation_revision_after,
+                committed_at=committed_at,
+            )
+            expected_results.append(operation_result)
+            expected_effects.extend(effects)
+            expected_materialized.extend(materialized_records)
+        if (sorted((record.record_kind, record.record_digest) for record in expected_materialized)
+                != sorted((record.record_kind, record.record_digest) for record in materialized)):
+            raise PreplanningStoreError("native graph differs from sealed planner materialization")
+        if tuple(expected_results) != core.ordered_operation_results:
+            raise PreplanningStoreError("native group results differ from sealed materialization")
+        actual_effects = tuple(record for record in snapshot_records.values()
+                               if record.source_kind == "semantic_ingestion_bootstrap_graph_v3_group_commit_effect"
+                               and record.content.get("primary_id") == primary.memory_id)
+        if ({record.memory_id: record.content for record in actual_effects}
+                != {record.memory_id: record.content for record in expected_effects}):
+            raise PreplanningStoreError("native group effect members are incomplete or substituted")
+        for operation_id in request.operation_ids:
+            fanout = _bootstrap_graph_v3_group_commit_fanout_record(
+                source_operation_id=request.source_operation_id, transaction_group_id=request.transaction_group_id,
+                operation_ids=request.operation_ids, member_operation_id=operation_id,
+                request_ctv_digest=request.request_ctv_digest, primary_id=primary.memory_id,
+                reload_digest=reload.reload_digest, timestamp=committed_at,
+            )
+            actual = snapshot_records.get(fanout.memory_id)
+            if actual is None or actual.source_kind != fanout.source_kind or actual.content != fanout.content:
+                raise PreplanningStoreError("native group fanout closure is incomplete")
 
     def _reload_bootstrap_graph_transaction_v3(
         self,
@@ -11336,7 +12547,7 @@ class SemanticIngestionAtomicStore:
         )
         existing = self._memory_plane.get_record(primary_id)
         if existing is not None:
-            return _bootstrap_graph_v3_group_commit_reload_from_record(existing, request)
+            return self._reload_bootstrap_graph_group_receipt(existing, request)
 
         def write(*, retried_after_cas_conflict: bool = False) -> BootstrapGraphGroupCommitReloadV3:
             control_record = self._required_control_record(request.operation_fence_binding)
@@ -11428,6 +12639,15 @@ class SemanticIngestionAtomicStore:
                     observed_graph_revision=current_snapshot.graph_revision,
                 )
             before_observation = control.observation_revision
+            ledger_authority = (
+                self._load_observation_append_head(request.writer_commit_binding)
+                if request.writer_commit_binding.activation_digest is not None else None
+            )
+            native_receipt = None
+            native_observation = None
+            ledger_records: tuple[CanonicalMemoryRecord, ...] = ()
+            ledger_preconditions: tuple[MemoryPlanePrecondition, ...] = ()
+            native_audit_records: tuple[CanonicalMemoryRecord, ...] = ()
             accepted = any(
                 item.reduction.native_terminal.status == "accepted"
                 for item in request.ordered_operation_inputs
@@ -11444,6 +12664,7 @@ class SemanticIngestionAtomicStore:
             operation_results = []
             effect_records: list[CanonicalMemoryRecord] = []
             all_materialized_records: list[CanonicalGraphRecord] = []
+            materialized_by_operation: dict[str, tuple[CanonicalGraphRecord, ...]] = {}
             for item in request.ordered_operation_inputs:
                 reduction = item.reduction
                 materialization = reduction.effect_materialization
@@ -11474,6 +12695,16 @@ class SemanticIngestionAtomicStore:
                         key=lambda record: (record.record_kind, record.record_digest),
                     ))
                     all_materialized_records.extend(materialized_records)
+                materialized_by_operation[item.operation_id] = materialized_records
+                result, records = _bootstrap_graph_operation_effects(
+                    request=request, item=item, materialized_records=materialized_records,
+                    primary_id=primary_id, before_graph=before_graph, after_graph=after_graph,
+                    before_observation=before_observation, after_observation=after_observation,
+                    committed_at=committed_at,
+                )
+                operation_results.append(result)
+                effect_records.extend(records)
+                continue
                 graph_payload = encode_typed_value(tuple(
                     record.model_dump(mode="python") for record in materialized_records
                 ))
@@ -11552,6 +12783,8 @@ class SemanticIngestionAtomicStore:
                 ))
             canonical_event_records: tuple[CanonicalMemoryRecord, ...] = ()
             canonical_event_preconditions: tuple[MemoryPlanePrecondition, ...] = ()
+            native_projection_records: tuple[CanonicalMemoryRecord, ...] = ()
+            native_projection_preconditions: tuple[MemoryPlanePrecondition, ...] = ()
             if accepted:
                 from memorii.core.semantic_ingestion.contracts import SemanticGraphDelta
                 from memorii.core.semantic_ingestion.event_replay import (
@@ -11673,11 +12906,212 @@ class SemanticIngestionAtomicStore:
                         expected_digest=record_digest(reference_integrity_record),
                     ),
                 )
+                if request.writer_commit_binding.activation_digest is not None:
+                    # A native group has no generic AtomicGenerationRequest, but
+                    # it must publish through the same projection owner and bind
+                    # the resulting generations into its replay aggregate before
+                    # its one group CAS is attempted.
+                    policy_bundles = tuple(
+                        item.reduction.native_compilation.operation_input
+                        .planning_construction_authority.arbitration_policy_bundle
+                        for item in request.ordered_operation_inputs
+                        if item.reduction.native_compilation.operation_input
+                        .planning_construction_authority is not None
+                    )
+                    if (
+                        len(policy_bundles) != len(request.ordered_operation_inputs)
+                        or not policy_bundles
+                        or any(bundle is None for bundle in policy_bundles)
+                        or any(bundle != policy_bundles[0] for bundle in policy_bundles[1:])
+                    ):
+                        raise PreplanningStoreError(
+                            "native group projection has no complete retained policy authority"
+                        )
+                    writer_record = self._writers.require_current(request.writer_commit_binding)
+                    authorization = self._writers._authorize_atomic(
+                        request.writer_commit_binding,
+                        capability=self._write_capability,
+                        lease_expires_at=request.operation_lease_binding.lease_expires_at,
+                        server_now=self._now,
+                    )
+                    (
+                        prepared_records,
+                        prepared_preconditions,
+                        projection_bindings,
+                        conflict_binding,
+                        prepared_projection,
+                    ) = self._prepare_native_projection_publication(
+                        prior_state=prior_replay_state,
+                        next_state=next_replay_state,
+                        canonical_event_batch=canonical_event_batch,
+                        canonical_graph_delta=canonical_graph_delta,
+                        writer_commit_binding=request.writer_commit_binding,
+                        complete_read_set_digest=request.group_plan_member.graph_read_set.read_set_digest,
+                        base_snapshot_token=prior_replay_state.state_digest,
+                        authorization=authorization,
+                        policy_bundle=policy_bundles[0],
+                        require_policy_bundle=True,
+                    )
+                    from memorii.core.semantic_ingestion.event_replay import (
+                        advance_semantic_replay_authority,
+                        create_replay_checkpoint,
+                    )
+
+                    prior_authority = self.semantic_replay_authority()
+                    if (
+                        prior_authority.graph_state != prior_replay_state
+                        or prior_authority.projection_history_bindings
+                        != self._projection_history.replay_bindings()
+                    ):
+                        raise PreplanningStoreError("native group replay authority is stale")
+                    reconstructed = self._reconstruct_semantic_replay_authority(
+                        graph_state=next_replay_state,
+                        bindings=(
+                            *prior_authority.observation_bindings,
+                            *prior_authority.progress_bindings,
+                            *prior_authority.artifact_bindings,
+                        ),
+                    )
+                    checkpoint = create_replay_checkpoint(
+                        state=next_replay_state,
+                        watermark_batch=canonical_event_batch,
+                        writer_epoch=request.writer_commit_binding.expected_writer_epoch,
+                        authority=self._checkpoint_resume_authority,
+                        created_at=committed_at,
+                        reconstructed_replay_authority_digest=reconstructed.authority_digest,
+                        projection_history_bindings=projection_bindings,
+                        semantic_conflict_replay_binding=conflict_binding,
+                    )
+                    aggregate = advance_semantic_replay_authority(
+                        prior_authority,
+                        graph_state=next_replay_state,
+                        member_bindings=(),
+                        reconstructed_authority_digest=reconstructed.authority_digest,
+                        latest_checkpoint=checkpoint,
+                        projection_history_bindings=projection_bindings,
+                        semantic_conflict_replay_binding=conflict_binding,
+                    )
+                    authority_records = (
+                        _semantic_replay_authority_record(aggregate, committed_at),
+                        _semantic_checkpoint_lifecycle_record(
+                            self._checkpoint_resume_authority, committed_at,
+                        ),
+                        _semantic_registry_history_record(
+                            self._event_schema_registry_history, committed_at,
+                        ),
+                    )
+                    native_projection_records = (*prepared_records, *authority_records)
+                    native_projection_preconditions = (
+                        *prepared_preconditions,
+                        *self._semantic_authority_record_preconditions(
+                            authority_records, require_unfrozen=True,
+                        ),
+                    )
+                    from memorii.core.semantic_ingestion.bootstrap_graph_projection_publication import (
+                        prepare_native_projection_evidence,
+                    )
+                    if ledger_authority is None:
+                        raise PreplanningStoreError("native projection lacks ledger authority")
+                    target, history, _, _, _ = ledger_authority
+                    native_receipt, evidence_records = prepare_native_projection_evidence(
+                        source_operation_id=request.source_operation_id,
+                        transaction_group_id=request.transaction_group_id,
+                        request_ctv_digest=request.request_ctv_digest,
+                        graph_revision_before=before_graph, graph_revision_after=after_graph,
+                        canonical_graph_delta=canonical_graph_delta,
+                        canonical_event_batch=canonical_event_batch,
+                        prepared_projection=prepared_projection, aggregate=aggregate,
+                        checkpoint=checkpoint, history=history, publication=target.publication,
+                        limits=self._observation_artifact_limits,
+                    )
+                    native_projection_records = (*native_projection_records, *evidence_records)
+                    native_projection_preconditions = (
+                        *native_projection_preconditions,
+                        *(RecordAbsentPrecondition(memory_id=record.memory_id) for record in evidence_records),
+                    )
+            if ledger_authority is not None:
+                from memorii.core.memory_evolution.bootstrap_group_observation import (
+                    build_bootstrap_group_observation_audit,
+                    build_native_group_observation_delta,
+                )
+                from memorii.core.memory_evolution.graph_planning import PlanningCommitValues
+                from memorii.core.memory_evolution.observation_activation_runtime import (
+                    emit_registered_observation_artifact,
+                    observation_successor_revision,
+                    registered_semantic_payload,
+                    semantic_payload_digest,
+                )
+                target, history, activation, ledger_head, current_head_record = ledger_authority
+                if not accepted:
+                    prior_reference_integrity = self.reference_integrity_snapshot()
+                    next_reference_integrity = prior_reference_integrity
+                audit = build_bootstrap_group_observation_audit(
+                    request=request, current_graph_snapshot=current_snapshot,
+                    materialized_graph_records=tuple(all_materialized_records),
+                    commit_values=PlanningCommitValues(
+                        transaction_group_id=request.transaction_group_id,
+                        graph_revision_before=before_graph, graph_revision_after=after_graph,
+                        committed_at=committed_at,
+                    ),
+                    prior_reference_integrity=prior_reference_integrity,
+                    next_reference_integrity=next_reference_integrity,
+                )
+                provisional_observation = build_native_group_observation_delta(
+                    request=request, audit=audit, materialized_graph_records=tuple(all_materialized_records),
+                    observation_revision_before=ledger_head.observation_revision,
+                    observation_revision_after="0" * 64,
+                    observation_schema_fingerprint=activation.observation_schema_fingerprint,
+                )
+                payload = registered_semantic_payload(
+                    provisional_observation, history=history, publication=target.publication,
+                    limits=self._observation_artifact_limits,
+                )
+                payload_digest = semantic_payload_digest(
+                    payload, history=history, publication=target.publication,
+                    limits=self._observation_artifact_limits,
+                )
+                before_observation = ledger_head.observation_revision
+                after_observation = observation_successor_revision(
+                    ledger_head, repository_id=activation.repository_id,
+                    activation_digest=activation.activation_digest, payload_digest=payload_digest,
+                )
+                native_observation = build_native_group_observation_delta(
+                    request=request, audit=audit, materialized_graph_records=tuple(all_materialized_records),
+                    observation_revision_before=before_observation, observation_revision_after=after_observation,
+                    observation_schema_fingerprint=activation.observation_schema_fingerprint,
+                )
+                operation_results = []
+                effect_records = []
+                for item in request.ordered_operation_inputs:
+                    operation_result, operation_effects = _bootstrap_graph_operation_effects(
+                        request=request, item=item,
+                        materialized_records=materialized_by_operation[item.operation_id],
+                        primary_id=primary_id, before_graph=before_graph, after_graph=after_graph,
+                        before_observation=before_observation, after_observation=after_observation,
+                        committed_at=committed_at,
+                    )
+                    operation_results.append(operation_result)
+                    effect_records.extend(operation_effects)
+                if audit.graph_revision_delta is not None:
+                    graph_artifact = emit_registered_observation_artifact(
+                        audit.graph_revision_delta, schema_id="GraphRevisionDelta", history=history,
+                        publication=target.publication, limits=self._observation_artifact_limits,
+                    )
+                    native_audit_records = (CanonicalMemoryRecord(
+                        memory_id=primary_id + ":graph-revision-delta",
+                        domain=MemoryDomain.EXECUTION, text="", status=CommitStatus.COMMITTED,
+                        source_kind="semantic_ingestion_bootstrap_graph_v3_graph_revision_delta",
+                        content={"semantic_ingestion_kind": "bootstrap_graph_v3_graph_revision_delta",
+                                 "artifact": graph_artifact.raw.decode("utf-8")},
+                        timestamp=committed_at, visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+                    ),)
             atomic_write = sha256(
                 b"memorii.semantic-ingestion.bootstrap-graph-group-atomic-write.v3\0"
                 + request.request_ctv_digest.encode() + str(control.generation + 1).encode()
             ).hexdigest()
             core = BootstrapGraphGroupCommitResultCoreV3.create(
+                **({"group_result_schema_version": 2, "observation_delta": native_observation,
+                    "native_projection_publication_receipt": native_receipt} if native_observation is not None else {}),
                 request_ctv_digest=request.request_ctv_digest,
                 disposition="committed" if accepted else "noncommitting",
                 ordered_operation_results=tuple(operation_results),
@@ -11698,6 +13132,55 @@ class SemanticIngestionAtomicStore:
                 atomic_write_digest=atomic_write,
             )
             result = BootstrapGraphGroupCommitResultV3.create(core=core, receipt=receipt)
+            ledger_entry = None
+            if ledger_authority is not None and native_observation is not None:
+                from memorii.core.memory_evolution.observation_ledger_contracts import (
+                    ObservationGroupResultLocator,
+                    ObservationLedgerEntry,
+                    ObservationLedgerHead,
+                )
+                entry_artifact = emit_registered_observation_artifact(
+                    ObservationLedgerEntry(
+                        schema_version=1, repository_id=activation.repository_id,
+                        activation_digest=activation.activation_digest,
+                        sequence=ledger_head.sequence + 1, previous_entry_digest=ledger_head.last_entry_digest,
+                        semantic_payload_digest=payload_digest, delta=native_observation,
+                        result_locator=ObservationGroupResultLocator(
+                            schema_version=1, kind="group_primary", immutable_record_id=primary_id,
+                            source_id=native_observation.source_id, source_digest=native_observation.source_digest,
+                            source_operation_id=request.source_operation_id,
+                            operation_fence_id=native_observation.operation_fence_id,
+                            transaction_group_id=request.transaction_group_id, operation_ids=request.operation_ids,
+                            request_ctv_digest=request.request_ctv_digest,
+                        ), result_digest=result.result_digest, entry_digest="0" * 64,
+                    ), schema_id="ObservationLedgerEntry", history=history,
+                    publication=target.publication, limits=self._observation_artifact_limits,
+                )
+                ledger_entry = entry_artifact.value
+                if not isinstance(ledger_entry, ObservationLedgerEntry):
+                    raise PreplanningStoreError("registered group ledger entry is invalid")
+                head_artifact = emit_registered_observation_artifact(
+                    ObservationLedgerHead(
+                        schema_version=1, repository_id=activation.repository_id,
+                        activation_digest=activation.activation_digest, sequence=ledger_entry.sequence,
+                        observation_revision=after_observation,
+                        last_delta_id=native_observation.observation_delta_id,
+                        last_delta_digest=native_observation.delta_digest,
+                        last_entry_digest=ledger_entry.entry_digest, head_digest="0" * 64,
+                    ), schema_id="ObservationLedgerHead", history=history,
+                    publication=target.publication, limits=self._observation_artifact_limits,
+                )
+                if not isinstance(head_artifact.value, ObservationLedgerHead):
+                    raise PreplanningStoreError("registered group ledger head is invalid")
+                ledger_records = (
+                    _observation_ledger_entry_record(ledger_entry, entry_artifact.raw, committed_at),
+                    _observation_ledger_head_record(head_artifact.value, head_artifact.raw, committed_at),
+                )
+                ledger_preconditions = (
+                    RecordAbsentPrecondition(memory_id=ledger_records[0].memory_id),
+                    RecordDigestPrecondition(memory_id=current_head_record.memory_id,
+                                             expected_digest=record_digest(current_head_record)),
+                )
             successor = BootstrapGraphCurrentGenerationV3.create(
                 store_identity_digest=sha256(_control_namespace(control).encode()).hexdigest(),
                 operation_id=request.source_operation_id, request_digest=request.request_digest,
@@ -11705,6 +13188,10 @@ class SemanticIngestionAtomicStore:
                 latest_atomic_write_digest=atomic_write, control_epoch_digest=request.control_epoch.epoch_digest,
             )
             reload = BootstrapGraphGroupCommitReloadV3.create(
+                **({"group_result_schema_version": 2, "observation_delta": native_observation,
+                    "native_projection_publication_receipt": native_receipt,
+                    "ledger_entry_id": _observation_ledger_entry_memory_id(ledger_entry.repository_id, ledger_entry.delta.observation_delta_id),
+                    "ledger_entry_digest": ledger_entry.entry_digest} if ledger_entry is not None else {}),
                 source_operation_id=request.source_operation_id, transaction_group_id=request.transaction_group_id,
                 operation_ids=request.operation_ids, request_ctv_digest=request.request_ctv_digest,
                 persisted_result=result, successor_generation=successor,
@@ -11727,6 +13214,9 @@ class SemanticIngestionAtomicStore:
                 ) for operation_id in request.operation_ids),
                 *effect_records,
                 *canonical_event_records,
+                *native_projection_records,
+                *native_audit_records,
+                *ledger_records,
             )
             writer_record = self._writers.require_current(request.writer_commit_binding)
             authorization = self._writers._authorize_atomic(
@@ -11739,14 +13229,17 @@ class SemanticIngestionAtomicStore:
                     preconditions=(
                         RecordDigestPrecondition(memory_id=control_record.memory_id, expected_digest=record_digest(control_record)),
                         RecordDigestPrecondition(memory_id=writer_record.memory_id, expected_digest=record_digest(writer_record)),
-                        *(RecordAbsentPrecondition(memory_id=record.memory_id) for record in records[1:-len(canonical_event_records) or None]),
+                        *(RecordAbsentPrecondition(memory_id=record.memory_id) for record in records[1:]
+                          if record not in (*canonical_event_records, *native_projection_records, *ledger_records)),
                         *canonical_event_preconditions,
+                        *native_projection_preconditions,
+                        *ledger_preconditions,
                     ), authorization=authorization,
                 )
             except MemoryPlaneRevisionConflictError as exc:
                 found = self._memory_plane.get_record(primary_id)
                 if found is not None:
-                    return _bootstrap_graph_v3_group_commit_reload_from_record(found, request)
+                    return self._reload_bootstrap_graph_group_receipt(found, request)
                 if retried_after_cas_conflict:
                     raise PreplanningStoreError(
                         "bootstrap graph group commit CAS conflicted"
@@ -11788,7 +13281,7 @@ class SemanticIngestionAtomicStore:
             required_outcome_scopes=required_outcome_scopes, control_epoch=request.control_epoch,
             allow_terminal_recovery=True,
         )
-        return _bootstrap_graph_v3_group_commit_reload_from_record(record, request)
+        return self._reload_bootstrap_graph_group_receipt(record, request)
 
     def persist_terminal_group(
         self,
@@ -12607,6 +14100,97 @@ class SemanticIngestionAtomicStore:
             event_batch=event_batch,
         )
 
+    def _prepare_native_projection_publication(
+        self,
+        *,
+        prior_state,
+        next_state,
+        canonical_event_batch,
+        canonical_graph_delta,
+        writer_commit_binding,
+        complete_read_set_digest: str,
+        base_snapshot_token: str,
+        authorization: SemanticWriterWriteAuthorization,
+        policy_bundle,
+        semantic_conflict_authority=None,
+        require_policy_bundle: bool,
+    ):
+        """Prepare the canonical projection publication for both terminal paths.
+
+        Callers own their enclosing aggregate/checkpoint CAS, while this owner
+        retains pointer, policy, and catch-up validation in one place.
+        """
+        from memorii.core.memory_evolution.policy_migration import PolicyMigrationError
+        from memorii.core.memory_evolution.projection_history import (
+            ProjectionCommitRequest,
+            ProjectionHistoryError,
+            projection_records_from_replay_state,
+        )
+        from memorii.core.memory_evolution.projection_scheduler import ProjectionSchedulerError
+
+        try:
+            current_bindings = self._projection_history.replay_bindings()
+            if current_bindings and policy_bundle is None and require_policy_bundle:
+                raise PreplanningStoreError("activated native projection has no retained policy authority")
+            (
+                temporal_projections,
+                trust_projections,
+                temporal_policy_fingerprint,
+                trust_policy_fingerprint,
+                arbitration_as_of,
+            ) = projection_records_from_replay_state(
+                next_state,
+                active_temporal=(self._projection_history.active_temporal_authority() if current_bindings else None),
+                active_trust=(self._projection_history.active_trust_authority() if current_bindings else None),
+                active_temporal_policy=(policy_bundle.temporal_policy if current_bindings and policy_bundle is not None else None),
+                active_trust_policy=(policy_bundle.trust_policy if current_bindings and policy_bundle is not None else None),
+            )
+            conflict_authority = semantic_conflict_authority
+            if conflict_authority is None:
+                conflict_authority = self._projection_history.resolve_semantic_conflict_authority(
+                    temporal_projections=temporal_projections,
+                    trust_projections=trust_projections,
+                )
+            prepared = self._projection_history.prepare(
+                ProjectionCommitRequest(
+                    repository_id=_SEMANTIC_EVENT_REPOSITORY_ID,
+                    operation_id=canonical_event_batch.transaction_group_id,
+                    graph_revision=next_state.graph_revision,
+                    event_batch_sequence=canonical_event_batch.log_position.sequence,
+                    event_batch_digest=canonical_event_batch.source_event_batch_digest,
+                    complete_read_set_digest=complete_read_set_digest,
+                    writer_epoch=writer_commit_binding.expected_writer_epoch,
+                    base_snapshot_token=base_snapshot_token,
+                    temporal_policy_fingerprint=temporal_policy_fingerprint,
+                    trust_policy_fingerprint=trust_policy_fingerprint,
+                    arbitration_as_of=arbitration_as_of,
+                    temporal_projections=temporal_projections,
+                    trust_projections=trust_projections,
+                    semantic_conflict_authority=conflict_authority,
+                ),
+                capability=self._write_capability,
+                authorization=authorization,
+            )
+            catch_up = self._policy_migration.prepare_write_catch_up(
+                temporal_projections=temporal_projections,
+                trust_projections=trust_projections,
+                trust_decay_command_digests=prepared.publication.trust.generation.canonical_decay_command_digests,
+                graph_revision=next_state.graph_revision,
+                graph_delta_digest=canonical_graph_delta.delta_digest,
+                ledger_position=canonical_event_batch.log_position.sequence,
+                watermark=canonical_event_batch.source_event_batch_digest,
+                complete_read_set_digest=complete_read_set_digest,
+            )
+        except (PolicyMigrationError, ProjectionHistoryError, ProjectionSchedulerError) as exc:
+            raise PreplanningStoreError("canonical semantic projection publication is invalid") from exc
+        return (
+            (*prepared.records, *catch_up.records),
+            (*prepared.preconditions, *catch_up.preconditions),
+            prepared.publication.replay_bindings,
+            self._projection_history.semantic_conflict_replay_binding(pending_records=prepared.records),
+            prepared,
+        )
+
     def _semantic_event_authority_updates(
         self,
         request: AtomicGenerationRequest,
@@ -12614,17 +14198,7 @@ class SemanticIngestionAtomicStore:
         authorization: SemanticWriterWriteAuthorization,
         terminal_group_closure: _ValidatedTerminalGroupClosure | None,
     ) -> tuple[tuple[CanonicalMemoryRecord, ...], tuple[MemoryPlanePrecondition, ...]]:
-        from memorii.core.memory_evolution.policy_migration import (
-            PolicyMigrationError,
-        )
-        from memorii.core.memory_evolution.projection_history import (
-            ProjectionCommitRequest,
-            ProjectionHistoryError,
-            projection_records_from_replay_state,
-        )
-        from memorii.core.memory_evolution.projection_scheduler import (
-            ProjectionSchedulerError,
-        )
+        from memorii.core.memory_evolution.projection_history import ProjectionHistoryError
         from memorii.core.semantic_ingestion.event_replay import (
             SemanticEventReplayError,
             SemanticReplayAuthorityAggregate,
@@ -12772,108 +14346,26 @@ class SemanticIngestionAtomicStore:
         projection_records: tuple[CanonicalMemoryRecord, ...] = ()
         projection_preconditions: tuple[MemoryPlanePrecondition, ...] = ()
         if batch is not None:
-            if graph_delta is None or not isinstance(request, CommittedGroupAtomicWriteRequest):
+            if graph_delta is None or terminal_group_closure is None or not isinstance(request, CommittedGroupAtomicWriteRequest):
                 raise PreplanningStoreError("projection publication has no committed graph authority")
-            try:
-                (
-                    temporal_projections,
-                    trust_projections,
-                    temporal_policy_fingerprint,
-                    trust_policy_fingerprint,
-                    arbitration_as_of,
-                ) = projection_records_from_replay_state(
-                    next_state,
-                    active_temporal=(
-                        self._projection_history.active_temporal_authority()
-                        if current_projection_bindings
-                        else None
-                    ),
-                    active_trust=(
-                        self._projection_history.active_trust_authority()
-                        if current_projection_bindings
-                        else None
-                    ),
-                    active_temporal_policy=(
-                        terminal_group_closure.terminal.arbitration_policy_bundle.temporal_policy
-                        if current_projection_bindings
-                        and terminal_group_closure is not None
-                        and terminal_group_closure.terminal.arbitration_policy_bundle
-                        is not None
-                        else None
-                    ),
-                    active_trust_policy=(
-                        terminal_group_closure.terminal.arbitration_policy_bundle.trust_policy
-                        if current_projection_bindings
-                        and terminal_group_closure is not None
-                        and terminal_group_closure.terminal.arbitration_policy_bundle
-                        is not None
-                        else None
-                    ),
-                )
-                # Terminal callers seal host callback output during the
-                # side-effect-free preflight.  Do not invoke a host callback
-                # after lease/checkpoint mutation.  `prepare` below still
-                # independently derives contest/scope and binds every current
-                # pointer/authority record as a CAS precondition.
-                derived_conflict_authority = request.semantic_conflict_authority
-                if derived_conflict_authority is None:
-                    derived_conflict_authority = (
-                        self._projection_history.resolve_semantic_conflict_authority(
-                            temporal_projections=temporal_projections,
-                            trust_projections=trust_projections,
-                        )
-                    )
-                prepared_projection = self._projection_history.prepare(
-                    ProjectionCommitRequest(
-                        repository_id=_SEMANTIC_EVENT_REPOSITORY_ID,
-                        operation_id=batch.transaction_group_id,
-                        graph_revision=next_state.graph_revision,
-                        event_batch_sequence=batch.log_position.sequence,
-                        event_batch_digest=batch.source_event_batch_digest,
-                        complete_read_set_digest=(request.expected_effective_read_set_digest),
-                        writer_epoch=(request.writer_commit_binding.expected_writer_epoch),
-                        base_snapshot_token=prior.graph_state.state_digest,
-                        temporal_policy_fingerprint=temporal_policy_fingerprint,
-                        trust_policy_fingerprint=trust_policy_fingerprint,
-                        arbitration_as_of=arbitration_as_of,
-                        temporal_projections=temporal_projections,
-                        trust_projections=trust_projections,
-                        semantic_conflict_authority=derived_conflict_authority,
-                    ),
-                    capability=self._write_capability,
-                    authorization=authorization,
-                )
-                prepared_catch_up = self._policy_migration.prepare_write_catch_up(
-                    temporal_projections=temporal_projections,
-                    trust_projections=trust_projections,
-                    trust_decay_command_digests=(
-                        prepared_projection.publication.trust.generation.canonical_decay_command_digests
-                    ),
-                    graph_revision=next_state.graph_revision,
-                    graph_delta_digest=graph_delta.delta_digest,
-                    ledger_position=batch.log_position.sequence,
-                    watermark=batch.source_event_batch_digest,
-                    complete_read_set_digest=(request.expected_effective_read_set_digest),
-                )
-            except (
-                PolicyMigrationError,
-                ProjectionHistoryError,
-                ProjectionSchedulerError,
-            ) as exc:
-                raise PreplanningStoreError("canonical semantic projection publication is invalid") from exc
-            projection_records = (
-                *prepared_projection.records,
-                *prepared_catch_up.records,
-            )
-            projection_preconditions = (
-                *prepared_projection.preconditions,
-                *prepared_catch_up.preconditions,
-            )
-            projection_bindings = prepared_projection.publication.replay_bindings
-            conflict_binding = (
-                self._projection_history.semantic_conflict_replay_binding(
-                    pending_records=prepared_projection.records,
-                )
+            (
+                projection_records,
+                projection_preconditions,
+                projection_bindings,
+                conflict_binding,
+                _,
+            ) = self._prepare_native_projection_publication(
+                prior_state=prior,
+                next_state=next_state,
+                canonical_event_batch=batch,
+                canonical_graph_delta=graph_delta,
+                writer_commit_binding=request.writer_commit_binding,
+                complete_read_set_digest=request.expected_effective_read_set_digest,
+                base_snapshot_token=prior.graph_state.state_digest,
+                authorization=authorization,
+                policy_bundle=terminal_group_closure.terminal.arbitration_policy_bundle,
+                semantic_conflict_authority=request.semantic_conflict_authority,
+                require_policy_bundle=False,
             )
         else:
             projection_bindings = current_projection_bindings
@@ -13680,6 +15172,29 @@ def _bootstrap_graph_v3_group_commit_effect_record(
     )
 
 
+def _bootstrap_graph_operation_effects(*, request, item, materialized_records, primary_id, before_graph, after_graph, before_observation, after_observation, committed_at):
+    """Build one native operation's immutable result/effect members."""
+    from memorii.core.semantic_ingestion.contracts import (
+        BootstrapGraphOperationCommitResultV3,
+        contract_digest,
+        encode_semantic_contract,
+    )
+    materialization = item.reduction.effect_materialization
+    accepted = item.reduction.native_terminal.status == "accepted"
+    graph_payload = encode_typed_value(tuple(record.model_dump(mode="python") for record in materialized_records))
+    graph_digest = None if not accepted else contract_digest(b"memorii.semantic-ingestion.bootstrap-graph-native-delta.v3", {"operation_execution_id": item.operation_execution_id, "graph_revision_before": before_graph, "graph_revision_after": after_graph, "records": tuple(record.model_dump(mode="python") for record in materialized_records)})
+    event_payload = encode_typed_value({"operation_execution_id": item.operation_execution_id, "operation_id": item.operation_id, "transaction_group_id": request.transaction_group_id, "graph_delta_digest": graph_digest, "record_digests": tuple(record.record_digest for record in materialized_records), "committed_at": committed_at})
+    event_digest = None if not accepted else contract_digest(b"memorii.semantic-ingestion.bootstrap-graph-native-event-batch.v3", decode_typed_value(event_payload))
+    observation_payload = encode_typed_value({"operation_execution_id": item.operation_execution_id, "operation_id": item.operation_id, "disposition": materialization.observation_disposition, "reason_codes": materialization.observation_reason_codes, "graph_delta_digest": graph_digest, "event_batch_digest": event_digest, "observation_revision_before": before_observation, "observation_revision_after": after_observation})
+    observation_digest = contract_digest(b"memorii.semantic-ingestion.bootstrap-graph-native-observation.v3", decode_typed_value(observation_payload))
+    result = BootstrapGraphOperationCommitResultV3.create(transaction_group_id=request.transaction_group_id, operation_id=item.operation_id, operation_execution_id=item.operation_execution_id, operation_input_digest=item.input_digest, reduction=item.reduction, final_status=item.reduction.native_terminal.status, graph_delta_digest=graph_digest, event_batch_digest=event_digest, observation_delta_digest=observation_digest)
+    records = [_bootstrap_graph_v3_group_commit_effect_record(primary_id=primary_id, operation_id=item.operation_id, kind="result", payload=encode_semantic_contract(result), timestamp=committed_at, carrier_digest=result.result_digest)]
+    if accepted:
+        records.extend((_bootstrap_graph_v3_group_commit_effect_record(primary_id=primary_id, operation_id=item.operation_id, kind="graph_delta", payload=graph_payload, timestamp=committed_at, carrier_digest=graph_digest), _bootstrap_graph_v3_group_commit_effect_record(primary_id=primary_id, operation_id=item.operation_id, kind="event_batch", payload=event_payload, timestamp=committed_at, carrier_digest=event_digest)))
+    records.append(_bootstrap_graph_v3_group_commit_effect_record(primary_id=primary_id, operation_id=item.operation_id, kind="observation_delta", payload=observation_payload, timestamp=committed_at, carrier_digest=observation_digest))
+    return result, tuple(records)
+
+
 def _bootstrap_graph_v3_group_commit_request_from_record(
     record: CanonicalMemoryRecord,
 ) -> BootstrapGraphGroupCommitRequestV3:
@@ -13816,8 +15331,9 @@ class _TerminalAuthorityRequest:
 
 def _bootstrap_graph_v3_terminal_payloads(*, request: BootstrapGraphTerminalPublicationRequestV3,
                                           group_result_type: type,
-                                          canonical_result_type: type) -> dict[str, tuple[Any, ...]]:
-    """Materialize the sealed nine-kind terminal grammar in its declared order."""
+                                          canonical_result_type: type,
+                                          assigned_source_observation: object | None = None) -> dict[str, tuple[Any, ...]]:
+    """Materialize V1's nine-member or V2's source-observation terminal grammar."""
     group_results = tuple(
         group_result_type.model_validate(item.model_dump(mode="python"))
         for item in request.ordered_group_result_constructions
@@ -13855,7 +15371,7 @@ def _bootstrap_graph_v3_terminal_payloads(*, request: BootstrapGraphTerminalPubl
         or core.execution_manifest_digest != request.execution_manifest.manifest_digest
     ):
         raise PreplanningStoreError("bootstrap graph terminal handoff closure is substituted")
-    return {
+    payloads = {
         "bootstrap_graph_coordinator_request": (request.coordinator_request,),
         "bootstrap_graph_control_epoch": (request.control_epoch,),
         "bootstrap_graph_dependent_attempt": (request.final_attempt,),
@@ -13866,6 +15382,15 @@ def _bootstrap_graph_v3_terminal_payloads(*, request: BootstrapGraphTerminalPubl
         "bootstrap_graph_terminal_handoff": (request.handoff,),
         "bootstrap_graph_canonical_source_result": (canonical_result,),
     }
+    if request.publication_intent.terminal_member_schema_version == 2:
+        if request.source_finalization_observation_delta is None:
+            raise PreplanningStoreError("bootstrap graph source finalization observation is absent")
+        payloads["bootstrap_graph_source_finalization_observation_delta"] = (
+            request.source_finalization_observation_delta,
+        )
+    if request.publication_intent.terminal_member_schema_version == 3 and assigned_source_observation is not None:
+        payloads["source_observation_intent"] = (assigned_source_observation,)
+    return payloads
 
 
 def _bootstrap_graph_v3_terminal_members(*, request: BootstrapGraphTerminalPublicationRequestV3,
@@ -13880,6 +15405,7 @@ def _bootstrap_graph_v3_terminal_members(*, request: BootstrapGraphTerminalPubli
         "ingestion_execution_manifest": "manifest_digest",
         "transaction_group_result": "result_digest",
         "bootstrap_graph_canonical_source_result": "result_digest",
+        "bootstrap_graph_source_finalization_observation_delta": "delta_digest",
     }
     members: list[BootstrapGraphPlanAtomicMemberV3] = []
     offsets: dict[str, int] = {}
@@ -13890,16 +15416,39 @@ def _bootstrap_graph_v3_terminal_members(*, request: BootstrapGraphTerminalPubli
             raise PreplanningStoreError("bootstrap graph terminal member intent is incomplete")
         payload = values[index]
         offsets[intent.kind] = index + 1
+        emitted_kind = (
+            "bootstrap_graph_source_finalization_observation_delta"
+            if intent.kind == "source_observation_intent" else intent.kind
+        )
         if intent.kind == "bootstrap_graph_terminal_handoff":
             payload_digest = payload.core.core_digest
         else:
-            digest_field = digest_field_by_kind.get(intent.kind)
+            digest_field = digest_field_by_kind.get(emitted_kind)
             payload_digest = getattr(payload, digest_field, None) if digest_field else None
-        if payload_digest != intent.construction_input_digest:
+        if (
+            intent.kind != "source_observation_intent"
+            and payload_digest != intent.construction_input_digest
+        ):
             raise PreplanningStoreError("bootstrap graph terminal member intent is substituted")
-        canonical_payload = encoder(payload)
+        if intent.kind == "source_observation_intent" and (
+            request.source_observation_intent is None
+            or intent.construction_input_digest != request.source_observation_intent.intent_digest
+            or payload.source_outcome != request.source_observation_intent.source_outcome
+            or payload.observation_schema_fingerprint != request.source_observation_intent.observation_schema_fingerprint
+        ):
+            raise PreplanningStoreError("bootstrap graph source member intent is substituted")
+        if emitted_kind == "bootstrap_graph_source_finalization_observation_delta":
+            from memorii.core.semantic_ingestion.contracts import (
+                encode_bootstrap_graph_atomic_member_payload_v3,
+            )
+
+            canonical_payload = encode_bootstrap_graph_atomic_member_payload_v3(
+                kind=emitted_kind, artifact=payload,
+            )
+        else:
+            canonical_payload = encoder(payload)
         members.append(member_type.create(
-            member_id=intent.member_id, kind=intent.kind, canonical_payload=canonical_payload,
+            member_id=intent.member_id, kind=emitted_kind, canonical_payload=canonical_payload,
             payload_digest=sha256(canonical_payload).hexdigest(),
         ))
     if any(offsets.get(kind, 0) != len(values) for kind, values in payloads.items()):
@@ -14679,6 +16228,81 @@ def _bootstrap_graph_v3_member_record(
     )
 
 
+def _observation_ledger_entry_memory_id(repository_id: str, delta_id: str) -> str:
+    if not isinstance(repository_id, str) or not repository_id or not isinstance(delta_id, str) or not delta_id:
+        raise PreplanningStoreError("observation ledger delta identity is invalid")
+    return "semantic_ingestion:observation-ledger:entry:" + sha256(
+        b"memorii.observation-ledger-entry.v1\0"
+        + encode_typed_value((repository_id, delta_id))
+    ).hexdigest()
+
+
+def _observation_ledger_entry_record(
+    entry: ObservationLedgerEntry, artifact: bytes, timestamp: datetime,
+) -> CanonicalMemoryRecord:
+    from memorii.core.memory_evolution.observation_ledger_contracts import ObservationLedgerEntry
+
+    if type(entry) is not ObservationLedgerEntry:
+        raise PreplanningStoreError("observation ledger entry type is invalid")
+    return CanonicalMemoryRecord(
+        memory_id=_observation_ledger_entry_memory_id(entry.repository_id, entry.delta.observation_delta_id),
+        domain=MemoryDomain.EXECUTION, text="",
+        content={"semantic_ingestion_kind": "observation_ledger_entry", "artifact": artifact.decode("utf-8")},
+        status=CommitStatus.COMMITTED, source_kind="semantic_ingestion_observation_ledger_entry",
+        timestamp=timestamp, visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+
+
+def _observation_ledger_head_record(
+    head: ObservationLedgerHead, artifact: bytes, timestamp: datetime,
+) -> CanonicalMemoryRecord:
+    from memorii.core.memory_evolution.observation_ledger_contracts import ObservationLedgerHead
+    from memorii.core.memory_evolution.writer_admission import observation_ledger_head_memory_id
+
+    if type(head) is not ObservationLedgerHead:
+        raise PreplanningStoreError("observation ledger head type is invalid")
+    return CanonicalMemoryRecord(
+        memory_id=observation_ledger_head_memory_id(head.repository_id),
+        domain=MemoryDomain.EXECUTION, text="",
+        content={"semantic_ingestion_kind": "observation_ledger_head", "artifact": artifact.decode("utf-8")},
+        status=CommitStatus.COMMITTED, source_kind="semantic_ingestion_observation_ledger_head",
+        timestamp=timestamp, visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+
+
+def _ledger_entry_from_record(
+    record: CanonicalMemoryRecord, *, history: ProtectedTypedValueRegistryHistory | None,
+    limits: ProtectedTypedValueArtifactReaderLimits | None = None,
+):
+    from memorii.core.memory_evolution.observation_activation_runtime import validate_registered_artifact
+    from memorii.core.memory_evolution.observation_ledger_contracts import ObservationLedgerEntry
+
+    if (
+        history is None
+        or record.source_kind != "semantic_ingestion_observation_ledger_entry"
+        or record.content.get("semantic_ingestion_kind") != "observation_ledger_entry"
+        or set(record.content) != {"semantic_ingestion_kind", "artifact"}
+        or type(record.content.get("artifact")) is not str
+    ):
+        raise PreplanningStoreError("observation ledger entry record is invalid")
+    value = validate_registered_artifact(
+        record.content["artifact"].encode("utf-8"),
+        schema_id="ObservationLedgerEntry",
+        history=history,
+        limits=(
+            ProtectedTypedValueArtifactReaderLimits(
+                2 * 1024 * 1024, 64_000, 32,
+                ProtectedTypedValueBodyLimits(2 * 1024 * 1024, 64_000, 32),
+            )
+            if limits is None
+            else limits
+        ),
+    )
+    if type(value) is not ObservationLedgerEntry or record.memory_id != _observation_ledger_entry_memory_id(value.repository_id, value.delta.observation_delta_id):
+        raise PreplanningStoreError("observation ledger entry record is substituted")
+    return value
+
+
 def _bootstrap_graph_v3_manifest_record(
     *, namespace_id: str, request: BootstrapGraphPlanAtomicWriteRequestV3, timestamp: datetime
 ) -> CanonicalMemoryRecord:
@@ -14703,6 +16327,8 @@ def _bootstrap_graph_v3_terminal_manifest_record(
     *, namespace_id: str, generation: int, members: tuple[BootstrapGraphPlanAtomicMemberV3, ...],
     manifest_digest: str, request: BootstrapGraphTerminalPublicationRequestV3, timestamp: datetime,
 ) -> CanonicalMemoryRecord:
+    from memorii.core.semantic_ingestion.contracts import encode_semantic_contract
+
     return CanonicalMemoryRecord(
         memory_id=_bootstrap_graph_v3_manifest_id(namespace_id, generation),
         domain=MemoryDomain.EXECUTION, text="",
@@ -14712,6 +16338,8 @@ def _bootstrap_graph_v3_terminal_manifest_record(
             "locator_digest": request.publication_intent.locator_digest,
             "manifest_digest": manifest_digest,
             "members": tuple(member.model_dump(mode="json") for member in members),
+            **({"publication_request_canonical_hex": encode_semantic_contract(request).hex()}
+               if request.publication_intent.terminal_member_schema_version == 3 else {}),
         },
         status=CommitStatus.COMMITTED,
         source_kind="semantic_ingestion_bootstrap_graph_v3_manifest",

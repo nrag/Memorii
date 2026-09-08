@@ -1,0 +1,25 @@
+{
+  "scope": "Real MemoryPlane JSONL backend batch mechanics only; neutral records, no semantic admission claim",
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "tree": "authorized dirty working tree",
+  "command": "PYTHONPATH=memorii:docs/work/semantic_ingestion/observation-ledger .venv/bin/python -W error -m pytest docs/work/semantic_ingestion/observation-ledger/test_backend_feasibility.py -q -p no:cacheprovider",
+  "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii",
+  "exit_code": 0,
+  "result": "4 passed in 0.93s",
+  "files": {
+    "docs/work/semantic_ingestion/observation-ledger/backend_feasibility.py": "2ea537a0d81518c7e2dce3651d0b0b7339e07392a13377f8688329280e8d0a9e",
+    "docs/work/semantic_ingestion/observation-ledger/test_backend_feasibility.py": "09941f29c4a152bad0be72434622c3b5237af12d8ed0184547c48b7a8043ed7b"
+  },
+  "proof": [
+    "genesis head absence conflict leaves entire snapshot unchanged",
+    "existing head digest conflict leaves entire snapshot unchanged",
+    "late immutable result collision publishes neither head nor entry",
+    "cross-source interleaving, retry, exact reload and durable reopen"
+  ],
+  "exclusions": [
+    "semantic writer policy and lease integration",
+    "observation schema registration",
+    "full replay/checkpoint trust",
+    "production ledger entrypoints"
+  ]
+}

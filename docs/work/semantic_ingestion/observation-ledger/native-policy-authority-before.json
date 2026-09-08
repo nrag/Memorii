@@ -1,0 +1,11 @@
+{
+  "artifact": "native-policy-authority-before.ctv",
+  "sha256": "65d321a60ed5e3352ed076feacd02514aabd2dd2a3504332d16f53b7bd6f0ce4",
+  "size_bytes": 36601,
+  "capture": "nested canonical authority body from existing public provider sync_event fixture before policy-bundle retention edit; not a standalone semantic artifact root",
+  "policy_bundle_retention_edits_before_capture": false,
+  "source_sha256": {
+    "memorii/core/semantic_ingestion/contracts.py": "2ba6004c30035b6d7165b0bdaeb7ff5d4cb1cb5d8fff7f13098ae0b65a5a7032",
+    "memorii/core/semantic_ingestion/source_normalization_stage.py": "5e6578aba9325bcf4d20a443afc60506b6a8d12bee3acfa183a7d3247a8a0a05"
+  }
+}

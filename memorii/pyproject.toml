@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "Memorii framework-neutral memory plane"
 requires-python = ">=3.11"
 dependencies = [
+  "cryptography>=50.0.1,<51",
   "pydantic>=2.7,<3",
   "PyICU>=2.13",
   "scikit-learn>=1.5,<2",
@@ -51,7 +52,7 @@ prod = [
 include-package-data = true
 
 [tool.setuptools.package-data]
-memorii = ["core/benchmark/fixture_sets/*.json", "core/semantic_ingestion/resources/*.json", "prompts/**/*.yaml"]
+memorii = ["core/benchmark/fixture_sets/*.json", "core/semantic_ingestion/resources/*.json", "core/memory_evolution/observation_registry_sources/*.json", "core/memory_evolution/observation_registry_sources/*/*/*.json", "prompts/**/*.yaml"]
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -59,7 +60,7 @@ include = ["memorii*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["."]
+pythonpath = [".", ".."]
 markers = [
   "integration: tests that cross component boundaries and may require an explicitly enabled external provider",
 ]
@@ -82,6 +83,10 @@ ignore = [
 [tool.pyright]
 pythonVersion = "3.11"
 typeCheckingMode = "basic"
+executionEnvironments = [
+  { root = "tests/unit/acceptance", extraPaths = [".."] },
+  { root = "." },
+]
 include = [
   "memorii/core/belief",
   "memorii/core/benchmark/artifact_rows",

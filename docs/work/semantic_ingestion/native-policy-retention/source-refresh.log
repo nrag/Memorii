@@ -1,0 +1,7 @@
+Traceback (most recent call last):
+  File "/Users/nandaraghunathan/Code/Memorii/Memorii/docs/design/semantic_ingestion/traceability_golden_vectors/regenerate_recipe_v19.py", line 424, in <module>
+    main()
+  File "/Users/nandaraghunathan/Code/Memorii/Memorii/docs/design/semantic_ingestion/traceability_golden_vectors/regenerate_recipe_v19.py", line 382, in main
+    case["case_id"]: case for case in recipe["direct_negative_cases"]
+                                      ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyError: 'direct_negative_cases'

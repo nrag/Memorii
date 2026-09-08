@@ -167,6 +167,11 @@ class MemoryPlaneService:
 
         return self._record_store().read_snapshot()
 
+    def read_write_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]:
+        """Return one detached full-write snapshot for a conditional writer."""
+
+        return self._record_store().read_write_snapshot()
+
     def stage_record(
         self,
         record: CanonicalMemoryRecord,
@@ -185,14 +190,24 @@ class MemoryPlaneService:
         records: tuple[CanonicalMemoryRecord, ...],
         *,
         preconditions: tuple[MemoryPlanePrecondition, ...],
+        expected_write_revision: int | None = None,
         authorization: MemoryPlaneWriteAuthorization | None = None,
         transaction_precondition: Callable[[], None] | None = None,
     ) -> int:
         if self._active_unit_of_work.get() is not None:
             raise RuntimeError("conditional control writes cannot be nested in a memory-plane unit of work")
+        if expected_write_revision is None:
+            return self._records.apply_batch(
+                records,
+                expected_revision=None,
+                preconditions=preconditions,
+                authorization=authorization,
+                transaction_precondition=transaction_precondition,
+            )
         return self._records.apply_batch(
             records,
             expected_revision=None,
+            expected_write_revision=expected_write_revision,
             preconditions=preconditions,
             authorization=authorization,
             transaction_precondition=transaction_precondition,

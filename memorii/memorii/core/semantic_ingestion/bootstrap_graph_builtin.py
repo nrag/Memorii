@@ -537,12 +537,17 @@ class _BuiltInBootstrapGraphExecutionBuilderV3:
             required_outcome_scopes=artifact.required_outcome_scopes,
             operation_fence_binding=request.operation_fence_binding,
         )
+        source_intent_factory = atomic_store.source_observation_intent_factory()
         coordinator = BootstrapGraphDependentCoordinatorV3(
             epoch_repository=epochs, plan_repository=AtomicStoreBootstrapGraphPlanRepositoryV3(atomic_store=atomic_store),
             terminal_port=AtomicStoreBootstrapGraphTerminalPersistencePortV3(atomic_store=atomic_store),
             compiler=_Compiler(operation_inputs, sealed_snapshot, canonical_reload), authorizer=_Authorizer(compilation),
             group_commit_repository=AtomicStoreBootstrapGraphGroupCommitRepositoryV3(atomic_store=atomic_store),
-            terminal_preparer=DeterministicBootstrapGraphTerminalPreparationV3(), terminal_host_authority=host,
+            terminal_preparer=DeterministicBootstrapGraphTerminalPreparationV3(
+                source_observation_intent_factory=(
+                    source_intent_factory
+                ),
+            ), terminal_host_authority=host,
         )
         return BootstrapGraphExecutionV3(coordinator=coordinator, request=coordinator_request, transition=transition)
 

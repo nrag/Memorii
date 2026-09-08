@@ -1,0 +1,1 @@
+{"fields":[{"field_name":"session_id","policy":"required_nullable"},{"field_name":"task_id","policy":"required_nullable"},{"field_name":"user_id","policy":"required_nullable"}],"role":"optional","schema_id":"MemoryScope","schema_version":"1"}

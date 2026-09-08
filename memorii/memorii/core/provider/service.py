@@ -95,9 +95,16 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     AuthenticatedIngressContextResolver,
     AuthenticatedIngressResolutionError,
     DeliveryIdentity,
+    SemanticWriterCommitBinding,
+)
+from memorii.core.memory_evolution.observation_activation_configuration import (
+    ObservationActivationTargetConfigurationError,
 )
 from memorii.core.memory_evolution.operation_store import (
     EvolutionOperationRepository,
+)
+from memorii.core.memory_evolution.typed_value_registry_configuration import (
+    TypedValueRegistryConfigurationError,
 )
 from memorii.core.memory_evolution.writer_admission import (
     SemanticWriterAdmissionStore,
@@ -485,8 +492,14 @@ class ProviderMemoryService:
                         now_provider=self._now_provider,
                         bootstrap_profile=self._bootstrap_profile,
                     )
-            except (ImportError, OSError, RuntimeError, TypeError, ValueError):
+            except (TypedValueRegistryConfigurationError, ObservationActivationTargetConfigurationError):
+                raise
+            except (ImportError, OSError, RuntimeError, TypeError, ValueError) as exc:
+                if isinstance(host_bootstrap_capability, BuiltInLocalHostSemanticIngestionCapability) and host_bootstrap_capability.observation_activation_target_configuration is not None:
+                    raise ObservationActivationTargetConfigurationError("configured activation target runtime construction failed") from exc
                 semantic_runtime = None
+        if isinstance(host_bootstrap_capability, BuiltInLocalHostSemanticIngestionCapability) and host_bootstrap_capability.observation_activation_target_configuration is not None and semantic_runtime is None:
+            raise ObservationActivationTargetConfigurationError("configured activation target requires an available semantic runtime")
         # Post-ingress runtime validation reads this stored composition
         # reference instead of reaching into the coordinator's privates.
         self._composed_semantic_runtime = semantic_runtime
@@ -615,6 +628,12 @@ class ProviderMemoryService:
         self._last_memory_evolution_result: MemoryEvolutionResult | None = None
         self._last_recall_bundle: RecallStateBundle | None = None
         self._last_prefetch_result: ProviderPrefetchResult[ProductionRetrievalDecision] | None = None
+
+    def activate_observation_ledger(self) -> SemanticWriterCommitBinding:
+        """Explicit trusted-host cutover; never exposed as a provider tool."""
+        if self._composed_semantic_runtime is None:
+            raise PreplanningStoreError("observation ledger activation target authority is not configured")
+        return self._composed_semantic_runtime.activate_observation_ledger()
 
     def retrieve_context(
         self,

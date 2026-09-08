@@ -1,0 +1,1 @@
+{"fields":[{"field_name":"end","policy":"required_nullable"},{"field_name":"start","policy":"required"}],"role":"optional","schema_id":"TimeInterval","schema_version":"1"}

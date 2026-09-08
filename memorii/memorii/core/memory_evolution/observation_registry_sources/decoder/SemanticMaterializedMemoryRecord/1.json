@@ -1,0 +1,1 @@
+{"decoder_id":"memorii.semantic_ingestion.observation.SemanticMaterializedMemoryRecord.v1","implementation_source_digest":"15a39eb16bb6f91a6d9fd6634e2eec17d7156ae2f3294a6659dfb20fb4165f32","role":"decoder","schema_id":"SemanticMaterializedMemoryRecord","schema_version":"1","typed_root_kind":"model"}

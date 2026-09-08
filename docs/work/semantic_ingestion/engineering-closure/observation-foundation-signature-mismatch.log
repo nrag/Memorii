@@ -1,0 +1,127 @@
+FF.F..                                                                   [100%]
+=================================== FAILURES ===================================
+_______ test_cursor_real_ed25519_rejects_tampering_and_noncanonical_wire _______
+
+    def test_cursor_real_ed25519_rejects_tampering_and_noncanonical_wire() -> None:
+        codec = _codec()
+>       cursor = codec.issue(_coordinates())
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/core/memory_evolution/test_graph_observation_foundation.py:86: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+memorii/core/memory_evolution/graph_observation_cursor.py:98: in issue
+    payload = self._signer.sign(coordinates)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+memorii/core/memory_evolution/graph_observation_cursor.py:61: in sign
+    return coordinates.signed(self._private_key.sign(_CURSOR_DOMAIN + raw).hex())
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = GraphObservationUnsignedCursorCoordinates(schema_version=1, stream_position=0, preceding_record_kind=None, preceding_p...tion-1', view='current', valid_at=None, system_as_of=datetime.datetime(2026, 9, 6, 0, 0, tzinfo=datetime.timezone.utc))
+signature = '9aa3f838aff7254fc9f3af9ffdcdace67a251801a402f7fae450963069c519b111351135bf58b778d626c49dd164bdfc8f0503fd36c02019b64605f826507d09'
+
+    def signed(self, signature: str) -> GraphObservationCursorPayload:
+>       return GraphObservationCursorPayload.model_validate(
+            self.model_dump(mode="python") | {"signature": signature}
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for GraphObservationCursorPayload
+E       signature
+E         String should match pattern '^[0-9a-f]{64}$' [type=string_pattern_mismatch, input_value='9aa3f838aff7254fc9f3af9f...6c02019b64605f826507d09', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.13/v/string_pattern_mismatch
+
+memorii/core/memory_evolution/graph_observation_contracts.py:295: ValidationError
+_ test_cursor_coordinates_classify_policy_revision_expiry_and_request_mismatch _
+
+    def test_cursor_coordinates_classify_policy_revision_expiry_and_request_mismatch() -> None:
+        codec = _codec()
+>       payload = codec.decode(codec.issue(_coordinates()))
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/core/memory_evolution/test_graph_observation_foundation.py:99: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+memorii/core/memory_evolution/graph_observation_cursor.py:98: in issue
+    payload = self._signer.sign(coordinates)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+memorii/core/memory_evolution/graph_observation_cursor.py:61: in sign
+    return coordinates.signed(self._private_key.sign(_CURSOR_DOMAIN + raw).hex())
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = GraphObservationUnsignedCursorCoordinates(schema_version=1, stream_position=0, preceding_record_kind=None, preceding_p...tion-1', view='current', valid_at=None, system_as_of=datetime.datetime(2026, 9, 6, 0, 0, tzinfo=datetime.timezone.utc))
+signature = 'd339fe11d91265a5d079e8b656486da98c748186272f62ecfc520fdcf45c9d9ff30dbaa509253b2e033f763c66b4302c5524d2b47c43b0859167321b24042c0e'
+
+    def signed(self, signature: str) -> GraphObservationCursorPayload:
+>       return GraphObservationCursorPayload.model_validate(
+            self.model_dump(mode="python") | {"signature": signature}
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for GraphObservationCursorPayload
+E       signature
+E         String should match pattern '^[0-9a-f]{64}$' [type=string_pattern_mismatch, input_value='d339fe11d91265a5d079e8b6...c43b0859167321b24042c0e', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.13/v/string_pattern_mismatch
+
+memorii/core/memory_evolution/graph_observation_contracts.py:295: ValidationError
+__ test_closed_contracts_reject_forged_digest_selector_and_cursor_predecessor __
+
+    def test_closed_contracts_reject_forged_digest_selector_and_cursor_predecessor() -> None:
+        with pytest.raises(ValueError, match="context digest"):
+            AuthenticatedGraphObservationContext(
+                principal_subject_id="principal", tenant_partition_id="tenant", authorized_scope_set_digest="a" * 64,
+                authentication_session_id="session", context_digest="b" * 64,
+            )
+        with pytest.raises(ValueError, match="ordered"):
+            GraphObservationCohortSelector(
+                seed_source_ids=("z", "a"), seed_operation_ids=(), include_referenced_boundary_entities=True,
+            )
+        body = _coordinates().model_copy(update={"stream_position": 1})
+        with pytest.raises(ValueError, match="predecessor"):
+>           _codec().issue(body)
+
+tests/unit/core/memory_evolution/test_graph_observation_foundation.py:169: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+memorii/core/memory_evolution/graph_observation_cursor.py:98: in issue
+    payload = self._signer.sign(coordinates)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+memorii/core/memory_evolution/graph_observation_cursor.py:61: in sign
+    return coordinates.signed(self._private_key.sign(_CURSOR_DOMAIN + raw).hex())
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = GraphObservationUnsignedCursorCoordinates(schema_version=1, stream_position=1, preceding_record_kind=None, preceding_p...tion-1', view='current', valid_at=None, system_as_of=datetime.datetime(2026, 9, 6, 0, 0, tzinfo=datetime.timezone.utc))
+signature = 'a86424e957c1f6fc48246c50fce18499ad430b9656b231c07b2958790b5a58d073bcc1b2c42de9c2a4ade9c21b4194fe4a52dae55b0768778de81b77d7320c06'
+
+    def signed(self, signature: str) -> GraphObservationCursorPayload:
+>       return GraphObservationCursorPayload.model_validate(
+            self.model_dump(mode="python") | {"signature": signature}
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for GraphObservationCursorPayload
+E       signature
+E         String should match pattern '^[0-9a-f]{64}$' [type=string_pattern_mismatch, input_value='a86424e957c1f6fc48246c50...b0768778de81b77d7320c06', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.13/v/string_pattern_mismatch
+
+memorii/core/memory_evolution/graph_observation_contracts.py:295: ValidationError
+
+During handling of the above exception, another exception occurred:
+
+    def test_closed_contracts_reject_forged_digest_selector_and_cursor_predecessor() -> None:
+        with pytest.raises(ValueError, match="context digest"):
+            AuthenticatedGraphObservationContext(
+                principal_subject_id="principal", tenant_partition_id="tenant", authorized_scope_set_digest="a" * 64,
+                authentication_session_id="session", context_digest="b" * 64,
+            )
+        with pytest.raises(ValueError, match="ordered"):
+            GraphObservationCohortSelector(
+                seed_source_ids=("z", "a"), seed_operation_ids=(), include_referenced_boundary_entities=True,
+            )
+        body = _coordinates().model_copy(update={"stream_position": 1})
+>       with pytest.raises(ValueError, match="predecessor"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'predecessor'
+E         Actual message: "1 validation error for GraphObservationCursorPayload\nsignature\n  String should match pattern '^[0-9a-f]{64}$' [type=string_pattern_mismatch, input_value='a86424e957c1f6fc48246c50...b0768778de81b77d7320c06', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/string_pattern_mismatch"
+
+tests/unit/core/memory_evolution/test_graph_observation_foundation.py:168: AssertionError
+=========================== short test summary info ============================
+FAILED tests/unit/core/memory_evolution/test_graph_observation_foundation.py::test_cursor_real_ed25519_rejects_tampering_and_noncanonical_wire
+FAILED tests/unit/core/memory_evolution/test_graph_observation_foundation.py::test_cursor_coordinates_classify_policy_revision_expiry_and_request_mismatch
+FAILED tests/unit/core/memory_evolution/test_graph_observation_foundation.py::test_closed_contracts_reject_forged_digest_selector_and_cursor_predecessor
+3 failed, 3 passed in 4.53s

@@ -1,0 +1,26 @@
+{
+  "status": "FROZEN_FINAL_DESIGN_REVIEW",
+  "candidate": "415648c1fc8c5dfd64bad9065ad54a74e9cc8e01fe5a603344d315144fbf0a34",
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "dirty_tree": true,
+  "files": {
+    "docs/work/semantic_ingestion/activation-target-identity/proposal.md": "b02ba16effaa98c6326eafab499e10ef7fb004535875c515540352a14b3d62f0",
+    "docs/work/semantic_ingestion/activation-target-identity/verification.md": "8195040ac0beaf35a3dc49810fa58f92a0181371b54e9935e7a074cff0c3709b",
+    "docs/work/semantic_ingestion/activation-target-identity/feasibility.json": "8591cc52175a53fa54c1d568205d7601951f2b62ca95f9cdd39e27928c865c01",
+    "docs/work/semantic_ingestion/activation-target-identity/install-feasibility.json": "46b5bdaeaf87dfd2c2e05b32a248d4ad6f02ee90b34ba8d365da544de30e77e0",
+    "docs/work/semantic_ingestion/activation-target-identity/probe_package.py": "d282770d22fadf18563960ee2e93606e2dc50b6b1d096df76e41148c49fc090b",
+    "docs/work/semantic_ingestion/activation-target-identity/identity-input.json": "e1274715c27dec5c2616299541d8e32c2be7a0c3b3b6f0fee6b52b872a05f81e",
+    "docs/work/semantic_ingestion/activation-target-identity/identity-expected.json": "7e799574af8dbaa4d2b3b29cef196fa2331b8472cfde6995d322495a653261c2",
+    "docs/work/semantic_ingestion/activation-target-identity/identity_oracle.py": "cc25ab4f266a27ec98a20f751103a49360c62fd13cf4821a215700d4efa7b446",
+    "docs/work/semantic_ingestion/activation-target-identity/identity_reference.mjs": "ae01f71933a09b07856949bb369076facbbc16c951546ebce659f3b06b91ceec",
+    "docs/work/semantic_ingestion/activation-target-identity/verify_identity_recipes.py": "8961c920829d440745d329befb2ae8a01d9b702252b97e859ba9210f5e14f8a4",
+    "docs/work/semantic_ingestion/activation-target-identity/identity-feasibility.json": "b4f5391e88e8510ffa0386fc4e26cb063b9d4a24c386f854c4a16aa14aba3968"
+  },
+  "scope": "T01-T08 target identity design only",
+  "evidence": "Historical wheel, no-compile install, stale cache/fresh cache controls, five independently equal exact preimages and 56 mutation cases pass",
+  "limitations": [
+    "No implemented activation",
+    "No real signing or CI certification"
+  ],
+  "prior_review": "review-round-1.json"
+}

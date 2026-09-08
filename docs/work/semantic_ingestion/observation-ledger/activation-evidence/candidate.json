@@ -1,0 +1,18 @@
+{
+  "focused_evidence": "16 changed-behavior tests complete in ongoing 241-case run (first file); 214 cases passed so far. Broader filesystem/Hermes race case pending; no final aggregate success claimed. Earlier construction 14 cases passed plus 2 native cases passed. Full Ruff, identity, configured Pyright pass.",
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "next_gate": "terminal result of compatibility run; reviewers must not grant closure before required evidence complete",
+  "scope": "bounded activation, native inventory, registered trio, repeat recovery and retired grammar; excludes append/retrieval/checkpoints and release certification",
+  "sources": {
+    "docs/design/semantic_ingestion_activation_target.md": "ad69f8ed9f115a4493cce99614b77bac37e6eb10c246c0601c360750ef7f0912",
+    "docs/design/semantic_ingestion_observation.md": "8f2fba74b947eebaf0f91308143bcc67d77c2b8571ea9e6ad7d86b59b006ad6a",
+    "memorii/memorii/core/memory_evolution/atomic_store.py": "89724872c4370af11081c0bb2cf797e70880675ab0ac86a0c84eb6887b82e1d7",
+    "memorii/memorii/core/memory_evolution/ingestion_contracts.py": "51220579a6f77d8e1451cd0f9bf64b89075facf114ec69c192082845c8c5c172",
+    "memorii/memorii/core/memory_evolution/observation_activation_runtime.py": "78b6def7ede2174a015a1e65b4f74fd5fbf49ca32fd075634fe1d42a5bb6b2db",
+    "memorii/memorii/core/memory_evolution/writer_admission.py": "fd9054d3ffe7e830bef1a2eb6fd321535abd3815fe010a0a545d05d76d9b1600",
+    "memorii/memorii/core/provider/service.py": "744f9ae1401511db9dbb5c9c7b34c30e5769beedbf028f8079e98ea28dae1b63",
+    "memorii/memorii/core/semantic_ingestion/capability.py": "b4bde9eedf777e2f89af1313098ce12c039f965faeeefcc9cd2edc70585379a1",
+    "memorii/tests/integration/test_observation_ledger_activation.py": "302b786956005f2f69f914c77d1a5707d9684503845a12d67b49e00a937c46de",
+    "memorii/tests/unit/core/semantic_ingestion/test_semantic_provider_composition.py": "27c2f8d9a89f64d533fe1ff80a818fb53988057fd76ba1b2a0a624dac2ae6fa0"
+  }
+}

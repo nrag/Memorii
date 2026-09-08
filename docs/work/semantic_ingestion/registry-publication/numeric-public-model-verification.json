@@ -1,0 +1,25 @@
+{
+  "scope": "numeric map codec and public observation model construction, not runtime registration",
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "tree": "authorized dirty tree",
+  "command": "../.venv/bin/python -W error -m pytest tests/unit/core/memory_evolution/test_typed_numeric_values.py tests/unit/core/memory_evolution/test_graph_observation_public_contracts.py tests/unit/core/memory_evolution/test_graph_observation_snapshot_contracts.py tests/unit/core/memory_evolution/test_graph_observation_streams.py tests/unit/core/memory_evolution/test_graph_ingestion_time_contracts.py -q -p no:cacheprovider",
+  "result": "36 passed in 5.72s",
+  "exit_code": 0,
+  "sha256": {
+    "memorii/memorii/core/memory_evolution/typed_numeric_values.py": "6416cdd27631c87fa16ed62a10e38ecbedfdcf7ac7f9db2ba71d3e7e7e4ee8f2",
+    "memorii/memorii/core/memory_evolution/graph_observation_public_contracts.py": "46552653e26339b5020da1eeda9fa335f93ac84023befd9ab66a8d4e58d88b4a",
+    "memorii/memorii/core/memory_evolution/graph_observation_snapshot_contracts.py": "5c57bdd70f789ccaf20d775200e9a10032295b778dbafd06b6c644bc886af2fe",
+    "memorii/memorii/core/memory_evolution/graph_observation_streams.py": "60dbcd995cf2ff220d9f4cf7106a957348debd4c06a9fea26314f97ef6e719be",
+    "memorii/memorii/core/memory_evolution/graph_ingestion_time_contracts.py": "e841b9ae5513af4a3143374502763e652003b5fe5249980e908ce72bc96cec29",
+    "memorii/tests/unit/core/memory_evolution/test_typed_numeric_values.py": "a8b9be5a3875f08815a7cd247b6314bcf08c4d709b4e121d487c5ced9bdeb698",
+    "memorii/tests/unit/core/memory_evolution/test_graph_observation_public_contracts.py": "976d5fcd293fabeb1b4dfd7fa52e478a1e0a2c2a4256dbf3477b9cf59deef499",
+    "memorii/tests/unit/core/memory_evolution/test_graph_observation_snapshot_contracts.py": "b624c8e0abf49c11e3029152365e62a54455e1bbe1b5e55a3392bca3b604f022",
+    "memorii/tests/unit/core/memory_evolution/test_graph_observation_streams.py": "457d3cc73b836829373437443bf2ad38c4f7ee681b678d17e1c1332e36fb30e8",
+    "memorii/tests/unit/core/memory_evolution/test_graph_ingestion_time_contracts.py": "ca570d9421249e1ac5cad49f9ae0bc8170cb7f85b6fb4ced78158d1ef9e9adfd"
+  },
+  "limitations": [
+    "No full source package, independent compiler parity or static decoder table",
+    "No sharedledger/CAS/publicretrieval integration",
+    "No production closure claim"
+  ]
+}

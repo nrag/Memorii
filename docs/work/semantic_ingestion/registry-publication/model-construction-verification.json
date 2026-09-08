@@ -1,0 +1,45 @@
+{
+  "scope": "Local observation and ledger model construction only; no published registry or public retrieval",
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "tree": "authorized dirty tree",
+  "checks": [
+    {
+      "suite": "structural, ledger, observation foundation and persistence",
+      "result": "26 passed in 5.53s",
+      "evidence_note": "Coordinator result retained from completed session29995; foundation/persistence files are not frozen by this model-only manifest"
+    },
+    {
+      "suite": "ingestion, streams, initial native publication shapes",
+      "command": "../.venv/bin/python -m pytest tests/unit/core/memory_evolution/test_graph_ingestion_observation_records.py tests/unit/core/memory_evolution/test_graph_observation_streams.py tests/unit/core/semantic_ingestion/test_bootstrap_graph_projection_publication.py -q",
+      "result": "10 passed in 5.88s",
+      "exit_code": 0,
+      "evidence_note": "Native receipt correction follows this run and is excluded from the frozen file list"
+    },
+    {
+      "suite": "explicit-file Pyright, four listed model modules and four tests",
+      "result": "0 errors, 0 warnings, 0 informations",
+      "exit_code": 0
+    },
+    {
+      "suite": "Ruff, four model modules and four tests",
+      "result": "All checks passed!",
+      "exit_code": 0
+    }
+  ],
+  "sha256": {
+    "memorii/memorii/core/memory_evolution/graph_observation_records.py": "b96dc22132a45acbf0b9318bee1b6ef529b82e479b00736853f8e2b91e1ff390",
+    "memorii/memorii/core/memory_evolution/observation_ledger_contracts.py": "14195df09edacfc56b59423f7430b0aa6063e8b235275ceb5f8aff8c36ae6b7d",
+    "memorii/memorii/core/memory_evolution/graph_ingestion_observation_records.py": "6e459f9b3a18e29abe5b1f3e5acfc4e8e64690c03d2045e671dc1c9c4469076a",
+    "memorii/memorii/core/memory_evolution/graph_observation_streams.py": "60dbcd995cf2ff220d9f4cf7106a957348debd4c06a9fea26314f97ef6e719be",
+    "memorii/tests/unit/core/memory_evolution/test_graph_observation_records.py": "44ebd47391d624ffe96014aca878b8523065f87bf8146b6226da4ff7f9f6a304",
+    "memorii/tests/unit/core/memory_evolution/test_observation_ledger_contracts.py": "063af62b8cda24fc046f039797c4317f5a8645086827435aa10a2ea6b32d394f",
+    "memorii/tests/unit/core/memory_evolution/test_graph_ingestion_observation_records.py": "e9291f040b23a2653df53a8e15625583665bc284e966c660d98217d73b7930f7",
+    "memorii/tests/unit/core/memory_evolution/test_graph_observation_streams.py": "457d3cc73b836829373437443bf2ad38c4f7ee681b678d17e1c1332e36fb30e8"
+  },
+  "limitations": [
+    "No protected profile-3 body decoder/self-digest verification",
+    "No full declaration package, independent compiler parity or production registry binding",
+    "No native projection CAS, shared observation ledger or public query path",
+    "Native receipt/evidence helper correction passes separate seven-test run; see native-publication-model-verification.json"
+  ]
+}

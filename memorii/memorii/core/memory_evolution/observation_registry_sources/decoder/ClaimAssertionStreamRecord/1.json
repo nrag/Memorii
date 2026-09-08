@@ -1,0 +1,1 @@
+{"decoder_id":"memorii.semantic_ingestion.observation.ClaimAssertionStreamRecord.v1","implementation_source_digest":"f40e6ea23a7795cbdb70afde17f1359f63f2da8b2860172cada4623b92cc86dd","role":"decoder","schema_id":"ClaimAssertionStreamRecord","schema_version":"1","typed_root_kind":"model"}

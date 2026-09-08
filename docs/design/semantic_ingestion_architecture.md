@@ -3,6 +3,15 @@
 **Document status:** Proposed target architecture for production memory
 ingestion.
 
+Operational observation update: the profile-3 contracts in
+[semantic_ingestion_observation.md](semantic_ingestion_observation.md) supersede
+the corresponding proposed registry publication, shared observation ledger,
+checkpoint and public observation shapes below. This includes separate temporal
+and trust projection observations, approved on 2026-09-07. Historical profile-2
+bytes and the nonoperational fixture inventory retain their existing contracts.
+The addendum is a target contract; runtime completion still requires the
+implementation and acceptance evidence in Section 5.
+
 Assessment baseline: commit
 `44cd7773a75ac8545ddcf799c76dc94c0240f788` (2026-07-26). The file and symbol
 references in this document were revalidated against that committed tree:
@@ -28432,6 +28441,7 @@ class BootstrapNativePlanningConstructionAuthorityV3(BaseModel):
     required_scope_set_digest: str
     predicate_registry_fingerprint: str
     predicate_trust_rule: PredicateTrustRule
+    arbitration_policy_bundle: SemanticArbitrationPolicyBundle | None
     action_policy_fingerprint: str
     action_transition: AcceptedActionTransitionReference | None
     planning_codec_entries: tuple[CanonicalGraphRecordCodecEntry, ...]
@@ -28448,6 +28458,23 @@ and `native-identity-construction-authority.v3`. The normalization owner obtains
 these bytes only from same-generation admission, temporal-policy, graph-policy,
 codec-manifest and canonical-identity owners, persists them inside each native
 operation input, and reloads them exactly. Ambient lookup and defaults reject.
+
+For newly constructed fact-path authority,
+`arbitration_policy_bundle` is the exact immutable
+`SemanticArbitrationPolicyBundle` supplied to normalization; it is not rebuilt
+from a fingerprint. Its trust policy's rule for
+`predicate_trust_rule.predicate_id` must equal `predicate_trust_rule`. For every
+retained temporal construction, the accepted closure's temporal and trust
+fingerprints and snapshot digests, and its arbitration instant, must equal the
+bundle's temporal/trust policies and `arbitration_as_of`; the construction
+temporal fingerprint and its effective-time temporal fingerprint/snapshot
+digest must equal the bundle's temporal policy. A present bundle is included in
+the authority CTV before `authority_digest` is computed. The absent field is a
+legacy decoding shape: it is omitted from both canonical lowering and digest
+preimage, preserving prior bytes and hashes. It does not authorize ambient
+lookup or future native projection publication without a bundle. No temporal
+construction count follows from this field; operation contracts retain their
+own cardinality rules.
 
 The literal Planning* field map is:
 

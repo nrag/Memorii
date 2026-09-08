@@ -1,0 +1,1 @@
+{"fields":[{"field_name":"authority_loss","policy":"required"},{"field_name":"eligibility","policy":"required"},{"field_name":"minimum_age","policy":"required"}],"role":"optional","schema_id":"TrustDecayStep","schema_version":"1"}

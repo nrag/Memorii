@@ -1,0 +1,13 @@
+....................................................                     [100%]
+============================= slowest 10 durations =============================
+93.20s call     tests/integration/test_observation_ledger_activation.py::test_public_drain_preserves_live_operation_and_rejects_new_old_epoch_work
+33.93s call     tests/integration/test_bootstrap_group_observation.py::test_audit_binds_actual_native_graph_and_retained_mentions
+18.73s call     tests/integration/test_observation_ledger_activation.py::test_public_activation_recovers_jsonl_failure_before_or_after_commit[False]
+18.34s call     tests/integration/test_observation_ledger_activation.py::test_public_concurrent_activation_recovers_winning_jsonl_cutover[_activate_observation_ledger]
+17.83s call     tests/integration/test_observation_ledger_activation.py::test_public_activation_preserves_captured_jsonl_history_bytes
+17.37s call     tests/integration/test_observation_ledger_activation.py::test_public_concurrent_activation_recovers_winning_jsonl_cutover[_begin_observation_ledger_drain]
+17.29s call     tests/integration/test_observation_ledger_activation.py::test_public_activation_recovers_jsonl_failure_before_or_after_commit[True]
+10.62s call     tests/integration/test_observation_terminal_intent.py::test_versioned_terminal_request_roundtrips_and_omits_other_source_grammar[2]
+10.43s call     tests/integration/test_observation_terminal_intent.py::test_versioned_terminal_request_roundtrips_and_omits_other_source_grammar[3]
+7.70s call     tests/integration/test_native_projection_evidence.py::test_native_projection_registered_members_and_stale_checkpoint
+52 passed in 306.79s (0:05:06)

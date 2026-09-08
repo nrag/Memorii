@@ -1,0 +1,16 @@
+{
+  "scope": "proposed exact ledger hash preimages; owner acceptance pending",
+  "proposal_sha256": "8a62b3576e395665e4c561d6e38e7695dfa87a3d080e03a5043ca5e8523cf131",
+  "spec_review": "ready for owner decision; no gap",
+  "test_review": "independently testable recipes and attack matrix; ready for owner decision",
+  "correctness_review": "DREV-001 resolved by retaining UTF-8 predecessor grammar and independent replay reachability; ready for owner decision",
+  "remaining_validated_p1_p2": [],
+  "remaining_design_changes_required": [],
+  "external_decision": "Accept exact proposed domains and length-prefixed preimages before canonical promotion and implementation.",
+  "evidence_limits": [
+    "No append/replay/retrieval implementation claimed",
+    "No new CI or release certification",
+    "Independent implementation vectors still required"
+  ],
+  "activation_baseline_preserved": true
+}

@@ -1,0 +1,24 @@
+{
+  "scope": "declaration parser construction only; no registry publication or runtime binding",
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "tree": "authorized dirty tree",
+  "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii",
+  "python": "3.12.14",
+  "pytest": "9.0.3",
+  "checks": [
+    {
+      "command": "../.venv/bin/python -W error -m pytest tests/unit/core/memory_evolution/test_typed_value_declarations.py -p no:cacheprovider",
+      "exit_code": 0,
+      "result": "12 passed in 4.34s"
+    },
+    {
+      "command": "../.venv/bin/pyright --pythonpath ../.venv/bin/python memorii/core/memory_evolution/typed_value_declarations.py tests/unit/core/memory_evolution/test_typed_value_declarations.py",
+      "exit_code": 0,
+      "result": "0 errors, 0 warnings, 0 informations"
+    }
+  ],
+  "sha256": {
+    "memorii/memorii/core/memory_evolution/typed_value_declarations.py": "e33003d766adc0679f37fa5658db7c8d982145c43439d2ac7d996c5beec27085",
+    "memorii/tests/unit/core/memory_evolution/test_typed_value_declarations.py": "46ce5afe5e429ceff641a5912c46d0ac0ce6dd1202082c262bce72052dc03662"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "status": "FROZEN_PURE_CHECKPOINT_CONSTRUCTION_CANDIDATE",
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "tree": "authorized dirty tree",
+  "files": {
+    "memorii/memorii/core/memory_evolution/observation_checkpoint_integrity.py": "12050b90e5fd456faade362df2d2c06ba38d7c176ce38eb21d8ae84c9b595d17",
+    "memorii/tests/unit/core/memory_evolution/test_observation_checkpoint_integrity.py": "5e7b36fbc050f247c39c45f01ea4266aa1e5e17d6d7d3d5a6ed53d6ad0b5d8bc"
+  },
+  "scope": "Fixed checkpoint preimage construction and cryptographic verification only. No public external dispatch, replay/lifecycle/key eligibility, issuance/persistence/activation authority.",
+  "test_command": "../.venv/bin/python -W error -m pytest tests/unit/core/memory_evolution/test_observation_checkpoint_integrity.py -p no:cacheprovider -q",
+  "test_result": "5 passed in6.87s",
+  "ruff": "Root scoped check passed",
+  "pyright": "Root configured two-file check0errors0warnings",
+  "source_closure": "36files6444rows; full179entry independent parity and58vectors passed",
+  "package": "1257JSON byte matches and installed imports; local no-build-isolation only",
+  "remaining": "Actual protected replay/lifecycle/clock/key context and ledger publication are outside this bounded pure helper; R17/R19 partial"
+}

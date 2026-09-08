@@ -1,0 +1,30 @@
+5b6fcc67103ba4d18842c89a68e3d2da95f3a70be143b7fd38b1aa06606519ec
+5b6fcc67103ba4d18842c89a68e3d2da95f3a70be143b7fd38b1aa06606519ec
+rejected mutation: non-isolated-invocation: CGS structural checker requires isolated Python (-I)
+rejected mutation: checker-identity-mutation: Traceback (most recent call last):
+  File "/Users/nandaraghunathan/Code/Memorii/Memorii/docs/design/semantic_ingestion/traceability_golden_vectors/check_cgs_structural_contract_v1.py", line 922, in <module>
+    main()
+  File "/Users/nandaraghunathan/Code/Memorii/Memorii/docs/design/semantic_ingestion/traceability_golden_vectors/check_cgs_structural_contract_v1.py", line 903, in main
+    raise ValueError(
+ValueError: checker SHA-256 mismatch: expected 0000000000000000000000000000000000000000000000000000000000000000, got f05835dcbf0dc319855e34f79b6b051371ced0ce40f6d345fd78a729d62e7825
+rejected mutation: prototype-non-isolated-invocation: CGS structural prototype requires isolated Python (-I)
+rejected mutation: domain-mapping-mutation: Traceback (most recent call last):
+  File "/Users/nandaraghunathan/Code/Memorii/Memorii/docs/design/semantic_ingestion/traceability_golden_vectors/check_cgs_structural_contract_v1.py", line 922, in <module>
+    main()
+  File "/Users/nandaraghunathan/Code/Memorii/Memorii/docs/design/semantic_ingestion/traceability_golden_vectors/check_cgs_structural_contract_v1.py", line 907, in main
+    validate(
+  File "/Users/nandaraghunathan/Code/Memorii/Memorii/docs/design/semantic_ingestion/traceability_golden_vectors/check_cgs_structural_contract_v1.py", line 555, in validate
+    raise ValueError(f"domain missing NUL terminator: {domain_id}")
+ValueError: domain missing NUL terminator: anchor_binding_root
+rejected mutation: outer-envelope-domain-mutation: known-answer mismatch
+Traceback (most recent call last):
+  File "/Users/nandaraghunathan/Code/Memorii/Memorii/docs/design/semantic_ingestion/traceability_golden_vectors/check_cgs_structural_contract_v1.py", line 922, in <module>
+    main()
+  File "/Users/nandaraghunathan/Code/Memorii/Memorii/docs/design/semantic_ingestion/traceability_golden_vectors/check_cgs_structural_contract_v1.py", line 907, in main
+    validate(
+  File "/Users/nandaraghunathan/Code/Memorii/Memorii/docs/design/semantic_ingestion/traceability_golden_vectors/check_cgs_structural_contract_v1.py", line 621, in validate
+    subprocess.run(
+  File "/usr/local/Cellar/python@3.12/3.12.14/Frameworks/Python.framework/Versions/3.12/lib/python3.12/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/usr/local/opt/python@3.12/bin/python3.12', '-I', '/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/tmpvv486usa/cgs_structural_manifest_prototype.py', '/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/tmpvv486usa/semantic_ingestion_architecture.md', '/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/tmpvv486usa/registry-v1.json', '/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/tmpvv486usa/structural_manifest_derivation_ledger-v1.json', '/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/tmpvv486usa/cgs-structural-manifest-prototype-v1.json', '--verify']' returned non-zero exit status 1.
+CGS structural contract checked

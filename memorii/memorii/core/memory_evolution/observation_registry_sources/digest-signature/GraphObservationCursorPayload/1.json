@@ -1,0 +1,1 @@
+{"policy":{"kind":"signature_only","signature_domain":"memorii.graph-observation.cursor.v3","signature_field":"signature","signature_purpose":"graph_observation_cursor"},"role":"digest-signature","schema_id":"GraphObservationCursorPayload","schema_version":"1"}

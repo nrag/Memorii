@@ -13,11 +13,13 @@ import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta  # type: ignore[attr-defined]
+from functools import lru_cache
 from hashlib import sha256
 from threading import local as threading_local
-from typing import Any, Literal, Protocol
+from types import MappingProxyType
+from typing import Any, Literal, Protocol, SupportsIndex
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 
 _INTEGER = re.compile(r"(?:0|-?[1-9][0-9]*)\Z")
 # A string without any JSON-escaped character encodes to exactly
@@ -193,7 +195,7 @@ class _HashableCtvMap(tuple[tuple[str, Any], ...]):
     def __new__(cls, values: dict[str, Any]) -> _HashableCtvMap:
         return super().__new__(cls, values.items())
 
-    def __getitem__(self, key: int | slice | str) -> Any:
+    def __getitem__(self, key: SupportsIndex | slice | str) -> Any:
         if not isinstance(key, str):
             return super().__getitem__(key)
         for candidate, value in self:
@@ -753,9 +755,25 @@ class SemanticWriterAdmission(BaseModel):
     writer_epoch: int = Field(ge=1)
     activated_at: datetime
     previous_admission_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    activation_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     admission_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_serializer(mode="wrap")
+    def serialize_legacy_admission(self, handler):
+        values = handler(self)
+        if self.activation_digest is None:
+            values.pop("activation_digest", None)
+        return values
+
+    def _canonical_contract_field_names(self) -> tuple[str, ...]:
+        """Match the frozen legacy omission used by the model serializer."""
+        return tuple(
+            name
+            for name in type(self).model_fields
+            if name != "activation_digest" or self.activation_digest is not None
+        )
 
 
 class SemanticWriterCommitBinding(BaseModel):
@@ -766,8 +784,24 @@ class SemanticWriterCommitBinding(BaseModel):
     runtime_mode: Literal["legacy_pre_cutover", "verified_semantic", "evidence_only"]
     writer_implementation_fingerprint: str = Field(min_length=1)
     graph_schema_fingerprint: str = Field(min_length=1)
+    activation_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_serializer(mode="wrap")
+    def serialize_legacy_binding(self, handler):
+        values = handler(self)
+        if self.activation_digest is None:
+            values.pop("activation_digest", None)
+        return values
+
+    def _canonical_contract_field_names(self) -> tuple[str, ...]:
+        """Match the frozen legacy omission used by the model serializer."""
+        return tuple(
+            name
+            for name in type(self).model_fields
+            if name != "activation_digest" or self.activation_digest is not None
+        )
 
     @property
     def binding_digest(self) -> str:
@@ -1471,3 +1505,446 @@ def decode_legacy_artifact_diagnostic(
     if value["canonical_value_digest"] != expected_value_digest or value["artifact_digest"] != expected_artifact_digest:
         raise CanonicalTypedValueError("canonical_envelope_digest_mismatch")
     return CanonicalEncodedArtifact(binding, body, expected_value_digest, expected_artifact_digest)
+
+
+NativeObservationDecoder = Callable[[Mapping[str, object]], BaseModel]
+
+
+@lru_cache(maxsize=1)
+def native_observation_decoder_table() -> Mapping[str, NativeObservationDecoder]:
+    """Return finite native decoders selected only by exact normative IDs.
+
+    Local imports defer native owner loading until protected codec selection.
+    Source, body, binding, integrity, and resource gates remain codec
+    responsibilities before a decoder may be called.
+    """
+
+    from memorii.core.memory_evolution.conflict_attention import (
+        SemanticConflictReplayBinding,
+    )
+    from memorii.core.memory_evolution.graph_effect_contracts import (
+        CanonicalOperationIntroductionRecord,
+        CanonicalOperationTerminalOutcomeRecord,
+        CanonicalSourceIntroductionRecord,
+        CanonicalSourceTerminalOutcomeCore,
+        CanonicalSourceTerminalOutcomeRecord,
+        GraphRecordMutation,
+        GraphRevisionDelta,
+        IngestionObservationDelta,
+        IngestionObservationRecordMutation,
+        SourceFinalizationObservationDelta,
+    )
+    from memorii.core.memory_evolution.graph_ingestion_observation_records import (
+        ObservedOperationIntroduction,
+        ObservedOperationTerminalOutcome,
+        ObservedSourceIntroduction,
+        ObservedSourceOutcomeConsistencyAssessment,
+        ObservedSourceTerminalOutcome,
+    )
+    from memorii.core.memory_evolution.graph_ingestion_time_contracts import (
+        SourceRetentionTimeAttestation,
+        TransactionGroupCommitTimeAttestation,
+    )
+    from memorii.core.memory_evolution.graph_observation_contracts import (
+        GraphObservationCohortSelector,
+        GraphObservationFailure,
+    )
+    from memorii.core.memory_evolution.graph_observation_public_contracts import (
+        AuthenticatedGraphObservationContext,
+        GraphObservationAuthorizationDecision,
+        GraphObservationPage,
+        GraphObservationPagePolicySnapshot,
+        GraphObservationRequest,
+        GraphObservationRequestCoordinates,
+        GraphRecordObservationSnapshot,
+        IngestionTimeAttestationPage,
+        IngestionTimeAttestationRequest,
+        IngestionTimeAttestationRequestCoordinates,
+        IngestionTimeObservationSnapshot,
+    )
+    from memorii.core.memory_evolution.graph_observation_records import (
+        ObservedActionRevision,
+        ObservedActionRoleBinding,
+        ObservedAliasRevision,
+        ObservedAssertionEntityReference,
+        ObservedAuthenticatedReferenceEffectiveTime,
+        ObservedCertifiedTextEffectiveTime,
+        ObservedCitationRecord,
+        ObservedClaimAssertion,
+        ObservedEntityReference,
+        ObservedEntityRevision,
+        ObservedIdentityTransition,
+        ObservedProvenanceRecord,
+        ObservedReferenceDisposition,
+        ObservedRelation,
+        ObservedSystemRecordedEffectiveTime,
+        ObservedTemporalClaimProjection,
+        ObservedTemporalTransition,
+        ObservedTrustClaimProjection,
+        ObservedTypeEvidence,
+    )
+    from memorii.core.memory_evolution.graph_observation_snapshot_contracts import (
+        GraphObservationCohortPreimage,
+        GraphObservationCursorPayload,
+        GraphObservationRecordKey,
+        ResolvedGraphObservationCohort,
+    )
+    from memorii.core.memory_evolution.graph_observation_streams import (
+        ActionRevisionStreamRecord,
+        AliasRevisionStreamRecord,
+        CitationStreamRecord,
+        ClaimAssertionStreamRecord,
+        EntityRevisionStreamRecord,
+        IdentityTransitionStreamRecord,
+        OperationIntroductionStreamRecord,
+        OperationTerminalOutcomeStreamRecord,
+        ProvenanceStreamRecord,
+        ReferenceDispositionStreamRecord,
+        RelationStreamRecord,
+        SourceIntroductionStreamRecord,
+        SourceTerminalOutcomeStreamRecord,
+        TemporalClaimProjectionStreamRecord,
+        TemporalTransitionStreamRecord,
+        TrustClaimProjectionStreamRecord,
+        TypeEvidenceStreamRecord,
+    )
+    from memorii.core.memory_evolution.graph_records import (
+        AliasRevision,
+        CanonicalEntityRevisionRef,
+        CitationRecord,
+        ClaimProjection,
+        EntityRevision,
+        GroundedMentionRef,
+        ProvenanceRecord,
+        ReferenceDispositionRecord,
+        RelationRevision,
+        SnapshotGraphRecord,
+        SourceAuthority,
+        TypeEvidence,
+    )
+    from memorii.core.memory_evolution.models import (
+        MemoryScope,
+    )
+    from memorii.core.memory_evolution.observation_ledger_contracts import (
+        ObservationGroupResultLocator,
+        ObservationGroupSemanticPayload,
+        ObservationLedgerActivation,
+        ObservationLedgerEntry,
+        ObservationLedgerHead,
+        ObservationSourceResultLocator,
+        ObservationSourceSemanticPayload,
+        SourceObservationIntent,
+    )
+    from memorii.core.memory_evolution.observation_replay_contracts import (
+        IngestionObservationReplayCheckpoint,
+        ObservationCheckpointBundle,
+        ObservationCheckpointLifecycle,
+        ObservationCheckpointPublicationReceipt,
+        ObservationCheckpointSigningPreimage,
+        ObservationReplayState,
+    )
+    from memorii.core.memory_evolution.projection_binding import (
+        ProjectionHistoryReplayBinding,
+    )
+    from memorii.core.memory_evolution.projection_history import (
+        TemporalProjectionPublication,
+        TrustProjectionPublication,
+    )
+    from memorii.core.memory_evolution.reference_integrity import (
+        ReferenceEdgeLedgerEntry,
+        ReferenceTarget,
+    )
+    from memorii.core.memory_evolution.semantic_state import (
+        AcceptedClaimIdentity,
+        ActiveTemporalProjectionPointer,
+        ActiveTrustProjectionPointer,
+        CompiledIdentityLineageTransition,
+        ImmutableAssertionEntityRef,
+        LineageEntityIdentity,
+        LineageEvidenceReference,
+        LineageReferenceDisposition,
+        LineageReverseReference,
+        PredicateStateRule,
+        ProjectionEvidenceRecord,
+        SemanticAssertionKey,
+        SemanticClaimSlotKey,
+        SemanticClaimValueKey,
+        TemporalPolicyMigrationCertificate,
+        TemporalProjectionCommitCertificate,
+        TemporalProjectionGeneration,
+        TemporalProjectionHistoryEntry,
+        TemporalProjectionRecord,
+        TrustPolicyMigrationCertificate,
+        TrustProjectionCommitCertificate,
+        TrustProjectionGeneration,
+        TrustProjectionHistoryEntry,
+        TrustProjectionRecord,
+    )
+    from memorii.core.memory_evolution.time_contracts import (
+        TimeInterval,
+    )
+    from memorii.core.semantic_ingestion.bootstrap_graph_projection_publication import (
+        BootstrapGraphNativeProjectionPublicationReceiptV3,
+        BootstrapGraphNativeReplayAuthorityEvidenceV3,
+        BootstrapGraphNativeReplayCheckpointEvidenceV3,
+    )
+    from memorii.core.semantic_ingestion.contracts import (
+        AcceptedTemporalEvidence,
+        ActionRevision,
+        AuthenticatedDocumentTimeReference,
+        AuthenticatedEventTimeReference,
+        AuthenticatedSourceIntervalEvidence,
+        ClaimAssertion,
+        EnvelopeFieldTextArtifactMappingProof,
+        GovernanceCarrierArtifact,
+        IdentityLineageRecord,
+        MessageAdmissionCarrierSet,
+        MessageAdmissionIdentity,
+        OperationTemporalAttachmentBinding,
+        OperationTemporalDecisionBinding,
+        PredicateTrustRule,
+        ProjectionTextSpan,
+        RequiredOutcomeScopeSet,
+        RetainedSourceTextArtifact,
+        RetainedSourceTextSpan,
+        SegmentGovernanceBinding,
+        SegmentGovernanceCarrierSet,
+        SegmentLocalTextArtifact,
+        SegmentLocalTextSpan,
+        SemanticGraphDelta,
+        SemanticProjectionTextArtifact,
+        SemanticTerminalBindingSet,
+        SourceAuthorityEvidence,
+        SourceSpan,
+        SourceSpanReference,
+        TemporalEvidenceCandidate,
+        TemporalEvidenceDecisionClosure,
+        TemporalTransitionRecord,
+        TrustDecayStep,
+        TypedLiteral,
+        VerbatimTextArtifactMappingProof,
+    )
+    from memorii.core.semantic_ingestion.event_replay import (
+        CommittedMemoryRecordSnapshot,
+        EventBatchLogPosition,
+        EventProvenance,
+        MemoryEventMetadata,
+        SemanticEventBinding,
+        SemanticMaterializedMemoryRecord,
+        SemanticMemoryEvent,
+        SemanticMemoryEventBatch,
+        SemanticMemoryEventPayload,
+        SemanticReplayAuthorityAggregate,
+        SemanticReplayAuthorityMemberBinding,
+        SemanticReplayCheckpoint,
+        SemanticReplayCheckpointBundle,
+        SemanticReplayState,
+    )
+
+    return MappingProxyType(
+        {
+            "memorii.semantic_ingestion.observation.AcceptedClaimIdentity.v1": AcceptedClaimIdentity.model_validate,
+            "memorii.semantic_ingestion.observation.AcceptedTemporalEvidence.v1": AcceptedTemporalEvidence.model_validate,
+            "memorii.semantic_ingestion.observation.ActionRevision.v1": ActionRevision.model_validate,
+            "memorii.semantic_ingestion.observation.ActionRevisionStreamRecord.v1": ActionRevisionStreamRecord.model_validate,
+            "memorii.semantic_ingestion.observation.ActiveTemporalProjectionPointer.v1": ActiveTemporalProjectionPointer.model_validate,
+            "memorii.semantic_ingestion.observation.ActiveTrustProjectionPointer.v1": ActiveTrustProjectionPointer.model_validate,
+            "memorii.semantic_ingestion.observation.AliasRevision.v1": AliasRevision.model_validate,
+            "memorii.semantic_ingestion.observation.AliasRevisionStreamRecord.v1": AliasRevisionStreamRecord.model_validate,
+            "memorii.semantic_ingestion.observation.AuthenticatedDocumentTimeReference.v1": AuthenticatedDocumentTimeReference.model_validate,
+            "memorii.semantic_ingestion.observation.AuthenticatedEventTimeReference.v1": AuthenticatedEventTimeReference.model_validate,
+            "memorii.semantic_ingestion.observation.AuthenticatedGraphObservationContext.v1": AuthenticatedGraphObservationContext.model_validate,
+            "memorii.semantic_ingestion.observation.AuthenticatedSourceIntervalEvidence.v1": AuthenticatedSourceIntervalEvidence.model_validate,
+            "memorii.semantic_ingestion.observation.BootstrapGraphNativeProjectionPublicationReceiptV3.v1": BootstrapGraphNativeProjectionPublicationReceiptV3.model_validate,
+            "memorii.semantic_ingestion.observation.BootstrapGraphNativeReplayAuthorityEvidenceV3.v1": BootstrapGraphNativeReplayAuthorityEvidenceV3.model_validate,
+            "memorii.semantic_ingestion.observation.BootstrapGraphNativeReplayCheckpointEvidenceV3.v1": BootstrapGraphNativeReplayCheckpointEvidenceV3.model_validate,
+            "memorii.semantic_ingestion.observation.CanonicalEntityRevisionRef.v1": CanonicalEntityRevisionRef.model_validate,
+            "memorii.semantic_ingestion.observation.CanonicalOperationIntroductionRecord.v1": CanonicalOperationIntroductionRecord.model_validate,
+            "memorii.semantic_ingestion.observation.CanonicalOperationTerminalOutcomeRecord.v1": CanonicalOperationTerminalOutcomeRecord.model_validate,
+            "memorii.semantic_ingestion.observation.CanonicalSourceIntroductionRecord.v1": CanonicalSourceIntroductionRecord.model_validate,
+            "memorii.semantic_ingestion.observation.CanonicalSourceTerminalOutcomeCore.v1": CanonicalSourceTerminalOutcomeCore.model_validate,
+            "memorii.semantic_ingestion.observation.CanonicalSourceTerminalOutcomeRecord.v1": CanonicalSourceTerminalOutcomeRecord.model_validate,
+            "memorii.semantic_ingestion.observation.CitationRecord.v1": CitationRecord.model_validate,
+            "memorii.semantic_ingestion.observation.CitationStreamRecord.v1": CitationStreamRecord.model_validate,
+            "memorii.semantic_ingestion.observation.ClaimAssertion.v1": ClaimAssertion.model_validate,
+            "memorii.semantic_ingestion.observation.ClaimAssertionStreamRecord.v1": ClaimAssertionStreamRecord.model_validate,
+            "memorii.semantic_ingestion.observation.ClaimProjection.v1": ClaimProjection.model_validate,
+            "memorii.semantic_ingestion.observation.CommittedMemoryRecordSnapshot.v1": CommittedMemoryRecordSnapshot.model_validate,
+            "memorii.semantic_ingestion.observation.CompiledIdentityLineageTransition.v1": CompiledIdentityLineageTransition.model_validate,
+            "memorii.semantic_ingestion.observation.EntityRevision.v1": EntityRevision.model_validate,
+            "memorii.semantic_ingestion.observation.EntityRevisionStreamRecord.v1": EntityRevisionStreamRecord.model_validate,
+            "memorii.semantic_ingestion.observation.EnvelopeFieldTextArtifactMappingProof.v1": EnvelopeFieldTextArtifactMappingProof.model_validate,
+            "memorii.semantic_ingestion.observation.EventBatchLogPosition.v1": EventBatchLogPosition.model_validate,
+            "memorii.semantic_ingestion.observation.EventProvenance.v1": EventProvenance.model_validate,
+            "memorii.semantic_ingestion.observation.GovernanceCarrierArtifact.v1": GovernanceCarrierArtifact.model_validate,
+            "memorii.semantic_ingestion.observation.GraphObservationAuthorizationDecision.v1": GraphObservationAuthorizationDecision.model_validate,
+            "memorii.semantic_ingestion.observation.GraphObservationCohortPreimage.v1": GraphObservationCohortPreimage.model_validate,
+            "memorii.semantic_ingestion.observation.GraphObservationCohortSelector.v1": GraphObservationCohortSelector.model_validate,
+            "memorii.semantic_ingestion.observation.GraphObservationCursorPayload.v1": GraphObservationCursorPayload.model_validate,
+            "memorii.semantic_ingestion.observation.GraphObservationFailure.v1": GraphObservationFailure.model_validate,
+            "memorii.semantic_ingestion.observation.GraphObservationPage.v1": GraphObservationPage.model_validate,
+            "memorii.semantic_ingestion.observation.GraphObservationPagePolicySnapshot.v1": GraphObservationPagePolicySnapshot.model_validate,
+            "memorii.semantic_ingestion.observation.GraphObservationRecordKey.v1": GraphObservationRecordKey.model_validate,
+            "memorii.semantic_ingestion.observation.GraphObservationRequest.v1": GraphObservationRequest.model_validate,
+            "memorii.semantic_ingestion.observation.GraphObservationRequestCoordinates.v1": GraphObservationRequestCoordinates.model_validate,
+            "memorii.semantic_ingestion.observation.GraphRecordMutation.v1": GraphRecordMutation.model_validate,
+            "memorii.semantic_ingestion.observation.GraphRecordObservationSnapshot.v1": GraphRecordObservationSnapshot.model_validate,
+            "memorii.semantic_ingestion.observation.GraphRevisionDelta.v1": GraphRevisionDelta.model_validate,
+            "memorii.semantic_ingestion.observation.GroundedMentionRef.v1": GroundedMentionRef.model_validate,
+            "memorii.semantic_ingestion.observation.IdentityLineageRecord.v1": IdentityLineageRecord.model_validate,
+            "memorii.semantic_ingestion.observation.IdentityTransitionStreamRecord.v1": IdentityTransitionStreamRecord.model_validate,
+            "memorii.semantic_ingestion.observation.ImmutableAssertionEntityRef.v1": ImmutableAssertionEntityRef.model_validate,
+            "memorii.semantic_ingestion.observation.IngestionObservationDelta.v1": IngestionObservationDelta.model_validate,
+            "memorii.semantic_ingestion.observation.IngestionObservationRecordMutation.v1": IngestionObservationRecordMutation.model_validate,
+            "memorii.semantic_ingestion.observation.IngestionObservationReplayCheckpoint.v1": IngestionObservationReplayCheckpoint.model_validate,
+            "memorii.semantic_ingestion.observation.IngestionTimeAttestationPage.v1": IngestionTimeAttestationPage.model_validate,
+            "memorii.semantic_ingestion.observation.IngestionTimeAttestationRequest.v1": IngestionTimeAttestationRequest.model_validate,
+            "memorii.semantic_ingestion.observation.IngestionTimeAttestationRequestCoordinates.v1": IngestionTimeAttestationRequestCoordinates.model_validate,
+            "memorii.semantic_ingestion.observation.IngestionTimeObservationSnapshot.v1": IngestionTimeObservationSnapshot.model_validate,
+            "memorii.semantic_ingestion.observation.LineageEntityIdentity.v1": LineageEntityIdentity.model_validate,
+            "memorii.semantic_ingestion.observation.LineageEvidenceReference.v1": LineageEvidenceReference.model_validate,
+            "memorii.semantic_ingestion.observation.LineageReferenceDisposition.v1": LineageReferenceDisposition.model_validate,
+            "memorii.semantic_ingestion.observation.LineageReverseReference.v1": LineageReverseReference.model_validate,
+            "memorii.semantic_ingestion.observation.MemoryEventMetadata.v1": MemoryEventMetadata.model_validate,
+            "memorii.semantic_ingestion.observation.MemoryScope.v1": MemoryScope.model_validate,
+            "memorii.semantic_ingestion.observation.MessageAdmissionCarrierSet.v1": MessageAdmissionCarrierSet.model_validate,
+            "memorii.semantic_ingestion.observation.MessageAdmissionIdentity.v1": MessageAdmissionIdentity.model_validate,
+            "memorii.semantic_ingestion.observation.ObservationCheckpointBundle.v1": ObservationCheckpointBundle.model_validate,
+            "memorii.semantic_ingestion.observation.ObservationCheckpointLifecycle.v1": ObservationCheckpointLifecycle.model_validate,
+            "memorii.semantic_ingestion.observation.ObservationCheckpointPublicationReceipt.v1": ObservationCheckpointPublicationReceipt.model_validate,
+            "memorii.semantic_ingestion.observation.ObservationCheckpointSigningPreimage.v1": ObservationCheckpointSigningPreimage.model_validate,
+            "memorii.semantic_ingestion.observation.ObservationGroupResultLocator.v1": ObservationGroupResultLocator.model_validate,
+            "memorii.semantic_ingestion.observation.ObservationGroupSemanticPayload.v1": ObservationGroupSemanticPayload.model_validate,
+            "memorii.semantic_ingestion.observation.ObservationLedgerActivation.v1": ObservationLedgerActivation.model_validate,
+            "memorii.semantic_ingestion.observation.ObservationLedgerEntry.v1": ObservationLedgerEntry.model_validate,
+            "memorii.semantic_ingestion.observation.ObservationLedgerHead.v1": ObservationLedgerHead.model_validate,
+            "memorii.semantic_ingestion.observation.ObservationReplayState.v1": ObservationReplayState.model_validate,
+            "memorii.semantic_ingestion.observation.ObservationSourceResultLocator.v1": ObservationSourceResultLocator.model_validate,
+            "memorii.semantic_ingestion.observation.ObservationSourceSemanticPayload.v1": ObservationSourceSemanticPayload.model_validate,
+            "memorii.semantic_ingestion.observation.ObservedActionRevision.v1": ObservedActionRevision.model_validate,
+            "memorii.semantic_ingestion.observation.ObservedActionRoleBinding.v1": ObservedActionRoleBinding.model_validate,
+            "memorii.semantic_ingestion.observation.ObservedAliasRevision.v1": ObservedAliasRevision.model_validate,
+            "memorii.semantic_ingestion.observation.ObservedAssertionEntityReference.v1": ObservedAssertionEntityReference.model_validate,
+            "memorii.semantic_ingestion.observation.ObservedAuthenticatedReferenceEffectiveTime.v1": ObservedAuthenticatedReferenceEffectiveTime.model_validate,
+            "memorii.semantic_ingestion.observation.ObservedCertifiedTextEffectiveTime.v1": ObservedCertifiedTextEffectiveTime.model_validate,
+            "memorii.semantic_ingestion.observation.ObservedCitationRecord.v1": ObservedCitationRecord.model_validate,
+            "memorii.semantic_ingestion.observation.ObservedClaimAssertion.v1": ObservedClaimAssertion.model_validate,
+            "memorii.semantic_ingestion.observation.ObservedEntityReference.v1": ObservedEntityReference.model_validate,
+            "memorii.semantic_ingestion.observation.ObservedEntityRevision.v1": ObservedEntityRevision.model_validate,
+            "memorii.semantic_ingestion.observation.ObservedIdentityTransition.v1": ObservedIdentityTransition.model_validate,
+            "memorii.semantic_ingestion.observation.ObservedOperationIntroduction.v1": ObservedOperationIntroduction.model_validate,
+            "memorii.semantic_ingestion.observation.ObservedOperationTerminalOutcome.v1": ObservedOperationTerminalOutcome.model_validate,
+            "memorii.semantic_ingestion.observation.ObservedProvenanceRecord.v1": ObservedProvenanceRecord.model_validate,
+            "memorii.semantic_ingestion.observation.ObservedReferenceDisposition.v1": ObservedReferenceDisposition.model_validate,
+            "memorii.semantic_ingestion.observation.ObservedRelation.v1": ObservedRelation.model_validate,
+            "memorii.semantic_ingestion.observation.ObservedSourceIntroduction.v1": ObservedSourceIntroduction.model_validate,
+            "memorii.semantic_ingestion.observation.ObservedSourceOutcomeConsistencyAssessment.v1": ObservedSourceOutcomeConsistencyAssessment.model_validate,
+            "memorii.semantic_ingestion.observation.ObservedSourceTerminalOutcome.v1": ObservedSourceTerminalOutcome.model_validate,
+            "memorii.semantic_ingestion.observation.ObservedSystemRecordedEffectiveTime.v1": ObservedSystemRecordedEffectiveTime.model_validate,
+            "memorii.semantic_ingestion.observation.ObservedTemporalClaimProjection.v1": ObservedTemporalClaimProjection.model_validate,
+            "memorii.semantic_ingestion.observation.ObservedTemporalTransition.v1": ObservedTemporalTransition.model_validate,
+            "memorii.semantic_ingestion.observation.ObservedTrustClaimProjection.v1": ObservedTrustClaimProjection.model_validate,
+            "memorii.semantic_ingestion.observation.ObservedTypeEvidence.v1": ObservedTypeEvidence.model_validate,
+            "memorii.semantic_ingestion.observation.OperationIntroductionStreamRecord.v1": OperationIntroductionStreamRecord.model_validate,
+            "memorii.semantic_ingestion.observation.OperationTemporalAttachmentBinding.v1": OperationTemporalAttachmentBinding.model_validate,
+            "memorii.semantic_ingestion.observation.OperationTemporalDecisionBinding.v1": OperationTemporalDecisionBinding.model_validate,
+            "memorii.semantic_ingestion.observation.OperationTerminalOutcomeStreamRecord.v1": OperationTerminalOutcomeStreamRecord.model_validate,
+            "memorii.semantic_ingestion.observation.PredicateStateRule.v1": PredicateStateRule.model_validate,
+            "memorii.semantic_ingestion.observation.PredicateTrustRule.v1": PredicateTrustRule.model_validate,
+            "memorii.semantic_ingestion.observation.ProjectionEvidenceRecord.v1": ProjectionEvidenceRecord.model_validate,
+            "memorii.semantic_ingestion.observation.ProjectionHistoryReplayBinding.v1": ProjectionHistoryReplayBinding.model_validate,
+            "memorii.semantic_ingestion.observation.ProjectionTextSpan.v1": ProjectionTextSpan.model_validate,
+            "memorii.semantic_ingestion.observation.ProvenanceRecord.v1": ProvenanceRecord.model_validate,
+            "memorii.semantic_ingestion.observation.ProvenanceStreamRecord.v1": ProvenanceStreamRecord.model_validate,
+            "memorii.semantic_ingestion.observation.ReferenceDispositionRecord.v1": ReferenceDispositionRecord.model_validate,
+            "memorii.semantic_ingestion.observation.ReferenceDispositionStreamRecord.v1": ReferenceDispositionStreamRecord.model_validate,
+            "memorii.semantic_ingestion.observation.ReferenceEdgeLedgerEntry.v1": ReferenceEdgeLedgerEntry.model_validate,
+            "memorii.semantic_ingestion.observation.ReferenceTarget.v1": ReferenceTarget.model_validate,
+            "memorii.semantic_ingestion.observation.RelationRevision.v1": RelationRevision.model_validate,
+            "memorii.semantic_ingestion.observation.RelationStreamRecord.v1": RelationStreamRecord.model_validate,
+            "memorii.semantic_ingestion.observation.RequiredOutcomeScopeSet.v1": RequiredOutcomeScopeSet.model_validate,
+            "memorii.semantic_ingestion.observation.ResolvedGraphObservationCohort.v1": ResolvedGraphObservationCohort.model_validate,
+            "memorii.semantic_ingestion.observation.RetainedSourceTextArtifact.v1": RetainedSourceTextArtifact.model_validate,
+            "memorii.semantic_ingestion.observation.RetainedSourceTextSpan.v1": RetainedSourceTextSpan.model_validate,
+            "memorii.semantic_ingestion.observation.SegmentGovernanceBinding.v1": SegmentGovernanceBinding.model_validate,
+            "memorii.semantic_ingestion.observation.SegmentGovernanceCarrierSet.v1": SegmentGovernanceCarrierSet.model_validate,
+            "memorii.semantic_ingestion.observation.SegmentLocalTextArtifact.v1": SegmentLocalTextArtifact.model_validate,
+            "memorii.semantic_ingestion.observation.SegmentLocalTextSpan.v1": SegmentLocalTextSpan.model_validate,
+            "memorii.semantic_ingestion.observation.SemanticAssertionKey.v1": SemanticAssertionKey.model_validate,
+            "memorii.semantic_ingestion.observation.SemanticClaimSlotKey.v1": SemanticClaimSlotKey.model_validate,
+            "memorii.semantic_ingestion.observation.SemanticClaimValueKey.v1": SemanticClaimValueKey.model_validate,
+            "memorii.semantic_ingestion.observation.SemanticConflictReplayBinding.v1": SemanticConflictReplayBinding.model_validate,
+            "memorii.semantic_ingestion.observation.SemanticEventBinding.v1": SemanticEventBinding.model_validate,
+            "memorii.semantic_ingestion.observation.SemanticGraphDelta.v1": SemanticGraphDelta.model_validate,
+            "memorii.semantic_ingestion.observation.SemanticMaterializedMemoryRecord.v1": SemanticMaterializedMemoryRecord.model_validate,
+            "memorii.semantic_ingestion.observation.SemanticMemoryEvent.v1": SemanticMemoryEvent.model_validate,
+            "memorii.semantic_ingestion.observation.SemanticMemoryEventBatch.v1": SemanticMemoryEventBatch.model_validate,
+            "memorii.semantic_ingestion.observation.SemanticMemoryEventPayload.v1": SemanticMemoryEventPayload.model_validate,
+            "memorii.semantic_ingestion.observation.SemanticProjectionTextArtifact.v1": SemanticProjectionTextArtifact.model_validate,
+            "memorii.semantic_ingestion.observation.SemanticReplayAuthorityAggregate.v1": SemanticReplayAuthorityAggregate.model_validate,
+            "memorii.semantic_ingestion.observation.SemanticReplayAuthorityMemberBinding.v1": SemanticReplayAuthorityMemberBinding.model_validate,
+            "memorii.semantic_ingestion.observation.SemanticReplayCheckpoint.v1": SemanticReplayCheckpoint.model_validate,
+            "memorii.semantic_ingestion.observation.SemanticReplayCheckpointBundle.v1": SemanticReplayCheckpointBundle.model_validate,
+            "memorii.semantic_ingestion.observation.SemanticReplayState.v1": SemanticReplayState.model_validate,
+            "memorii.semantic_ingestion.observation.SemanticTerminalBindingSet.v1": SemanticTerminalBindingSet.model_validate,
+            "memorii.semantic_ingestion.observation.SnapshotGraphRecord.v1": SnapshotGraphRecord.model_validate,
+            "memorii.semantic_ingestion.observation.SourceAuthority.v1": SourceAuthority.model_validate,
+            "memorii.semantic_ingestion.observation.SourceAuthorityEvidence.v1": SourceAuthorityEvidence.model_validate,
+            "memorii.semantic_ingestion.observation.SourceFinalizationObservationDelta.v1": SourceFinalizationObservationDelta.model_validate,
+            "memorii.semantic_ingestion.observation.SourceIntroductionStreamRecord.v1": SourceIntroductionStreamRecord.model_validate,
+            "memorii.semantic_ingestion.observation.SourceObservationIntent.v1": SourceObservationIntent.model_validate,
+            "memorii.semantic_ingestion.observation.SourceRetentionTimeAttestation.v1": SourceRetentionTimeAttestation.model_validate,
+            "memorii.semantic_ingestion.observation.SourceSpan.v1": SourceSpan.model_validate,
+            "memorii.semantic_ingestion.observation.SourceSpanReference.v1": SourceSpanReference.model_validate,
+            "memorii.semantic_ingestion.observation.SourceTerminalOutcomeStreamRecord.v1": SourceTerminalOutcomeStreamRecord.model_validate,
+            "memorii.semantic_ingestion.observation.TemporalClaimProjectionStreamRecord.v1": TemporalClaimProjectionStreamRecord.model_validate,
+            "memorii.semantic_ingestion.observation.TemporalEvidenceCandidate.v1": TemporalEvidenceCandidate.model_validate,
+            "memorii.semantic_ingestion.observation.TemporalEvidenceDecisionClosure.v1": TemporalEvidenceDecisionClosure.model_validate,
+            "memorii.semantic_ingestion.observation.TemporalPolicyMigrationCertificate.v1": TemporalPolicyMigrationCertificate.model_validate,
+            "memorii.semantic_ingestion.observation.TemporalProjectionCommitCertificate.v1": TemporalProjectionCommitCertificate.model_validate,
+            "memorii.semantic_ingestion.observation.TemporalProjectionGeneration.v1": TemporalProjectionGeneration.model_validate,
+            "memorii.semantic_ingestion.observation.TemporalProjectionHistoryEntry.v1": TemporalProjectionHistoryEntry.model_validate,
+            "memorii.semantic_ingestion.observation.TemporalProjectionPublication.v1": TemporalProjectionPublication.model_validate,
+            "memorii.semantic_ingestion.observation.TemporalProjectionRecord.v1": TemporalProjectionRecord.model_validate,
+            "memorii.semantic_ingestion.observation.TemporalTransitionRecord.v1": TemporalTransitionRecord.model_validate,
+            "memorii.semantic_ingestion.observation.TemporalTransitionStreamRecord.v1": TemporalTransitionStreamRecord.model_validate,
+            "memorii.semantic_ingestion.observation.TimeInterval.v1": TimeInterval.model_validate,
+            "memorii.semantic_ingestion.observation.TransactionGroupCommitTimeAttestation.v1": TransactionGroupCommitTimeAttestation.model_validate,
+            "memorii.semantic_ingestion.observation.TrustClaimProjectionStreamRecord.v1": TrustClaimProjectionStreamRecord.model_validate,
+            "memorii.semantic_ingestion.observation.TrustDecayStep.v1": TrustDecayStep.model_validate,
+            "memorii.semantic_ingestion.observation.TrustPolicyMigrationCertificate.v1": TrustPolicyMigrationCertificate.model_validate,
+            "memorii.semantic_ingestion.observation.TrustProjectionCommitCertificate.v1": TrustProjectionCommitCertificate.model_validate,
+            "memorii.semantic_ingestion.observation.TrustProjectionGeneration.v1": TrustProjectionGeneration.model_validate,
+            "memorii.semantic_ingestion.observation.TrustProjectionHistoryEntry.v1": TrustProjectionHistoryEntry.model_validate,
+            "memorii.semantic_ingestion.observation.TrustProjectionPublication.v1": TrustProjectionPublication.model_validate,
+            "memorii.semantic_ingestion.observation.TrustProjectionRecord.v1": TrustProjectionRecord.model_validate,
+            "memorii.semantic_ingestion.observation.TypeEvidence.v1": TypeEvidence.model_validate,
+            "memorii.semantic_ingestion.observation.TypeEvidenceStreamRecord.v1": TypeEvidenceStreamRecord.model_validate,
+            "memorii.semantic_ingestion.observation.TypedLiteral.v1": TypedLiteral.model_validate,
+            "memorii.semantic_ingestion.observation.VerbatimTextArtifactMappingProof.v1": VerbatimTextArtifactMappingProof.model_validate,
+        }
+    )
+
+
+def lookup_native_observation_decoder(decoder_id: str) -> NativeObservationDecoder:
+    """Return one exact native decoder or fail closed for an unknown ID."""
+
+    if not isinstance(decoder_id, str):
+        raise ValueError("native_observation_decoder_unknown")
+    try:
+        return native_observation_decoder_table()[decoder_id]
+    except KeyError as exc:
+        raise ValueError("native_observation_decoder_unknown") from exc
+
+
+def decode_native_observation(decoder_id: str, raw_fields: Mapping[str, object]) -> BaseModel:
+    """Construct after protected codec validation has completed.
+
+    This helper authenticates neither signatures nor self-digests, source
+    bindings, nor canonical-body integrity. Its caller must complete those
+    applicable authority-bearing gates before native model construction.
+    """
+
+    if not isinstance(raw_fields, Mapping):
+        raise ValueError("native_observation_fields_invalid")
+    return lookup_native_observation_decoder(decoder_id)(raw_fields)
