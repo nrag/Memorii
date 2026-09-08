@@ -93,16 +93,20 @@ No parent completion from focused tests or helper approval.
 
 ## Next Action
 
-Complete the closed activated-writer transaction grammar and verify actual
-source/group append and recovery through the canonical atomic store; active
+Complete the activated provider failure-family proofs (lost acknowledgement,
+contention, authorization failure and noncommitting outcomes); active
 packet: `milestones/append-replay.plan.md`.
 
 ## Current Construction Boundary (2026-09-08)
 
 Registered global append assembly, detached group/source replay joins, retained
 native projection evidence, snapshot-only projection readers and graph paging
-mechanics are implemented. Activated mutations remain disabled pending complete
-writer admission and actual production transaction proof. Graph paging has a
+mechanics are implemented. The current production candidate enables activated
+mutations through closed writer validation and canonical detached replay. Two
+ordinary provider sources produced four ledger entries; corrected JSONL
+reopen/retry passes1 test1269.55s, consolidated regression passes281 tests1108.52s
+and compatibility delta passes160 tests69.31s. Code/spec reviews found no further
+concrete defect; activated failure-family proof remains required. Graph paging has a
 fixture cohort integration test, not a production backend/provider binding.
 Ingestion-time continuation exposes a confirmed cursor/request contract mismatch
 recorded in `retrieval-runtime-map.md`; its wire contract has not been amended.

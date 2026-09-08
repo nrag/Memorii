@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.ObservedActionRoleBinding.v1","implementation_source_digest":"d9523350d94dbd13f821081d82bd6594a35ec0ff29d3d76ffaee564e65dafa05","role":"decoder","schema_id":"ObservedActionRoleBinding","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.ObservedActionRoleBinding.v1","implementation_source_digest":"25f64d3808752ac7d9c1b50ad4245f7c631affbfac56aa768b1cf1b91dedd39c","role":"decoder","schema_id":"ObservedActionRoleBinding","schema_version":"1","typed_root_kind":"model"}

@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
@@ -34,6 +35,26 @@ from memorii.domain.enums import (
     MemoryDomain,
     MemoryRecordVisibility,
 )
+
+
+@pytest.mark.parametrize("custom_limits", (False, True))
+def test_atomic_owners_cannot_change_configured_observation_limits(custom_limits):
+    from memorii.core.memory_evolution.observation_activation_runtime import DEFAULT_OBSERVATION_ARTIFACT_LIMITS
+
+    plane = MemoryPlaneService()
+    writers = SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest())
+    limits = DEFAULT_OBSERVATION_ARTIFACT_LIMITS
+    if custom_limits:
+        limits = replace(limits, maximum_envelope_bytes=limits.maximum_envelope_bytes // 2)
+    SemanticIngestionAtomicStore(plane, writers, observation_artifact_limits=limits)
+    SemanticIngestionAtomicStore(plane, writers, observation_artifact_limits=limits)
+    before = plane.read_write_snapshot()
+    with pytest.raises(SemanticWriterAdmissionError, match="already configured"):
+        SemanticIngestionAtomicStore(
+            plane, writers,
+            observation_artifact_limits=replace(limits, maximum_envelope_bytes=limits.maximum_envelope_bytes - 1),
+        )
+    assert plane.read_write_snapshot() == before
 
 
 def _bootstrap_graph_v3_epoch_transition_records() -> tuple[CanonicalMemoryRecord, ...]:

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from memorii.core.memory_evolution.atomic_store import SemanticIngestionAtomicStore
 from memorii.core.memory_evolution.bootstrap_group_observation import (
     BootstrapGroupObservationAuditError,

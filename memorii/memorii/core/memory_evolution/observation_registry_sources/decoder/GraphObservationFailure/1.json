@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.GraphObservationFailure.v1","implementation_source_digest":"90c29bb319baaaaa38cbd5da8863b5dbdf297119f84cd44bc5065ca302611095","role":"decoder","schema_id":"GraphObservationFailure","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.GraphObservationFailure.v1","implementation_source_digest":"b8073ca663cbb28958543b516bca07f5dcdff0241a522a0cd65c58a4a082679f","role":"decoder","schema_id":"GraphObservationFailure","schema_version":"1","typed_root_kind":"model"}

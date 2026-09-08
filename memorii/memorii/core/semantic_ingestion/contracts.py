@@ -88,12 +88,12 @@ if TYPE_CHECKING:
         VerifiedIdentityDecisionAuthority,
     )
     from memorii.core.memory_evolution.observation_ledger_contracts import SourceObservationIntent
-    from memorii.core.semantic_ingestion.bootstrap_graph_projection_publication import (
-        BootstrapGraphNativeProjectionPublicationReceiptV3,
-    )
     from memorii.core.memory_evolution.transaction_coordinator import (
         GraphReadSetToken,
         SealedGraphStateSnapshot,
+    )
+    from memorii.core.semantic_ingestion.bootstrap_graph_projection_publication import (
+        BootstrapGraphNativeProjectionPublicationReceiptV3,
     )
     from memorii.core.semantic_ingestion.canonical_evidence_arena import CanonicalEvidenceArena
     from memorii.core.semantic_ingestion.event_replay import SemanticMemoryEventBatch
@@ -12094,11 +12094,18 @@ class BootstrapGraphCanonicalSourceResultInputV3(_BootstrapV3Contract):
     @model_validator(mode="after")
     def validate_canonical_outcome(self) -> BootstrapGraphCanonicalSourceResultInputV3:
         record = self.completed_canonical_source_result
+        construction_result_digests = tuple(
+            item.result_digest for item in self.ordered_group_result_constructions
+        )
+        persisted_group_result_digests = tuple(
+            item.group_commit_reload.persisted_result.result_digest
+            for item in self.ordered_group_result_constructions
+        )
         if (
             record.core != self.canonical_outcome_core
             or record.final_status != self.source_status
             or record.group_result_digests
-            != tuple(item.result_digest for item in self.ordered_group_result_constructions)
+            not in {construction_result_digests, persisted_group_result_digests}
             or self.ordered_group_commit_reload_digests
             != tuple(
                 item.group_commit_reload.reload_digest
@@ -12190,6 +12197,21 @@ class BootstrapGraphTerminalPublicationRequestV3(_BootstrapV3Contract):
             or self.predecessor_generation.control_epoch_digest != self.control_epoch.epoch_digest
         ):
             raise ValueError("bootstrap graph terminal publication request is invalid")
+        expected_group_result_digests = tuple(
+            (
+                item.group_commit_reload.persisted_result.result_digest
+                if self.publication_intent.terminal_member_schema_version == 3
+                else item.result_digest
+            )
+            for item in self.ordered_group_result_constructions
+        )
+        if (
+            self.canonical_source_result_input.completed_canonical_source_result.group_result_digests
+            != expected_group_result_digests
+            or self.handoff_core.ordered_group_result_digests
+            != expected_group_result_digests
+        ):
+            raise ValueError("bootstrap graph terminal source group results are invalid")
         if (
             self.publication_intent.terminal_member_schema_version == 2
             and (
@@ -13666,13 +13688,13 @@ def rebuild_bootstrap_graph_effect_contracts() -> None:
         VerifiedIdentityDecisionAuthority,
     )
     from memorii.core.memory_evolution.observation_ledger_contracts import SourceObservationIntent
-    from memorii.core.semantic_ingestion.bootstrap_graph_projection_publication import (
-        BootstrapGraphNativeProjectionPublicationReceiptV3,
-    )
     from memorii.core.memory_evolution.semantic_compilation import SemanticCompilationResult
     from memorii.core.memory_evolution.transaction_coordinator import (
         GraphReadSetToken,
         SealedGraphStateSnapshot,
+    )
+    from memorii.core.semantic_ingestion.bootstrap_graph_projection_publication import (
+        BootstrapGraphNativeProjectionPublicationReceiptV3,
     )
     from memorii.core.semantic_ingestion.event_replay import SemanticMemoryEventBatch
 

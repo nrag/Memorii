@@ -80,30 +80,46 @@
       "production_caller": "ProviderIngestionCoordinator -> BootstrapGraphHostBundle -> BootstrapGraphTransactionCoordinatorV3 -> DeterministicBootstrapGraphTerminalPreparationV3.prepare -> BootstrapGraphArtifactAssemblerV3.build_terminal_publication_request -> AtomicStoreBootstrapGraphTerminalRepositoryV3.persist_and_reload",
       "authority": "Retained admitted source, canonical terminal outcome, complete fence/scopes/delivery/lease/writer bindings and current epoch/generation. Server derives observation ID, successor and schema fingerprint; atomic store independently validates coordinates against current control and canonical result before one CAS.",
       "outcome_proof": "Native source finalization: exact before/after public reproducer; 22 lost-ack/restart/normal-root cases pass; historical captured V1 bytes and persisted reload, stale/substituted/missing member cases pass; zero-group failed terminal passes. Evidence in terminal-publication/source-candidate.json and debug-001.plan.md. Independent closure review pending.",
-      "remaining": "Group observation persistence, authenticated scoped query/pagination, independent structural comparator and final required gates remain unfinished.",
+      "remaining": "Activated failure-family proofs, checkpoint external authority, authenticated scoped retrieval, independent comparator, final packaging and CI gates remain unfinished.",
       "binding_map": "source-finalization-integration-map.md",
       "bounded_source_closure": "docs/work/semantic_ingestion/terminal-publication/closure.md; source candidate89907b04b2a9888ad6b708c859c3db1bde359dfb029dc24eed03a7780b80c9a5 independently approved. This historical bounded proof does not certify later group edits.",
       "shared_observation_ledger": {
-        "status": "design_in_progress",
+        "status": "locally_verified_production_checkpoint",
         "design": "docs/work/semantic_ingestion/observation-ledger/design.plan.md",
         "runtime_boundaries": [
           {
             "behavior": "shared group/source append and exact reload",
-            "status": "absent",
-            "production_caller": null,
-            "production_caller_count": 0
+            "status": "locally_verified_production_checkpoint",
+            "production_caller": "ProviderMemoryService.sync_event -> ProviderIngestionCoordinator -> BootstrapGraphHostBundle.execute -> BootstrapGraphTransactionCoordinatorV3 -> AtomicStoreBootstrapGraphRepositoryV3.commit_or_reload / AtomicStoreBootstrapGraphTerminalPersistencePortV3.persist_and_reload",
+            "production_caller_count": 2,
+            "caller_count_definition": "One coordinator callsite to the group port and one to the source terminal port; ordinary ingestion and recovery share these ports.",
+            "canonical_owner": "SemanticIngestionAtomicStore.commit_or_reload_bootstrap_graph_group_v3 / persist_bootstrap_graph_terminal_v3",
+            "authority": "Host-composed verified registry and protected target, current admission/manifest, typed sealed request, exact source/fence/delivery/lease, selected publication; capability-specific mandatory snapshot validator after closed transaction grammar.",
+            "validation": "SemanticGovernedWritePolicy.validate selects registered atomic owner callback -> _validate_activated_observation_snapshot -> _replay_schema3_observation_ledger -> immutable native/source evidence checks, then post-validation lease expiry check.",
+            "write": "Native group or source terminal members plus one global entry/head in the same full-revision conditional write.",
+            "read": "Detached complete-prefix replay; immutable primary and source terminal recovery; fanout contents compared in JSON representation after durable reopen.",
+            "outcome_proof": "production-execution-results.json: real activated provider two sources/four entries, JSONL reopen and acknowledged retry pass1 test1269.55s; consolidated281 tests1108.52s; historical compatibility delta160 tests69.31s. Activated lost acknowledgement, contention, authority failure and noncommitting public cases remain required.",
+            "exclusions": [
+              "checkpoint external authority",
+              "public authenticated retrieval",
+              "independent structural comparison",
+              "whole-M5 closure"
+            ]
           },
           {
             "behavior": "writer activation and legacy-write fencing",
-            "status": "absent",
-            "production_caller": null,
-            "production_caller_count": 0
+            "status": "locally_verified_bounded_activation",
+            "production_caller": "ProviderMemoryService.activate_observation_ledger -> AuthorizedSemanticIngestionRuntime.activate_observation_ledger -> SemanticIngestionAtomicStore.activate_observation_ledger",
+            "production_caller_count": 1,
+            "proof": "observation_activation entry below retains bounded24-case approval; current four legacy-route rejection cases pass after active-epoch correction."
           },
           {
             "behavior": "genesis observation replay",
-            "status": "absent",
-            "production_caller": null,
-            "production_caller_count": 0
+            "status": "locally_verified_production_checkpoint",
+            "production_caller": "SemanticIngestionAtomicStore._load_observation_activation / _validate_activated_observation_snapshot -> _replay_schema3_observation_ledger",
+            "production_caller_count": 2,
+            "authority": "Complete detached snapshot, independently loaded head, protected registry/target and immutable entry/result/graph joins.",
+            "proof": "Full-prefix regressions and activated provider durable reopen/retry pass; production-execution-results.json. External checkpoint authority remains absent."
           },
           {
             "behavior": "authenticated observation checkpoint and tail replay",
@@ -118,7 +134,7 @@
             "production_caller_count": 0
           }
         ],
-        "evidence": "19 nonproduction ordering/DAG-model checks and targeted independent test consultation; not real store CAS or checkpoint trust. Source-local revision heads do not satisfy shared-ledger API authority."
+        "evidence": "observation-ledger/append-evidence/production-execution-results.json and production-review-results.md; real public sync_event with registered artifacts/admission/native graph/JSONL and fake host/model transport. Local evidence, not installed or live acceptance."
       },
       "native_policy_retention": {
         "status": "locally verified; independent evidence delta review pending",
@@ -165,7 +181,7 @@
         "authority": "Explicit payload-free trusted-host ProviderMemoryService API is the governing external trigger. Runtime revalidates bootstrap/deployment authorization and obtains current binding; atomic owner revalidates protected target/history, drains and validates complete native terminal inventory from a detached snapshot; writer performs the joined activation/genesis/successor CAS under full write revision and exact predecessor/absence conditions.",
         "production_caller_count": 1,
         "canonical_owner": "SemanticIngestionAtomicStore.activate_observation_ledger -> SemanticWriterAdmissionStore._activate_observation_ledger",
-        "remaining": "Ledger append/replay, checkpoint authority and authenticated retrieval remain dependent open work. Current release packaging and CI evidence remain outstanding. No parent completion or release approval claimed."
+        "remaining": "Activated append/reopen/retry locally verified; activated failure-family proof, checkpoint authority, authenticated retrieval, final packaging and CI evidence remain outstanding. No parent completion or release approval."
       }
     },
     {

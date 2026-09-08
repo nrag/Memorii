@@ -1085,16 +1085,21 @@ class SemanticIngestionAtomicStore:
             raise ObservationActivationTargetConfigurationError("atomic store and writer activation targets differ")
         self._observation_activation_target = observation_activation_target
         self._typed_value_registry_history = typed_value_registry_history
-        self._observation_artifact_limits = (
-            ProtectedTypedValueArtifactReaderLimits(
-                2 * 1024 * 1024, 64_000, 32,
-                ProtectedTypedValueBodyLimits(2 * 1024 * 1024, 64_000, 80),
+        if observation_artifact_limits is None:
+            from memorii.core.memory_evolution.observation_activation_runtime import (
+                DEFAULT_OBSERVATION_ARTIFACT_LIMITS,
             )
-            if observation_artifact_limits is None else observation_artifact_limits
-        )
+            self._observation_artifact_limits = DEFAULT_OBSERVATION_ARTIFACT_LIMITS
+        else:
+            self._observation_artifact_limits = observation_artifact_limits
         if type(self._observation_artifact_limits) is not ProtectedTypedValueArtifactReaderLimits:
             raise ValueError("observation artifact limits are invalid")
+        self._writers._configure_observation_artifact_limits(self._observation_artifact_limits)
         self._write_capability = self._writers._register_atomic_owner()
+        self._writers._register_activated_observation_snapshot_validator(
+            capability=self._write_capability,
+            validator=self._validate_activated_observation_snapshot,
+        )
         self._max_lease_recoveries = max_lease_recoveries
         self._activation_max_rescans = activation_max_rescans
         self._now = now_provider
@@ -10941,7 +10946,7 @@ class SemanticIngestionAtomicStore:
         ):
             raise PreplanningStoreError("bootstrap graph terminal locator is corrupt")
         try:
-            reload = BootstrapGraphTerminalReloadV3.model_validate(index.content["reload"])
+            reload = BootstrapGraphTerminalReloadV3.model_validate_json(json.dumps(index.content["reload"]), strict=True)
         except (KeyError, TypeError, ValueError) as exc:
             raise PreplanningStoreError("bootstrap graph terminal locator is corrupt") from exc
         control = reload.terminal_control
@@ -11039,9 +11044,7 @@ class SemanticIngestionAtomicStore:
         if record.source_kind != "semantic_ingestion_bootstrap_graph_v3_terminal_locator":
             raise PreplanningStoreError("bootstrap graph terminal request index is corrupt")
         try:
-            reload = BootstrapGraphTerminalReloadV3.model_validate(
-                record.content["reload"], strict=False
-            )
+            reload = BootstrapGraphTerminalReloadV3.model_validate_json(json.dumps(record.content["reload"]), strict=True)
         except (KeyError, TypeError, ValueError) as exc:
             raise PreplanningStoreError("bootstrap graph terminal request index is corrupt") from exc
         if (
@@ -11091,9 +11094,7 @@ class SemanticIngestionAtomicStore:
         if record.source_kind != "semantic_ingestion_bootstrap_graph_v3_terminal_locator":
             raise PreplanningStoreError("bootstrap graph terminal recovery index is corrupt")
         try:
-            reload = BootstrapGraphTerminalReloadV3.model_validate(
-                record.content["reload"], strict=False
-            )
+            reload = BootstrapGraphTerminalReloadV3.model_validate_json(json.dumps(record.content["reload"]), strict=True)
         except (KeyError, TypeError, ValueError) as exc:
             raise PreplanningStoreError("bootstrap graph terminal recovery index is corrupt") from exc
         canonical = reload.canonical_source_result
@@ -11678,9 +11679,7 @@ class SemanticIngestionAtomicStore:
         if index is None or index.source_kind != "semantic_ingestion_bootstrap_graph_v3_terminal_locator":
             raise PreplanningStoreError("bootstrap graph terminal publication is absent")
         try:
-            reload = BootstrapGraphTerminalReloadV3.model_validate(
-                index.content["reload"], strict=False
-            )
+            reload = BootstrapGraphTerminalReloadV3.model_validate_json(json.dumps(index.content["reload"]), strict=True)
         except (KeyError, TypeError, ValueError) as exc:
             raise PreplanningStoreError("bootstrap graph terminal locator is corrupt") from exc
         if reload_type is not None:
@@ -12056,6 +12055,22 @@ class SemanticIngestionAtomicStore:
         except (KeyError, TypeError, ValueError) as exc:
             raise PreplanningStoreError("schema-3 observation replay is corrupt") from exc
 
+    def _validate_activated_observation_snapshot(
+        self,
+        proposed: tuple[CanonicalMemoryRecord, ...],
+        current: tuple[CanonicalMemoryRecord, ...],
+    ) -> bool:
+        """Validate a proposed CAS against one merged detached snapshot."""
+        if len({record.memory_id for record in proposed}) != len(proposed):
+            return False
+        snapshot = {record.memory_id: record for record in current}
+        snapshot.update({record.memory_id: record for record in proposed})
+        try:
+            self._replay_schema3_observation_ledger(snapshot_records=snapshot)
+        except (PreplanningStoreError, ValueError):
+            return False
+        return True
+
     def _verify_schema3_source_entry_snapshot(
         self, *, entry: ObservationLedgerEntry, snapshot_records: dict[str, CanonicalMemoryRecord],
     ) -> None:
@@ -12083,7 +12098,7 @@ class SemanticIngestionAtomicStore:
             ):
                 continue
             try:
-                candidate = BootstrapGraphTerminalReloadV3.model_validate(record.content["reload"])
+                candidate = BootstrapGraphTerminalReloadV3.model_validate_json(json.dumps(record.content["reload"]), strict=True)
             except (KeyError, TypeError, ValueError) as exc:
                 raise PreplanningStoreError("schema-3 source terminal locator is corrupt") from exc
             if candidate.ledger_entry_id == _observation_ledger_entry_memory_id(entry.repository_id, entry.delta.observation_delta_id):
@@ -12340,7 +12355,8 @@ class SemanticIngestionAtomicStore:
                 reload_digest=reload.reload_digest, timestamp=committed_at,
             )
             actual = snapshot_records.get(fanout.memory_id)
-            if actual is None or actual.source_kind != fanout.source_kind or actual.content != fanout.content:
+            if (actual is None or actual.source_kind != fanout.source_kind
+                    or actual.model_dump(mode="json")["content"] != fanout.model_dump(mode="json")["content"]):
                 raise PreplanningStoreError("native group fanout closure is incomplete")
 
     def _reload_bootstrap_graph_transaction_v3(
@@ -15353,20 +15369,25 @@ def _bootstrap_graph_v3_terminal_payloads(*, request: BootstrapGraphTerminalPubl
     )
     if tuple(item.transaction_group_id for item in latest_entries) != request.final_plan.canonical_group_order:
         raise PreplanningStoreError("bootstrap graph terminal lineage is incomplete")
+    source_group_result_digests = tuple(
+        (
+            item.group_commit_reload.persisted_result.result_digest
+            if request.publication_intent.terminal_member_schema_version == 3
+            else item.result_digest
+        )
+        for item in request.ordered_group_result_constructions
+    )
     canonical_result = canonical_result_type.create(
         request_digest=request.canonical_source_result_input.request_digest,
         normalization_replay_digest=request.canonical_source_result_input.normalization_replay_digest,
         source_plan_lineage_digest=request.canonical_source_result_input.source_plan_lineage_digest,
-        ordered_group_result_digests=tuple(
-            item.result_digest
-            for item in request.ordered_group_result_constructions
-        ),
+        ordered_group_result_digests=source_group_result_digests,
         canonical_source_result=request.canonical_source_result_input.completed_canonical_source_result,
         control_epoch_digest=request.canonical_source_result_input.control_epoch_digest,
     )
     core = request.handoff_core
     if (
-        core.ordered_group_result_digests != tuple(item.result_digest for item in group_results)
+        core.ordered_group_result_digests != source_group_result_digests
         or core.final_source_result_digest != canonical_result.result_digest
         or core.execution_manifest_digest != request.execution_manifest.manifest_digest
     ):

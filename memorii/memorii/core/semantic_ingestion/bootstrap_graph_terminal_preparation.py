@@ -418,6 +418,17 @@ class DeterministicBootstrapGraphTerminalPreparationV3:
             for member in final_plan.group_members
             for operation_id in member.operation_ids
         }))
+        activated_observation_ledger = (
+            control_epoch.writer_commit_binding.activation_digest is not None
+        )
+        group_result_digests = tuple(
+            (
+                item.group_commit_reload.persisted_result.result_digest
+                if activated_observation_ledger
+                else item.result_digest
+            )
+            for item in constructions
+        )
         outcome_core = CanonicalSourceTerminalOutcomeCore.create(
             ingestion_record_kind="source_terminal_outcome",
             source_id=host_authority.source_id,
@@ -431,9 +442,7 @@ class DeterministicBootstrapGraphTerminalPreparationV3:
             operation_fence_id=host_authority.operation_fence_binding.operation_fence_id,
             operation_ids=operation_ids,
             final_status=status,
-            group_result_digests=tuple(
-                item.result_digest for item in constructions
-            ),
+            group_result_digests=group_result_digests,
         )
         outcome_record = CanonicalSourceTerminalOutcomeRecord.create(
             core=outcome_core,
@@ -456,9 +465,7 @@ class DeterministicBootstrapGraphTerminalPreparationV3:
             request_digest=request.request_digest,
             normalization_replay_digest=request.normalization_replay.replay_digest,
             source_plan_lineage_digest=complete_lineage.lineage_digest,
-            ordered_group_result_digests=tuple(
-                item.result_digest for item in constructions
-            ),
+            ordered_group_result_digests=group_result_digests,
             canonical_source_result=outcome_record,
             control_epoch_digest=control_epoch.epoch_digest,
         )
@@ -474,6 +481,8 @@ class DeterministicBootstrapGraphTerminalPreparationV3:
             and source_observation_intent.source_outcome != outcome_record
         ):
             raise ValueError("bootstrap graph source observation intent is substituted")
+        if activated_observation_ledger and source_observation_intent is None:
+            raise ValueError("activated source terminal requires an observation intent")
         source_finalization_observation_delta = None
         if source_observation_intent is None:
             observation_revision_before = (
@@ -503,7 +512,7 @@ class DeterministicBootstrapGraphTerminalPreparationV3:
             transaction_group_plan_digest=final_plan.plan_digest,
             source_plan_lineage_digest=complete_lineage.lineage_digest,
             execution_manifest_digest=manifest.manifest_digest,
-            ordered_group_result_digests=tuple(item.result_digest for item in constructions),
+            ordered_group_result_digests=group_result_digests,
             final_source_result_digest=canonical_result.result_digest,
             operation_lease_binding=control_epoch.operation_lease_binding,
             operation_fence_binding=control_epoch.operation_fence_binding,

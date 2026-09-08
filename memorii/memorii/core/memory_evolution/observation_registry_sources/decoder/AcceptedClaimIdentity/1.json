@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.AcceptedClaimIdentity.v1","implementation_source_digest":"d6c70a06bddfd00b8db12cb97cde3cf52b479505a3463c06652ad61140b302cd","role":"decoder","schema_id":"AcceptedClaimIdentity","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.AcceptedClaimIdentity.v1","implementation_source_digest":"352ba3484988ee0a4c1211b8c152a1139c822b8705b195e3c19569dc3a155fa6","role":"decoder","schema_id":"AcceptedClaimIdentity","schema_version":"1","typed_root_kind":"model"}

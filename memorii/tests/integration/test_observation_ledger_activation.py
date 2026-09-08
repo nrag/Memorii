@@ -47,8 +47,14 @@ from tests.unit.core.semantic_ingestion.test_semantic_atomic_store import _hando
 from tests.unit.core.semantic_ingestion.test_semantic_provider_composition import TEST_NOW, _built_in_local_capability
 
 
-def _registry_configuration(tmp_path: Path):
-    schemas = ("ObservationLedgerActivation", "ObservationLedgerHead")
+def _registry_configuration(tmp_path: Path, *, complete=False):
+    schemas = (tuple(sorted(path.name for path in (_ROOT / "schema").iterdir() if path.is_dir()))
+               if complete else ("ObservationLedgerActivation", "ObservationLedgerHead"))
+    limits = replace(
+        _PUBLICATION_LIMITS,
+        decoder_source_limits=replace(_PUBLICATION_LIMITS.decoder_source_limits, maximum_files=max(8, len(schemas))),
+        maximum_publication_manifest_bytes=2 * 1024 * 1024,
+    ) if complete else _PUBLICATION_LIMITS
     roles = [(_ROOT / "grammar.json").read_bytes()]
     for schema in schemas:
         roles.extend((_ROOT / role / schema / "1.json").read_bytes()
@@ -58,14 +64,14 @@ def _registry_configuration(tmp_path: Path):
     package = author_typed_value_publication_package(
         roles, tuple(DecoderSourceSelection(
             f"memorii.semantic_ingestion.observation.{schema}.v1", "feature-test", decoder.name,
-        ) for schema in schemas), source_package_root=tmp_path, limits=_PUBLICATION_LIMITS,
+        ) for schema in schemas), source_package_root=tmp_path, limits=limits,
     )
     vectors = b'{"integration":"activation"}'
     registry = ProtectedTypedValueRegistryConfiguration((ProtectedTypedValueRegistryPublicationConfiguration(
         package.raw_role_sources, package.raw_decoder_source_manifest, package.raw_publication_manifest,
-        vectors, tmp_path, _PUBLICATION_LIMITS,
+        vectors, tmp_path, limits,
         ProtectedTypedValuePublicationPins(
-            parse_typed_value_publication_manifest(package.raw_publication_manifest, maximum_bytes=60_000).publication_digest,
+            parse_typed_value_publication_manifest(package.raw_publication_manifest, maximum_bytes=limits.maximum_publication_manifest_bytes).publication_digest,
             package.compiled_registry.registry_digest,
             tuple(DecoderSourceSnapshotPin(item.decoder_id, item.source_snapshot_digest)
                   for item in package.verified_decoder_sources.snapshots), sha256(vectors).hexdigest(),
@@ -74,8 +80,8 @@ def _registry_configuration(tmp_path: Path):
     return registry
 
 
-def _provider_factory(tmp_path, monkeypatch, *, normalization=False):
-    registry = _registry_configuration(tmp_path)
+def _provider_factory(tmp_path, monkeypatch, *, normalization=False, complete_registry=False):
+    registry = _registry_configuration(tmp_path, complete=complete_registry)
     target, _, _ = _signed_package(tmp_path, monkeypatch, verify_configured_typed_value_registry_history(registry))
     clock = [TEST_NOW]
     def build(plane):
@@ -235,6 +241,31 @@ def test_activated_writer_rejects_legacy_mutation_routes(tmp_path, monkeypatch, 
                 unit.commit()
         else:
             store._publish_preplanning(admission=admission, writer_binding=activated)
+    assert plane.read_write_snapshot() == before
+
+
+def test_activated_write_rejects_lease_expiry_during_validation(tmp_path, monkeypatch) -> None:
+    _, plane, writers, store, binding, clock, _ = _runtime(tmp_path, monkeypatch)
+    active = store.activate_observation_ledger(writer_binding=binding)
+    authorization = writers._authorize_atomic(
+        active, capability=store._write_capability,
+        lease_expires_at=clock[0] + timedelta(seconds=1), server_now=lambda: clock[0],
+    )
+    before = plane.read_write_snapshot()
+    record = plane.get_record(writer_admission_memory_id())
+    assert record is not None
+
+    def delayed_validation(*args, **kwargs):
+        # Isolate the time-of-use guard from the separately exercised grammar.
+        clock[0] += timedelta(seconds=2)
+        return True
+
+    monkeypatch.setattr(
+        "memorii.core.memory_evolution.writer_admission._is_activated_preterminal_write",
+        delayed_validation,
+    )
+    with pytest.raises(SemanticWriterAdmissionError, match="expired during validation"):
+        plane.conditionally_write_records((record,), preconditions=(), authorization=authorization)
     assert plane.read_write_snapshot() == before
 
 

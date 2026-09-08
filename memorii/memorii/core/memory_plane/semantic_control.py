@@ -42,6 +42,7 @@ _SOURCE_CLASSES: dict[str, SemanticControlClass] = {
     "semantic_ingestion_writer_admission": "admission",
     "semantic_ingestion_observation_ledger_activation": "admission",
     "semantic_ingestion_observation_ledger_head": "admission",
+    "semantic_ingestion_observation_ledger_entry": "admission",
     "semantic_ingestion_source": "admission",
     "semantic_ingestion_metadata_poor_snapshot": "admission",
     "semantic_ingestion_admission_index": "admission",

@@ -212,7 +212,7 @@ visible and must precede any actual capability acceptance claim.
 ## All 23 Requirement Allocation
 
 Updated 2026-09-08 against the implementation packets and recorded local
-evidence at HEAD `191826cd3afb38bf605a337a71d576063b3bae5e` plus the authorized
+evidence at baseline `8785d9f3a2bb237e579da1242efbd0c8be31d7e2` plus the authorized
 working-tree changes. These are engineering progress labels, not release or
 final-candidate approval:
 
@@ -238,12 +238,25 @@ snapshot missing-member rejection cases pass. The expanded integration gate
 passes52 cases, including registered native-evidence and graph-paging
 construction. Exact group-recovery entry joins also pass2 isolated regressions. The paging fixture verifies contiguous pages, reauthorization,
 changed-scope rejection and intervening-write invalidation. These remain bounded
-local checks: activated writer admission and actual ledger transactions,
-production retrieval/cohort selection and provider composition are outstanding.
+local checks. The current production round replaces the blanket activated-write
+rejection with closed transaction validation and canonical detached replay,
+shares protected reader limits, fixes strict JSON terminal recovery, and aligns
+schema-3 source outcomes with committed group result digests. The actual provider
+now passes two-source ingestion, four durable group/source ledger entries, JSONL
+reopen and acknowledged retry under the later head without duplicate entries
+(1 test,1269.55s). The consolidated suite passes281 tests1108.52s; the separate
+compatibility delta passes160 tests69.31s. Four legacy-route rejection cases,
+two limit-consistency cases, the lease-expiry guard,58 regenerated registry
+vectors, lint, type and identity checks pass. Code/spec reviews found no further
+concrete defect. Activated public lost-acknowledgement, contention, authorization
+failure and noncommitting-outcome proofs remain required before append/replay
+approval; acknowledged retry is not lost-acknowledgement proof.
+Production retrieval/cohort selection and its provider composition remain
+unimplemented; the uncalled partial projector was removed from this round.
 Ingestion-time continuation also requires a design correction because the
 shared cursor requires graph-only coordinates absent from that API.
 No requirement row is promoted
-by these helper and compatibility results. Current details and evidence are in
+to complete by this production write/recovery checkpoint. Current details and evidence are in
 `../semantic_ingestion/observation-ledger/milestones/append-replay.plan.md`.
 
 | ID | Current status | Completed or locally verified work | Remaining engineering work | Release-only condition |
@@ -264,9 +277,9 @@ by these helper and compatibility results. Current details and evidence are in
 | R14 | Blocked | Independent numeric evaluator/kernel port approved; 81 tests and 33 independent vectors recorded | Resolve acceptance-authority issue-time, bounded byte-entry and closed-shape design; finish held-context/CLI assembly and full policy/data evaluation | Actual product policy approval/signature and qualifying measurements |
 | R15 | Not implemented | Monitor readiness and validation matrix documented | Implement production monitor, atomic registry/CAS transitions, freshness/outage/breach/recovery and in-flight demotion/reactivation proof | Approved monitoring policy and real evidence windows |
 | R16 | Partial | Bootstrap topology retained; bounded native policy retention independently approved | Integrate and prove complete bundle/profile validation through the new registry, activation and host paths | Approve/sign final bundle fingerprints |
-| R17 | Partial | Full-write snapshot primitive approved; observation models, source declarations, body/native codecs and registry history locally tested; 58 independent construction vectors and full 179-entry output agree; protected reader locally tested; host/provider/writer/store registry composition passes five focused tests; native candidate encoding has independent byte-oracle proof; registered ordinary/self-digest/cursor integrity and protected reader pass 91 tests; fixed checkpoint preimage/crypto passes five tests; both slices independently approved; target-identity design approved; protected target helpers and selected registry cases pass 54 tests; four actual provider target/authorization cases pass;14 fresh-process bootstrap checks pass; five provider recovery failures corrected and rerun green; independently reviewed offline preparation verifies 5632 files and prepares/resolves a 1772-file signed test target; six authority and five installed tampering checks reject; full preparation CI is wired but unobserved | Durable activation has 24 passing integration cases and bounded spec/correctness/test approval, including concurrency, restart and historical-byte preservation; exact ledger hash-preimage amendment accepted and promoted; finish its runtime integration, refresh final packaging and obtain CI evidence; finish checkpoint external-context authority and registry integration, ledger/group CAS, public authenticated pagination/retrieval, independent comparator and end-to-end proofs | Real caller trust and acceptance witnesses |
+| R17 | Partial | Full-write snapshot primitive approved; observation models, source declarations, body/native codecs and registry history locally tested; 58 independent construction vectors and full 179-entry output agree; protected reader locally tested; host/provider/writer/store registry composition passes five focused tests; native candidate encoding has independent byte-oracle proof; registered ordinary/self-digest/cursor integrity and protected reader pass 91 tests; fixed checkpoint preimage/crypto passes five tests; both slices independently approved; target-identity design approved; protected target helpers and selected registry cases pass 54 tests; four actual provider target/authorization cases pass;14 fresh-process bootstrap checks pass; five provider recovery failures corrected and rerun green; independently reviewed offline preparation verifies 5632 files and prepares/resolves a 1772-file signed test target; six authority and five installed tampering checks reject; full preparation CI is wired but unobserved | Durable activation has 24 passing integration cases and bounded spec/correctness/test approval, including concurrency, restart and historical-byte preservation; exact ledger hash-preimage amendment accepted and promoted; activated ordinary ingestion and JSONL reopen/retry now pass with281 consolidated regressions; finish activated failure-family proofs, refresh final packaging and obtain CI evidence; finish checkpoint external-context authority and registry integration, ledger/group CAS, public authenticated pagination/retrieval, independent comparator and end-to-end proofs | Real caller trust and acceptance witnesses |
 | R18 | Baseline complete | M4 historical/conflict/lineage replay proof retained | Final candidate regression only | None distinct |
-| R19 | Partial | Existing capability/ingress seams, configured trust resolver and bounded storage/policy prerequisites | Complete ordinary host composition for verified registry, writer/store, monitor, replay and observation APIs; run all host-root proofs | Install approved real host configuration |
+| R19 | Partial | Existing capability/ingress seams, configured trust resolver and bounded storage/policy prerequisites; ordinary provider activation, group/source ledger append and durable reopen/retry now locally verified | Complete ordinary host composition for verified registry, writer/store, monitor, replay and observation APIs; run all host-root proofs | Install approved real host configuration |
 | R20 | Baseline complete | Lease/recovery/exhaustion proof retained | Final candidate regression only | None distinct |
 | R21 | Baseline complete | Crash-atomic generation/backend proof retained | Final candidate regression only | None distinct |
 | R22 | Baseline complete | Provider compatibility/protected-result proof retained; stale M0 inference reconciled | Final regression; current evidence capture tracked under R03 | None distinct |

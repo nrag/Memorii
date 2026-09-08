@@ -51,8 +51,104 @@ contract edits. One writer owns overlapping native/atomic paths.
 
 ## Next Action
 
-Complete the closed activated-writer transaction grammar and verify actual
-source/group append and recovery through the canonical atomic store.
+Complete the activated provider failure-family proofs (lost acknowledgement,
+contention, authorization failure and noncommitting outcomes).
+
+## Production Completion Round
+
+Final checkpoint result:281 consolidated tests passed1108.52s; separate full
+activated-provider test passed1269.55s, including two sources/four entries,
+JSONL reopen and acknowledged retry after the later head without duplicates.
+Compatibility delta160 passed69.31s;58 independent registry vectors passed;
+Ruff, Pyright and identity hygiene passed. Source/test/generated files remained
+unchanged during these final runs and independent review. The dedicated CI
+timeout was increased to30 minutes with the same command and assertions; the
+test reviewer approved that bounded delta. CI remains unobserved and local
+Python3.12.14 does not establish CI Python3.11 parity.
+
+Review results: no remaining validated P1/P2 or concrete spec defect was found.
+The test reviewer requires activated public lost-acknowledgement, contention,
+authorization/fallback failure and zero-group/noncommitting proofs before full
+append/replay approval. These are confirmed evidence actions, not claimed
+production defects or completed tests. See production-review-results.md and
+production-execution-results.json. Earlier frozen document contents are retained
+in production-reviewed-documents.json; final metadata/document refresh does not
+change reviewed production behavior. This is a production-fix checkpoint, not
+append/replay or M5 closure. Public retrieval remains unimplemented.
+
+Current review identity: append-evidence/production-candidate.json. Corrected
+production binding preflight: append-evidence/production-binding-review.md.
+All delegate writers handed off; root owns the frozen candidate. The prior
+provider discriminator reached two sources/four entries before JSONL reopening
+exposed tuple/list comparison of fanout operation IDs. Comparing the canonical
+JSON content fixes this without changing persisted bytes or relaxing values.
+Final compatibility delta:160 passed69.31s; Ruff, Pyright and identity hygiene
+passed. Full provider recovery and consolidated regression are running. The
+standard spec/correctness/test cohort is reviewing this bounded round; no
+whole-milestone or whole-branch approval is claimed.
+
+User requested production fixes across as many open requirements as practical,
+followed by consolidated tests. Baseline is clean8785d9f3. Root will not label
+helper construction as completion. Observable target: ordinary provider
+activation, accepted ingestion, global group/source entries, restart/recovery,
+and authenticated graph retrieval using the real detached cohort backend.
+The current round prioritizes the complete activated write/recovery path. The
+partial graph projector was removed before candidate verification because it
+had no production caller and covered only four graph variants; public retrieval
+remains explicit unfinished work, not an approved or shipped helper slice.
+Ingestion-time cursor design and acceptance-authority design remain separate
+explicit contracts; do not invent new wire fields to bypass them.
+
+Delegation and ownership: Terra activated_writer owns atomic_store,
+writer_admission, semantic_control and native group/evidence production owners;
+Spark production_bindings maps remaining retrieval helpers read-only; Terra
+production_test_matrix reviews actual-provider validation seams read-only;
+Terra observation_projector owns only the new typed native-to-observed projection
+module. Root owns provider/factory, concrete cohort/authorization composition,
+tests, generated artifacts, all long commands and commits. This separates
+nonoverlapping writers while keeping the actual end-to-end route as the target.
+
+The initial actual-provider test authors the full registry, activates through
+ProviderMemoryService, and calls sync_event with a normal graph proposal. It
+reproduced the post-activation blanket mutation rejection in16.30s. The fixture
+isolates installed target metadata and host/model transport, not writer admission,
+native graph construction, registry validation or canonical persistence. It
+does not establish installed-wheel or external provider certification.
+The read-only test matrix requires success, interleaving/CAS no-partial-write,
+lost acknowledgement after later progress, reopen, protected authority rejection,
+and public retrieval without fixture cohorts. Focused construction checks may
+discriminate failures; broad gates run once after production construction settles.
+
+The actual-provider discriminator exposed two production root causes: the
+activated writer rejected the prerequisite admission/planning/handoff transactions,
+and the atomic owner used body-depth80 while admission used body-depth32 for the
+same registered ledger entry. The latter was isolated by tracing the failed
+entry read after the legacy native-group closure had validated successfully.
+The correction must share the protected configured reader limits, including
+explicit overrides, rather than loosen an isolated validator.
+
+Bounded correctness consultation identified required transaction joins for native
+receipt/group identity, source locator/member identity, and selected publication
+bytes. These are confirmed validation-boundary corrections. The worker is
+remediating them before the consolidated candidate; this consultation is not
+milestone approval. Existing activation/paging evidence predates these edits.
+
+The next production discriminator persisted the native group and its first
+ledger entry, then exposed Python-mode decoding of JSON terminal receipts.
+Publication stores `reload.model_dump(mode="json")`; terminal publication,
+request/recovery lookup, exact reload and ledger replay now use strict JSON
+model decoding. This preserves typed validation without coercing arbitrary
+Python values. The candidate provider test checks two sources, original entry
+preservation, JSONL reopen and replay of the first request under the later head.
+
+Canonical binding: `ProviderMemoryService.sync_event` reaches provider ingestion,
+the existing graph coordinator/repository, and atomic group/source publication.
+`SemanticGovernedWritePolicy.validate` requires the exact active binding and
+closed transaction grammar, then invokes the callback registered for that
+atomic capability. The callback uses one detached merged snapshot and the
+existing full ledger replay plus immutable native/source evidence validators.
+There is no permissive callback fallback. The two configured-limit consistency
+tests passed (7.35s); full candidate provider and consolidated proofs remain due.
 
 ## 2026-09-08 Pending Construction
 

@@ -107,9 +107,10 @@ class RegisteredObservationArtifact:
     canonical_value_digest: str
 
 
-_LIMITS = ProtectedTypedValueArtifactReaderLimits(
-    2 * 1024 * 1024, 64_000, 32, ProtectedTypedValueBodyLimits(2 * 1024 * 1024, 64_000, 32)
+DEFAULT_OBSERVATION_ARTIFACT_LIMITS = ProtectedTypedValueArtifactReaderLimits(
+    2 * 1024 * 1024, 64_000, 32, ProtectedTypedValueBodyLimits(2 * 1024 * 1024, 64_000, 80)
 )
+_LIMITS = DEFAULT_OBSERVATION_ARTIFACT_LIMITS
 
 
 def legacy_terminal_inventory_digest(snapshot: tuple[CanonicalMemoryRecord, ...]) -> str:

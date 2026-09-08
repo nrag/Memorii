@@ -1,0 +1,18 @@
+{
+  "status": "LOCAL_POSITIVE_PARITY_NOT_VECTOR_OR_RELEASE_APPROVAL",
+  "role_count": 1255,
+  "entry_count": 179,
+  "output_sha256": "029167f8d03cc41884974b294d54ccdc47ce6e5670a1f425fd1211ade1d6db8b",
+  "independent_source_sha256": "3a360f1b4d3710b5d203d5fa2b82985a7ffc2b81307d0028c034c352d2383b0c",
+  "decoder_source_manifest_sha256": "0a2b4adf4f76fd979a845cf81f2b23f5ae4e0c4d0b069ed2f9e97ee29e04ba7e",
+  "publication_manifest_sha256": "b3d931590222d5e6ddea5a05b76a903d2d05a482de06d315dbec50e07bf3e48d",
+  "profile_digest": "a6da0b15af67134cf5199b4d925e6d3c225ff1c239c6e1c9d039753b5342ebe0",
+  "registry_digest": "feb3ec98c5ab16d5b78724b982dc8cbb737ae7b47c1a0db91c10f1a176766c71",
+  "publication_digest": "f302b440f26d3cd5c6f8054158f5024c50a13b85fcdfb4101751c4fd76f162b5",
+  "complete_normalized_output_bytes_equal": true,
+  "remaining": [
+    "run verify_registry_vectors.py for the combined positive/rejection manifest",
+    "protected deployment/runtime composition",
+    "whole-candidate gates and review"
+  ]
+}

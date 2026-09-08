@@ -5,6 +5,7 @@ import pytest
 from memorii.core.memory_evolution.observation_ledger_contracts import SourceObservationIntent
 from memorii.core.memory_evolution.observation_persistence import build_source_finalization_observation_delta
 from memorii.core.semantic_ingestion.contracts import (
+    BootstrapGraphCanonicalSourceResultV3,
     BootstrapGraphTerminalMemberIntentV3,
     BootstrapGraphTerminalPersistenceHandoffV3,
     BootstrapGraphTerminalPublicationIntentV3,
@@ -24,20 +25,55 @@ def _fields(value, exclude):
 def _request(version: int):
     rebuild_bootstrap_graph_effect_contracts()
     old = decode_semantic_contract(_fixture_bytes("publication-request.ctv"), BootstrapGraphTerminalPublicationRequestV3)
-    source = old.canonical_source_result_input.completed_canonical_source_result
+    canonical_input = old.canonical_source_result_input
+    source = canonical_input.completed_canonical_source_result
+    handoff_core = old.handoff_core
+    member_intents = old.publication_intent.member_intents
+    if version == 3:
+        groups = tuple(item.group_commit_reload.persisted_result.result_digest
+                       for item in old.ordered_group_result_constructions)
+        core = type(source.core).create(**{
+            **source.core.model_dump(mode="python", exclude={"core_digest"}),
+            "group_result_digests": groups,
+        })
+        source = type(source).create(core=core, preparation_fingerprint=old.publication_intent.preparation_fingerprint)
+        canonical_input = type(canonical_input).create(**{
+            **_fields(canonical_input, {"input_digest", "schema_version"}),
+            "canonical_outcome_core": core, "completed_canonical_source_result": source,
+        })
+        result = BootstrapGraphCanonicalSourceResultV3.create(
+            request_digest=canonical_input.request_digest,
+            normalization_replay_digest=canonical_input.normalization_replay_digest,
+            source_plan_lineage_digest=canonical_input.source_plan_lineage_digest,
+            ordered_group_result_digests=groups, canonical_source_result=source,
+            control_epoch_digest=canonical_input.control_epoch_digest,
+        )
+        handoff_core = type(handoff_core).create(**{
+            **_fields(handoff_core, {"core_digest", "schema_version"}),
+            "ordered_group_result_digests": groups, "final_source_result_digest": result.result_digest,
+        })
+        changed_digests = {
+            "bootstrap_graph_terminal_handoff": handoff_core.core_digest,
+            "bootstrap_graph_canonical_source_result": result.result_digest,
+        }
+        member_intents = tuple(BootstrapGraphTerminalMemberIntentV3.create(
+            kind=member.kind, member_id=member.member_id,
+            construction_input_digest=changed_digests.get(member.kind, member.construction_input_digest),
+        ) for member in member_intents)
     intent = SourceObservationIntent(kind="source_finalization", source_outcome=source, observation_schema_fingerprint="a" * 64, intent_digest="b" * 64)
     delta = build_source_finalization_observation_delta(source_outcome=source, observation_delta_id="source-finalization", observation_revision_before="genesis", observation_revision_after="c" * 64, observation_schema_fingerprint="a" * 64)
-    members = (*old.publication_intent.member_intents, BootstrapGraphTerminalMemberIntentV3.create(
+    members = (*member_intents, BootstrapGraphTerminalMemberIntentV3.create(
         kind="source_observation_intent" if version == 3 else "bootstrap_graph_source_finalization_observation_delta",
         member_id="source-finalization-observation", construction_input_digest=intent.intent_digest if version == 3 else delta.delta_digest,
     ))
     publication = BootstrapGraphTerminalPublicationIntentV3.create(**{
         **old.publication_intent.model_dump(mode="python", exclude={"intent_digest", "locator_digest"}),
         "terminal_member_schema_version": version, "member_intents": members,
+        "canonical_source_result_input_digest": canonical_input.input_digest,
     })
-    handoff = BootstrapGraphTerminalPersistenceHandoffV3.create(core=old.handoff.core, publication_intent=publication)
+    handoff = BootstrapGraphTerminalPersistenceHandoffV3.create(core=handoff_core, publication_intent=publication)
     values = _fields(old, {"publication_request_digest", "schema_version"})
-    values.update(publication_intent=publication, handoff=handoff)
+    values.update(publication_intent=publication, handoff=handoff, handoff_core=handoff_core, canonical_source_result_input=canonical_input)
     values.update({"source_observation_intent": intent} if version == 3 else {"source_finalization_observation_delta": delta})
     return BootstrapGraphTerminalPublicationRequestV3.create(**values), delta
 

@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.ObservedAliasRevision.v1","implementation_source_digest":"91f9034ea7db2043ba2bd5964ce3c4586bb3d7d6b573ecc176bf6dc054e23066","role":"decoder","schema_id":"ObservedAliasRevision","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.ObservedAliasRevision.v1","implementation_source_digest":"7da7c0a7c9c105c052e3572003858f0a652a46c0ca0f36d7881a1dbae7c3ba6a","role":"decoder","schema_id":"ObservedAliasRevision","schema_version":"1","typed_root_kind":"model"}

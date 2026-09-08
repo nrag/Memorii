@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.TrustProjectionPublication.v1","implementation_source_digest":"78b38a93863a4c3aeb714090d3245efcd795aa7da2750dd1a86867846ed9fef6","role":"decoder","schema_id":"TrustProjectionPublication","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.TrustProjectionPublication.v1","implementation_source_digest":"5205b248a4efe5353191ed054e074e7813e072581b6d486a70d47878f93b7431","role":"decoder","schema_id":"TrustProjectionPublication","schema_version":"1","typed_root_kind":"model"}

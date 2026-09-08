@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.SnapshotGraphRecord.v1","implementation_source_digest":"7230b90c02756aee4d4d935047c01397376e20fdcbd83f4acd860db7cffa1339","role":"decoder","schema_id":"SnapshotGraphRecord","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.SnapshotGraphRecord.v1","implementation_source_digest":"f67b9283ad3c7c7a7803a958f7d812eb61c4ac2df5211f752c35104e6ab4b7c0","role":"decoder","schema_id":"SnapshotGraphRecord","schema_version":"1","typed_root_kind":"model"}

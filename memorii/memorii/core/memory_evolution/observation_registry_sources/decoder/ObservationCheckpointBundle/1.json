@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.ObservationCheckpointBundle.v1","implementation_source_digest":"853cd0f76c9f83f9e6a9ebfb465d3e3f8896b0154cd6e0ae11bc54444486d856","role":"decoder","schema_id":"ObservationCheckpointBundle","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.ObservationCheckpointBundle.v1","implementation_source_digest":"4416c5dac422d00167785e3acdcae9f6a57e9115919b368c69903c796f4a72dc","role":"decoder","schema_id":"ObservationCheckpointBundle","schema_version":"1","typed_root_kind":"model"}
