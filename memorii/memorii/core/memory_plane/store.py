@@ -9,6 +9,8 @@ import os
 import tempfile
 from collections.abc import Callable
 from contextlib import AbstractContextManager
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from secrets import token_bytes
 from threading import RLock
@@ -90,6 +92,22 @@ class MemoryPlaneGovernedWritePolicyRequiredError(RuntimeError):
 
 class MemoryPlaneWriteAuthorization:
     """Opaque authorization owned by a feature policy, not the memory plane."""
+
+
+@dataclass(frozen=True)
+class MemoryPlaneTimedWriteSnapshot:
+    """One detached full-write snapshot with backend-atomic UTC creation time."""
+
+    write_revision: int
+    records: tuple[CanonicalMemoryRecord, ...]
+    created_at: datetime
+
+    def __post_init__(self) -> None:
+        if type(self.write_revision) is not int or self.write_revision < 0:
+            raise ValueError("snapshot write revision must be a nonnegative integer")
+        if self.created_at.tzinfo is None or self.created_at.utcoffset() != timedelta(0):
+            raise ValueError("snapshot created_at must be timezone-aware UTC")
+        object.__setattr__(self, "created_at", self.created_at.astimezone(UTC))
 
 
 class GovernedWritePolicy(Protocol):
@@ -202,6 +220,10 @@ class MemoryPlaneStore(Protocol):
     def read_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]: ...
 
     def read_write_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]: ...
+
+    def read_timed_write_snapshot(
+        self, *, now: Callable[[], datetime]
+    ) -> MemoryPlaneTimedWriteSnapshot: ...
 
     def get_record(self, memory_id: str) -> CanonicalMemoryRecord | None: ...
 
@@ -357,6 +379,11 @@ class InMemoryMemoryPlaneStore:
         with self._lock:
             return self._write_revision, tuple(_clone_record(record) for record in self._records.values())
 
+    def read_timed_write_snapshot(self, *, now: Callable[[], datetime]) -> MemoryPlaneTimedWriteSnapshot:
+        with self._lock:
+            records = tuple(_clone_record(record) for record in self._records.values())
+            return MemoryPlaneTimedWriteSnapshot(self._write_revision, records, now())
+
     def get_record(self, memory_id: str) -> CanonicalMemoryRecord | None:
         with self._lock:
             record = self._records.get(memory_id)
@@ -397,6 +424,10 @@ class ReadOnlyMemoryPlaneSnapshotStore(InMemoryMemoryPlaneStore):
 
     def read_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]:
         raise PermissionError("detached inventory has no data-revision authority")
+
+    def read_timed_write_snapshot(self, *, now: Callable[[], datetime]) -> MemoryPlaneTimedWriteSnapshot:
+        del now
+        raise PermissionError("detached memory-plane snapshot has no timed write authority")
 
     def write_records(
         self, records: tuple[CanonicalMemoryRecord, ...], *,
@@ -615,6 +646,13 @@ class JsonlMemoryPlaneStore:
             batches, latest_by_id = self._current_records_unlocked()
             revision = batches[-1].revision if batches else 0
             return revision, tuple(_clone_record(record) for record in latest_by_id.values())
+
+    def read_timed_write_snapshot(self, *, now: Callable[[], datetime]) -> MemoryPlaneTimedWriteSnapshot:
+        with self._locked(exclusive=False):
+            batches, latest_by_id = self._current_records_unlocked()
+            revision = batches[-1].revision if batches else 0
+            records = tuple(_clone_record(record) for record in latest_by_id.values())
+            return MemoryPlaneTimedWriteSnapshot(revision, records, now())
 
     def get_record(self, memory_id: str) -> CanonicalMemoryRecord | None:
         with self._locked(exclusive=False):

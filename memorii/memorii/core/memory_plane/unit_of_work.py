@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import datetime
 
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.store import (
     GovernedWritePolicy,
     MemoryPlanePrecondition,
     MemoryPlaneStore,
+    MemoryPlaneTimedWriteSnapshot,
     MemoryPlaneWriteAuthorization,
 )
 from memorii.domain.enums import CommitStatus, MemoryDomain
@@ -120,6 +122,12 @@ class MemoryPlaneUnitOfWork:
 
     def read_write_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]:
         raise RuntimeError("write snapshots require the root memory-plane store")
+
+    def read_timed_write_snapshot(
+        self, *, now: Callable[[], datetime]
+    ) -> MemoryPlaneTimedWriteSnapshot:
+        del now
+        raise RuntimeError("timed write snapshots require the root memory-plane store")
 
     def get_record(self, memory_id: str) -> CanonicalMemoryRecord | None:
         record = self._pending.get(memory_id, self._records.get(memory_id))

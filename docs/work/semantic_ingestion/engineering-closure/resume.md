@@ -1,7 +1,7 @@
 # Semantic Ingestion Closure Resume
 
 Work type: implementation. Coordinator: root. Status: active, not closed.
-Current committed baseline:43117817 on semantic_ingestion_m5.
+Current committed baseline:7a92bce2 on semantic_ingestion_m5.
 Index: implementation.plan.md. Active packet:
 ../observation-ledger/milestones/continuation-runtime.plan.md.
 Previous resume preserved in archive/resume-e2514b32b7c1f15fd11fd1778ed91aad6ada05d6442e5ddad51db8360797da9f.md.
@@ -21,7 +21,7 @@ registry emission and shared bounded retention retain their earlier evidence.
 These internal components still lack a complete public materializer/caller.
 Public composition is parked in the linked design's public-composition-draft.patch.
 
-Remaining: concrete17-stream materializer, atomic snapshot/time binding,
+Remaining: concrete17-stream materializer,
 checkpoint authority, persisted time-attestation producer, public host wiring,
 independent comparator and activated failure proofs. Acceptance issuance-prefix
 design is approved but production evaluator/CLI integration remains; monitoring
@@ -33,7 +33,19 @@ design alone. No full current-revision CI or operational certification is claime
 
 ## Ownership And Next Action
 
-All recipe writers and reviewers are finished. Root owns canonical promotion,
-verification and commit/push. Next action: implement the concrete detached
-materializer using the promoted recipe and wire it through the public provider
-with atomic snapshot/time authority. No user decision is pending for provenance.
+The timed snapshot fix is implemented and locally verified (57 focused tests),
+with bounded correctness approval. Both backends sample the protected clock
+inside their read lock; both paging roots use the resulting creation time.
+No public runtime or parent requirement is closed by this internal component.
+
+Next action: obtain the owner decision on
+../graph-observation-materialization/proposal.md, then finish its feasibility
+and independent design review before public integration. The original
+provenance/policy-context decision remains approved and is not reopened.
+
+All workers are finished. Root corrected weak contention/time assertions and
+typed the touched test harness. Public host/provider/materializer construction
+was parked outside production: exact structural field rules and a registered
+projection identity preimage are unresolved. The linked design packet records
+the confirmed gaps, rejected mapper claims, recommendation and unverified drafts.
+The asynchronous owner question is pending. Root owns evidence and commit/push.

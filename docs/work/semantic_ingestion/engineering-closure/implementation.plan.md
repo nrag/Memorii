@@ -2,7 +2,7 @@
 
 - Work ID: semantic-ingestion-engineering-closure
 - Work type: implementation
-- Status: active consolidated closure; retained-context design approved, public retrieval integration resumed
+- Status: blocked on the linked public structural-field/identity decision; timed snapshot component locally verified
 - Coordinator: Codex main thread
 - Created: 2026-09-06
 - Last updated: 2026-09-08
@@ -168,8 +168,8 @@ writers finish; no current whole-candidate proof is claimed yet.
 
 ## Next Action
 
-Implement the concrete public observation materializer using the promoted
-retained-context recipe and atomic snapshot/time authority.
+Obtain the owner decision on ../graph-observation-materialization/proposal.md,
+then finish that linked design's feasibility/review before public integration.
 
 2026-09-08: root owns all code, generation, tests and commits. Read-only
 component reviews cover frozen90c58da62428f3caeab8ee7bca03116a24009d35e97aa705e1d757987a61362c.
@@ -294,7 +294,7 @@ now owns only the read-only retention-clock retry trace, because the provider
 currently substitutes caller event time for retained_at. Root retains all design
 and code writes. No keys, policy values or acceptance measurements are invented.
 
-Current next action: resolve the linked observed-provenance materialization design, then resume public retrieval integration.
+Historical next action (superseded): resolve the linked observed-provenance materialization design, then resume public retrieval integration.
 The Spark mapper retention_retry_map is refreshing the exact public entrypoint
 binding preflight read-only; root owns checkpoint documentation and commits.
 
@@ -303,3 +303,18 @@ The detailed active semantic dependency is owned by
 is approved as recorded above; its production promotion remains separate.
 
 2026-09-08 owner decision: complete retained policy context is approved. The linked observed-provenance design operation is active for its corrected feasibility and review; the semantic-choice blocker is resolved.
+
+Current checkpoint: retained provenance design was promoted in7a92bce2. The
+timed full-write snapshot now samples protected UTC time inside both backend
+locks and both paging roots use it;57 focused tests and bounded correctness
+consultation pass. Current source/test typing and Ruff checks are recorded in
+the active packet's public-integration-evidence directory. Full activation/CI
+and public integration are not complete.
+
+Concrete materialization exposed a missing registered projection identity
+preimage and undefined entity/relation field derivations. The linked
+../graph-observation-materialization/design.plan.md owns the consolidated
+proposal, pending owner decision and parked unverified drafts. This is separate
+from, and does not reopen, the approved provenance/policy decision. No public
+provider stub or graph-denying partial materializer was left in production.
+All23 remain15 baseline-complete and8 open.

@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
+from threading import Event, Thread
 
 import pytest
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
@@ -45,6 +46,19 @@ def _record(memory_id: str, *, internal: bool = False) -> CanonicalMemoryRecord:
     )
 
 
+def _write_with_deadline(store: MemoryPlaneStore, memory_id: str) -> None:
+    completed = Event()
+
+    def write() -> None:
+        store.stage_record(_record(memory_id, internal=True))
+        completed.set()
+
+    thread = Thread(target=write, daemon=True)
+    thread.start()
+    assert completed.wait(5), "snapshot failure retained the backend lock"
+    thread.join(timeout=1)
+
+
 def test_detached_reader_preserves_inventory_and_rejects_every_mutation_route():
     record = _record("detached")
     store = ReadOnlyMemoryPlaneSnapshotStore(write_revision=7, records=(record,))
@@ -53,7 +67,8 @@ def test_detached_reader_preserves_inventory_and_rejects_every_mutation_route():
     assert original[0] == 7
     assert original[1][0].content["nested"]["memory_id"] == "detached"
     original[1][0].content.clear()
-    assert store.get_record("detached").content
+    retained = store.get_record("detached")
+    assert retained is not None and retained.content
     for mutate in (
         lambda: store.stage_record(_record("new")),
         lambda: store.upsert_record(_record("new")),
@@ -67,8 +82,77 @@ def test_detached_reader_preserves_inventory_and_rejects_every_mutation_route():
             mutate()
     assert store.read_write_snapshot()[0] == 7
     assert tuple(item.memory_id for item in store.list_records()) == ("detached",)
+    with pytest.raises(PermissionError, match="timed write authority"):
+        store.read_timed_write_snapshot(
+            now=lambda: (_ for _ in ()).throw(AssertionError("clock must not be called"))
+        )
     with pytest.raises(ValueError):
         ReadOnlyMemoryPlaneSnapshotStore(write_revision=True, records=())
+
+
+def test_timed_write_snapshot_is_detached_and_rejects_non_utc_clock(
+    store_factory: StoreFactory, tmp_path: Path,
+) -> None:
+    store = store_factory(tmp_path / "store")
+    store.stage_record(_record("timed", internal=True))
+    snapshot = store.read_timed_write_snapshot(now=lambda: datetime(2026, 1, 2, tzinfo=UTC))
+    assert snapshot.write_revision == 1
+    assert snapshot.created_at == datetime(2026, 1, 2, tzinfo=UTC)
+    snapshot.records[0].content["nested"]["memory_id"] = "caller mutation"
+    retained = store.get_record("timed")
+    assert retained is not None and retained.content["nested"]["memory_id"] == "timed"
+    writer = store_factory(tmp_path / "store") if store.durable else store
+    for index, invalid in enumerate((
+        datetime(2026, 1, 2),
+        datetime(2026, 1, 2, 1, tzinfo=timezone(timedelta(hours=1))),
+    )):
+        with pytest.raises(ValueError, match="created_at"):
+            store.read_timed_write_snapshot(now=lambda value=invalid: value)
+        memory_id = f"after-invalid-clock-{index}"
+        _write_with_deadline(writer, memory_id)
+        later = store.read_timed_write_snapshot(now=lambda: datetime(2026, 1, 2, tzinfo=UTC))
+        assert memory_id in {record.memory_id for record in later.records}
+
+
+def test_timed_write_snapshot_blocks_competing_writer_and_clock_failure_releases_lock(
+    store_factory: StoreFactory, tmp_path: Path,
+) -> None:
+    path = tmp_path / "store"
+    first = store_factory(path)
+    second = store_factory(path) if first.durable else first
+    first.stage_record(_record("before", internal=True))
+    entered, release = Event(), Event()
+
+    def clock() -> datetime:
+        entered.set()
+        assert release.wait(10)
+        return datetime(2026, 1, 2, tzinfo=UTC)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        snapshot = executor.submit(first.read_timed_write_snapshot, now=clock)
+        assert entered.wait(10)
+        writer_started = Event()
+
+        def write() -> None:
+            writer_started.set()
+            second.stage_record(_record("contending", internal=True))
+
+        writer = executor.submit(write)
+        assert writer_started.wait(10)
+        assert not writer.done()
+        release.set()
+        captured = snapshot.result(timeout=10)
+        assert captured.write_revision == 1
+        assert tuple(record.memory_id for record in captured.records) == ("before",)
+        writer.result(timeout=10)
+
+    with pytest.raises(RuntimeError, match="clock failure"):
+        first.read_timed_write_snapshot(
+            now=lambda: (_ for _ in ()).throw(RuntimeError("clock failure"))
+        )
+    _write_with_deadline(second, "after-clock-failure")
+    later = first.read_timed_write_snapshot(now=lambda: datetime(2026, 1, 2, tzinfo=UTC))
+    assert "after-clock-failure" in {record.memory_id for record in later.records}
 
 
 def test_full_write_snapshot_covers_control_runtime_mixed_empty_and_all_write_paths(
@@ -301,6 +385,16 @@ def test_unit_of_work_rejects_root_only_write_snapshot_and_guard() -> None:
         pending = unit_of_work.pending_records
         with pytest.raises(RuntimeError, match="root memory-plane store"):
             service.read_write_snapshot()
+        called = False
+
+        def clock() -> datetime:
+            nonlocal called
+            called = True
+            return datetime(2026, 1, 1, tzinfo=UTC)
+
+        with pytest.raises(RuntimeError, match="root memory-plane store"):
+            service.read_timed_write_snapshot(now=clock)
+        assert called is False
         with pytest.raises(RuntimeError, match="root memory-plane store"):
             unit_of_work.apply_batch(
                 (_record("control:guarded", internal=True),),

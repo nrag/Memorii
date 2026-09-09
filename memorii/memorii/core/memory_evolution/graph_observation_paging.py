@@ -121,6 +121,7 @@ class DetachedGraphObservationRecords:
 
     memory_plane_write_revision: int
     records: tuple[CanonicalMemoryRecord, ...]
+    created_at: datetime
 
 
 @dataclass(frozen=True)
@@ -253,9 +254,11 @@ class AuthenticatedGraphObservationPagingRuntime:
                 return self._failure("denied")
             completed = False
             try:
-                write_revision, records = self._memory_plane.read_write_snapshot()
+                timed_snapshot = self._memory_plane.read_timed_write_snapshot(now=self._clock.now)
                 cohort_input = self._cohort_provider.graph_observation_input(
-                    snapshot=DetachedGraphObservationRecords(write_revision, records), context=context,
+                    snapshot=DetachedGraphObservationRecords(
+                        timed_snapshot.write_revision, timed_snapshot.records, timed_snapshot.created_at
+                    ), context=context,
                     decision=decision, authorized_scope=authorized_scope, request=coordinates,
                     maximum_stream_records=self._retention_budget.maximum_stream_records,
                     maximum_snapshot_bytes=self._retention_budget.maximum_snapshot_bytes,
@@ -265,7 +268,8 @@ class AuthenticatedGraphObservationPagingRuntime:
                     return self._failure("denied")
                 retained = self._retain_graph_snapshot(
                     context=context, decision=decision, policy=policy, request=coordinates,
-                    cohort_input=cohort_input, memory_plane_write_revision=write_revision, created_at=now, token=token,
+                    cohort_input=cohort_input, memory_plane_write_revision=timed_snapshot.write_revision,
+                    created_at=timed_snapshot.created_at, token=token,
                 )
                 page = self._graph_page(
                     retained.snapshot, start=0, policy=policy, context=context, decision=decision, now=now
@@ -319,9 +323,11 @@ class AuthenticatedGraphObservationPagingRuntime:
                 return self._failure("denied")
             completed = False
             try:
-                write_revision, records = self._memory_plane.read_write_snapshot()
+                timed_snapshot = self._memory_plane.read_timed_write_snapshot(now=self._clock.now)
                 cohort_input = self._cohort_provider.ingestion_time_input(
-                    snapshot=DetachedGraphObservationRecords(write_revision, records), context=context,
+                    snapshot=DetachedGraphObservationRecords(
+                        timed_snapshot.write_revision, timed_snapshot.records, timed_snapshot.created_at
+                    ), context=context,
                     decision=decision, authorized_scope=authorized_scope, request=coordinates,
                     maximum_stream_records=self._retention_budget.maximum_stream_records,
                     maximum_snapshot_bytes=self._retention_budget.maximum_snapshot_bytes,
@@ -331,7 +337,8 @@ class AuthenticatedGraphObservationPagingRuntime:
                     return self._failure("denied")
                 retained = self._retain_ingestion_snapshot(
                     context=context, decision=decision, policy=policy, request=coordinates,
-                    cohort_input=cohort_input, memory_plane_write_revision=write_revision, created_at=now, token=token,
+                    cohort_input=cohort_input, memory_plane_write_revision=timed_snapshot.write_revision,
+                    created_at=timed_snapshot.created_at, token=token,
                 )
                 page = self._ingestion_page(retained.snapshot, 0, policy, context, decision)
                 completed = True

@@ -1,0 +1,197 @@
+"""Registered observation projection for verified retained native graph records.
+
+This owner deliberately accepts only the native fact arm.  Other accepted
+operation arms need their own exact native-to-observed field recipes; emitting
+plausible records from their shared planning inventory would invent semantics.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+
+from pydantic import BaseModel
+
+from memorii.core.memory_evolution.graph_observation_records import (
+    ObservedAssertionEntityReference,
+    ObservedCitationRecord,
+    ObservedClaimAssertion,
+    ObservedEntityReference,
+    ObservedEntityRevision,
+    ObservedProvenanceRecord,
+    ObservedRelation,
+    TimeInterval,
+)
+from memorii.core.memory_evolution.graph_observation_streams import (
+    CitationStreamRecord,
+    ClaimAssertionStreamRecord,
+    EntityRevisionStreamRecord,
+    ProvenanceStreamRecord,
+    RelationStreamRecord,
+)
+from memorii.core.memory_evolution.graph_planning import (
+    PlanningCommitValues,
+    materialize_canonical_planning_payload,
+)
+from memorii.core.memory_evolution.graph_records import (
+    CanonicalGraphRecord,
+    ClaimAssertion,
+    CitationRecord,
+    EntityRevision,
+    ProvenanceRecord,
+    RelationRevision,
+    graph_record_id,
+)
+from memorii.core.memory_evolution.observation_activation_runtime import (
+    emit_registered_observation_artifact,
+)
+from memorii.core.memory_evolution.typed_value_artifact_reader import (
+    ProtectedTypedValueArtifactReaderLimits,
+)
+from memorii.core.memory_evolution.typed_value_publication import (
+    VerifiedTypedValuePublication,
+)
+from memorii.core.memory_evolution.typed_value_registry_history import (
+    ProtectedTypedValueRegistryHistory,
+)
+from memorii.core.semantic_ingestion.contracts import (
+    BootstrapNativeAcceptedOperationEffectV3,
+    BootstrapNativeEvidenceProjectionV3,
+    BootstrapNativeFactEffectV3,
+    BootstrapNativeOperationCompilationV3,
+    BootstrapNativePlanningRecordV3,
+)
+
+
+class NativeGraphObservationProjectionError(ValueError):
+    """The retained native authority cannot produce one exact observation."""
+
+
+NativeGraphObservationStreamRecord = (
+    EntityRevisionStreamRecord
+    | ClaimAssertionStreamRecord
+    | RelationStreamRecord
+    | CitationStreamRecord
+    | ProvenanceStreamRecord
+)
+
+
+def project_retained_native_operation_stream(
+    *,
+    compilation: BootstrapNativeOperationCompilationV3,
+    accepted_effect: BootstrapNativeAcceptedOperationEffectV3,
+    retained_native_records: Sequence[BaseModel],
+    commit_values: PlanningCommitValues,
+    authorizing_transaction_group_id: str,
+    boundary_ids: frozenset[str],
+    native_entity_lookup: Mapping[str, ObservedEntityReference],
+    history: ProtectedTypedValueRegistryHistory,
+    publication: VerifiedTypedValuePublication,
+    limits: ProtectedTypedValueArtifactReaderLimits,
+) -> tuple[NativeGraphObservationStreamRecord, ...]:
+    """Convert one verified fact operation through registered observed roots.
+
+    The caller supplies one already verified operation/effect join and a
+    complete retained native record inventory.  This function re-materializes
+    each selected planning record under the passed commit coordinates and
+    rejects any metadata or retained-inventory substitution.
+    """
+    if not isinstance(accepted_effect, BootstrapNativeFactEffectV3):
+        raise NativeGraphObservationProjectionError(
+            "accepted operation arm has no exact observed projection recipe"
+        )
+    authority = compilation.operation_input.planning_construction_authority
+    if authority is None or (
+        compilation.terminal_status != "accepted"
+        or authority.operation_id != compilation.operation_id
+        or authority.operation_execution_id != compilation.operation_execution_id
+        or accepted_effect.fact != compilation.operation_member.operation
+    ):
+        raise NativeGraphObservationProjectionError("native fact authority is incomplete")
+    if commit_values.transaction_group_id != authorizing_transaction_group_id:
+        raise NativeGraphObservationProjectionError("commit authority group is substituted")
+
+    records = _materialized_records(
+        accepted_effect.planning_records,
+        retained_native_records=retained_native_records,
+        commit_values=commit_values,
+        authorizing_transaction_group_id=authorizing_transaction_group_id,
+        operation_id=compilation.operation_id,
+    )
+    entities = _entities(records, native_entity_lookup, authority.source_id, commit_values, boundary_ids)
+    claim = _one_record(records, ClaimAssertion, "claim assertion")
+    relation = _optional_one_record(records, RelationRevision, "relation")
+    projections = _fact_projections(accepted_effect, claim.claim_assertion_id)
+    citations, provenances = _paired_evidence(
+        projections, records, compilation, authority.source_id, authority.source_digest,
+        commit_values, boundary_ids,
+    )
+    claim_value = _claim(
+        claim, accepted_effect, entities, citations, provenances, authority.source_id,
+        commit_values, boundary_ids,
+    )
+    emitted: list[NativeGraphObservationStreamRecord] = [*entities.values(), claim_value, *citations, *provenances]
+    if relation is not None:
+        emitted.append(_relation(
+            relation, accepted_effect, entities, claim_value, provenances,
+            authority.source_id, commit_values, boundary_ids,
+        ))
+    return tuple(sorted(emitted, key=lambda item: (item.record_kind, item.primary_key)))
+
+
+def _materialized_records(
+    planning_records: Sequence[BootstrapNativePlanningRecordV3],
+    *,
+    retained_native_records: Sequence[BaseModel],
+    commit_values: PlanningCommitValues,
+    authorizing_transaction_group_id: str,
+    operation_id: str,
+) -> tuple[CanonicalGraphRecord, ...]:
+    retained = {(item.record_kind, graph_record_id(item)): item for item in retained_native_records}
+    if len(retained) != len(retained_native_records):
+        raise NativeGraphObservationProjectionError("retained native inventory has duplicate identities")
+    materialized = []
+    for record in planning_records:
+        value = materialize_canonical_planning_payload(
+            record.planning_payload, commit_values=commit_values,
+            authorizing_transaction_group_id=authorizing_transaction_group_id,
+        )
+        key = (value.record_kind, graph_record_id(value))
+        if (
+            record.operation_execution_id == ""
+            or record.record_kind != value.record_kind
+            or record.record_id != graph_record_id(value)
+            or value.operation_id != operation_id
+            or retained.get(key) != value
+        ):
+            raise NativeGraphObservationProjectionError("native record differs from canonical materialization")
+        materialized.append(value)
+    return tuple(materialized)
+
+
+def _entities(
+    records: Sequence[CanonicalGraphRecord], lookup: Mapping[str, ObservedEntityReference],
+    source_id: str, commit_values: PlanningCommitValues, boundary_ids: frozenset[str],
+) -> dict[str, EntityRevisionStreamRecord]:
+    values: dict[str, EntityRevisionStreamRecord] = {}
+    for record in records:
+        if not isinstance(record, EntityRevision):
+            continue
+        reference = lookup.get(record.entity_revision_id)
+        if reference is None or (
+            reference.entity_revision_id != record.entity_revision_id
+            or reference.logical_entity_id != record.logical_entity_id
+        ):
+            raise NativeGraphObservationProjectionError("native entity lookup is incomplete")
+        payload = _emit(ObservedEntityRevision(
+            entity_revision_id=record.entity_revision_id, logical_entity_id=record.logical_entity_id,
+            canonical_type=None, lifecycle_state=record.lifecycle, valid_interval=None,
+            system_interval=_system_interval(commit_values), source_ids=(source_id,),
+            operation_ids=(record.operation_id,), boundary=record.entity_revision_id in boundary_ids,
+            record_digest="0" * 64,
+        ), "ObservedEntityRevision", history=None, publication=None, limits=None)
+        values[record.entity_revision_id] = EntityRevisionStreamRecord(
+            record_kind="entity_revision", primary_key=payload.entity_revision_id,
+            record_digest=payload.record_digest, payload=payload,
+        )
+    return values
+

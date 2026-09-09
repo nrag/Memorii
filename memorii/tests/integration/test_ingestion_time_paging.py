@@ -1,8 +1,10 @@
 """Real registered cursor/retention behavior with a bounded fixture cohort."""
 
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from threading import Event
+from typing import TypeVar
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -39,9 +41,12 @@ from memorii.core.memory_evolution.observation_activation_runtime import (
 )
 from memorii.core.memory_evolution.typed_value_artifact_integrity import TrustedTypedValueArtifactVerificationKey
 from memorii.core.memory_plane.service import MemoryPlaneService
+from pydantic import BaseModel
 from tests.fixtures.semantic_ingestion.observation_publication import observation_publication
 from tests.unit.core.memory_evolution.test_graph_observation_public_contracts import _cohorts
 from tests.unit.core.memory_evolution.test_graph_observation_streams import _entity_payload
+
+_Model = TypeVar("_Model", bound=BaseModel)
 
 
 @pytest.fixture
@@ -55,21 +60,33 @@ def paging(tmp_path, monkeypatch):
     ))
     publication = history.publications[0]
 
-    def emit(value):
-        return emit_registered_observation_artifact(
+    def emit(value: _Model) -> _Model:
+        result = emit_registered_observation_artifact(
             value, schema_id=type(value).__name__, history=history,
             publication=publication, limits=limits,
         ).value
+        assert isinstance(result, type(value))
+        return result
 
     class Harness:
+        context: AuthenticatedGraphObservationContext
+        scope: MemoryScope
+        expires_at: datetime
+        runtime: AuthenticatedGraphObservationPagingRuntime
+        request: IngestionTimeAttestationRequest
+        graph_request: GraphObservationRequest
+        attestations: tuple[SourceRetentionTimeAttestation, TransactionGroupCommitTimeAttestation]
+        key: Ed25519PrivateKey
+        codec: dict
+        emit: Callable[[BaseModel], BaseModel]
         now_value = datetime(2026, 9, 8, tzinfo=UTC)
         denied = False
         outage = False
         cohort_failure = False
         expire_during_build = False
         empty = False
-        entered = None
-        release = None
+        entered: Event | None = None
+        release: Event | None = None
         cohort_calls = 0
         policy_revision = "page-policy"
         scope_identity = "scope"
@@ -104,6 +121,7 @@ def paging(tmp_path, monkeypatch):
             assert maximum_snapshot_bytes == self.runtime._retention_budget.maximum_snapshot_bytes
             if self.entered is not None:
                 self.entered.set()
+                assert self.release is not None
                 assert self.release.wait(10)
             if self.cohort_failure:
                 raise ObservationCohortUnavailableError("not terminal")
@@ -130,6 +148,12 @@ def paging(tmp_path, monkeypatch):
                 for item in stream
             )})
             return GraphObservationCohortInput(preimage, stream)
+
+        def read_graph(self, request: GraphObservationRequest | None = None):
+            return self.runtime.observe_graph(host_ingress="trusted", request=request or self.graph_request)
+
+        def read(self, request: IngestionTimeAttestationRequest | None = None):
+            return self.runtime.observe_ingestion_time_attestations(host_ingress="trusted", request=request or self.request)
 
     h = Harness()
     h.scope = MemoryScope(user_id="user")
@@ -173,8 +197,6 @@ def paging(tmp_path, monkeypatch):
     h.graph_request = GraphObservationRequest(
         **h.request.model_dump(), view="current", valid_at=None, system_as_of=h.now_value,
     )
-    h.read_graph = lambda request=None: h.runtime.observe_graph(host_ingress="trusted", request=request or h.graph_request)
-    h.read = lambda request=None: h.runtime.observe_ingestion_time_attestations(host_ingress="trusted", request=request or h.request)
     return h
 
 
@@ -321,6 +343,59 @@ def test_snapshot_policy_age_expires_during_construction(paging, monkeypatch, en
     monkeypatch.setattr(h, "ingestion_time_input", slow)
     assert (h.read_graph() if endpoint == "graph" else h.read()).reason == "denied"
     assert not h.runtime._retained_bytes and not h.runtime._reservations
+
+
+@pytest.mark.parametrize("endpoint", ["graph", "ingestion"])
+def test_snapshot_creation_time_is_distinct_from_authorization_time_and_sets_retention_deadline(
+    paging, monkeypatch, endpoint,
+):
+    h = paging
+    authorization_time = h.now_value
+    original_authorize = h.authorize
+
+    def advance_after_authorization(**kwargs):
+        result = original_authorize(**kwargs)
+        h.now_value += timedelta(minutes=1)
+        return result
+
+    monkeypatch.setattr(h, "authorize", advance_after_authorization)
+    page = h.read_graph() if endpoint == "graph" else h.read()
+    assert page.kind == "page" and page.next_cursor
+    retained = next(iter(
+        h.runtime._graph_snapshots.values() if endpoint == "graph" else h.runtime._ingestion_snapshots.values()
+    ))
+    locked_time = authorization_time + timedelta(minutes=1)
+    assert retained.snapshot.created_at == locked_time
+    assert retained.expires_at == locked_time + timedelta(minutes=5)
+
+
+@pytest.mark.parametrize("endpoint", ["graph", "ingestion"])
+@pytest.mark.parametrize("mutation", ["control", "empty_batch"])
+def test_continuation_fences_writes_that_do_not_advance_data_revision(paging, endpoint, mutation):
+    from memorii.core.memory_plane.models import CanonicalMemoryRecord
+    from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
+
+    h = paging
+    read = h.read_graph if endpoint == "graph" else h.read
+    request = h.graph_request if endpoint == "graph" else h.request
+    first = read()
+    assert first.kind == "page" and first.next_cursor
+    plane = h.runtime._memory_plane
+    data_revision, _ = plane.read_snapshot()
+    write_revision, _ = plane.read_write_snapshot()
+    records = () if mutation == "empty_batch" else (CanonicalMemoryRecord(
+        memory_id="observation-control", domain=MemoryDomain.SEMANTIC,
+        text="internal control", content={}, status=CommitStatus.COMMITTED,
+        source_kind="observation_control_test", timestamp=h.now_value,
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    ),)
+    plane.conditionally_write_records(records, preconditions=())
+    assert plane.read_snapshot()[0] == data_revision
+    assert plane.read_write_snapshot()[0] == write_revision + 1
+    response = read(request.model_copy(update={"cursor": first.next_cursor}))
+    assert response.kind == "failure" and response.reason == "stale_cursor"
+    assert not h.runtime._graph_snapshots and not h.runtime._ingestion_snapshots
+    assert not h.runtime._reservations and not h.runtime._retained_bytes
 
 
 @pytest.mark.parametrize("endpoint", ["graph", "ingestion"])

@@ -1,0 +1,107 @@
+{
+  "base_commit": "7a92bce208ecfb7d8ff199e629edb09f663d1948",
+  "tree": "dirty candidate; all named changes owned by current task",
+  "candidate_sha256": "f5f293da327edff23f1ec0a5188e70d94ae12f2ab85b024430992215c24b73fd",
+  "production_and_test_files": {
+    "memorii/memorii/core/memory_evolution/graph_observation_paging.py": "ab9a22c7b596b5a2605d00884fb21d7a244dc762dd3b3bb1376c3e3949b29163",
+    "memorii/memorii/core/memory_plane/service.py": "95420468b098def5d243e83d1359b7638acd7a5d6965a84a2d11c0d2d43d96f1",
+    "memorii/memorii/core/memory_plane/store.py": "6b9b16e981882ed251580f488bb04811fdfd7de94e3e487812a73a2302c5dc60",
+    "memorii/memorii/core/memory_plane/unit_of_work.py": "5360c0c11570b23aaab9be040b65ca8debacf5528c78a7376122845ad106f5f6",
+    "memorii/tests/integration/test_ingestion_time_paging.py": "b5d742d93316c8f197c3eb7fadf100525269a9a01c8c84777d2c97d9e4b3045e",
+    "memorii/tests/unit/core/test_memory_plane_write_snapshot.py": "294523e80433690312073e6bb90573cdc4dd79334484fbee3e74698f4b1a8cbb"
+  },
+  "changed_surface_files": {
+    "docs/work/semantic_ingestion/engineering-closure/implementation.plan.md": "840e98e85f0c7f7187a34edd831284f2184125f4c9c07cb1b40ba27037a9e3a0",
+    "docs/work/semantic_ingestion/engineering-closure/resume.md": "36ba75c851f73c987ef1834acfa92fc48c88f8f4ce9a4ce6e6394ee50b28d3f2",
+    "docs/work/semantic_ingestion/graph-observation-materialization/design.plan.md": "6b2405c0e30aff8b0879c118715b2494be8913f4fcbeae619dba5043a9ad4c09",
+    "docs/work/semantic_ingestion/graph-observation-materialization/drafts/graph_observation_host.py.draft": "00b854d744c01b12f9b67fbdb4dcba3a7be7ace0d2fbe0833d914b289c19a5d4",
+    "docs/work/semantic_ingestion/graph-observation-materialization/drafts/graph_observation_materialization.py.draft": "645c5cc2b6495285de812ae694c975736e299e2a9a66eeebe5867f1c9eb60526",
+    "docs/work/semantic_ingestion/graph-observation-materialization/drafts/graph_observation_native_projection.py.draft": "86098ef073400f8edec8be908fbf7de262fa30144a3cdc87288d63f7276e99ad",
+    "docs/work/semantic_ingestion/graph-observation-materialization/drafts/test_provider_observation.py.draft": "f50d1bd2ee558802400767e30e4a3b1b39ca4aa59e100f5b216d8a025e63290f",
+    "docs/work/semantic_ingestion/graph-observation-materialization/proposal.md": "6c8e52015b2c5f0be057ebf8d307df7d0749cf951266e8d7d5ee0e7ec8b8d926",
+    "docs/work/semantic_ingestion/observation-ledger/milestones/continuation-runtime.plan.md": "136cd17d531c4587a09a39680f07631220a6497deb862fb06b9754b2a4c66466",
+    "docs/work/semantic_ingestion/observation-ledger/milestones/public-observation-bindings.md": "155d59fc6d15c1669682a39cf0f59f0ea052d42d49256ccd822c29155d736ac3",
+    "docs/work/semantic_ingestion_completion_readiness/closure-plan.md": "73e0996754bbd72730943f8b27105b69a3bee24ff822faaabbf8c3918b391c55",
+    "memorii/memorii/core/memory_evolution/graph_observation_paging.py": "ab9a22c7b596b5a2605d00884fb21d7a244dc762dd3b3bb1376c3e3949b29163",
+    "memorii/memorii/core/memory_plane/service.py": "95420468b098def5d243e83d1359b7638acd7a5d6965a84a2d11c0d2d43d96f1",
+    "memorii/memorii/core/memory_plane/store.py": "6b9b16e981882ed251580f488bb04811fdfd7de94e3e487812a73a2302c5dc60",
+    "memorii/memorii/core/memory_plane/unit_of_work.py": "5360c0c11570b23aaab9be040b65ca8debacf5528c78a7376122845ad106f5f6",
+    "memorii/tests/integration/test_ingestion_time_paging.py": "b5d742d93316c8f197c3eb7fadf100525269a9a01c8c84777d2c97d9e4b3045e",
+    "memorii/tests/unit/core/test_memory_plane_write_snapshot.py": "294523e80433690312073e6bb90573cdc4dd79334484fbee3e74698f4b1a8cbb"
+  },
+  "command_cwd": "memorii",
+  "environment": {
+    "os": "macOS",
+    "python": "3.12.14",
+    "ruff": "0.15.21",
+    "pyright": "1.1.411"
+  },
+  "commands": [
+    {
+      "command": "../.venv/bin/python -W error -m pytest tests/unit/core/test_memory_plane_write_snapshot.py tests/integration/test_graph_observation_paging.py tests/integration/test_ingestion_time_paging.py -p no:cacheprovider -q --durations=5",
+      "log": "timed-snapshot-tests-frozen.log",
+      "exit_code": 0,
+      "result": "53 passed in 40.99s"
+    },
+    {
+      "command": "../.venv/bin/python -m ruff check memorii tests",
+      "log": "ruff-corrected.log",
+      "exit_code": 0
+    },
+    {
+      "command": "../.venv/bin/pyright --pythonpath ../.venv/bin/python",
+      "log": "pyright-configured.log",
+      "exit_code": 0
+    },
+    {
+      "command": "../.venv/bin/pyright --pythonpath ../.venv/bin/python memorii/core/memory_plane/store.py memorii/core/memory_plane/service.py memorii/core/memory_plane/unit_of_work.py memorii/core/memory_evolution/graph_observation_paging.py tests/unit/core/test_memory_plane_write_snapshot.py tests/integration/test_ingestion_time_paging.py",
+      "log": "pyright-corrected.log",
+      "exit_code": 0
+    },
+    {
+      "command": "../.venv/bin/python -m memorii.tools.identity_hygiene --root .. --allowlist ../.agents/identity_hygiene_allowlist.json",
+      "log": "identity.log",
+      "exit_code": 0
+    }
+  ],
+  "logs": {
+    "identity.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "pyright-configured.log": "6d88a1b220adb7a3d62092b6e38431f0b3fe8babe9864fab90e5849766260332",
+    "pyright-corrected.log": "6d88a1b220adb7a3d62092b6e38431f0b3fe8babe9864fab90e5849766260332",
+    "pyright.log": "6f5fe2204a922a59fd6749b93c8a16aa56a53c8c495302700211d6d1d1a0050d",
+    "ruff-corrected.log": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+    "ruff-final.log": "54bfe8f68dde8d3bc3c3e0bf9fb258c1ef4dd3c6c6160feea4e769c5216ac553",
+    "ruff.log": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+    "timed-snapshot-tests-corrected.log": "56ea8ab34274e73105f50b7eba24d02e948959d0a969bc668ca8cb8acc7832a3",
+    "timed-snapshot-tests-final.log": "6b4eee4423fe5d157e49e5b2edd772b2a9aef98ab1c3ec1b4cd04a51f94ff09c",
+    "timed-snapshot-tests-frozen.log": "a3d66645494cba96ce5cd1c669710cb73e798fa23a462296660421ccbc3a5488",
+    "timed-snapshot-tests.log": "a92ad3d720c52b483a0cfb105ab3cd8f5d654c2e919515559b3467f3e3b6282b"
+  },
+  "failures": [
+    {
+      "log": "timed-snapshot-tests.log",
+      "result": "1 failed, 52 passed",
+      "disposition": "wrong two-independent-store fixture; fixed shared InMemory authority and rerun green"
+    },
+    {
+      "log": "pyright.log",
+      "result": "37 errors",
+      "disposition": "expanded check included fixture typing; corrected Harness/emit/read methods and optional reads; rerun green; no pre-existing failure claim"
+    },
+    {
+      "log": "ruff-final.log",
+      "result": "unsorted imports",
+      "disposition": "Ruff sorted import; frozen test pass and Ruff rerun green"
+    }
+  ],
+  "review": {
+    "correctness": "bounded four-production-file approval; no findings; code unchanged",
+    "test": "delta consultation pending manifest publication"
+  },
+  "evidence_limits": [
+    "Public provider/materializer drafts are outside production, incomplete and unverified.",
+    "No complete17-stream materializer or parent requirement closure.",
+    "Full activation job not rerun. No current-revision GitHub CI claim; local Python3.12 differs from CI3.11.",
+    "New proposal remains unapproved and does not change canonical designs or registered artifacts."
+  ]
+}

@@ -23,6 +23,7 @@ from memorii.core.memory_plane.store import (
     InMemoryMemoryPlaneStore,
     MemoryPlanePrecondition,
     MemoryPlaneStore,
+    MemoryPlaneTimedWriteSnapshot,
     MemoryPlaneWriteAuthorization,
 )
 from memorii.core.memory_plane.unit_of_work import MemoryPlaneUnitOfWork
@@ -171,6 +172,13 @@ class MemoryPlaneService:
         """Return one detached full-write snapshot for a conditional writer."""
 
         return self._record_store().read_write_snapshot()
+
+    def read_timed_write_snapshot(
+        self, *, now: Callable[[], datetime]
+    ) -> MemoryPlaneTimedWriteSnapshot:
+        """Return a backend-atomic full-write snapshot and UTC creation time."""
+
+        return self._record_store().read_timed_write_snapshot(now=now)
 
     def stage_record(
         self,

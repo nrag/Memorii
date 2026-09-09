@@ -55,7 +55,7 @@ No signatures, external policy values or statistical outcomes are fabricated.
 
 ## Next Action
 
-Implement the concrete authenticated public observation call chain using the promoted retained-context recipe and atomic snapshot/time authority.
+Obtain the owner decision on ../../graph-observation-materialization/proposal.md and complete that linked design correction before resuming public integration.
 
 ## Current Component Evidence (2026-09-08)
 
@@ -193,3 +193,65 @@ registered-ingestion-prep-evidence/manifest.json.
 The linked provenance design is complete:13 checks and all three bounded
 reviews approve the promoted retained-context recipe. No user policy-context
 decision remains. Public materializer and snapshot/time binding are still open.
+
+## Public Integration Resumption At 7a92bce2
+
+The tree was clean. The approved provenance recipe is no longer a design
+dependency. Root is mapping exact retained graph fields; no fixture or
+co-produced-record guess supplies public authority.
+
+Delegation/cost ledger: public_observation_bindings (Spark code-mapper,
+read-only) refreshes provider/store entrypoint bindings; graph_projection_authority
+(Spark explorer, read-only) traces entity/relation/action field authorities.
+atomic_observation_time (Terra worker, sole code writer) owns only store,
+service, unit-of-work, paging and their feature-local tests. The existing test
+reviewer provided a bounded preimplementation matrix; no full review is claimed.
+Root owns documents, all pytest commands, evidence reconciliation and commit/push.
+
+Timed snapshot scope: additive full-write snapshot with protected UTC sample
+inside the backend lock, carried into both paging snapshot roots. Preserve the
+existing two-value snapshot API and persisted bytes. Read-only inventories and
+units of work cannot mint fresh snapshot time. Authorization remains before
+read/clock authority; continuation still fences every write.
+
+Validation matrix: both backends with barrier-controlled competing writer
+(separate JSONL handle); detached records; one UTC sample; invalid/raising clock
+releases locks; read-only/UoW reject before sample; both endpoints distinguish
+authorization from snapshot creation time and age; pre-read denials; control
+and empty writes stale both continuation kinds. Existing paging tests own
+mechanics; a later actual provider proof must own public integration.
+
+Changed-surface/authority ledger: memory_plane store/service/UoW and paging
+are implementation only; their feature-local tests are verification surfaces.
+No registered model, codec, persisted format or generated artifact changes are
+planned for the timed snapshot. New names must describe snapshot behavior.
+The activation job in .github/workflows/pr-gates.yml selects both paging tests;
+focused results will not be reported as a full activation or CI pass.
+
+## Timed Snapshot Checkpoint And Public Integration Blocker
+
+Both backend timed snapshots and both paging creation times are implemented.
+The first test run exposed a wrong two-store in-memory fixture (1 failed,
+52 passed); corrected shared-store contention and genuinely distinct auth/read
+clock samples pass53 tests. Bounded correctness consultation reports no findings
+on the four frozen production files. An expanded typing check exposed test
+harness annotations; root corrected them rather than claiming baseline failure.
+Final commands and hashes are recorded in public-integration-evidence/manifest.json.
+No full activation job, current CI, public runtime or parent closure is claimed.
+
+The public construction work revealed an actual contract gap: projection
+observation_id lacks a registered preimage/hash recipe; entity/relation field
+semantics are not completely specified by native records. Terra correctness
+consultation confirmed the identity gap. Root rejected claims that source IDs,
+claim identity, operation joins or reference paths do not exist; those are
+ordinary implementation obligations. The actual unresolved choices, proposal,
+and parked unverified drafts belong to the separate design operation
+../../graph-observation-materialization/design.plan.md. All worker ownership
+has returned to root. The user question is pending; provenance is not reopened.
+
+The bounded test delta required two evidence corrections: control-only and
+empty-batch writes now stale both continuation kinds while leaving data revision
+unchanged; invalid and raising clocks now prove lock release using another
+thread (and a second JSONL handle). The combined run passes57 cases; after an
+explicit lambda capture formatting correction all24 store cases pass again.
+These are required evidence actions, not newly found product defects.
