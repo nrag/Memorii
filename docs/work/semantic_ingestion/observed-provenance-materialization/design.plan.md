@@ -2,7 +2,7 @@
 
 - Work ID: observed-provenance-materialization
 - Work type: design
-- Status: blocked
+- Status: complete
 - Coordinator: root
 - Created: 2026-09-08
 - Last updated: 2026-09-08
@@ -49,7 +49,7 @@ Graph schemas/roles remain unchanged unless review demonstrates a required delta
 
 ## Next Action
 
-Obtain the design-owner choice of declared context versus applied-only policies, then complete the corresponding typed feasibility matrix.
+Resume the parent implementation with the promoted retained-context recipe; this design operation is complete.
 
 ## Rejected Recipe Candidate
 
@@ -77,7 +77,7 @@ for a particular field. Existing documents do not select declared versus applied
 context. Obtain explicit design-owner acceptance after the proposal is complete
 and reviewed; do not infer it from missing production signing keys.
 
-## Exact Decision Blocker
+## Historical Decision Blocker (Resolved Below)
 
 User question is pending via the conversation: complete retained policy context
 or only proven-applied policies. The recommended proposal is reviewable and
@@ -88,3 +88,65 @@ Public composition edits are preserved in public-composition-draft.patch, not
 active production code; the referenced materializer does not yet exist.
 Independent registered access and ingestion-record conversion remain verifiable
 under their existing approved contracts.
+
+## Owner Decision And Resumed Work
+
+On 2026-09-08 the user explicitly chose complete retained policy context. The
+previous external decision blocker is resolved; do not ask again. The listing
+includes declared retained context and does not claim each policy was applied
+to each field. The same recipe governs provenance and claim policy listings.
+No signing-key choice is required for this decision.
+
+Root owns proposal/plan and promotion. provenance_recipe_writer (worker/Terra)
+is the sole writer of feasibility.py/test_feasibility.py for the four confirmed
+evidence/conformance actions. provenance_promotion_map (code-mapper/Spark) maps
+canonical insertion and affected authority/gates read-only. Both tasks are bounded;
+no duplicate full review or production closure claim is authorized by this proof.
+
+## Corrected Candidate And Evidence
+
+Root took ownership after worker handoff. Three worker command attempts ended
+without terminal status; none counts as passing evidence. Root ran one bounded
+check, repaired a target-mutation fixture and missing effect discriminator
+arguments, then repaired optional-authority construction to preserve typed nested
+values. Final run passes9 tests in41.18s. Import sorting followed without semantic
+changes; py_compile passes. Portable failures and final output are retained in
+evidence/. No writer remains active on candidate files.
+
+Evidence is deliberately differentiated: fact has exact retained P/citation/C
+joins and negative inventory checks; correction/retraction/action have validated
+constructor and closed digest-path proof; identity has an exact native schema
+field-path check and a validated optional policy construction, not an executed
+identity effect. The final delta review must assess these boundaries explicitly.
+The structural mapper's claims of existing public callers and direct entity
+`type`/`value` fields are unsupported and rejected; they do not govern later code.
+
+## First Corrected Review Reconciliation
+
+All reviewers inspected frozen86bb997a5697710c7126c137c41461e76459fca4e98f9696fcf2d1dc852cdefb.
+Confirmed required conformance/evidence actions: canonical target metadata/payload
+identity equality; correction transition subset ownership without duplicate
+views; fixed-inventory commit-coordinate negatives; sibling owner assertions
+and resolution negatives; future rather than existing public-trigger wording.
+These form one reconstruction of the target ownership/identity boundary, not
+independent case patches. No finding requires another user decision.
+Identity runtime execution is a recorded follow-up, not bounded design approval
+evidence. Historical candidate bytes are preserved under history/86bb.../. Root
+owns one coherent remediation and its commands. One final delta round remains.
+
+Final target-boundary remediation passes13 checks in40.51s. Wrong commit time
+is tested against a temporal-transition payload that actually contains the
+commit-time coordinate; native fact P/citation/claim payloads do not carry it.
+Wrong authorizing/commit group tests hold fact inventory fixed. The generic
+transition fixture derives another operation ID, so its validated bindings were
+rebuilt under the native operation before testing the positive join. Initial
+failures and corrected evidence are retained. Root owns all reviewed files; no
+writer/command remains active on this candidate. Final bounded delta review is
+now the sole next action.
+
+## Completion
+
+All three final delta reviews approve candidate577da1e0...; closure.md records
+acceptance scope and the identity-runtime follow-up. promotion.json records the
+canonical insertion and unchanged SIA/model identities. No semantic decision
+remains for the provenance policy listing.

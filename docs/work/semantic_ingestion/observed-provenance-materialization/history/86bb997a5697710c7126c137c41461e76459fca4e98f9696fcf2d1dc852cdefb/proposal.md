@@ -12,9 +12,8 @@ registered digest policy and historical artifact. This is a read-only projection
 of already verified retained native authority, not new evidence or arbitration.
 The source is the detached, replay-verified group request, its native compilation,
 construction authority, accepted effect, evidence construction and projection.
-The proposed future trigger is ProviderMemoryService.observe_graph through the
-host-owned paging runtime and its concrete snapshot materializer. That public
-method/materializer is not implemented; R19 remains unmapped. No request chooses these
+The real trigger is ProviderMemoryService.observe_graph through the host-owned
+paging runtime and its concrete snapshot materializer. No request chooses these
 inputs. Missing or nonunique joins deny the entire cohort before a page exists.
 
 ## Exact Evidence Join
@@ -36,13 +35,6 @@ and A.source_digest supply the citation's source span and digest. This rule
 also applies to an effect nested in a correction; use the enclosing operation
 identity and the actual nested effect owning E. Reject cross-operation pairing,
 missing/duplicate pairs, divergent native bytes and ambiguous cited identities.
-Each selected planning record's metadata kind and ID must equal its canonically
-materialized kind and ID. Return the canonical materialized target identity.
-For correction, replacement_effect.planning_records is the canonical target
-universe; transition_records must equal its temporal-transition subset and is
-not appended a second time. The other arms use fact/action planning_records,
-retraction transition_records, or identity materialization's revision/alias,
-lineage and reference-disposition records respectively.
 
 ## Proof Ancestry
 

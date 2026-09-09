@@ -45,13 +45,9 @@ def _effect_authority(
         return effect.evidence_projections, effect.planning_records, (effect.effect_digest,)
     if isinstance(effect, BootstrapNativeCorrectionEffectV3):
         replacement = effect.replacement_effect
-        expected_transitions = tuple(item for item in replacement.planning_records
-                                     if item.record_kind == "temporal_transition")
-        if effect.transition_records != expected_transitions:
-            raise ValueError("correction transition view differs from its canonical record owner")
         return (
             replacement.evidence_projections,
-            replacement.planning_records,
+            (*replacement.planning_records, *effect.transition_records),
             (effect.effect_digest, replacement.effect_digest),
         )
     if isinstance(effect, BootstrapNativeRetractionEffectV3):
@@ -91,8 +87,6 @@ def _retained_materialization(
         commit_values=commit_values,
         authorizing_transaction_group_id=authorizing_transaction_group_id,
     )
-    if record.record_id != graph_record_id(materialized) or record.record_kind != materialized.record_kind:
-        raise ValueError("native record metadata differs from canonical materialized identity")
     matches = tuple(
         item for item in retained_records
         if getattr(item, "record_kind", None) == materialized.record_kind
@@ -229,8 +223,8 @@ def retained_context(
         *effect_digests,
     }))
     return RetainedProvenanceContext(
-        target_kind=materialized.record_kind,
-        target_id=graph_record_id(materialized),
+        target_kind=target.record_kind,
+        target_id=target.record_id,
         proof_ancestry_ids=ancestry,
         policy_fingerprints=_policy_context(compilation),
     )

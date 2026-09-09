@@ -4,15 +4,11 @@ The production capture currently supplies a validated fact arm. The helper's
 typed dispatch covers all five accepted-effect classes; accepted sibling-arm
 captures remain a runtime-readiness requirement, not evidence claimed here.
 """
-from datetime import timedelta
-
 import pytest
 from feasibility import _effect_authority, _policy_context, retained_context
 
 from memorii.core.memory_evolution.graph_planning import (
-    AbsentPlanningPrecondition,
     PlanningCommitValues,
-    canonical_planning_payload_from_record,
     materialize_canonical_planning_payload,
 )
 from memorii.core.semantic_ingestion.contracts import (
@@ -29,10 +25,8 @@ from memorii.core.semantic_ingestion.contracts import (
     BootstrapProposalActionStateV3,
     BootstrapProposalCorrectionV3,
     BootstrapProposalRetractionV3,
-    TemporalTransitionRecord,
     contract_digest,
 )
-from tests.fixtures.semantic_ingestion.semantic_terminal_fixture import accepted_terminal
 from tests.unit.core.semantic_ingestion.test_bootstrap_graph_observation_retention import _capture_builtin_fact_planning
 from tests.unit.core.semantic_ingestion.test_semantic_provider_composition import TEST_NOW
 
@@ -57,9 +51,8 @@ def _commit_values(group_request):
 
 def _retained_inventory(effect, group_request):
     commit_values = _commit_values(group_request)
-    projections, owned_records, _ = _effect_authority(effect)
-    native_records = list(owned_records)
-    for item in projections:
+    native_records = [*effect.planning_records]
+    for item in effect.evidence_projections:
         native_records.extend((item.citation_record, item.provenance_record))
     unique = {
         (item.record_kind, item.record_id): item
@@ -319,19 +312,9 @@ def test_validated_sibling_effect_envelopes_expose_their_closed_digest_paths(cap
         (action_effect, (action_effect.effect_digest,)),
     )
     for effect, digests in expected:
-        projections, records, effect_digests = _effect_authority(effect)
+        projections, _records, effect_digests = _effect_authority(effect)
         assert projections == fact.evidence_projections
         assert effect_digests == digests
-        assert records == (() if effect.kind == "retraction" else fact.planning_records)
-        if effect.kind == "action_state":
-            compilation = group_request.ordered_operation_inputs[0].reduction.native_compilation
-            inventory = _retained_inventory(effect, group_request)
-            context = _retained_context(compilation, effect, projections[0], group_request,
-                                        retained_records=inventory)
-            assert context.target_kind == "claim_assertion"
-            with pytest.raises(ValueError, match="missing cited native target"):
-                _retained_context(compilation, effect.model_copy(update={"planning_records": ()}),
-                                  projections[0], group_request, retained_records=inventory)
 
 
 def test_identity_policy_context_is_a_validated_optional_construction_field(captured_fact):
@@ -379,134 +362,3 @@ def test_identity_policy_context_is_a_validated_optional_construction_field(capt
         update={"planning_construction_authority": duplicate_authority}
     )})
     assert _policy_context(duplicate_compilation) == _policy_context(compilation)
-
-
-def _recreate(value, **changes):
-    return type(value).create(**{
-        **{name: getattr(value, name) for name in type(value).model_fields
-           if name not in {"schema_version", value._digest_field}},
-        **changes,
-    })
-
-
-@pytest.mark.parametrize("coordinate", ("authorizing_group", "commit_group"))
-def test_commit_authority_substitution_cannot_reinterpret_retained_inventory(captured_fact, coordinate):
-    _, _, request = captured_fact
-    reduction = request.ordered_operation_inputs[0].reduction
-    effect = reduction.effect_materialization.accepted_effect
-    commit = _commit_values(request)
-    authorizing_group = request.transaction_group_id
-    if coordinate == "authorizing_group":
-        authorizing_group = "foreign-group"
-    else:
-        commit = commit.model_copy(update={"transaction_group_id": "foreign-group"})
-    with pytest.raises(ValueError):
-        retained_context(
-            reduction.native_compilation, effect, effect.evidence_projections[0],
-            commit_values=commit, authorizing_transaction_group_id=authorizing_group,
-            retained_records=_retained_inventory(effect, request),
-        )
-
-
-def test_target_metadata_cannot_replace_canonical_payload_identity(captured_fact):
-    _, _, request = captured_fact
-    reduction = request.ordered_operation_inputs[0].reduction
-    effect = reduction.effect_materialization.accepted_effect
-    projection = effect.evidence_projections[0]
-    target_id = projection.citation_record.planning_payload.planning_record["cited_record_id"]
-    target = next(item for item in effect.planning_records if item.record_id == target_id)
-    changed_target = _recreate(target, record_id="metadata-only-substitution")
-    citation_payload = dict(projection.citation_record.planning_payload.planning_record)
-    citation_payload["cited_record_id"] = changed_target.record_id
-    citation = _recreate(projection.citation_record, planning_payload=type(projection.citation_record.planning_payload)(
-        planning_record=citation_payload,
-    ))
-    changed_projection = _recreate(projection, citation_record=citation)
-    changed_effect = _recreate(effect, planning_records=tuple(
-        changed_target if item == target else item for item in effect.planning_records
-    ), evidence_projections=(changed_projection,))
-    inventory = tuple(
-        materialize_canonical_planning_payload(citation.planning_payload,
-            commit_values=_commit_values(request), authorizing_transaction_group_id=request.transaction_group_id)
-        if item.record_kind == "citation" and item.citation_id == citation.record_id else item
-        for item in _retained_inventory(effect, request)
-    )
-    with pytest.raises(ValueError, match="canonical materialized identity"):
-        _retained_context(reduction.native_compilation, changed_effect, changed_projection, request,
-                          retained_records=inventory)
-
-
-def test_correction_and_retraction_resolve_their_single_owned_transition(captured_fact):
-    _, _, request = captured_fact
-    reduction = request.ordered_operation_inputs[0].reduction
-    fact = reduction.effect_materialization.accepted_effect
-    compilation = reduction.native_compilation
-    carrier = next(item for item in accepted_terminal(
-        operation_id=compilation.operation_id, operation_kind="correction",
-    ).accepted_carriers if isinstance(item, TemporalTransitionRecord))
-    # The generic terminal fixture derives its own operation identity. Rebind
-    # its typed transition authority to this native operation through owners.
-    original_binding = carrier.temporal_decision_binding
-    attachment = type(original_binding.temporal_attachment).create(**{
-        **{name: getattr(original_binding.temporal_attachment, name)
-           for name in type(original_binding.temporal_attachment).model_fields if name != "binding_digest"},
-        "operation_id": compilation.operation_id,
-    })
-    binding = type(original_binding).create(**{
-        **{name: getattr(original_binding, name) for name in type(original_binding).model_fields
-           if name != "binding_digest"},
-        "operation_id": compilation.operation_id, "temporal_attachment": attachment,
-    })
-    body = {**carrier.model_dump(mode="python", exclude={"record_digest"}),
-            "operation_id": compilation.operation_id,
-            "temporal_decision_binding": binding.model_dump(mode="python")}
-    carrier = TemporalTransitionRecord.model_validate({
-        **body, "record_digest": contract_digest(b"memorii.semantic-ingestion.temporal-carrier.v1", body),
-    })
-    transition = BootstrapNativePlanningRecordV3.create(
-        operation_execution_id=compilation.operation_execution_id,
-        record_kind="temporal_transition", record_id=carrier.transition_id,
-        precondition=AbsentPlanningPrecondition(),
-        planning_payload=canonical_planning_payload_from_record(carrier,
-            transaction_group_id=request.transaction_group_id),
-        source_member_digest=fact.fact.fact_digest,
-    )
-    original = fact.evidence_projections[0]
-    payload = dict(original.citation_record.planning_payload.planning_record)
-    payload["cited_record_id"] = transition.record_id
-    citation = _recreate(original.citation_record, planning_payload=type(original.citation_record.planning_payload)(
-        planning_record=payload,
-    ))
-    projection = _recreate(original, citation_record=citation)
-    # The actual reducer stores transitions both in replacement.planning_records
-    # and as an exact subset view on the correction envelope.
-    replacement = _recreate(fact, planning_records=(transition,), evidence_projections=(projection,))
-    correction = BootstrapNativeCorrectionEffectV3.create(
-        kind="correction", correction=BootstrapProposalCorrectionV3.create(
-            corrected_fact=fact.fact, replacement_fact=fact.fact, assertion=fact.fact.assertion,
-            correction_anchor=fact.fact.predicate_anchor),
-        corrected_targets=(), replacement_effect=replacement, transition_records=(transition,),
-    )
-    retraction = BootstrapNativeRetractionEffectV3.create(
-        kind="retraction", retraction=BootstrapProposalRetractionV3.create(
-            retracted_fact=fact.fact, assertion=fact.fact.assertion, retraction_anchor=fact.fact.predicate_anchor),
-        retracted_targets=(), transition_records=(transition,), evidence_projections=(projection,),
-    )
-    for effect in (correction, retraction):
-        inventory = _retained_inventory(effect, request)
-        context = _retained_context(compilation, effect, projection, request, retained_records=inventory)
-        assert (context.target_kind, context.target_id) == ("temporal_transition", transition.record_id)
-        assert _effect_authority(effect)[1] == (transition,)
-        commit = _commit_values(request)
-        with pytest.raises(ValueError, match="retained graph inventory"):
-            retained_context(compilation, effect, projection,
-                commit_values=commit.model_copy(update={"committed_at": commit.committed_at + timedelta(seconds=1)}),
-                authorizing_transaction_group_id=request.transaction_group_id, retained_records=inventory)
-        if effect.kind == "correction":
-            assert set((effect.effect_digest, replacement.effect_digest)).issubset(context.proof_ancestry_ids)
-            broken = effect.model_copy(update={"replacement_effect": replacement.model_copy(
-                update={"planning_records": ()})})
-        else:
-            broken = effect.model_copy(update={"transition_records": ()})
-        with pytest.raises(ValueError):
-            _retained_context(compilation, broken, projection, request, retained_records=inventory)

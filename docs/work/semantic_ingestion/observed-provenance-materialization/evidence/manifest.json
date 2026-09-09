@@ -1,0 +1,21 @@
+{
+  "command": "PYTHONPATH=memorii .venv/bin/python -W error -m pytest docs/work/semantic_ingestion/observed-provenance-materialization/test_feasibility.py -q -p no:cacheprovider",
+  "cwd": "repository root",
+  "exit_code": 0,
+  "result": "13 passed in40.51s",
+  "candidate_sha256": "577da1e0143244dbca95086df26b196fe10bdb662dc0cdcbd8fdb7cf2a9f0ab7",
+  "toolchain": "macOS Python3.12.14 / pytest9.0.3; no CI parity claimed",
+  "static_checks": "Scoped Ruff after import-sort correction, py_compile and identity hygiene pass",
+  "limitations": "No public runtime or identity effect execution proof; identity covers typed owner fields and validated optional policy context. The model requires verified input authority supplied upstream.",
+  "logs": {
+    "recipe.log": "a492db1c4c426e5b70ee4a0f3f6e5bc3d5b6a0f1eea7ef5e4079376076168b95",
+    "native-fact.log": "156e7dba5d350cb7c3f79c1ba64756aaac5e68fa526ff92fd7018089fea7b64e",
+    "initial-join-fixture.log": "f3f7b375067049317c795c7b0c3e8ba8df81529d7b6516ff238331a1980f451e",
+    "identity.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "initial-identity-fixture.log": "da22bae550dae7f7d607534e21a418b4f036e55f4d6917e62f85f606d107adbb",
+    "recipe-delta.log": "65767e2b37796e106c2deffb68543792e481a2d937277af56c20e82e97bd309c",
+    "initial-coordinate-fixture.log": "29edc80c116755bfff2decd181247565ce77a649dc4066cbe5f8ed8622ffff21",
+    "promotion-identity.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "promotion_checks": "Canonical insertion matches reviewed excerpt; candidate before/after addendum hashes and unchanged SIA/models verified; post-promotion identity hygiene exit0."
+}

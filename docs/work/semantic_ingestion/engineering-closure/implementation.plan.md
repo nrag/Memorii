@@ -2,7 +2,7 @@
 
 - Work ID: semantic-ingestion-engineering-closure
 - Work type: implementation
-- Status: active consolidated closure; public retrieval integration paused for linked observed-provenance design amendment
+- Status: active consolidated closure; retained-context design approved, public retrieval integration resumed
 - Coordinator: Codex main thread
 - Created: 2026-09-06
 - Last updated: 2026-09-08
@@ -168,8 +168,8 @@ writers finish; no current whole-candidate proof is claimed yet.
 
 ## Next Action
 
-Resolve the linked observed-provenance policy-context decision and revised
-feasibility review before resuming the concrete public materializer.
+Implement the concrete public observation materializer using the promoted
+retained-context recipe and atomic snapshot/time authority.
 
 2026-09-08: root owns all code, generation, tests and commits. Read-only
 component reviews cover frozen90c58da62428f3caeab8ee7bca03116a24009d35e97aa705e1d757987a61362c.
@@ -301,3 +301,5 @@ binding preflight read-only; root owns checkpoint documentation and commits.
 The detailed active semantic dependency is owned by
 ../observed-provenance-materialization/design.plan.md. Issuance-prefix correction
 is approved as recorded above; its production promotion remains separate.
+
+2026-09-08 owner decision: complete retained policy context is approved. The linked observed-provenance design operation is active for its corrected feasibility and review; the semantic-choice blocker is resolved.

@@ -1,0 +1,93 @@
+.F
+=================================== FAILURES ===================================
+_____ test_retained_fact_context_denies_substituted_and_ambiguous_targets ______
+
+captured_fact = (BootstrapNativeTargetPlanningRequestV3(schema_version=3, transaction_group_id='d21b4ffd1b7133d30624f5a739a950bc97f42e...229dc32abf11e3f672be01597c'),), request_ctv_digest='71081ebd917ef407ed6ee0c10c3506f51a32d9d90ebbbfdd9df6665595892e7b'))
+
+    def test_retained_fact_context_denies_substituted_and_ambiguous_targets(captured_fact):
+        _, _, group_request = captured_fact
+        reduction = group_request.ordered_operation_inputs[0].reduction
+        compilation = reduction.native_compilation
+        effect = reduction.effect_materialization.accepted_effect
+        assert isinstance(effect, BootstrapNativeFactEffectV3)
+        projection = effect.evidence_projections[0]
+    
+        citation_payload = dict(projection.citation_record.planning_payload.planning_record)
+        citation_payload["cited_record_id"] = "not-a-retained-target"
+        citation = projection.citation_record.model_copy(
+            update={"planning_payload": projection.citation_record.planning_payload.model_copy(
+                update={"planning_record": citation_payload}
+            )}
+        )
+        with pytest.raises(ValueError, match="missing cited native target"):
+>           _retained_context(compilation, effect, projection.model_copy(update={"citation_record": citation}), group_request)
+
+docs/work/semantic_ingestion/observed-provenance-materialization/test_feasibility.py:140: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+docs/work/semantic_ingestion/observed-provenance-materialization/test_feasibility.py:74: in _retained_context
+    return retained_context(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+compilation = BootstrapNativeOperationCompilationV3(schema_version=3, transaction_group_id='d21b4ffd1b7133d30624f5a739a950bc97f42e1b...tus='accepted', reason_codes=(), compilation_digest='0835a05fc44f9be656e99105845866b62a8c47584b6bedcdecad419731040782')
+effect = BootstrapNativeFactEffectV3(schema_version=3, kind='fact', fact=BootstrapProposalFactV3(schema_version=3, kind='fact',...f209d603134cf9ba801359dd3adfc898c')), effect_digest='80dfd65261caaeaaf939780bcdcde71bb1ee2bad44243686bdd050dae7171193')
+projection = BootstrapNativeEvidenceProjectionV3(schema_version=3, operation_execution_id='6836a48d4826ca8545e31f2ef3f4739b73d0271e...45ffbc43258ea7bc49b8c89805d856'), projection_digest='0007e6967a9d062bae77b679257aefb79b6794914dd0e564f7ba0c3405a82ebc')
+
+    def retained_context(
+        compilation: BootstrapNativeOperationCompilationV3,
+        effect: BootstrapNativeAcceptedOperationEffectV3,
+        projection: BootstrapNativeEvidenceProjectionV3,
+        *,
+        commit_values: PlanningCommitValues,
+        authorizing_transaction_group_id: str,
+        retained_records: Sequence[BaseModel],
+    ) -> RetainedProvenanceContext:
+        """Resolve one exact P/E/K/C retained-native provenance join."""
+        authority = compilation.operation_input.planning_construction_authority
+        if authority is None:
+            raise ValueError("missing retained planning authority")
+        if (
+            authority.source_id != compilation.operation_input.source_id
+            or authority.source_digest != compilation.operation_input.source_digest
+            or authority.operation_execution_id != compilation.operation_execution_id
+            or authority.operation_id != compilation.operation_id
+            or projection.operation_execution_id != compilation.operation_execution_id
+        ):
+            raise ValueError("foreign retained operation authority")
+    
+        projections, records, effect_digests = _effect_authority(effect)
+        if projection not in projections:
+>           raise ValueError("projection is absent from accepted effect")
+E           ValueError: projection is absent from accepted effect
+
+docs/work/semantic_ingestion/observed-provenance-materialization/feasibility.py:143: ValueError
+
+During handling of the above exception, another exception occurred:
+
+captured_fact = (BootstrapNativeTargetPlanningRequestV3(schema_version=3, transaction_group_id='d21b4ffd1b7133d30624f5a739a950bc97f42e...229dc32abf11e3f672be01597c'),), request_ctv_digest='71081ebd917ef407ed6ee0c10c3506f51a32d9d90ebbbfdd9df6665595892e7b'))
+
+    def test_retained_fact_context_denies_substituted_and_ambiguous_targets(captured_fact):
+        _, _, group_request = captured_fact
+        reduction = group_request.ordered_operation_inputs[0].reduction
+        compilation = reduction.native_compilation
+        effect = reduction.effect_materialization.accepted_effect
+        assert isinstance(effect, BootstrapNativeFactEffectV3)
+        projection = effect.evidence_projections[0]
+    
+        citation_payload = dict(projection.citation_record.planning_payload.planning_record)
+        citation_payload["cited_record_id"] = "not-a-retained-target"
+        citation = projection.citation_record.model_copy(
+            update={"planning_payload": projection.citation_record.planning_payload.model_copy(
+                update={"planning_record": citation_payload}
+            )}
+        )
+>       with pytest.raises(ValueError, match="missing cited native target"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'missing cited native target'
+E         Actual message: 'projection is absent from accepted effect'
+
+docs/work/semantic_ingestion/observed-provenance-materialization/test_feasibility.py:139: AssertionError
+=========================== short test summary info ============================
+FAILED docs/work/semantic_ingestion/observed-provenance-materialization/test_feasibility.py::test_retained_fact_context_denies_substituted_and_ambiguous_targets
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 1 passed in 41.48s

@@ -3,9 +3,9 @@
   "scope": "Retained-context recipe design only; no runtime/public integration approval",
   "owner_decision": "Complete retained policy context approved2026-09-08",
   "files": {
-    "docs/work/semantic_ingestion/observed-provenance-materialization/proposal.md": "6fb6686771d6d4f37fb7318aada50ad8ad8f4f0671ee0eca6ab0eb39e8cfd260",
-    "docs/work/semantic_ingestion/observed-provenance-materialization/feasibility.py": "52044aea529b20fa69fb33b73f01c23c3a77a0376f805966c75ec9f13dad8459",
-    "docs/work/semantic_ingestion/observed-provenance-materialization/test_feasibility.py": "e8c333c2819262b829c9808e88f9473f2a4786dad8ee77fd2f241c0221bfdfd5",
+    "docs/work/semantic_ingestion/observed-provenance-materialization/proposal.md": "b62d34f1e0ed32418cbe8eb5756519034306a29a031430c3b8d067335a12ccfa",
+    "docs/work/semantic_ingestion/observed-provenance-materialization/feasibility.py": "cb0aedd72457ccbbf8d5a53fe5920fe4348f61d4cc6825c857bd55b6ec5478b4",
+    "docs/work/semantic_ingestion/observed-provenance-materialization/test_feasibility.py": "0eda7738abe43eabf880d0f10bd8586b8a65052adbb23345a3c0b127bef77898",
     "docs/work/semantic_ingestion/observed-provenance-materialization/promotion-map.md": "f642a43f89824573a990b679fe8c2b744a58c90b15bb803c9e89fe90dbba5208",
     "docs/work/semantic_ingestion/observed-provenance-materialization/review-packet.md": "10c05bf7a69a2d1ecbcda032c4557ec32811bedb9a4455288867de32ece47cbc",
     "docs/design/semantic_ingestion_architecture.md": "a7770e627e2dc627c772b8c54dd5998ce83c1baf43079a210056826b5ebce626",
@@ -14,5 +14,5 @@
     "memorii/memorii/core/memory_evolution/graph_planning.py": "38f29abf2c509c719b0b160013249f3d7b184c4064ffbee9b36c539ed336aec3",
     "memorii/memorii/core/memory_evolution/graph_records.py": "9d5eae432053d126574f7d6f4abd88886adadd21dffa4ea5acf04c3bfb3ce4eb"
   },
-  "evidence": "13 passed in40.51s; Ruff passes. Adds canonical target ID equality, real typed correction/retraction cited transition without duplicate view, action owner denial, fixed-inventory group and commit-time substitution proof; identity execution remains excluded."
+  "evidence": "9 passed41.18s; final import sorting only afterward; py_compile passes; real fact join + validated correction/retraction/action envelopes + identity typed field-path and optional policy proof. No identity runtime envelope claimed."
 }

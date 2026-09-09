@@ -1,0 +1,18 @@
+{
+  "candidate_sha256": "577da1e0143244dbca95086df26b196fe10bdb662dc0cdcbd8fdb7cf2a9f0ab7",
+  "canonical_path": "docs/design/semantic_ingestion_observation.md",
+  "before_sha256": "e6d811b29f4f43fc9e51e3326e846a922de0333d645346c19a6ff2d4935e7643",
+  "after_sha256": "1ebdec16f48716ec47fedae9cdb705bd7065cbff393118aafe2cf3d2c6df17e2",
+  "promoted_excerpt_sha256": "c35b2f79008e13f0b1c4d47f52902a51d3bbb7b63753856c473a11840e2f8c4c",
+  "unchanged": {
+    "docs/design/semantic_ingestion_architecture.md": "a7770e627e2dc627c772b8c54dd5998ce83c1baf43079a210056826b5ebce626",
+    "memorii/memorii/core/semantic_ingestion/contracts.py": "56d2102eb610e8886b71d2d572a833e5e39fca6aa3e2dcbff88b80dd5470603d",
+    "memorii/memorii/core/memory_evolution/graph_observation_records.py": "b96dc22132a45acbf0b9318bee1b6ef529b82e479b00736853f8e2b91e1ff390"
+  },
+  "reviews": {
+    "spec": "approved",
+    "correctness": "approved",
+    "tests": "approved"
+  },
+  "runtime_complete": false
+}

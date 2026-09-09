@@ -1,0 +1,68 @@
+........F                                                                [100%]
+=================================== FAILURES ===================================
+___ test_identity_policy_context_is_a_validated_optional_construction_field ____
+
+captured_fact = (BootstrapNativeTargetPlanningRequestV3(schema_version=3, transaction_group_id='d21b4ffd1b7133d30624f5a739a950bc97f42e...229dc32abf11e3f672be01597c'),), request_ctv_digest='5e9e4f47c317cb08ff5615135d0f1a67c3e42d560acafab387241d090dae816c'))
+
+    def test_identity_policy_context_is_a_validated_optional_construction_field(captured_fact):
+        _, _, group_request = captured_fact
+        compilation = group_request.ordered_operation_inputs[0].reduction.native_compilation
+        authority = compilation.operation_input.planning_construction_authority
+        assert authority is not None
+        identity = BootstrapNativeIdentityConstructionAuthorityV3.create(
+            graph_free_identity_input_digest="1" * 64,
+            authority_record_id="identity-authority:feasibility",
+            authority_record_digest="2" * 64,
+            verifier_id="feasibility-verifier",
+            semantic_authorization_read_set_digest="3" * 64,
+            identity_policy_fingerprint="4" * 64,
+            operation_fence_id="identity-fence:feasibility",
+            operation_fence_binding_digest="5" * 64,
+        )
+        values = authority.model_dump(mode="python")
+        values.pop("schema_version")
+        values.pop("authority_digest")
+        values["identity_construction"] = identity
+>       with_identity = authority.__class__.create(**values)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+docs/work/semantic_ingestion/observed-provenance-materialization/test_feasibility.py:336: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+memorii/memorii/core/semantic_ingestion/contracts.py:7896: in create
+    return super().create(schema_version=3, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+cls = <class 'memorii.core.semantic_ingestion.contracts.BootstrapNativePlanningConstructionAuthorityV3'>
+values = {'action_policy_fingerprint': 'f7fa7f3a3e50ffb3d47dc7c56c9137a967efc92be4d2250137c60a2be00bd64b', 'action_transition':...0b707ebab6363441a02a', 'provenance_id': '97032a0aaa076214e4ffb8bf8007b2dbbe939abd829b1282c20a10976070ba4c', ...}), ...}
+body = {'action_policy_fingerprint': 'f7fa7f3a3e50ffb3d47dc7c56c9137a967efc92be4d2250137c60a2be00bd64b', 'action_transition':...0b707ebab6363441a02a', 'provenance_id': '97032a0aaa076214e4ffb8bf8007b2dbbe939abd829b1282c20a10976070ba4c', ...}), ...}
+base = <class 'memorii.core.semantic_ingestion.contracts.BootstrapNativePlanningConstructionAuthorityV3'>
+excluded = frozenset()
+digest_body = {'action_policy_fingerprint': 'f7fa7f3a3e50ffb3d47dc7c56c9137a967efc92be4d2250137c60a2be00bd64b', 'action_transition':...0b707ebab6363441a02a', 'provenance_id': '97032a0aaa076214e4ffb8bf8007b2dbbe939abd829b1282c20a10976070ba4c', ...}), ...}
+
+    @classmethod
+    def create(cls, **values: object):  # type: ignore[no-untyped-def]
+        body: dict[str, object] = {}
+        for base in reversed(cls.__mro__):
+            body.update(base.__dict__.get("_create_static_values", {}))
+        if "schema_version" in cls.model_fields:
+            body["schema_version"] = 2
+        body.update(values)
+        excluded = cls._digest_excluded_fields | cls._versioned_digest_excluded_fields(body)
+        digest_body = {
+            name: value
+            for name, value in body.items()
+            if name not in excluded
+        }
+>       return cls(
+            **body,
+            **{cls._digest_field: contract_digest(cls._digest_domain, digest_body)},
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for BootstrapNativePlanningConstructionAuthorityV3
+E         Value error, authority_digest mismatch [type=value_error, input_value={'schema_version': 3, 'so...77848e3f8a3766b2d19c6c'}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/value_error
+
+memorii/memorii/core/semantic_ingestion/contracts.py:4270: ValidationError
+=========================== short test summary info ============================
+FAILED docs/work/semantic_ingestion/observed-provenance-materialization/test_feasibility.py::test_identity_policy_context_is_a_validated_optional_construction_field
+1 failed, 8 passed in 40.60s

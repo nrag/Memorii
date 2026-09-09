@@ -55,7 +55,7 @@ No signatures, external policy values or statistical outcomes are fabricated.
 
 ## Next Action
 
-Resolve the linked provenance policy-context design decision before resuming the concrete authenticated public observation call chain.
+Implement the concrete authenticated public observation call chain using the promoted retained-context recipe and atomic snapshot/time authority.
 
 ## Current Component Evidence (2026-09-08)
 
@@ -187,3 +187,9 @@ review.md reconciles the remaining public-entrypoint finding. All local checks
 finished; no GitHub CI or parent completion is claimed. The test writer handed
 off; root owns the final checkpoint. Commands and portable logs are in
 registered-ingestion-prep-evidence/manifest.json.
+
+2026-09-08 owner decision: complete retained policy context is approved. The linked observed-provenance design operation is active for its corrected feasibility and review; the semantic-choice blocker is resolved.
+
+The linked provenance design is complete:13 checks and all three bounded
+reviews approve the promoted retained-context recipe. No user policy-context
+decision remains. Public materializer and snapshot/time binding are still open.
