@@ -38,3 +38,8 @@ durable start/clock binding. Proposal drafted; coordinator found unresolved admi
 cycle and source-result preimage/version coverage. Next: reconstruct these exact
 atomic binding contracts before feasibility proof and frozen review. The draft
 is not implementation-ready and has not changed canonical or production bytes.
+
+2026-09-08 coordinator discovery: provider retention currently uses the caller's
+event timestamp, not a protected server clock. Proposal corrects the earlier
+assumption and records the required authorization/retry/clock path. Next action
+remains reconstructing the complete admission binding before producer edits.

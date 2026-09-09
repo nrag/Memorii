@@ -1,0 +1,12 @@
+{
+  "files": {
+    "docs/work/semantic_ingestion/acceptance-issuance-prefix/proposal.md": "adfb219cc8cced373d16c417b3b7ace76843ad89a1b3630c721cf8387f82d59d",
+    "docs/work/semantic_ingestion/acceptance-issuance-prefix/issuance_prefix_feasibility.py": "743ad5d8bd13945facb27dcb46679fa56e2ebe79000670a0cf80f2e4a75a88b3",
+    "docs/work/semantic_ingestion/acceptance-issuance-prefix/test_issuance_prefix_feasibility.py": "964f2876880cd41fb3f0681f0078e733b6822cb78bb7fdd515fc82617c4a36ca",
+    "docs/work/semantic_ingestion/acceptance-authority-successor/proposal.md": "e0c554e793e7ed90eb34b305d311b4e77cd215593698865c82ad951260da18f1",
+    "docs/work/semantic_ingestion/acceptance-authority-successor/authority_successor_feasibility.py": "fc8dbbd81a73b78de44db119dcf74721ab5f2a3d074c11a0de5f1f523fd4ad9a",
+    "docs/work/semantic_ingestion/acceptance-authority-successor/test_authority_successor_feasibility.py": "e2a759d5c64e018a64b190f214565c9d10c876398003e4c37478d623eac5b1e1",
+    "docs/design/semantic_ingestion_architecture.md": "a7770e627e2dc627c772b8c54dd5998ce83c1baf43079a210056826b5ebce626"
+  },
+  "evidence": "79 passed in 0.64s; 56 preserved + 23 new; model only"
+}
