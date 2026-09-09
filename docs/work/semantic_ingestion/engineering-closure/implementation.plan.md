@@ -2,7 +2,7 @@
 
 - Work ID: semantic-ingestion-engineering-closure
 - Work type: implementation
-- Status: active consolidated closure; continuation design approved, runtime integration active, acceptance-authority issuance-prefix binding unresolved
+- Status: active consolidated closure; public retrieval integration paused for linked observed-provenance design amendment
 - Coordinator: Codex main thread
 - Created: 2026-09-06
 - Last updated: 2026-09-08
@@ -168,8 +168,8 @@ writers finish; no current whole-candidate proof is claimed yet.
 
 ## Next Action
 
-Continue detached cohort/persistence integration from the current continuation
-packet and resume.md, preserving the reviewed paging component.
+Resolve the linked observed-provenance policy-context decision and revised
+feasibility review before resuming the concrete public materializer.
 
 2026-09-08: root owns all code, generation, tests and commits. Read-only
 component reviews cover frozen90c58da62428f3caeab8ee7bca03116a24009d35e97aa705e1d757987a61362c.
@@ -294,6 +294,10 @@ now owns only the read-only retention-clock retry trace, because the provider
 currently substitutes caller event time for retained_at. Root retains all design
 and code writes. No keys, policy values or acceptance measurements are invented.
 
-Current next action: implement the concrete authenticated public observation call chain.
+Current next action: resolve the linked observed-provenance materialization design, then resume public retrieval integration.
 The Spark mapper retention_retry_map is refreshing the exact public entrypoint
 binding preflight read-only; root owns checkpoint documentation and commits.
+
+The detailed active semantic dependency is owned by
+../observed-provenance-materialization/design.plan.md. Issuance-prefix correction
+is approved as recorded above; its production promotion remains separate.

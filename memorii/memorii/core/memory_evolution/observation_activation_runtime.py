@@ -15,6 +15,12 @@ from memorii.core.memory_evolution.graph_effect_contracts import (
     IngestionObservationDelta,
     SourceFinalizationObservationDelta,
 )
+from memorii.core.memory_evolution.graph_ingestion_observation_records import (
+    ObservedOperationIntroduction,
+    ObservedOperationTerminalOutcome,
+    ObservedSourceIntroduction,
+    ObservedSourceTerminalOutcome,
+)
 from memorii.core.memory_evolution.graph_ingestion_time_contracts import (
     SourceRetentionTimeAttestation,
     TransactionGroupCommitTimeAttestation,
@@ -28,6 +34,21 @@ from memorii.core.memory_evolution.graph_observation_public_contracts import (
     IngestionTimeAttestationCursorPayload,
     IngestionTimeAttestationPage,
     IngestionTimeObservationSnapshot,
+)
+from memorii.core.memory_evolution.graph_observation_records import (
+    ObservedActionRevision,
+    ObservedAliasRevision,
+    ObservedCitationRecord,
+    ObservedClaimAssertion,
+    ObservedEntityRevision,
+    ObservedIdentityTransition,
+    ObservedProvenanceRecord,
+    ObservedReferenceDisposition,
+    ObservedRelation,
+    ObservedTemporalClaimProjection,
+    ObservedTemporalTransition,
+    ObservedTrustClaimProjection,
+    ObservedTypeEvidence,
 )
 from memorii.core.memory_evolution.graph_observation_snapshot_contracts import (
     GraphObservationCohortPreimage,
@@ -82,6 +103,24 @@ class ObservationActivationRuntimeError(ValueError):
 
 
 _ROOT_TYPES: dict[str, type[BaseModel]] = {
+    "ObservedEntityRevision": ObservedEntityRevision,
+    "ObservedAliasRevision": ObservedAliasRevision,
+    "ObservedTypeEvidence": ObservedTypeEvidence,
+    "ObservedClaimAssertion": ObservedClaimAssertion,
+    "ObservedTemporalClaimProjection": ObservedTemporalClaimProjection,
+    "ObservedTrustClaimProjection": ObservedTrustClaimProjection,
+    "ObservedRelation": ObservedRelation,
+    "ObservedActionRevision": ObservedActionRevision,
+    "ObservedCitationRecord": ObservedCitationRecord,
+    "ObservedProvenanceRecord": ObservedProvenanceRecord,
+    "ObservedTemporalTransition": ObservedTemporalTransition,
+    "ObservedIdentityTransition": ObservedIdentityTransition,
+    "ObservedReferenceDisposition": ObservedReferenceDisposition,
+    "ObservedSourceIntroduction": ObservedSourceIntroduction,
+    "ObservedOperationIntroduction": ObservedOperationIntroduction,
+    "ObservedOperationTerminalOutcome": ObservedOperationTerminalOutcome,
+    "ObservedSourceTerminalOutcome": ObservedSourceTerminalOutcome,
+
     "ObservationLedgerActivation": ObservationLedgerActivation,
     "ObservationLedgerHead": ObservationLedgerHead,
     "ObservationLedgerEntry": ObservationLedgerEntry,

@@ -1,0 +1,40 @@
+{
+  "candidate": "candidate.json",
+  "candidate_sha256": "7850ddf7a4ee6a635d9a1171de86390fb9b72afd55908f2e5ac9a45cefaf76c6",
+  "scope": "Internal preparation; no public endpoint, M5 closure, or remote CI claim",
+  "toolchain": "macOS Python3.12.14; CI Ubuntu Python3.11 differs",
+  "checks": {
+    "projection": {
+      "command": "PYTHONPATH=memorii .venv/bin/python -m pytest memorii/tests/unit/core/memory_evolution/test_graph_observation_ingestion_projection.py -q",
+      "exit_code": 0,
+      "result": "5 passed in18.18s"
+    },
+    "pyright": {
+      "command": ".venv/bin/python -m pyright --project memorii/pyproject.toml --pythonpath .venv/bin/python",
+      "exit_code": 0
+    },
+    "ruff": {
+      "command": ".venv/bin/python -m ruff check memorii/memorii memorii/tests",
+      "exit_code": 0
+    },
+    "identity": {
+      "command": "PYTHONPATH=memorii .venv/bin/python -m memorii.tools.identity_hygiene --root . --allowlist .agents/identity_hygiene_allowlist.json",
+      "exit_code": 0
+    },
+    "access_workflow": {
+      "command": "PYTHONPATH=memorii .venv/bin/python -W error -m pytest memorii/tests/integration/test_graph_observation_access.py memorii/tests/unit/tools/test_ctv_binding_authority_pr_gate.py -q -p no:cacheprovider",
+      "exit_code": 0,
+      "result": "21 passed in290.48s"
+    }
+  },
+  "cwd": "repository root",
+  "logs": {
+    "projection.log": "303b64421345216f5c8ef7ba35f6b6d5c656d8e6ec658a1bafdb35322a00450a",
+    "pyright.log": "6d88a1b220adb7a3d62092b6e38431f0b3fe8babe9864fab90e5849766260332",
+    "ruff.log": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+    "identity.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "initial-pyright-failure.log": "9f032cb74dc88975d6f1e3929201f659fb5eac04dab7dea911cf770dbb3afaa9",
+    "access-workflow.log": "334d82881a724c7b6c93d5fd80501e652471fcd89254f0150729a0c9a82b2eae"
+  },
+  "history": "Initial typing failure required real delta narrowing; original placeholder tests then failed. Fixtures were repaired, not the production guard weakened. Final projection result includes the exact-ledger review correction."
+}

@@ -55,8 +55,7 @@ No signatures, external policy values or statistical outcomes are fabricated.
 
 ## Next Action
 
-Continue the real detached cohort/persistence contract and provider integration
-while preserving the reviewed registered cursor/retention component.
+Resolve the linked provenance policy-context design decision before resuming the concrete authenticated public observation call chain.
 
 ## Current Component Evidence (2026-09-08)
 
@@ -151,4 +150,40 @@ Disposition: required evidence_action paired with the already planned concrete
 public caller and bounded materializer implementation; no synthetic caller or
 requirement promotion. All local commands have finished.
 
-Current next action: implement the concrete authenticated public observation call chain.
+
+## Public Composition Construction
+
+Base6029030d is pushed. Root owns existing paging, capability, provider, host
+configuration and integration tests. Terra worker observation_materializer owns
+only new concrete materialization modules and focused tests. Spark
+retention_retry_map refreshes the public binding map read-only. Test reviewer
+consultation requires real ProviderMemoryService triggers, exact same registry
+and snapshot authority, purpose/pre-read denial, context/current-grant checks,
+continuation freshness, cross-purpose cursors and restart. A time-attestation
+page cannot succeed until genuine persisted attestations exist. No fixture
+cohort may stand in for the provider integration proof.
+
+## Internal Adapter Checkpoint And Review Corrections
+
+Public composition is parked in the linked provenance design's
+public-composition-draft.patch; the concrete materializer is not present.
+The registered access adapter and four ingestion projection variants are internal
+preparation only. Root coordinates; repair_projection_tests (Terra worker) owns
+only the projection test repair; access_projection_review (Terra correctness)
+provides bounded read-only consultation. No full milestone approval is requested.
+
+Confirmed corrections: bind selected native records exactly to ledger mutations
+and source finalizations, and reject noncanonical authorized-scope identities.
+The proposed paging timestamp was removed: an authorization-time clock sample
+cannot establish the atomic store snapshot's system time. A genuine atomic
+snapshot/time binding remains an integration obligation. These are determinate
+corrections; no public runtime completion is claimed. Fixture repair uses real
+native deltas and covers zero/multiple introductions plus substituted records.
+
+Frozen registered-ingestion-prep-evidence/candidate.json passed5 projection and
+21 access/workflow checks. Full Ruff, scoped Pyright and identity hygiene pass.
+Bounded correctness consultation approves the corrected internal slice only;
+review.md reconciles the remaining public-entrypoint finding. All local checks
+finished; no GitHub CI or parent completion is claimed. The test writer handed
+off; root owns the final checkpoint. Commands and portable logs are in
+registered-ingestion-prep-evidence/manifest.json.

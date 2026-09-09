@@ -18,7 +18,7 @@ folder beside the current packet. Independent bounded component delta reviews ap
 No current GitHub CI, installed package or full activation gate is claimed.
 The activation run was interrupted after review findings, with no completed test.
 
-Root-owned uncommitted work in atomic_store.py and graph_observation_cohort.py
+Checkpoint6029030d (pushed) in atomic_store.py and graph_observation_cohort.py
 provides detached authority reconstruction/membership only. It is not a complete
 materializer or public provider integration and must not be reported as one.
 Concrete bounded cohort construction, all17 observed streams, protected host
@@ -49,7 +49,7 @@ and missing immutable admission digest. The activated provider test now also
 checks detached membership, scope refusal, missing graph closure, and snapshot
 stability after a subsequent write; it passed in1472.96s. The CI selection check also passes. Final test review confirms a production-entrypoint gap: both new owners currently have only test callers. This evidence verifies internal preparation, not runtime integration.
 
-Next action: implement the concrete authenticated public observation call chain, including bounded stream materialization and protected host composition.
+Next action: resolve and review the exact provenance proof/policy recipes in ../observed-provenance-materialization/design.plan.md, then resume the concrete materializer.
 
 ## Latest Gate Outcome
 
@@ -57,3 +57,33 @@ All three hermetic CTV/lifecycle/structural source gates pass. Source tests:
 276 passed initially and3 stale-pin/dependency cases passed corrected reruns.
 The final full Ruff, identity and scoped Pyright checks pass. Full activation,
 installed-package and GitHub checks are not claimed for this component revision.
+
+## Active Design Dependency And Internal Preparation
+
+The provider/public methods and capability/host wiring are parked in
+../observed-provenance-materialization/public-composition-draft.patch. They are
+not active production code: the concrete materializer remains absent. Current
+internal preparation comprises the registered access adapter,17 observed emission
+roots and4-variant ingestion converter. It does not close public integration.
+29 existing paging/public-denial checks pass in66.74s; registered access proof
+passes1 case in7.88s. No successful public graph retrieval is proven. Spec
+consultation confirms paired citation supplies provenance target; ancestry and
+policy list membership need the linked narrow design amendment. Native fact
+feasibility passed1 test in53.60s; its portable log is in the linked design's
+evidence directory. Three reviews require broader operation-arm/target-join
+proofs. The user decision on retained policy context versus proven-applied
+policies remains pending; the proposal is noncanonical.
+No row has closed;15 baseline-complete and8 open remain.
+
+## Verified Internal Preparation Checkpoint
+
+The corrected internal access/conversion candidate passes5 projection tests
+(18.18s) and21 access/workflow tests (290.48s), full Ruff, scoped Pyright and
+identity hygiene. Portable commands, hashes and results are in
+../observation-ledger/milestones/registered-ingestion-prep-evidence/manifest.json.
+Bounded correctness inspection approves only this internal preparation.
+Exact retained-record equality and canonical scope identity are enforced.
+The authorization-time snapshot field was removed; atomic snapshot/time binding
+remains required. All writers and local checks are finished. Public composition
+is parked; provenance policy meaning still awaits the user's pending choice.
+No requirement row closes:15 baseline-complete and8 open.
