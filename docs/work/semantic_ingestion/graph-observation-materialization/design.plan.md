@@ -2,10 +2,10 @@
 
 - Work ID: graph-observation-materialization
 - Work type: design
-- Status: blocked
+- Status: feasibility closed (remaining_validated_p1_p2: []); canonical promotion next
 - Coordinator: root
 - Created: 2026-09-08
-- Last updated: 2026-09-08
+- Last updated: 2026-09-09
 - Parent WorkPlan: ../engineering-closure/implementation.plan.md
 - Related WorkPlans: ../observed-provenance-materialization/design.plan.md
 - Canonical inputs: docs/design/semantic_ingestion_observation.md; docs/design/semantic_ingestion_architecture.md; root AGENTS.md and its governing source order
@@ -57,10 +57,10 @@ work, not reasons to request new user decisions.
 
 ## Proposed Decision
 
-See proposal.md. It presents one recommended complete structural meaning and
-one alternative. It is not a promoted normative amendment or an approved design.
-External decision: accept the proposed read-only field semantics and registered
-projection identity before implementing public output with those meanings.
+Owner approved proposal.md on 2026-09-08 ("Yes. go ahead"). The read-only
+structural-field semantics and registered projection identity recipe are accepted.
+No external semantic decision remains on that proposal. Canonical promotion and
+engineering readiness still require feasibility evidence and independent review.
 Remaining engineering questions (source-span exact joins, same-time version
 visibility and complete arm coverage) must be settled by feasibility/review;
 owner agreement alone will not establish implementation readiness.
@@ -104,5 +104,53 @@ drafts. Root owns this proposal and all evidence/decisions.
 
 ## Next Action
 
-Obtain the owner decision on proposal.md, then complete the bounded field and
-identity feasibility/review before resuming public materialization.
+Feasibility review round 1 completed (spec_auditor approve-with-actions,
+correctness_reviewer approve, test_reviewer reject-resubmit). The confirmed
+changes_required findings were remediated in revision r2 (frozen
+feasibility-evidence-manifest-r2.json, SHA256
+a2684e58ef84817aad807a4214fdc17de61329a468095e4ec25e5a7a86488b74; 28 tests
+pass, Ruff clean): canonical claim-identity payload equality, relation
+provenance_ids restricted to supporting-claim-cited pairs, entity sources
+from the retained planning construction authority, successor record-lineage
+filter, identity field-constraint denial, grounded-mention exclusion proof.
+The combined bounded delta review (spec_auditor + test_reviewer roles)
+verdict is resolved with no regression; both P3 observations (verbatim ruff
+argv, owner-constructed authority type) are applied/recorded. The bounded
+feasibility objective is closed: remaining_validated_p1_p2: [].
+
+Next action: canonical promotion — proposal -> canonical observation
+addendum -> explicit identity model and authored registry roles ->
+decoder/source inventory -> compiled publication -> independent
+vectors/checksums/workflow pins -> reader/materializer under the linked
+continuation-runtime implementation milestone.
+
+## Feasibility Audit Record (2026-09-09, revision r2)
+
+Nonproduction module feasibility.py derives the proposed public fields from
+retained authority and fails closed: entity canonical_type requires unique
+eligible TypeEvidence.asserted_type (competing denies, foreign logical entity
+denies, grounded-mention references cannot bind); entity valid_interval is
+None and lifecycle copies EntityRevision; entity sources come from the
+retained planning construction authority of the exact creating operation
+(foreign or absent authority denies); relation supporting claims pair only
+through exact ClaimProjection endpoint/predicate binding plus canonical
+claim-identity payload equality, with interval intersection (disagreement
+denies); relation provenance_ids carry only provenance pairs whose citations
+target the exact supporting claims; system intervals derive from commit-event
+ownership ordered by (timestamp, sequence) with successor detection via
+prior_record_digest plus record lineage (the real event owner refuses
+cross-record construction); complete SourceSpanReference is copied only on a
+unique match. ProjectionObservationIdentity.v1 uses the existing
+registered_self_digest_preimage construction with domain
+memorii.semantic_ingestion.observation.ProjectionObservationIdentity.v1,
+observation_id excluding only itself, and nonconforming preimage fields
+denying before any digest. The fact arm is exercised on the real retained
+capture; correction/retraction/action arms have no retained production
+capture in this environment and identity has no validated producer yet —
+these arms are disclosed per arm in the manifest, not claimed. Identity
+binding coordinates are explicit feasibility placeholders; promotion must
+replace them with authored publication coordinates. Recorded promotion
+obligations (system-coordinate-gated relation lifecycle, TypeEvidence
+view/time applicability, pairing scope, observed-record identity carriage)
+and the local 3.14.7-not-CI-parity limitation are in
+feasibility-evidence-manifest-r2.json.

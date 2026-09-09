@@ -1,7 +1,8 @@
 # Proposed Public Observation Field Semantics
 
-Status: proposed; owner decision and feasibility/review pending. No production
-or canonical design semantics are changed by this document.
+Status: owner approved on 2026-09-08; engineering feasibility/review pending.
+The owner accepted the recommended field meanings and projection identity recipe.
+This document has not yet been promoted into canonical design or production.
 
 ## Recommendation
 

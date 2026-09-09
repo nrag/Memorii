@@ -1,7 +1,7 @@
 # Semantic Ingestion Closure Resume
 
 Work type: implementation. Coordinator: root. Status: active, not closed.
-Current committed baseline:7a92bce2 on semantic_ingestion_m5.
+Current committed baseline:a7c6a9ed on semantic_ingestion_m5.
 Index: implementation.plan.md. Active packet:
 ../observation-ledger/milestones/continuation-runtime.plan.md.
 Previous resume preserved in archive/resume-e2514b32b7c1f15fd11fd1778ed91aad6ada05d6442e5ddad51db8360797da9f.md.
@@ -38,14 +38,19 @@ with bounded correctness approval. Both backends sample the protected clock
 inside their read lock; both paging roots use the resulting creation time.
 No public runtime or parent requirement is closed by this internal component.
 
-Next action: obtain the owner decision on
-../graph-observation-materialization/proposal.md, then finish its feasibility
-and independent design review before public integration. The original
-provenance/policy-context decision remains approved and is not reopened.
+Next action: the linked design's feasibility objective is closed. Round-1
+reviews (spec approve-with-actions, correctness approve, test reject-resubmit)
+drove remediation r2; the bounded delta review confirms resolved with no
+regression (remaining_validated_p1_p2: []; 28 tests, Ruff clean; manifest
+feasibility-evidence-manifest-r2.json a2684e58...). Next: canonical promotion
+of the field/identity recipe (identity root, authored registry roles, compiled
+publication), then the concrete materializer and public provider wiring under
+continuation-runtime.plan.md. The original provenance/policy-context decision
+remains approved and is not reopened.
 
 All workers are finished. Root corrected weak contention/time assertions and
 typed the touched test harness. Public host/provider/materializer construction
 was parked outside production: exact structural field rules and a registered
 projection identity preimage are unresolved. The linked design packet records
 the confirmed gaps, rejected mapper claims, recommendation and unverified drafts.
-The asynchronous owner question is pending. Root owns evidence and commit/push.
+The owner approved the recommendation on 2026-09-08; no repeated decision is needed. Root owns evidence and commit/push.

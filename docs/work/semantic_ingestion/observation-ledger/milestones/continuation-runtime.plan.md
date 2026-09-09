@@ -55,7 +55,7 @@ No signatures, external policy values or statistical outcomes are fabricated.
 
 ## Next Action
 
-Obtain the owner decision on ../../graph-observation-materialization/proposal.md and complete that linked design correction before resuming public integration.
+Complete the owner-approved linked structural-field/identity design feasibility and review before resuming public integration.
 
 ## Current Component Evidence (2026-09-08)
 

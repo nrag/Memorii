@@ -2,7 +2,7 @@
 
 - Work ID: semantic-ingestion-engineering-closure
 - Work type: implementation
-- Status: blocked on the linked public structural-field/identity decision; timed snapshot component locally verified
+- Status: active; approved structural-field/identity design undergoing feasibility review
 - Coordinator: Codex main thread
 - Created: 2026-09-06
 - Last updated: 2026-09-08
@@ -168,7 +168,7 @@ writers finish; no current whole-candidate proof is claimed yet.
 
 ## Next Action
 
-Obtain the owner decision on ../graph-observation-materialization/proposal.md,
+Complete feasibility and independent review of the owner-approved ../graph-observation-materialization/proposal.md,
 then finish that linked design's feasibility/review before public integration.
 
 2026-09-08: root owns all code, generation, tests and commits. Read-only
