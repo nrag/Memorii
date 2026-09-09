@@ -134,14 +134,16 @@ if TYPE_CHECKING:
     )
     from memorii.core.memory_evolution.graph_effect_contracts import (
         CanonicalSourceTerminalOutcomeRecord,
+        GraphRevisionDelta,
         SourceFinalizationObservationDelta,
     )
-    from memorii.core.memory_evolution.graph_records import CanonicalGraphRecord
+    from memorii.core.memory_evolution.graph_records import CanonicalGraphRecord, GraphStateSnapshot
     from memorii.core.memory_evolution.observation_ledger_contracts import (
         ObservationLedgerEntry,
         ObservationLedgerHead,
         SourceObservationIntent,
     )
+    from memorii.core.memory_evolution.observation_replay_contracts import ObservationReplayState
     from memorii.core.memory_evolution.policy_migration import (
         PolicyMigrationRepository,
         PreparedPolicyMigrationProgress,
@@ -164,6 +166,7 @@ if TYPE_CHECKING:
         PreparedTrustDecayPublication,
         ProjectionScheduler,
     )
+    from memorii.core.memory_evolution.reference_integrity import ReferenceEdgeLedgerSnapshot
     from memorii.core.semantic_ingestion.canonical_evidence_arena import CanonicalEvidenceLease
     from memorii.core.semantic_ingestion.contracts import (
         BootstrapCanonicalIdentityBindingAllocationReloadV3,
@@ -223,6 +226,21 @@ _SEMANTIC_CHECKPOINT_SIGNATURE_OWNER = object()
 _SEMANTIC_INTEGRITY_GENERATION_DOMAIN = b"memorii.semantic-ingestion.atomic-integrity-generation.v1\0"
 _SEMANTIC_CLEAN_GENERATION_DOMAIN = b"memorii.semantic-ingestion.atomic-clean-generation.v1\0"
 _CLARIFICATION_RECOVERY_BINDING_DOMAIN = b"memorii.semantic-ingestion.clarification-recovery-binding.v1\0"
+
+
+@dataclass(frozen=True)
+class DetachedSemanticObservationAuthority:
+    """Verified read material from one full-write snapshot; no live read handle."""
+
+    write_revision: int
+    records: tuple[CanonicalMemoryRecord, ...]
+    graph: GraphStateSnapshot
+    semantic_state: SemanticReplayState
+    references: ReferenceEdgeLedgerSnapshot
+    observation: ObservationReplayState
+    event_batches: tuple[SemanticMemoryEventBatch, ...]
+    graph_deltas: tuple[GraphRevisionDelta, ...]
+    group_requests: tuple[BootstrapGraphGroupCommitRequestV3, ...]
 
 
 def _activation_record_shape(record: CanonicalMemoryRecord, source_kind: str) -> bool:
@@ -8271,6 +8289,12 @@ class SemanticIngestionAtomicStore:
     def semantic_event_batches(self) -> tuple[SemanticMemoryEventBatch, ...]:
         """Read and verify the repository-scoped canonical event authority."""
 
+        return self._semantic_event_batches_from(self._memory_plane)
+
+    def _semantic_event_batches_from(
+        self, memory_plane: MemoryPlaneService,
+    ) -> tuple[SemanticMemoryEventBatch, ...]:
+
         from memorii.core.semantic_ingestion.event_replay import (
             SemanticEventReplayError,
             decode_semantic_memory_event_batch,
@@ -8280,7 +8304,7 @@ class SemanticIngestionAtomicStore:
         records = sorted(
             (
                 record
-                for record in self._memory_plane.list_records()
+                for record in memory_plane.list_records()
                 if record.source_kind == "semantic_ingestion_event_batch"
             ),
             key=lambda record: record.memory_id,
@@ -8320,18 +8344,21 @@ class SemanticIngestionAtomicStore:
         return tuple(batches)
 
     def semantic_replay_state(self) -> SemanticReplayState:
+        return self._semantic_replay_state_from(self._memory_plane)
+
+    def _semantic_replay_state_from(self, memory_plane: MemoryPlaneService) -> SemanticReplayState:
         from memorii.core.semantic_ingestion.event_replay import (
             decode_semantic_replay_state,
             replay_semantic_event_batches,
         )
 
-        batches = self.semantic_event_batches()
+        batches = self._semantic_event_batches_from(memory_plane)
         reconstructed = replay_semantic_event_batches(
             repository_id=_SEMANTIC_EVENT_REPOSITORY_ID,
             batches=batches,
             registry_history=self._event_schema_registry_history,
         )
-        record = self._memory_plane.get_record(_semantic_replay_state_id())
+        record = memory_plane.get_record(_semantic_replay_state_id())
         if record is None:
             if batches:
                 raise PreplanningStoreError("semantic replay state authority is absent")
@@ -8350,6 +8377,12 @@ class SemanticIngestionAtomicStore:
     def graph_state_snapshot(self):
         """Project the complete typed graph snapshot from canonical event authority."""
 
+        return self._graph_state_snapshot_from(self._memory_plane)
+
+    def _graph_state_snapshot_from(
+        self, memory_plane: MemoryPlaneService, *, system_as_of: datetime | None = None,
+    ):
+
         from memorii.core.memory_evolution.graph_records import (
             GraphPartitionVersion,
             GraphReadSet,
@@ -8363,9 +8396,9 @@ class SemanticIngestionAtomicStore:
             generated_reference_schema_manifest,
         )
 
-        first = self.semantic_replay_state()
-        ledger = self.reference_integrity_snapshot()
-        second = self.semantic_replay_state()
+        first = self._semantic_replay_state_from(memory_plane)
+        ledger = self._reference_integrity_snapshot_from(memory_plane)
+        second = self._semantic_replay_state_from(memory_plane)
         if first != second or ledger.audit_certificate is None:
             raise PreplanningStoreError("stale_graph_snapshot")
         codec_manifest = canonical_graph_codec_manifest()
@@ -8404,7 +8437,7 @@ class SemanticIngestionAtomicStore:
         values = {
             "snapshot_token": snapshot_token,
             "graph_revision": first.graph_revision,
-            "system_as_of": self._now().astimezone(UTC),
+            "system_as_of": self._now().astimezone(UTC) if system_as_of is None else system_as_of,
             "records": records,
             "exact_record_counts_by_kind": tuple(
                 (kind, sum(item.payload_record_kind == kind for item in records))
@@ -8456,12 +8489,69 @@ class SemanticIngestionAtomicStore:
     def reference_integrity_snapshot(self):
         """Read the canonical generated-manifest edge-ledger authority."""
 
+        return self._reference_integrity_snapshot_from(self._memory_plane)
+
+    def read_detached_observation_authority(
+        self, *, write_revision: int, records: tuple[CanonicalMemoryRecord, ...],
+        snapshot_created_at: datetime,
+    ) -> DetachedSemanticObservationAuthority:
+        """Verify graph, reference and observation authority without a live read."""
+        from memorii.core.memory_evolution.graph_effect_contracts import GraphRevisionDelta, IngestionObservationDelta
+        from memorii.core.memory_evolution.observation_activation_runtime import validate_registered_artifact
+        from memorii.core.memory_evolution.observation_ledger_contracts import ObservationGroupResultLocator
+        from memorii.core.memory_plane.store import ReadOnlyMemoryPlaneSnapshotStore
+
+        plane = MemoryPlaneService(record_store=ReadOnlyMemoryPlaneSnapshotStore(
+            write_revision=write_revision, records=records,
+        ))
+        detached = tuple(plane.list_records())
+        by_id = {record.memory_id: record for record in detached}
+        observation = self._replay_schema3_observation_ledger(snapshot_records=by_id)
+        history = self._typed_value_registry_history
+        if history is None:
+            raise PreplanningStoreError("observation registry history is unavailable")
+        deltas: list[GraphRevisionDelta] = []
+        group_requests: list[BootstrapGraphGroupCommitRequestV3] = []
+        for entry in observation.entries:
+            delta = entry.delta
+            if not isinstance(delta, IngestionObservationDelta):
+                continue
+            locator = entry.result_locator
+            if not isinstance(locator, ObservationGroupResultLocator):
+                raise PreplanningStoreError("observation group locator is invalid")
+            primary = by_id.get(locator.immutable_record_id)
+            if primary is None:
+                raise PreplanningStoreError("observation group primary is absent")
+            group_requests.append(_bootstrap_graph_v3_group_commit_request_from_record(primary))
+            if delta.terminal_status != "committed":
+                continue
+            record = by_id.get(locator.immutable_record_id + ":graph-revision-delta")
+            if record is None or not isinstance(record.content.get("artifact"), str):
+                raise PreplanningStoreError("committed observation graph delta is absent")
+            value = validate_registered_artifact(
+                record.content["artifact"].encode("utf-8"), schema_id="GraphRevisionDelta",
+                history=history, limits=self._observation_artifact_limits,
+            )
+            if not isinstance(value, GraphRevisionDelta) or value.delta_digest != delta.graph_revision_delta_digest:
+                raise PreplanningStoreError("committed observation graph delta is substituted")
+            deltas.append(value)
+        return DetachedSemanticObservationAuthority(
+            write_revision=write_revision, records=detached,
+            graph=self._graph_state_snapshot_from(plane, system_as_of=snapshot_created_at),
+            semantic_state=self._semantic_replay_state_from(plane),
+            references=self._reference_integrity_snapshot_from(plane),
+            observation=observation, event_batches=self._semantic_event_batches_from(plane),
+            graph_deltas=tuple(deltas), group_requests=tuple(group_requests),
+        )
+
+    def _reference_integrity_snapshot_from(self, memory_plane: MemoryPlaneService):
+
         from memorii.core.memory_evolution.reference_integrity import (
             ReferenceEdgeLedgerSnapshot,
             validate_reference_integrity_converse,
         )
 
-        record = self._memory_plane.get_record(_reference_integrity_ledger_id())
+        record = memory_plane.get_record(_reference_integrity_ledger_id())
         if record is None:
             raise PreplanningStoreError("unresolved_reference_integrity_not_bootstrapped")
         try:
@@ -8476,7 +8566,7 @@ class SemanticIngestionAtomicStore:
         if record.content.get("ledger_digest") != snapshot.ledger_digest:
             raise PreplanningStoreError("reference integrity authority digest differs")
         try:
-            validate_reference_integrity_converse(snapshot, self.semantic_replay_state())
+            validate_reference_integrity_converse(snapshot, self._semantic_replay_state_from(memory_plane))
         except ValueError as exc:
             raise PreplanningStoreError("reference integrity authority is incomplete") from exc
         return snapshot
@@ -11980,11 +12070,12 @@ class SemanticIngestionAtomicStore:
 
     def _replay_schema3_observation_ledger(
         self, *, snapshot_records: dict[str, CanonicalMemoryRecord],
-    ) -> None:
+    ) -> ObservationReplayState:
         """Run the complete prefix verifier against one detached record snapshot."""
         from memorii.core.memory_evolution.observation_activation_runtime import validate_registered_artifact
         from memorii.core.memory_evolution.observation_ledger_contracts import ObservationLedgerActivation
         from memorii.core.memory_evolution.observation_ledger_replay import replay_observation_ledger
+        from memorii.core.memory_evolution.observation_replay_contracts import ObservationReplayState
         from memorii.core.memory_evolution.writer_admission import observation_ledger_head_memory_id
 
         target, history = self._observation_activation_target, self._typed_value_registry_history
@@ -12037,7 +12128,7 @@ class SemanticIngestionAtomicStore:
                 or activation.ledger_codec_fingerprint != target.identity.ledger_codec_fingerprint
             ):
                 raise ValueError("activation identity")
-            replay_observation_ledger(
+            replay = replay_observation_ledger(
                 repository_id=_SEMANTIC_EVENT_REPOSITORY_ID,
                 activation_digest=activation.activation_digest,
                 activation_artifact=activation_records[0].content["artifact"].encode("utf-8"),
@@ -12052,6 +12143,9 @@ class SemanticIngestionAtomicStore:
                     entry=entry, snapshot_records=snapshot_records,
                 ),
             )
+            if not isinstance(replay.value, ObservationReplayState):
+                raise ValueError("observation replay state type is invalid")
+            return replay.value
         except (KeyError, TypeError, ValueError) as exc:
             raise PreplanningStoreError("schema-3 observation replay is corrupt") from exc
 

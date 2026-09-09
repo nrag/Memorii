@@ -1,0 +1,10 @@
+{
+  "files": {
+    "memorii/memorii/core/memory_evolution/atomic_store.py": "0b13a75a74be57d5553a726de1412c012d01d11f754d732c13d92e8ac0d714ac",
+    "memorii/memorii/core/memory_evolution/graph_observation_cohort.py": "9b9098cacf3f38eb1c69f0b82dd1e88cffa40163e9034df45090cdfe40d1b682",
+    "memorii/tests/integration/test_activated_provider_ledger.py": "0d6d516638b61c02ee620ec531d4d7e75bdf168fa4774f69718b6be0f2b16633",
+    "memorii/tests/unit/core/memory_evolution/test_graph_observation_cohort.py": "bb8c3db574c2fcab15c9b66dbb61cd4e485a82bc194671d4bb8cbb46bd2e52ec",
+    "docs/design/semantic_ingestion_architecture.md": "a7770e627e2dc627c772b8c54dd5998ce83c1baf43079a210056826b5ebce626"
+  },
+  "scope": "detached authority reconstruction and terminal membership only; no public endpoint/materializer closure"
+}

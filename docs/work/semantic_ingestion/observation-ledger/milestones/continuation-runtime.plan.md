@@ -112,3 +112,43 @@ mutation checks. Final scoped Pyright reports0 errors/warnings; full Ruff and
 identity hygiene pass. Portable logs retain the initial failures and the reruns;
 no single-run all-green or GitHub-CI claim is made. The local source-test run
 used macOS/Python3.12 and took589.38s, not equivalent to Ubuntu CI timing.
+
+## Detached Authority And Membership Checkpoint
+
+Current frozen candidate: detached-cohort-candidate.json SHA256
+2edcc99e59c601676be791c59c03744264cc806f36c808a444133606b0a39aac.
+Root owns these production/test files and all commands. The reader reconstructs
+graph, event, reference and observation state from one detached store snapshot;
+its protected creation time is explicit. Source/operation membership closes
+over transaction/fence siblings and co-committed graph deltas, checking every
+source's complete private scope grant and terminal result. Three focused native
+delta tests pass; spec/correctness bounded reviews approve. The full activated
+provider/reopen test is still running and is not yet passing evidence.
+
+The first two local attempts were interrupted before test completion (152.82s
+for a test-coordinate correction,316.14s for review corrections). Neither is
+passing evidence. The current attempt uses frozen corrected code. Final scoped
+Pyright passes; portable evidence will record the terminal provider result.
+No public endpoint,17-stream materializer or time-attestation producer exists yet.
+
+The frozen expanded provider test completed successfully:1 passed in1472.96s
+(24m32s). It includes real activation, source+operation selection, no live-clock
+resampling, scope/missing-delta refusal, later-write snapshot stability and JSONL
+reopen/exact retry. The3 native-delta unit tests pass, plus1 CI-selection check
+in0.40s. Explicit CI selection is the only delta from the approved code candidate;
+its identity is detached-cohort-ci-candidate.json SHA256
+214718332b88138b841838ca6098d712b5423a0bf0f73ce8263b6962618d25c9.
+Portable evidence is in detached-cohort-evidence/manifest.json; final test review
+is now ready. No remoteCI or public endpoint completion is claimed.
+
+## Final Internal Reader Review Disposition
+
+Confirmed: Not applicable / blocks_approval / verification. The detached reader
+and membership resolver have zero production callers; the real-storage test
+calls them directly. Spec/correctness approval and passing local checks establish
+internal feasibility only. R19 and this runtime milestone remain incomplete.
+Disposition: required evidence_action paired with the already planned concrete
+public caller and bounded materializer implementation; no synthetic caller or
+requirement promotion. All local commands have finished.
+
+Current next action: implement the concrete authenticated public observation call chain.

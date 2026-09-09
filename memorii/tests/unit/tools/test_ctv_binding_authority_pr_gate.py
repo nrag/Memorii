@@ -300,6 +300,7 @@ def test_pr_workflow_structurally_runs_complete_matrix_and_exact_pinned_checker(
     assert 'test "$OBSERVATION_ACTIVATION_RESULT" = success' in unit_job["steps"][0]["run"]
     activation_command = jobs["observation-ledger-activation"]["steps"][3]["run"]
     assert "tests/integration/test_ingestion_time_paging.py" in shlex.split(activation_command)
+    assert "tests/unit/core/memory_evolution/test_graph_observation_cohort.py" in shlex.split(activation_command)
     assert "tests/integration/test_graph_observation_paging.py" in shlex.split(activation_command)
     assert unit_result_env["SCOPED_CONTEXT_RESULT"] == "${{ needs.scoped-context-integration.result }}"
     assert unit_result_env["TERMINAL_RESULT"] == "${{ needs.semantic-terminal-persistence.result }}"

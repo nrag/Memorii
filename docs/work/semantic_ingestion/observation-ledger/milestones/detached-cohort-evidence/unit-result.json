@@ -1,0 +1,6 @@
+{
+  "command": "PYTHONPATH=memorii .venv/bin/python -m pytest memorii/tests/unit/core/memory_evolution/test_graph_observation_cohort.py -q",
+  "exit_code": 0,
+  "result": "3 passed in 10.46s",
+  "evidence_type": "local deterministic native-delta membership tests; authority is a test double; no public runtime proof"
+}

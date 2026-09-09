@@ -35,7 +35,7 @@ No bespoke digest preimage or trailing-NUL domain is introduced.
 Add these exact versioned fields:
 
 ```text
-CanonicalSourceTerminalOutcomeRecord:
+CanonicalSourceTerminalOutcomeCore AND CanonicalSourceTerminalOutcomeRecord:
   source_result_schema_version: Literal[1,2] = 1
   source_retention_attestation_digest: Digest|null = null
 BootstrapGraphGroupCommitResultCoreV3:
@@ -43,9 +43,12 @@ BootstrapGraphGroupCommitResultCoreV3:
   transaction_group_commit_attestation_digest: Digest|null = null
 ```
 
-Source schema 1 omits its new fields from serialization and digest preimages,
-preserving historical bytes. Source schema 2 requires a non-null source digest
-and includes it in `record_digest`. Core schema 3 requires a non-null group
+Source schema 1 omits the new fields from both core and completed-record
+serialization and every affected preimage, preserving historical bytes. Source
+schema 2 requires a non-null retention-attestation digest in the core and the
+completed record, requires their exact equality, and derives the existing chain
+in order: core digest -> outcome ID -> source-result digest -> record digest.
+It must not add an unbound digest only to the final record. Core schema 3 requires a non-null group
 digest exactly when committed and null when noncommitting, including it in
 `core_digest`. The source-finalization delta validates the schema-2 digest;
 the group ledger/result locator validates the core-schema-3 digest. A later
@@ -164,3 +167,43 @@ as the winner. This requires tracing initial authorization, authorized source
 lookup, preparation, publication and retry together. Legacy records retain their
 original bytes and never receive a synthetic server-time attestation. This is a
 confirmed production-path gap against SIA 4.1.5, not missing release-signing data.
+
+
+## Legacy Group Core Field Exclusion
+
+The current group core already has separate schema-1 and schema-2 byte forms.
+The new time-attestation field must be excluded from BOTH old forms, including
+`_versioned_digest_excluded_fields`, canonical field-name selection and the
+serializer. Schema1 also retains its current exclusions for ledger fields;
+schema2 retains those existing ledger fields. Schema3 includes the new field,
+with a digest for committed outcomes and explicit null for noncommitting ones.
+Updating only the schema1 exclusion would silently change existing schema2
+result hashes. The corresponding decoder/registry versions and transitive
+source/group wrappers must be included in the promotion and replay fixtures.
+
+The canonical `PendingSemanticOperation` and `SourceAdmissionAtomicWriteRequest`
+names currently have no production class. The draft must map their normative
+immutable fields to the actual initial preplanning generation or introduce the
+missing closed owner before defining the immutable admission request digest;
+a mutable latest control digest is not an immutable pending-operation anchor.
+
+
+## Validated Retry Owner Map
+
+The read-only retry trace confirms no retained-source lookup before provider
+governance derivation. Existing `GovernedSourceAdmissionService.lookup` checks
+principal, delivery key, tenant and the complete stored scope set before outcome
+access; it is a reusable authorization pattern, not an API that returns original
+StepOne material. `prepare_atomic` only constructs its five prepared records;
+it does not perform `_recover_exact_admission`. The latter belongs to a different
+admission path and currently returns an observation built from the proposed source.
+The coordinator corrected the mapper's overbroad claim that both prepare paths
+already recovered the original source.
+
+`_same_admission_record` ignores only the top-level record timestamp; all content
+remains exact. Thus changing only `retained_at` to a new server sample is not a
+complete retry fix: any governance/material digest depending on that time must
+also reuse the winning retained material. `_admit_with_writer_retry` retries one
+specific writer-admission mismatch, not general retention conflicts. The new
+protected source-replay seam must be designed at that boundary and must not reuse
+an outcome lookup as an unchecked source-byte accessor.

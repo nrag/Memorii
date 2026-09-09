@@ -270,3 +270,30 @@ source production/test files are frozen against that writer. It must project
 retained authority and real graph changes without invented provenance, and report
 any indeterminate semantic field before implementation. Root executes all pytest.
 An unintegrated projection helper cannot close a runtime requirement.
+
+
+## Current Resumption Checkpoint
+
+2026-09-08: bounded issuance-prefix correction is complete and pushed in
+c8261b6a. Its final proof has103 passing cases and spec/correctness/test approval;
+see ../acceptance-issuance-prefix/closure.md. The historical blocked successor
+above is preserved history, not the current correction's status. R14 is partial;
+all23 still have15 retained baseline-complete and8 engineering-open rows.
+
+Root owns the frozen detached authority/cohort code and all validation commands.
+The native terminal membership tests pass3 cases and scoped Pyright/Ruff/identity
+checks pass. Spec and correctness review approve the internal slice; the activated
+provider/reopen test passed (1 case,1472.96s). Test review confirms the absence
+of a production caller and withholds runtime approval. Public observation
+composition and the17-stream materializer are still absent.
+
+Delegation this resumption: the existing acceptance agent's bounded draft was
+rejected on inspection and root took writer ownership; spec/correctness/test
+agents performed independent read-only conformance reviews. A Spark code-mapper
+now owns only the read-only retention-clock retry trace, because the provider
+currently substitutes caller event time for retained_at. Root retains all design
+and code writes. No keys, policy values or acceptance measurements are invented.
+
+Current next action: implement the concrete authenticated public observation call chain.
+The Spark mapper retention_retry_map is refreshing the exact public entrypoint
+binding preflight read-only; root owns checkpoint documentation and commits.
