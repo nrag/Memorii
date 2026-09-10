@@ -21,6 +21,9 @@ from memorii.core.memory_evolution.conflict_attention_repository import (
 from memorii.core.memory_evolution.conflict_integrity import (
     PrivilegedSemanticIntegrityLifecycle,
 )
+from memorii.core.memory_evolution.graph_observation_paging import (
+    AuthenticatedGraphObservationPagingRuntime,
+)
 from memorii.core.memory_evolution.identity_lineage import (
     AtomicStoreScopedIdentityLineageAuditReader,
     GrantBackedIdentityLineageAuditAuthorizer,
@@ -66,6 +69,8 @@ def build_provider_memory_service_from_env(
     conflict_attention_composite: bool = False,
     now_provider: Callable[[], datetime] | None = None,
     scoped_read_authority: ScopedHostReadAuthority | None = None,
+    graph_observation_runtime: AuthenticatedGraphObservationPagingRuntime
+    | None = None,
 ) -> ProviderMemoryService:
     """Build the source-only governed-source admission provider composition without ambient model dependencies."""
 
@@ -126,6 +131,7 @@ def build_provider_memory_service_from_env(
         identity_lineage_audit_authorizer=audit_authorizer,
         now_provider=now_provider,
         scoped_read_authority=scoped_read_authority,
+        graph_observation_runtime=graph_observation_runtime,
     )
 
 

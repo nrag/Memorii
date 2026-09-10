@@ -7,6 +7,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
+from secrets import token_urlsafe
 from typing import Any, Protocol, cast
 
 from pydantic import ValidationError
@@ -84,6 +85,18 @@ from memorii.core.memory_evolution.conflict_attention_repository import (
 from memorii.core.memory_evolution.conflict_integrity import (
     FileConflictIntegrityRepository,
     PrivilegedSemanticIntegrityLifecycle,
+)
+from memorii.core.memory_evolution.graph_observation_contracts import (
+    GraphObservationFailure,
+)
+from memorii.core.memory_evolution.graph_observation_paging import (
+    AuthenticatedGraphObservationPagingRuntime,
+)
+from memorii.core.memory_evolution.graph_observation_public_contracts import (
+    GraphObservationRequest,
+    GraphObservationResponse,
+    IngestionTimeAttestationRequest,
+    IngestionTimeAttestationResponse,
 )
 from memorii.core.memory_evolution.identity_lineage import (
     IdentityLineageAuditScopeSnapshot,
@@ -284,6 +297,8 @@ class ProviderMemoryService:
         source_normalization_host_bundle_builder: SourceNormalizationHostBundleBuilder | None = None,
         verified_production_host_authority: VerifiedProductionHostAuthority | None = None,
         canonical_evidence_enabled: bool | None = None,
+        graph_observation_runtime: AuthenticatedGraphObservationPagingRuntime
+        | None = None,
         _host_construction: object | None = None,
     ) -> None:
         self._memory_plane = memory_plane or MemoryPlaneService()
@@ -503,6 +518,10 @@ class ProviderMemoryService:
         # Post-ingress runtime validation reads this stored composition
         # reference instead of reaching into the coordinator's privates.
         self._composed_semantic_runtime = semantic_runtime
+        # Structural observation is a host-held protected capability: without an
+        # explicitly composed paging runtime every public observation request
+        # fails closed without reading the memory plane.
+        self._graph_observation_runtime = graph_observation_runtime
         self._work_state_service = work_state_service
         self._work_state_selector = WorkStateSelector(work_state_service)
         self._solver_frontier_planner = solver_frontier_planner
@@ -634,6 +653,40 @@ class ProviderMemoryService:
         if self._composed_semantic_runtime is None:
             raise PreplanningStoreError("observation ledger activation target authority is not configured")
         return self._composed_semantic_runtime.activate_observation_ledger()
+
+    def observe_graph(
+        self,
+        *,
+        host_ingress: AuthenticatedHostIngress,
+        request: GraphObservationRequest,
+    ) -> GraphObservationResponse:
+        """Return one registered graph-observation page or a non-disclosing failure."""
+        runtime = self._graph_observation_runtime
+        if runtime is None:
+            return self._observation_denial(cursor=request.cursor)
+        return runtime.observe_graph(host_ingress=host_ingress, request=request)
+
+    def observe_ingestion_time_attestations(
+        self,
+        *,
+        host_ingress: AuthenticatedHostIngress,
+        request: IngestionTimeAttestationRequest,
+    ) -> IngestionTimeAttestationResponse:
+        """Return one ingestion-time attestation page or a non-disclosing failure."""
+        runtime = self._graph_observation_runtime
+        if runtime is None:
+            return self._observation_denial(cursor=request.cursor)
+        return runtime.observe_ingestion_time_attestations(
+            host_ingress=host_ingress, request=request,
+        )
+
+    @staticmethod
+    def _observation_denial(*, cursor: str | None) -> GraphObservationFailure:
+        """Exact non-disclosing denial for an unavailable protected runtime."""
+        return GraphObservationFailure(
+            reason="denied" if cursor is None else "revoked_access",
+            request_correlation_token=token_urlsafe(24),
+        )
 
     def retrieve_context(
         self,
