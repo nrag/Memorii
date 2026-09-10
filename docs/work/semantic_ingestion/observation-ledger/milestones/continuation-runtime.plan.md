@@ -55,7 +55,16 @@ No signatures, external policy values or statistical outcomes are fabricated.
 
 ## Next Action
 
-Complete the owner-approved linked structural-field/identity design feasibility and review before resuming public integration.
+The linked design is closed and promoted (8a0ed7d feasibility, 66770e7
+promotion): field semantics are canonical in the observation addendum and
+ProjectionObservationIdentity.v1 is a registered self-digest root (181
+schemas/1269 roles; 58 vectors; promotion.json binds the bytes). Public
+integration is unblocked. Current construction: one Terra writer owns the new
+production module graph_observation_native_projection.py plus focused tests
+(structural stream families from retained native authority through
+emit_registered_observation_artifact; every ambiguous join denies). Root owns
+provider/host/service wiring afterward, then real ProviderMemoryService proof.
+No fixture cohort may stand in for the provider integration proof.
 
 ## Current Component Evidence (2026-09-08)
 
