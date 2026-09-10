@@ -84,6 +84,42 @@ the three-role independent review before any R17/R19 promotion claim. The
 ProjectionObservationIdentity reader-side re-derivation for observed projection
 records remains an implementation obligation.
 
+## Milestone Review Round 1 (2026-09-10, candidate ed55c520)
+
+All three reviewers approve-with-actions; no rejection. Reconciled confirmed
+changes_required (one remediation round, sole writer = root):
+
+1. System-interval semantics (spec F1 / correctness F1, correctness rates P1):
+   observed system_interval currently stamps snapshot.created_at on every
+   record, contradicting the promoted commit-event-ownership rule; the verified
+   event coordinate is already derived in _commit_values. Correct to per-version
+   event-derived intervals.
+2. Boundary records (spec F2): referenced-but-unchanged entities are resolved
+   in the lookup but never emitted; boundary_ids/boundary_record_keys are
+   hardcoded empty and reference_path is constant. Emit boundary records with
+   real reference paths per the architecture's referenced-boundary rule.
+3. Sibling arms (spec F3 / correctness F2): correction/retraction/action/
+   identity arms structurally deny whole cohorts; current planner commits
+   fact-only deltas. Determinate correction this round: record the explicit
+   arm gap here (typed refusal retained); arm payload implementation is a
+   separate milestone and must precede any arm-inclusive promotion claim.
+4. Provider integrity-join denials have zero coverage (test F1): add tampered/
+   substituted-authority tests hitting each fail-closed branch.
+5. CI gate wiring (test F2): add the slow materialization test to unit-shards
+   ignores, select materialization+composed suites in the activation job,
+   refresh unit-test durations.
+
+Recorded follow-ups: converse closures (retained-inventory, evidence-pair,
+changes-without-intent) correctness F3-F5; projection_kind closed-literal
+registration before first identity issuance (spec F4); view/time applicability
+folded into the projection-record obligation (spec F5); exact-count composed
+assertion, host-mismatch test, restart item, arm-coverage discharge (test
+F3-F6); reader-side ProjectionObservationIdentity re-derivation (standing).
+
+Next action: execute remediation round 1 as one coherent batch, re-freeze,
+delta-review the corrected surfaces, then close the milestone. The gate-matrix
+background run is recorded separately when it terminates.
+
 ## Current Component Evidence (2026-09-08)
 
 Root took sole ownership after checking delegated output. Both cursor roots,
