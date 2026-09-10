@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.ProjectionTextSpan.v1","implementation_source_digest":"cb544f3205ec8c8e552a09f2ce2bbefada6f1d3e55cb983c4c39442017fa1250","role":"decoder","schema_id":"ProjectionTextSpan","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.ProjectionTextSpan.v1","implementation_source_digest":"067745178999aa9f7e5833232428ffa1acbe5b31e21823bff59a256dd65bda75","role":"decoder","schema_id":"ProjectionTextSpan","schema_version":"1","typed_root_kind":"model"}

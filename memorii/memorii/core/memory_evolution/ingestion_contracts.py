@@ -1583,6 +1583,7 @@ def native_observation_decoder_table() -> Mapping[str, NativeObservationDecoder]
         ObservedTemporalTransition,
         ObservedTrustClaimProjection,
         ObservedTypeEvidence,
+        ProjectionObservationIdentity,
     )
     from memorii.core.memory_evolution.graph_observation_snapshot_contracts import (
         GraphObservationCohortPreimage,
@@ -1847,6 +1848,7 @@ def native_observation_decoder_table() -> Mapping[str, NativeObservationDecoder]
             "memorii.semantic_ingestion.observation.ObservedTemporalTransition.v1": ObservedTemporalTransition.model_validate,
             "memorii.semantic_ingestion.observation.ObservedTrustClaimProjection.v1": ObservedTrustClaimProjection.model_validate,
             "memorii.semantic_ingestion.observation.ObservedTypeEvidence.v1": ObservedTypeEvidence.model_validate,
+            "memorii.semantic_ingestion.observation.ProjectionObservationIdentity.v1": ProjectionObservationIdentity.model_validate,
             "memorii.semantic_ingestion.observation.OperationIntroductionStreamRecord.v1": OperationIntroductionStreamRecord.model_validate,
             "memorii.semantic_ingestion.observation.OperationTemporalAttachmentBinding.v1": OperationTemporalAttachmentBinding.model_validate,
             "memorii.semantic_ingestion.observation.OperationTemporalDecisionBinding.v1": OperationTemporalDecisionBinding.model_validate,

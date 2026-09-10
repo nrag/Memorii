@@ -99,6 +99,6 @@ without mutating historical cursor bytes. The model map is bounded discovery,
 not an authoritative declaration source or proof of complete recursive closure.
 
 Acceptance witness types are excluded by ../time-witness-boundary/closure.md.
-The current production authoring inventory has 78 explicit roots and 180 total
+The current production authoring inventory has 79 explicit roots and 181 total
 root/helper schemas; decoder-owner-inventory.json records their finite native
 class owners for static code construction, not runtime publication.

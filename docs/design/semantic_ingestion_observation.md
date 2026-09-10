@@ -1968,3 +1968,97 @@ migration. It is unnecessary for the native paired-evidence path, but remains
 required for any future writer that lacks those exact authorities. Alternative:
 expose only applied policies is rejected because no field-level execution trace
 is retained. The selected recipe exposes declared context explicitly.
+
+## Public Structural Field Semantics And Projection Identity
+
+Owner decision approved on 2026-09-08; feasibility independently reviewed and
+closed 2026-09-09 (remaining_validated_p1_p2: []). The promoted semantics
+follow; the concrete public materializer remains a separate implementation
+obligation.
+
+### Structural Field Rules
+
+Structural observations are a read-only view of retained native authority with
+explicit joins to verified commit/evidence records. Temporal and trust
+projections are exposed separately. No new stored graph representation exists
+and no field is inferred from the caller, current host policy, text or model
+output.
+
+- Entity `canonical_type` is the unique independently retained
+  `TypeEvidence.asserted_type` applicable to that immutable entity revision and
+  the requested view/time. No eligible evidence means null; competing distinct
+  types deny the cohort. Full type evidence remains separately observable.
+- Entity `valid_interval` is null: the structural entity revision has no native
+  business-time interval. Type-evidence and claim intervals remain on their own
+  records.
+- Entity `lifecycle_state` copies `EntityRevision.lifecycle` exactly.
+- Entity `source_ids` are the retained lineage source references plus the exact
+  creating/updating native operation's source, read from the retained planning
+  construction authority; a foreign or absent operation authority denies.
+  `operation_ids` are the exact version's verified native/event ownership.
+- Relation `supporting_claim_assertion_ids` are the exact native claims paired
+  with the relation through `ClaimProjection` endpoint/predicate binding plus
+  canonical claim-identity payload equality. No unrelated same-predicate claim
+  search happens.
+- Relation `valid_interval` is the common interval of those exact supporting
+  claims; disagreement denies.
+- Relation `lifecycle_state` `active` means the structural relation version
+  exists at the requested system coordinate; it does not mean its claim
+  currently wins temporal/trust arbitration. Those outcomes stay in separate
+  projections.
+- Relation `source_ids` are the supporting claims' source authority evidence;
+  `provenance_ids` are the provenance pairs whose citations target those exact
+  supporting claims. A claim-targeted provenance record is never reinterpreted
+  as relation-targeted.
+- System intervals derive from verified commit-event ownership of the exact
+  record version and its successor, never snapshot/request time. Event
+  (timestamp, sequence) is the ordering authority; a same-time successor is
+  ordered by sequence and retains exact lineage with an unbounded end, never an
+  invented positive interval. Ambiguous ordering, ownership or succession denies.
+- `SourceSpanReference` fields copy a uniquely matched, complete retained
+  `SourceSpanReference`, including artifact and mapping proof. A
+  `LineageEvidenceReference` alone is insufficient and denies; missing or
+  ambiguous full evidence denies.
+
+Action, identity and transition fields use their exact retained operation
+authorities; a missing action transition or identity construction is a typed
+refusal, never a guessed transition or rewritten identity. Claims and
+provenance retain the approved retained policy-context and P/E/K/C recipe
+unchanged.
+
+### Projection Identity Root
+
+`ProjectionObservationIdentity.v1` is one explicit registered root with fields
+`projection_kind` (literal `temporal` or `trust`), `repository_id` (nonempty),
+`generation_digest` and `projection_digest` (lowercase SHA256), and
+`observation_id` (lowercase SHA256), the sole registered self-digest field. It
+uses the existing profile-3 registered self-digest construction with domain
+`memorii.semantic_ingestion.observation.ProjectionObservationIdentity.v1`; the
+complete selected binding and the four ordinary fields are the preimage, and
+`observation_id` excludes only itself. The outward identity is the digest's
+lowercase hexadecimal string. Nonconforming preimage fields deny before any
+digest.
+
+Both observed projection records copy the derived identity. Their protected
+registered readers derive and compare it using the identity root from the same
+selected publication before accepting the record; pure native model shape
+validation is not a substitute for this profile-bound integrity check. Changing
+kind, repository, generation or native projection changes or rejects the
+identity. The observed `record_digest` continues to bind the entire observed
+payload, including that validated `observation_id` and the full publication
+pointers.
+
+Existing historical registered artifacts retain their original identities and
+read routes. The identity rule requires an explicitly selected publication that
+contains the identity root; no relabelling or silent retrofit is permitted.
+
+### Compatibility, Rollout And Alternatives
+
+Alternative: persist a new complete observation projection at commit, including
+every currently missing field and identifier. That duplicates native authority
+and requires writer, replay, migration and compatibility changes; it is
+rejected. The selected recipe uses retained evidence and rejects any historical
+record whose exact joins cannot be proved. Rollout adds the identity root and
+its authored registry roles to the next compiled publication while retaining
+historical publication readers; rollback disables new observation publication
+and never bypasses the ledger or mutates history.

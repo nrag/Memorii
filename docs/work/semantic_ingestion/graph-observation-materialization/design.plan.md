@@ -118,11 +118,19 @@ verdict is resolved with no regression; both P3 observations (verbatim ruff
 argv, owner-constructed authority type) are applied/recorded. The bounded
 feasibility objective is closed: remaining_validated_p1_p2: [].
 
-Next action: canonical promotion — proposal -> canonical observation
-addendum -> explicit identity model and authored registry roles ->
-decoder/source inventory -> compiled publication -> independent
-vectors/checksums/workflow pins -> reader/materializer under the linked
-continuation-runtime implementation milestone.
+Next action: canonical promotion is executed (2026-09-09, promotion.json
+binds before/after addendum hashes 1ebdec16…/73ab8a55… and the promoted
+excerpt). ProjectionObservationIdentity is a registered self-digest root:
+model in graph_observation_records.py, decoder entry in
+ingestion_contracts.py, six authored role files, inventories at 181
+schemas/1087 authored roles/1269 total roles; reproduce_publication
+--refresh-generated rebuilt the publication and verify_registry_vectors
+passes 58 cases. Focused decoder-inventory (4) and observation (21) tests,
+Ruff and scoped Pyright pass; no gate pins reference the observation
+addendum. Next action: the concrete reader/materializer and public
+ProviderMemoryService wiring under the linked continuation-runtime
+implementation milestone, including observed projection records carrying
+the derived identity and registered readers re-deriving it.
 
 ## Feasibility Audit Record (2026-09-09, revision r2)
 

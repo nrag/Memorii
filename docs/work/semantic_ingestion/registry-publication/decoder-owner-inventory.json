@@ -890,6 +890,14 @@
       "source_file": "memorii/memorii/core/memory_evolution/projection_binding.py"
     },
     {
+      "schema_id": "ProjectionObservationIdentity",
+      "schema_version": "1",
+      "decoder_id": "memorii.semantic_ingestion.observation.ProjectionObservationIdentity.v1",
+      "python_module": "memorii.core.memory_evolution.graph_observation_records",
+      "python_class": "ProjectionObservationIdentity",
+      "source_file": "memorii/memorii/core/memory_evolution/graph_observation_records.py"
+    },
+    {
       "schema_id": "ProjectionTextSpan",
       "schema_version": "1",
       "decoder_id": "memorii.semantic_ingestion.observation.ProjectionTextSpan.v1",
@@ -1442,6 +1450,6 @@
       "source_file": "memorii/memorii/core/semantic_ingestion/contracts.py"
     }
   ],
-  "count": 180,
+  "count": 181,
   "authority": "Normative decoder ID convention plus reviewed existing native class owners; offline reflection only. Runtime must use explicit fixed imports and finite lookup. No implementation hash invented before code exists."
 }

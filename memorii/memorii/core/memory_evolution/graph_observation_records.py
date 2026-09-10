@@ -179,6 +179,22 @@ class ObservedTrustClaimProjection(_ClosedObservationPayload):
         return self
 
 
+class ProjectionObservationIdentity(_ClosedObservationPayload):
+    """Registered identity root for observed temporal/trust projections.
+
+    observation_id is the profile-3 registered self digest of the complete
+    selected binding and the four ordinary fields; protected readers derive
+    and compare it using this root from the same selected publication. The
+    outward identity is the digest's lowercase hexadecimal string.
+    """
+
+    projection_kind: Literal["temporal", "trust"]
+    repository_id: Identifier
+    generation_digest: Digest
+    projection_digest: Digest
+    observation_id: Digest
+
+
 class ObservedRelation(_ClosedObservationPayload):
     relation_id: Identifier
     predicate_id: Identifier
@@ -338,5 +354,5 @@ __all__ = [
     "ObservedEntityRevision", "ObservedIdentityTransition", "ObservedProvenanceRecord",
     "ObservedReferenceDisposition", "ObservedRelation", "ObservedSystemRecordedEffectiveTime",
     "ObservedTemporalClaimProjection", "ObservedTemporalTransition", "ObservedTrustClaimProjection",
-    "ObservedTypeEvidence",
+    "ObservedTypeEvidence", "ProjectionObservationIdentity",
 ]

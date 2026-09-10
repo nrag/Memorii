@@ -38,14 +38,16 @@ with bounded correctness approval. Both backends sample the protected clock
 inside their read lock; both paging roots use the resulting creation time.
 No public runtime or parent requirement is closed by this internal component.
 
-Next action: the linked design's feasibility objective is closed. Round-1
-reviews (spec approve-with-actions, correctness approve, test reject-resubmit)
-drove remediation r2; the bounded delta review confirms resolved with no
-regression (remaining_validated_p1_p2: []; 28 tests, Ruff clean; manifest
-feasibility-evidence-manifest-r2.json a2684e58...). Next: canonical promotion
-of the field/identity recipe (identity root, authored registry roles, compiled
-publication), then the concrete materializer and public provider wiring under
-continuation-runtime.plan.md. The original provenance/policy-context decision
+The linked design's feasibility is closed and canonically promoted
+(8a0ed7d, then the promotion commit): the field-semantics addendum is in
+docs/design/semantic_ingestion_observation.md and
+ProjectionObservationIdentity.v1 is a registered self-digest root (181
+schemas/1269 roles; 58 vectors pass; promotion.json binds the bytes).
+
+Next action: implement the concrete 17-stream materializer and public
+ProviderMemoryService wiring under continuation-runtime.plan.md, with
+observed projection records carrying the derived identity and registered
+readers re-deriving it. The original provenance/policy-context decision
 remains approved and is not reopened.
 
 All workers are finished. Root corrected weak contention/time assertions and

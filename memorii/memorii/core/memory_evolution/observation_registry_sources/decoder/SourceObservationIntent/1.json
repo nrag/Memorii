@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.SourceObservationIntent.v1","implementation_source_digest":"e3cc5e243c7da5fba9b313fd697bf787cfc77b5c68259e3dd5c2a277984dc17c","role":"decoder","schema_id":"SourceObservationIntent","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.SourceObservationIntent.v1","implementation_source_digest":"87efeb385736cf7cc8de85e86ed9dadb0178db4285d11c489aa885905928db41","role":"decoder","schema_id":"SourceObservationIntent","schema_version":"1","typed_root_kind":"model"}

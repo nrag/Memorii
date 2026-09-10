@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.RetainedSourceTextSpan.v1","implementation_source_digest":"b8bc04c7143d87b2f08b1f8c4a0c76d58de8f8963f067ec0662fb7b631d1eb13","role":"decoder","schema_id":"RetainedSourceTextSpan","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.RetainedSourceTextSpan.v1","implementation_source_digest":"3d2ae5aa4f906afb7689cc162d54f614e0c6caf368deee9f01d5e24df32b7474","role":"decoder","schema_id":"RetainedSourceTextSpan","schema_version":"1","typed_root_kind":"model"}

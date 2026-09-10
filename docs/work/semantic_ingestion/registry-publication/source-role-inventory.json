@@ -2,15 +2,15 @@
   "status": "CONSTRUCTED_DECLARATIONS_NOT_OPERATIONAL_PUBLICATION",
   "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
   "role_counts": {
-    "digest-signature": 180,
-    "enum": 180,
+    "digest-signature": 181,
+    "enum": 181,
     "grammar": 1,
-    "numeric": 180,
-    "optional": 180,
-    "schema": 180,
-    "upcast": 180
+    "numeric": 181,
+    "optional": 181,
+    "schema": 181,
+    "upcast": 181
   },
-  "file_count": 1081,
+  "file_count": 1087,
   "files": [
     {
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/digest-signature/AcceptedClaimIdentity/1.json",
@@ -566,6 +566,11 @@
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/digest-signature/ProjectionHistoryReplayBinding/1.json",
       "role": "digest-signature",
       "sha256": "044cc3f9b425c442cf7cbe847d3056a5313ed323e02acc9c7a73a2118656bf74"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/digest-signature/ProjectionObservationIdentity/1.json",
+      "role": "digest-signature",
+      "sha256": "2686e26391c819f360399f5f445e757cce10c75acab32b022a079f3dd717d210"
     },
     {
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/digest-signature/ProjectionTextSpan/1.json",
@@ -1466,6 +1471,11 @@
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/enum/ProjectionHistoryReplayBinding/1.json",
       "role": "enum",
       "sha256": "dbeb54934eae7fe2deaaccf8c81d4c4548cb5acfc747ce337365fea88663078f"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/enum/ProjectionObservationIdentity/1.json",
+      "role": "enum",
+      "sha256": "df059a1f80b03e18462e2df31a2b09d6b771cc8db18efca1d6bdd8ae20c87b0d"
     },
     {
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/enum/ProjectionTextSpan/1.json",
@@ -2373,6 +2383,11 @@
       "sha256": "f76366755de76b779099a141e6f697e3632fd08d1fc9273c1a4d2c332185ff35"
     },
     {
+      "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/numeric/ProjectionObservationIdentity/1.json",
+      "role": "numeric",
+      "sha256": "c2b8aae7f35513a1d8bacd38b941a710dd70eb88d60241d8de7b9c9c66fcc846"
+    },
+    {
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/numeric/ProjectionTextSpan/1.json",
       "role": "numeric",
       "sha256": "b34b6b72b635daad92e5881665bf621b56cd83bbd3fc968c99569103edca14ff"
@@ -3271,6 +3286,11 @@
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/optional/ProjectionHistoryReplayBinding/1.json",
       "role": "optional",
       "sha256": "4752454aadbad2f7e5c8729c6d86a4a6d73eec17ee258a890b8f2c71f6e0266e"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/optional/ProjectionObservationIdentity/1.json",
+      "role": "optional",
+      "sha256": "6e027651f8b63f01020b5d89d1fe077a7766101bcecd8849f3e4dafda416ac2a"
     },
     {
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/optional/ProjectionTextSpan/1.json",
@@ -4173,6 +4193,11 @@
       "sha256": "e6e4e4b1818d71066364b1db38a86cdb46666d12e0fbdf0443ae0c9aba4e6bfc"
     },
     {
+      "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/schema/ProjectionObservationIdentity/1.json",
+      "role": "schema",
+      "sha256": "1ac5702dcaee50bf0ceb215c003dbe24681492e62558b4db61d063d0057e0e61"
+    },
+    {
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/schema/ProjectionTextSpan/1.json",
       "role": "schema",
       "sha256": "17cb873c2b0a10ec77186b12022b7fe0fe3654b2a604e4c501a2420707303bf1"
@@ -5071,6 +5096,11 @@
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/upcast/ProjectionHistoryReplayBinding/1.json",
       "role": "upcast",
       "sha256": "158c6a37b39d832ebbf5d872fb4990190262f4007c34d90c604e26affcb0dd2a"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/upcast/ProjectionObservationIdentity/1.json",
+      "role": "upcast",
+      "sha256": "e71f71672e284e1fd50d3db889cabf01713c9a00bc69ebc7683ee9c49f249205"
     },
     {
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/upcast/ProjectionTextSpan/1.json",

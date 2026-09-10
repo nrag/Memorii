@@ -4,6 +4,16 @@ Work type: implementation. Status: constructed and locally reproduced; parent
 semantic ingestion closure incomplete. Base d17466d5 on semantic_ingestion_m5.
 Previous resume preserved at archive/resume-37c2022be979d908d3bfb51073e3d83e2ef9f7215e5809f4d21175aacec3b4ec.md.
 
+## Projection Identity Root Construction (2026-09-09)
+
+The owner-approved ProjectionObservationIdentity root adds one explicit root:
+79 roots,181 schemas,1087 authored roles and1269 total roles. The six authored
+role files, decoder-owner entry and source-role rows are current;
+reproduce_publication.py --refresh-generated rebuilt publication, registry and
+decoder declarations and verify_registry_vectors.py passes58 cases with
+181 publication entries and1269 roles. Counts recorded in
+registry-vector-results.json.
+
 ## Current Construction Evidence
 
 The approved ingestion-time cursor adds one explicit root:78 roots,180 schemas,

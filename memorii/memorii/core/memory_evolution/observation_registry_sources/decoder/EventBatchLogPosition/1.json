@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.EventBatchLogPosition.v1","implementation_source_digest":"5bde2e9646d5361affbfbfc335b2ea427b3202dc3d2ee7a89d5e85a3f160f030","role":"decoder","schema_id":"EventBatchLogPosition","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.EventBatchLogPosition.v1","implementation_source_digest":"0b3367ec7f47ecca818e0d074ae45c1071014237ca5ce24de24a7b97141410f4","role":"decoder","schema_id":"EventBatchLogPosition","schema_version":"1","typed_root_kind":"model"}

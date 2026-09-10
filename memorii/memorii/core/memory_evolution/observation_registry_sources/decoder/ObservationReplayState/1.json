@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.ObservationReplayState.v1","implementation_source_digest":"270713e0ad98c3f6fa884c6d3edb5fd9bdef6078bb262b85651a6bc1d1f3332b","role":"decoder","schema_id":"ObservationReplayState","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.ObservationReplayState.v1","implementation_source_digest":"47cd8df5a030222b73f08eb5b7af87a714b69a37094378121d14c6ba70a2399a","role":"decoder","schema_id":"ObservationReplayState","schema_version":"1","typed_root_kind":"model"}

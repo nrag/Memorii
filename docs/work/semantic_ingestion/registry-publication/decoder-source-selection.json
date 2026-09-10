@@ -260,6 +260,7 @@
     "memorii.semantic_ingestion.observation.PredicateTrustRule.v1",
     "memorii.semantic_ingestion.observation.ProjectionEvidenceRecord.v1",
     "memorii.semantic_ingestion.observation.ProjectionHistoryReplayBinding.v1",
+    "memorii.semantic_ingestion.observation.ProjectionObservationIdentity.v1",
     "memorii.semantic_ingestion.observation.ProjectionTextSpan.v1",
     "memorii.semantic_ingestion.observation.ProvenanceRecord.v1",
     "memorii.semantic_ingestion.observation.ProvenanceStreamRecord.v1",

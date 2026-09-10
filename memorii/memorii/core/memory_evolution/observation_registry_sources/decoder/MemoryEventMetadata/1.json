@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.MemoryEventMetadata.v1","implementation_source_digest":"19f7ddbb9bd5976443a11657ecb7e0d3734196161b4d02a9e7a2229e9b12207c","role":"decoder","schema_id":"MemoryEventMetadata","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.MemoryEventMetadata.v1","implementation_source_digest":"f7ff96d61b02f68ae4a98cfddc71146bb75efcca38b465e36435eb907816e9a1","role":"decoder","schema_id":"MemoryEventMetadata","schema_version":"1","typed_root_kind":"model"}
