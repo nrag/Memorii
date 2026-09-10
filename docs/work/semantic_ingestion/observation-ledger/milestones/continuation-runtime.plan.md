@@ -55,16 +55,26 @@ No signatures, external policy values or statistical outcomes are fabricated.
 
 ## Next Action
 
-The linked design is closed and promoted (8a0ed7d feasibility, 66770e7
-promotion): field semantics are canonical in the observation addendum and
-ProjectionObservationIdentity.v1 is a registered self-digest root (181
-schemas/1269 roles; 58 vectors; promotion.json binds the bytes). Public
-integration is unblocked. Current construction: one Terra writer owns the new
-production module graph_observation_native_projection.py plus focused tests
-(structural stream families from retained native authority through
-emit_registered_observation_artifact; every ambiguous join denies). Root owns
-provider/host/service wiring afterward, then real ProviderMemoryService proof.
-No fixture cohort may stand in for the provider integration proof.
+Construction is committed: 40bf61b adds graph_observation_native_projection.py
+(one verified native operation -> observed stream records through the
+registered emit path; 14 focused tests); f31ac1b adds
+graph_observation_materialization.py (AtomicStoreGraphObservationCohortProvider:
+merged ingestion+native stream with duplicate denial, group-request/event-batch
+closure joins by transaction_group_id — the draft's graph-delta-digest join is
+NOT retained and was corrected; snapshot creation time is the system interval),
+graph_observation_host.py, and ProviderMemoryService.observe_graph /
+observe_ingestion_time_attestations with non-disclosing fail-closed denials
+when unconfigured (factory pass-through, no env guessing). Focused real-backend
+tests: 6 passed (489s); provider service/factory regressions 57 passed; paging/
+decoders/native projection 19 passed; Ruff and scoped Pyright clean.
+
+ingestion_time_input remains a typed denial: no persisted time-attestation
+producer exists. Remaining for this milestone: the service-configured
+end-to-end proof (host composition -> ProviderMemoryService.observe_graph
+success path through the real activated backend), full affected gates, and the
+three-role independent review before any R17/R19 promotion claim. The
+ProjectionObservationIdentity reader-side re-derivation for observed projection
+records remains an implementation obligation.
 
 ## Current Component Evidence (2026-09-08)
 
