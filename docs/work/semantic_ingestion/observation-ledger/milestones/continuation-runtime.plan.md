@@ -116,9 +116,13 @@ folded into the projection-record obligation (spec F5); exact-count composed
 assertion, host-mismatch test, restart item, arm-coverage discharge (test
 F3-F6); reader-side ProjectionObservationIdentity re-derivation (standing).
 
+Baseline gate matrix at candidate ed55c520 (pre-remediation): the activation
+job's exact selection plus the three new suites passed 118 cases in 4123.98s
+under -W error on local CPython 3.14.7 (not CI parity). This is baseline
+evidence; the binding gate run happens at the remediated candidate.
+
 Next action: execute remediation round 1 as one coherent batch, re-freeze,
-delta-review the corrected surfaces, then close the milestone. The gate-matrix
-background run is recorded separately when it terminates.
+delta-review the corrected surfaces, then close the milestone.
 
 ## Current Component Evidence (2026-09-08)
 
