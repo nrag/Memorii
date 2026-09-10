@@ -69,10 +69,18 @@ tests: 6 passed (489s); provider service/factory regressions 57 passed; paging/
 decoders/native projection 19 passed; Ruff and scoped Pyright clean.
 
 ingestion_time_input remains a typed denial: no persisted time-attestation
-producer exists. Remaining for this milestone: the service-configured
-end-to-end proof (host composition -> ProviderMemoryService.observe_graph
-success path through the real activated backend), full affected gates, and the
-three-role independent review before any R17/R19 promotion claim. The
+producer exists. The service-configured end-to-end proof is committed
+(test_composed_graph_observation_service.py; 3 tests in ~500s on the real
+activated backend): observe_graph returns real pages (4 ingestion + 5 native
+kinds, real digests, contiguous positions, stale_cursor on exhaustion);
+unconfigured endpoints fail closed without reading the memory plane; the
+configured ingestion-time endpoint denies before the write-revision fence;
+cross-purpose cursors deny at decode (invalid_cursor). Authority models must be
+emitted through the writer registry before use (_registered_exact re-emits and
+compares); page/policy digests are never placeholders on the wire.
+
+Remaining for this milestone: full affected gates at one frozen candidate and
+the three-role independent review before any R17/R19 promotion claim. The
 ProjectionObservationIdentity reader-side re-derivation for observed projection
 records remains an implementation obligation.
 
