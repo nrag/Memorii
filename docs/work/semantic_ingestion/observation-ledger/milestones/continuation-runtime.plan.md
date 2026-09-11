@@ -418,3 +418,7 @@ committed-path materialization regression is coordinator-run and recorded
 below when terminal. No real non-fact cohort exists yet, so no real-backend
 arm observation is claimed. The blanket unsupported-kind denial is replaced
 by precise per-arm recipe denials.
+
+Sibling-arm committed-path regression (coordinator-run): the materialization
+real-backend suite passed 19 cases in 3375.96s at ce7a68ee. The sibling-arm
+milestone is fully verified.
