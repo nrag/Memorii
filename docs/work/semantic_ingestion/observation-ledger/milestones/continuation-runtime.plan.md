@@ -398,3 +398,23 @@ is now fully verified, not just analysis. All converse-closure follow-ups are
 discharged; remaining carried work is the sibling-arm payloads, projection
 records + reader-side identity re-derivation, and the attestation-producer
 design packet.
+
+## Sibling-Arm Payload Record (2026-09-11, commit ce7a68ee)
+
+All four non-fact arms now project through the native projection owner:
+correction/retraction transitions -> ObservedTemporalTransition (correction
+derives the slot key from the retained replacement claim), action arms ->
+ObservedActionRevision (role bindings resolved through recomputed planner
+participant coordinates), identity arms -> ObservedIdentityTransition +
+ObservedReferenceDisposition (per-use-site reference paths; complete retained
+source spans only). Typed refusals are kept for genuinely unprovable joins.
+Disclosed carrier insufficiencies (fail-closed, not guessed): retraction
+transitions lack any retained claim-slot-key authority; action arms retaining
+claims lack the fact member for polarity; no canonical recipe yet exists for
+ActionTransitionApplicabilityKey digests (retained value copied only).
+Evidence tier: envelope tests built from the real fact capture through the
+real constructors (25 fast-suite cases, ruff, scoped pyright green); the
+committed-path materialization regression is coordinator-run and recorded
+below when terminal. No real non-fact cohort exists yet, so no real-backend
+arm observation is claimed. The blanket unsupported-kind denial is replaced
+by precise per-arm recipe denials.
