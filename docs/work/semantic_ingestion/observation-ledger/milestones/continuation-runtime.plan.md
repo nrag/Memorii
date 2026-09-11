@@ -391,3 +391,10 @@ was started by the coordinator. Next: sibling-arm payload milestone, then
 projection records + reader-side identity, then the attestation-producer
 design packet (owner decision), with the owner-requested production-keys/
 trusted-deployment/signatures brainstorm between as scheduled.
+
+Binding regression terminal result (coordinator-run): the full materialization
+suite passed 19 cases in 3475.32s at b2955d5a — the converse-closure hardening
+is now fully verified, not just analysis. All converse-closure follow-ups are
+discharged; remaining carried work is the sibling-arm payloads, projection
+records + reader-side identity re-derivation, and the attestation-producer
+design packet.
