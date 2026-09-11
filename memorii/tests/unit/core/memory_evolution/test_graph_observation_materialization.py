@@ -587,6 +587,98 @@ def test_intent_inventory_mismatch_denies(backend, monkeypatch):
         _cohort_input(backend)
 
 
+def test_evidence_pair_outside_committed_inventory_denies(backend, monkeypatch):
+    """An accepted effect's evidence pair whose citation record is not a
+    committed record of the selected delta denies."""
+    group_request = next(
+        request for request in backend.authority.group_requests
+        if request.transaction_group_id == backend.selected_delta.transaction_group_id
+    )
+    item = group_request.ordered_operation_inputs[0]
+    effect = item.reduction.effect_materialization.accepted_effect
+    projection = effect.evidence_projections[0]
+    citation = projection.citation_record
+    payload = citation.planning_payload.model_copy(deep=True)
+    payload.planning_record["citation_id"] = "citation:uncommitted"
+    tampered_pair = projection.model_copy(update={
+        "citation_record": citation.model_copy(update={
+            "record_id": "citation:uncommitted",
+            "planning_payload": payload,
+        }),
+    })
+    substituted_effect = effect.model_copy(update={
+        "evidence_projections": (tampered_pair, *effect.evidence_projections[1:]),
+    })
+    substituted = item.model_copy(update={
+        "reduction": item.reduction.model_copy(update={
+            "effect_materialization": item.reduction.effect_materialization.model_copy(
+                update={"accepted_effect": substituted_effect},
+            ),
+        }),
+    })
+    _substitute_authority(backend, monkeypatch, group_requests=tuple(
+        request.model_copy(update={"ordered_operation_inputs": (substituted,)})
+        if request is group_request else request
+        for request in backend.authority.group_requests
+    ))
+    with pytest.raises(
+        ObservationCohortUnavailableError,
+        match="accepted effect evidence pair is not part of the committed record inventory",
+    ):
+        _cohort_input(backend)
+
+
+def test_change_without_accepted_intent_denies(backend, monkeypatch):
+    """A committed record change covered by no accepted operation's record
+    intents denies instead of being silently dropped.
+
+    The uncovered change and its owning commit event are moved from the other
+    transaction into the selected delta's changes and event batch, so every
+    earlier integrity join (event-batch closure, commit coordinates, system
+    intervals) still passes and only the group-level intent union denies.
+    """
+    other_change = next(
+        change for change in backend.other_delta.record_changes
+        if change.record_kind == "entity_revision"
+    )
+    other_batch = _other_batch(backend)
+    other_event = next(
+        event for event in other_batch.events
+        if event.payload.record_kind == "entity_revision"
+        and event.payload.record_id == other_change.record_id
+    )
+    selected_batch = _selected_batch(backend)
+    selected = backend.selected_delta.model_copy(update={
+        "record_changes": (*backend.selected_delta.record_changes, other_change),
+    })
+    moved_batches = []
+    for batch in backend.authority.event_batches:
+        if batch is selected_batch:
+            moved_batches.append(batch.model_copy(update={
+                "events": (*batch.events, other_event),
+            }))
+        elif batch is other_batch:
+            moved_batches.append(batch.model_copy(update={
+                "events": tuple(event for event in batch.events if event is not other_event),
+            }))
+        else:
+            moved_batches.append(batch)
+    _substitute_authority(
+        backend, monkeypatch,
+        graph_deltas=tuple(
+            selected if delta is backend.selected_delta else delta
+            for delta in backend.authority.graph_deltas
+        ),
+        event_batches=tuple(moved_batches),
+    )
+    with pytest.raises(
+        ObservationCohortUnavailableError,
+        match="committed graph mutation is not closed by the accepted operations' "
+        "record intents",
+    ):
+        _cohort_input(backend)
+
+
 def test_event_batch_record_set_mismatch_denies(backend, monkeypatch):
     batch = _selected_batch(backend)
     stripped = batch.model_copy(update={"events": batch.events[:-1]})

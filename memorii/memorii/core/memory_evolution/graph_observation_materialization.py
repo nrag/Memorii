@@ -209,14 +209,32 @@ class AtomicStoreGraphObservationCohortProvider:
                     for change in delta.record_changes
                 ),
             )
+            covered: set[tuple[str, str]] = set()
             for item in request.ordered_operation_inputs:
                 if item.reduction.native_terminal.status != "accepted":
                     continue
                 projected = self._project_operation(
                     item=item, request=request, delta=delta, authority=authority,
                     commit_values=commit_values, system_intervals=system_intervals,
+                    covered=covered,
                 )
                 emitted.extend(projected)
+            # Converse of the per-operation intent joins: the union of every
+            # accepted operation's record intents must close the whole group's
+            # committed record changes.  Non-accepted operations carry no
+            # intents or effects (the effect-materialization contract denies
+            # "nonaccepting native materialization has effects"), so a change
+            # covered by no accepted intent is unobserved by anything and
+            # denies instead of being silently dropped.
+            uncovered = sorted(
+                {(change.record_kind, change.record_id) for change in delta.record_changes}
+                - covered
+            )
+            if uncovered:
+                raise ObservationCohortUnavailableError(
+                    "committed graph mutation is not closed by the accepted operations' "
+                    "record intents: " + ", ".join(f"{kind} {record_id}" for kind, record_id in uncovered)
+                )
         return tuple(emitted)
 
     def _boundary_stream_records(
@@ -296,6 +314,7 @@ class AtomicStoreGraphObservationCohortProvider:
         authority: DetachedSemanticObservationAuthority,
         commit_values: PlanningCommitValues,
         system_intervals: Mapping[tuple[str, str], TimeInterval],
+        covered: set[tuple[str, str]],
     ) -> tuple[NativeGraphObservationStreamRecord, ...]:
         compilation: BootstrapNativeOperationCompilationV3 = (
             item.reduction.native_compilation
@@ -330,6 +349,7 @@ class AtomicStoreGraphObservationCohortProvider:
                     "accepted graph mutation is not the retained committed inventory"
                 )
             materialized.append(record)
+            covered.add(identity)
         evidence_pairs = []
         for projection in _accepted_evidence_projections(effect):
             citation = materialize_canonical_planning_payload(
@@ -344,6 +364,17 @@ class AtomicStoreGraphObservationCohortProvider:
                 raise ObservationCohortUnavailableError(
                     "retained evidence pair does not materialize to its canonical records"
                 )
+            # Converse closure: every accepted-effect evidence pair must itself
+            # be retained as committed records of this selected delta; a pair
+            # whose citation or provenance is outside the committed inventory
+            # denies instead of observing uncommitted evidence.
+            for record in (citation, provenance):
+                change = changes.get((record.record_kind, graph_record_id(record)))
+                if change is None or change.after_digest != record.record_digest:
+                    raise ObservationCohortUnavailableError(
+                        "accepted effect evidence pair is not part of the committed "
+                        "record inventory"
+                    )
             evidence_pairs.append((citation, provenance))
         lookup = _native_entity_lookup(
             operation_records=tuple(materialized), authority=authority,

@@ -447,24 +447,42 @@ def test_unique_eligible_retained_type_evidence_yields_canonical_type(
         and item.primary_key == entity.entity_revision_id
     )
     assert payload.canonical_type == "product"
-    other_revision = EntityRevision.create(
-        entity_revision_id="entity:other", logical_entity_id=entity.logical_entity_id,
-        operation_id=entity.operation_id, codec_fingerprint=entity.codec_fingerprint,
-        source_evidence=entity.source_evidence,
+    object_entity = next(
+        record for record in arm.records
+        if isinstance(record, EntityRevision)
+        and record.entity_revision_id != entity.entity_revision_id
     )
-    unrelated = _project(
+    sibling = _project(
         arm, history=history, limits=limits,
         retained_native_records=(
             *arm.records, _type_evidence(entity, "product"),
-            _type_evidence(other_revision, "person"),
+            _type_evidence(object_entity, "person"),
         ),
     )
     payload = next(
-        item.payload for item in unrelated
+        item.payload for item in sibling
         if item.record_kind == "entity_revision"
         and item.primary_key == entity.entity_revision_id
     )
+    # Evidence bound to another entity revision of the same closed inventory
+    # joins the cohort without disturbing this entity's canonical type.
     assert payload.canonical_type == "product"
+    foreign_revision = EntityRevision.create(
+        entity_revision_id="entity:foreign", logical_entity_id=entity.logical_entity_id,
+        operation_id=entity.operation_id, codec_fingerprint=entity.codec_fingerprint,
+        source_evidence=entity.source_evidence,
+    )
+    with pytest.raises(
+        NativeGraphObservationProjectionError,
+        match="retained native inventory is not closed by the operation's planning records",
+    ):
+        _project(
+            arm, history=history, limits=limits,
+            retained_native_records=(
+                *arm.records, _type_evidence(entity, "product"),
+                _type_evidence(foreign_revision, "person"),
+            ),
+        )
     competing = (
         *arm.records, _type_evidence(entity, "product"), _type_evidence(entity, "person"),
     )
@@ -648,6 +666,38 @@ def test_duplicate_retained_identity_denies(tmp_path, monkeypatch, arm):
         _project(
             arm, history=history, limits=limits,
             retained_native_records=(*arm.records, arm.records[0]),
+        )
+
+
+def test_unmatched_retained_inventory_record_denies(tmp_path, monkeypatch, arm):
+    """The planning records must close the retained inventory: a retained
+    record consumed by no planning record and holding no recognized join
+    helper role denies."""
+    history, limits = observation_publication(tmp_path, monkeypatch, _FACT_ROOTS)
+    entity = _entity(arm.records)
+    unmatched = EntityRevision.create(
+        entity_revision_id="entity:unmatched", logical_entity_id=entity.logical_entity_id,
+        operation_id=entity.operation_id, codec_fingerprint=entity.codec_fingerprint,
+        source_evidence=entity.source_evidence,
+    )
+    with pytest.raises(
+        NativeGraphObservationProjectionError,
+        match="retained native inventory is not closed by the operation's planning records: "
+        "entity_revision entity:unmatched",
+    ):
+        _project(
+            arm, history=history, limits=limits,
+            retained_native_records=(*arm.records, unmatched),
+        )
+    # Type evidence bound to a foreign revision is not a recognized join helper.
+    with pytest.raises(
+        NativeGraphObservationProjectionError,
+        match="retained native inventory is not closed by the operation's planning records: "
+        "type_evidence evidence:person:False",
+    ):
+        _project(
+            arm, history=history, limits=limits,
+            retained_native_records=(*arm.records, _type_evidence(unmatched, "person")),
         )
 
 

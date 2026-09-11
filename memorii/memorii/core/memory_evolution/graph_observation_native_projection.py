@@ -175,6 +175,14 @@ def project_native_graph_observation_stream(
         operation_execution_id=compilation.operation_execution_id,
     )
     _require_supported_record_kinds(records)
+    inventory_entities = {
+        value.entity_revision_id for value in records if isinstance(value, EntityRevision)
+    }
+    _require_retained_inventory_closed(
+        records,
+        inventory_entities=inventory_entities,
+        retained_native_records=retained_native_records,
+    )
 
     claims = [value for value in records if isinstance(value, ClaimAssertion)]
     if len(claims) != 1:
@@ -182,8 +190,16 @@ def project_native_graph_observation_stream(
             "accepted operation arm does not retain exactly one claim assertion"
         )
     claim = claims[0]
+    # The canonical-type cohort is closed to evidence that binds one entity
+    # revision of this operation's inventory; evidence bound to foreign
+    # entities or revisions neither joins a type nor survives the inventory
+    # closure above.  ``_canonical_type`` still matches the exact revision id
+    # per asserted entity, so foreign-bound evidence never supplies a type.
     type_evidence_cohort = tuple(
-        value for value in retained_native_records if isinstance(value, TypeEvidence)
+        value for value in retained_native_records
+        if isinstance(value, TypeEvidence)
+        and isinstance(value.entity_reference, CanonicalEntityRevisionRef)
+        and value.entity_reference.entity_revision_id in inventory_entities
     )
     retained_spans = tuple(
         construction.source_span
@@ -330,6 +346,42 @@ def _require_supported_record_kinds(records: Sequence[CanonicalGraphRecord]) -> 
         raise NativeGraphObservationProjectionError(
             "retained native record kind has no exact observed projection recipe: "
             + ", ".join(unsupported)
+        )
+
+
+def _require_retained_inventory_closed(
+    records: Sequence[CanonicalGraphRecord],
+    *,
+    inventory_entities: set[str],
+    retained_native_records: Sequence[CanonicalGraphRecord],
+) -> None:
+    """Require the planning records to close the retained native inventory.
+
+    The converse of ``_materialized_records``: every retained record is
+    consumed by this operation's materialized planning set or is one of the
+    recognized non-emitting join helpers.  ``claim_projection`` is the
+    documented join helper for relation pairing; retained type evidence joins
+    into entity canonical types only while it binds one entity revision of
+    this closed inventory.  Any other unmatched retained record -- including
+    evidence bound to foreign entities or revisions -- has no consumed role
+    and denies instead of riding along silently.
+    """
+    planned = {
+        (value.record_kind, graph_record_id(value)) for value in records
+    }
+    for value in retained_native_records:
+        key = (value.record_kind, graph_record_id(value))
+        if key in planned:
+            continue
+        if isinstance(value, ClaimProjection) or (
+            isinstance(value, TypeEvidence)
+            and isinstance(value.entity_reference, CanonicalEntityRevisionRef)
+            and value.entity_reference.entity_revision_id in inventory_entities
+        ):
+            continue
+        raise NativeGraphObservationProjectionError(
+            "retained native inventory is not closed by the operation's planning records: "
+            + f"{value.record_kind} {graph_record_id(value)}"
         )
 
 
