@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -2125,3 +2125,350 @@ def test_identity_arm_projects_lineage_and_reference_disposition_envelope(
             accepted_effect=effect, retained_native_records=records,
             evidence_pairs=pairs, native_entity_lookup=lookup,
         )
+
+
+# --- Observed temporal/trust claim projections from retained publications ---
+#
+# The projection-record producer is exercised against a real published
+# projection history (two generations, temporal and trust) reconstructed from
+# the same detached memory-plane snapshot, mirroring the detached authority.
+# Every denial below keeps a passing control in the same test that proves the
+# guard is load-bearing for exactly the guarded condition.
+
+
+_PROJECTION_ROOTS = (
+    "ProjectionObservationIdentity", "ObservedTemporalClaimProjection",
+    "ObservedTrustClaimProjection",
+)
+
+
+def _published_history(tmp_path, monkeypatch, *, publications: int):
+    """Publish real temporal/trust generations and detach their authority."""
+    from tests.unit.core.test_projection_history import (
+        T0 as HISTORY_T0,
+    )
+    from tests.unit.core.test_projection_history import (
+        _Clock,
+        _repository,
+        _request,
+    )
+
+    clock = _Clock(*(
+        HISTORY_T0 + timedelta(hours=index + 1) for index in range(publications)
+    ))
+    harness = _repository(tmp_path / "projection-history", clock)
+    for operation in range(1, publications + 1):
+        harness.install(_request(
+            operation, outcome="contested" if operation == 1 else "pass",
+        ))
+    revision, records = harness.plane.read_write_snapshot()
+    from memorii.core.memory_evolution.projection_history import (
+        ProjectionHistoryRepository,
+    )
+    from memorii.core.memory_plane.service import MemoryPlaneService
+    from memorii.core.memory_plane.store import ReadOnlyMemoryPlaneSnapshotStore
+
+    detached = ProjectionHistoryRepository(
+        MemoryPlaneService(record_store=ReadOnlyMemoryPlaneSnapshotStore(
+            write_revision=revision, records=records,
+        )),
+        repository_id="semantic_ingestion",
+    )
+    return harness, detached
+
+
+def _project_publications(
+    published, projection_history, *,
+    view="current", valid_at=None, system_as_of=None, graph_revision=None,
+):
+    """Project one retained projection history under a published registry.
+
+    ``published`` is the ``observation_publication`` fixture result.
+    """
+    from memorii.core.memory_evolution.graph_observation_materialization import (
+        project_observed_claim_projections,
+    )
+    from tests.unit.core.test_projection_history import T0 as HISTORY_T0
+
+    history, limits = published
+    return project_observed_claim_projections(
+        projection_history=projection_history, view=view, valid_at=valid_at,
+        system_as_of=system_as_of or HISTORY_T0 + timedelta(days=1),
+        graph_revision=graph_revision or "graph-revision-2",
+        history=history,
+        publication=history.publications[0],
+        limits=limits,
+    )
+
+
+def _projection_kind(record_kind: str) -> str:
+    return (
+        "temporal" if record_kind == "temporal_claim_projection" else "trust"
+    )
+
+
+def test_current_view_emits_projection_records_from_active_publications(
+    tmp_path, monkeypatch,
+):
+    published = observation_publication(
+        tmp_path, monkeypatch, _PROJECTION_ROOTS,
+    )
+    harness, detached = _published_history(tmp_path, monkeypatch, publications=2)
+    active_temporal = detached.active_temporal_authority()
+    active_trust = detached.active_trust_authority()
+    selection = _project_publications(published, detached)
+
+    assert selection.temporal_generation_digest == (
+        active_temporal.pointer.generation_digest
+    )
+    assert selection.temporal_pointer_digest == active_temporal.pointer.pointer_digest
+    assert selection.trust_generation_digest == active_trust.pointer.generation_digest
+    assert selection.trust_pointer_digest == active_trust.pointer.pointer_digest
+    assert [item.record_kind for item in selection.records] == [
+        "temporal_claim_projection", "trust_claim_projection",
+    ]
+    from memorii.core.memory_evolution.observation_activation_runtime import (
+        derive_projection_observation_identity,
+    )
+
+    for item, view in (
+        (selection.records[0], active_temporal),
+        (selection.records[1], active_trust),
+    ):
+        payload = item.payload
+        assert payload.projection == view.projections[-1]
+        assert payload.generation_digest == view.pointer.generation_digest
+        assert payload.publication_pointer == view.pointer
+        assert payload.successor_publication_pointer is None
+        assert payload.boundary is True
+        assert item.primary_key == payload.observation_id
+        assert item.record_digest == payload.record_digest
+        assert _HEX64.fullmatch(payload.record_digest)
+        # The outward identity is the registered derived identity, never a
+        # hand-set value.
+        assert payload.observation_id == derive_projection_observation_identity(
+            _projection_kind(item.record_kind),
+            payload.projection.repository_id, payload.generation_digest,
+            payload.projection.projection_digest,
+            history=published[0],
+            publication=published[0].publications[0],
+            limits=published[1],
+        )
+
+
+def test_historical_view_selects_publication_at_system_time_with_successor(
+    tmp_path, monkeypatch,
+):
+    from tests.unit.core.test_projection_history import T0 as HISTORY_T0
+
+    published = observation_publication(
+        tmp_path, monkeypatch, _PROJECTION_ROOTS,
+    )
+    harness, detached = _published_history(tmp_path, monkeypatch, publications=2)
+    first_temporal = detached.historical_temporal(
+        system_as_of=HISTORY_T0 + timedelta(hours=1)
+    )
+    second_temporal = detached.historical_temporal(
+        system_as_of=HISTORY_T0 + timedelta(hours=2)
+    )
+    selection = _project_publications(
+        published, detached, view="historical",
+        valid_at=HISTORY_T0 + timedelta(minutes=30),
+        system_as_of=HISTORY_T0 + timedelta(hours=1, minutes=30),
+    )
+    temporal_payload = selection.records[0].payload
+    assert selection.temporal_pointer_digest == (
+        first_temporal.pointer.pointer_digest
+    )
+    assert temporal_payload.publication_pointer == first_temporal.pointer
+    # The immediately following same-kind pointer is retained as successor.
+    assert temporal_payload.successor_publication_pointer == (
+        second_temporal.pointer
+    )
+    assert temporal_payload.projection.projection_digest == (
+        first_temporal.projections[-1].projection_digest
+    )
+    trust_payload = selection.records[1].payload
+    assert trust_payload.successor_publication_pointer is not None
+    assert trust_payload.successor_publication_pointer.pointer_digest != (
+        trust_payload.publication_pointer.pointer_digest
+    )
+
+
+def test_view_and_valid_time_combinations_deny_with_controls(tmp_path, monkeypatch):
+    from tests.unit.core.test_projection_history import T0 as HISTORY_T0
+
+    published = observation_publication(
+        tmp_path, monkeypatch, _PROJECTION_ROOTS,
+    )
+    _, detached = _published_history(tmp_path, monkeypatch, publications=2)
+    from memorii.core.memory_evolution.graph_observation_paging import (
+        ObservationCohortUnavailableError,
+    )
+
+    with pytest.raises(
+        ObservationCohortUnavailableError,
+        match="current projection view cannot select a valid time",
+    ):
+        _project_publications(
+            published, detached, view="current",
+            valid_at=HISTORY_T0,
+        )
+    # Control: the same authority with no valid time emits.
+    assert _project_publications(published, detached).records
+    with pytest.raises(
+        ObservationCohortUnavailableError,
+        match="historical projection view requires a valid time",
+    ):
+        _project_publications(
+            published, detached, view="historical", valid_at=None,
+        )
+    # Control: the same authority with a valid time emits historical records.
+    assert _project_publications(
+        published, detached, view="historical",
+        valid_at=HISTORY_T0, system_as_of=HISTORY_T0 + timedelta(days=1),
+    ).records
+    with pytest.raises(
+        ObservationCohortUnavailableError,
+        match="no exact publication selection recipe",
+    ):
+        _project_publications(
+            published, detached, view="lineage", valid_at=None,
+        )
+
+
+def test_absent_history_allows_null_pairs_only_for_current_view(
+    tmp_path, monkeypatch,
+):
+    from tests.unit.core.test_projection_history import T0 as HISTORY_T0
+
+    published = observation_publication(
+        tmp_path, monkeypatch, _PROJECTION_ROOTS,
+    )
+    harness, detached = _published_history(tmp_path, monkeypatch, publications=0)
+    empty = _project_publications(published, detached)
+    # Before the first projection generation the cohort remains observable
+    # with null pairs and no projection records.
+    assert empty.records == ()
+    assert empty.temporal_generation_digest is None
+    assert empty.temporal_pointer_digest is None
+    assert empty.trust_generation_digest is None
+    assert empty.trust_pointer_digest is None
+    from memorii.core.memory_evolution.graph_observation_paging import (
+        ObservationCohortUnavailableError,
+    )
+
+    # A historical view denies when no publication exists at its coordinate.
+    with pytest.raises(
+        ObservationCohortUnavailableError,
+        match="selected projection publication is not retained in the detached image",
+    ):
+        _project_publications(
+            published, detached, view="historical",
+            valid_at=HISTORY_T0, system_as_of=HISTORY_T0,
+        )
+
+
+def test_stale_active_generation_denies_current_view_with_control(
+    tmp_path, monkeypatch,
+):
+    published = observation_publication(
+        tmp_path, monkeypatch, _PROJECTION_ROOTS,
+    )
+    _, detached = _published_history(tmp_path, monkeypatch, publications=2)
+    from memorii.core.memory_evolution.graph_observation_paging import (
+        ObservationCohortUnavailableError,
+    )
+
+    with pytest.raises(
+        ObservationCohortUnavailableError,
+        match="active temporal projection generation does not bind the requested graph",
+    ):
+        _project_publications(
+            published, detached, graph_revision="graph-revision-1",
+        )
+    # Control: the active generations bind the requested revision.
+    assert _project_publications(published, detached).records
+
+
+def test_asymmetric_projection_history_denies_with_control(tmp_path, monkeypatch):
+    """One kind's retained history cannot stand in for the other's absence."""
+    from memorii.core.memory_evolution.graph_observation_paging import (
+        ObservationCohortUnavailableError,
+    )
+    from memorii.core.memory_evolution.projection_history import (
+        ProjectionHistoryRepository,
+    )
+    from memorii.core.memory_plane.service import MemoryPlaneService
+    from memorii.core.memory_plane.store import ReadOnlyMemoryPlaneSnapshotStore
+
+    published = observation_publication(
+        tmp_path, monkeypatch, _PROJECTION_ROOTS,
+    )
+    harness, detached = _published_history(tmp_path, monkeypatch, publications=2)
+    revision, records = harness.plane.read_write_snapshot()
+    asymmetric = ProjectionHistoryRepository(
+        MemoryPlaneService(record_store=ReadOnlyMemoryPlaneSnapshotStore(
+            write_revision=revision,
+            records=tuple(
+                record for record in records
+                if not record.source_kind.startswith("semantic_projection_trust")
+            ),
+        )),
+        repository_id="semantic_ingestion",
+    )
+    with pytest.raises(
+        ObservationCohortUnavailableError,
+        match="selected projection publication is not retained in the detached image",
+    ):
+        _project_publications(published, asymmetric)
+    # Control: the complete detached image of the same snapshot emits.
+    assert _project_publications(published, detached).records
+
+
+def test_identity_root_absent_denies_emission_with_control(tmp_path, monkeypatch):
+    """A publication without the identity root never receives hand-set identities."""
+    published = observation_publication(
+        tmp_path, monkeypatch,
+        ("ObservedTemporalClaimProjection", "ObservedTrustClaimProjection"),
+    )
+    harness, detached = _published_history(tmp_path, monkeypatch, publications=2)
+    from memorii.core.memory_evolution.graph_observation_paging import (
+        ObservationCohortUnavailableError,
+    )
+
+    with pytest.raises(
+        ObservationCohortUnavailableError,
+        match="projection observation identity root is not selected",
+    ):
+        _project_publications(published, detached)
+    # Control: the same retained authority emits under a publication with the
+    # identity root.
+    with_identity = observation_publication(
+        tmp_path / "identity", monkeypatch, _PROJECTION_ROOTS,
+    )
+    assert _project_publications(with_identity, detached).records
+
+
+def test_successor_pointer_join_guards(tmp_path, monkeypatch):
+    """An unknown pointer digest denies; the retained successor join is exact."""
+    from memorii.core.memory_evolution.projection_history import (
+        ProjectionHistoryError,
+    )
+    from tests.unit.core.test_projection_history import T0 as HISTORY_T0
+
+    _, detached = _published_history(tmp_path, monkeypatch, publications=2)
+    active = detached.active_temporal_authority()
+    successor = detached.publication_successor(
+        "temporal", active.pointer.pointer_digest
+    )
+    assert successor is None  # the tip has no successor
+    historical = detached.historical_temporal(
+        system_as_of=HISTORY_T0 + timedelta(hours=1)
+    )
+    assert historical.pointer.pointer_digest != active.pointer.pointer_digest
+    assert detached.publication_successor(
+        "temporal", historical.pointer.pointer_digest
+    ) == active.pointer
+    with pytest.raises(ProjectionHistoryError):
+        detached.publication_successor("temporal", "0" * 64)

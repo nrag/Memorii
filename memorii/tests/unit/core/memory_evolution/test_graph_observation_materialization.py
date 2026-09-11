@@ -269,6 +269,13 @@ def test_merged_stream_contains_ingestion_and_native_records(backend):
     assert len(identities) == len(set(identities))
     assert set(kinds) >= _INGESTION_KINDS
     assert set(kinds) >= _NATIVE_KINDS
+    projection_kinds = ("temporal_claim_projection", "trust_claim_projection")
+    changed = [
+        item for item in cohort.stream if item.record_kind not in projection_kinds
+    ]
+    projections = [
+        item for item in cohort.stream if item.record_kind in projection_kinds
+    ]
     for record in cohort.stream:
         assert _HEX64.fullmatch(record.record_digest)
         assert record.record_digest != "0" * 64
@@ -279,7 +286,11 @@ def test_merged_stream_contains_ingestion_and_native_records(backend):
             assert record.payload.system_interval == TimeInterval(start=TEST_NOW)
             assert record.payload.system_interval != TimeInterval(start=_SNAPSHOT_TIME)
         if "boundary" in type(record.payload).model_fields:
-            assert record.payload.boundary is False
+            # Projection publications are boundary records: retained state
+            # selected through their own publication pointers, never changes
+            # of the selected deltas.  Every other record of this real
+            # single-delta cohort is changed by the delta itself.
+            assert record.payload.boundary is (record.record_kind in projection_kinds)
     claim = next(item for item in cohort.stream if item.record_kind == "claim_assertion")
     assert claim.payload.polarity == "positive"
     assert claim.payload.policy_fingerprints == tuple(sorted(set(claim.payload.policy_fingerprints)))
@@ -296,11 +307,47 @@ def test_merged_stream_contains_ingestion_and_native_records(backend):
     preimage = cohort.cohort_preimage
     assert preimage.changed_record_keys == tuple(
         GraphObservationRecordKey(record_kind=item.record_kind, primary_key=item.primary_key)
-        for item in cohort.stream
+        for item in changed
     )
-    # Every reference of the selected delta is also changed by it, so this
-    # real single-delta cohort has no boundary records.
-    assert preimage.boundary_record_keys == ()
+    # Projection publications, when the detached image retains them, are the
+    # cohort's boundary records and name their selected generation/pointer
+    # pairs; a history absent before the first publication keeps null pairs.
+    assert preimage.boundary_record_keys == tuple(
+        GraphObservationRecordKey(record_kind=item.record_kind, primary_key=item.primary_key)
+        for item in projections
+    )
+    assert (preimage.temporal_projection_generation_digest is None) == (
+        "temporal_claim_projection" not in kinds
+    )
+    assert (preimage.temporal_projection_pointer_digest is None) == (
+        "temporal_claim_projection" not in kinds
+    )
+    assert (preimage.trust_projection_generation_digest is None) == (
+        "trust_claim_projection" not in kinds
+    )
+    assert (preimage.trust_projection_pointer_digest is None) == (
+        "trust_claim_projection" not in kinds
+    )
+    if projections:
+        active_temporal = backend.authority.projection_history.active_temporal_authority()
+        active_trust = backend.authority.projection_history.active_trust_authority()
+        assert preimage.temporal_projection_generation_digest == (
+            active_temporal.pointer.generation_digest
+        )
+        assert preimage.temporal_projection_pointer_digest == (
+            active_temporal.pointer.pointer_digest
+        )
+        assert preimage.trust_projection_generation_digest == (
+            active_trust.pointer.generation_digest
+        )
+        assert preimage.trust_projection_pointer_digest == (
+            active_trust.pointer.pointer_digest
+        )
+        for item in projections:
+            payload = item.payload
+            assert payload.boundary is True
+            assert payload.successor_publication_pointer is None
+            assert item.primary_key == payload.observation_id
     assert len(preimage.graph_revision_delta_ids) == 1
     assert preimage.graph_revision_delta_digests == (backend.selected_delta.delta_digest,)
     assert preimage.graph_revision == backend.authority.graph.graph_revision
@@ -384,8 +431,18 @@ def test_cross_transaction_referenced_entity_emits_boundary_record(backend, monk
     }))
     assert payload.operation_ids == (retained.operation_id,)
     preimage = cohort.cohort_preimage
+    projection_kinds = ("temporal_claim_projection", "trust_claim_projection")
+    projections = [
+        item for item in cohort.stream if item.record_kind in projection_kinds
+    ]
+    # Boundary keys carry the referenced entity plus the separately selected
+    # projection publications, never a change of the selected deltas.
     assert preimage.boundary_record_keys == (
         GraphObservationRecordKey(record_kind="entity_revision", primary_key=boundary_entity_id),
+        *(
+            GraphObservationRecordKey(record_kind=item.record_kind, primary_key=item.primary_key)
+            for item in projections
+        ),
     )
     assert all(
         (item.record_kind, item.primary_key) != ("entity_revision", boundary_entity_id)
@@ -395,7 +452,7 @@ def test_cross_transaction_referenced_entity_emits_boundary_record(backend, monk
         GraphObservationRecordKey(record_kind=item.record_kind, primary_key=item.primary_key)
         for item in cohort.stream if not (
             item.record_kind == "entity_revision" and item.payload.boundary
-        )
+        ) and item.record_kind not in projection_kinds
     ) == preimage.changed_record_keys
 
 
@@ -740,8 +797,14 @@ def test_duplicate_merged_identity_denies(backend):
     native = tuple(
         item for item in cohort.stream if item.record_kind in _NATIVE_KINDS
     )
+    projection_kinds = ("temporal_claim_projection", "trust_claim_projection")
+    projections = tuple(
+        item for item in cohort.stream if item.record_kind in projection_kinds
+    )
     assert ingestion and native
-    assert _merge_observation_streams(ingestion, native) == cohort.stream
+    # The provider merges ingestion records, native delta records, boundary
+    # entities, and separately selected projection publications.
+    assert _merge_observation_streams(ingestion, (*native, *projections)) == cohort.stream
     with pytest.raises(
         ObservationCohortUnavailableError, match="duplicate record identity",
     ):

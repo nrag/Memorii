@@ -5,13 +5,17 @@ tuple supplied by paging plus the detached observation authority that tuple
 reconstructs.  It has no memory-plane read path of its own.  Ingestion
 observation records and graph mutation records are materialized separately and
 merged into one complete stream; a partial or duplicated cohort is denied.
+Temporal and trust claim projections are exposed separately from their own
+retained projection publications, selected by the requested view/time and
+never derived from graph deltas.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING, Literal, TypeAlias, TypeVar
 
 from memorii.core.memory_evolution.atomic_store import (
     DetachedSemanticObservationAuthority,
@@ -25,6 +29,7 @@ from memorii.core.memory_evolution.graph_observation_cohort import (
     ResolvedObservationMembership,
     resolve_observation_membership,
 )
+from memorii.core.memory_evolution.graph_observation_contracts import GraphObservationView
 from memorii.core.memory_evolution.graph_observation_ingestion_projection import (
     materialize_ingestion_observation_stream,
 )
@@ -46,11 +51,19 @@ from memorii.core.memory_evolution.graph_observation_public_contracts import (
     GraphObservationRequestCoordinates,
     IngestionTimeAttestationRequestCoordinates,
 )
+from memorii.core.memory_evolution.graph_observation_records import (
+    ObservedTemporalClaimProjection,
+    ObservedTrustClaimProjection,
+)
 from memorii.core.memory_evolution.graph_observation_snapshot_contracts import (
     GraphObservationCohortPreimage,
     GraphObservationRecordKey,
 )
-from memorii.core.memory_evolution.graph_observation_streams import GraphObservationStreamRecord
+from memorii.core.memory_evolution.graph_observation_streams import (
+    GraphObservationStreamRecord,
+    TemporalClaimProjectionStreamRecord,
+    TrustClaimProjectionStreamRecord,
+)
 from memorii.core.memory_evolution.graph_planning import (
     PlanningCommitValues,
     materialize_canonical_planning_payload,
@@ -63,8 +76,27 @@ from memorii.core.memory_evolution.graph_records import (
     graph_record_id,
 )
 from memorii.core.memory_evolution.models import MemoryScope
+from memorii.core.memory_evolution.observation_activation_runtime import (
+    ObservationActivationRuntimeError,
+    derive_projection_observation_identity,
+    emit_registered_observation_artifact,
+    projection_observation_identity_root_selected,
+)
+from memorii.core.memory_evolution.projection_history import (
+    ProjectionHistoryError,
+    ProjectionHistoryRepository,
+)
+from memorii.core.memory_evolution.semantic_state import (
+    ActiveTemporalProjectionPointer,
+    ActiveTrustProjectionPointer,
+    TemporalProjectionRecord,
+    TemporalProjectionView,
+    TrustProjectionRecord,
+    TrustProjectionView,
+)
 from memorii.core.memory_evolution.time_contracts import TimeInterval
 from memorii.core.memory_evolution.typed_value_artifact_reader import ProtectedTypedValueArtifactReaderLimits
+from memorii.core.memory_evolution.typed_value_model_codec import TypedValueModelCodecCapacityError
 from memorii.core.memory_evolution.typed_value_publication import VerifiedTypedValuePublication
 from memorii.core.memory_evolution.typed_value_registry_history import ProtectedTypedValueRegistryHistory
 from memorii.core.semantic_ingestion.contracts import (
@@ -142,11 +174,19 @@ class AtomicStoreGraphObservationCohortProvider:
             authority=authority, membership=membership,
         )
         boundary = self._boundary_stream_records(authority=authority, membership=membership)
-        stream = _merge_observation_streams(ingestion, (*native, *boundary))
+        projections = project_observed_claim_projections(
+            projection_history=authority.projection_history,
+            view=request.view, valid_at=request.valid_at,
+            system_as_of=request.system_as_of,
+            graph_revision=authority.graph.graph_revision,
+            history=self._history, publication=self._publication, limits=self._limits,
+        )
+        stream = _merge_observation_streams(ingestion, (*native, *boundary, *projections.records))
         if len(stream) > maximum_stream_records:
             raise ObservationCohortUnavailableError("observation stream record ceiling exceeded")
         preimage = self._preimage(
-            authority, membership, decision, request, (*ingestion, *native), boundary,
+            authority, membership, decision, request, (*ingestion, *native),
+            (*boundary, *projections.records), projections,
         )
         return GraphObservationCohortInput(cohort_preimage=preimage, stream=stream)
 
@@ -422,6 +462,7 @@ class AtomicStoreGraphObservationCohortProvider:
         request: GraphObservationRequestCoordinates,
         changed_stream: tuple[GraphObservationStreamRecord, ...],
         boundary_stream: tuple[GraphObservationStreamRecord, ...],
+        projections: ObservedProjectionPublicationSelection,
     ) -> GraphObservationCohortPreimage:
         reference = authority.references
         certificate = reference.audit_certificate
@@ -457,11 +498,282 @@ class AtomicStoreGraphObservationCohortProvider:
             reference_audit_certificate_digest=certificate.certificate_digest, complete=True,
             graph_revision=authority.graph.graph_revision, observation_revision=authority.observation.head.observation_revision,
             memory_plane_write_revision=authority.write_revision,
-            temporal_projection_generation_digest=None, temporal_projection_pointer_digest=None,
-            trust_projection_generation_digest=None, trust_projection_pointer_digest=None,
+            temporal_projection_generation_digest=projections.temporal_generation_digest,
+            temporal_projection_pointer_digest=projections.temporal_pointer_digest,
+            trust_projection_generation_digest=projections.trust_generation_digest,
+            trust_projection_pointer_digest=projections.trust_pointer_digest,
             observation_schema_fingerprint=_observation_schema_fingerprint(membership),
             changed_record_keys=keys, boundary_record_keys=boundary_keys,
         )
+
+
+@dataclass(frozen=True)
+class ObservedProjectionPublicationSelection:
+    """The separately selected projection publications of one observation.
+
+    Each generation/pointer pair is either both present or both null.  A null
+    selection means the detached image retains no verified projection history
+    before the first publication of either kind; it cannot stand in for an
+    unread, invalid, or unavailable history at a requested historical
+    coordinate, which denies instead.
+    """
+
+    temporal_generation_digest: str | None
+    temporal_pointer_digest: str | None
+    trust_generation_digest: str | None
+    trust_pointer_digest: str | None
+    records: tuple[GraphObservationStreamRecord, ...]
+
+
+def project_observed_claim_projections(
+    *,
+    projection_history: ProjectionHistoryRepository,
+    view: GraphObservationView,
+    valid_at: datetime | None,
+    system_as_of: datetime,
+    graph_revision: str,
+    history: ProtectedTypedValueRegistryHistory,
+    publication: VerifiedTypedValuePublication,
+    limits: ProtectedTypedValueArtifactReaderLimits,
+) -> ObservedProjectionPublicationSelection:
+    """Emit the observed temporal/trust claim projections of one cohort.
+
+    The publications come from the projection history retained in the same
+    detached memory-plane image, never from graph deltas or a live read.  A
+    current view selects each kind through its active pointer and requires the
+    active generation to bind the requested graph revision; a historical view
+    requires a valid time and selects each kind through its pointer at the
+    requested system time.  Each observed record copies its complete native
+    projection payload, generation digest, publication pointer, and same-kind
+    successor pointer, carries the cohort-derived boundary flag, and takes its
+    ``observation_id`` from the registered identity root of the selected
+    publication.  Every ambiguous, absent, or substituted value denies.
+    """
+
+    temporal, trust = _select_projection_publications(
+        projection_history, view=view, valid_at=valid_at, system_as_of=system_as_of,
+        graph_revision=graph_revision,
+    )
+    if temporal is None or trust is None:
+        return ObservedProjectionPublicationSelection(None, None, None, None, ())
+    if not projection_observation_identity_root_selected(history, publication):
+        raise ObservationCohortUnavailableError(
+            "projection observation identity root is not selected"
+        )
+    records = (
+        *_temporal_projection_records(
+            temporal, projection_history=projection_history, history=history,
+            publication=publication, limits=limits,
+        ),
+        *_trust_projection_records(
+            trust, projection_history=projection_history, history=history,
+            publication=publication, limits=limits,
+        ),
+    )
+    return ObservedProjectionPublicationSelection(
+        temporal_generation_digest=temporal.pointer.generation_digest,
+        temporal_pointer_digest=temporal.pointer.pointer_digest,
+        trust_generation_digest=trust.pointer.generation_digest,
+        trust_pointer_digest=trust.pointer.pointer_digest,
+        records=tuple(sorted(
+            records, key=lambda item: (item.record_kind, item.primary_key)
+        )),
+    )
+
+
+def _select_projection_publications(
+    projection_history: ProjectionHistoryRepository,
+    *,
+    view: GraphObservationView,
+    valid_at: datetime | None,
+    system_as_of: datetime,
+    graph_revision: str,
+) -> tuple[TemporalProjectionView | None, TrustProjectionView | None]:
+    """Apply the requested view/time to each kind's retained publication chain.
+
+    A current view must not select a valid time; a historical view requires
+    one, while the publication itself is selected at the requested system
+    time.  The two kinds select independently through their own canonical
+    rules; one kind's advance never substitutes or rewrites the other's
+    coordinate.  A repository that retains no projection history at all is
+    observable with null pairs before its first publication; anything absent
+    or unreadable at a requested historical coordinate denies.
+    """
+
+    if view == "current" and valid_at is not None:
+        raise ObservationCohortUnavailableError(
+            "current projection view cannot select a valid time"
+        )
+    if view == "historical" and valid_at is None:
+        raise ObservationCohortUnavailableError(
+            "historical projection view requires a valid time"
+        )
+    try:
+        bindings = projection_history.replay_bindings()
+        if view == "current":
+            if not bindings:
+                return None, None
+            temporal = projection_history.active_temporal_authority()
+            trust = projection_history.active_trust_authority()
+        elif view == "historical":
+            if not bindings:
+                raise ObservationCohortUnavailableError(
+                    "selected projection publication is not retained in the detached image"
+                )
+            temporal = projection_history.historical_temporal(system_as_of=system_as_of)
+            trust = projection_history.historical_trust(system_as_of=system_as_of)
+        else:
+            raise ObservationCohortUnavailableError(
+                "requested projection view has no exact publication selection recipe"
+            )
+    except ProjectionHistoryError as exc:
+        raise ObservationCohortUnavailableError(
+            "selected projection publication is not retained in the detached image"
+        ) from exc
+    if view == "current":
+        for kind, selected in (("temporal", temporal), ("trust", trust)):
+            if selected.generation.base_graph_revision != graph_revision:
+                raise ObservationCohortUnavailableError(
+                    f"active {kind} projection generation does not bind the "
+                    "requested graph revision"
+                )
+    return temporal, trust
+
+
+def _temporal_projection_records(
+    selected: TemporalProjectionView,
+    *,
+    projection_history: ProjectionHistoryRepository,
+    history: ProtectedTypedValueRegistryHistory,
+    publication: VerifiedTypedValuePublication,
+    limits: ProtectedTypedValueArtifactReaderLimits,
+) -> tuple[GraphObservationStreamRecord, ...]:
+    """Emit one observed temporal record per native projection of a publication."""
+    successor = projection_history.publication_successor(
+        "temporal", selected.pointer.pointer_digest
+    )
+    if not (successor is None or isinstance(successor, ActiveTemporalProjectionPointer)):
+        raise ObservationCohortUnavailableError(
+            "temporal projection successor pointer is substituted"
+        )
+    emitted: list[GraphObservationStreamRecord] = []
+    for projection in selected.projections:
+        payload = _emit_observed_projection(
+            ObservedTemporalClaimProjection(
+                observation_id=_derived_projection_identity(
+                    "temporal", projection, selected.pointer,
+                    history=history, publication=publication, limits=limits,
+                ),
+                projection=projection,
+                generation_digest=selected.pointer.generation_digest,
+                publication_pointer=selected.pointer,
+                successor_publication_pointer=successor, boundary=True,
+                record_digest="0" * 64,
+            ),
+            history=history, publication=publication, limits=limits,
+        )
+        emitted.append(TemporalClaimProjectionStreamRecord(
+            record_kind="temporal_claim_projection", primary_key=payload.observation_id,
+            record_digest=payload.record_digest, payload=payload,
+        ))
+    return tuple(emitted)
+
+
+def _trust_projection_records(
+    selected: TrustProjectionView,
+    *,
+    projection_history: ProjectionHistoryRepository,
+    history: ProtectedTypedValueRegistryHistory,
+    publication: VerifiedTypedValuePublication,
+    limits: ProtectedTypedValueArtifactReaderLimits,
+) -> tuple[GraphObservationStreamRecord, ...]:
+    """Emit one observed trust record per native projection of a publication."""
+    successor = projection_history.publication_successor(
+        "trust", selected.pointer.pointer_digest
+    )
+    if not (successor is None or isinstance(successor, ActiveTrustProjectionPointer)):
+        raise ObservationCohortUnavailableError(
+            "trust projection successor pointer is substituted"
+        )
+    emitted: list[GraphObservationStreamRecord] = []
+    for projection in selected.projections:
+        payload = _emit_observed_projection(
+            ObservedTrustClaimProjection(
+                observation_id=_derived_projection_identity(
+                    "trust", projection, selected.pointer,
+                    history=history, publication=publication, limits=limits,
+                ),
+                projection=projection,
+                generation_digest=selected.pointer.generation_digest,
+                publication_pointer=selected.pointer,
+                successor_publication_pointer=successor, boundary=True,
+                record_digest="0" * 64,
+            ),
+            history=history, publication=publication, limits=limits,
+        )
+        emitted.append(TrustClaimProjectionStreamRecord(
+            record_kind="trust_claim_projection", primary_key=payload.observation_id,
+            record_digest=payload.record_digest, payload=payload,
+        ))
+    return tuple(emitted)
+
+
+def _derived_projection_identity(
+    kind: Literal["temporal", "trust"],
+    projection: TemporalProjectionRecord | TrustProjectionRecord,
+    pointer: ActiveTemporalProjectionPointer | ActiveTrustProjectionPointer,
+    *,
+    history: ProtectedTypedValueRegistryHistory,
+    publication: VerifiedTypedValuePublication,
+    limits: ProtectedTypedValueArtifactReaderLimits,
+) -> str:
+    """Derive one projection's registered outward identity, or deny."""
+    try:
+        return derive_projection_observation_identity(
+            kind, projection.repository_id, pointer.generation_digest,
+            projection.projection_digest, history=history, publication=publication,
+            limits=limits,
+        )
+    except (ObservationActivationRuntimeError, TypedValueModelCodecCapacityError) as exc:
+        raise ObservationCohortUnavailableError(
+            f"observed {kind} projection identity cannot be derived"
+        ) from exc
+
+
+_ObservedProjectionT = TypeVar(
+    "_ObservedProjectionT", ObservedTemporalClaimProjection, ObservedTrustClaimProjection,
+)
+
+
+def _emit_observed_projection(
+    payload: _ObservedProjectionT,
+    *,
+    history: ProtectedTypedValueRegistryHistory,
+    publication: VerifiedTypedValuePublication,
+    limits: ProtectedTypedValueArtifactReaderLimits,
+) -> _ObservedProjectionT:
+    """Emit one observed projection payload through the registered path.
+
+    The registered emission supplies the real record digest and re-derives the
+    identity; a record that is not identical to its own emission denies.
+    """
+
+    try:
+        emitted = emit_registered_observation_artifact(
+            payload, schema_id=type(payload).__name__, history=history,
+            publication=publication, limits=limits,
+        ).value
+    except (ObservationActivationRuntimeError, TypedValueModelCodecCapacityError) as exc:
+        raise ObservationCohortUnavailableError(
+            "observed projection record cannot be emitted"
+        ) from exc
+    if type(emitted) is not type(payload) or emitted != payload.model_copy(
+        update={"record_digest": emitted.record_digest}
+    ):
+        raise ObservationCohortUnavailableError(
+            "observed projection record is substituted"
+        )
+    return emitted
 
 
 def _accepted_evidence_projections(
@@ -640,4 +952,7 @@ def _observation_schema_fingerprint(membership: ResolvedObservationMembership) -
     return next(iter(values))
 
 
-__all__ = ["AtomicStoreGraphObservationCohortProvider"]
+__all__ = [
+    "AtomicStoreGraphObservationCohortProvider", "ObservedProjectionPublicationSelection",
+    "project_observed_claim_projections",
+]

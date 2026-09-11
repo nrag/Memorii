@@ -241,6 +241,7 @@ class DetachedSemanticObservationAuthority:
     event_batches: tuple[SemanticMemoryEventBatch, ...]
     graph_deltas: tuple[GraphRevisionDelta, ...]
     group_requests: tuple[BootstrapGraphGroupCommitRequestV3, ...]
+    projection_history: ProjectionHistoryRepository
 
 
 def _activation_record_shape(record: CanonicalMemoryRecord, source_kind: str) -> bool:
@@ -8542,6 +8543,28 @@ class SemanticIngestionAtomicStore:
             references=self._reference_integrity_snapshot_from(plane),
             observation=observation, event_batches=self._semantic_event_batches_from(plane),
             graph_deltas=tuple(deltas), group_requests=tuple(group_requests),
+            projection_history=self._detached_projection_history_from(plane),
+        )
+
+    @staticmethod
+    def _detached_projection_history_from(
+        memory_plane: MemoryPlaneService,
+    ) -> ProjectionHistoryRepository:
+        """Reconstruct the retained projection authority from the same image.
+
+        Temporal/trust projection generations, pointers, and records are plain
+        committed memory-plane records, so the detached image retains them.
+        The repository is rebuilt over the read-only snapshot plane and never
+        consults a live graph, replay aggregate, or policy resolver.
+        """
+
+        from memorii.core.memory_evolution.projection_history import (
+            ProjectionHistoryRepository,
+        )
+
+        return ProjectionHistoryRepository(
+            memory_plane,
+            repository_id=_SEMANTIC_EVENT_REPOSITORY_ID,
         )
 
     def _reference_integrity_snapshot_from(self, memory_plane: MemoryPlaneService):

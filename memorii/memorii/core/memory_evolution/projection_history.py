@@ -4104,6 +4104,44 @@ class ProjectionHistoryRepository:
             raise ProjectionHistoryError("projection_history_unavailable")
         return self._trust_view(loaded, loaded.active)
 
+    def publication_successor(
+        self,
+        kind: ProjectionKind,
+        pointer_digest: str,
+    ) -> ActiveTemporalProjectionPointer | ActiveTrustProjectionPointer | None:
+        """Return the immediately following same-kind pointer of one publication.
+
+        The retained history chain is the sole authority: the successor is the
+        entry directly after the uniquely identified pointer, revalidated
+        against the pointer it follows (repository, revision, publication
+        sequence, and predecessor digest).  The tip of a history has no
+        successor.  An ambiguous or mismatched chain raises instead of
+        synthesizing or relabelling a pointer.
+        """
+
+        loaded = self._load_kind(kind)
+        positions = tuple(
+            index
+            for index, entry in enumerate(loaded.entries)
+            if entry.pointer.pointer_digest == pointer_digest
+        )
+        if len(positions) != 1:
+            raise ProjectionHistoryError("projection_history_integrity_error")
+        pointer = loaded.entries[positions[0]].pointer
+        following = (
+            loaded.entries[positions[0] + 1].pointer
+            if positions[0] + 1 < len(loaded.entries)
+            else None
+        )
+        if following is not None and (
+            following.repository_id != pointer.repository_id
+            or following.pointer_revision != pointer.pointer_revision + 1
+            or following.publication_sequence != pointer.publication_sequence + 1
+            or following.predecessor_pointer_digest != pointer.pointer_digest
+        ):
+            raise ProjectionHistoryError("projection_history_integrity_error")
+        return following
+
     def completed_temporal_migration(
         self,
         migration_plan_digest: str,
