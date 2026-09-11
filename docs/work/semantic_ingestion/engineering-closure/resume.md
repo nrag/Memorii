@@ -44,11 +44,20 @@ docs/design/semantic_ingestion_observation.md and
 ProjectionObservationIdentity.v1 is a registered self-digest root (181
 schemas/1269 roles; 58 vectors pass; promotion.json binds the bytes).
 
-Next action: implement the concrete 17-stream materializer and public
-ProviderMemoryService wiring under continuation-runtime.plan.md, with
-observed projection records carrying the derived identity and registered
-readers re-deriving it. The original provenance/policy-context decision
-remains approved and is not reopened.
+The public graph-observation construction milestone is CLOSED (2026-09-11,
+candidate 0dc0217e; remaining_validated_p1_p2: []): native projection,
+detached provider with event-derived system intervals and boundary records,
+host composition, public service methods, identity root registration and the
+composed real-backend proof, with the binding activation-job selection
+passing 115 cases locally. R17/R19 remain partial pending whole-candidate CI
+and the carried follow-ups (sibling arms, reader-side identity re-derivation,
+attestation producer, converse closures) recorded in
+continuation-runtime.plan.md's closure section. The original
+provenance/policy-context decision remains approved and is not reopened.
+
+Next action: owner-requested brainstorm on production keys, trusted
+deployment material and real signatures (a design conversation with real
+external decisions), then the carried follow-ups.
 
 All workers are finished. Root corrected weak contention/time assertions and
 typed the touched test harness. Public host/provider/materializer construction

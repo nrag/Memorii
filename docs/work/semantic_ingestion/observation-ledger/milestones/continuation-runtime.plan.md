@@ -1,6 +1,6 @@
 # Registered Continuation Runtime
 
-Work type: implementation milestone. Status: active. Coordinator: root.
+Work type: implementation milestone. Status: closed for the bounded construction milestone 2026-09-11; follow-ups carried. Coordinator: root.
 Parent: ../implementation.plan.md; campaign: completion-readiness/closure-plan.md.
 Approved design: ../../ingestion-time-continuation/closure.md, candidate
 d90458a82014c9a04d43646cf352044aba1aa5be7e4228c1f0ddddad762c9a42, promoted to
@@ -135,9 +135,40 @@ boundary test uses a substituted-authority seam because the current planner
 never produces cross-transaction references; boundary emission is a separate
 cohort-level function; system_intervals keys use canonical record kinds.
 
-Next action: coordinator re-run of the slow real-backend suites at this
-candidate, then the bounded delta review of the corrected surfaces, then
-milestone closure.
+## Milestone Closure (2026-09-11, candidate 0dc0217e)
+
+The bounded delta review of remediation commit e1e1602c resolves all five
+round-1 changes_required findings with no regression and authorizes closure
+once the binding gate passes. Coordinator evidence at this candidate:
+- binding activation-job selection (exact pr-gates list, 15 files,
+  -W error, local CPython 3.14.7): 115 passed in 7210.76s (2h00m10s)
+- slow real-backend suites independently re-run: 20 passed in 5927.30s
+- fast suites (native projection/paging/cohort): 20 passed; full Ruff;
+  scoped Pyright 0 errors
+- registry reproduction byte-compare and 58 vectors passed at promotion
+- activation-job timeout pre-sized to 240 minutes per measured budget
+  (delta-review P3, resolved)
+remaining_validated_p1_p2: []
+
+Closure scope: the registered public graph-observation construction
+milestone — native structural projection (fact arm + typed sibling-arm
+refusals), detached cohort provider with event-derived per-version system
+intervals and referenced-boundary emission, host composition, public
+ProviderMemoryService methods with non-disclosing fail-closed denials,
+ProjectionObservationIdentity.v1 registration, canonical field-semantics
+addendum, and the composed real-backend end-to-end proof. Parent R17/R19
+remain partial pending whole-candidate CI and the follow-ups below.
+
+Carried follow-ups (must precede any arm-inclusive or projection-record
+promotion claim): sibling-arm payload implementation (correction/retraction/
+action/identity); reader-side ProjectionObservationIdentity re-derivation for
+observed projection records; projection_kind closed-literal registration
+before first identity issuance; view/time applicability with projection
+records; converse closures (retained-inventory, evidence-pair,
+changes-without-intent); exact-count composed assertion; host-mismatch test;
+restart item; persisted ingestion-time attestation producer. Local CPython
+3.14.7 evidence is not CI parity; GitHub CI execution of the activation job
+(including its new timeout) remains a separate evidence-maturity step.
 
 ## Current Component Evidence (2026-09-08)
 
