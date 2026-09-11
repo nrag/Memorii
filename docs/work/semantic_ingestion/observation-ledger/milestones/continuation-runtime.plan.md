@@ -121,8 +121,23 @@ job's exact selection plus the three new suites passed 118 cases in 4123.98s
 under -W error on local CPython 3.14.7 (not CI parity). This is baseline
 evidence; the binding gate run happens at the remediated candidate.
 
-Next action: execute remediation round 1 as one coherent batch, re-freeze,
-delta-review the corrected surfaces, then close the milestone.
+Remediation round 1 is committed (see git log: event-derived per-record
+system intervals keyed by canonical record kind with same-time-successor
+lineage retention; boundary records emitted from retained payloads with their
+own events and per-use-site reference paths, preimage boundary/changed keys
+closed and disjoint; nine integrity-join denial tests validated by
+guard-deletion; CI wiring with shard ignore, activation-job selection and
+honest durations, activation timeout raised 30->90 for the added suites).
+Writer gates: native 16, materialization 17 (real backend, 1h42m-2h25m),
+composed 3, paging/cohort 4; ruff+pyright clean. Coordinator re-ran the fast
+suites (20 passed), ruff and scoped pyright. Reviewer re-check decisions:
+boundary test uses a substituted-authority seam because the current planner
+never produces cross-transaction references; boundary emission is a separate
+cohort-level function; system_intervals keys use canonical record kinds.
+
+Next action: coordinator re-run of the slow real-backend suites at this
+candidate, then the bounded delta review of the corrected surfaces, then
+milestone closure.
 
 ## Current Component Evidence (2026-09-08)
 
