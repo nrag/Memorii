@@ -6,9 +6,10 @@ import base64
 import json
 from dataclasses import dataclass
 from hashlib import sha256
+from typing import Literal
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from memorii.core.memory_evolution.graph_effect_contracts import (
     GraphRevisionDelta,
@@ -49,6 +50,7 @@ from memorii.core.memory_evolution.graph_observation_records import (
     ObservedTemporalTransition,
     ObservedTrustClaimProjection,
     ObservedTypeEvidence,
+    ProjectionObservationIdentity,
 )
 from memorii.core.memory_evolution.graph_observation_snapshot_contracts import (
     GraphObservationCohortPreimage,
@@ -109,6 +111,7 @@ _ROOT_TYPES: dict[str, type[BaseModel]] = {
     "ObservedClaimAssertion": ObservedClaimAssertion,
     "ObservedTemporalClaimProjection": ObservedTemporalClaimProjection,
     "ObservedTrustClaimProjection": ObservedTrustClaimProjection,
+    "ProjectionObservationIdentity": ProjectionObservationIdentity,
     "ObservedRelation": ObservedRelation,
     "ObservedActionRevision": ObservedActionRevision,
     "ObservedCitationRecord": ObservedCitationRecord,
@@ -150,6 +153,14 @@ _ROOT_TYPES: dict[str, type[BaseModel]] = {
 }
 _PAYLOAD_DOMAIN = b"memorii.observation-ledger.semantic-payload.v1"
 _REVISION_DOMAIN = b"memorii.observation-ledger.revision.v1"
+_PROJECTION_IDENTITY_SCHEMA_ID = "ProjectionObservationIdentity"
+_OBSERVED_PROJECTION_KIND_BY_TYPE: dict[type[BaseModel], Literal["temporal", "trust"]] = {
+    ObservedTemporalClaimProjection: "temporal",
+    ObservedTrustClaimProjection: "trust",
+}
+# Fixed-width placeholder so the identity root body encodes before the
+# registered self-digest is derived; its value is excluded from the preimage.
+_IDENTITY_SELF_DIGEST_PLACEHOLDER = "0" * 64
 
 
 @dataclass(frozen=True)
@@ -342,6 +353,19 @@ def emit_registered_observation_artifact(
     expected = _ROOT_TYPES.get(schema_id)
     if expected is None or type(value) is not expected:
         raise ObservationActivationRuntimeError("registered observation artifact model is invalid")
+    # Cross-root integrity: an observed projection record whose selected
+    # publication contains the identity root must carry the identity derived
+    # through that root's registered construction, not a hand-set value.
+    # Publications without the root keep emitting historical records unchanged.
+    # Cross-root integrity: an observed projection record whose selected
+    # publication contains the identity root must carry the identity derived
+    # through that root's registered construction, not a hand-set value.
+    # Publications without the root keep emitting historical records unchanged.
+    if (_OBSERVED_PROJECTION_KIND_BY_TYPE.get(type(value)) is not None
+            and projection_observation_identity_root_selected(history, publication)):
+        verify_projection_observation_identity(
+            value, history=history, publication=publication, limits=limits,
+        )
     selected = _entry(history, schema_id, publication)
     binding = _binding(selected)
     raw = _registered_artifact(value, schema_id, history, publication, limits)
@@ -352,6 +376,105 @@ def emit_registered_observation_artifact(
         raise ObservationActivationRuntimeError("registered observation artifact publication is substituted")
     body = checked.materialization.checked_artifact.canonical_value_bytes
     return RegisteredObservationArtifact(checked.materialization.materialized.value, raw, binding, body, sha256(body).hexdigest())
+
+
+def projection_observation_identity_root_selected(
+    history: ProtectedTypedValueRegistryHistory,
+    publication: VerifiedTypedValuePublication | None,
+) -> bool:
+    """Report whether the explicitly selected publication contains the identity root.
+
+    The projection identity rule binds an observed projection record to the
+    identity root of the same selected publication.  A publication without
+    the root keeps its historical read routes; callers gate the identity
+    check on this predicate instead of retrofitting old artifacts.
+    """
+    if publication is None:
+        return False
+    try:
+        publication.compiled_registry.entry_for(_PROJECTION_IDENTITY_SCHEMA_ID, "1")
+    except KeyError:
+        return False
+    return True
+
+
+def derive_projection_observation_identity(
+    projection_kind: Literal["temporal", "trust"],
+    repository_id: str,
+    generation_digest: str,
+    projection_digest: str,
+    *,
+    history: ProtectedTypedValueRegistryHistory,
+    publication: VerifiedTypedValuePublication,
+    limits: ProtectedTypedValueArtifactReaderLimits = _LIMITS,
+) -> str:
+    """Derive the ``ProjectionObservationIdentity.v1`` outward identity.
+
+    The identity is the registered self digest of the identity root emitted
+    under the caller's protected selected publication: the complete selected
+    binding and the four ordinary fields are the preimage, and
+    ``observation_id`` excludes only itself.  Nonconforming preimage fields
+    deny before any digest.  This is the producer-side helper for tests and
+    the future projection-record producer; readers use
+    :func:`verify_projection_observation_identity`.
+    """
+    try:
+        root = ProjectionObservationIdentity(
+            projection_kind=projection_kind,
+            repository_id=repository_id,
+            generation_digest=generation_digest,
+            projection_digest=projection_digest,
+            observation_id=_IDENTITY_SELF_DIGEST_PLACEHOLDER,
+        )
+    except ValidationError as exc:
+        raise ObservationActivationRuntimeError(
+            "projection observation identity preimage is invalid"
+        ) from exc
+    emitted = emit_registered_observation_artifact(
+        root, schema_id=_PROJECTION_IDENTITY_SCHEMA_ID,
+        history=history, publication=publication, limits=limits,
+    ).value
+    if type(emitted) is not ProjectionObservationIdentity:
+        raise ObservationActivationRuntimeError("projection observation identity root is substituted")
+    return emitted.observation_id
+
+
+def verify_projection_observation_identity(
+    value: BaseModel,
+    *,
+    history: ProtectedTypedValueRegistryHistory,
+    publication: VerifiedTypedValuePublication,
+    limits: ProtectedTypedValueArtifactReaderLimits = _LIMITS,
+) -> None:
+    """Re-derive and compare a projection record's ``observation_id``.
+
+    Protected registered readers accept an observed temporal/trust projection
+    record only after deriving the expected identity from the record's own
+    fields (projection kind by type, repository and native projection digest
+    from the embedded projection, generation digest from the record) through
+    the identity root of the same selected publication; pure native model
+    shape validation is not a substitute.  Any other model denies.  The
+    identity root must be present in that publication: this check denies on
+    an absent root.  Acceptance points that must keep reading historical
+    artifacts gate on :func:`projection_observation_identity_root_selected`
+    first.
+    """
+    if type(value) is ObservedTemporalClaimProjection or type(value) is ObservedTrustClaimProjection:
+        record: ObservedTemporalClaimProjection | ObservedTrustClaimProjection = value
+    else:
+        raise ObservationActivationRuntimeError("projection observation record model is invalid")
+    projection_kind = _OBSERVED_PROJECTION_KIND_BY_TYPE[type(record)]
+    if not projection_observation_identity_root_selected(history, publication):
+        raise ObservationActivationRuntimeError("projection observation identity root is not selected")
+    expected = derive_projection_observation_identity(
+        projection_kind,
+        record.projection.repository_id,
+        record.generation_digest,
+        record.projection.projection_digest,
+        history=history, publication=publication, limits=limits,
+    )
+    if record.observation_id != expected:
+        raise ObservationActivationRuntimeError("projection observation identity is substituted")
 
 
 def registered_semantic_payload(

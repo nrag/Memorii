@@ -42,6 +42,10 @@ from memorii.core.memory_evolution.graph_observation_public_contracts import (
     IngestionTimeObservationSnapshot,
     _attestation_order_key,
 )
+from memorii.core.memory_evolution.graph_observation_records import (
+    ObservedTemporalClaimProjection,
+    ObservedTrustClaimProjection,
+)
 from memorii.core.memory_evolution.graph_observation_snapshot_contracts import (
     GraphObservationCohortPreimage,
     GraphObservationCursorPayload,
@@ -58,6 +62,8 @@ from memorii.core.memory_evolution.observation_activation_runtime import (
     emit_registered_observation_artifact,
     issue_registered_ingestion_time_attestation_cursor,
     issue_registered_observation_cursor,
+    projection_observation_identity_root_selected,
+    verify_projection_observation_identity,
 )
 from memorii.core.memory_evolution.typed_value_artifact_integrity import TrustedTypedValueArtifactVerificationKey
 from memorii.core.memory_evolution.typed_value_artifact_reader import ProtectedTypedValueArtifactReaderLimits
@@ -408,6 +414,7 @@ class AuthenticatedGraphObservationPagingRuntime:
             raise GraphObservationPagingError("cohort input coordinates are substituted")
         if len(cohort_input.stream) > self._retention_budget.maximum_stream_records:
             raise ObservationSnapshotCapacityError("graph cohort stream exceeds protected capacity")
+        self._verify_projection_observation_identities(cohort_input.stream)
         cohort = self._emit_cohort(cohort_input.cohort_preimage)
         snapshot = GraphRecordObservationSnapshot(
             schema_version=1, snapshot_token=token, created_at=created_at,
@@ -421,6 +428,32 @@ class AuthenticatedGraphObservationPagingRuntime:
         retained = _RetainedGraphSnapshot(snapshot, _retention_deadline(created_at, decision, policy))
         self._retain_token(token, context.tenant_partition_id, len(artifact.raw), retained, ingestion=False, now=_utc(self._clock.now(), "protected observation clock"))
         return retained
+
+    def _verify_projection_observation_identities(self, stream: tuple[GraphObservationStreamRecord, ...]) -> None:
+        """Re-derive observed projection identities before accepting a stream.
+
+        When the runtime's explicitly selected publication contains the
+        ``ProjectionObservationIdentity`` root, every observed temporal/trust
+        projection record in an incoming cohort stream must carry the identity
+        derived through that root's registered construction; a hand-set or
+        substituted ``observation_id`` turns into the non-disclosing cohort
+        denial.  Publications without the identity root keep accepting
+        historical projection records through their original routes.
+        """
+        if not projection_observation_identity_root_selected(self._history, self._publication):
+            return
+        for item in stream:
+            payload = item.payload
+            if not isinstance(payload, (ObservedTemporalClaimProjection, ObservedTrustClaimProjection)):
+                continue
+            try:
+                verify_projection_observation_identity(
+                    payload, history=self._history, publication=self._publication, limits=self._limits,
+                )
+            except ObservationActivationRuntimeError as exc:
+                raise ObservationCohortUnavailableError(
+                    "observation projection identity is substituted"
+                ) from exc
 
     def _retain_ingestion_snapshot(self, *, context: AuthenticatedGraphObservationContext,
                                    decision: GraphObservationAuthorizationDecision,
