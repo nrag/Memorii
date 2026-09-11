@@ -19,6 +19,7 @@ from memorii.core.memory_evolution.graph_observation_native_projection import (
     _effect_authority,
     _intersect_valid_intervals,
     _supporting_claims,
+    project_boundary_entity_revision,
     project_native_graph_observation_stream,
 )
 from memorii.core.memory_evolution.graph_observation_records import (
@@ -76,7 +77,6 @@ class _FactArm:
     records: tuple
     pairs: tuple
     lookup: dict
-    boundary_ids: frozenset
 
 
 @pytest.fixture(scope="module")
@@ -128,20 +128,13 @@ def arm(captured_fact) -> _FactArm:
     )
     records = _materialize(effect, group_request.transaction_group_id, commit_values)
     lookup = {
-        record.entity_revision_id: ObservedEntityReference(
-            entity_revision_id=record.entity_revision_id,
-            logical_entity_id=record.logical_entity_id,
-            reference_path="entity_revision_id",
-        )
+        record.entity_revision_id: record.logical_entity_id
         for record in records if isinstance(record, EntityRevision)
     }
-    claim = _claim(records)
-    subject = _subject_entity(records)
     return _FactArm(
         compilation=compilation, effect=effect, group_request=group_request,
         commit_values=commit_values, records=records,
         pairs=_materialized_pairs(effect, commit_values), lookup=lookup,
-        boundary_ids=frozenset({subject.entity_revision_id, claim.claim_assertion_id}),
     )
 
 
@@ -170,6 +163,19 @@ def _projection(records) -> ClaimProjection:
     return next(record for record in records if isinstance(record, ClaimProjection))
 
 
+def _commit_event_intervals(records) -> dict[tuple[str, str], TimeInterval]:
+    """Event-derived intervals as the materialization provider joins them.
+
+    Every captured record version is owned by one commit event at the frozen
+    writer clock TEST_NOW and has no successor, matching the real backend's
+    event batches.
+    """
+    return {
+        (record.record_kind, graph_record_id(record)): TimeInterval(start=TEST_NOW)
+        for record in records
+    }
+
+
 def _project(arm: _FactArm, *, history, limits, **overrides):
     values = dict(
         compilation=arm.compilation,
@@ -179,13 +185,15 @@ def _project(arm: _FactArm, *, history, limits, **overrides):
         commit_values=arm.commit_values,
         authorizing_transaction_group_id=arm.group_request.transaction_group_id,
         native_entity_lookup=arm.lookup,
-        boundary_ids=arm.boundary_ids,
-        system_interval=TimeInterval(start=TEST_NOW),
         history=history,
         publication=history.publications[0],
         limits=limits,
     )
     values.update(overrides)
+    values.setdefault(
+        "system_intervals",
+        _commit_event_intervals(values["retained_native_records"]),
+    )
     return project_native_graph_observation_stream(**values)
 
 
@@ -258,9 +266,16 @@ def _type_evidence(
     )
 
 
+def _expected_reference(arm: _FactArm, entity_revision_id: str, path: str):
+    return ObservedEntityReference(
+        entity_revision_id=entity_revision_id,
+        logical_entity_id=arm.lookup[entity_revision_id],
+        reference_path=path,
+    )
+
+
 def test_fact_operation_projects_exact_registered_observed_stream(tmp_path, monkeypatch, arm):
     history, limits = observation_publication(tmp_path, monkeypatch, _FACT_ROOTS)
-    system_interval = TimeInterval(start=TEST_NOW)
     stream = _project(arm, history=history, limits=limits)
 
     assert [item.record_kind for item in stream] == [
@@ -272,8 +287,12 @@ def test_fact_operation_projects_exact_registered_observed_stream(tmp_path, monk
         assert _HEX64.fullmatch(item.record_digest)
         assert item.record_digest != "0" * 64
         if "system_interval" in type(item.payload).model_fields:
-            assert item.payload.system_interval == system_interval
+            # System intervals are the commit-event time (TEST_NOW), never a
+            # snapshot or request time.
+            assert item.payload.system_interval == TimeInterval(start=TEST_NOW)
     assert stream == tuple(sorted(stream, key=lambda item: (item.record_kind, item.primary_key)))
+    # Re-projecting the same retained authority is deterministic.
+    assert _project(arm, history=history, limits=limits) == stream
 
     authority = arm.compilation.operation_input.planning_construction_authority
     claim = _claim(arm.records)
@@ -299,7 +318,7 @@ def test_fact_operation_projects_exact_registered_observed_stream(tmp_path, monk
         assert payload.lifecycle_state == record.lifecycle == "active"
         assert payload.source_ids == (authority.source_id,)
         assert payload.operation_ids == (record.operation_id,)
-        assert payload.boundary == (record.entity_revision_id in arm.boundary_ids)
+        assert payload.boundary is False
 
     claim_payload = next(
         item.payload for item in stream if item.record_kind == "claim_assertion"
@@ -323,13 +342,18 @@ def test_fact_operation_projects_exact_registered_observed_stream(tmp_path, monk
     if authority.arbitration_policy_bundle is not None:
         fingerprints.add(authority.arbitration_policy_bundle.trust_policy.fingerprint)
         fingerprints.add(authority.arbitration_policy_bundle.temporal_policy.fingerprint)
-    assert claim_payload.subject_assertion_ref.entity == arm.lookup[
-        identity.subject_assertion_ref.entity_revision_id
-    ]
+    assert claim_payload.subject_assertion_ref.entity == _expected_reference(
+        arm, identity.subject_assertion_ref.entity_revision_id,
+        "/claim_identity/subject_assertion_ref/entity_revision_id",
+    )
     assert claim_payload.subject_assertion_ref.logical_entity_id_at_assertion == (
         identity.subject_assertion_ref.logical_entity_id_at_assertion
     )
     assert claim_payload.object_assertion_ref is not None
+    assert claim_payload.object_assertion_ref.entity == _expected_reference(
+        arm, identity.object_assertion_ref.entity_revision_id,
+        "/claim_identity/object_assertion_ref/entity_revision_id",
+    )
     assert claim_payload.object_assertion_ref.logical_entity_id_at_assertion == (
         identity.object_assertion_ref.logical_entity_id_at_assertion
     )
@@ -351,14 +375,18 @@ def test_fact_operation_projects_exact_registered_observed_stream(tmp_path, monk
     assert claim_payload.citation_ids == tuple(sorted(pair[0].citation_id for pair in citing))
     assert claim_payload.provenance_ids == tuple(sorted(pair[1].provenance_id for pair in citing))
     assert claim_payload.policy_fingerprints == tuple(sorted(fingerprints))
-    assert claim_payload.boundary is True
+    assert claim_payload.boundary is False
 
     relation_payload = next(item.payload for item in stream if item.record_kind == "relation")
     assert relation_payload.relation_id == relation.relation_revision_id
     assert relation_payload.predicate_id == relation.predicate_id
-    assert relation_payload.subject == arm.lookup[relation.subject_entity_revision_id]
+    assert relation_payload.subject == _expected_reference(
+        arm, relation.subject_entity_revision_id, "subject_entity_revision_id",
+    )
     assert relation_payload.object_kind == "entity"
-    assert relation_payload.object_entity == arm.lookup[relation.object_entity_revision_id]
+    assert relation_payload.object_entity == _expected_reference(
+        arm, relation.object_entity_revision_id, "object_entity_revision_id",
+    )
     assert relation_payload.literal_value is None
     assert relation_payload.supporting_claim_assertion_ids == (claim.claim_assertion_id,)
     assert relation_payload.lifecycle_state == "active"
@@ -488,7 +516,9 @@ def test_retained_type_evidence_stream_copies_complete_source_spans(
     )
     payload = next(item.payload for item in stream if item.record_kind == "type_evidence")
     assert payload.evidence_id == "evidence:certified"
-    assert payload.entity == arm.lookup[entity.entity_revision_id]
+    assert payload.entity == _expected_reference(
+        arm, entity.entity_revision_id, "entity_reference.entity_revision_id",
+    )
     assert payload.asserted_type == "product"
     assert payload.origin == "certified_source_assertion"
     assert payload.source_evidence == (span,)
@@ -631,14 +661,81 @@ def test_missing_native_entity_lookup_entry_denies(tmp_path, monkeypatch, arm):
     ):
         _project(arm, history=history, limits=limits, native_entity_lookup=lookup)
     mismatched = dict(arm.lookup)
-    mismatched[entity.entity_revision_id] = ObservedEntityReference(
-        entity_revision_id=entity.entity_revision_id,
-        logical_entity_id="logical:substituted", reference_path="entity_revision_id",
-    )
+    mismatched[entity.entity_revision_id] = "logical:substituted"
     with pytest.raises(
         NativeGraphObservationProjectionError, match="native entity lookup is incomplete",
     ):
         _project(arm, history=history, limits=limits, native_entity_lookup=mismatched)
+
+
+def test_missing_commit_event_system_interval_denies(tmp_path, monkeypatch, arm):
+    history, limits = observation_publication(tmp_path, monkeypatch, _FACT_ROOTS)
+    intervals = _commit_event_intervals(arm.records)
+    entity = _subject_entity(arm.records)
+    del intervals[("entity_revision", entity.entity_revision_id)]
+    with pytest.raises(
+        NativeGraphObservationProjectionError,
+        match="observed entity_revision has no commit-event-derived system interval",
+    ):
+        _project(arm, history=history, limits=limits, system_intervals=intervals)
+    claim = _claim(arm.records)
+    intervals = _commit_event_intervals(arm.records)
+    del intervals[("claim_assertion", claim.claim_assertion_id)]
+    with pytest.raises(
+        NativeGraphObservationProjectionError,
+        match="observed claim_assertion has no commit-event-derived system interval",
+    ):
+        _project(arm, history=history, limits=limits, system_intervals=intervals)
+
+
+def test_boundary_entity_revision_emits_boundary_record(tmp_path, monkeypatch, arm):
+    """A referenced-but-unchanged entity revision is emitted as a boundary
+    record whose fields derive only from its own retained authority."""
+    history, limits = observation_publication(tmp_path, monkeypatch, _FACT_ROOTS)
+    entity = _subject_entity(arm.records)
+    interval = TimeInterval(start=TEST_NOW.replace(day=15))
+    record = project_boundary_entity_revision(
+        entity,
+        retained_type_evidence=(),
+        system_interval=interval,
+        history=history, publication=history.publications[0], limits=limits,
+    )
+    payload = record.payload
+    assert record.record_kind == "entity_revision"
+    assert record.primary_key == entity.entity_revision_id
+    assert record.record_digest == payload.record_digest
+    assert _HEX64.fullmatch(payload.record_digest)
+    assert payload.entity_revision_id == entity.entity_revision_id
+    assert payload.logical_entity_id == entity.logical_entity_id
+    assert payload.canonical_type is None
+    assert payload.lifecycle_state == entity.lifecycle
+    assert payload.valid_interval is None
+    assert payload.system_interval == interval
+    assert payload.source_ids == tuple(sorted({
+        item.source_id for item in entity.source_evidence
+    }))
+    assert payload.operation_ids == (entity.operation_id,)
+    assert payload.boundary is True
+    # Retained type evidence bound to the exact revision supplies the type.
+    evidence = _type_evidence(entity, "product")
+    typed = project_boundary_entity_revision(
+        entity,
+        retained_type_evidence=(evidence,),
+        system_interval=interval,
+        history=history, publication=history.publications[0], limits=limits,
+    )
+    assert typed.payload.canonical_type == "product"
+    assert typed.payload.record_digest != payload.record_digest
+    # Competing retained type evidence on the exact revision denies.
+    with pytest.raises(
+        NativeGraphObservationProjectionError, match="competing entity type evidence",
+    ):
+        project_boundary_entity_revision(
+            entity,
+            retained_type_evidence=(evidence, _type_evidence(entity, "person")),
+            system_interval=interval,
+            history=history, publication=history.publications[0], limits=limits,
+        )
 
 
 def test_claim_identity_payload_mismatch_excludes_relation_support(

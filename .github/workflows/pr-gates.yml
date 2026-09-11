@@ -297,7 +297,7 @@ jobs:
   observation-ledger-activation:
     name: Observation Ledger Activation
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -312,7 +312,7 @@ jobs:
         run: pip install -e '.[local,dev]'
       - name: Verify durable activation and recovery
         working-directory: memorii
-        run: python -W error -m pytest tests/integration/test_activated_provider_ledger.py tests/integration/test_observation_ledger_activation.py tests/integration/test_observation_ledger_artifacts.py tests/integration/test_observation_terminal_intent.py tests/integration/test_observation_ledger_replay.py tests/integration/test_bootstrap_group_observation.py tests/integration/test_registered_observation_cursor.py tests/integration/test_native_projection_evidence.py tests/integration/test_graph_observation_paging.py tests/integration/test_ingestion_time_paging.py tests/unit/core/memory_evolution/test_graph_observation_cohort.py tests/unit/core/memory_evolution/test_graph_observation_ingestion_projection.py tests/integration/test_graph_observation_access.py -p no:cacheprovider -q --durations=10 --junitxml=observation-ledger-activation.xml
+        run: python -W error -m pytest tests/integration/test_activated_provider_ledger.py tests/integration/test_observation_ledger_activation.py tests/integration/test_observation_ledger_artifacts.py tests/integration/test_observation_terminal_intent.py tests/integration/test_observation_ledger_replay.py tests/integration/test_bootstrap_group_observation.py tests/integration/test_registered_observation_cursor.py tests/integration/test_native_projection_evidence.py tests/integration/test_graph_observation_paging.py tests/integration/test_ingestion_time_paging.py tests/unit/core/memory_evolution/test_graph_observation_cohort.py tests/unit/core/memory_evolution/test_graph_observation_ingestion_projection.py tests/integration/test_graph_observation_access.py tests/unit/core/memory_evolution/test_graph_observation_materialization.py tests/integration/test_composed_graph_observation_service.py -p no:cacheprovider -q --durations=10 --junitxml=observation-ledger-activation.xml
       - name: Retain activation test results
         if: always()
         uses: actions/upload-artifact@v4

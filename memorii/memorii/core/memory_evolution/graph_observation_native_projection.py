@@ -135,9 +135,8 @@ def project_native_graph_observation_stream(
     evidence_pairs: Sequence[tuple[CitationRecord, ProvenanceRecord]],
     commit_values: PlanningCommitValues,
     authorizing_transaction_group_id: str,
-    native_entity_lookup: Mapping[str, ObservedEntityReference],
-    boundary_ids: frozenset[str],
-    system_interval: TimeInterval,
+    native_entity_lookup: Mapping[str, str],
+    system_intervals: Mapping[tuple[str, str], TimeInterval],
     history: ProtectedTypedValueRegistryHistory,
     publication: VerifiedTypedValuePublication,
     limits: ProtectedTypedValueArtifactReaderLimits,
@@ -149,7 +148,10 @@ def project_native_graph_observation_stream(
     re-materialized under the passed commit coordinates and must match the
     retained inventory exactly; any metadata or inventory substitution
     denies.  Each observed payload is emitted through the registered
-    observation runtime to obtain its real record digest.
+    observation runtime to obtain its real record digest.  ``system_intervals``
+    supplies one commit-event-owned interval per exact changed record version,
+    keyed by ``(record_kind, record_id)``; this owner never samples a clock and
+    never stamps a request or snapshot time on an observed payload.
     """
     authority = compilation.operation_input.planning_construction_authority
     if authority is None or (
@@ -194,24 +196,24 @@ def project_native_graph_observation_stream(
         if isinstance(value, EntityRevision):
             emitted.append(_entity_revision(
                 value, type_evidence_cohort=type_evidence_cohort, lookup=native_entity_lookup,
-                authority_source_id=authority.source_id, system_interval=system_interval,
-                boundary_ids=boundary_ids, history=history, publication=publication, limits=limits,
+                authority_source_id=authority.source_id, system_intervals=system_intervals,
+                history=history, publication=publication, limits=limits,
             ))
         elif isinstance(value, AliasRevision):
             emitted.append(_alias_revision(
                 value, lookup=native_entity_lookup, authority_source_id=authority.source_id,
-                system_interval=system_interval, boundary_ids=boundary_ids,
+                system_intervals=system_intervals,
                 history=history, publication=publication, limits=limits,
             ))
         elif isinstance(value, TypeEvidence):
             emitted.append(_type_evidence(
                 value, retained_spans=retained_spans, lookup=native_entity_lookup,
-                system_interval=system_interval, boundary_ids=boundary_ids,
+                system_intervals=system_intervals,
                 history=history, publication=publication, limits=limits,
             ))
     claim_record = _claim(
         claim, fact, evidence_pairs=evidence_pairs, policy_fingerprints=policy_fingerprints,
-        lookup=native_entity_lookup, system_interval=system_interval, boundary_ids=boundary_ids,
+        lookup=native_entity_lookup, system_intervals=system_intervals,
         history=history, publication=publication, limits=limits,
     )
     emitted.append(claim_record)
@@ -219,21 +221,20 @@ def project_native_graph_observation_stream(
         if isinstance(value, RelationRevision):
             emitted.append(_relation(
                 value, claim, records=records, evidence_pairs=evidence_pairs,
-                lookup=native_entity_lookup, system_interval=system_interval,
-                boundary_ids=boundary_ids, history=history, publication=publication, limits=limits,
+                lookup=native_entity_lookup, system_intervals=system_intervals,
+                history=history, publication=publication, limits=limits,
             ))
         elif isinstance(value, CitationRecord):
             emitted.append(_citation(
                 value, records=records, evidence_projections=evidence_projections,
-                authority=authority, system_interval=system_interval, boundary_ids=boundary_ids,
-                history=history, publication=publication, limits=limits,
+                authority=authority, history=history, publication=publication, limits=limits,
             ))
         elif isinstance(value, ProvenanceRecord):
             emitted.append(_provenance(
                 value, records=records, evidence_projections=evidence_projections,
                 authority=authority, compilation=compilation, effect_digests=effect_digests,
-                policy_fingerprints=policy_fingerprints, system_interval=system_interval,
-                boundary_ids=boundary_ids, history=history, publication=publication, limits=limits,
+                policy_fingerprints=policy_fingerprints, system_intervals=system_intervals,
+                history=history, publication=publication, limits=limits,
             ))
     keys = [(item.record_kind, item.primary_key) for item in emitted]
     if len(keys) != len(set(keys)):
@@ -414,17 +415,58 @@ def _emit(
 
 
 def _lookup_reference(
-    lookup: Mapping[str, ObservedEntityReference],
+    lookup: Mapping[str, str],
     entity_revision_id: str,
     *,
     logical_entity_id: str | None = None,
-) -> ObservedEntityReference:
-    reference = lookup.get(entity_revision_id)
-    if reference is None or reference.entity_revision_id != entity_revision_id or (
-        logical_entity_id is not None and reference.logical_entity_id != logical_entity_id
-    ):
+) -> str:
+    """Resolve one entity revision's retained logical identity, or deny."""
+    resolved = lookup.get(entity_revision_id)
+    if resolved is None or (logical_entity_id is not None and resolved != logical_entity_id):
         raise NativeGraphObservationProjectionError("native entity lookup is incomplete")
-    return reference
+    return resolved
+
+
+# Per-use-site entity reference field paths, copying the native
+# ``extract_reference_edges`` convention exactly: each observed entity
+# reference carries the field path of the referencing record that produced it.
+_ALIAS_ENTITY_REFERENCE_PATH = "entity_revision_id"
+_TYPE_EVIDENCE_ENTITY_REFERENCE_PATH = "entity_reference.entity_revision_id"
+_CLAIM_SUBJECT_REFERENCE_PATH = "/claim_identity/subject_assertion_ref/entity_revision_id"
+_CLAIM_OBJECT_REFERENCE_PATH = "/claim_identity/object_assertion_ref/entity_revision_id"
+_RELATION_SUBJECT_REFERENCE_PATH = "subject_entity_revision_id"
+_RELATION_OBJECT_REFERENCE_PATH = "object_entity_revision_id"
+
+
+def _entity_reference(
+    lookup: Mapping[str, str],
+    entity_revision_id: str,
+    *,
+    reference_path: str,
+    logical_entity_id: str | None = None,
+) -> ObservedEntityReference:
+    """Construct one per-use-site observed entity reference from the lookup."""
+    return ObservedEntityReference(
+        entity_revision_id=entity_revision_id,
+        logical_entity_id=_lookup_reference(
+            lookup, entity_revision_id, logical_entity_id=logical_entity_id,
+        ),
+        reference_path=reference_path,
+    )
+
+
+def _system_interval(
+    system_intervals: Mapping[tuple[str, str], TimeInterval],
+    record_kind: str,
+    record_id: str,
+) -> TimeInterval:
+    """One commit-event-owned interval for this exact record version, or deny."""
+    interval = system_intervals.get((record_kind, record_id))
+    if interval is None:
+        raise NativeGraphObservationProjectionError(
+            f"observed {record_kind} has no commit-event-derived system interval"
+        )
+    return interval
 
 
 def _canonical_type(
@@ -453,10 +495,9 @@ def _entity_revision(
     record: EntityRevision,
     *,
     type_evidence_cohort: Sequence[TypeEvidence],
-    lookup: Mapping[str, ObservedEntityReference],
+    lookup: Mapping[str, str],
     authority_source_id: str,
-    system_interval: TimeInterval,
-    boundary_ids: frozenset[str],
+    system_intervals: Mapping[tuple[str, str], TimeInterval],
     history: ProtectedTypedValueRegistryHistory,
     publication: VerifiedTypedValuePublication,
     limits: ProtectedTypedValueArtifactReaderLimits,
@@ -468,12 +509,50 @@ def _entity_revision(
         entity_revision_id=record.entity_revision_id, logical_entity_id=record.logical_entity_id,
         canonical_type=_canonical_type(record, type_evidence_cohort),
         lifecycle_state=record.lifecycle, valid_interval=None,
-        system_interval=system_interval,
+        system_interval=_system_interval(
+            system_intervals, "entity_revision", record.entity_revision_id,
+        ),
         source_ids=tuple(sorted({
             item.source_id for item in record.source_evidence
         } | {authority_source_id})),
         operation_ids=(record.operation_id,),
-        boundary=record.entity_revision_id in boundary_ids,
+        boundary=False,
+        record_digest="0" * 64,
+    ), "ObservedEntityRevision", history, publication, limits)
+    return EntityRevisionStreamRecord(
+        record_kind="entity_revision", primary_key=payload.entity_revision_id,
+        record_digest=payload.record_digest, payload=payload,
+    )
+
+
+def project_boundary_entity_revision(
+    record: EntityRevision,
+    *,
+    retained_type_evidence: Sequence[TypeEvidence],
+    system_interval: TimeInterval,
+    history: ProtectedTypedValueRegistryHistory,
+    publication: VerifiedTypedValuePublication,
+    limits: ProtectedTypedValueArtifactReaderLimits,
+) -> EntityRevisionStreamRecord:
+    """Emit one referenced-but-unchanged entity revision as a boundary record.
+
+    The payload is derived only from the retained native record and its own
+    retained evidence: ``canonical_type`` comes from eligible retained type
+    evidence bound to this exact revision (``None`` when none exists),
+    ``source_ids`` are the record's own lineage source references only, and
+    ``operation_ids`` are that exact version's own native operation.  The
+    caller must supply this record's own commit-event-derived interval.
+    """
+    payload = _emit(ObservedEntityRevision(
+        entity_revision_id=record.entity_revision_id, logical_entity_id=record.logical_entity_id,
+        canonical_type=_canonical_type(record, retained_type_evidence),
+        lifecycle_state=record.lifecycle, valid_interval=None,
+        system_interval=system_interval,
+        source_ids=tuple(sorted({
+            item.source_id for item in record.source_evidence
+        })),
+        operation_ids=(record.operation_id,),
+        boundary=True,
         record_digest="0" * 64,
     ), "ObservedEntityRevision", history, publication, limits)
     return EntityRevisionStreamRecord(
@@ -485,25 +564,30 @@ def _entity_revision(
 def _alias_revision(
     record: AliasRevision,
     *,
-    lookup: Mapping[str, ObservedEntityReference],
+    lookup: Mapping[str, str],
     authority_source_id: str,
-    system_interval: TimeInterval,
-    boundary_ids: frozenset[str],
+    system_intervals: Mapping[tuple[str, str], TimeInterval],
     history: ProtectedTypedValueRegistryHistory,
     publication: VerifiedTypedValuePublication,
     limits: ProtectedTypedValueArtifactReaderLimits,
 ) -> AliasRevisionStreamRecord:
-    reference = _lookup_reference(lookup, record.entity_revision_id)
+    reference = _entity_reference(
+        lookup, record.entity_revision_id,
+        reference_path=_ALIAS_ENTITY_REFERENCE_PATH,
+        logical_entity_id=record.logical_entity_id,
+    )
     payload = _emit(ObservedAliasRevision(
         alias_revision_id=record.alias_revision_id, entity=reference,
         alias_namespace=record.alias_namespace,
         normalized_alias_key=record.normalized_alias_key,
         binding_evidence_ids=tuple(item.evidence_digest for item in record.source_evidence),
-        valid_interval=None, system_interval=system_interval,
+        valid_interval=None, system_interval=_system_interval(
+            system_intervals, "alias_revision", record.alias_revision_id,
+        ),
         source_ids=tuple(sorted({
             item.source_id for item in record.source_evidence
         } | {authority_source_id})),
-        boundary=record.alias_revision_id in boundary_ids,
+        boundary=False,
         record_digest="0" * 64,
     ), "ObservedAliasRevision", history, publication, limits)
     return AliasRevisionStreamRecord(
@@ -537,9 +621,8 @@ def _type_evidence(
     record: TypeEvidence,
     *,
     retained_spans: Sequence[SourceSpanReference],
-    lookup: Mapping[str, ObservedEntityReference],
-    system_interval: TimeInterval,
-    boundary_ids: frozenset[str],
+    lookup: Mapping[str, str],
+    system_intervals: Mapping[tuple[str, str], TimeInterval],
     history: ProtectedTypedValueRegistryHistory,
     publication: VerifiedTypedValuePublication,
     limits: ProtectedTypedValueArtifactReaderLimits,
@@ -555,8 +638,10 @@ def _type_evidence(
         raise NativeGraphObservationProjectionError(
             "type evidence does not bind one exact entity revision"
         )
-    entity = _lookup_reference(
-        lookup, reference.entity_revision_id, logical_entity_id=reference.logical_entity_id,
+    entity = _entity_reference(
+        lookup, reference.entity_revision_id,
+        reference_path=_TYPE_EVIDENCE_ENTITY_REFERENCE_PATH,
+        logical_entity_id=reference.logical_entity_id,
     )
     payload = _emit(ObservedTypeEvidence(
         evidence_id=record.evidence_id, entity=entity, asserted_type=record.asserted_type,
@@ -569,8 +654,10 @@ def _type_evidence(
         ),
         proof_ancestry_ids=record.proof_ancestry_ids,
         proof_policy_fingerprint=record.proof_policy_fingerprint,
-        valid_interval=record.valid_interval, system_interval=system_interval,
-        boundary=record.evidence_id in boundary_ids,
+        valid_interval=record.valid_interval, system_interval=_system_interval(
+            system_intervals, "type_evidence", record.evidence_id,
+        ),
+        boundary=False,
         record_digest="0" * 64,
     ), "ObservedTypeEvidence", history, publication, limits)
     return TypeEvidenceStreamRecord(
@@ -601,9 +688,8 @@ def _claim(
     *,
     evidence_pairs: Sequence[tuple[CitationRecord, ProvenanceRecord]],
     policy_fingerprints: tuple[str, ...],
-    lookup: Mapping[str, ObservedEntityReference],
-    system_interval: TimeInterval,
-    boundary_ids: frozenset[str],
+    lookup: Mapping[str, str],
+    system_intervals: Mapping[tuple[str, str], TimeInterval],
     history: ProtectedTypedValueRegistryHistory,
     publication: VerifiedTypedValuePublication,
     limits: ProtectedTypedValueArtifactReaderLimits,
@@ -630,7 +716,10 @@ def _claim(
     object_assertion_ref = None
     if identity.object_assertion_ref is not None:
         object_assertion_ref = ObservedAssertionEntityReference(
-            entity=_lookup_reference(lookup, identity.object_assertion_ref.entity_revision_id),
+            entity=_entity_reference(
+                lookup, identity.object_assertion_ref.entity_revision_id,
+                reference_path=_CLAIM_OBJECT_REFERENCE_PATH,
+            ),
             logical_entity_id_at_assertion=identity.object_assertion_ref.logical_entity_id_at_assertion,
         )
     citing = tuple(
@@ -640,7 +729,10 @@ def _claim(
     payload = _emit(ObservedClaimAssertion(
         claim_assertion_id=claim.claim_assertion_id,
         subject_assertion_ref=ObservedAssertionEntityReference(
-            entity=_lookup_reference(lookup, subject.entity_revision_id),
+            entity=_entity_reference(
+                lookup, subject.entity_revision_id,
+                reference_path=_CLAIM_SUBJECT_REFERENCE_PATH,
+            ),
             logical_entity_id_at_assertion=subject.logical_entity_id_at_assertion,
         ),
         object_assertion_ref=object_assertion_ref,
@@ -652,14 +744,16 @@ def _claim(
         temporal_reference_evidence=claim.temporal_evidence.reference_evidence,
         authenticated_source_interval_evidence=_interval_evidence(claim),
         temporal_decision_binding=claim.temporal_decision_binding,
-        system_interval=system_interval,
+        system_interval=_system_interval(
+            system_intervals, "claim_assertion", claim.claim_assertion_id,
+        ),
         source_authority_class=authority_evidence.authority.authority_class,
         source_ids=(authority_evidence.source_id,),
         operation_ids=(claim.operation_id,),
         citation_ids=tuple(sorted({pair[0].citation_id for pair in citing})),
         provenance_ids=tuple(sorted({pair[1].provenance_id for pair in citing})),
         policy_fingerprints=policy_fingerprints,
-        boundary=claim.claim_assertion_id in boundary_ids,
+        boundary=False,
         record_digest="0" * 64,
     ), "ObservedClaimAssertion", history, publication, limits)
     return ClaimAssertionStreamRecord(
@@ -757,9 +851,8 @@ def _relation(
     *,
     records: Sequence[BaseModel],
     evidence_pairs: Sequence[tuple[CitationRecord, ProvenanceRecord]],
-    lookup: Mapping[str, ObservedEntityReference],
-    system_interval: TimeInterval,
-    boundary_ids: frozenset[str],
+    lookup: Mapping[str, str],
+    system_intervals: Mapping[tuple[str, str], TimeInterval],
     history: ProtectedTypedValueRegistryHistory,
     publication: VerifiedTypedValuePublication,
     limits: ProtectedTypedValueArtifactReaderLimits,
@@ -775,13 +868,15 @@ def _relation(
     supporting_ids = tuple(item.claim_assertion_id for item in supporting)
     payload = _emit(ObservedRelation(
         relation_id=record.relation_revision_id, predicate_id=record.predicate_id,
-        subject=_lookup_reference(
+        subject=_entity_reference(
             lookup, record.subject_entity_revision_id,
+            reference_path=_RELATION_SUBJECT_REFERENCE_PATH,
             logical_entity_id=record.subject_logical_entity_id,
         ),
         object_kind="entity",
-        object_entity=_lookup_reference(
+        object_entity=_entity_reference(
             lookup, record.object_entity_revision_id,
+            reference_path=_RELATION_OBJECT_REFERENCE_PATH,
             logical_entity_id=record.object_logical_entity_id,
         ),
         literal_value=None,
@@ -790,7 +885,9 @@ def _relation(
         valid_interval=_intersect_valid_intervals(
             [item.valid_interval for item in supporting]
         ),
-        system_interval=system_interval,
+        system_interval=_system_interval(
+            system_intervals, "relation_revision", record.relation_revision_id,
+        ),
         source_ids=tuple(sorted({
             item.source_authority_evidence.source_id
             for item in supporting
@@ -801,7 +898,7 @@ def _relation(
             for citation, provenance in evidence_pairs
             if citation.cited_record_id in set(supporting_ids)
         })),
-        boundary=record.relation_revision_id in boundary_ids,
+        boundary=False,
         record_digest="0" * 64,
     ), "ObservedRelation", history, publication, limits)
     return RelationStreamRecord(
@@ -845,8 +942,6 @@ def _citation(
     records: Sequence[CanonicalGraphRecord],
     evidence_projections: Sequence[BootstrapNativeEvidenceProjectionV3],
     authority: BootstrapNativePlanningConstructionAuthorityV3,
-    system_interval: TimeInterval,
-    boundary_ids: frozenset[str],
     history: ProtectedTypedValueRegistryHistory,
     publication: VerifiedTypedValuePublication,
     limits: ProtectedTypedValueArtifactReaderLimits,
@@ -864,7 +959,7 @@ def _citation(
         source_id=construction.source_span.source_id,
         source_span=construction.source_span,
         source_digest=authority.source_digest,
-        boundary=record.citation_id in boundary_ids,
+        boundary=False,
         record_digest="0" * 64,
     ), "ObservedCitationRecord", history, publication, limits)
     return CitationStreamRecord(
@@ -904,8 +999,7 @@ def _provenance(
     compilation: BootstrapNativeOperationCompilationV3,
     effect_digests: tuple[str, ...],
     policy_fingerprints: tuple[str, ...],
-    system_interval: TimeInterval,
-    boundary_ids: frozenset[str],
+    system_intervals: Mapping[tuple[str, str], TimeInterval],
     history: ProtectedTypedValueRegistryHistory,
     publication: VerifiedTypedValuePublication,
     limits: ProtectedTypedValueArtifactReaderLimits,
@@ -943,7 +1037,10 @@ def _provenance(
             *effect_digests,
         })),
         policy_fingerprints=policy_fingerprints,
-        system_interval=system_interval, boundary=record.provenance_id in boundary_ids,
+        system_interval=_system_interval(
+            system_intervals, "provenance", record.provenance_id,
+        ),
+        boundary=False,
         record_digest="0" * 64,
     ), "ObservedProvenanceRecord", history, publication, limits)
     return ProvenanceStreamRecord(
@@ -955,5 +1052,6 @@ def _provenance(
 __all__ = [
     "NativeGraphObservationProjectionError",
     "NativeGraphObservationStreamRecord",
+    "project_boundary_entity_revision",
     "project_native_graph_observation_stream",
 ]
