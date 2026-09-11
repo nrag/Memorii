@@ -422,3 +422,21 @@ by precise per-arm recipe denials.
 Sibling-arm committed-path regression (coordinator-run): the materialization
 real-backend suite passed 19 cases in 3375.96s at ce7a68ee. The sibling-arm
 milestone is fully verified.
+
+## Projection Identity Reader Record (2026-09-11, commit 80c75de5)
+
+The standing reader-side obligation is discharged: observed projection
+records are accepted only after the registered reader derives the expected
+observation_id through the ProjectionObservationIdentity root from the same
+selected publication (emit re-verification funnel + the paging snapshot
+acceptance point; mismatch -> non-disclosing denied). Publications without
+the identity root keep historical read routes unchanged (the compiled
+production publication does not contain the root yet, so current behavior is
+byte-identical until the next publication refresh). A producer helper derives
+identities through the registered emit path. Guard-deletion validation and
+substitution tests (kind/repository/generation/projection swaps, forged ids,
+historical-publication forgeries) pass; 32 fast-suite cases, Ruff and scoped
+Pyright green. Remaining known follow-ups: projection-record PRODUCTION
+(observed temporal/trust projection records are still not emitted by the
+public stream producer — view/time applicability rides with it) and the
+applicability-key digest recipe disclosure.
