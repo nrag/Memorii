@@ -368,3 +368,26 @@ unchanged; invalid and raising clocks now prove lock release using another
 thread (and a second JSONL handle). The combined run passes57 cases; after an
 explicit lambda capture formatting correction all24 store cases pass again.
 These are required evidence actions, not newly found product defects.
+
+## Post-Closure CI Evidence And Branch-Debt Triage (2026-09-11)
+
+PR #120 at head 5596828f: Observation Ledger Activation SUCCESS on GitHub CI,
+including both new real-backend suites under the 240-minute budget — the
+milestone's CI leg. Pre-existing branch failures reproduce identically at
+pre-session baseline a7c6a9ed and are NOT caused by this operation: unit
+shard 1 (test_terminal_request_reload_rejects_in_memory_corrupt_closure),
+shard 4 (architecture explicit-owners and cross-module private-symbol tests
+violating via bootstrap_graph_projection_publication.py,
+observation_activation_package.py and
+semantic_ingestion_activation_target_release.py), shard 2 workflow-structure
+and Package Smoke — none of this operation's modules appear in any violation.
+These are merge-blocking branch debt for a separate bounded operation.
+
+Converse-closure hardening committed (b2955d5a): retained-inventory,
+evidence-pair and changes-without-intent closures with guard-deletion-validated
+denial tests; fast native suite 17 passed; both new materialization denial
+tests passed on the real backend; the full materialization regression re-run
+was started by the coordinator. Next: sibling-arm payload milestone, then
+projection records + reader-side identity, then the attestation-producer
+design packet (owner decision), with the owner-requested production-keys/
+trusted-deployment/signatures brainstorm between as scheduled.
