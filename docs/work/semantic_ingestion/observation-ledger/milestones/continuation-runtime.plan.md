@@ -440,3 +440,19 @@ Pyright green. Remaining known follow-ups: projection-record PRODUCTION
 (observed temporal/trust projection records are still not emitted by the
 public stream producer — view/time applicability rides with it) and the
 applicability-key digest recipe disclosure.
+
+## Projection Record Production Record (2026-09-11)
+
+All 17 observation stream families are now produced: projection state is
+retained in the detached image as committed memory-plane records, so
+project_observed_claim_projections emits ObservedTemporalClaimProjection /
+ObservedTrustClaimProjection with copied native payloads, retained
+generation/pointers/successors, derived registered identities (publication
+without the identity root denies), boundary keys, and preimage projection
+digest pairs. View/time selection: current requires valid_at=None and a
+generation whose base revision equals the detached graph revision; historical
+requires valid_at and selects at system_as_of; lineage is a typed denial.
+Fast-tier gates 53 passed, Ruff and scoped Pyright clean (coordinator-run);
+the materialization real-backend suite re-run is coordinator-owned and
+recorded when terminal. Remaining product work: the attestation campaign
+(M0 clock fix first) per the approved design.
