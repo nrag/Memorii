@@ -3,8 +3,12 @@
 The production capture supplies one verified accepted fact operation with its
 complete retained native record inventory.  Every test projects that arm (or a
 rebuilt variant) through the registered observed roots and asserts the exact
-promoted field semantics or the fail-closed denial.  No provider or public
-endpoint is certified by these tests.
+promoted field semantics or the fail-closed denial.  The sibling-arm envelope
+tests build correction/retraction/action/identity envelopes from the same real
+fact capture through the real contract constructors (the validated feasibility
+builders), because the current production planner never commits non-fact
+cohorts -- no real-store sibling-arm cohort exists yet and none is claimed.
+No provider or public endpoint is certified by these tests.
 """
 
 from __future__ import annotations
@@ -12,6 +16,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 import pytest
 from memorii.core.memory_evolution.graph_observation_native_projection import (
@@ -27,7 +32,10 @@ from memorii.core.memory_evolution.graph_observation_records import (
 )
 from memorii.core.memory_evolution.graph_planning import (
     AbsentPlanningPrecondition,
+    GraphPlanningState,
+    NonPublishingIdentityPlanningResultV3,
     PlanningCommitValues,
+    build_frozen_identity_graph_planning_artifact_from_state,
     canonical_planning_payload_from_record,
     materialize_canonical_planning_payload,
 )
@@ -39,23 +47,70 @@ from memorii.core.memory_evolution.graph_records import (
     ReferenceDispositionRecord,
     RelationRevision,
     SourceAuthority,
+    TrustedAcceptedIdentityOperationDecision,
     TypeEvidence,
+    VerifiedIdentityDecisionAuthority,
     canonical_graph_codec_manifest,
     graph_record_id,
 )
-from memorii.core.memory_evolution.semantic_state import LineageEvidenceReference
+from memorii.core.memory_evolution.identity_lineage import identity_lineage_genesis_digest
+from memorii.core.memory_evolution.reference_integrity import bootstrap_reference_integrity
+from memorii.core.memory_evolution.semantic_state import (
+    AcceptedIdentityOperation,
+    CompiledIdentityLineageTransition,
+    LineageEntityIdentity,
+    LineageEvidenceReference,
+    LineageReferenceDisposition,
+    LineageReverseReference,
+)
 from memorii.core.memory_evolution.time_contracts import TimeInterval
+from memorii.core.memory_evolution.transaction_coordinator import (
+    SemanticIngestionTransactionCoordinator,
+)
 from memorii.core.semantic_ingestion.contracts import (
+    AcceptedActionTransitionReference,
+    ActionRevision,
+    ActionTransitionApplicabilityKey,
+    BootstrapCanonicalIdentityBindingAllocationAuthorityV3,
+    BootstrapCanonicalIdentityBindingAllocationReloadV3,
+    BootstrapGraphTargetReferenceV3,
+    BootstrapNativeActionStateEffectV3,
+    BootstrapNativeCorrectionEffectV3,
     BootstrapNativeFactEffectV3,
+    BootstrapNativeIdentityConstructionAuthorityV3,
+    BootstrapNativeIdentityEffectV3,
+    BootstrapNativeIdentityMaterializationV3,
     BootstrapNativePlanningRecordV3,
+    BootstrapNativeRetractionEffectV3,
+    BootstrapNativeTargetBindingV3,
+    BootstrapNativeTemporalConstructionV3,
+    BootstrapProposalActionRoleBindingV3,
+    BootstrapProposalActionRoleParticipantV3,
+    BootstrapProposalActionStateV3,
+    BootstrapProposalCorrectionV3,
+    BootstrapProposalIdentityOperationV3,
+    BootstrapProposalRetractionV3,
+    BootstrapSnapshotTargetAuthorityV3,
+    CertifiedTextEffectiveTime,
     ClaimAssertion,
+    IdentityLineageRecord,
+    SystemRecordedEffectiveTime,
+    TemporalTransitionRecord,
     contract_digest,
 )
+from memorii.core.semantic_ingestion.event_replay import SemanticReplayState
 from tests.fixtures.semantic_ingestion.observation_publication import (
     observation_publication,
 )
+from tests.fixtures.semantic_ingestion.semantic_terminal_fixture import accepted_terminal
 from tests.unit.core.semantic_ingestion.test_bootstrap_graph_observation_retention import (
     _capture_builtin_fact_planning,
+)
+from tests.unit.core.semantic_ingestion.test_identity_lineage_prerequisites import (
+    _artifact as _identity_artifact,
+)
+from tests.unit.core.semantic_ingestion.test_identity_lineage_prerequisites import (
+    _Reader,
 )
 from tests.unit.core.semantic_ingestion.test_semantic_provider_composition import (
     TEST_NOW,
@@ -912,10 +967,11 @@ def test_unsupported_retained_record_kind_and_arm_deny(tmp_path, monkeypatch, ar
         arm.effect, (*arm.effect.planning_records, _planning_record(arm, disposition)),
     )
     records = _materialize(effect, arm.group_request.transaction_group_id, arm.commit_values)
+    # ``reference_disposition`` is now a supported kind owned by identity arms;
+    # a fact arm retaining one still denies through the exact arm mismatch.
     with pytest.raises(
         NativeGraphObservationProjectionError,
-        match="retained native record kind has no exact observed projection recipe: "
-        "reference_disposition",
+        match="reference disposition is retained by an operation arm that does not own it",
     ):
         _project(
             arm, history=history, limits=limits, accepted_effect=effect,
@@ -971,3 +1027,1101 @@ def _rebuild_claim(claim: ClaimAssertion, *, claim_assertion_id=None, interval=N
             b"memorii.semantic-ingestion.temporal-carrier.v1", body,
         ),
     })
+
+
+# --- Sibling-arm envelope proofs -------------------------------------------------
+#
+# The current production planner never commits non-fact cohorts, so no
+# real-store sibling-arm cohort exists.  These envelope tests build each arm
+# from the real fact capture through the real contract constructors (the
+# validated feasibility builders) and project them through the registered
+# roots; they prove the exact field recipes and typed refusals, never a
+# provider run or a committed cohort.
+
+_SIBLING_ROOTS = _FACT_ROOTS + (
+    "ObservedTemporalTransition", "ObservedActionRevision",
+    "ObservedIdentityTransition", "ObservedReferenceDisposition",
+)
+
+
+def _authority_values(arm: _FactArm) -> dict:
+    authority = arm.compilation.operation_input.planning_construction_authority
+    assert authority is not None
+    return {
+        name: getattr(authority, name)
+        for name in type(authority).model_fields
+        if name not in {"schema_version", "authority_digest"}
+    }
+
+
+def _rebuild_authority(arm: _FactArm, **changes):
+    """Rebuild the captured authority through its real constructor."""
+    values = _authority_values(arm) | changes
+    authority = arm.compilation.operation_input.planning_construction_authority
+    assert authority is not None
+    return type(authority).create(**values)
+
+
+def _compilation_with_authority(arm: _FactArm, authority, *, operation_member=None):
+    """Rebind the captured compilation's authority (and optionally member).
+
+    ``model_copy`` is used only to assemble the already-verified captured
+    compilation around the rebuilt authority; every projection-side join
+    (operation identity, member binding, terminal status) is re-checked by
+    the projection owner itself.
+    """
+    operation_input = arm.compilation.operation_input.model_copy(update={
+        "planning_construction_authority": authority,
+        **({} if operation_member is None else {"operation_member": operation_member}),
+    })
+    return arm.compilation.model_copy(update={
+        "operation_input": operation_input,
+        **({} if operation_member is None else {"operation_member": operation_member}),
+    })
+
+
+def _rebased_transition(arm: _FactArm, kind: str, *, transition_kind=None):
+    """Rebind the fixture's real transition carrier to this native operation.
+
+    The generic terminal fixture derives its own operation identity; the typed
+    transition authority is rebound through its owners exactly as the closed
+    feasibility did, recomputing every digest.
+    """
+    carrier = next(
+        item for item in accepted_terminal(
+            operation_id="op:sibling-transition", operation_kind=kind,
+        ).accepted_carriers if isinstance(item, TemporalTransitionRecord)
+    )
+    original = carrier.temporal_decision_binding
+    attachment = type(original.temporal_attachment).create(**{
+        **{name: getattr(original.temporal_attachment, name)
+           for name in type(original.temporal_attachment).model_fields
+           if name != "binding_digest"},
+        "operation_id": arm.compilation.operation_id,
+    })
+    binding = type(original).create(**{
+        **{name: getattr(original, name)
+           for name in type(original).model_fields if name != "binding_digest"},
+        "operation_id": arm.compilation.operation_id,
+        "temporal_attachment": attachment,
+    })
+    body = carrier.model_dump(mode="python", exclude={"record_digest"}) | {
+        "operation_id": arm.compilation.operation_id,
+        "temporal_decision_binding": binding.model_dump(mode="python"),
+    }
+    if transition_kind is not None:
+        body["transition_kind"] = transition_kind
+    carrier = TemporalTransitionRecord.model_validate({
+        **body,
+        "record_digest": contract_digest(
+            b"memorii.semantic-ingestion.temporal-carrier.v1", body,
+        ),
+    })
+    planning = BootstrapNativePlanningRecordV3.create(
+        operation_execution_id=arm.compilation.operation_execution_id,
+        record_kind="temporal_transition", record_id=carrier.transition_id,
+        precondition=AbsentPlanningPrecondition(),
+        planning_payload=canonical_planning_payload_from_record(
+            carrier, transaction_group_id=arm.group_request.transaction_group_id,
+        ),
+        source_member_digest=arm.effect.fact.fact_digest,
+    )
+    return carrier, planning, binding
+
+
+def _transition_construction(binding, evidence, *, coordinate):
+    closure = evidence.decision_closure
+    return BootstrapNativeTemporalConstructionV3.create(
+        temporal_role="transition",
+        temporal_consensus_digest=binding.temporal_attachment.stable_attachment_consensus_digest,
+        effective_time=coordinate,
+        accepted_temporal_evidence=evidence,
+        temporal_decision_binding=binding,
+        temporal_policy_fingerprint=closure.temporal_policy_fingerprint,
+    )
+
+
+def _certified_coordinate(arm: _FactArm, evidence):
+    closure = evidence.decision_closure
+    assert evidence.valid_interval is not None
+    authority = arm.compilation.operation_input.planning_construction_authority
+    assert authority is not None
+    return CertifiedTextEffectiveTime(
+        kind="certified_text_time",
+        effective_at=evidence.valid_interval.start,
+        evidence_spans=(authority.evidence_constructions[0].source_span,),
+        temporal_policy_fingerprint=closure.temporal_policy_fingerprint,
+        temporal_policy_snapshot_digest=closure.temporal_policy_snapshot_digest,
+    )
+
+
+def _claim_target_binding(arm: _FactArm, claim: ClaimAssertion, *, role: str):
+    target = BootstrapGraphTargetReferenceV3.create(
+        record_kind="claim_assertion", record_id=claim.claim_assertion_id,
+        record_digest=claim.record_digest,
+    )
+    return BootstrapNativeTargetBindingV3.create(
+        role=role, source_coordinate_digest="a" * 64,
+        authority=BootstrapSnapshotTargetAuthorityV3.create(
+            kind="snapshot", target=target,
+            sealed_snapshot_digest="0" * 64, effective_read_set_digest="0" * 64,
+            snapshot_record_digest=target.record_digest,
+        ),
+    )
+
+
+def _recreate(value, **changes):
+    return type(value).create(**{
+        **{name: getattr(value, name) for name in type(value).model_fields
+           if name not in {"schema_version", value._digest_field}},
+        **changes,
+    })
+
+
+def _citation_citing(arm: _FactArm, record_id: str):
+    """Rebind the captured citation/provenance pair to one exact new target."""
+    original = arm.effect.evidence_projections[0]
+    payload = dict(original.citation_record.planning_payload.planning_record)
+    payload["cited_record_id"] = record_id
+    citation = _recreate(
+        original.citation_record,
+        planning_payload=type(original.citation_record.planning_payload)(
+            planning_record=payload,
+        ),
+    )
+    return _recreate(original, citation_record=citation)
+
+
+def test_correction_arm_projects_replacement_and_transition_envelope(
+    tmp_path, monkeypatch, arm,
+):
+    history, limits = observation_publication(tmp_path, monkeypatch, _SIBLING_ROOTS)
+    claim = _claim(arm.records)
+    identity = claim.claim_identity
+    assert identity is not None
+    carrier, transition, binding = _rebased_transition(arm, "correction")
+    coordinate = _certified_coordinate(arm, carrier.temporal_evidence)
+    construction = _transition_construction(
+        binding, carrier.temporal_evidence, coordinate=coordinate,
+    )
+    # The captured arm retains an arbitration bundle whose policy fingerprints
+    # belong to the fact capture; the rebased transition construction carries
+    # the fixture's own policies, so the rebuilt authority drops the bundle
+    # (a permitted absent optional) exactly like the closed feasibility.
+    authority = _rebuild_authority(
+        arm, arbitration_policy_bundle=None,
+        temporal_constructions=(
+            *arm.compilation.operation_input.planning_construction_authority.temporal_constructions,
+            construction,
+        ),
+    )
+    compilation = _compilation_with_authority(
+        arm, authority, operation_member=BootstrapProposalCorrectionV3.create(
+            corrected_fact=arm.effect.fact, replacement_fact=arm.effect.fact,
+            assertion=arm.effect.fact.assertion,
+            correction_anchor=arm.effect.fact.predicate_anchor,
+        ),
+    )
+    replacement = _recreate(
+        arm.effect,
+        planning_records=(*arm.effect.planning_records, transition),
+    )
+    correction = BootstrapNativeCorrectionEffectV3.create(
+        kind="correction",
+        correction=compilation.operation_input.operation_member,
+        corrected_targets=(
+            _claim_target_binding(arm, claim, role="corrected_target"),
+        ),
+        replacement_effect=replacement, transition_records=(transition,),
+    )
+    records = _materialize(
+        replacement, arm.group_request.transaction_group_id, arm.commit_values,
+    )
+    intervals = _commit_event_intervals(records)
+    stream = _project(
+        arm, history=history, limits=limits, compilation=compilation,
+        accepted_effect=correction, retained_native_records=records,
+        system_intervals=intervals,
+    )
+    assert [item.record_kind for item in stream] == [
+        "citation", "citation", "claim_assertion", "entity_revision",
+        "entity_revision", "provenance", "provenance", "relation",
+        "temporal_transition",
+    ]
+    transition_payload = stream[-1].payload
+    assert stream[-1].primary_key == carrier.transition_id
+    assert transition_payload.transition_id == carrier.transition_id
+    assert transition_payload.operation_id == arm.compilation.operation_id
+    assert transition_payload.claim_slot_key == identity.assertion_key_at_recording.slot
+    assert transition_payload.compared_claim_ids == (claim.claim_assertion_id,)
+    assert transition_payload.previous_projection_claim_ids == (claim.claim_assertion_id,)
+    assert transition_payload.next_projection_claim_ids == (claim.claim_assertion_id,)
+    assert transition_payload.transition_kind == "correction"
+    assert transition_payload.effective_time.kind == "certified_text_time"
+    assert transition_payload.effective_time.effective_at == coordinate.effective_at
+    assert transition_payload.effective_time.evidence_spans == coordinate.evidence_spans
+    assert transition_payload.effective_time.temporal_policy_fingerprint == (
+        coordinate.temporal_policy_fingerprint
+    )
+    assert transition_payload.transition_temporal_evidence == carrier.temporal_evidence
+    assert transition_payload.transition_temporal_decision_binding == binding
+    assert transition_payload.system_interval == TimeInterval(start=TEST_NOW)
+    assert transition_payload.source_ids == (authority.source_id,)
+    assert transition_payload.provenance_ids == ()
+    assert transition_payload.boundary is False
+    assert _HEX64.fullmatch(stream[-1].record_digest)
+    assert stream[-1].record_digest == transition_payload.record_digest
+
+    # A missing or ambiguous transition temporal construction denies.
+    correction_member = compilation.operation_input.operation_member
+    stripped = _rebuild_authority(arm, arbitration_policy_bundle=None)
+    with pytest.raises(
+        NativeGraphObservationProjectionError,
+        match="transition lacks its unique retained transition temporal authority",
+    ):
+        _project(
+            arm, history=history, limits=limits,
+            compilation=_compilation_with_authority(
+                arm, stripped, operation_member=correction_member,
+            ),
+            accepted_effect=correction, retained_native_records=records,
+            system_intervals=intervals,
+        )
+    duplicated = _rebuild_authority(
+        arm, arbitration_policy_bundle=None,
+        temporal_constructions=(
+            *_authority_values(arm)["temporal_constructions"], construction, construction,
+        ),
+    )
+    with pytest.raises(
+        NativeGraphObservationProjectionError,
+        match="transition lacks its unique retained transition temporal authority",
+    ):
+        _project(
+            arm, history=history, limits=limits,
+            compilation=_compilation_with_authority(
+                arm, duplicated, operation_member=correction_member,
+            ),
+            accepted_effect=correction, retained_native_records=records,
+            system_intervals=intervals,
+        )
+    # The coordinate discriminator must match the evidence the binding
+    # carries: an interval-evidenced transition cannot be system-recorded-only.
+    ambiguous = _rebuild_authority(
+        arm, arbitration_policy_bundle=None,
+        temporal_constructions=(
+            *_authority_values(arm)["temporal_constructions"],
+            _transition_construction(
+                binding, carrier.temporal_evidence,
+                coordinate=SystemRecordedEffectiveTime(
+                    kind="system_recorded_only",
+                    temporal_policy_fingerprint=(
+                        carrier.temporal_evidence.decision_closure.temporal_policy_fingerprint
+                    ),
+                    temporal_policy_snapshot_digest=(
+                        carrier.temporal_evidence.decision_closure.temporal_policy_snapshot_digest
+                    ),
+                ),
+            ),
+        ),
+    )
+    with pytest.raises(
+        NativeGraphObservationProjectionError,
+        match="transition effective-time evidence is ambiguous",
+    ):
+        _project(
+            arm, history=history, limits=limits,
+            compilation=_compilation_with_authority(
+                arm, ambiguous, operation_member=correction_member,
+            ),
+            accepted_effect=correction, retained_native_records=records,
+            system_intervals=intervals,
+        )
+    # A transition version without its commit-event-derived interval denies.
+    missing_interval = dict(intervals)
+    del missing_interval[("temporal_transition", carrier.transition_id)]
+    with pytest.raises(
+        NativeGraphObservationProjectionError,
+        match="observed temporal_transition has no commit-event-derived system interval",
+    ):
+        _project(
+            arm, history=history, limits=limits, compilation=compilation,
+            accepted_effect=correction, retained_native_records=records,
+            system_intervals=missing_interval,
+        )
+
+
+def test_retraction_arm_transition_envelope_denies_without_claim_slot_authority(
+    tmp_path, monkeypatch, arm,
+):
+    """The retraction envelope retains no claim identity for its transition.
+
+    The retracted target is only a claim reference and the retraction proposal
+    carries mention digests, so no retained carrier supplies the observed
+    transition's claim slot key: the projection is a typed refusal, never a
+    guessed slot.  Every other retraction join (arm ownership, kind,
+    transition temporal authority) must still succeed first.
+    """
+    history, limits = observation_publication(tmp_path, monkeypatch, _SIBLING_ROOTS)
+    claim = _claim(arm.records)
+    carrier, transition, binding = _rebased_transition(arm, "retraction")
+    coordinate = _certified_coordinate(arm, carrier.temporal_evidence)
+    authority = _rebuild_authority(
+        arm, arbitration_policy_bundle=None,
+        temporal_constructions=(
+            *_authority_values(arm)["temporal_constructions"],
+            _transition_construction(
+                binding, carrier.temporal_evidence, coordinate=coordinate,
+            ),
+        ),
+    )
+    compilation = _compilation_with_authority(
+        arm, authority, operation_member=BootstrapProposalRetractionV3.create(
+            retracted_fact=arm.effect.fact, assertion=arm.effect.fact.assertion,
+            retraction_anchor=arm.effect.fact.predicate_anchor,
+        ),
+    )
+    projection = _citation_citing(arm, carrier.transition_id)
+    retraction = BootstrapNativeRetractionEffectV3.create(
+        kind="retraction",
+        retraction=compilation.operation_input.operation_member,
+        retracted_targets=(
+            _claim_target_binding(arm, claim, role="retracted_target"),
+        ),
+        transition_records=(transition,), evidence_projections=(projection,),
+    )
+    records = _materialize(
+        SimpleNamespace(planning_records=(
+            transition, projection.citation_record, projection.provenance_record,
+        )),
+        arm.group_request.transaction_group_id, arm.commit_values,
+    )
+    pairs = _materialized_pairs(SimpleNamespace(evidence_projections=(projection,)), arm.commit_values)
+    with pytest.raises(
+        NativeGraphObservationProjectionError,
+        match="retraction transition lacks its retained claim slot key authority",
+    ):
+        _project(
+            arm, history=history, limits=limits, compilation=compilation,
+            accepted_effect=retraction, retained_native_records=records,
+            evidence_pairs=pairs,
+        )
+    # A transition kind that differs from its operation arm denies first.
+    flipped_carrier, flipped, _flipped_binding = _rebased_transition(
+        arm, "retraction", transition_kind="correction",
+    )
+    assert flipped_carrier.transition_kind == "correction"
+    flipped_projection = _citation_citing(arm, flipped_carrier.transition_id)
+    flipped_retraction = BootstrapNativeRetractionEffectV3.create(
+        kind="retraction",
+        retraction=BootstrapProposalRetractionV3.create(
+            retracted_fact=arm.effect.fact, assertion=arm.effect.fact.assertion,
+            retraction_anchor=arm.effect.fact.predicate_anchor,
+        ),
+        retracted_targets=(),
+        transition_records=(flipped,), evidence_projections=(flipped_projection,),
+    )
+    flipped_records = _materialize(
+        SimpleNamespace(planning_records=(
+            flipped, flipped_projection.citation_record,
+            flipped_projection.provenance_record,
+        )),
+        arm.group_request.transaction_group_id, arm.commit_values,
+    )
+    flipped_pairs = _materialized_pairs(
+        SimpleNamespace(evidence_projections=(flipped_projection,)), arm.commit_values,
+    )
+    with pytest.raises(
+        NativeGraphObservationProjectionError,
+        match="transition kind differs from its operation arm",
+    ):
+        _project(
+            arm, history=history, limits=limits, compilation=compilation,
+            accepted_effect=flipped_retraction, retained_native_records=flipped_records,
+            evidence_pairs=flipped_pairs,
+        )
+
+
+def _action_carrier(arm: _FactArm) -> ActionRevision:
+    """One action revision carrier bound to this native operation.
+
+    The carrier copies the captured claim's accepted temporal evidence and
+    decision binding through the real carrier digest recipe; no action planner
+    exists yet, so the envelope holds the same retained temporal authority a
+    planned action would carry.
+    """
+    claim = _claim(arm.records)
+    body = {
+        "record_kind": "action_revision",
+        "action_revision_id": "action-revision:envelope",
+        "statement_digest": contract_digest(
+            b"memorii.semantic-ingestion.statement.v1", "Atlas performs an action.",
+        ),
+        "operation_id": arm.compilation.operation_id,
+        "valid_interval": claim.valid_interval,
+        "temporal_evidence": claim.temporal_evidence,
+        "temporal_decision_binding": claim.temporal_decision_binding,
+        "record_version": 1,
+        "codec_fingerprint": claim.codec_fingerprint,
+    }
+    return ActionRevision.model_validate({
+        **body,
+        "record_digest": contract_digest(
+            b"memorii.semantic-ingestion.temporal-carrier.v1", body,
+        ),
+    })
+
+
+def _action_state_proposal(arm: _FactArm):
+    fact = arm.effect.fact
+    participant = BootstrapProposalActionRoleParticipantV3.create(
+        mention_digest=fact.subject_mention_digest, grounding=(fact.assertion,),
+    )
+    binding = BootstrapProposalActionRoleBindingV3.create(
+        role_id="actor", endpoint_kind="actor", participants=(participant,),
+    )
+    return BootstrapProposalActionStateV3.create(
+        action_anchor=fact.predicate_anchor,
+        logical_action_digest=contract_digest(
+            b"memorii.semantic-ingestion.bootstrap-proposal-logical-action.v3",
+            {"action_anchor": fact.predicate_anchor, "role_bindings": (binding,)},
+        ),
+        role_bindings=(binding,),
+        state_id="observed",
+        state_anchor=fact.assertion,
+        execution_branch=None,
+        execution_branch_digest=None,
+        assertion=fact.assertion,
+        temporal_qualifiers=(),
+    )
+
+
+def _participant_target_binding(
+    arm: _FactArm, entity: EntityRevision, *, role_id: str, index: int, mention: str,
+):
+    """The resolved participant binding at its exact retained mention coordinate."""
+    coordinate = contract_digest(
+        b"memorii.bootstrap-graph.cluster-reference-coordinate.v3",
+        {
+            "operation_member_digest": (
+                arm.compilation.operation_input.operation_subject.member_digest
+            ),
+            "path": f"action.{role_id}.{index}",
+            "mention_digest": mention,
+        },
+    )
+    return BootstrapNativeTargetBindingV3.create(
+        role="action_participant", source_coordinate_digest=coordinate,
+        authority=BootstrapSnapshotTargetAuthorityV3.create(
+            kind="snapshot",
+            target=BootstrapGraphTargetReferenceV3.create(
+                record_kind="entity_revision",
+                record_id=entity.entity_revision_id,
+                record_digest=entity.record_digest,
+            ),
+            sealed_snapshot_digest="0" * 64, effective_read_set_digest="0" * 64,
+            snapshot_record_digest=entity.record_digest,
+        ),
+    )
+
+
+def _action_transition_reference(arm: _FactArm, *, to_state_id="observed"):
+    authority = arm.compilation.operation_input.planning_construction_authority
+    assert authority is not None
+    key_values = {
+        "from_state_id": "pending",
+        "to_state_id": to_state_id,
+        "execution_branch_kind": "unbranched",
+    }
+    applicability = ActionTransitionApplicabilityKey(
+        **key_values,
+        applicability_key_digest=contract_digest(
+            b"memorii.semantic-ingestion.action-transition-applicability.v1",
+            key_values,
+        ),
+    )
+    return AcceptedActionTransitionReference(
+        transition_rule_id="action-rule:observed",
+        applicability_key=applicability,
+        action_policy_fingerprint=authority.action_policy_fingerprint,
+        resolution_evidence_digest="e" * 64,
+    )
+
+
+def test_action_arm_projects_participants_and_role_binding_envelope(
+    tmp_path, monkeypatch, arm,
+):
+    history, limits = observation_publication(tmp_path, monkeypatch, _SIBLING_ROOTS)
+    claim = _claim(arm.records)
+    action = _action_carrier(arm)
+    proposal = _action_state_proposal(arm)
+    subject = _subject_entity(arm.records)
+    participant_binding = _participant_target_binding(
+        arm, subject, role_id="actor", index=0,
+        mention=arm.effect.fact.subject_mention_digest,
+    )
+    action_planning = BootstrapNativePlanningRecordV3.create(
+        operation_execution_id=arm.compilation.operation_execution_id,
+        record_kind="action_revision", record_id=action.action_revision_id,
+        precondition=AbsentPlanningPrecondition(),
+        planning_payload=canonical_planning_payload_from_record(
+            action, transaction_group_id=arm.group_request.transaction_group_id,
+        ),
+        source_member_digest=arm.compilation.operation_input.operation_subject.member_digest,
+    )
+    projection = _citation_citing(arm, action.action_revision_id)
+    entity_planning = tuple(
+        record for record in arm.effect.planning_records
+        if record.record_kind == "entity_revision"
+    )
+    citation_planning = (projection.citation_record,)
+    provenance_planning = (projection.provenance_record,)
+    effect = BootstrapNativeActionStateEffectV3.create(
+        kind="action_state", action_state=proposal,
+        resolved_participants=(participant_binding,),
+        planning_records=(*entity_planning, action_planning, *citation_planning, *provenance_planning),
+        terminal_bindings=arm.effect.terminal_bindings,
+        evidence_projections=(projection,),
+    )
+    authority = _rebuild_authority(
+        arm, action_transition=_action_transition_reference(arm),
+    )
+    compilation = _compilation_with_authority(
+        arm, authority, operation_member=proposal,
+    )
+    records = _materialize(
+        effect, arm.group_request.transaction_group_id, arm.commit_values,
+    )
+    pairs = _materialized_pairs(effect, arm.commit_values)
+    lookup = {
+        record.entity_revision_id: record.logical_entity_id
+        for record in records if isinstance(record, EntityRevision)
+    }
+    stream = _project(
+        arm, history=history, limits=limits, compilation=compilation,
+        accepted_effect=effect, retained_native_records=records,
+        evidence_pairs=pairs, native_entity_lookup=lookup,
+    )
+    assert [item.record_kind for item in stream] == [
+        "action_revision", "citation", "entity_revision", "entity_revision",
+        "provenance",
+    ]
+    action_payload = stream[0].payload
+    assert stream[0].primary_key == action.action_revision_id
+    assert action_payload.action_revision_id == action.action_revision_id
+    assert action_payload.logical_action_id == proposal.logical_action_digest
+    assert action_payload.role_bindings == (
+        type(action_payload.role_bindings[0])(
+            role_id="actor", endpoint_kind="actor",
+            entities=(
+                ObservedEntityReference(
+                    entity_revision_id=subject.entity_revision_id,
+                    logical_entity_id=subject.logical_entity_id,
+                    reference_path="action_state.role_bindings[].participants[]",
+                ),
+            ),
+        ),
+    )
+    assert action_payload.action_state == "observed"
+    assert action_payload.execution_branch_id is None
+    assert action_payload.transition_rule_id == "action-rule:observed"
+    assert action_payload.transition_applicability_key_digest == (
+        authority.action_transition.applicability_key.applicability_key_digest
+    )
+    assert action_payload.supporting_claim_assertion_ids == ()
+    assert action_payload.valid_interval == claim.valid_interval
+    assert action_payload.authenticated_source_interval_evidence == (
+        next(
+            candidate.authenticated_source_interval_evidence
+            for candidate in claim.temporal_evidence.decision_closure.candidates
+            if candidate.candidate_id
+            in claim.temporal_evidence.decision_closure.selected_candidate_ids
+        )
+    )
+    assert action_payload.temporal_decision_binding == action.temporal_decision_binding
+    assert action_payload.system_interval == TimeInterval(start=TEST_NOW)
+    assert action_payload.source_ids == (authority.source_id,)
+    assert action_payload.provenance_ids == (pairs[0][1].provenance_id,)
+    assert action_payload.boundary is False
+    assert _HEX64.fullmatch(stream[0].record_digest)
+    assert stream[0].record_digest == action_payload.record_digest
+
+    # The captured fact authority retains no action transition: typed refusal.
+    with pytest.raises(
+        NativeGraphObservationProjectionError,
+        match="action revision lacks its retained action transition authority",
+    ):
+        _project(
+            arm, history=history, limits=limits,
+            compilation=_compilation_with_authority(arm, _rebuild_authority(arm), operation_member=proposal),
+            accepted_effect=effect, retained_native_records=records,
+            evidence_pairs=pairs, native_entity_lookup=lookup,
+        )
+    # An applicability key that does not bind the retained action state denies.
+    mismatched = _rebuild_authority(
+        arm, action_transition=_action_transition_reference(arm, to_state_id="other"),
+    )
+    with pytest.raises(
+        NativeGraphObservationProjectionError,
+        match="action transition applicability does not bind the retained action state",
+    ):
+        _project(
+            arm, history=history, limits=limits,
+            compilation=_compilation_with_authority(arm, mismatched, operation_member=proposal),
+            accepted_effect=effect, retained_native_records=records,
+            evidence_pairs=pairs, native_entity_lookup=lookup,
+        )
+    # A participant whose mention coordinate resolves to no exact entity
+    # target denies instead of guessing an entity.
+    foreign = effect.model_copy(update={"resolved_participants": ()})
+    with pytest.raises(
+        NativeGraphObservationProjectionError,
+        match="action role participant does not resolve to one exact entity target",
+    ):
+        _project(
+            arm, history=history, limits=limits, compilation=compilation,
+            accepted_effect=foreign, retained_native_records=records,
+            evidence_pairs=pairs, native_entity_lookup=lookup,
+        )
+    # An action arm that retains claims keeps its exact claim-projection
+    # pairing, but a retained claim still needs its polarity authority: the
+    # action envelope retains no fact member, so the claim emission is a typed
+    # refusal rather than a guessed polarity.
+    claim_planning = tuple(
+        record for record in arm.effect.planning_records
+        if record.record_kind in {"claim_assertion", "claim_projection", "relation_revision"}
+    )
+    with_claims = _recreate(
+        effect, planning_records=(
+            *entity_planning, *claim_planning, action_planning,
+            *citation_planning, *provenance_planning,
+        ),
+    )
+    claim_records = _materialize(
+        with_claims, arm.group_request.transaction_group_id, arm.commit_values,
+    )
+    with pytest.raises(
+        NativeGraphObservationProjectionError,
+        match="claim polarity lacks its retained operation authority",
+    ):
+        _project(
+            arm, history=history, limits=limits, compilation=compilation,
+            accepted_effect=with_claims, retained_native_records=claim_records,
+            evidence_pairs=pairs, native_entity_lookup=lookup,
+        )
+
+
+def _identity_envelope(arm: _FactArm):
+    """Build one real identity materialization envelope around a rekey.
+
+    The chain uses only real constructors: the terminal fixture seals one
+    identity operation with its transition-role binding, the production
+    identity-lineage compiler inputs compile a rekey transition (one
+    historical reference closure entry with its disposition), the graph
+    planning owner freezes the nonpublishing planning result, and the
+    bootstrap materialization contract retains the lineage, successor and
+    disposition planning records.  The carriers are then rebound to this
+    native operation exactly like the correction/retraction feasibility.
+    """
+    authority = arm.compilation.operation_input.planning_construction_authority
+    assert authority is not None
+    span = authority.evidence_constructions[0].source_span
+    evidence = (LineageEvidenceReference(
+        source_id=span.source_id, start=span.segment_local_span.start,
+        end=span.segment_local_span.end, evidence_digest="4" * 64,
+    ),)
+    predecessor = LineageEntityIdentity(
+        entity_revision_id="entity-revision:alice:v1", logical_entity_id="entity:alice",
+    )
+    successor = LineageEntityIdentity(
+        entity_revision_id="entity-revision:alice:v2", logical_entity_id="entity:alice",
+    )
+    reference = LineageReverseReference.create(
+        record_kind="claim_projection", record_id="claim-projection:referencing",
+        reference_path="subject_entity_revision_id", predecessor=predecessor,
+        lifecycle="historical", base_record_digest="5" * 64,
+        referenced_value_digest="6" * 64,
+    )
+    disposition = LineageReferenceDisposition.create(
+        reference_digest=reference.reference_digest,
+        record_kind=reference.record_kind, record_id=reference.record_id,
+        reference_path=reference.reference_path, predecessor=predecessor,
+        disposition="preserve_historical", successors=(),
+        source_evidence=evidence, basis="operation_defined_history_preservation",
+    )
+    fixture = accepted_terminal(
+        operation_id="op:identity-envelope", operation_kind="identity",
+        identity_lineage_compiler=SimpleNamespace(
+            compile_transition=lambda operation, candidate, source_analysis: (
+                CompiledIdentityLineageTransition.create(
+                    operation_id=operation.operation_id, operation="rekey",
+                    predecessors=(predecessor,), successors=(successor,),
+                    graph_revision_before="genesis", recorded_at=None,
+                    lineage_snapshot_before_digest=identity_lineage_genesis_digest(
+                        "semantic_ingestion",
+                    ),
+                    source_evidence=evidence,
+                    reverse_reference_closure=(reference,),
+                    reference_dispositions=(disposition,),
+                )
+            ),
+        ),
+    )
+    sealed = fixture.sealed_operations[0]
+    candidate = fixture.candidates[0]
+    analysis = fixture.source_analyses[0]
+    accepted = AcceptedIdentityOperation.create(
+        operation_id=sealed.operation_id, operation="rekey",
+        predecessors=(predecessor,), successors=(successor,),
+        source_evidence=evidence, reference_assignments=(),
+    )
+    state = SemanticReplayState.genesis("semantic_ingestion")
+    reader = _Reader(state, bootstrap_reference_integrity(state, completed_at=TEST_NOW))
+    snapshot = SemanticIngestionTransactionCoordinator(
+        reader, now_provider=lambda: TEST_NOW,
+    ).acquire_snapshot()
+    decision = TrustedAcceptedIdentityOperationDecision.create(
+        operation=accepted, alias_payload=None,
+        sealed_operation_digest=sealed.sealed_operation_digest,
+        candidate_digest=candidate.candidate_digest,
+        source_analysis_digest=analysis.analysis_digest,
+        operation_fence_binding_digest="f" * 64,
+        graph_snapshot_digest=snapshot.snapshot_digest,
+        graph_read_set_digest=snapshot.read_set.read_set_digest,
+        authority_digest="7" * 64,
+    )
+    verification = VerifiedIdentityDecisionAuthority.create(
+        decision_digest=decision.decision_digest,
+        sealed_operation_digest=sealed.sealed_operation_digest,
+        candidate_digest=candidate.candidate_digest,
+        source_analysis_digest=analysis.analysis_digest,
+        operation_fence_binding_digest="f" * 64,
+        graph_snapshot_digest=snapshot.snapshot_digest,
+        graph_read_set_digest=snapshot.read_set.read_set_digest,
+        authority_record_id="authority:identity-envelope",
+        authority_record_digest="9" * 64, verifier_id="verifier",
+    )
+    artifact = _identity_artifact(
+        accepted,
+        sealed_operation_digest=sealed.sealed_operation_digest,
+        candidate_digest=candidate.candidate_digest,
+        source_analysis_digest=analysis.analysis_digest,
+    ).model_copy(update={
+        # The accepted artifact must carry the exact computed decision and
+        # verification identities the frozen artifact re-checks.
+        "authority_digest": verification.verification_digest,
+        "verified_decision_digest": decision.decision_digest,
+        "authority_verification_digest": verification.verification_digest,
+        "authority_record_id": "authority:identity-envelope",
+        "authority_record_digest": "9" * 64,
+    })
+    from memorii.core.memory_evolution.graph_records import (
+        AcceptedIdentityOperationArtifact,
+    )
+    artifact = AcceptedIdentityOperationArtifact.create(**{
+        name: getattr(artifact, name) for name in type(artifact).model_fields
+        if name != "artifact_digest"
+    })
+    fixture_transition = next(
+        item.transition for item in fixture.accepted_carriers
+        if isinstance(item, IdentityLineageRecord)
+    )
+    state_before = GraphPlanningState.create(
+        base_snapshot_digest=snapshot.canonical_graph.snapshot_digest, records=(),
+        codec_manifest_fingerprint=canonical_graph_codec_manifest().manifest_fingerprint,
+        applied_planned_delta_digests=(),
+    )
+    frozen = build_frozen_identity_graph_planning_artifact_from_state(
+        sealed_graph_snapshot=snapshot,
+        transaction_group_id=arm.group_request.transaction_group_id,
+        current_planning_state=state_before,
+        accepted_operation_artifact=artifact,
+        compiled_transition=fixture_transition,
+        operation=sealed, candidate=candidate,
+        trusted_decision=decision, authority_verification=verification,
+    )
+    nonpublishing = NonPublishingIdentityPlanningResultV3.create(
+        transaction_group_id=arm.group_request.transaction_group_id,
+        sealed_graph_snapshot_digest=snapshot.snapshot_digest,
+        graph_read_set_digest=snapshot.read_set.read_set_digest,
+        planning_state_before_digest=state_before.state_digest,
+        frozen_artifact=frozen,
+        planning_state_after=frozen.planning_state_after,
+    )
+    allocation = BootstrapCanonicalIdentityBindingAllocationAuthorityV3.create(
+        source_id=authority.source_id, source_digest=authority.source_digest,
+        preparation_fingerprint=authority.preparation_fingerprint,
+        recovery_key_digest="1" * 64, sealed_snapshot_digest=snapshot.snapshot_digest,
+        effective_read_set_digest=snapshot.read_set.read_set_digest,
+        authority_base_planning_state_digest=state_before.state_digest,
+        required_scope_set_digest="2" * 64,
+        authorized_scope_identity="scope:identity-envelope",
+        allocation_namespace_id="identity-envelope",
+        source_operation_memberships=(), referenced_cluster_ids=(),
+        cluster_decisions=(), first_use_dependencies=(),
+    )
+    reload = BootstrapCanonicalIdentityBindingAllocationReloadV3.create(
+        authority=allocation, source_plan_checkpoint_digest="b" * 64,
+        publication_generation_digest="c" * 64,
+    )
+    # Rebind the fixture's real identity carrier to this native operation.
+    carrier = next(
+        item for item in fixture.accepted_carriers
+        if isinstance(item, IdentityLineageRecord)
+    )
+    original_binding = carrier.temporal_decision_binding
+    attachment = type(original_binding.temporal_attachment).create(**{
+        **{name: getattr(original_binding.temporal_attachment, name)
+           for name in type(original_binding.temporal_attachment).model_fields
+           if name != "binding_digest"},
+        "operation_id": arm.compilation.operation_id,
+    })
+    binding = type(original_binding).create(**{
+        **{name: getattr(original_binding, name)
+           for name in type(original_binding).model_fields
+           if name != "binding_digest"},
+        "operation_id": arm.compilation.operation_id,
+        "temporal_attachment": attachment,
+    })
+    rebased_transition = CompiledIdentityLineageTransition.create(**{
+        name: value for name, value in {
+            "operation_id": arm.compilation.operation_id, "operation": "rekey",
+            "predecessors": (predecessor,), "successors": (successor,),
+            "graph_revision_before": "genesis", "recorded_at": None,
+            "lineage_snapshot_before_digest": identity_lineage_genesis_digest(
+                "semantic_ingestion",
+            ),
+            "source_evidence": evidence,
+            "reverse_reference_closure": (reference,),
+            "reference_dispositions": (disposition,),
+        }.items()
+    })
+    body = carrier.model_dump(mode="python", exclude={"record_digest"}) | {
+        "operation_id": arm.compilation.operation_id,
+        "statement_digest": rebased_transition.transition_digest,
+        "transition": rebased_transition.model_dump(mode="python"),
+        "temporal_decision_binding": binding.model_dump(mode="python"),
+    }
+    rebased_carrier = IdentityLineageRecord.model_validate({
+        **body,
+        "record_digest": contract_digest(
+            b"memorii.semantic-ingestion.temporal-carrier.v1", body,
+        ),
+    })
+    successor_entity = EntityRevision.create(
+        operation_id=arm.compilation.operation_id,
+        entity_revision_id=successor.entity_revision_id,
+        logical_entity_id=successor.logical_entity_id,
+        lifecycle="active", source_evidence=evidence,
+        codec_fingerprint=_codec("entity_revision"),
+    )
+    disposition_record = ReferenceDispositionRecord.create(
+        operation_id=arm.compilation.operation_id,
+        codec_fingerprint=_codec("reference_disposition"),
+        reference_disposition_id=disposition.disposition_digest,
+        target_record_kind=reference.record_kind, target_record_id=reference.record_id,
+        target_reference_path=reference.reference_path,
+        predecessor_entity_revision_id=predecessor.entity_revision_id,
+        predecessor_logical_entity_id=predecessor.logical_entity_id,
+        successor_entity_revision_ids=(),
+        successor_logical_entity_ids=(),
+        disposition=disposition.disposition,
+        basis=disposition.basis, source_evidence=evidence,
+    )
+    def _planning(record):
+        return BootstrapNativePlanningRecordV3.create(
+            operation_execution_id=arm.compilation.operation_execution_id,
+            record_kind=record.record_kind, record_id=graph_record_id(record),
+            precondition=AbsentPlanningPrecondition(),
+            planning_payload=canonical_planning_payload_from_record(
+                record, transaction_group_id=arm.group_request.transaction_group_id,
+            ),
+            source_member_digest=arm.compilation.operation_input.operation_subject.member_digest,
+        )
+    lineage_planning = _planning(rebased_carrier)
+    materialization = BootstrapNativeIdentityMaterializationV3.create(
+        canonical_identity_authority=reload,
+        graph_free_identity_input_digest="d" * 64,
+        fresh_planning_result=nonpublishing,
+        revision_and_alias_records=(_planning(successor_entity),),
+        lineage_record=lineage_planning,
+        reference_disposition_records=(_planning(disposition_record),),
+    )
+    identity_member = BootstrapProposalIdentityOperationV3.create(
+        operation="rekey",
+        predecessor_mention_digests=(arm.effect.fact.subject_mention_digest,),
+        successor_mention_digests=(arm.effect.fact.subject_mention_digest,),
+        reference_assignments=(), assertion=arm.effect.fact.assertion,
+        identity_anchor=arm.effect.fact.predicate_anchor,
+    )
+    return {
+        "carrier": rebased_carrier, "binding": binding,
+        "transition": rebased_transition, "reference": reference,
+        "disposition": disposition, "evidence": evidence,
+        "successor_entity": successor_entity,
+        "disposition_record": disposition_record,
+        "materialization": materialization, "identity_member": identity_member,
+        "lineage_planning": lineage_planning,
+    }
+
+
+def test_identity_arm_projects_lineage_and_reference_disposition_envelope(
+    tmp_path, monkeypatch, arm,
+):
+    history, limits = observation_publication(tmp_path, monkeypatch, _SIBLING_ROOTS)
+    envelope = _identity_envelope(arm)
+    carrier = envelope["carrier"]
+    binding = envelope["binding"]
+    coordinate = _certified_coordinate(arm, carrier.temporal_evidence)
+    identity_authority = _rebuild_authority(
+        arm, arbitration_policy_bundle=None,
+        temporal_constructions=(
+            *_authority_values(arm)["temporal_constructions"],
+            _transition_construction(
+                binding, carrier.temporal_evidence, coordinate=coordinate,
+            ),
+        ),
+        identity_construction=BootstrapNativeIdentityConstructionAuthorityV3.create(
+            graph_free_identity_input_digest="1" * 64,
+            authority_record_id="authority:identity-envelope",
+            authority_record_digest="2" * 64, verifier_id="verifier",
+            semantic_authorization_read_set_digest="3" * 64,
+            identity_policy_fingerprint="4" * 64,
+            operation_fence_id="identity-fence:envelope",
+            operation_fence_binding_digest="5" * 64,
+        ),
+    )
+    compilation = _compilation_with_authority(
+        arm, identity_authority, operation_member=envelope["identity_member"],
+    )
+    projection = _citation_citing(arm, carrier.identity_lineage_id)
+    effect = BootstrapNativeIdentityEffectV3.create(
+        kind="identity",
+        identity_operation=envelope["identity_member"],
+        materialization=envelope["materialization"],
+        target_bindings=(), terminal_bindings=arm.effect.terminal_bindings,
+        evidence_projections=(projection,),
+    )
+    materialization = envelope["materialization"]
+    records = _materialize(
+        SimpleNamespace(planning_records=(
+            *materialization.revision_and_alias_records,
+            materialization.lineage_record,
+            *materialization.reference_disposition_records,
+            projection.citation_record,
+            projection.provenance_record,
+        )),
+        arm.group_request.transaction_group_id, arm.commit_values,
+    )
+    pairs = _materialized_pairs(effect, arm.commit_values)
+    lookup = dict(arm.lookup) | {
+        envelope["successor_entity"].entity_revision_id:
+            envelope["successor_entity"].logical_entity_id,
+        "entity-revision:alice:v1": "entity:alice",
+    }
+    stream = _project(
+        arm, history=history, limits=limits, compilation=compilation,
+        accepted_effect=effect, retained_native_records=records,
+        evidence_pairs=pairs, native_entity_lookup=lookup,
+    )
+    assert [item.record_kind for item in stream] == [
+        "citation", "entity_revision", "identity_transition", "provenance",
+        "reference_disposition",
+    ]
+    identity_payload = stream[2].payload
+    assert stream[2].primary_key == carrier.identity_lineage_id
+    assert identity_payload.transition_id == carrier.identity_lineage_id
+    assert identity_payload.operation == "rekey"
+    assert identity_payload.predecessor_entities == (
+        ObservedEntityReference(
+            entity_revision_id="entity-revision:alice:v1",
+            logical_entity_id="entity:alice",
+            reference_path="transition.predecessors[].entity_revision_id",
+        ),
+    )
+    assert identity_payload.successor_entities == (
+        ObservedEntityReference(
+            entity_revision_id=envelope["successor_entity"].entity_revision_id,
+            logical_entity_id=envelope["successor_entity"].logical_entity_id,
+            reference_path="transition.successors[].entity_revision_id",
+        ),
+    )
+    assert identity_payload.effective_time.kind == "certified_text_time"
+    assert identity_payload.effective_time.evidence_spans == coordinate.evidence_spans
+    assert identity_payload.transition_temporal_evidence == carrier.temporal_evidence
+    assert identity_payload.transition_temporal_decision_binding == binding
+    assert identity_payload.system_interval == TimeInterval(start=TEST_NOW)
+    assert identity_payload.source_evidence == coordinate.evidence_spans
+    assert identity_payload.operation_id == arm.compilation.operation_id
+    assert identity_payload.boundary is False
+    assert _HEX64.fullmatch(stream[2].record_digest)
+    assert stream[2].record_digest == identity_payload.record_digest
+
+    disposition_payload = stream[4].payload
+    disposition_record = envelope["disposition_record"]
+    assert stream[4].primary_key == disposition_record.reference_disposition_id
+    assert disposition_payload.disposition_id == (
+        disposition_record.reference_disposition_id
+    )
+    assert disposition_payload.transition_id == carrier.identity_lineage_id
+    assert disposition_payload.record_kind == "claim_projection"
+    assert disposition_payload.record_id == envelope["reference"].record_id
+    assert disposition_payload.reference_path == envelope["reference"].reference_path
+    assert disposition_payload.predecessor_entity == ObservedEntityReference(
+        entity_revision_id="entity-revision:alice:v1",
+        logical_entity_id="entity:alice",
+        reference_path="predecessor_entity_revision_id",
+    )
+    assert disposition_payload.successor_entities == ()
+    assert disposition_payload.disposition == "preserve_historical"
+    assert disposition_payload.evidence_ids == ("4" * 64,)
+    assert disposition_payload.system_interval == TimeInterval(start=TEST_NOW)
+    assert disposition_payload.boundary is False
+    assert _HEX64.fullmatch(stream[4].record_digest)
+
+    # Without its retained identity construction the arm is a typed refusal.
+    stripped = _rebuild_authority(
+        arm, arbitration_policy_bundle=None,
+        temporal_constructions=(
+            *_authority_values(arm)["temporal_constructions"],
+            _transition_construction(
+                binding, carrier.temporal_evidence, coordinate=coordinate,
+            ),
+        ),
+    )
+    with pytest.raises(
+        NativeGraphObservationProjectionError,
+        match="identity arm lacks its retained identity construction",
+    ):
+        _project(
+            arm, history=history, limits=limits,
+            compilation=_compilation_with_authority(
+                arm, stripped, operation_member=envelope["identity_member"],
+            ),
+            accepted_effect=effect, retained_native_records=records,
+            evidence_pairs=pairs, native_entity_lookup=lookup,
+        )
+    # Lineage source evidence that resolves to no complete retained span denies.
+    unresolvable_authority = _rebuild_authority(
+        arm, arbitration_policy_bundle=None, evidence_constructions=(),
+        temporal_constructions=(
+            *_authority_values(arm)["temporal_constructions"],
+            _transition_construction(
+                binding, carrier.temporal_evidence, coordinate=coordinate,
+            ),
+        ),
+        identity_construction=identity_authority.identity_construction,
+    )
+    with pytest.raises(
+        NativeGraphObservationProjectionError,
+        match="no complete retained source span",
+    ):
+        _project(
+            arm, history=history, limits=limits,
+            compilation=_compilation_with_authority(
+                arm, unresolvable_authority,
+                operation_member=envelope["identity_member"],
+            ),
+            accepted_effect=effect, retained_native_records=records,
+            evidence_pairs=pairs, native_entity_lookup=lookup,
+        )
