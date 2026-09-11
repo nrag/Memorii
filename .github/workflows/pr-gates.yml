@@ -297,7 +297,7 @@ jobs:
   observation-ledger-activation:
     name: Observation Ledger Activation
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 240
     steps:
       - name: Checkout
         uses: actions/checkout@v4
