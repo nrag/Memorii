@@ -115,3 +115,22 @@ Placed before the owner with recommendations (Option 1; typed denial for
 legacy data; per-source + per-group granularity; production-write exclusion
 of external time). Implementation remains blocked until the owner decides;
 recommendations are not approvals.
+
+## Owner Decision (2026-09-11)
+
+The owner approved the recommendations: Option 1 (store-persisted seal minted
+at admission/group-commit CAS under the protected clock); typed denial for
+legacy/unsealed cohorts; per-source-retention + per-group-commit granularity;
+external trusted-time authorities permanently excluded from the production
+write path (acceptance-layer countersigning only). Administrative defaults
+adopted with the approval (coordinator-proposed): immutable attestation
+execution records are retained without compaction (prior packet's deliberate
+choice); the provider clock gap fix proceeds as a prerequisite milestone; the
+schema-2/3 migration rides the same publication refresh as
+ProjectionObservationIdentity.v1.
+
+Next: resolve the prior proposal's coordinator readiness findings (admission
+anchoring before a terminal exists, acyclic committed_batch_digest,
+publish_admitted_source enumeration, protected clock at raw-source
+construction, complete digest-chain coverage), then feasibility proof on the
+real backend, then independent design review before implementation.
