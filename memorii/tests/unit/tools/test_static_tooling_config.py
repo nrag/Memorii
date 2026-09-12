@@ -232,6 +232,7 @@ def test_pr_unit_gate_is_complete_duration_balanced_and_timeout_bounded() -> Non
         "package-smoke",
         "provider-compatibility",
         "scoped-context-integration",
+        "observation-ledger-activation",
         "unit-test-shards",
         "unit-timing-inventory",
         "semantic-terminal-persistence",
@@ -244,6 +245,7 @@ def test_pr_unit_gate_is_complete_duration_balanced_and_timeout_bounded() -> Non
         "PACKAGE_RESULT": "package-smoke",
         "COMPATIBILITY_RESULT": "provider-compatibility",
         "SCOPED_CONTEXT_RESULT": "scoped-context-integration",
+        "OBSERVATION_ACTIVATION_RESULT": "observation-ledger-activation",
         "SHARD_RESULT": "unit-test-shards",
         "TIMING_RESULT": "unit-timing-inventory",
         "TERMINAL_RESULT": "semantic-terminal-persistence",
@@ -425,6 +427,12 @@ def test_unit_pytest_owners_partition_the_live_unit_corpus_exactly_once() -> Non
         "canonical-evidence-production-limits": (
             "tests/unit/core/semantic_ingestion/test_canonical_evidence_production_limits.py",
         ),
+        # Owned by the observation-ledger activation job: graph-observation
+        # materialization exercises durable activation-backed paging and
+        # snapshot authority whose runtime exceeds the unit shard budget.
+        "observation-ledger-activation": (
+            "tests/unit/core/memory_evolution/test_graph_observation_materialization.py",
+        ),
     }
     owners = {"broad": broad}
     for owner, paths in owner_paths.items():
@@ -577,7 +585,7 @@ def test_projection_history_job_is_exact_and_disjoint_from_broad_unit_shards() -
     count_command = next(
         step["run"] for step in steps if step["name"] == "Verify exact projection-history collection count"
     )
-    assert '"87 tests collected in "*' in count_command
+    assert '"88 tests collected in "*' in count_command
     assert all(count_command.count(path) == 1 for path in expected_files)
 
     shard_config = json.loads((PROJECT_ROOT / "tests" / "ci" / "unit-shards.json").read_text())
