@@ -181,3 +181,22 @@ SemanticGraphDelta digest (the reload-validation join), not the observation
 ledger's GraphRevisionDelta digest. The M0-M3 campaign is complete;
 remaining wrap-up: applicability-key digest-recipe disclosure, full affected
 gates at one frozen candidate, and the campaign review record.
+
+## M0 Correction And CI Record (2026-09-12)
+
+CI review exposed an M0 gap: replay-before-derivation keyed only on delivery
+identity, so redelivery with substituted content under the same operation id
+silently inherited the original admission. Fixed at the reuse boundary
+(provider/ingestion.py both paths; substituted content raises
+"atomic admission evidence is partial or mismatched" before reuse; commit
+85e21b63, scenario-suite proven). PR #120 is GREEN as of run 34712825249 at
+4e524f31 (first fully green run on this branch): the CI-green operation also
+resolved identity-hygiene violations (milestone-coordinate identifiers and
+fixture literals, digests re-frozen against pre-extension code), static-
+tooling gate expectations, architecture explicit-owner/private-symbol
+violations, projection-history count pin, numpy wheel bytecode in release
+preparation acquire, and the decoder-source regeneration chain after the
+helper renames. Standing rule recorded: every deliberate decoder-source-file
+change requires the regeneration chain (reproduce_publication
+--refresh-generated, verify_registry_vectors) plus release-candidate refresh
+in the same change.

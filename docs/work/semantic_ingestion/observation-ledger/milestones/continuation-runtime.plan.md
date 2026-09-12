@@ -456,3 +456,18 @@ Fast-tier gates 53 passed, Ruff and scoped Pyright clean (coordinator-run);
 the materialization real-backend suite re-run is coordinator-owned and
 recorded when terminal. Remaining product work: the attestation campaign
 (M0 clock fix first) per the approved design.
+
+## CI Green And Debt Clearance Record (2026-09-12)
+
+PR #120 fully green (run 34712825249 at 4e524f31): all six unit shards,
+benchmark contracts/tests, semantic ingestion/projection-history jobs, static
+analysis (hygiene + full pyright), package smoke (installed proof) and the
+unit-test aggregate pass. The pre-existing branch debt recorded on 2026-09-11
+is cleared (corrupt-closure test seam corrected to the atomic-snapshot read
+design; architecture owner/private-symbol violations fixed by making shared
+helpers public in canonical owners). Release-preparation candidate manifest
+now restricted to git-tracked repository members only (93 untracked local
+benchmark artifacts removed). All 17 observation stream families, the
+attestation campaign M0-M3, and the projection identity reader are complete
+and CI-enforced. Remaining wrap-up: applicability-key digest-recipe
+disclosure and the frozen-candidate full gate record.
