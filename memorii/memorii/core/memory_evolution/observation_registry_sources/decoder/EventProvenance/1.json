@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.EventProvenance.v1","implementation_source_digest":"b8b57140681b2b2393e6e01d61b9232b45d50b6e51efa4747693e8842c3ae7eb","role":"decoder","schema_id":"EventProvenance","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.EventProvenance.v1","implementation_source_digest":"40dded982bb1171a0a78d084aff79f4bd4f23a55ef505975a7859057c2eacd39","role":"decoder","schema_id":"EventProvenance","schema_version":"1","typed_root_kind":"model"}

@@ -14,7 +14,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from acceptance.observation_registry_compiler import SourceLimits, compile_observation_registry
-from memorii.core.memory_evolution.ingestion_contracts import _length_prefixed
+from memorii.core.memory_evolution.ingestion_contracts import length_prefixed
 from memorii.core.memory_evolution.typed_value_declarations import ProtectedDeclarationParseLimits
 from memorii.core.memory_evolution.typed_value_decoder_sources import DecoderSourceSelection, ProtectedDecoderSourceManifestLimits
 from memorii.core.memory_evolution.typed_value_publication import ProtectedTypedValuePublicationLimits, parse_typed_value_publication_manifest
@@ -90,7 +90,7 @@ def main() -> None:
         raise ValueError("grammar missing")
 
     def lp(*parts: str | bytes) -> bytes:
-        return _length_prefixed(*(part.encode("utf-8") if isinstance(part, str) else part for part in parts))
+        return length_prefixed(*(part.encode("utf-8") if isinstance(part, str) else part for part in parts))
 
     primary_entries = []
     for entry in registry.entries:

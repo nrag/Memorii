@@ -20,7 +20,7 @@ from acceptance.observation_registry_compiler import (
     derive_observation_registry,
 )
 from acceptance.observation_registry_vectors import RegistryRejectionVector, build_rejection_vectors
-from memorii.core.memory_evolution.ingestion_contracts import _length_prefixed
+from memorii.core.memory_evolution.ingestion_contracts import length_prefixed
 from memorii.core.memory_evolution.typed_value_declarations import (
     DeclarationParseError,
     ProtectedDeclarationParseLimits,
@@ -65,7 +65,7 @@ def _json_bytes(value):
 
 
 def _lp(*parts):
-    return _length_prefixed(*(part.encode("utf-8") if isinstance(part, str) else part for part in parts))
+    return length_prefixed(*(part.encode("utf-8") if isinstance(part, str) else part for part in parts))
 
 
 def _primary_output(verified):
