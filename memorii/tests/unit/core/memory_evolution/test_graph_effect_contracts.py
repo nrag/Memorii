@@ -155,21 +155,21 @@ def test_terminal_effect_rebuild_resolves_canonical_event_owner() -> None:
 
 def _frozen_legacy_outcome_core() -> CanonicalSourceTerminalOutcomeCore:
     source = build_prepared_source_authority(
-        source_id="source:m1-freeze", source_digest=_digest("m1-freeze-source"),
+        source_id="source:legacy-byte-freeze", source_digest=_digest("legacy-byte-freeze-source"),
         source_text="Ada works.",
     )
     return CanonicalSourceTerminalOutcomeCore.create(
         ingestion_record_kind="source_terminal_outcome",
         source_id=source.source_id,
         source_digest=source.source_digest,
-        delivery_principal_binding_digest=_digest("m1-principal"),
-        delivery_key_digest=_digest("m1-delivery"),
+        delivery_principal_binding_digest=_digest("legacy-freeze-principal"),
+        delivery_key_digest=_digest("legacy-freeze-delivery"),
         segment_governance_carriers=source.segment_governance_carriers,
         message_admission_carriers=source.message_admission_carriers,
         governance_carrier_artifact=source.governance_carrier_artifact,
         required_outcome_scopes=source.governance_carrier_artifact.required_outcome_scopes,
-        operation_fence_id="fence:m1-freeze",
-        operation_ids=("operation:m1-freeze",),
+        operation_fence_id="fence:legacy-byte-freeze",
+        operation_ids=("operation:legacy-byte-freeze",),
         final_status="evidence_only",
         group_result_digests=(),
     )
@@ -178,26 +178,28 @@ def _frozen_legacy_outcome_core() -> CanonicalSourceTerminalOutcomeCore:
 def test_schema_1_terminal_outcome_bytes_are_frozen() -> None:
     """Schema-1 core -> outcome -> source-result -> record bytes are legacy-exact.
 
-    The frozen literals were captured from the pre-extension contracts, so the
+    The frozen literals were captured from the pre-extension contracts (commit
+    6c99ca62; recomputed 2026-09-12 after renaming the fixture ids for identity
+    hygiene), so the
     new schema-2 fields must stay excluded from every preimage and from
     serialization while the declared schema version is 1.
     """
     core = _frozen_legacy_outcome_core()
     record = CanonicalSourceTerminalOutcomeRecord.create(
-        core=core, preparation_fingerprint=_digest("m1-preparation"),
+        core=core, preparation_fingerprint=_digest("legacy-freeze-preparation"),
     )
 
     assert core.core_digest == (
-        "f75a240f69b1c2b204417204bb7632a9792370fe2ebfe905ad21c228aca888f3"
+        "6846bb60bffdabcd77edd347f9e477c62b7aadadc31ed39adaedceaa34fb5150"
     )
     assert record.outcome_id == (
-        "a332bc813870c7cdacd5b221f94ca34028dd215a8e73ae634118df5626338c28"
+        "ef3c341201e9adbeab89696a01a393d28657e4a8d9617612fc1ca3aa515a1760"
     )
     assert record.source_result_digest == (
-        "a351ba1bdd3ef497169359badcd3aa7839db060e5b2bd1f9c86d7302160decbc"
+        "c5ff9fdbae8a2e07f2a0b01faa8d64f050318ec07bf50f86fe1922be738e87e4"
     )
     assert record.record_digest == (
-        "f7d5dcf1c4bca01d34fb4f508857cc64444697324445288c0813a95ca17739c7"
+        "7e385c4871f5676f2fca9a7be1ca8e1432a102231c3f1c449d2278cc7cde5a5b"
     )
     core_dump = core.model_dump(mode="python")
     record_dump = record.model_dump(mode="python")
@@ -215,7 +217,7 @@ def test_schema_1_terminal_outcome_bytes_are_frozen() -> None:
 
 def test_schema_2_terminal_outcome_requires_and_binds_the_attestation_digest() -> None:
     core = _frozen_legacy_outcome_core()
-    attestation_digest = _digest("m1-admission-seal")
+    attestation_digest = _digest("legacy-freeze-admission-seal")
     schema_2_core = CanonicalSourceTerminalOutcomeCore.create(
         **{
             **core.model_dump(mode="python", exclude={"core_digest"}),
@@ -224,7 +226,7 @@ def test_schema_2_terminal_outcome_requires_and_binds_the_attestation_digest() -
         },
     )
     record = CanonicalSourceTerminalOutcomeRecord.create(
-        core=schema_2_core, preparation_fingerprint=_digest("m1-preparation"),
+        core=schema_2_core, preparation_fingerprint=_digest("legacy-freeze-preparation"),
     )
 
     assert schema_2_core.source_result_schema_version == 2
@@ -233,7 +235,7 @@ def test_schema_2_terminal_outcome_requires_and_binds_the_attestation_digest() -
     # Schema 2 includes both fields in every preimage: the digests must differ
     # from their schema-1 counterparts over otherwise identical material.
     schema_1_record = CanonicalSourceTerminalOutcomeRecord.create(
-        core=core, preparation_fingerprint=_digest("m1-preparation"),
+        core=core, preparation_fingerprint=_digest("legacy-freeze-preparation"),
     )
     assert schema_2_core.core_digest != core.core_digest
     assert record.source_result_digest != schema_1_record.source_result_digest
