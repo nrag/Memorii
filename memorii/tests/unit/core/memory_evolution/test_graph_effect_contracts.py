@@ -153,7 +153,7 @@ def test_terminal_effect_rebuild_resolves_canonical_event_owner() -> None:
     )
 
 
-def _m1_freeze_core() -> CanonicalSourceTerminalOutcomeCore:
+def _frozen_legacy_outcome_core() -> CanonicalSourceTerminalOutcomeCore:
     source = build_prepared_source_authority(
         source_id="source:m1-freeze", source_digest=_digest("m1-freeze-source"),
         source_text="Ada works.",
@@ -182,7 +182,7 @@ def test_schema_1_terminal_outcome_bytes_are_frozen() -> None:
     new schema-2 fields must stay excluded from every preimage and from
     serialization while the declared schema version is 1.
     """
-    core = _m1_freeze_core()
+    core = _frozen_legacy_outcome_core()
     record = CanonicalSourceTerminalOutcomeRecord.create(
         core=core, preparation_fingerprint=_digest("m1-preparation"),
     )
@@ -214,7 +214,7 @@ def test_schema_1_terminal_outcome_bytes_are_frozen() -> None:
 
 
 def test_schema_2_terminal_outcome_requires_and_binds_the_attestation_digest() -> None:
-    core = _m1_freeze_core()
+    core = _frozen_legacy_outcome_core()
     attestation_digest = _digest("m1-admission-seal")
     schema_2_core = CanonicalSourceTerminalOutcomeCore.create(
         **{
