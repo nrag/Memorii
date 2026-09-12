@@ -31,6 +31,25 @@ remain. Actual trusted key provisioning/final signatures remain deferred.
 All23 table:15 baseline-complete and8 open. No requirement closes from the recipe
 design alone. No full current-revision CI or operational certification is claimed.
 
+## Current State (2026-09-12)
+
+PR #120 is fully green (run 34712825249 at 4e524f31) — the first green run
+on this branch, including the pre-existing debt clearance. Completed since
+the last resume: canonical promotion of the field-semantics addendum and
+ProjectionObservationIdentity.v1 (181 schemas/1269 roles); the concrete
+17-stream materializer with event-derived system intervals, boundary records,
+sibling-arm payloads and projection-record production; the public
+ProviderMemoryService observation methods proven end-to-end on the real
+activated backend; the owner-approved ingestion-time attestation campaign
+M0-M3 (protected clock, versioned schemas, CAS-time seal minting, verified
+seal reader) with observe_ingestion_time_attestations paging real seals.
+R17/R19 promotion evidence now exists at CI-enforced maturity for the public
+construction; formal promotion of the parent requirement rows awaits the
+campaign wrap-up record and whole-branch review per the completion contract.
+Actual production signatures/keys remain deferred; the owner adopted
+Option B Tier-1 (FIDO-hardened cloud-KMS signing) with YubiKey provisioning
+underway.
+
 ## Ownership And Next Action
 
 The timed snapshot fix is implemented and locally verified (57 focused tests),
@@ -55,9 +74,12 @@ attestation producer, converse closures) recorded in
 continuation-runtime.plan.md's closure section. The original
 provenance/policy-context decision remains approved and is not reopened.
 
-Next action: owner-requested brainstorm on production keys, trusted
-deployment material and real signatures (a design conversation with real
-external decisions), then the carried follow-ups.
+Next action: close the product-work wrap-up (applicability-key digest-recipe
+disclosure; frozen-candidate full-gate record), then implement Option B
+Tier-1 signing wiring once the owner completes YubiKey/GitHub/cloud
+provisioning (inputs awaited: cloud choice, key alias, environment name,
+officer list). The production-keys conversation is concluded: Tier-1
+FIDO-hardened cloud-KMS signing adopted 2026-09-12.
 
 All workers are finished. Root corrected weak contention/time assertions and
 typed the touched test harness. Public host/provider/materializer construction
