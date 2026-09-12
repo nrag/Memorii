@@ -210,7 +210,7 @@ def test_apply_memory_write_production_profile_path_enables_canonical_evidence_a
     assert observed == [True]
 
 
-def test_provider_preserves_caller_owned_event_time() -> None:
+def test_provider_retention_time_comes_from_protected_clock_not_caller_event_time() -> None:
     from tests.unit.core.semantic_ingestion.test_semantic_provider_composition import (
         _host_ingress,
         _SwitchingIngressResolver,
@@ -239,7 +239,12 @@ def test_provider_preserves_caller_owned_event_time() -> None:
     assert "semantic_ingestion_writer_admission" in kinds
     sources = memory_plane.list_records(source_kind="semantic_ingestion_source")
     if sources:
-        assert all(record.timestamp == source_time for record in sources)
+        # The protected ingestion clock owns retention time: the retained
+        # record carries the single protected sample (here the injected
+        # now_provider), while the caller-owned event timestamp remains
+        # delivery identity only and never authenticated retention time.
+        assert all(record.timestamp == processing_time for record in sources)
+        assert all(record.timestamp != source_time for record in sources)
 
 
 @pytest.mark.parametrize(

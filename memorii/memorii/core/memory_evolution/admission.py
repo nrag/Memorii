@@ -52,6 +52,14 @@ class SemanticIngestionOutcomeLookupRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+class SemanticIngestionSourceReplayRequest(BaseModel):
+    """Purpose-bound authenticated redelivery input; it contains no source payload."""
+
+    delivery_identity: DeliveryIdentity
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
 class SemanticIngestionOutcomeLookupResponse(BaseModel):
     """One deliberately non-disclosing result shape for all unavailable cases."""
 
@@ -403,6 +411,68 @@ class GovernedSourceAdmissionService:
                         operation_fence_binding_digest=fence.binding_digest,
                     )
         return SemanticIngestionOutcomeLookupResponse(available=True, outcome=decoded)
+
+    def replay_retained_source(
+        self,
+        request: SemanticIngestionSourceReplayRequest,
+        *,
+        authenticated_ingress: AuthenticatedIngressContext,
+    ) -> CanonicalMemoryRecord | None:
+        """Return the winner's retained source bytes for an authorized redelivery.
+
+        Authorization precedes byte access exactly as ``lookup`` precedes
+        outcome access: principal, delivery key, tenant, and the complete
+        stored scope set are validated against the protected admission index
+        before any retained record is returned.  This is deliberately not an
+        outcome lookup; it never decodes outcome evidence and returns only
+        the immutable retained source whose digest binds to the indexed
+        operation fence.  Any anomaly denies (returns ``None``) instead of
+        disclosing bytes.
+        """
+        index_id = _index_id(request.delivery_identity.delivery_key_digest)
+        index = self._memory_plane.get_record(index_id)
+        if index is None or index.source_kind != "semantic_ingestion_admission_index":
+            return None
+        content = index.content
+        if (
+            content.get("principal_binding_digest")
+            != authenticated_ingress.delivery_principal_binding.binding_digest
+            or content.get("delivery_key_digest")
+            != request.delivery_identity.delivery_key_digest
+            or content.get("tenant_partition_id")
+            != authenticated_ingress.delivery_principal_binding.tenant_partition_id
+        ):
+            return None
+        required = tuple(content.get("required_scopes", ()))
+        if not set(required).issubset(
+            authenticated_ingress.current_authorized_scopes.scopes
+        ):
+            return None
+        try:
+            fence = OperationFenceBinding.model_validate(
+                content.get("operation_fence_binding")
+            )
+        except ValueError:
+            return None
+        retained = self._memory_plane.get_record(fence.source_id)
+        try:
+            retained_digest = (
+                source_admission_source_digest(retained) if retained is not None else None
+            )
+        except ValueError:
+            return None
+        if (
+            retained is None
+            or retained.memory_id != fence.source_id
+            or retained.source_kind
+            not in {
+                "semantic_ingestion_source",
+                "semantic_ingestion_metadata_poor_snapshot",
+            }
+            or retained_digest != fence.source_digest
+        ):
+            return None
+        return retained
 
     def _terminal_result(
         self, *, fence: OperationFenceBinding, generation: int,

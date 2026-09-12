@@ -51,6 +51,7 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     encode_typed_value,
     normalize_delivery_id,
 )
+from memorii.core.memory_evolution.ingestion_time_clock import IngestionTimeClock
 from memorii.core.memory_evolution.source_admission import (
     ProviderEventNormalizer,
     derive_bootstrap_authenticated_language_evidence,
@@ -633,6 +634,7 @@ def _service_with_capability(
     capability: _TestHostBootstrapCapability,
     *,
     memory_plane: MemoryPlaneService | None = None,
+    clock: IngestionTimeClock | None = None,
 ) -> ProviderMemoryService:
     with patch(
         "memorii.core.memory_evolution.bootstrap_profile.entry_points",
@@ -640,6 +642,7 @@ def _service_with_capability(
     ):
         return ProviderMemoryService(
             memory_plane=memory_plane,
+            clock=clock,
             host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
         )
 
@@ -1316,7 +1319,19 @@ def test_concurrent_exact_delivery_is_idempotent(
         else InMemoryMemoryPlaneStore()
     )
     plane = MemoryPlaneService(record_store=store)
-    service = _service_with_capability(_TestHostBootstrapCapability(), memory_plane=plane)
+    # Concurrent exact delivery holds byte-exact evidence only when both
+    # attempts carry the same protected clock sample; the caller-owned event
+    # timestamp is delivery identity, never retention time, so a fixed-sample
+    # protected clock (not the event timestamp) makes both threads derive
+    # identical retention evidence.
+    service = _service_with_capability(
+        _TestHostBootstrapCapability(),
+        memory_plane=plane,
+        clock=IngestionTimeClock(
+            identity="test-concurrent-clock",
+            now_provider=lambda: datetime(2026, 1, 1, tzinfo=UTC),
+        ),
+    )
     ingress = AuthenticatedHostIngress(
         provider_identity="provider:test",
         principal_handle=object(),
@@ -1355,8 +1370,8 @@ def test_concurrent_exact_delivery_is_idempotent(
             content="Atlas owner is Bob.",
             operation_id="concurrent-exact-delivery",
             task_id="task:one",
-            # Concurrent exact delivery presents one caller-owned event
-            # timestamp: both threads reconstruct byte-identical evidence.
+            # The caller-owned event timestamp stays delivery identity; the
+            # fixed-sample protected clock supplies retention time.
             timestamp=datetime(2026, 1, 1, tzinfo=UTC),
             authenticated_host_ingress=ingress,
         )

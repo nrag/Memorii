@@ -110,6 +110,10 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     DeliveryIdentity,
     SemanticWriterCommitBinding,
 )
+from memorii.core.memory_evolution.ingestion_time_clock import (
+    PRODUCTION_INGESTION_TIME_CLOCK_IDENTITY,
+    IngestionTimeClock,
+)
 from memorii.core.memory_evolution.observation_activation_configuration import (
     ObservationActivationTargetConfigurationError,
 )
@@ -277,6 +281,7 @@ class ProviderMemoryService:
         memory_evolution_query_analyzer: QueryAnalyzer | None = None,
         memory_evolution_operation_repository: EvolutionOperationRepository | None = None,
         now_provider: Callable[[], datetime] | None = None,
+        clock: IngestionTimeClock | None = None,
         scoped_read_authority: ScopedHostReadAuthority | None = None,
         conflict_attention_repository: ConflictClarificationRepository | None = None,
         conflict_attention_enabled: bool = False,
@@ -420,7 +425,16 @@ class ProviderMemoryService:
             except ValueError:
                 self._bootstrap_profile = None
                 self._bootstrap_unavailable_reason = "invalid_manifest"
-        self._now_provider = now_provider or (lambda: datetime.now(UTC))
+        # One protected clock instance is the single ingestion-time authority:
+        # the provider raw-source construction sites sample through it and the
+        # atomic store's now_provider is its own now_utc, so group-CAS instants
+        # and lease arithmetic share the same authority (never an ambient wall
+        # clock or a caller-supplied event timestamp).
+        self._clock = clock or IngestionTimeClock(
+            identity=PRODUCTION_INGESTION_TIME_CLOCK_IDENTITY,
+            now_provider=now_provider or (lambda: datetime.now(UTC)),
+        )
+        self._now_provider = self._clock.now_utc
         if conflict_attention_enabled and conflict_attention_repository is None:
             raise ValueError("conflict attention is enabled without a repository")
         self._conflict_attention_repository = conflict_attention_repository
@@ -614,9 +628,9 @@ class ProviderMemoryService:
             bootstrap_unavailable_reason=self._bootstrap_unavailable_reason,
             atomic_store=self._semantic_atomic_store,
             writer_admission=self._semantic_writer_admission,
+            clock=self._clock,
             semantic_policy_provider=semantic_runtime.policy_provider if semantic_runtime is not None else None,
             semantic_runtime=semantic_runtime,
-            now_provider=self._now_provider,
             canonical_evidence_arena_factory=self._new_canonical_evidence_arena,
         )
         self._semantic_runtime_validated_after_ingress = False
