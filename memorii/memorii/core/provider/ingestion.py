@@ -322,6 +322,12 @@ class ProviderIngestionCoordinator:
                     metadata_poor=True,
                 )
             )
+            if retained_source is not None:
+                snapshot_bytes = retained_source.content.get("snapshot_utf8_bytes")
+                if snapshot_bytes != (event.content or "").encode("utf-8"):
+                    raise PreplanningStoreError(
+                        "atomic admission evidence is partial or mismatched"
+                    )
             def prepare() -> PreparedSourceAdmission:
                 return self._admission_service.prepare_atomic(
                 source=metadata_poor_source,
@@ -427,6 +433,14 @@ class ProviderIngestionCoordinator:
                     authenticated_ingress=authenticated_ingress,
                 )
                 if retained_source is not None:
+                    # Reuse is authorized only for an exact redelivery: the
+                    # delivery identity alone does not bind the event bytes, so
+                    # a substituted delivery must never silently inherit the
+                    # winner's retained admission evidence.
+                    if retained_source.text != request.original_text:
+                        raise PreplanningStoreError(
+                            "atomic admission evidence is partial or mismatched"
+                        )
                     recovered_observation = source_observation_from_record(retained_source)
                     governed_source = retained_source
                     bootstrap_language_evidence = (
