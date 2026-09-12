@@ -409,3 +409,41 @@ in the table. R19 remains partial for those host negatives and the missing
 monitor/status integration. The refreshed count remains 15 engineering-complete
 and 8 partial/unimplemented; the remaining engineering work is explicit and is
 not collapsed into deferred production signing.
+
+## Evidence Progress Record (2026-09-12, PR #120 green at 4e524f31)
+
+No open row is closed by this record; it captures evidence now held so the
+next campaign step plans from reality. The eight-open count is unchanged.
+
+- R17 (observation/retrieval): the public construction is complete and
+  CI-enforced — all 17 stream families produced through the registered
+  materializer (event-derived system intervals, boundary records, sibling
+  arms, projection records with derived identities), scoped authenticated
+  paging with non-disclosing denials, ingestion-time attestations minted at
+  CAS and paged end-to-end (campaign M0-M3). REMAINING for the row: the
+  independent structural comparator (not implemented; no production module),
+  whole-branch review, and the frozen-candidate gate record.
+- R19 (host composition): ProviderMemoryService public methods + factory
+  pass-through proven on the real activated backend; Observation Ledger
+  Activation job green in CI. REMAINING: the full host matrix breadth
+  (filesystem/factory/Hermes, local/no-network, authorized roots).
+- R03 (portable evidence): first fully green PR-gates run (34712825249),
+  installed proof against a prepared deployment, git-tracked-only candidate
+  manifest. REMAINING: complete requirement/owner/gate map and portable
+  receipts at the frozen candidate.
+- R13/R16 (release crypto/bundle verification): offline sign/verify chain,
+  four-artifact flow and release-preparation proof remain CI-green; owner
+  adopted Option B Tier-1 (FIDO-hardened cloud-KMS signing) — wiring awaits
+  owner provisioning inputs (cloud, key alias, environment, officers).
+  REMAINING: configured release assembly, bundle/profile verification on
+  publication/activation, real signatures (deferred, now scheduled via
+  Tier-1).
+- R14 (statistical evaluator): unchanged — evaluator/CLI integration and the
+  acceptance-authority successor decision remain open.
+- R15 (monitor): unchanged — not implemented.
+- R08 (host behaviors): unchanged beyond the factory/service observation
+  path; matrix breadth open.
+
+Sequencing note: the monitor (R15) and comparator (R17 leg) are the two
+largest unbuilt production components; both were queued behind the contracts
+this campaign has now delivered.
