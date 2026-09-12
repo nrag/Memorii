@@ -162,3 +162,22 @@ recovery bookkeeping records beyond the seals, so the reuse proof pins the
 seal-member bytes, counts, event batch and retained source rather than the
 whole plane. Next: M3 reader (ingestion_time_input cohort selection with the
 typed-denial rule).
+
+## M3 Reader Record (2026-09-12) — Campaign Complete
+
+M3 is complete and coordinator-verified: ingestion_time_input resolves
+sealed attestations through verified retained joins only (source:
+finalization -> schema-2 outcome -> member -> registered artifact with
+fence/record-digest/clock validation; group: entry -> reload -> schema-3
+core -> member -> artifact with batch/delta/digest closure), emits in the
+frozen order key with runtime-owned predecessors, and denies legacy, mixed,
+tampered and unsealed cohorts (guard-deletion validated). The endpoint
+observe_ingestion_time_attestations pages real seals end-to-end through the
+composed service on the real sealed backend (writer: materialization 28
+passed in 4405.76s; composed 4 passed; coordinator re-ran fast suites 41
+passed, ruff, and the composed suite 4 passed in 652.59s). Recorded
+deviation: the group seal's applied_graph_delta_digest binds the
+SemanticGraphDelta digest (the reload-validation join), not the observation
+ledger's GraphRevisionDelta digest. The M0-M3 campaign is complete;
+remaining wrap-up: applicability-key digest-recipe disclosure, full affected
+gates at one frozen candidate, and the campaign review record.
