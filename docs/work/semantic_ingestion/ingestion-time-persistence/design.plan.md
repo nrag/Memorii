@@ -97,3 +97,20 @@ caller-timestamp default remains); store sharing realized via clock.now_utc
 as the store now_provider; seal-member recovery reuse lands with M2. The
 projection-record materialization regression also completed: 19 passed in
 4560.79s at 5927e10a. Next: M1 persisted schemas.
+
+## M1 Persisted Schemas Record (2026-09-11)
+
+M1 is complete: versioned-exclusion hooks on _Addressed (no-op defaults),
+schema-2 source terminal outcome fields, schema-3 group core attestation
+digest with per-version exclusions, reload v3 binding, registry role refresh
+for the two outcome schemas riding the publication refresh (seal roots were
+already registered; 181 schemas / 1269 roles; 58 vectors; coordinator re-ran
+refresh + vectors + byte-compare green and decoder-inventory equality).
+Legacy byte preservation proven end-to-end for schema-1 outcomes and a real
+persisted schema-1 group reload envelope; schema-2 group-core preservation is
+mechanism-level (no cheap real producer outside the real-backend suite).
+Recorded deviations: schema-1 also forbids a non-null attestation digest
+(fail-closed sibling pattern); outcome-schema registry roles updated beyond
+the task's item 5 (required by the codec's exact field-set equality). Two
+recovery-suite failures reproduced identically at clean HEAD (pre-existing).
+Next: M2 seal minting.
