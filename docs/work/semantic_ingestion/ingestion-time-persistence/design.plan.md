@@ -77,3 +77,23 @@ schemas, M2 minting, M3 reader.
 - Next action: feasibility proof of the revised contract on the real backend
   (per owner-decision.md Next), then independent design review before
   implementation.
+
+## M0 Clock Fix Record (2026-09-11)
+
+M0 is complete: closed IngestionTimeClock owner
+(memorii/core/memory_evolution/ingestion_time_clock.py) required at the
+ProviderIngestionCoordinator constructor (omission raises); one protected
+sample supplies the retained record timestamp and governance
+received_at/retained_at on both provider paths (caller delivery timestamp is
+delivery identity only); recovery-before-derivation redelivery reuses the
+winner's bytes through the new authorized replay_retained_source accessor and
+never resamples (guard-deletion validated). Coordinator-run gates: 66 clock/
+provider/factory cases, Ruff, scoped Pyright clean; two recovery-suite
+failures proven pre-existing at clean HEAD. Recorded deviations: class name
+is ProviderIngestionCoordinator (no ProviderIngestionService exists);
+service/factory keep an optional clock defaulting to the composed protected
+clock (fail-closed enforced at the coordinator constructor; no wall-clock or
+caller-timestamp default remains); store sharing realized via clock.now_utc
+as the store now_provider; seal-member recovery reuse lands with M2. The
+projection-record materialization regression also completed: 19 passed in
+4560.79s at 5927e10a. Next: M1 persisted schemas.
