@@ -114,3 +114,51 @@ Recorded deviations: schema-1 also forbids a non-null attestation digest
 the task's item 5 (required by the codec's exact field-set equality). Two
 recovery-suite failures reproduced identically at clean HEAD (pre-existing).
 Next: M2 seal minting.
+
+## M2 Seal Minting Record (2026-09-12)
+
+M2 minting is implemented: both admission CAS entry points
+(`publish_admitted_source`, `admit_source`) mint the
+`semantic_ingestion:admission:{delivery_key_digest}:retention_attestation`
+member (SourceRetentionTimeAttestation, self-digest under the registered
+profile domain, retained_at = the M0 protected sample already recorded as the
+retained record timestamp, source_record_digest = record_digest of the exact
+committed record) in the same conditionally_write_records CAS with
+RecordAbsentPrecondition; the group CAS mints the
+`{primary_id}:group_commit_attestation` member (TransactionGroupCommitTime-
+Attestation, committed_batch_digest = SemanticMemoryEventBatch.source_event_
+batch_digest, started/committed instants from the store's protected clock,
+sampled only in seal-minting stores) after the canonical batch and before the
+core, and writes schema-3 cores (non-null iff committed; explicit null when
+noncommitting) plus version-3 reloads; `_reload_bootstrap_graph_group_receipt`
+extends to version 3 with the full member/artifact/batch joins; terminal
+preparation builds the schema-2 outcome when the composition can read the
+sealed member (legacy schema 1 otherwise, never force-upgraded). Sealing is a
+store-deployment property: it exists exactly when the configured typed-value
+registry history has exactly one publication resolving both seal schemas
+(ambiguous or activation-inconsistent selections fail closed); default
+unconfigured compositions keep their legacy unsealed bytes and remain the M3
+typed-denial cohort. Retry exactness extends to the member: identity, fence,
+retention instant, record digest and clock identity must match byte-for-byte
+while the winner's descriptive graph_revision is accepted verbatim, so a later
+graph revision cannot break an exact redelivery. Writer-admission admission
+and group-commit write predicates admit the two new member kinds with
+identity/shape/presence checks tied to the persisted core digest. Gates:
+9 unit minting proofs + 3 real-backend JSONL proofs (committed mint + lost-ack
+reload + redelivery/reopen byte reuse), composition 45/45 (baseline 45),
+provider-service + observation-retention 42, coordinator v3 18 + 1 failure
+reproduced identically at clean HEAD (pre-existing), contract suites 17,
+native observation decoders 4, Ruff clean, Pyright at HEAD baseline for every
+touched production file (0 new errors). Recorded deviations: (1) the
+composed-provider fixtures abort an all-unavailable plan before the group CAS,
+so the noncommitting schema-3 explicit-null closure is proven at the contract
+validator plus the reload verification branch instead of one end-to-end
+noncommitting flow; (2) the host authority's seal-digest field rides outside
+the authority digest (`_digest_excluded_fields`) because the carrier is
+host-composed and never persisted while the binding is content-addressed in
+the schema-2 outcome core, keeping every legacy authority/preparation digest
+byte-exact; (3) full-flow redelivery after reopen may legitimately append
+recovery bookkeeping records beyond the seals, so the reuse proof pins the
+seal-member bytes, counts, event batch and retained source rather than the
+whole plane. Next: M3 reader (ingestion_time_input cohort selection with the
+typed-denial rule).

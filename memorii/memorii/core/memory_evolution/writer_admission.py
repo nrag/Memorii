@@ -2958,10 +2958,33 @@ def _validate_atomic_admission_records(
         "semantic_ingestion_profile_outcome",
     }
     profiles = [record for record in records if record.source_kind in profile_kinds]
+    seals = [
+        record
+        for record in records
+        if record.source_kind == "semantic_ingestion_source_retention_attestation"
+    ]
     if len(sources) != 1 or len(indexes) != 1 or {record.source_kind for record in profiles} != profile_kinds:
         raise SemanticWriterAdmissionError("atomic admission generation membership is incomplete")
-    if len(records) != 5 or sources[0].memory_id != fence.source_id:
+    # The five retained Step-1 records, plus the optional seal member a
+    # seal-minting store writes in the same admission CAS. The member's
+    # registered artifact is verified by the atomic store; this authorization
+    # boundary pins only its identity, shape and fence binding.
+    if len(records) not in (5, 6) or len(seals) > 1 or sources[0].memory_id != fence.source_id:
         raise SemanticWriterAdmissionError("atomic admission source binding is mismatched")
+    if seals:
+        seal = seals[0]
+        if (
+            len(records) != 6
+            or seal.memory_id
+            != f"semantic_ingestion:admission:{fence.delivery_key_digest}:retention_attestation"
+            or seal.domain != MemoryDomain.EXECUTION
+            or seal.visibility != MemoryRecordVisibility.INTERNAL_CONTROL
+            or seal.status != CommitStatus.COMMITTED
+            or set(seal.content) != {"semantic_ingestion_kind", "artifact"}
+            or seal.content.get("semantic_ingestion_kind") != "source_retention_attestation"
+            or not isinstance(seal.content.get("artifact"), str)
+        ):
+            raise SemanticWriterAdmissionError("atomic admission seal member is malformed")
     index = indexes[0]
     if (
         index.content.get("operation_fence_binding") != fence.model_dump(mode="json")
@@ -3507,6 +3530,7 @@ def _is_bootstrap_graph_v3_group_commit_write(
                 "semantic_event_batch",
                 "semantic_replay_state",
                 "reference_integrity_ledger",
+                "transaction_group_commit_attestation",
             }
             for kind in kinds
         )
@@ -3542,6 +3566,36 @@ def _is_bootstrap_graph_v3_group_commit_write(
             or reload.request_ctv_digest != request.request_ctv_digest
         ):
             return False
+
+        # The ingestion-time seal member appears exactly when the persisted
+        # core binds its digest (schema 3 committed); a noncommitting or
+        # pre-seal schema-1/2 group carries no member. Its registered
+        # artifact is verified by the store's mint and reload joins; this
+        # boundary pins identity, shape and presence.
+        seal_members = [
+            item
+            for item in governed
+            if item.content.get("semantic_ingestion_kind")
+            == "transaction_group_commit_attestation"
+        ]
+        attestation_digest = (
+            reload.persisted_result.core.transaction_group_commit_attestation_digest
+        )
+        if len(seal_members) != (1 if attestation_digest is not None else 0):
+            return False
+        if seal_members:
+            seal = seal_members[0]
+            if (
+                seal.memory_id != primary.memory_id + ":group_commit_attestation"
+                or seal.source_kind
+                != "semantic_ingestion_transaction_group_commit_attestation"
+                or seal.domain != MemoryDomain.EXECUTION
+                or seal.visibility != MemoryRecordVisibility.INTERNAL_CONTROL
+                or seal.status != CommitStatus.COMMITTED
+                or set(seal.content) != {"semantic_ingestion_kind", "artifact"}
+                or not isinstance(seal.content.get("artifact"), str)
+            ):
+                return False
 
         operation_ids = request.operation_ids
         fanouts = [

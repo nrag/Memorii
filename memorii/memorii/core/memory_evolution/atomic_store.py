@@ -102,6 +102,13 @@ from memorii.core.memory_plane.store import (
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility, TemporalValidityStatus
 
 if TYPE_CHECKING:
+    from memorii.core.memory_evolution.graph_ingestion_time_contracts import (
+        TransactionGroupCommitTimeAttestation,
+    )
+    from memorii.core.memory_evolution.ingestion_time_clock import IngestionTimeClock
+    from memorii.core.memory_evolution.typed_value_publication import (
+        VerifiedTypedValuePublication,
+    )
 
     class _GraphV3AuthorityRequest(Protocol):
         """The store's current-authority verifier's deliberately small view."""
@@ -1078,6 +1085,7 @@ class SemanticIngestionAtomicStore:
         max_lease_recoveries: int = 1,
         activation_max_rescans: int = 3,
         now_provider=lambda: datetime.now(UTC),
+        ingestion_time_clock: IngestionTimeClock | None = None,
         event_schema_registry: SemanticEventSchemaRegistry | None = None,
         event_schema_registry_history: SemanticEventSchemaRegistryHistory | None = None,
         typed_value_registry_history: ProtectedTypedValueRegistryHistory | None = None,
@@ -1121,7 +1129,28 @@ class SemanticIngestionAtomicStore:
         )
         self._max_lease_recoveries = max_lease_recoveries
         self._activation_max_rescans = activation_max_rescans
-        self._now = now_provider
+        # One protected clock may own the store's time authority outright; its
+        # stable identity is the only ingestion-time identity seals may record.
+        # Stores composed without a clock keep their explicit now provider and
+        # the composition-root production identity, matching the default clock
+        # the provider service composes.
+        from memorii.core.memory_evolution.ingestion_time_clock import (
+            PRODUCTION_INGESTION_TIME_CLOCK_IDENTITY,
+        )
+
+        self._ingestion_time_clock_identity = (
+            ingestion_time_clock.identity
+            if ingestion_time_clock is not None
+            else PRODUCTION_INGESTION_TIME_CLOCK_IDENTITY
+        )
+        self._now = (
+            ingestion_time_clock.now_utc
+            if ingestion_time_clock is not None
+            else now_provider
+        )
+        self._ingestion_time_seal_authority_cache: (
+            tuple[ProtectedTypedValueRegistryHistory, VerifiedTypedValuePublication] | None
+        ) | None = None
         from memorii.core.semantic_ingestion.event_replay import (
             SemanticEventSchemaRegistry,
             SemanticEventSchemaRegistryHistory,
@@ -2179,6 +2208,226 @@ class SemanticIngestionAtomicStore:
     ) -> PreplanningPublication:
         raise PreplanningStoreError("new preplanning publication requires atomic source admission")
 
+    def _ingestion_time_seal_authority(
+        self,
+    ) -> tuple[ProtectedTypedValueRegistryHistory, VerifiedTypedValuePublication] | None:
+        """Resolve the one publication that mints registered ingestion-time seals.
+
+        Sealing is a store-deployment property: it exists exactly when the
+        configured typed-value registry history contains one publication whose
+        compiled registry resolves both seal schemas. Stores without such a
+        publication keep their legacy unsealed write path (the reader denies
+        those cohorts); ambiguous or activation-inconsistent selections fail
+        closed instead of guessing a publication.
+        """
+
+        if self._ingestion_time_seal_authority_cache is not None:
+            return self._ingestion_time_seal_authority_cache
+        history = self._typed_value_registry_history
+        resolved: (
+            tuple[ProtectedTypedValueRegistryHistory, VerifiedTypedValuePublication] | None
+        ) = None
+        if history is not None:
+            candidates = [
+                publication
+                for publication in history.publications
+                if _publication_resolves_ingestion_time_seals(publication)
+            ]
+            if len(candidates) > 1:
+                raise PreplanningStoreError("ingestion time seal publication is ambiguous")
+            if candidates:
+                target = self._observation_activation_target
+                if target is not None and target.publication is not candidates[0]:
+                    raise PreplanningStoreError(
+                        "ingestion time seal publication is not the selected activation publication"
+                    )
+                resolved = (history, candidates[0])
+        self._ingestion_time_seal_authority_cache = resolved
+        return resolved
+
+    def _mint_source_retention_seal_member(
+        self, prepared: PreparedSourceAdmission,
+    ) -> CanonicalMemoryRecord | None:
+        """Mint the admission-anchor seal member for one admission CAS.
+
+        The artifact binds the retained record byte-for-byte: its retention
+        instant is the single protected-clock sample already recorded as the
+        retained record timestamp (never a fresh sample), and its
+        ``source_record_digest`` covers the exact committed record. The
+        graph revision is descriptive only; readers never compare it with
+        live state, and the retry validator below deliberately does not
+        either.
+        """
+
+        authority = self._ingestion_time_seal_authority()
+        if authority is None:
+            return None
+        history, publication = authority
+        admission = prepared.accepted
+        retained = next(
+            record for record in prepared.records
+            if record.memory_id == admission.source_id
+        )
+        from memorii.core.memory_evolution.graph_ingestion_time_contracts import (
+            SourceRetentionTimeAttestation,
+        )
+        from memorii.core.memory_evolution.observation_activation_runtime import (
+            emit_registered_observation_artifact,
+        )
+
+        member_id = _source_retention_seal_member_id(
+            admission.delivery_identity.delivery_key_digest
+        )
+        artifact = emit_registered_observation_artifact(
+            SourceRetentionTimeAttestation(
+                kind="source_retention",
+                attestation_id=member_id,
+                source_id=admission.operation_fence_binding.source_id,
+                operation_fence_id=admission.operation_fence_binding.operation_fence_id,
+                retained_at=retained.timestamp,
+                graph_revision=self.semantic_replay_state().graph_revision,
+                clock_identity=self._ingestion_time_clock_identity,
+                source_record_digest=record_digest(retained),
+                attestation_digest="0" * 64,
+            ),
+            schema_id="SourceRetentionTimeAttestation", history=history,
+            publication=publication, limits=self._observation_artifact_limits,
+        )
+        attestation = artifact.value
+        if type(attestation) is not SourceRetentionTimeAttestation:
+            raise PreplanningStoreError("registered source retention seal is invalid")
+        return CanonicalMemoryRecord(
+            memory_id=member_id,
+            domain=MemoryDomain.EXECUTION,
+            text="",
+            content={
+                "semantic_ingestion_kind": "source_retention_attestation",
+                "artifact": artifact.raw.decode("utf-8"),
+            },
+            status=CommitStatus.COMMITTED,
+            source_kind="semantic_ingestion_source_retention_attestation",
+            timestamp=retained.timestamp,
+            visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+        )
+
+    def _validate_retention_seal_member(
+        self,
+        existing: CanonicalMemoryRecord | None,
+        prepared: PreparedSourceAdmission,
+    ) -> bool:
+        """Retry exactness for the seal member, ignoring only live graph state.
+
+        On redelivery the member must exist and bind the same admission
+        identity: member id, fence, retention instant, retained-record digest
+        and clock identity all match byte-for-byte through the registered
+        artifact. The winner's descriptive ``graph_revision`` sample is
+        accepted verbatim (the admission CAS never preconditions on it), so a
+        later graph revision cannot break an exact redelivery.
+        """
+
+        if existing is None:
+            return False
+        authority = self._ingestion_time_seal_authority()
+        if authority is None:
+            return False
+        history, _publication = authority
+        if (
+            existing.memory_id
+            != _source_retention_seal_member_id(
+                prepared.accepted.delivery_identity.delivery_key_digest
+            )
+            or existing.source_kind != "semantic_ingestion_source_retention_attestation"
+            or existing.domain != MemoryDomain.EXECUTION
+            or existing.visibility != MemoryRecordVisibility.INTERNAL_CONTROL
+            or existing.status != CommitStatus.COMMITTED
+            or set(existing.content) != {"semantic_ingestion_kind", "artifact"}
+            or existing.content.get("semantic_ingestion_kind") != "source_retention_attestation"
+            or not isinstance(existing.content.get("artifact"), str)
+        ):
+            return False
+        from memorii.core.memory_evolution.graph_ingestion_time_contracts import (
+            SourceRetentionTimeAttestation,
+        )
+        from memorii.core.memory_evolution.observation_activation_runtime import (
+            validate_registered_artifact,
+        )
+
+        try:
+            value = validate_registered_artifact(
+                existing.content["artifact"].encode("utf-8"),
+                schema_id="SourceRetentionTimeAttestation", history=history,
+                limits=self._observation_artifact_limits,
+            )
+        except ValueError:
+            return False
+        if type(value) is not SourceRetentionTimeAttestation:
+            return False
+        retained = next(
+            record for record in prepared.records
+            if record.memory_id == prepared.accepted.source_id
+        )
+        fence = prepared.accepted.operation_fence_binding
+        return (
+            value.attestation_id == existing.memory_id
+            and value.source_id == fence.source_id
+            and value.operation_fence_id == fence.operation_fence_id
+            and value.retained_at == retained.timestamp
+            and value.clock_identity == self._ingestion_time_clock_identity
+            and value.source_record_digest == record_digest(retained)
+        )
+
+    def source_retention_attestation_digest(
+        self, *, delivery_key_digest: str, operation_fence: OperationFenceBinding,
+    ) -> str | None:
+        """Return the winner's seal digest for the later terminal binding.
+
+        Terminal preparation joins the admission anchor through this accessor
+        only: an absent member keeps the legacy schema-1 outcome default, and
+        a substituted or malformed member fails closed rather than binding a
+        terminal to unverified seal bytes.
+        """
+
+        member = self._memory_plane.get_record(
+            _source_retention_seal_member_id(delivery_key_digest)
+        )
+        if member is None:
+            return None
+        authority = self._ingestion_time_seal_authority()
+        if authority is None:
+            raise PreplanningStoreError(
+                "retention seal member exists without a seal publication"
+            )
+        history, _publication = authority
+        if (
+            member.source_kind != "semantic_ingestion_source_retention_attestation"
+            or member.content.get("semantic_ingestion_kind") != "source_retention_attestation"
+            or not isinstance(member.content.get("artifact"), str)
+        ):
+            raise PreplanningStoreError("retention seal member is substituted")
+        from memorii.core.memory_evolution.graph_ingestion_time_contracts import (
+            SourceRetentionTimeAttestation,
+        )
+        from memorii.core.memory_evolution.observation_activation_runtime import (
+            validate_registered_artifact,
+        )
+
+        try:
+            value = validate_registered_artifact(
+                member.content["artifact"].encode("utf-8"),
+                schema_id="SourceRetentionTimeAttestation", history=history,
+                limits=self._observation_artifact_limits,
+            )
+        except ValueError as exc:
+            raise PreplanningStoreError("retention seal member is substituted") from exc
+        if (
+            type(value) is not SourceRetentionTimeAttestation
+            or value.attestation_id != member.memory_id
+            or value.source_id != operation_fence.source_id
+            or value.operation_fence_id != operation_fence.operation_fence_id
+        ):
+            raise PreplanningStoreError("retention seal member is substituted")
+        return value.attestation_digest
+
     def publish_admitted_source(
         self,
         *,
@@ -2210,14 +2459,25 @@ class SemanticIngestionAtomicStore:
         writer_binding: SemanticWriterCommitBinding,
     ) -> SourceAdmissionAccepted:
         admission = prepared.accepted
+        seal_member = self._mint_source_retention_seal_member(prepared)
+        admission_records = (
+            prepared.records if seal_member is None else (*prepared.records, seal_member)
+        )
         existing_records = tuple(
             self._memory_plane.get_record(record.memory_id)
-            for record in prepared.records
+            for record in admission_records
         )
         if any(record is not None for record in existing_records):
             if not all(
                 _same_admission_record(existing, expected)
-                for existing, expected in zip(existing_records, prepared.records, strict=True)
+                for existing, expected in zip(
+                    existing_records[: len(prepared.records)], prepared.records, strict=True,
+                )
+            ) or (
+                seal_member is not None
+                and not self._validate_retention_seal_member(
+                    existing_records[-1], prepared,
+                )
             ):
                 raise PreplanningStoreError(
                     "atomic admission evidence is partial or mismatched"
@@ -2230,9 +2490,9 @@ class SemanticIngestionAtomicStore:
         )
         try:
             self._memory_plane.conditionally_write_records(
-                prepared.records,
+                admission_records,
                 preconditions=(
-                    *(RecordAbsentPrecondition(memory_id=record.memory_id) for record in prepared.records),
+                    *(RecordAbsentPrecondition(memory_id=record.memory_id) for record in admission_records),
                     RecordDigestPrecondition(
                         memory_id=writer_record.memory_id,
                         expected_digest=record_digest(writer_record),
@@ -2246,6 +2506,11 @@ class SemanticIngestionAtomicStore:
                     self._memory_plane.get_record(record.memory_id), record
                 )
                 for record in prepared.records
+            ) or (
+                seal_member is not None
+                and not self._validate_retention_seal_member(
+                    self._memory_plane.get_record(seal_member.memory_id), prepared,
+                )
             ):
                 raise PreplanningStoreError(
                     "atomic admission conflict is not an exact committed retry"
@@ -2374,10 +2639,16 @@ class SemanticIngestionAtomicStore:
     ) -> PreplanningPublication:
         admission = prepared.accepted
         fence = admission.operation_fence_binding
+        seal_member = self._mint_source_retention_seal_member(prepared)
         if any(self._memory_plane.get_record(record.memory_id) is not None for record in prepared.records):
             if any(
                 not _same_admission_record(self._memory_plane.get_record(record.memory_id), record)
                 for record in prepared.records
+            ) or (
+                seal_member is not None
+                and not self._validate_retention_seal_member(
+                    self._memory_plane.get_record(seal_member.memory_id), prepared,
+                )
             ):
                 raise PreplanningStoreError("atomic admission evidence is partial or mismatched")
             return self._publish_preplanning(admission=admission, writer_binding=writer_binding)
@@ -2392,7 +2663,10 @@ class SemanticIngestionAtomicStore:
         )
         publication = _publication(control)
         generation_records = _publication_records(publication, self._now())
-        all_records = (*prepared.records, *generation_records)
+        admission_records = (
+            prepared.records if seal_member is None else (*prepared.records, seal_member)
+        )
+        all_records = (*admission_records, *generation_records)
         try:
             self._memory_plane.conditionally_write_records(
                 all_records,
@@ -2408,6 +2682,11 @@ class SemanticIngestionAtomicStore:
             if any(
                 not _same_admission_record(self._memory_plane.get_record(record.memory_id), record)
                 for record in prepared.records
+            ) or (
+                seal_member is not None
+                and not self._validate_retention_seal_member(
+                    self._memory_plane.get_record(seal_member.memory_id), prepared,
+                )
             ):
                 raise PreplanningStoreError("atomic admission conflict is not an exact committed retry") from exc
             existing = self._memory_plane.get_record(_control_id(fence))
@@ -12248,7 +12527,7 @@ class SemanticIngestionAtomicStore:
         self, record: CanonicalMemoryRecord, request: BootstrapGraphGroupCommitRequestV3,
     ) -> BootstrapGraphGroupCommitReloadV3:
         reload = _bootstrap_graph_v3_group_commit_reload_from_record(record, request)
-        if reload.group_result_schema_version == 2:
+        if reload.group_result_schema_version in (2, 3):
             if reload.ledger_entry_id is None or reload.ledger_entry_digest is None:
                 raise PreplanningStoreError("native group recovery ledger coordinates are absent")
             snapshot = self._memory_plane.read_write_snapshot()[1]
@@ -12268,7 +12547,132 @@ class SemanticIngestionAtomicStore:
             if entry.entry_digest != reload.ledger_entry_digest:
                 raise PreplanningStoreError("native group recovery ledger entry is substituted")
             self._verify_native_group_entry_snapshot(entry, snapshot_records=records)
+            if reload.group_result_schema_version == 3:
+                self._verify_group_commit_seal_snapshot(
+                    record, reload, request, snapshot_records=records,
+                )
         return reload
+
+    def _verify_group_commit_seal_snapshot(
+        self,
+        record: CanonicalMemoryRecord,
+        reload: BootstrapGraphGroupCommitReloadV3,
+        request: BootstrapGraphGroupCommitRequestV3,
+        *,
+        snapshot_records: dict[str, CanonicalMemoryRecord],
+    ) -> None:
+        """Reload joins the schema-3 seal member without ever re-minting it.
+
+        The chain is result digest -> member identity -> registered artifact
+        -> typed attestation -> field equality against the persisted request,
+        core and batch record read back from the same image. Any mismatch is
+        the existing typed reload error; a committed group without its member
+        or a noncommitting group with one are both partial publications.
+        """
+
+        core = reload.persisted_result.core
+        committed = core.disposition == "committed"
+        member = snapshot_records.get(_group_commit_seal_member_id(record.memory_id))
+        if not committed:
+            if (
+                core.transaction_group_commit_attestation_digest is not None
+                or member is not None
+            ):
+                raise PreplanningStoreError(
+                    "native group recovery carries an attestation on a noncommitting result"
+                )
+            return
+        if member is None:
+            raise PreplanningStoreError("native group recovery attestation member is absent")
+        authority = self._ingestion_time_seal_authority()
+        if authority is None:
+            raise PreplanningStoreError(
+                "native group recovery attestation has no seal publication"
+            )
+        history, _publication = authority
+        from memorii.core.memory_evolution.graph_ingestion_time_contracts import (
+            TransactionGroupCommitTimeAttestation,
+        )
+        from memorii.core.memory_evolution.observation_activation_runtime import (
+            validate_registered_artifact,
+        )
+
+        if (
+            member.source_kind
+            != "semantic_ingestion_transaction_group_commit_attestation"
+            or member.domain != MemoryDomain.EXECUTION
+            or member.visibility != MemoryRecordVisibility.INTERNAL_CONTROL
+            or member.status != CommitStatus.COMMITTED
+            or set(member.content) != {"semantic_ingestion_kind", "artifact"}
+            or member.content.get("semantic_ingestion_kind")
+            != "transaction_group_commit_attestation"
+            or not isinstance(member.content.get("artifact"), str)
+        ):
+            raise PreplanningStoreError(
+                "native group recovery attestation member is malformed"
+            )
+        try:
+            attestation = validate_registered_artifact(
+                member.content["artifact"].encode("utf-8"),
+                schema_id="TransactionGroupCommitTimeAttestation", history=history,
+                limits=self._observation_artifact_limits,
+            )
+        except ValueError as exc:
+            raise PreplanningStoreError(
+                "native group recovery attestation member is substituted"
+            ) from exc
+        if type(attestation) is not TransactionGroupCommitTimeAttestation:
+            raise PreplanningStoreError(
+                "native group recovery attestation member is substituted"
+            )
+        receipt = reload.native_projection_publication_receipt
+        if receipt is None:
+            raise PreplanningStoreError(
+                "native group recovery projection receipt is absent"
+            )
+        batch_record = snapshot_records.get(
+            _semantic_event_batch_id(
+                receipt.canonical_event_batch.log_position.sequence
+            )
+        )
+        if batch_record is None:
+            raise PreplanningStoreError(
+                "native group recovery event batch record is absent"
+            )
+        from memorii.core.semantic_ingestion.event_replay import (
+            decode_semantic_memory_event_batch,
+        )
+
+        try:
+            persisted_batch = decode_semantic_memory_event_batch(
+                bytes.fromhex(batch_record.content["canonical_hex"]),
+                registry_history=self._event_schema_registry_history,
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PreplanningStoreError(
+                "native group recovery event batch record is substituted"
+            ) from exc
+        if (
+            attestation.attestation_id != member.memory_id
+            or attestation.attestation_digest
+            != core.transaction_group_commit_attestation_digest
+            or attestation.transaction_group_id != request.transaction_group_id
+            or attestation.operation_ids
+            != tuple(item.operation_id for item in core.ordered_operation_results)
+            or attestation.source_id != request.operation_fence_binding.source_id
+            or attestation.operation_fence_id
+            != request.operation_fence_binding.operation_fence_id
+            or attestation.graph_revision_before != core.graph_revision_before
+            or attestation.graph_revision_after != core.graph_revision_after
+            or attestation.applied_graph_delta_digest
+            != receipt.canonical_event_batch.graph_delta_digest
+            or attestation.clock_identity != self._ingestion_time_clock_identity
+            or attestation.committed_batch_digest
+            != persisted_batch.source_event_batch_digest
+        ):
+            raise PreplanningStoreError(
+                "native group recovery attestation is substituted"
+            )
 
     def _verify_native_group_entry_snapshot(
         self, entry: ObservationLedgerEntry, *, snapshot_records: dict[str, CanonicalMemoryRecord],
@@ -12310,7 +12714,7 @@ class SemanticIngestionAtomicStore:
         if (
             primary.memory_id != _bootstrap_graph_v3_group_commit_primary_id(
                 request.source_operation_id, request.transaction_group_id, request.operation_ids, request.request_ctv_digest)
-            or reload.group_result_schema_version != 2 or reload.observation_delta != delta
+            or reload.group_result_schema_version not in (2, 3) or reload.observation_delta != delta
             or reload.persisted_result.result_digest != entry.result_digest
             or reload.ledger_entry_id != _observation_ledger_entry_memory_id(entry.repository_id, delta.observation_delta_id)
             or reload.ledger_entry_digest != entry.entry_digest
@@ -12683,6 +13087,15 @@ class SemanticIngestionAtomicStore:
             return self._reload_bootstrap_graph_group_receipt(existing, request)
 
         def write(*, retried_after_cas_conflict: bool = False) -> BootstrapGraphGroupCommitReloadV3:
+            # The transaction-start instant is one protected-clock sample taken
+            # at entry to the winning attempt, after the reload discrimination
+            # and before any effect construction. It is sampled only for
+            # seal-minting stores: an unsealed store keeps its exact legacy
+            # timeline, and a CAS retry that re-enters write() re-samples it.
+            seal_authority = self._ingestion_time_seal_authority()
+            transaction_started_at = (
+                self._now() if seal_authority is not None else None
+            )
             control_record = self._required_control_record(request.operation_fence_binding)
             control = _control_from_record(control_record)
             if (
@@ -12918,6 +13331,8 @@ class SemanticIngestionAtomicStore:
             canonical_event_preconditions: tuple[MemoryPlanePrecondition, ...] = ()
             native_projection_records: tuple[CanonicalMemoryRecord, ...] = ()
             native_projection_preconditions: tuple[MemoryPlanePrecondition, ...] = ()
+            group_seal_record: CanonicalMemoryRecord | None = None
+            group_attestation = None
             if accepted:
                 from memorii.core.semantic_ingestion.contracts import SemanticGraphDelta
                 from memorii.core.semantic_ingestion.event_replay import (
@@ -12985,6 +13400,38 @@ class SemanticIngestionAtomicStore:
                         expected_graph_revision=before_graph,
                         observed_graph_revision=observed,
                     ) from exc
+                # Dependency order inside the winning CAS: canonical delta ->
+                # canonical event batch -> group time attestation -> core ->
+                # receipt -> result -> ledger. The seal binds the batch digest
+                # and both protected instants before anything digests the
+                # seal, so the chain stays acyclic. Only a seal-minting store
+                # with an activated observation ledger mints; every CAS loser
+                # constructed nothing that persisted.
+                group_seal_record = None
+                group_attestation = None
+                if seal_authority is not None and ledger_authority is not None:
+                    group_attestation, group_seal_record = _mint_group_commit_seal_member(
+                        authority=seal_authority,
+                        attestation_id=_group_commit_seal_member_id(primary_id),
+                        source_id=request.operation_fence_binding.source_id,
+                        operation_fence_id=(
+                            request.operation_fence_binding.operation_fence_id
+                        ),
+                        transaction_group_id=request.transaction_group_id,
+                        operation_ids=tuple(
+                            item.operation_id for item in operation_results
+                        ),
+                        transaction_started_at=transaction_started_at,
+                        transaction_committed_at=committed_at,
+                        graph_revision_before=before_graph,
+                        graph_revision_after=after_graph,
+                        applied_graph_delta_digest=canonical_graph_delta.delta_digest,
+                        committed_batch_digest=(
+                            canonical_event_batch.source_event_batch_digest
+                        ),
+                        clock_identity=self._ingestion_time_clock_identity,
+                        artifact_limits=self._observation_artifact_limits,
+                    )
                 next_replay_state = replay_semantic_event_batches(
                     repository_id=_SEMANTIC_EVENT_REPOSITORY_ID,
                     batches=(canonical_event_batch,),
@@ -13242,9 +13689,17 @@ class SemanticIngestionAtomicStore:
                 b"memorii.semantic-ingestion.bootstrap-graph-group-atomic-write.v3\0"
                 + request.request_ctv_digest.encode() + str(control.generation + 1).encode()
             ).hexdigest()
+            # Schema 3 is chosen exactly when this store mints ingestion-time
+            # seals: committed groups bind the minted attestation digest,
+            # noncommitting groups carry the explicit null field, and stores
+            # without a seal publication keep their schema-2 bytes unchanged.
+            sealed_group_result = native_observation is not None and seal_authority is not None
             core = BootstrapGraphGroupCommitResultCoreV3.create(
-                **({"group_result_schema_version": 2, "observation_delta": native_observation,
-                    "native_projection_publication_receipt": native_receipt} if native_observation is not None else {}),
+                **({"group_result_schema_version": 3 if sealed_group_result else 2,
+                    "observation_delta": native_observation,
+                    "native_projection_publication_receipt": native_receipt,
+                    **({"transaction_group_commit_attestation_digest": group_attestation.attestation_digest}
+                       if group_attestation is not None else {})} if native_observation is not None else {}),
                 request_ctv_digest=request.request_ctv_digest,
                 disposition="committed" if accepted else "noncommitting",
                 ordered_operation_results=tuple(operation_results),
@@ -13321,7 +13776,8 @@ class SemanticIngestionAtomicStore:
                 latest_atomic_write_digest=atomic_write, control_epoch_digest=request.control_epoch.epoch_digest,
             )
             reload = BootstrapGraphGroupCommitReloadV3.create(
-                **({"group_result_schema_version": 2, "observation_delta": native_observation,
+                **({"group_result_schema_version": 3 if sealed_group_result else 2,
+                    "observation_delta": native_observation,
                     "native_projection_publication_receipt": native_receipt,
                     "ledger_entry_id": _observation_ledger_entry_memory_id(ledger_entry.repository_id, ledger_entry.delta.observation_delta_id),
                     "ledger_entry_digest": ledger_entry.entry_digest} if ledger_entry is not None else {}),
@@ -13347,6 +13803,7 @@ class SemanticIngestionAtomicStore:
                 ) for operation_id in request.operation_ids),
                 *effect_records,
                 *canonical_event_records,
+                *((group_seal_record,) if group_seal_record is not None else ()),
                 *native_projection_records,
                 *native_audit_records,
                 *ledger_records,
@@ -17004,3 +17461,108 @@ def _same_admission_record(
     if existing is None:
         return False
     return existing.model_copy(update={"timestamp": proposed.timestamp}) == proposed
+
+
+_INGESTION_TIME_SEAL_SCHEMA_IDS = (
+    "SourceRetentionTimeAttestation",
+    "TransactionGroupCommitTimeAttestation",
+)
+
+
+def _source_retention_seal_member_id(delivery_key_digest: str) -> str:
+    """The admission-evidence family member id for the retention seal."""
+    return f"semantic_ingestion:admission:{delivery_key_digest}:retention_attestation"
+
+
+def _group_commit_seal_member_id(primary_id: str) -> str:
+    """The `primary_id + ":suffix"` member id for the group-commit seal."""
+    return f"{primary_id}:group_commit_attestation"
+
+
+def _publication_resolves_ingestion_time_seals(publication: object) -> bool:
+    try:
+        compiled = publication.compiled_registry  # type: ignore[attr-defined]
+        return all(
+            compiled.entry_for(schema_id, "1") is not None
+            for schema_id in _INGESTION_TIME_SEAL_SCHEMA_IDS
+        )
+    except (AttributeError, KeyError, TypeError):
+        return False
+
+
+def _mint_group_commit_seal_member(
+    *,
+    authority: tuple[ProtectedTypedValueRegistryHistory, VerifiedTypedValuePublication],
+    attestation_id: str,
+    source_id: str,
+    operation_fence_id: str,
+    transaction_group_id: str,
+    operation_ids: tuple[str, ...],
+    transaction_started_at: datetime | None,
+    transaction_committed_at: datetime,
+    graph_revision_before: str,
+    graph_revision_after: str,
+    applied_graph_delta_digest: str,
+    committed_batch_digest: str,
+    clock_identity: str,
+    artifact_limits: ProtectedTypedValueArtifactReaderLimits,
+) -> tuple[TransactionGroupCommitTimeAttestation, CanonicalMemoryRecord]:
+    """Mint the TransactionGroupCommitTimeAttestation member inside the winning CAS.
+
+    Every field is derived from artifacts the same CAS constructs (delta,
+    batch, revisions, instants), so the member stays acyclic: nothing in the
+    attestation preimage references the core, receipt, result or ledger that
+    digest it afterwards.
+    """
+
+    from memorii.core.memory_evolution.graph_ingestion_time_contracts import (
+        TransactionGroupCommitTimeAttestation,
+    )
+    from memorii.core.memory_evolution.observation_activation_runtime import (
+        emit_registered_observation_artifact,
+    )
+
+    history, publication = authority
+    if transaction_started_at is None:
+        # A seal-minting store samples the start instant at write() entry;
+        # reaching mint construction without it is an authority defect.
+        raise PreplanningStoreError(
+            "group commit seal lacks its protected start instant"
+        )
+    artifact = emit_registered_observation_artifact(
+        TransactionGroupCommitTimeAttestation(
+            kind="transaction_group_commit",
+            attestation_id=attestation_id,
+            source_id=source_id,
+            operation_fence_id=operation_fence_id,
+            transaction_group_id=transaction_group_id,
+            operation_ids=operation_ids,
+            transaction_started_at=transaction_started_at,
+            transaction_committed_at=transaction_committed_at,
+            graph_revision_before=graph_revision_before,
+            graph_revision_after=graph_revision_after,
+            applied_graph_delta_digest=applied_graph_delta_digest,
+            clock_identity=clock_identity,
+            committed_batch_digest=committed_batch_digest,
+            attestation_digest="0" * 64,
+        ),
+        schema_id="TransactionGroupCommitTimeAttestation", history=history,
+        publication=publication, limits=artifact_limits,
+    )
+    attestation = artifact.value
+    if type(attestation) is not TransactionGroupCommitTimeAttestation:
+        raise PreplanningStoreError("registered group commit seal is invalid")
+    record = CanonicalMemoryRecord(
+        memory_id=attestation_id,
+        domain=MemoryDomain.EXECUTION,
+        text="",
+        content={
+            "semantic_ingestion_kind": "transaction_group_commit_attestation",
+            "artifact": artifact.raw.decode("utf-8"),
+        },
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_transaction_group_commit_attestation",
+        timestamp=transaction_committed_at,
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+    return attestation, record

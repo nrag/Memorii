@@ -429,6 +429,20 @@ class DeterministicBootstrapGraphTerminalPreparationV3:
             )
             for item in constructions
         )
+        # Schema 2 binds the terminal back to the admission seal through the
+        # sealed member's registered attestation digest. An unsealed admission
+        # (no seal publication or pre-seal legacy cohort) keeps the literal
+        # schema-1 outcome bytes; the preparation never force-upgrades it.
+        retention_binding = (
+            {}
+            if host_authority.source_retention_attestation_digest is None
+            else {
+                "source_result_schema_version": 2,
+                "source_retention_attestation_digest": (
+                    host_authority.source_retention_attestation_digest
+                ),
+            }
+        )
         outcome_core = CanonicalSourceTerminalOutcomeCore.create(
             ingestion_record_kind="source_terminal_outcome",
             source_id=host_authority.source_id,
@@ -443,6 +457,7 @@ class DeterministicBootstrapGraphTerminalPreparationV3:
             operation_ids=operation_ids,
             final_status=status,
             group_result_digests=group_result_digests,
+            **retention_binding,
         )
         outcome_record = CanonicalSourceTerminalOutcomeRecord.create(
             core=outcome_core,

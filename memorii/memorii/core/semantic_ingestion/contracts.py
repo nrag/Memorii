@@ -12266,7 +12266,17 @@ class BootstrapGraphTerminalHostAuthorityV3(_BootstrapV3Contract):
     delivery_principal_binding_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     delivery_key_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     execution_graph_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    # The admission seal's registered attestation digest, supplied by the
+    # composition that can read the sealed member; ``None`` keeps the legacy
+    # schema-1 terminal outcome default for unsealed cohorts. The carrier is
+    # host-composed and never persisted, and the binding is content-addressed
+    # where it matters (the schema-2 outcome core preimage), so the field
+    # rides outside the authority digest and every legacy digest stays exact.
+    source_retention_attestation_digest: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
     segment_language_routes: SegmentLanguageRouteSet
+    _digest_excluded_fields = frozenset({"source_retention_attestation_digest"})
     segment_governance_carriers: SegmentGovernanceCarrierSet
     message_admission_carriers: MessageAdmissionCarrierSet
     governance_carrier_artifact: GovernanceCarrierArtifact

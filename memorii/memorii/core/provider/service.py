@@ -593,6 +593,7 @@ class ProviderMemoryService:
             self._memory_plane,
             self._semantic_writer_admission,
             now_provider=self._now_provider,
+            ingestion_time_clock=self._clock,
             semantic_freeze_guard=(
                 semantic_integrity_lifecycle.freeze_guard
                 if semantic_integrity_lifecycle is not None
