@@ -1,9 +1,12 @@
 # Semantic Ingestion Engineering Closure Plan
 
 Baseline: `191826cd3afb38bf605a337a71d576063b3bae5e`, PR #120.
-Current status (2026-09-08): implementation active; 15 requirements retain
-completed baseline behavior and 8 still have engineering work open. The current
-dirty-tree candidate has not completed final CI and whole-branch review.
+Current status (2026-09-12): implementation active; 15 requirements retain
+completed engineering behavior and 8 remain partial or unimplemented. This
+table was rebuilt from production paths and the three-role closure review at
+`4ff7f53c10092f423494fff55fbc055d2f3fdf4c`. That revision is clean, pushed,
+and has no failed PR checks; its long-running Observation Ledger Activation
+check is still pending. Release signing is not the only remaining work.
 User-directed completion boundary: engineering
 readiness must not wait for actual production signing. Runtime still rejects
 unsigned, untrusted, expired or revoked activation material.
@@ -27,14 +30,27 @@ than imply that unsigned artifacts authorize runtime use.
 
 ## What Exists And What Needs Signing Work
 
-The following assessment describes the original planning baseline. Concrete
-Ed25519 verification, configured trust resolution, PEM offline signing, release
-assembly and lifecycle-signing tools now have local test evidence. R13 remains
-partial because complete host configuration/integration and final candidate
-proof are outstanding; see the current table below and
+The original assessment below is retained as planning context. Concrete Ed25519
+verification, configured trust resolution, PEM offline signing, release assembly,
+lifecycle-signing tools, installed-wheel preparation and protected activation
+now have deterministic and CI evidence. R13 remains partial because the complete
+acceptance-authority/release integration and final trusted release are outstanding;
+see the current table below and
 [signing progress](../semantic_ingestion/engineering-closure/milestones/02-release-crypto-trust.plan.md).
 
-The current repository is not yet a ready-made "sign a few files" workflow.
+The repository now has unsigned preparation, external-sign, assembly and verify
+workflows. The final YubiKey-backed cloud-KMS adapter and trusted deployment
+configuration remain release work. The historical inventory that follows
+explains the seams from which that workflow was built.
+
+At the refreshed candidate, the engineering closure review found three distinct
+product-work packages still open: the acceptance-authority/evaluator entrypoint,
+the scheduled capability monitor with atomic demotion, and the independent
+structural comparator plus configured ingress/revocation negatives. These do not
+require production private keys and must not be reclassified as signing work.
+
+Historical baseline:
+
 `semantic_ingestion_traceability_release.py:105` defines a SignatureVerifier
 callback; verifier-held trust material supplies that callback and key/certificate
 digests. `core/semantic_ingestion/capability.py:109` similarly declares a host
@@ -320,29 +336,29 @@ to complete by this production write/recovery checkpoint. Current details and ev
 
 | ID | Current status | Completed or locally verified work | Remaining engineering work | Release-only condition |
 | --- | --- | --- | --- | --- |
-| R01 | Baseline complete | M1 source/provenance/admission proof retained | Final candidate regression only | Deployment-wide authorization |
-| R02 | Baseline complete | M3 candidate/validation/commit proof retained | Final candidate regression only | Capability activation approval |
-| R03 | Partial | Corrected M0 crosswalk, historical evidence retention, coordination-identity repair | Freeze current evidence/source identities; finish owner/verification crosswalk, portable final package and review | Signed real release/evidence approval |
-| R04 | Baseline complete | M1/M3 typed owner and terminal-chain proof retained | Final candidate regression only | None distinct |
-| R05 | Baseline complete | M3 semantic evidence validation retained | Final regression; include semantic metrics in the still-open R14 evaluation | Approved capability quality evidence |
-| R06 | Baseline complete | M3 temporal matrix retained | Final regression; include temporal metrics in the still-open R14 evaluation | Approved capability quality evidence |
-| R07 | Baseline complete | Registered prompt/redaction bindings retained | Final fingerprint/regression checks | Approval of changed fingerprints if applicable |
-| R08 | Partial | Existing host boundaries and locally tested crypto/trust primitives retained | Finish real host/local/no-network/authorized-root matrix and monitor/registry integration | Real trusted deployment artifacts |
-| R09 | Baseline complete | Current-policy egress authorization and retained negative proof | Final policy-rotation/regression checks | Real remote policy only if enabled |
-| R10 | Baseline complete | M2/M4 exact event/replay proof retained | Final candidate regression only | None distinct |
-| R11 | Baseline complete | Single-writer, cutover and rollback proof retained | Final candidate regression only | Activation/migration authorization if used |
-| R12 | Baseline complete | Closed temporal/lifecycle contract proof retained | Final candidate regression only | None distinct |
-| R13 | Partial | Ed25519/public-key verification, configured resolver, PEM offline signing, release assembly and lifecycle signing locally tested; offline wheel preparation, pinned bootstrap launcher and unsigned target/signature flow exercised on 21 installed distributions | Complete remaining release runtime/host configuration, remaining assembly integration, portable final evidence and independent closure | Actual trusted keys, signatures and monotonic release publication |
-| R14 | Partial | Independent numeric evaluator/kernel port approved; 81 tests and 33 independent vectors recorded | The issuance-prefix correction now has bounded spec/correctness/test approval and103 model checks; canonical artifact promotion and production acceptance integration remain; finish protected repository/CTV/signature implementation, held-context/CLI assembly and full policy/data evaluation | Actual product policy approval/signature and qualifying measurements |
-| R15 | Not implemented | Monitor readiness and validation matrix documented | Implement production monitor, atomic registry/CAS transitions, freshness/outage/breach/recovery and in-flight demotion/reactivation proof | Approved monitoring policy and real evidence windows |
-| R16 | Partial | Bootstrap topology retained; bounded native policy retention independently approved | Integrate and prove complete bundle/profile validation through the new registry, activation and host paths | Approve/sign final bundle fingerprints |
-| R17 | Partial | Full-write snapshot primitive approved; observation models, source declarations, body/native codecs and registry history locally tested; 58 independent construction vectors and full 180-entry output agree; protected reader locally tested; host/provider/writer/store registry composition passes five focused tests; native candidate encoding has independent byte-oracle proof; registered ordinary/self-digest/cursor integrity and protected reader pass 91 tests; fixed checkpoint preimage/crypto passes five tests; both slices independently approved; target-identity design approved; protected target helpers and selected registry cases pass 54 tests; four actual provider target/authorization cases pass;14 fresh-process bootstrap checks pass; five provider recovery failures corrected and rerun green; independently reviewed offline preparation verifies 5632 files and prepares/resolves a 1772-file signed test target; six authority and five installed tampering checks reject; full preparation CI is wired but unobserved | Durable activation has 24 passing integration cases and bounded spec/correctness/test approval, including concurrency, restart and historical-byte preservation; exact ledger hash-preimage amendment accepted and promoted; activated ordinary ingestion and JSONL reopen/retry now pass with281 consolidated regressions; finish activated failure-family proofs, refresh final packaging and obtain CI evidence; registered graph/ingestion paging and retention pass30 focused tests with180 schemas/1262 roles independently reproduced; internal registered access and four ingestion conversions now have corrected ledger/scope bindings; atomic snapshot-time binding now passes57 focused tests and bounded correctness review; finish checkpoint external-context authority, public provider/cohort integration after the consolidated structural-field/projection-identity design correction (provenance recipe already approved), durable time-attestation production, independent comparator and end-to-end proofs | Real caller trust and acceptance witnesses |
-| R18 | Baseline complete | M4 historical/conflict/lineage replay proof retained | Final candidate regression only | None distinct |
-| R19 | Partial | Existing capability/ingress seams, configured trust resolver and bounded storage/policy prerequisites; ordinary provider activation, group/source ledger append and durable reopen/retry now locally verified; registered observation access and ingestion conversion remain internal preparation | Complete ordinary host composition for verified registry, writer/store, monitor, replay and observation APIs; run all host-root proofs | Install approved real host configuration |
-| R20 | Baseline complete | Lease/recovery/exhaustion proof retained | Final candidate regression only | None distinct |
-| R21 | Baseline complete | Crash-atomic generation/backend proof retained | Final candidate regression only | None distinct |
-| R22 | Baseline complete | Provider compatibility/protected-result proof retained; stale M0 inference reconciled | Final regression; current evidence capture tracked under R03 | None distinct |
-| R23 | Baseline complete | Delivery normalization/composite replay proof retained | Final candidate regression only | None distinct |
+| R01 | Engineering complete | Source retention, provenance and admission owners retain their M1 proof and current unit/acceptance gates pass | Parent closure record only | Deployment-wide authorization |
+| R02 | Engineering complete | Candidate, semantic validation and commit paths retain M3 proof; current scenario and transaction gates pass | Parent closure record only | Capability activation approval |
+| R03 | Partial | M0 crosswalk and historical evidence are retained; release preparation is restricted to tracked members; current provider observation supplies portable structural evidence | Freeze the eventual post-remediation candidate and publish the final owner/gate/evidence package | Signed real release/evidence approval |
+| R04 | Engineering complete | Typed evidence ownership and terminal-chain validation retain M1/M3 proof under current gates | Parent closure record only | None distinct |
+| R05 | Engineering complete | Semantic evidence validation and required metric inputs are retained | R14 must consume these metrics before release approval; no additional R05 production code identified | Approved capability quality evidence |
+| R06 | Engineering complete | Temporal construction/decision matrix and exact replay remain covered | R14 must consume these metrics before release approval; no additional R06 production code identified | Approved capability quality evidence |
+| R07 | Engineering complete | Registered prompt, redaction and fingerprint bindings pass the current authority/generation gates | Parent closure record only | Approval of changed fingerprints if applicable |
+| R08 | Partial | Built-in local/no-network profile, protected activation, configured trust, installed-wheel bootstrap and provider observation composition are implemented and CI exercised | Implement monitor/status integration and configured host-ingress rejection/revocation proof across supported roots | Real trusted deployment artifacts |
+| R09 | Engineering complete | Current-policy egress authorization and negative paths remain covered | Parent closure record only | Real remote policy only if enabled |
+| R10 | Engineering complete | Exact event, graph and replay authority retain M2/M4 proof; current persistence shards pass | Parent closure record only | None distinct |
+| R11 | Engineering complete | Single-writer, cutover, retry, restart and rollback behavior remain covered | Parent closure record only | Activation/migration authorization if used |
+| R12 | Engineering complete | Temporal/lifecycle contracts and current projection-history gates pass | Parent closure record only | None distinct |
+| R13 | Partial | Ed25519 verification, configured resolver, PEM external signing, release/lifecycle assembly, installed preparation, protected target validation and test-key tamper matrix are implemented | Complete acceptance-authority/evaluator-to-deployment binding, final host/release evidence and cloud-KMS signer adapter selected for the release | Actual trusted keys, signatures and monotonic release publication |
+| R14 | Partial | Independent arithmetic/CTV evaluator passes 81 focused tests and 33 independent vectors; issuance-prefix design correction passes 103 checks | Promote the acceptance-authority contract; ship an installed evaluator/CLI with protected held context and verified-result publication; run the complete approved policy/data evaluation | Product policy approval/signature and qualifying measurements |
+| R15 | Not implemented | Readiness, authority preflight and deterministic validation matrix exist | Implement the scheduled production monitor, immutable evidence-window evaluation, atomic registry/status CAS demotion, zero-traffic freshness, outage/breach handling, restart and explicit reactivation | Approved monitoring policy and real evidence windows |
+| R16 | Partial | Bootstrap topology, 181-schema/1269-role registered publication, native policy retention, installed package preparation and protected target activation are implemented | Bind the monitor/status owner across activation and use; close the configured ingress/root matrix and final package evidence | Approve/sign final bundle fingerprints |
+| R17 | Partial | All 17 graph observation families, registered projection identity reconstruction, event-derived intervals, scoped pagination, durable ingestion-time seals and public ProviderMemoryService methods are implemented; real activated JSONL composition and CI exercise the path | Add an independently authored closed-world structural comparator through the paginated public API; prove missing/extra/time/provenance/fence mutations and configured host-ingress rejection plus between-page revocation | Real caller trust and acceptance witnesses |
+| R18 | Engineering complete | Historical/conflict/lineage replay retains M4 proof and current projection-history gates pass | Parent closure record only | None distinct |
+| R19 | Partial | Normal provider roots reach protected registry/target activation, atomic ledger writes/recovery, all 17 observations and ingestion-time attestations; installed package and host composition are CI exercised | Integrate monitor/status checks into every normal root and add meaningful configured ingress/revocation negatives; then refresh the caller ledger | Install approved real host configuration |
+| R20 | Engineering complete | Lease, retry, recovery and exhaustion behavior remain covered by current persistence/transaction gates | Parent closure record only | None distinct |
+| R21 | Engineering complete | Crash-atomic generation and backend behavior remain covered | Parent closure record only | None distinct |
+| R22 | Engineering complete | Provider compatibility and protected-result behavior pass current recapture/scenario gates; stale M0 inference is reconciled | Parent closure record only | None distinct |
+| R23 | Engineering complete | Delivery normalization, duplicate/redelivery rejection and composite replay pass current scenario gates, including substituted-redelivery rejection | Parent closure record only | None distinct |
 
 Evidence and live work owners:
 
@@ -350,12 +366,13 @@ Evidence and live work owners:
 - [Signing/trust evidence](../semantic_ingestion/engineering-closure/milestones/02-release-crypto-trust.plan.md) and [current signing evidence hashes](../semantic_ingestion/engineering-closure/signing-local-evidence.json).
 - [R14 numeric approval and remaining authority blocker](../semantic_ingestion/engineering-closure/milestones/03-independent-statistical-evaluator.plan.md).
 - [Monitor work](../semantic_ingestion/engineering-closure/milestones/04-monitor-registry-transitions.plan.md).
-- [Active registry publication work](../semantic_ingestion/registry-publication/implementation.plan.md): 77 roots, 179 schemas and a constructed 1255-role publication candidate with 32 decoder source files; the consolidated construction check passes 168 tests, Ruff and Pyright. Independent normalized output bytes agree, and the wheel includes all 1257 registry JSON files. Complete rejection-vector publication, deployment pins and runtime composition remain pending; see [exact checkpoint evidence](../semantic_ingestion/registry-publication/registry-construction-checkpoint.json).
+- [Registry publication work](../semantic_ingestion/registry-publication/implementation.plan.md): the current publication contains 181 schemas and 1269 roles, includes ProjectionObservationIdentity and ingestion-time attestation roots, has independent normalized-output/vector evidence, is composed by the protected host runtime, and is exercised by the current generation and package gates.
 - [Observer/comparator work](../semantic_ingestion/engineering-closure/milestones/05-authenticated-observer-comparator.plan.md) and [final host/whole-program closure](../semantic_ingestion/engineering-closure/milestones/06-host-composition-closure.plan.md).
 
-The registry-history and native decoder modules are prerequisites with no
-completed service integration. They do not complete R15's capability monitor or
-R17's authenticated observer. Missing final CI/review applies across all 23 rows.
+Registry history and native decoders now have completed service integration.
+That does not supply R15's capability monitor or R17's independent comparator.
+The parent closure package remains open until the remaining product work lands
+and its exact candidate completes CI and independent review.
 
 ## Evidence Repair And PR State
 
@@ -367,11 +384,11 @@ files. Altered/missing logs fail; restored bytes pass. Historical bytes/status
 were not rewritten. See evidence-retention-checks.json. Packaging changes still
 need commit/push to become available in PR checkout; no new commit is claimed.
 
-PR #120 is open at 191826c and CI is running. Saved pr120-status.json is a point-in-
-time snapshot, not a final green claim. The previous "no PR/run" observation
-was accurate before creation and is now superseded. The eventual packaging and
-M5 code commits require CI at their own final SHA; do not transfer 191826c checks
-to later product changes.
+PR #120 is open at `4ff7f53c10092f423494fff55fbc055d2f3fdf4c`.
+At the 2026-09-12 refresh, every reported check has succeeded except the still
+running Observation Ledger Activation job; no failure is present. The earlier
+fully green run at `4e524f31` proves the preceding source candidate, not this
+documentation head or a future remediation candidate.
 
 ## Handoff And Limits
 
@@ -384,11 +401,11 @@ from release issuance. No completed milestone is reopened solely for signatures.
 
 ## Public Observation Resumption Checkpoint
 
-The additive timed full-write snapshot and both paging creation-time paths are
-implemented and locally verified. Public composition was investigated and its
-incomplete drafts parked outside production after confirming missing structural
-field and registered projection identity rules. See
-[the proposed correction](../semantic_ingestion/graph-observation-materialization/proposal.md)
-and the active continuation packet for57-test evidence and limitations.
-R17/R19 remain partial; all23 counts remain15 baseline-complete and8 open.
-This is a design-readiness gap, not deferred production signing.
+The additive timed snapshot, structural-field design, registered projection
+identity, complete materializer, public provider methods and persisted
+ingestion-time attestations are implemented. R17 remains partial solely for the
+independent comparator and configured authorization/revocation proof described
+in the table. R19 remains partial for those host negatives and the missing
+monitor/status integration. The refreshed count remains 15 engineering-complete
+and 8 partial/unimplemented; the remaining engineering work is explicit and is
+not collapsed into deferred production signing.
