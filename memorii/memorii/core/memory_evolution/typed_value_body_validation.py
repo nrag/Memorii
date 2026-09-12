@@ -181,7 +181,7 @@ def _validate_value(value: FrozenJsonValue, expression: TypeExpr, numeric: Numer
         if numeric is None or numeric.representation != expression.kind:
             raise TypedValueBodyValidationError(f"{path}_numeric_declaration_invalid")
         try:
-            decode_typed_numeric_value(_canonical_bytes(value), numeric, limits=ProtectedTypedNumericValueLimits(limits.maximum_bytes, limits.maximum_nodes, limits.maximum_depth))
+            decode_typed_numeric_value(canonical_bytes(value), numeric, limits=ProtectedTypedNumericValueLimits(limits.maximum_bytes, limits.maximum_nodes, limits.maximum_depth))
         except TypedNumericValueError as exc:
             raise TypedValueBodyValidationError(f"{path}_numeric_invalid") from exc
     elif isinstance(expression, EnumRefTypeExpr):
@@ -199,7 +199,7 @@ def _validate_value(value: FrozenJsonValue, expression: TypeExpr, numeric: Numer
         tag = "tuple" if expression.kind == "variadic_tuple" else expression.kind
         items = _tagged_items(value, tag, path)
         if expression.kind in {"set", "frozenset"}:
-            encoded = tuple(_canonical_bytes(item) for item in items)
+            encoded = tuple(canonical_bytes(item) for item in items)
             if encoded != tuple(sorted(encoded)) or len(encoded) != len(set(encoded)):
                 raise TypedValueBodyValidationError(f"{path}_collection_order_invalid")
         for index, child in enumerate(items):
@@ -372,7 +372,7 @@ def _tagged_entries(value: FrozenJsonValue, tag: str, path: str) -> tuple[tuple[
             raise TypedValueBodyValidationError(f"{path}_{tag}_entry_invalid")
         entries.append((item[0], item[1]))
     keys = tuple(key for key, _ in entries)
-    ordered = tuple(sorted(keys, key=lambda key: _canonical_bytes(key)))
+    ordered = tuple(sorted(keys, key=lambda key: canonical_bytes(key)))
     if keys != ordered or len(keys) != len(set(keys)):
         raise TypedValueBodyValidationError(f"{path}_{tag}_key_order_invalid")
     return tuple(entries)
@@ -400,7 +400,7 @@ def _integer_compare(left: str, right: str) -> int:
     return -result if left_negative else result
 
 
-def _canonical_bytes(value: FrozenJsonValue) -> bytes:
+def canonical_bytes(value: FrozenJsonValue) -> bytes:
     return json.dumps(_thaw(value), ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8", "strict")
 
 

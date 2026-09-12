@@ -18,8 +18,8 @@ from memorii.core.memory_evolution.observation_activation_target import (
 )
 from memorii.core.memory_evolution.typed_value_decoder_sources import (
     DecoderSourceManifestError,
-    _open_canonical_source_root,
-    _read_whole_file,
+    open_canonical_source_root,
+    read_whole_file,
 )
 
 
@@ -52,9 +52,9 @@ def verify_installed_observation_target(
         ):
             raise ObservationActivationPackageError("observation_activation_package_metadata_mismatch")
         record_relative = _record_relative_path(configuration)
-        descriptor = _open_canonical_source_root(root)
+        descriptor = open_canonical_source_root(root)
         try:
-            scripts_descriptor = _open_canonical_source_root(configuration.scripts_root)
+            scripts_descriptor = open_canonical_source_root(configuration.scripts_root)
             try:
                 site_status = os.fstat(descriptor)
                 scripts_status = os.fstat(scripts_descriptor)
@@ -62,13 +62,13 @@ def verify_installed_observation_target(
                     raise ObservationActivationPackageError("observation_activation_package_anchors_overlap")
             finally:
                 os.close(scripts_descriptor)
-            record_bytes = _read_whole_file(descriptor, record_relative, 4 * 1024 * 1024)
+            record_bytes = read_whole_file(descriptor, record_relative, 4 * 1024 * 1024)
             if sha256(record_bytes).hexdigest() != selected.record_sha256:
                 raise ObservationActivationPackageError("observation_activation_package_record_digest_mismatch")
             record_rows = _parse_record(record_bytes)
             configured = {row.installed_relative_path: row for row in configuration.installed_files}
             metadata_relative = record_relative.rsplit("/", 1)[0] + "/METADATA"
-            metadata_bytes = _read_whole_file(descriptor, metadata_relative, 4 * 1024 * 1024)
+            metadata_bytes = read_whole_file(descriptor, metadata_relative, 4 * 1024 * 1024)
             for location, raw in ((record_relative, record_bytes), (metadata_relative, metadata_bytes)):
                 installed = configured.get(f"site/{location}")
                 if (
@@ -99,8 +99,8 @@ def verify_installed_observation_target(
                     or record != (row.sha256, row.size)
                 ):
                     raise ObservationActivationPackageError("observation_activation_package_record_membership_mismatch")
-                first = _read_whole_file(descriptor, path, row.size)
-                second = _read_whole_file(descriptor, path, row.size)
+                first = read_whole_file(descriptor, path, row.size)
+                second = read_whole_file(descriptor, path, row.size)
                 if first != second or len(first) != row.size or sha256(first).hexdigest() != row.sha256:
                     raise ObservationActivationPackageError("observation_activation_package_payload_bytes_mismatch")
         finally:

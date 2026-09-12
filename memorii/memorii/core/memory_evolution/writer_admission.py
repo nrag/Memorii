@@ -270,7 +270,7 @@ class SemanticWriterAdmissionStore:
     ) -> SemanticWriterAdmission:
         existing = self._memory_plane.get_record(writer_admission_memory_id())
         if existing is not None:
-            current, manifest = _from_record(existing)
+            current, manifest = writer_admission_from_record(existing)
             if not _matches_initial_evidence_only(
                 current,
                 manifest,
@@ -311,7 +311,7 @@ class SemanticWriterAdmissionStore:
             existing = self._memory_plane.get_record(record.memory_id)
             if existing is None:
                 raise
-            current, manifest = _from_record(existing)
+            current, manifest = writer_admission_from_record(existing)
             if not _matches_initial_evidence_only(
                 current,
                 manifest,
@@ -340,7 +340,7 @@ class SemanticWriterAdmissionStore:
         record = self._memory_plane.get_record(writer_admission_memory_id())
         if record is None:
             raise SemanticWriterAdmissionError("semantic writer is unbound")
-        admission, manifest = _from_record(record)
+        admission, manifest = writer_admission_from_record(record)
         expected = self.commit_binding(admission)
         if not self._is_supported_manifest(manifest) or binding != expected:
             raise SemanticWriterAdmissionError("semantic writer binding is stale or mismatched")
@@ -350,7 +350,7 @@ class SemanticWriterAdmissionStore:
         record = self._memory_plane.get_record(writer_admission_memory_id())
         if record is None:
             raise SemanticWriterAdmissionError("semantic writer is unbound")
-        admission, manifest = _from_record(record)
+        admission, manifest = writer_admission_from_record(record)
         if not self._is_supported_manifest(manifest):
             raise SemanticWriterAdmissionError("semantic writer manifest is mismatched")
         return admission
@@ -449,7 +449,7 @@ class SemanticWriterAdmissionStore:
         current_record = self._memory_plane.get_record(writer_admission_memory_id())
         if current_record is None:
             raise SemanticWriterAdmissionError("semantic writer is unbound")
-        current, manifest = _from_record(current_record)
+        current, manifest = writer_admission_from_record(current_record)
         if manifest != self._manifest:
             raise SemanticWriterAdmissionError("semantic writer manifest is mismatched")
         if self.commit_binding(current) != expected:
@@ -570,7 +570,7 @@ class SemanticWriterAdmissionStore:
         current_record = self._memory_plane.get_record(writer_admission_memory_id())
         if current_record is None:
             raise SemanticWriterAdmissionError("semantic writer is unbound")
-        current, manifest = _from_record(current_record)
+        current, manifest = writer_admission_from_record(current_record)
         if manifest != self._manifest or self.commit_binding(current) != expected:
             if (
                 current.previous_admission_digest == expected.admission_digest
@@ -659,7 +659,7 @@ class SemanticWriterAdmissionStore:
         if capability not in self._atomic_owners:
             raise SemanticWriterAdmissionError("semantic atomic writer is not registered")
         record = self.require_current(binding)
-        admission, manifest = _from_record(record)
+        admission, manifest = writer_admission_from_record(record)
         return SemanticWriterWriteAuthorization(
             admission=admission,
             manifest=manifest,
@@ -682,7 +682,7 @@ class SemanticWriterAdmissionStore:
         if max_rescans <= 0:
             raise SemanticWriterAdmissionError("observation ledger activation retry bound is invalid")
         current_record = self.require_current(expected)
-        current, manifest = _from_record(current_record)
+        current, manifest = writer_admission_from_record(current_record)
         if manifest != bounded_preplanning_ownership_manifest() or current != self.current() or not current_record.content.get("draining", False):
             raise SemanticWriterAdmissionError("semantic writer binding is stale or mismatched")
         if activation.previous_writer_admission_digest != current.admission_digest or activation.target_writer_epoch != current.writer_epoch + 1:
@@ -730,7 +730,7 @@ class SemanticWriterAdmissionStore:
         if self._observation_activation_target is None:
             raise SemanticWriterAdmissionError("observation ledger activation target authority is not configured")
         current_record = self.require_current(expected)
-        current, manifest = _from_record(current_record)
+        current, manifest = writer_admission_from_record(current_record)
         if manifest != bounded_preplanning_ownership_manifest():
             raise SemanticWriterAdmissionError("semantic writer manifest is mismatched")
         if not current_record.content.get("draining", False):
@@ -770,7 +770,7 @@ class SemanticGovernedWritePolicy:
                 (record for record in current if record.memory_id == writer_admission_memory_id()),
                 None,
             )
-            if persisted_writer is not None and _from_record(persisted_writer)[0].activation_digest is not None:
+            if persisted_writer is not None and writer_admission_from_record(persisted_writer)[0].activation_digest is not None:
                 raise SemanticWriterAdmissionError(
                     "activated writer requires a complete observation ledger closure"
                 )
@@ -823,17 +823,17 @@ class SemanticGovernedWritePolicy:
                 raise SemanticWriterAdmissionError("initial writer admission authorization is invalid")
             if len(governed) != 1 or governed[0].source_kind != "semantic_ingestion_writer_admission":
                 raise SemanticWriterAdmissionError("initial writer admission is not an isolated write")
-            proposed, manifest = _from_record(governed[0])
+            proposed, manifest = writer_admission_from_record(governed[0])
             if proposed != authorization.admission or manifest != authorization.manifest:
                 raise SemanticWriterAdmissionError("initial writer admission authorization is mismatched")
             return
-        current_admission, current_manifest = _from_record(current_record)
+        current_admission, current_manifest = writer_admission_from_record(current_record)
         if authorization.owner is self._admissions._transition_owner:
             writer_records = [record for record in governed if record.memory_id == writer_admission_memory_id()]
             if len(writer_records) != 1:
                 raise SemanticWriterAdmissionError("writer transition lacks one authority record")
             proposed_record = writer_records[0]
-            proposed, manifest = _from_record(proposed_record)
+            proposed, manifest = writer_admission_from_record(proposed_record)
             if proposed == current_admission:
                 if len(governed) != 1 or not proposed_record.content.get("draining", False):
                     raise SemanticWriterAdmissionError("writer drain freeze is invalid")
@@ -4021,7 +4021,7 @@ def _is_activated_observation_ledger_write(
         current_head_record = next(record for record in current if record.source_kind == "semantic_ingestion_observation_ledger_head")
         current_head = validate_registered_artifact(current_head_record.content["artifact"].encode("utf-8"), schema_id="ObservationLedgerHead", history=history, limits=limits)
         writer_record = next(record for record in current if record.memory_id == writer_admission_memory_id())
-        admission, manifest = _from_record(writer_record)
+        admission, manifest = writer_admission_from_record(writer_record)
         if (
             type(entry) is not ObservationLedgerEntry
             or type(next_head) is not ObservationLedgerHead
@@ -4177,7 +4177,7 @@ def _is_activated_preterminal_write(
     ]
     if len(controls) != 1:
         try:
-            current_admission, _ = _from_record(next(
+            current_admission, _ = writer_admission_from_record(next(
                 record for record in current if record.memory_id == writer_admission_memory_id()
             ))
         except (StopIteration, SemanticWriterAdmissionError):
@@ -4192,7 +4192,7 @@ def _is_activated_preterminal_write(
             _is_bootstrap_graph_v3_epoch_transition_write(governed, current),
         ))
     try:
-        current_admission, _ = _from_record(next(
+        current_admission, _ = writer_admission_from_record(next(
             record for record in current if record.memory_id == writer_admission_memory_id()
         ))
         binding = SemanticWriterCommitBinding.model_validate(
@@ -4242,7 +4242,7 @@ def _is_activated_preterminal_write(
         return False
 
 
-def _from_record(record: CanonicalMemoryRecord) -> tuple[SemanticWriterAdmission, SemanticRecordOwnershipManifest]:
+def writer_admission_from_record(record: CanonicalMemoryRecord) -> tuple[SemanticWriterAdmission, SemanticRecordOwnershipManifest]:
     if (
         record.source_kind != "semantic_ingestion_writer_admission"
         or record.content.get("semantic_ingestion_kind") != "writer_admission"

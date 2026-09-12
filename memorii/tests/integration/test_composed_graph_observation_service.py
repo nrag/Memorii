@@ -40,7 +40,7 @@ from memorii.core.memory_evolution.graph_observation_public_contracts import (
     GraphObservationRequest,
     IngestionTimeAttestationPage,
     IngestionTimeAttestationRequest,
-    _attestation_order_key,
+    attestation_order_key,
 )
 from memorii.core.memory_evolution.models import MemoryScope
 from memorii.core.memory_evolution.observation_activation_runtime import (
@@ -359,7 +359,7 @@ def test_configured_service_observe_ingestion_time_attestations_returns_real_pag
         expected_start = page.stream_end_position
         cursor = page.next_cursor
         pages += 1
-    keys = [_attestation_order_key(item) for item in attestations]
+    keys = [attestation_order_key(item) for item in attestations]
     assert keys == sorted(set(keys))
     assert {item.kind for item in attestations} == {
         "source_retention", "transaction_group_commit",

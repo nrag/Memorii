@@ -323,7 +323,7 @@ def test_inter_read_mutation_rejects_without_bypassing_file_verifier(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     configuration, history, _ = _signed_package(tmp_path, monkeypatch)
-    read = package_verifier._read_whole_file
+    read = package_verifier.read_whole_file
     mutated = False
 
     def mutate(descriptor, path, limit):
@@ -334,7 +334,7 @@ def test_inter_read_mutation_rejects_without_bypassing_file_verifier(
             (configuration.deployment_configuration.installation_root / path).write_bytes(b"changed")
         return raw
 
-    monkeypatch.setattr(package_verifier, "_read_whole_file", mutate)
+    monkeypatch.setattr(package_verifier, "read_whole_file", mutate)
     with pytest.raises(ObservationActivationTargetConfigurationError):
         resolve_verified_observation_activation_target(configuration, history)
     assert mutated

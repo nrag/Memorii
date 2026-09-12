@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from memorii.core.memory_evolution.ingestion_contracts import _length_prefixed
+from memorii.core.memory_evolution.ingestion_contracts import length_prefixed
 from memorii.core.memory_evolution.projection_binding import ProjectionHistoryReplayBinding
 from memorii.core.memory_evolution.projection_history import (
     TemporalProjectionPublication,
@@ -65,7 +65,7 @@ def publication_identity_digest(
     if canonical_event_batch.graph_delta_digest != canonical_graph_delta.delta_digest:
         raise ValueError("native projection publication graph/event coordinates are substituted")
     return sha256(
-        _length_prefixed(
+        length_prefixed(
             _IDENTITY_DOMAIN,
             source_operation_id.encode("utf-8"),
             transaction_group_id.encode("utf-8"),

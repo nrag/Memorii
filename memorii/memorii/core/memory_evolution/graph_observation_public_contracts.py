@@ -258,7 +258,7 @@ class IngestionTimeObservationSnapshot(_ClosedPublicContract):
         )
         if self.memory_plane_write_revision != self.resolved_cohort.memory_plane_write_revision:
             raise ValueError("ingestion-time snapshot write revision is invalid")
-        attestation_keys = tuple(_attestation_order_key(value) for value in self.stream)
+        attestation_keys = tuple(attestation_order_key(value) for value in self.stream)
         if attestation_keys != tuple(sorted(set(attestation_keys))):
             raise ValueError("ingestion-time snapshot stream is invalid")
         return self
@@ -275,7 +275,7 @@ def _validate_page_positions(*, start: int, end: int, count: int) -> None:
         raise ValueError("graph observation page positions are invalid")
 
 
-def _attestation_order_key(
+def attestation_order_key(
     value: ProductionIngestionTimeAttestation,
 ) -> tuple[str, str, str, str, str]:
     if isinstance(value, SourceRetentionTimeAttestation):
@@ -354,7 +354,7 @@ class IngestionTimeAttestationPage(_ClosedPublicContract):
     @model_validator(mode="after")
     def _validate_coordinates(self) -> IngestionTimeAttestationPage:
         _validate_page_positions(start=self.stream_start_position, end=self.stream_end_position, count=len(self.attestations))
-        attestation_keys = tuple(_attestation_order_key(value) for value in self.attestations)
+        attestation_keys = tuple(attestation_order_key(value) for value in self.attestations)
         if (
             len(self.attestations) > self.total_page_size
             or attestation_keys != tuple(sorted(set(attestation_keys)))

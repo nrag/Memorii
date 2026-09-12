@@ -18,8 +18,8 @@ from types import SimpleNamespace
 
 import pytest
 from memorii.core.memory_evolution.atomic_store import (
-    _group_commit_seal_member_id,
-    _source_retention_seal_member_id,
+    group_commit_seal_member_id,
+    source_retention_seal_member_id,
 )
 from memorii.core.memory_evolution.graph_effect_contracts import (
     IngestionObservationDelta,
@@ -47,7 +47,7 @@ from memorii.core.memory_evolution.graph_observation_public_contracts import (
     GraphObservationRequestCoordinates,
     IngestionTimeAttestationRequest,
     IngestionTimeAttestationRequestCoordinates,
-    _attestation_order_key,
+    attestation_order_key,
 )
 from memorii.core.memory_evolution.graph_observation_snapshot_contracts import (
     GraphObservationRecordKey,
@@ -870,12 +870,12 @@ def test_ingestion_time_input_resolves_sealed_attestations(backend):
     transaction-group-commit seal per committed group (bound to the group's
     locator, operation set, applied delta digest and persisted batch digest),
     every artifact naming the store's composed clock identity, emitted exactly
-    in the registered ``_attestation_order_key`` order.
+    in the registered ``attestation_order_key`` order.
     """
     cohort = _time_input(backend)
     attestations = cohort.stream
     assert attestations
-    keys = [_attestation_order_key(item) for item in attestations]
+    keys = [attestation_order_key(item) for item in attestations]
     assert keys == sorted(set(keys))
     kinds = [item.kind for item in attestations]
     assert kinds == sorted(kinds)
@@ -887,7 +887,7 @@ def test_ingestion_time_input_resolves_sealed_attestations(backend):
         if record.memory_id == finalization.source_id
     )
     source = next(item for item in attestations if item.kind == "source_retention")
-    assert source.attestation_id == _source_retention_seal_member_id(
+    assert source.attestation_id == source_retention_seal_member_id(
         finalization.delivery_key_digest
     )
     assert source.source_id == finalization.source_id
@@ -910,7 +910,7 @@ def test_ingestion_time_input_resolves_sealed_attestations(backend):
         batch for batch in backend.authority.event_batches
         if batch.transaction_group_id == entry.delta.transaction_group_id
     )
-    assert group.attestation_id == _group_commit_seal_member_id(
+    assert group.attestation_id == group_commit_seal_member_id(
         entry.result_locator.immutable_record_id
     )
     assert group.source_id == entry.delta.source_id
@@ -1068,7 +1068,7 @@ def _seal_schema_override(backend, monkeypatch, *, group_schema):
 
 def test_ingestion_time_absent_group_seal_member_denies(backend):
     """A tampered snapshot missing the group seal member denies the cohort."""
-    member_id = _group_commit_seal_member_id(
+    member_id = group_commit_seal_member_id(
         backend.group_entry.result_locator.immutable_record_id
     )
     stripped = dataclasses.replace(backend.snapshot, records=tuple(
@@ -1083,7 +1083,7 @@ def test_ingestion_time_absent_group_seal_member_denies(backend):
 def test_ingestion_time_substituted_source_seal_member_denies(backend):
     """A tampered seal-member artifact fails its registered validation."""
     finalization = backend.finalization_entry.delta
-    member_id = _source_retention_seal_member_id(finalization.delivery_key_digest)
+    member_id = source_retention_seal_member_id(finalization.delivery_key_digest)
     member = next(
         record for record in backend.snapshot.records if record.memory_id == member_id
     )
@@ -1237,19 +1237,19 @@ def test_ingestion_time_order_key_contract():
         applied_graph_delta_digest="3" * 64, clock_identity="clock:1",
         committed_batch_digest="4" * 64, attestation_digest="5" * 64,
     )
-    assert _attestation_order_key(source) == (
+    assert attestation_order_key(source) == (
         "source_retention", "source:1", "fence:1", "", "seal:a",
     )
-    assert _attestation_order_key(group) == (
+    assert attestation_order_key(group) == (
         "transaction_group_commit", "source:1", "fence:1", "group:2", "seal:b",
     )
-    assert _attestation_order_key(source) < _attestation_order_key(group)
+    assert attestation_order_key(source) < attestation_order_key(group)
     later_group = group.model_copy(update={"transaction_group_id": "group:3"})
-    assert _attestation_order_key(group) < _attestation_order_key(later_group)
+    assert attestation_order_key(group) < attestation_order_key(later_group)
     later_fence = source.model_copy(update={"operation_fence_id": "fence:2"})
-    assert _attestation_order_key(source) < _attestation_order_key(later_fence)
+    assert attestation_order_key(source) < attestation_order_key(later_fence)
     later_id = source.model_copy(update={"attestation_id": "seal:z"})
-    assert _attestation_order_key(source) < _attestation_order_key(later_id)
+    assert attestation_order_key(source) < attestation_order_key(later_id)
 
 
 @pytest.mark.parametrize("cursor", (None, "untrusted-token"))

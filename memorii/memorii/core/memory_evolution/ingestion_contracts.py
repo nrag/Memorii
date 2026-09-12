@@ -312,7 +312,7 @@ def _hashable_ctv_value(value: Any) -> Any:
 def _digest(domain: bytes, *parts: bytes) -> str:
     """Hash explicit length-delimited fields so identity inputs cannot alias."""
 
-    return sha256(_length_prefixed(domain, *parts)).hexdigest()
+    return sha256(length_prefixed(domain, *parts)).hexdigest()
 
 
 def normalize_delivery_id(value: str) -> str:
@@ -1368,13 +1368,13 @@ def decode_typed_value(
     return result
 
 
-def _length_prefixed(*parts: bytes) -> bytes:
+def length_prefixed(*parts: bytes) -> bytes:
     return b"".join(len(part).to_bytes(8, "big") + part for part in parts)
 
 
 def artifact_preimage(binding: CanonicalTypedValueProfileBinding, canonical_value_bytes: bytes) -> bytes:
     binding.validate()
-    return _length_prefixed(
+    return length_prefixed(
         _ARTIFACT_DOMAIN,
         binding.profile_id.encode("utf-8"),
         str(binding.profile_version).encode("ascii"),

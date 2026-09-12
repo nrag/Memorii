@@ -1372,12 +1372,12 @@ class SemanticIngestionAtomicStore:
         )
 
     def _activation_snapshot_admission(self, snapshot: tuple[CanonicalMemoryRecord, ...]):
-        from memorii.core.memory_evolution.writer_admission import _from_record
+        from memorii.core.memory_evolution.writer_admission import writer_admission_from_record
         records = tuple(record for record in snapshot if record.memory_id == writer_admission_memory_id())
         if len(records) != 1 or len({record.memory_id for record in snapshot}) != len(snapshot):
             raise PreplanningStoreError("observation ledger writer snapshot is absent or ambiguous")
         try:
-            admission, manifest = _from_record(records[0])
+            admission, manifest = writer_admission_from_record(records[0])
         except SemanticWriterAdmissionError as exc:
             raise PreplanningStoreError("observation ledger writer snapshot is corrupt") from exc
         return admission, manifest, records[0]
@@ -2275,7 +2275,7 @@ class SemanticIngestionAtomicStore:
             emit_registered_observation_artifact,
         )
 
-        member_id = _source_retention_seal_member_id(
+        member_id = source_retention_seal_member_id(
             admission.delivery_identity.delivery_key_digest
         )
         artifact = emit_registered_observation_artifact(
@@ -2333,7 +2333,7 @@ class SemanticIngestionAtomicStore:
         history, _publication = authority
         if (
             existing.memory_id
-            != _source_retention_seal_member_id(
+            != source_retention_seal_member_id(
                 prepared.accepted.delivery_identity.delivery_key_digest
             )
             or existing.source_kind != "semantic_ingestion_source_retention_attestation"
@@ -2405,7 +2405,7 @@ class SemanticIngestionAtomicStore:
         """
 
         member = self._memory_plane.get_record(
-            _source_retention_seal_member_id(delivery_key_digest)
+            source_retention_seal_member_id(delivery_key_digest)
         )
         if member is None:
             return None
@@ -12589,7 +12589,7 @@ class SemanticIngestionAtomicStore:
 
         core = reload.persisted_result.core
         committed = core.disposition == "committed"
-        member = snapshot_records.get(_group_commit_seal_member_id(record.memory_id))
+        member = snapshot_records.get(group_commit_seal_member_id(record.memory_id))
         if not committed:
             if (
                 core.transaction_group_commit_attestation_digest is not None
@@ -13429,7 +13429,7 @@ class SemanticIngestionAtomicStore:
                 if seal_authority is not None and ledger_authority is not None:
                     group_attestation, group_seal_record = _mint_group_commit_seal_member(
                         authority=seal_authority,
-                        attestation_id=_group_commit_seal_member_id(primary_id),
+                        attestation_id=group_commit_seal_member_id(primary_id),
                         source_id=request.operation_fence_binding.source_id,
                         operation_fence_id=(
                             request.operation_fence_binding.operation_fence_id
@@ -17486,12 +17486,12 @@ _INGESTION_TIME_SEAL_SCHEMA_IDS = (
 )
 
 
-def _source_retention_seal_member_id(delivery_key_digest: str) -> str:
+def source_retention_seal_member_id(delivery_key_digest: str) -> str:
     """The admission-evidence family member id for the retention seal."""
     return f"semantic_ingestion:admission:{delivery_key_digest}:retention_attestation"
 
 
-def _group_commit_seal_member_id(primary_id: str) -> str:
+def group_commit_seal_member_id(primary_id: str) -> str:
     """The `primary_id + ":suffix"` member id for the group-commit seal."""
     return f"{primary_id}:group_commit_attestation"
 

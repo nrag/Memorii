@@ -352,12 +352,12 @@ def _build_graph_revision_delta(
 def _snapshot_after_records(
     records: tuple[CanonicalGraphRecord, ...],
 ) -> tuple[SnapshotGraphRecord, ...]:
-    from memorii.core.memory_evolution.graph_planning import _snapshot_record
+    from memorii.core.memory_evolution.graph_planning import snapshot_record
     from memorii.core.memory_evolution.graph_records import canonical_graph_codec_manifest
 
     manifest = {entry.record_kind: entry for entry in canonical_graph_codec_manifest().entries}
     return tuple(
-        _snapshot_record(record, manifest[record.record_kind])
+        snapshot_record(record, manifest[record.record_kind])
         for record in records
     )
 

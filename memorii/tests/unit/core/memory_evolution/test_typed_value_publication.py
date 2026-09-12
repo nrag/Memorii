@@ -45,7 +45,7 @@ def _publication_inputs(
     (tmp_path / "decoder").mkdir(exist_ok=True)
     (tmp_path / "decoder" / "native.py").write_bytes(decoder_body)
     decoder_manifest = _raw({"role": "decoder_source_manifest", "profile_id": "semantic_ingestion_typed_value", "profile_version": "3", "files": [{"decoder_id": "decode-x", "source_file_id": "native", "relative_path": "decoder/native.py", "sha256": sha256(decoder_body).hexdigest()}]})
-    snapshot = sha256(compilation._length_prefixed(b"semantic-ingestion-profile3-decoder-source-snapshot", b"decode-x", b"1", b"native", b"decoder/native.py", decoder_body)).hexdigest()
+    snapshot = sha256(compilation.length_prefixed(b"semantic-ingestion-profile3-decoder-source-snapshot", b"decode-x", b"1", b"native", b"decoder/native.py", decoder_body)).hexdigest()
     sources = [
         _source_role("grammar", _grammar())[1],
         _source_role("schema/X/1", {"role": "schema", "schema_id": "X", "schema_version": "1", "root_kind": "model", "fields": [{"name": "value", "type": {"kind": "bool"}, "integrity_role": "ordinary"}]})[1],

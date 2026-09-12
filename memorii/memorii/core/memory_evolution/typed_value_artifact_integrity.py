@@ -23,7 +23,7 @@ from memorii.core.memory_evolution.typed_value_artifact_reader import (
     read_protected_typed_value_artifact,
     validate_materialize_and_reencode_checked_typed_value_artifact,
 )
-from memorii.core.memory_evolution.typed_value_body_validation import _canonical_bytes
+from memorii.core.memory_evolution.typed_value_body_validation import canonical_bytes
 from memorii.core.memory_evolution.typed_value_declarations import (
     DigestSignatureRole,
     ExternalSigningPreimagePolicy,
@@ -178,7 +178,7 @@ def registered_self_digest_preimage(
     return _length_prefixed(
         policy.digest_domain.encode("utf-8"),
         *_binding_members(binding),
-        _canonical_bytes(_root_without_field(tree, policy.digest_field)),
+        canonical_bytes(_root_without_field(tree, policy.digest_field)),
     )
 
 
@@ -193,7 +193,7 @@ def registered_signature_only_message(
     preimage = _length_prefixed(
         policy.signature_domain.encode("utf-8"),
         *_binding_members(binding),
-        _canonical_bytes(_root_without_field(tree, policy.signature_field)),
+        canonical_bytes(_root_without_field(tree, policy.signature_field)),
     )
     return _length_prefixed(
         policy.signature_purpose.encode("utf-8"),

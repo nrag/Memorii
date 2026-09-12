@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 from typing import TypeVar
 
-from memorii.core.memory_evolution.ingestion_contracts import _length_prefixed
+from memorii.core.memory_evolution.ingestion_contracts import length_prefixed
 from memorii.core.memory_evolution.typed_value_declarations import (
     CollectionTypeExpr,
     DeclarationRole,
@@ -469,7 +469,7 @@ def _policy_digest(role_kind: str, root: Coordinate, closure: tuple[Coordinate, 
 
 
 def _digest(*parts: bytes) -> str:
-    return sha256(_length_prefixed(*parts)).hexdigest()
+    return sha256(length_prefixed(*parts)).hexdigest()
 
 
 def _text(value: str) -> bytes:

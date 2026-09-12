@@ -20,8 +20,8 @@ from typing import TYPE_CHECKING, Literal, TypeAlias, TypeVar
 from memorii.core.memory_evolution.atomic_store import (
     DetachedSemanticObservationAuthority,
     SemanticIngestionAtomicStore,
-    _group_commit_seal_member_id,
-    _source_retention_seal_member_id,
+    group_commit_seal_member_id,
+    source_retention_seal_member_id,
 )
 from memorii.core.memory_evolution.graph_effect_contracts import (
     CanonicalIngestionObservationRecord,
@@ -58,7 +58,7 @@ from memorii.core.memory_evolution.graph_observation_public_contracts import (
     GraphObservationAuthorizationDecision,
     GraphObservationRequestCoordinates,
     IngestionTimeAttestationRequestCoordinates,
-    _attestation_order_key,
+    attestation_order_key,
 )
 from memorii.core.memory_evolution.graph_observation_records import (
     ObservedTemporalClaimProjection,
@@ -610,8 +610,8 @@ def _sealed_ingestion_time_attestations(
         )
         if seal is not None:
             emitted.append(seal)
-    ordered = tuple(sorted(emitted, key=_attestation_order_key))
-    order_keys = tuple(_attestation_order_key(item) for item in ordered)
+    ordered = tuple(sorted(emitted, key=attestation_order_key))
+    order_keys = tuple(attestation_order_key(item) for item in ordered)
     if len(set(order_keys)) != len(order_keys):
         raise ObservationCohortUnavailableError(
             "cohort retains a duplicated ingestion-time attestation identity"
@@ -686,7 +686,7 @@ def _source_retention_seal(
         raise ObservationCohortUnavailableError(
             "schema-2 source outcome lacks its retention attestation digest"
         )
-    member = records.get(_source_retention_seal_member_id(final.delivery_key_digest))
+    member = records.get(source_retention_seal_member_id(final.delivery_key_digest))
     if member is None:
         raise ObservationCohortUnavailableError(
             "source retention seal member is absent"
@@ -781,7 +781,7 @@ def _group_commit_seal(
         raise ObservationCohortUnavailableError(
             "group result digest join is substituted"
         )
-    member = records.get(_group_commit_seal_member_id(locator.immutable_record_id))
+    member = records.get(group_commit_seal_member_id(locator.immutable_record_id))
     if core.disposition != "committed":
         if core.transaction_group_commit_attestation_digest is not None or member is not None:
             raise ObservationCohortUnavailableError(

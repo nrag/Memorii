@@ -40,7 +40,7 @@ from memorii.core.memory_evolution.graph_observation_public_contracts import (
     IngestionTimeAttestationRequestCoordinates,
     IngestionTimeAttestationResponse,
     IngestionTimeObservationSnapshot,
-    _attestation_order_key,
+    attestation_order_key,
 )
 from memorii.core.memory_evolution.graph_observation_records import (
     ObservedTemporalClaimProjection,
@@ -472,7 +472,7 @@ class AuthenticatedGraphObservationPagingRuntime:
             or preimage.authorization_policy_revision != decision.policy_revision
         ):
             raise GraphObservationPagingError("ingestion cohort input coordinates are substituted")
-        order = tuple(_attestation_order_key(item) for item in cohort_input.stream)
+        order = tuple(attestation_order_key(item) for item in cohort_input.stream)
         if len(cohort_input.stream) > self._retention_budget.maximum_stream_records:
             raise ObservationSnapshotCapacityError("ingestion cohort stream exceeds protected capacity")
         if order != tuple(sorted(set(order))):

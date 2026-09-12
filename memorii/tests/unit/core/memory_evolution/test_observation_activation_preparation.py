@@ -112,7 +112,7 @@ def test_preparation_inventory_caps_are_checked_before_io(monkeypatch: pytest.Mo
     def reached_io(_path: Path) -> int:
         raise OSError("inventory accepted before IO")
 
-    monkeypatch.setattr(owner, "_open_canonical_source_root", reached_io)
+    monkeypatch.setattr(owner, "open_canonical_source_root", reached_io)
     if excess:
         with pytest.raises(ObservationActivationTargetError, match="package_inventory_limit"):
             owner._installed_memorii_package_files(configuration)

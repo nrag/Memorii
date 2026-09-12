@@ -26,8 +26,8 @@ from memorii.core.memory_evolution.observation_activation_target import (
     parse_observation_activation_target_manifest,
 )
 from memorii.core.memory_evolution.typed_value_decoder_sources import (
-    _open_canonical_source_root,
-    _read_whole_file,
+    open_canonical_source_root,
+    read_whole_file,
 )
 from memorii.core.memory_evolution.typed_value_publication import VerifiedTypedValuePublication
 
@@ -238,7 +238,7 @@ def _installed_memorii_package_files(configuration: DeploymentConfiguration) -> 
     if len(selected) > limits.maximum_package_files or sum(row.size for row in selected) > limits.maximum_payload_bytes:
         raise ObservationActivationTargetError("observation_activation_preparation_package_inventory_limit")
     rows: list[PackageFileRow] = []
-    descriptor = _open_canonical_source_root(configuration.installation_root)
+    descriptor = open_canonical_source_root(configuration.installation_root)
     try:
         for installed in selected:
             relative = installed.installed_relative_path.removeprefix("site/")
@@ -246,7 +246,7 @@ def _installed_memorii_package_files(configuration: DeploymentConfiguration) -> 
                 raise ObservationActivationTargetError("observation_activation_preparation_package_bytecode")
             if installed.size > _MAXIMUM_PACKAGE_FILE_BYTES:
                 raise ObservationActivationTargetError("observation_activation_preparation_package_file_too_large")
-            raw = _read_whole_file(descriptor, relative, _MAXIMUM_PACKAGE_FILE_BYTES)
+            raw = read_whole_file(descriptor, relative, _MAXIMUM_PACKAGE_FILE_BYTES)
             row = PackageFileRow(relative, sha256(raw).hexdigest(), len(raw))
             if (row.sha256, row.size) != (installed.sha256, installed.size):
                 raise ObservationActivationTargetError("observation_activation_preparation_package_pin_mismatch")

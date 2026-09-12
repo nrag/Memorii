@@ -14,7 +14,7 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Final, Literal
 
-from memorii.core.memory_evolution.ingestion_contracts import _length_prefixed
+from memorii.core.memory_evolution.ingestion_contracts import length_prefixed
 from memorii.core.memory_evolution.typed_value_decoder_sources import (
     FrozenJsonValue,
     ProtectedDecoderSourceManifestLimits,
@@ -371,7 +371,7 @@ def deployment_configuration_identity(configuration: DeploymentConfiguration) ->
                 _ascii(row.sha256),
             )
         )
-    return sha256(_length_prefixed(*parts)).hexdigest()
+    return sha256(length_prefixed(*parts)).hexdigest()
 
 
 def payload_inventory_digest(package_files: Iterable[PackageFileRow]) -> str:
@@ -386,7 +386,7 @@ def payload_inventory_digest(package_files: Iterable[PackageFileRow]) -> str:
     parts = [_PAYLOAD_DOMAIN]
     for row in rows:
         parts.extend((_utf8(row.relative_path), _ascii_decimal(row.size), _ascii(row.sha256)))
-    return sha256(_length_prefixed(*parts)).hexdigest()
+    return sha256(length_prefixed(*parts)).hexdigest()
 
 
 def derive_observation_activation_target_identity(
@@ -427,10 +427,10 @@ def derive_observation_activation_target_identity(
         payload,
         environment,
         sha256(
-            _length_prefixed(_WRITER_DOMAIN, _ascii(payload), _ascii(environment), _ascii(memorii_wheel_sha256))
+            length_prefixed(_WRITER_DOMAIN, _ascii(payload), _ascii(environment), _ascii(memorii_wheel_sha256))
         ).hexdigest(),
-        sha256(_length_prefixed(*schema_parts)).hexdigest(),
-        sha256(_length_prefixed(*codec_parts)).hexdigest(),
+        sha256(length_prefixed(*schema_parts)).hexdigest(),
+        sha256(length_prefixed(*codec_parts)).hexdigest(),
     )
 
 

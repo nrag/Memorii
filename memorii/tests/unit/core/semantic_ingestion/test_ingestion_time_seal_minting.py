@@ -20,7 +20,7 @@ from memorii.core.memory_evolution.admission import (
 from memorii.core.memory_evolution.atomic_store import (
     PreplanningStoreError,
     SemanticIngestionAtomicStore,
-    _source_retention_seal_member_id,
+    source_retention_seal_member_id,
 )
 from memorii.core.memory_evolution.graph_ingestion_time_contracts import (
     SourceRetentionTimeAttestation,
@@ -124,7 +124,7 @@ def _sealed_store(tmp_path, *, seal_schemas=SEAL_SCHEMAS):
 
 def _seal_member(plane: MemoryPlaneService, prepared):
     return plane.get_record(
-        _source_retention_seal_member_id(
+        source_retention_seal_member_id(
             prepared.accepted.delivery_identity.delivery_key_digest
         )
     )
@@ -146,7 +146,7 @@ def _decoded_seal(plane: MemoryPlaneService, store, prepared) -> SourceRetention
 def test_publish_admitted_source_mints_the_seal_in_the_same_cas(tmp_path) -> None:
     plane, store, binding, _clock = _sealed_store(tmp_path)
     prepared = _prepared(plane)
-    member_id = _source_retention_seal_member_id(
+    member_id = source_retention_seal_member_id(
         prepared.accepted.delivery_identity.delivery_key_digest
     )
     assert plane.get_record(member_id) is None
@@ -215,7 +215,7 @@ def test_unsealed_store_admits_without_any_member(tmp_path) -> None:
 def test_publish_cas_loser_mints_no_seal(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     plane, store, binding, _clock = _sealed_store(tmp_path)
     prepared = _prepared(plane)
-    member_id = _source_retention_seal_member_id(
+    member_id = source_retention_seal_member_id(
         prepared.accepted.delivery_identity.delivery_key_digest
     )
     store.publish_admitted_source(prepared=prepared, writer_binding=binding)
@@ -252,7 +252,7 @@ def test_exact_redelivery_reuses_winner_seal_bytes_after_graph_revision(
 ) -> None:
     plane, store, binding, clock = _sealed_store(tmp_path)
     prepared = _prepared(plane)
-    member_id = _source_retention_seal_member_id(
+    member_id = source_retention_seal_member_id(
         prepared.accepted.delivery_identity.delivery_key_digest
     )
     store.publish_admitted_source(prepared=prepared, writer_binding=binding)
@@ -282,7 +282,7 @@ def test_tampered_seal_member_fails_the_redelivery_closed(
 ) -> None:
     plane, store, binding, _clock = _sealed_store(tmp_path)
     prepared = _prepared(plane)
-    member_id = _source_retention_seal_member_id(
+    member_id = source_retention_seal_member_id(
         prepared.accepted.delivery_identity.delivery_key_digest
     )
     store.publish_admitted_source(prepared=prepared, writer_binding=binding)
@@ -320,7 +320,7 @@ def test_partial_publication_without_a_member_fails_closed(
 ) -> None:
     plane, store, binding, _clock = _sealed_store(tmp_path)
     prepared = _prepared(plane)
-    member_id = _source_retention_seal_member_id(
+    member_id = source_retention_seal_member_id(
         prepared.accepted.delivery_identity.delivery_key_digest
     )
     store.publish_admitted_source(prepared=prepared, writer_binding=binding)

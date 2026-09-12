@@ -17,7 +17,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import TypeAlias, cast
 
-from memorii.core.memory_evolution.ingestion_contracts import _length_prefixed
+from memorii.core.memory_evolution.ingestion_contracts import length_prefixed
 
 _ASCII_ID = re.compile(r"[A-Za-z0-9._/-]+\Z")
 _PATH_SEGMENT = re.compile(r"[A-Za-z0-9._-]+\Z")
@@ -206,14 +206,14 @@ def verify_decoder_source_manifest(
     """Verify named whole files beneath a protected canonical source root."""
     manifest = parse_decoder_source_manifest(raw_bytes, limits=limits)
     forbidden = _validated_supplemental_forbidden_paths(forbidden_relative_paths)
-    root_descriptor = _open_canonical_source_root(source_package_root)
+    root_descriptor = open_canonical_source_root(source_package_root)
     verified: list[VerifiedDecoderSourceFile] = []
     shared_paths: dict[str, tuple[str, bytes]] = {}
     try:
         for row in manifest.files:
             if _is_forbidden_source_path(row.relative_path, forbidden):
                 raise DecoderSourceManifestError("decoder_source_manifest.generated_source_forbidden")
-            raw_file = _read_whole_file(root_descriptor, row.relative_path, limits.maximum_file_bytes)
+            raw_file = read_whole_file(root_descriptor, row.relative_path, limits.maximum_file_bytes)
             _validate_utf8(raw_file, "decoder_source_manifest.source_file_utf8_invalid")
             actual_digest = sha256(raw_file).hexdigest()
             if actual_digest != row.sha256:
@@ -277,12 +277,12 @@ def capture_decoder_source_files(
     forbidden = _validated_supplemental_forbidden_paths(forbidden_relative_paths)
     if any(_is_forbidden_source_path(row.relative_path, forbidden) for row in rows):
         raise DecoderSourceManifestError("decoder_source_manifest.generated_source_forbidden")
-    root_descriptor = _open_canonical_source_root(source_package_root)
+    root_descriptor = open_canonical_source_root(source_package_root)
     try:
         captured: list[VerifiedDecoderSourceFile] = []
         shared_paths: dict[str, tuple[str, bytes]] = {}
         for row in rows:
-            raw_file = _read_whole_file(root_descriptor, row.relative_path, limits.maximum_file_bytes)
+            raw_file = read_whole_file(root_descriptor, row.relative_path, limits.maximum_file_bytes)
             _validate_utf8(raw_file, "decoder_source_manifest.source_file_utf8_invalid")
             prior = shared_paths.get(row.relative_path)
             if prior is not None and prior != (row.source_file_id, raw_file):
@@ -354,11 +354,11 @@ def _snapshots(files: tuple[VerifiedDecoderSourceFile, ...]) -> tuple[DecoderSou
         parts: list[bytes] = [_SNAPSHOT_DOMAIN, decoder_id.encode("utf-8"), str(len(rows)).encode("ascii")]
         for row in rows:
             parts.extend((row.source_file_id.encode("utf-8"), row.relative_path.encode("ascii"), row.raw_bytes))
-        snapshots.append(DecoderSourceSnapshot(decoder_id, sha256(_length_prefixed(*parts)).hexdigest(), rows))
+        snapshots.append(DecoderSourceSnapshot(decoder_id, sha256(length_prefixed(*parts)).hexdigest(), rows))
     return tuple(snapshots)
 
 
-def _open_canonical_source_root(source_package_root: Path) -> int:
+def open_canonical_source_root(source_package_root: Path) -> int:
     if not isinstance(source_package_root, Path) or not source_package_root.is_absolute():
         raise DecoderSourceManifestError("decoder_source_manifest.source_root_must_be_absolute")
     try:
@@ -412,7 +412,7 @@ def _is_forbidden_source_path(relative_path: str, supplemental_forbidden_paths: 
     )
 
 
-def _read_whole_file(root_descriptor: int, relative_path: str, maximum_file_bytes: int) -> bytes:
+def read_whole_file(root_descriptor: int, relative_path: str, maximum_file_bytes: int) -> bytes:
     segments = relative_path.split("/")
     directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
     file_flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
