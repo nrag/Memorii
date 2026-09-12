@@ -20,10 +20,18 @@ from typing import TYPE_CHECKING, Literal, TypeAlias, TypeVar
 from memorii.core.memory_evolution.atomic_store import (
     DetachedSemanticObservationAuthority,
     SemanticIngestionAtomicStore,
+    _group_commit_seal_member_id,
+    _source_retention_seal_member_id,
 )
 from memorii.core.memory_evolution.graph_effect_contracts import (
     CanonicalIngestionObservationRecord,
     IngestionObservationDelta,
+    SourceFinalizationObservationDelta,
+)
+from memorii.core.memory_evolution.graph_ingestion_time_contracts import (
+    ProductionIngestionTimeAttestation,
+    SourceRetentionTimeAttestation,
+    TransactionGroupCommitTimeAttestation,
 )
 from memorii.core.memory_evolution.graph_observation_cohort import (
     ResolvedObservationMembership,
@@ -50,6 +58,7 @@ from memorii.core.memory_evolution.graph_observation_public_contracts import (
     GraphObservationAuthorizationDecision,
     GraphObservationRequestCoordinates,
     IngestionTimeAttestationRequestCoordinates,
+    _attestation_order_key,
 )
 from memorii.core.memory_evolution.graph_observation_records import (
     ObservedTemporalClaimProjection,
@@ -81,6 +90,12 @@ from memorii.core.memory_evolution.observation_activation_runtime import (
     derive_projection_observation_identity,
     emit_registered_observation_artifact,
     projection_observation_identity_root_selected,
+    validate_registered_artifact,
+)
+from memorii.core.memory_evolution.observation_ledger_contracts import (
+    ObservationGroupResultLocator,
+    ObservationLedgerActivation,
+    ObservationLedgerEntry,
 )
 from memorii.core.memory_evolution.projection_history import (
     ProjectionHistoryError,
@@ -99,14 +114,19 @@ from memorii.core.memory_evolution.typed_value_artifact_reader import ProtectedT
 from memorii.core.memory_evolution.typed_value_model_codec import TypedValueModelCodecCapacityError
 from memorii.core.memory_evolution.typed_value_publication import VerifiedTypedValuePublication
 from memorii.core.memory_evolution.typed_value_registry_history import ProtectedTypedValueRegistryHistory
+from memorii.core.memory_plane.models import CanonicalMemoryRecord
+from memorii.core.memory_plane.store import record_digest as _memory_record_digest
 from memorii.core.semantic_ingestion.contracts import (
+    BootstrapGraphGroupCommitReloadV3,
     BootstrapNativeActionStateEffectV3,
     BootstrapNativeCorrectionEffectV3,
     BootstrapNativeEvidenceProjectionV3,
     BootstrapNativeFactEffectV3,
     BootstrapNativeIdentityEffectV3,
     BootstrapNativeRetractionEffectV3,
+    decode_semantic_contract,
 )
+from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
 
 if TYPE_CHECKING:
     from memorii.core.memory_evolution.graph_effect_contracts import GraphRevisionDelta
@@ -197,14 +217,36 @@ class AtomicStoreGraphObservationCohortProvider:
         request: IngestionTimeAttestationRequestCoordinates, maximum_stream_records: int,
         maximum_snapshot_bytes: int,
     ) -> IngestionTimeObservationCohortInput:
-        # Persisted attestation authority is not present in the detached image's
-        # public contract yet.  Do not synthesize a time witness from timestamps.
-        raise ObservationCohortUnavailableError("persisted ingestion-time attestations are unavailable")
+        """Resolve the cohort's sealed attestations through verified retained joins.
+
+        Selection is only-from-bound-digests: a source seal is reached through
+        the finalization outcome's schema-2 ``source_retention_attestation_digest``
+        join, and a group seal through the retained schema-3 group core's
+        ``transaction_group_commit_attestation_digest`` join.  Legacy or
+        unsealed cohorts are typed denials, never empty pages and never
+        synthesized attestations; a cohort with no ingestion results at all is
+        a valid empty stream.  No timestamp is ever read as a time witness.
+        """
+        authority, membership = self._membership(snapshot, context, authorized_scope, request)
+        attestations = _sealed_ingestion_time_attestations(
+            atomic_store=self._atomic_store, reader_history=self._history,
+            limits=self._limits, snapshot_records=snapshot.records,
+            authority=authority, membership=membership,
+        )
+        if len(attestations) > maximum_stream_records:
+            raise ObservationCohortUnavailableError("observation stream record ceiling exceeded")
+        return IngestionTimeObservationCohortInput(
+            cohort_preimage=_ingestion_time_cohort_preimage(
+                authority, membership, decision,
+                snapshot_records=snapshot.records, history=self._history, limits=self._limits,
+            ),
+            stream=attestations,
+        )
 
     def _membership(
         self, snapshot: DetachedGraphObservationRecords,
         context: AuthenticatedGraphObservationContext, authorized_scope: MemoryScope,
-        request: GraphObservationRequestCoordinates,
+        request: GraphObservationRequestCoordinates | IngestionTimeAttestationRequestCoordinates,
     ) -> tuple[DetachedSemanticObservationAuthority, ResolvedObservationMembership]:
         authority = self._atomic_store.read_detached_observation_authority(
             write_revision=snapshot.memory_plane_write_revision, records=snapshot.records,
@@ -505,6 +547,370 @@ class AtomicStoreGraphObservationCohortProvider:
             observation_schema_fingerprint=_observation_schema_fingerprint(membership),
             changed_record_keys=keys, boundary_record_keys=boundary_keys,
         )
+
+
+_SealAttestationT = TypeVar(
+    "_SealAttestationT", SourceRetentionTimeAttestation, TransactionGroupCommitTimeAttestation,
+)
+_SEAL_MEMBER_CONTENT_KEYS = frozenset({"semantic_ingestion_kind", "artifact"})
+_GROUP_PRIMARY_CONTENT_KEYS = frozenset({"semantic_ingestion_kind", "request_hex", "reload_hex"})
+
+
+def _sealed_ingestion_time_attestations(
+    *, atomic_store: SemanticIngestionAtomicStore,
+    reader_history: ProtectedTypedValueRegistryHistory,
+    limits: ProtectedTypedValueArtifactReaderLimits,
+    snapshot_records: tuple[CanonicalMemoryRecord, ...],
+    authority: DetachedSemanticObservationAuthority,
+    membership: ResolvedObservationMembership,
+) -> tuple[ProductionIngestionTimeAttestation, ...]:
+    """Select and fully validate one cohort's sealed ingestion-time attestations.
+
+    Every attestation is reached only through its result-bound digest join and
+    validated against the exact retained record, terminal outcome, group core,
+    and committed event batch of the same snapshot under the store's seal
+    authority and composed clock identity.  Legacy or unsealed cohorts deny;
+    any missing, duplicated, substituted, mixed-fence, invalid-order, or
+    absent-digest anomaly denies the whole cohort.  A cohort with no ingestion
+    results at all yields an empty stream.
+    """
+    seal_authority = atomic_store.ingestion_time_seal_reader_authority()
+    if seal_authority is None:
+        raise ObservationCohortUnavailableError(
+            "ingestion-time seal publication is unavailable for this store"
+        )
+    seal_history, _seal_publication, clock_identity = seal_authority
+    if seal_history is not reader_history:
+        raise ObservationCohortUnavailableError(
+            "ingestion-time seal authority differs from the reader's registry history"
+        )
+    records: dict[str, CanonicalMemoryRecord] = {}
+    for record in snapshot_records:
+        if record.memory_id in records:
+            raise ObservationCohortUnavailableError(
+                "detached snapshot retains a duplicated record identity"
+            )
+        records[record.memory_id] = record
+    emitted: list[ProductionIngestionTimeAttestation] = [
+        _source_retention_seal(
+            final, records=records, seal_history=seal_history,
+            clock_identity=clock_identity, limits=limits,
+        )
+        for final in membership.source_finalizations
+    ]
+    for entry in membership.group_entries:
+        delta = entry.delta
+        if not isinstance(delta, IngestionObservationDelta):
+            raise ObservationCohortUnavailableError(
+                "selected group entry does not name a terminal group"
+            )
+        seal = _group_commit_seal(
+            entry, records=records, authority=authority,
+            seal_history=seal_history, clock_identity=clock_identity, limits=limits,
+        )
+        if seal is not None:
+            emitted.append(seal)
+    ordered = tuple(sorted(emitted, key=_attestation_order_key))
+    order_keys = tuple(_attestation_order_key(item) for item in ordered)
+    if len(set(order_keys)) != len(order_keys):
+        raise ObservationCohortUnavailableError(
+            "cohort retains a duplicated ingestion-time attestation identity"
+        )
+    return ordered
+
+
+def _decode_seal_member(
+    member: CanonicalMemoryRecord,
+    *,
+    expected_type: type[_SealAttestationT], source_kind: str, ingestion_kind: str,
+    schema_id: str, history: ProtectedTypedValueRegistryHistory,
+    limits: ProtectedTypedValueArtifactReaderLimits,
+) -> _SealAttestationT:
+    """Decode one seal member's registered artifact after its exact record shape.
+
+    The member must be the immutable committed internal-control execution
+    record the minting CAS wrote, carrying exactly the registered artifact
+    bytes.  The registered decode re-verifies artifact integrity and the typed
+    contract's own time-order rules; any failure is a substituted member.
+    """
+    if (
+        member.source_kind != source_kind
+        or member.domain is not MemoryDomain.EXECUTION
+        or member.status is not CommitStatus.COMMITTED
+        or member.visibility is not MemoryRecordVisibility.INTERNAL_CONTROL
+        or set(member.content) != _SEAL_MEMBER_CONTENT_KEYS
+        or member.content.get("semantic_ingestion_kind") != ingestion_kind
+        or not isinstance(member.content.get("artifact"), str)
+    ):
+        raise ObservationCohortUnavailableError(
+            "ingestion-time seal member is substituted"
+        )
+    try:
+        value = validate_registered_artifact(
+            member.content["artifact"].encode("utf-8"),
+            schema_id=schema_id, history=history, limits=limits,
+        )
+    except ValueError as exc:
+        raise ObservationCohortUnavailableError(
+            "ingestion-time seal member is substituted"
+        ) from exc
+    if type(value) is not expected_type or value.attestation_id != member.memory_id:
+        raise ObservationCohortUnavailableError(
+            "ingestion-time seal member is substituted"
+        )
+    return value
+
+
+def _source_retention_seal(
+    final: SourceFinalizationObservationDelta,
+    *, records: Mapping[str, CanonicalMemoryRecord],
+    seal_history: ProtectedTypedValueRegistryHistory, clock_identity: str,
+    limits: ProtectedTypedValueArtifactReaderLimits,
+) -> SourceRetentionTimeAttestation:
+    """Resolve one finalization's admission seal through its schema-2 binding.
+
+    The chain is finalization delta -> schema-2 outcome ->
+    ``source_retention_attestation_digest`` -> admission member memory id ->
+    registered artifact, validated against the retained source record of the
+    same snapshot (retention instant and complete record digest), the cohort's
+    fence identity, and the store's composed clock.  An outcome whose writes
+    predate seals (schema 1) denies the cohort; nothing is ever synthesized.
+    """
+    outcome = final.source_outcome
+    if outcome.source_result_schema_version != 2:
+        raise ObservationCohortUnavailableError(
+            "legacy source finalization predates ingestion-time seals"
+        )
+    bound_digest = outcome.source_retention_attestation_digest
+    if bound_digest is None:
+        raise ObservationCohortUnavailableError(
+            "schema-2 source outcome lacks its retention attestation digest"
+        )
+    member = records.get(_source_retention_seal_member_id(final.delivery_key_digest))
+    if member is None:
+        raise ObservationCohortUnavailableError(
+            "source retention seal member is absent"
+        )
+    attestation = _decode_seal_member(
+        member, expected_type=SourceRetentionTimeAttestation,
+        source_kind="semantic_ingestion_source_retention_attestation",
+        ingestion_kind="source_retention_attestation",
+        schema_id="SourceRetentionTimeAttestation",
+        history=seal_history, limits=limits,
+    )
+    retained = records.get(final.source_id)
+    if retained is None:
+        raise ObservationCohortUnavailableError(
+            "retained source record is absent from the sealed snapshot"
+        )
+    if (
+        attestation.attestation_digest != bound_digest
+        or attestation.source_id != final.source_id
+        or attestation.operation_fence_id != final.operation_fence_id
+        or attestation.retained_at != retained.timestamp
+        or attestation.source_record_digest != _memory_record_digest(retained)
+        or attestation.clock_identity != clock_identity
+    ):
+        raise ObservationCohortUnavailableError(
+            "source retention seal does not bind its retained admission anchor"
+        )
+    return attestation
+
+
+def _group_commit_seal(
+    entry: ObservationLedgerEntry,
+    *, records: Mapping[str, CanonicalMemoryRecord],
+    authority: DetachedSemanticObservationAuthority,
+    seal_history: ProtectedTypedValueRegistryHistory, clock_identity: str,
+    limits: ProtectedTypedValueArtifactReaderLimits,
+) -> TransactionGroupCommitTimeAttestation | None:
+    """Resolve one group entry's seal through its schema-3 core binding.
+
+    The chain is group entry -> retained primary record -> reload ->
+    persisted result -> schema-3 core ``transaction_group_commit_attestation_digest``
+    -> group member memory id -> registered artifact, validated against the
+    entry's locator coordinates, the core's operation and revision fields, the
+    committed delta digest, and the persisted batch digest of the unique
+    retained event batch.  A group core at schema 1 or 2 denies the cohort.
+    A valid noncommitting group returns ``None`` (no seal exists to emit); one
+    that carries a seal anyway denies as a substituted publication.
+    """
+    delta = entry.delta
+    if not isinstance(delta, IngestionObservationDelta):
+        raise ObservationCohortUnavailableError(
+            "selected group entry does not name a terminal group"
+        )
+    locator = entry.result_locator
+    if not isinstance(locator, ObservationGroupResultLocator):
+        raise ObservationCohortUnavailableError(
+            "group entry result locator is substituted"
+        )
+    primary = records.get(locator.immutable_record_id)
+    if (
+        primary is None
+        or primary.source_kind != "semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+        or set(primary.content) != _GROUP_PRIMARY_CONTENT_KEYS
+        or primary.content.get("semantic_ingestion_kind")
+        != "bootstrap_graph_v3_group_commit_primary"
+    ):
+        raise ObservationCohortUnavailableError(
+            "group result primary record is absent or substituted"
+        )
+    try:
+        reload_contract = decode_semantic_contract(
+            bytes.fromhex(primary.content["reload_hex"]),
+            BootstrapGraphGroupCommitReloadV3,
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ObservationCohortUnavailableError(
+            "group result primary record is absent or substituted"
+        ) from exc
+    if reload_contract.group_result_schema_version != 3:
+        raise ObservationCohortUnavailableError(
+            "legacy group result predates ingestion-time seals"
+        )
+    core = reload_contract.persisted_result.core
+    if (
+        reload_contract.persisted_result.result_digest != entry.result_digest
+        or core.group_result_schema_version != 3
+        or reload_contract.source_operation_id != locator.source_operation_id
+        or reload_contract.transaction_group_id != locator.transaction_group_id
+        or reload_contract.operation_ids != locator.operation_ids
+        or reload_contract.request_ctv_digest != locator.request_ctv_digest
+    ):
+        raise ObservationCohortUnavailableError(
+            "group result digest join is substituted"
+        )
+    member = records.get(_group_commit_seal_member_id(locator.immutable_record_id))
+    if core.disposition != "committed":
+        if core.transaction_group_commit_attestation_digest is not None or member is not None:
+            raise ObservationCohortUnavailableError(
+                "noncommitting group result carries a group commit seal"
+            )
+        return None
+    if member is None:
+        raise ObservationCohortUnavailableError("group commit seal member is absent")
+    attestation = _decode_seal_member(
+        member, expected_type=TransactionGroupCommitTimeAttestation,
+        source_kind="semantic_ingestion_transaction_group_commit_attestation",
+        ingestion_kind="transaction_group_commit_attestation",
+        schema_id="TransactionGroupCommitTimeAttestation",
+        history=seal_history, limits=limits,
+    )
+    batches = tuple(
+        batch for batch in authority.event_batches
+        if batch.transaction_group_id == delta.transaction_group_id
+    )
+    if len(batches) != 1:
+        raise ObservationCohortUnavailableError(
+            "committed group lacks its unique retained event batch"
+        )
+    batch = batches[0]
+    if (
+        attestation.attestation_digest != core.transaction_group_commit_attestation_digest
+        or attestation.source_id != delta.source_id
+        or attestation.operation_fence_id != delta.operation_fence_id
+        or attestation.transaction_group_id != delta.transaction_group_id
+        or attestation.operation_ids != delta.operation_ids
+        or attestation.graph_revision_before != core.graph_revision_before
+        or attestation.graph_revision_after != core.graph_revision_after
+        # The seal binds the applied SemanticGraphDelta digest, which the
+        # persisted batch carries as its own graph_delta_digest (the same join
+        # the store's reload validation makes); it is not the GraphRevisionDelta
+        # digest the observation ledger names.
+        or attestation.applied_graph_delta_digest != batch.graph_delta_digest
+        or attestation.committed_batch_digest != batch.source_event_batch_digest
+        or attestation.clock_identity != clock_identity
+    ):
+        raise ObservationCohortUnavailableError(
+            "group commit seal does not bind its retained committed group"
+        )
+    return attestation
+
+
+def _ingestion_time_cohort_preimage(
+    authority: DetachedSemanticObservationAuthority,
+    membership: ResolvedObservationMembership,
+    decision: GraphObservationAuthorizationDecision,
+    *, snapshot_records: tuple[CanonicalMemoryRecord, ...],
+    history: ProtectedTypedValueRegistryHistory,
+    limits: ProtectedTypedValueArtifactReaderLimits,
+) -> GraphObservationCohortPreimage:
+    """Build the ingestion-time cohort preimage from the same verified closure.
+
+    The preimage names the resolved membership, its selected delta identities,
+    and the reference certificate exactly like the graph-observation preimage.
+    The endpoint selects no projection publications (null pairs) and its stream
+    carries attestations rather than graph records (empty record-key tuples).
+    """
+    reference = authority.references
+    certificate = reference.audit_certificate
+    if certificate is None:
+        raise ObservationCohortUnavailableError("reference audit certificate is unavailable")
+    return GraphObservationCohortPreimage(
+        seed_source_ids=membership.seed_source_ids, seed_operation_ids=membership.seed_operation_ids,
+        source_ids=membership.source_ids, operation_ids=membership.operation_ids,
+        operation_fence_ids=membership.operation_fence_ids, include_referenced_boundary_entities=True,
+        authorized_scope_identity=decision.authorized_scope_identity,
+        authorization_policy_revision=decision.policy_revision,
+        authorization_decision_digest=decision.decision_digest,
+        graph_revision_delta_ids=tuple(delta.graph_revision_delta_id for delta in membership.graph_deltas),
+        graph_revision_delta_digests=tuple(delta.delta_digest for delta in membership.graph_deltas),
+        ingestion_observation_delta_ids=tuple(entry.delta.observation_delta_id for entry in membership.group_entries) + tuple(delta.observation_delta_id for delta in membership.source_finalizations),
+        ingestion_observation_delta_digests=tuple(entry.delta.delta_digest for entry in membership.group_entries) + tuple(delta.delta_digest for delta in membership.source_finalizations),
+        reference_schema_manifest_fingerprint=reference.manifest_fingerprint,
+        reference_ledger_high_watermark=reference.high_watermark, reference_ledger_digest=reference.ledger_digest,
+        reference_audit_certificate_digest=certificate.certificate_digest, complete=True,
+        graph_revision=authority.graph.graph_revision, observation_revision=authority.observation.head.observation_revision,
+        memory_plane_write_revision=authority.write_revision,
+        temporal_projection_generation_digest=None,
+        temporal_projection_pointer_digest=None,
+        trust_projection_generation_digest=None,
+        trust_projection_pointer_digest=None,
+        observation_schema_fingerprint=_ingestion_time_schema_fingerprint(
+            membership, snapshot_records=snapshot_records, history=history, limits=limits,
+        ),
+        changed_record_keys=(), boundary_record_keys=(),
+    )
+
+
+def _ingestion_time_schema_fingerprint(
+    membership: ResolvedObservationMembership,
+    *, snapshot_records: tuple[CanonicalMemoryRecord, ...],
+    history: ProtectedTypedValueRegistryHistory,
+    limits: ProtectedTypedValueArtifactReaderLimits,
+) -> str:
+    """One exact observation schema fingerprint, even for an empty cohort.
+
+    A nonempty cohort carries the one fingerprint of its selected deltas.  A
+    cohort with no ingestion results at all still pages empty and carries the
+    retained ledger activation's own fingerprint; an absent, duplicated, or
+    unreadable activation denies instead of guessing one.
+    """
+    if membership.group_entries or membership.source_finalizations:
+        return _observation_schema_fingerprint(membership)
+    activations = tuple(
+        record for record in snapshot_records
+        if record.source_kind == "semantic_ingestion_observation_ledger_activation"
+    )
+    if len(activations) != 1 or not isinstance(activations[0].content.get("artifact"), str):
+        raise ObservationCohortUnavailableError(
+            "observation ledger activation is not uniquely retained"
+        )
+    try:
+        value = validate_registered_artifact(
+            activations[0].content["artifact"].encode("utf-8"),
+            schema_id="ObservationLedgerActivation", history=history, limits=limits,
+        )
+    except ValueError as exc:
+        raise ObservationCohortUnavailableError(
+            "observation ledger activation is not uniquely retained"
+        ) from exc
+    if not isinstance(value, ObservationLedgerActivation):
+        raise ObservationCohortUnavailableError(
+            "observation ledger activation is not uniquely retained"
+        )
+    return value.observation_schema_fingerprint
 
 
 @dataclass(frozen=True)

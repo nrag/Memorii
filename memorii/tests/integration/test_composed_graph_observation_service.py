@@ -5,9 +5,10 @@ way a host must compose it: ``build_host_graph_observation_runtime`` binds
 the protected paging runtime to the writer's exact store, registry history
 and activation target, and ``ProviderMemoryService`` receives that runtime
 through the factory pass-through.  ``observe_graph`` must then return real
-registered pages and cursors over the committed ingestion conversion, while
-the ingestion-time endpoint stays fail-closed because persisted
-attestations do not exist yet.
+registered pages and cursors over the committed ingestion conversion, and
+``observe_ingestion_time_attestations`` must return real sealed attestation
+pages (with signed continuations) resolved from the same store's minted
+seals.
 """
 
 from __future__ import annotations
@@ -37,7 +38,9 @@ from memorii.core.memory_evolution.graph_observation_public_contracts import (
     GraphObservationPage,
     GraphObservationPagePolicySnapshot,
     GraphObservationRequest,
+    IngestionTimeAttestationPage,
     IngestionTimeAttestationRequest,
+    _attestation_order_key,
 )
 from memorii.core.memory_evolution.models import MemoryScope
 from memorii.core.memory_evolution.observation_activation_runtime import (
@@ -300,6 +303,84 @@ def test_configured_service_observe_graph_returns_real_page(backend):
     _assert_non_disclosing_failure(exhausted, "stale_cursor")
 
 
+def test_configured_service_observe_ingestion_time_attestations_returns_real_page(backend):
+    """The sealed store pages its minted attestations end to end.
+
+    Page size one forces a real signed continuation; the cursor carries the
+    exact predecessor triple (kind, id, digest) of the attestation it
+    follows, the concatenated pages stay in the registered order-key order,
+    and every artifact names the store's composed clock identity.
+    """
+    paged = backend.time_request.model_copy(update={"total_page_size": 1})
+    first = backend.service.observe_ingestion_time_attestations(
+        host_ingress=_host_ingress(), request=paged,
+    )
+    assert isinstance(first, IngestionTimeAttestationPage)
+    assert first.kind == "page"
+    assert set(first.model_dump()) == set(IngestionTimeAttestationPage.model_fields)
+    assert first.graph_revision == backend.graph_revision
+    assert first.observation_revision == backend.observation_revision
+    assert first.memory_plane_write_revision == backend.write_revision
+    assert first.page_policy_revision == "composed-page-policy"
+    assert 0 < len(first.attestations) <= first.total_page_size == 1
+    assert (first.stream_start_position, first.stream_end_position) == (
+        0, len(first.attestations),
+    )
+    runtime = backend.service._graph_observation_runtime
+    attestations = list(first.attestations)
+    cursor = first.next_cursor
+    if cursor is not None:
+        payload = runtime._decode_ingestion_cursor(cursor)
+        assert payload is not None
+        predecessor = attestations[-1]
+        assert payload.stream_position == first.stream_end_position
+        assert (
+            payload.preceding_attestation_kind,
+            payload.preceding_attestation_id,
+            payload.preceding_attestation_digest,
+        ) == (
+            predecessor.kind, predecessor.attestation_id,
+            predecessor.attestation_digest,
+        )
+    expected_start = first.stream_end_position
+    pages = 1
+    while cursor is not None:
+        assert pages < _MAXIMUM_PAGES
+        page = backend.service.observe_ingestion_time_attestations(
+            host_ingress=_host_ingress(),
+            request=paged.model_copy(update={"cursor": cursor}),
+        )
+        assert isinstance(page, IngestionTimeAttestationPage)
+        assert page.kind == "page"
+        assert page.stream_start_position == expected_start
+        assert 0 < len(page.attestations) <= page.total_page_size
+        assert page.stream_end_position == expected_start + len(page.attestations)
+        attestations.extend(page.attestations)
+        expected_start = page.stream_end_position
+        cursor = page.next_cursor
+        pages += 1
+    keys = [_attestation_order_key(item) for item in attestations]
+    assert keys == sorted(set(keys))
+    assert {item.kind for item in attestations} == {
+        "source_retention", "transaction_group_commit",
+    }
+    clock_identity = (
+        runtime._cohort_provider._atomic_store.ingestion_time_seal_reader_authority()[2]
+    )
+    for item in attestations:
+        assert item.clock_identity == clock_identity
+        assert _HEX64.fullmatch(item.attestation_digest)
+        assert item.attestation_digest != "0" * 64
+    # The final page releases the retained snapshot, so replaying the first
+    # continuation cursor is stale by the paging runtime contract.
+    if first.next_cursor is not None:
+        exhausted = backend.service.observe_ingestion_time_attestations(
+            host_ingress=_host_ingress(),
+            request=paged.model_copy(update={"cursor": first.next_cursor}),
+        )
+        _assert_non_disclosing_failure(exhausted, "stale_cursor")
+
+
 def test_unconfigured_and_misconfigured_fail_closed(backend, monkeypatch):
     unconfigured = build_provider_memory_service_from_env()
     monkeypatch.setattr(unconfigured._memory_plane, "read_write_snapshot", _unexpected_plane_read)
@@ -338,12 +419,20 @@ def test_unconfigured_and_misconfigured_fail_closed(backend, monkeypatch):
         _assert_non_disclosing_failure(response, reason)
         tokens.add(response.request_correlation_token)
     assert len(tokens) == len(responses)
-    # With the runtime configured, the ingestion-time endpoint still fails
-    # closed because persisted attestations do not exist; the denial is
-    # decided before the write-revision fence could read the memory plane.
-    monkeypatch.setattr(backend.plane, "read_write_snapshot", _unexpected_plane_read)
+    # With the runtime configured, an unresolvable cohort (an unknown seed) is
+    # still the non-disclosing denial decided by the cohort provider.
+    unknown_seed = IngestionTimeAttestationRequest(
+        scope_constraint=MemoryScope(user_id="alice"),
+        cohort_selector=GraphObservationCohortSelector(
+            seed_source_ids=("unknown",), seed_operation_ids=(),
+            include_referenced_boundary_entities=True,
+        ),
+        expected_graph_revision=backend.graph_revision,
+        expected_observation_revision=backend.observation_revision,
+        total_page_size=1, cursor=None,
+    )
     denial = backend.service.observe_ingestion_time_attestations(
-        host_ingress=ingress, request=backend.time_request,
+        host_ingress=ingress, request=unknown_seed,
     )
     _assert_non_disclosing_failure(denial, "denied")
 

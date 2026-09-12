@@ -2376,6 +2376,23 @@ class SemanticIngestionAtomicStore:
             and value.source_record_digest == record_digest(retained)
         )
 
+    def ingestion_time_seal_reader_authority(
+        self,
+    ) -> tuple[ProtectedTypedValueRegistryHistory, VerifiedTypedValuePublication, str] | None:
+        """The exact seal authority a detached ingestion-time reader must join through.
+
+        Returns the store's one seal-minting registry history and publication
+        plus the composed protected-clock identity every sealed artifact must
+        record, or ``None`` when this store deploys without a seal publication
+        (the reader's typed-denial condition for unsealed stores).
+        """
+
+        resolved = self._ingestion_time_seal_authority()
+        if resolved is None:
+            return None
+        history, publication = resolved
+        return history, publication, self._ingestion_time_clock_identity
+
     def source_retention_attestation_digest(
         self, *, delivery_key_digest: str, operation_fence: OperationFenceBinding,
     ) -> str | None:
