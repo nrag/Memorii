@@ -151,3 +151,129 @@ def test_terminal_effect_rebuild_resolves_canonical_event_owner() -> None:
         contracts.BootstrapGraphEventBatchEffectV3.model_fields["payload"].annotation
         is SemanticMemoryEventBatch
     )
+
+
+def _m1_freeze_core() -> CanonicalSourceTerminalOutcomeCore:
+    source = build_prepared_source_authority(
+        source_id="source:m1-freeze", source_digest=_digest("m1-freeze-source"),
+        source_text="Ada works.",
+    )
+    return CanonicalSourceTerminalOutcomeCore.create(
+        ingestion_record_kind="source_terminal_outcome",
+        source_id=source.source_id,
+        source_digest=source.source_digest,
+        delivery_principal_binding_digest=_digest("m1-principal"),
+        delivery_key_digest=_digest("m1-delivery"),
+        segment_governance_carriers=source.segment_governance_carriers,
+        message_admission_carriers=source.message_admission_carriers,
+        governance_carrier_artifact=source.governance_carrier_artifact,
+        required_outcome_scopes=source.governance_carrier_artifact.required_outcome_scopes,
+        operation_fence_id="fence:m1-freeze",
+        operation_ids=("operation:m1-freeze",),
+        final_status="evidence_only",
+        group_result_digests=(),
+    )
+
+
+def test_schema_1_terminal_outcome_bytes_are_frozen() -> None:
+    """Schema-1 core -> outcome -> source-result -> record bytes are legacy-exact.
+
+    The frozen literals were captured from the pre-extension contracts, so the
+    new schema-2 fields must stay excluded from every preimage and from
+    serialization while the declared schema version is 1.
+    """
+    core = _m1_freeze_core()
+    record = CanonicalSourceTerminalOutcomeRecord.create(
+        core=core, preparation_fingerprint=_digest("m1-preparation"),
+    )
+
+    assert core.core_digest == (
+        "f75a240f69b1c2b204417204bb7632a9792370fe2ebfe905ad21c228aca888f3"
+    )
+    assert record.outcome_id == (
+        "a332bc813870c7cdacd5b221f94ca34028dd215a8e73ae634118df5626338c28"
+    )
+    assert record.source_result_digest == (
+        "a351ba1bdd3ef497169359badcd3aa7839db060e5b2bd1f9c86d7302160decbc"
+    )
+    assert record.record_digest == (
+        "f7d5dcf1c4bca01d34fb4f508857cc64444697324445288c0813a95ca17739c7"
+    )
+    core_dump = core.model_dump(mode="python")
+    record_dump = record.model_dump(mode="python")
+    assert "source_result_schema_version" not in core_dump
+    assert "source_retention_attestation_digest" not in core_dump
+    assert "source_result_schema_version" not in record_dump
+    assert "source_retention_attestation_digest" not in record_dump
+    assert sorted(core._canonical_contract_field_names()) == sorted(
+        name for name in type(core).model_fields
+        if name not in {
+            "source_result_schema_version", "source_retention_attestation_digest",
+        }
+    )
+
+
+def test_schema_2_terminal_outcome_requires_and_binds_the_attestation_digest() -> None:
+    core = _m1_freeze_core()
+    attestation_digest = _digest("m1-admission-seal")
+    schema_2_core = CanonicalSourceTerminalOutcomeCore.create(
+        **{
+            **core.model_dump(mode="python", exclude={"core_digest"}),
+            "source_result_schema_version": 2,
+            "source_retention_attestation_digest": attestation_digest,
+        },
+    )
+    record = CanonicalSourceTerminalOutcomeRecord.create(
+        core=schema_2_core, preparation_fingerprint=_digest("m1-preparation"),
+    )
+
+    assert schema_2_core.source_result_schema_version == 2
+    assert record.source_result_schema_version == 2
+    assert record.source_retention_attestation_digest == attestation_digest
+    # Schema 2 includes both fields in every preimage: the digests must differ
+    # from their schema-1 counterparts over otherwise identical material.
+    schema_1_record = CanonicalSourceTerminalOutcomeRecord.create(
+        core=core, preparation_fingerprint=_digest("m1-preparation"),
+    )
+    assert schema_2_core.core_digest != core.core_digest
+    assert record.source_result_digest != schema_1_record.source_result_digest
+    assert record.record_digest != schema_1_record.record_digest
+    # The outcome_id formula itself is unchanged: it still digests only
+    # source, fence, preparation, and core-digest fields, so the schema-2 id
+    # differs only through the schema-2 core_digest it already contains.
+    assert record.outcome_id != schema_1_record.outcome_id
+    dump = record.model_dump(mode="python")
+    assert dump["source_result_schema_version"] == 2
+    assert dump["source_retention_attestation_digest"] == attestation_digest
+
+    with pytest.raises(ValueError, match="canonical source terminal outcome core is invalid"):
+        CanonicalSourceTerminalOutcomeCore.create(
+            **{
+                **core.model_dump(mode="python", exclude={"core_digest"}),
+                "source_result_schema_version": 2,
+            },
+        )
+    with pytest.raises(ValueError, match="canonical source terminal outcome closure is invalid"):
+        CanonicalSourceTerminalOutcomeRecord(
+            **{
+                **record.model_dump(mode="python", exclude={"record_digest"}),
+                "source_retention_attestation_digest": _digest("substituted-seal"),
+            },
+            record_digest=record.record_digest,
+        )
+
+
+def test_addressed_versioned_exclusion_hooks_default_to_no_exclusion() -> None:
+    """Every other _Addressed contract keeps unfiltered fields and bytes."""
+    from memorii.core.memory_evolution.graph_effect_contracts import (
+        CanonicalOperationIntroductionRecord,
+        GraphRecordMutation,
+        _Addressed,
+    )
+
+    empty = {name: None for name in GraphRecordMutation.model_fields}
+    assert _Addressed._versioned_digest_excluded_fields({}) == frozenset()
+    assert GraphRecordMutation._versioned_digest_excluded_fields(empty) == frozenset()
+    assert CanonicalOperationIntroductionRecord._versioned_digest_excluded_fields(
+        {name: None for name in CanonicalOperationIntroductionRecord.model_fields}
+    ) == frozenset()

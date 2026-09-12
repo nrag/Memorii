@@ -11452,7 +11452,7 @@ class BootstrapGraphOperationCommitResultV3(_BootstrapV3Contract):
 
 
 class BootstrapGraphGroupCommitResultCoreV3(_BootstrapV3Contract):
-    group_result_schema_version: Literal[1, 2] = 1
+    group_result_schema_version: Literal[1, 2, 3] = 1
     request_ctv_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     disposition: Literal["committed", "noncommitting"]
     ordered_operation_results: tuple[BootstrapGraphOperationCommitResultV3, ...]
@@ -11465,6 +11465,9 @@ class BootstrapGraphGroupCommitResultCoreV3(_BootstrapV3Contract):
     publication_operation_generation: int = Field(ge=1)
     publication_artifact_generation: int = Field(ge=1)
     atomic_write_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    transaction_group_commit_attestation_digest: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
     observation_delta: IngestionObservationDelta | None = None
     native_projection_publication_receipt: BootstrapGraphNativeProjectionPublicationReceiptV3 | None = None
     core_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -11472,7 +11475,10 @@ class BootstrapGraphGroupCommitResultCoreV3(_BootstrapV3Contract):
     _digest_field = "core_digest"
     _legacy_v1_digest_excluded_fields = frozenset({
         "group_result_schema_version", "observation_delta",
-        "native_projection_publication_receipt",
+        "native_projection_publication_receipt", "transaction_group_commit_attestation_digest",
+    })
+    _schema_2_digest_excluded_fields: ClassVar[frozenset[str]] = frozenset({
+        "transaction_group_commit_attestation_digest",
     })
 
     @classmethod
@@ -11481,29 +11487,37 @@ class BootstrapGraphGroupCommitResultCoreV3(_BootstrapV3Contract):
 
     @classmethod
     def _versioned_digest_excluded_fields(cls, values: Mapping[str, object]) -> frozenset[str]:
-        return (
-            cls._legacy_v1_digest_excluded_fields
-            if values.get("group_result_schema_version", 1) == 1
-            else frozenset()
-        )
+        version = values.get("group_result_schema_version", 1)
+        if version == 1:
+            return cls._legacy_v1_digest_excluded_fields
+        if version == 2:
+            return cls._schema_2_digest_excluded_fields
+        return frozenset()
 
     def _canonical_contract_field_names(self) -> tuple[str, ...]:
-        return (
-            tuple(
-                name
-                for name in type(self).model_fields
-                if name not in self._legacy_v1_digest_excluded_fields
-            )
+        excluded = (
+            self._legacy_v1_digest_excluded_fields
             if self.group_result_schema_version == 1
-            else tuple(type(self).model_fields)
+            else self._schema_2_digest_excluded_fields
+            if self.group_result_schema_version == 2
+            else frozenset()
+        )
+        return tuple(
+            name for name in type(self).model_fields if name not in excluded
         )
 
     @model_serializer(mode="wrap")
     def serialize_group_result_core(self, handler):  # type: ignore[no-untyped-def]
         value = handler(self)
-        if self.group_result_schema_version == 1:
-            for field in self._legacy_v1_digest_excluded_fields:
-                value.pop(field, None)
+        excluded = (
+            self._legacy_v1_digest_excluded_fields
+            if self.group_result_schema_version == 1
+            else self._schema_2_digest_excluded_fields
+            if self.group_result_schema_version == 2
+            else frozenset()
+        )
+        for field in excluded:
+            value.pop(field, None)
         return value
 
     @model_validator(mode="after")
@@ -11513,7 +11527,11 @@ class BootstrapGraphGroupCommitResultCoreV3(_BootstrapV3Contract):
         if not ids or ids != tuple(sorted(set(ids))) or (self.disposition == "committed") != committed:
             raise ValueError("bootstrap graph group commit result core is invalid")
         if self.group_result_schema_version == 1:
-            if self.observation_delta is not None or self.native_projection_publication_receipt is not None:
+            if (
+                self.observation_delta is not None
+                or self.native_projection_publication_receipt is not None
+                or self.transaction_group_commit_attestation_digest is not None
+            ):
                 raise ValueError("legacy group result forbids ledger fields")
         else:
             delta = self.observation_delta
@@ -11542,6 +11560,11 @@ class BootstrapGraphGroupCommitResultCoreV3(_BootstrapV3Contract):
                 )
             ):
                 raise ValueError("schema-2 group result ledger closure is invalid")
+            if self.group_result_schema_version == 3 and (
+                (self.disposition == "committed")
+                != (self.transaction_group_commit_attestation_digest is not None)
+            ):
+                raise ValueError("schema-3 group result attestation binding is invalid")
         return self
 
 
@@ -12809,7 +12832,7 @@ class BootstrapGraphGroupCommitRequestV3(_BootstrapV3Contract):
 
 
 class BootstrapGraphGroupCommitReloadV3(_BootstrapV3Contract):
-    group_result_schema_version: Literal[1, 2] = 1
+    group_result_schema_version: Literal[1, 2, 3] = 1
     source_operation_id: str = Field(min_length=1)
     transaction_group_id: str = Field(pattern=r"^[0-9a-f]{64}$")
     operation_ids: tuple[str, ...]
@@ -12879,26 +12902,29 @@ class BootstrapGraphGroupCommitReloadV3(_BootstrapV3Contract):
                 or core.group_result_schema_version != 1
             ):
                 raise ValueError("legacy group reload forbids ledger fields")
-        elif (
-            core.group_result_schema_version != 2
-            or self.observation_delta != core.observation_delta
-            or self.native_projection_publication_receipt
-            != core.native_projection_publication_receipt
-            or self.observation_delta is None
-            or self.ledger_entry_id is None
-            or self.ledger_entry_digest is None
-            or self.observation_delta.transaction_group_id != self.transaction_group_id
-            or (
-                self.native_projection_publication_receipt is not None
-                and (
-                    self.native_projection_publication_receipt.source_operation_id
-                    != self.source_operation_id
-                    or self.native_projection_publication_receipt.transaction_group_id
-                    != self.transaction_group_id
+        else:
+            if (
+                core.group_result_schema_version != self.group_result_schema_version
+                or self.observation_delta != core.observation_delta
+                or self.native_projection_publication_receipt
+                != core.native_projection_publication_receipt
+                or self.observation_delta is None
+                or self.ledger_entry_id is None
+                or self.ledger_entry_digest is None
+                or self.observation_delta.transaction_group_id != self.transaction_group_id
+                or (
+                    self.native_projection_publication_receipt is not None
+                    and (
+                        self.native_projection_publication_receipt.source_operation_id
+                        != self.source_operation_id
+                        or self.native_projection_publication_receipt.transaction_group_id
+                        != self.transaction_group_id
+                    )
                 )
-            )
-        ):
-            raise ValueError("schema-2 group reload ledger closure is invalid")
+            ):
+                raise ValueError(
+                    f"schema-{self.group_result_schema_version} group reload ledger closure is invalid"
+                )
         return self
 
 

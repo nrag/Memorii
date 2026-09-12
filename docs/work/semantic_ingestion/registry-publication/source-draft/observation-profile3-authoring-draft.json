@@ -3494,6 +3494,14 @@
             {
               "field_name": "source_id",
               "policy": "required"
+            },
+            {
+              "field_name": "source_result_schema_version",
+              "policy": "required"
+            },
+            {
+              "field_name": "source_retention_attestation_digest",
+              "policy": "required_nullable"
             }
           ],
           "role": "optional",
@@ -3632,6 +3640,29 @@
                 "kind": "string",
                 "lexical_rule": "nonempty_unicode_scalar"
               }
+            },
+            {
+              "integrity_role": "ordinary",
+              "name": "source_result_schema_version",
+              "type": {
+                "kind": "literal",
+                "values": [
+                  {
+                    "integer_value": "1"
+                  },
+                  {
+                    "integer_value": "2"
+                  }
+                ]
+              }
+            },
+            {
+              "integrity_role": "ordinary",
+              "name": "source_retention_attestation_digest",
+              "type": {
+                "kind": "string",
+                "lexical_rule": "sha256"
+              }
             }
           ],
           "role": "schema",
@@ -3738,6 +3769,14 @@
             {
               "field_name": "source_result_digest",
               "policy": "required"
+            },
+            {
+              "field_name": "source_result_schema_version",
+              "policy": "required"
+            },
+            {
+              "field_name": "source_retention_attestation_digest",
+              "policy": "required_nullable"
             }
           ],
           "role": "optional",
@@ -3897,6 +3936,29 @@
             {
               "integrity_role": "ordinary",
               "name": "source_result_digest",
+              "type": {
+                "kind": "string",
+                "lexical_rule": "sha256"
+              }
+            },
+            {
+              "integrity_role": "ordinary",
+              "name": "source_result_schema_version",
+              "type": {
+                "kind": "literal",
+                "values": [
+                  {
+                    "integer_value": "1"
+                  },
+                  {
+                    "integer_value": "2"
+                  }
+                ]
+              }
+            },
+            {
+              "integrity_role": "ordinary",
+              "name": "source_retention_attestation_digest",
               "type": {
                 "kind": "string",
                 "lexical_rule": "sha256"

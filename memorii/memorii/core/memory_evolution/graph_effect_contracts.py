@@ -7,9 +7,10 @@ without making either side import the other's runtime owner.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Annotated, Literal, TypeAlias
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Annotated, ClassVar, Literal, TypeAlias
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_serializer, model_validator
 
 if TYPE_CHECKING:
     from memorii.core.memory_evolution.graph_records import GraphRecordKind, SnapshotGraphRecord
@@ -36,7 +37,34 @@ def _contract_digest(domain: bytes, value: object) -> str:
 
 
 class _Addressed(BaseModel):
+    """Content-addressed graph-effect base with versioned field exclusions.
+
+    The three exclusion hooks mirror ``_ContentAddressedContract``: a subclass
+    that declares a newer schema version excludes its new fields from every
+    digest preimage, from canonical CTV field selection, and from
+    serialization while the older schema remains byte-exact.  The defaults
+    are no-ops, so every subclass that does not override them keeps identical
+    bytes.
+    """
+
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    @classmethod
+    def _versioned_digest_excluded_fields(cls, values: Mapping[str, object]) -> frozenset[str]:
+        return frozenset()
+
+    def _canonical_contract_field_names(self) -> tuple[str, ...]:
+        return tuple(type(self).model_fields)
+
+    @model_serializer(mode="wrap")
+    def serialize_addressed_contract(self, handler):  # type: ignore[no-untyped-def]
+        value = handler(self)
+        excluded = type(self)._versioned_digest_excluded_fields(
+            {name: getattr(self, name) for name in type(self).model_fields}
+        )
+        for field in excluded:
+            value.pop(field, None)
+        return value
 
     @classmethod
     def create(cls, **values: object):  # type: ignore[no-untyped-def]
@@ -46,7 +74,9 @@ class _Addressed(BaseModel):
         domain = cls.__private_attributes__["_digest_domain"].default
         assert isinstance(digest_field, str)
         assert isinstance(domain, bytes)
-        return cls(**values, **{digest_field: _contract_digest(domain, values)})
+        excluded = cls._versioned_digest_excluded_fields(values)
+        digest_body = {name: value for name, value in values.items() if name not in excluded}
+        return cls(**values, **{digest_field: _contract_digest(domain, digest_body)})
 
 
 class GraphRecordMutation(_Addressed):
@@ -152,9 +182,33 @@ class CanonicalSourceTerminalOutcomeCore(_Addressed):
     operation_ids: tuple[str, ...]
     final_status: Literal["fully_committed", "partially_committed", "evidence_only", "rejected", "unresolved", "failed"]
     group_result_digests: tuple[str, ...]
+    source_result_schema_version: Literal[1, 2] = 1
+    source_retention_attestation_digest: str | None = Field(default=None, pattern=_DIGEST)
     core_digest: str = Field(pattern=_DIGEST)
     _digest_domain = b"memorii.semantic-ingestion.canonical-source-terminal-outcome-core.v1"
     _digest_field = "core_digest"
+    _schema_1_digest_excluded_fields: ClassVar[frozenset[str]] = frozenset({
+        "source_result_schema_version", "source_retention_attestation_digest",
+    })
+
+    @classmethod
+    def _versioned_digest_excluded_fields(cls, values: Mapping[str, object]) -> frozenset[str]:
+        return (
+            cls._schema_1_digest_excluded_fields
+            if values.get("source_result_schema_version", 1) == 1
+            else frozenset()
+        )
+
+    def _canonical_contract_field_names(self) -> tuple[str, ...]:
+        return (
+            tuple(
+                name
+                for name in type(self).model_fields
+                if name not in self._schema_1_digest_excluded_fields
+            )
+            if self.source_result_schema_version == 1
+            else tuple(type(self).model_fields)
+        )
 
     @model_validator(mode="after")
     def validate_core(self) -> CanonicalSourceTerminalOutcomeCore:
@@ -170,6 +224,10 @@ class CanonicalSourceTerminalOutcomeCore(_Addressed):
             or (
                 bool(self.group_result_digests)
                 and len(set(self.group_result_digests)) != len(self.group_result_digests)
+            )
+            or (
+                self.source_result_schema_version == 2
+                and self.source_retention_attestation_digest is None
             )
             or self.core_digest != _contract_digest(
                 self._digest_domain, self.model_dump(mode="python", exclude={"core_digest"})
@@ -197,10 +255,34 @@ class CanonicalSourceTerminalOutcomeRecord(_Addressed):
     operation_ids: tuple[str, ...]
     final_status: Literal["fully_committed", "partially_committed", "evidence_only", "rejected", "unresolved", "failed"]
     group_result_digests: tuple[str, ...]
+    source_result_schema_version: Literal[1, 2] = 1
+    source_retention_attestation_digest: str | None = Field(default=None, pattern=_DIGEST)
     source_result_digest: str = Field(pattern=_DIGEST)
     record_digest: str = Field(pattern=_DIGEST)
     _digest_domain = b"memorii.semantic-ingestion.canonical-source-terminal-outcome-record.v1"
     _digest_field = "record_digest"
+    _schema_1_digest_excluded_fields: ClassVar[frozenset[str]] = frozenset({
+        "source_result_schema_version", "source_retention_attestation_digest",
+    })
+
+    @classmethod
+    def _versioned_digest_excluded_fields(cls, values: Mapping[str, object]) -> frozenset[str]:
+        return (
+            cls._schema_1_digest_excluded_fields
+            if values.get("source_result_schema_version", 1) == 1
+            else frozenset()
+        )
+
+    def _canonical_contract_field_names(self) -> tuple[str, ...]:
+        return (
+            tuple(
+                name
+                for name in type(self).model_fields
+                if name not in self._schema_1_digest_excluded_fields
+            )
+            if self.source_result_schema_version == 1
+            else tuple(type(self).model_fields)
+        )
 
     @classmethod
     def create(
@@ -236,6 +318,9 @@ class CanonicalSourceTerminalOutcomeRecord(_Addressed):
             "final_status": core.final_status,
             "group_result_digests": core.group_result_digests,
         }
+        if core.source_result_schema_version == 2:
+            body["source_result_schema_version"] = core.source_result_schema_version
+            body["source_retention_attestation_digest"] = core.source_retention_attestation_digest
         source_result_digest = _contract_digest(
             b"memorii.semantic-ingestion.bootstrap-graph-source-result.v3", body
         )
@@ -263,6 +348,13 @@ class CanonicalSourceTerminalOutcomeRecord(_Addressed):
             or self.operation_ids != self.core.operation_ids
             or self.final_status != self.core.final_status
             or self.group_result_digests != self.core.group_result_digests
+            or self.source_result_schema_version != self.core.source_result_schema_version
+            or self.source_retention_attestation_digest
+            != self.core.source_retention_attestation_digest
+            or (
+                self.source_result_schema_version == 2
+                and self.source_retention_attestation_digest is None
+            )
             or self.record_digest != _contract_digest(
                 self._digest_domain, self.model_dump(mode="python", exclude={"record_digest"})
             )

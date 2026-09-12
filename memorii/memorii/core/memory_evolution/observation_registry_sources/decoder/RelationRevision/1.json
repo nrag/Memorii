@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.RelationRevision.v1","implementation_source_digest":"64282b151b32a2b4a32ebea24b8b94bc498f5cb4ffa24a30875880055d3c1092","role":"decoder","schema_id":"RelationRevision","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.RelationRevision.v1","implementation_source_digest":"78d45302456d52b31e768e40dc4e56a0d857c509ed77eeca8448c7362b60afc9","role":"decoder","schema_id":"RelationRevision","schema_version":"1","typed_root_kind":"model"}

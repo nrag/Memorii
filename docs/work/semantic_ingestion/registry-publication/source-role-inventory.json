@@ -2830,12 +2830,12 @@
     {
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/optional/CanonicalSourceTerminalOutcomeCore/1.json",
       "role": "optional",
-      "sha256": "685573a2711590f4ec1342198fd604eb08ec49fb50a518de869292f6ef190cf7"
+      "sha256": "ccbd1a61d1eea01693b3c1199113fabce88ea43163f15f19618fc9004a5bb2dc"
     },
     {
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/optional/CanonicalSourceTerminalOutcomeRecord/1.json",
       "role": "optional",
-      "sha256": "4ab8af46efd4f51e0a0b8b9fceb71e0921882f518e9e35ae19bce7190b7c6a79"
+      "sha256": "5205aa69742508dcba53c8c39c45b05f81fc57d12a218d6a596de4de736cffd9"
     },
     {
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/optional/CitationRecord/1.json",
@@ -3735,12 +3735,12 @@
     {
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/schema/CanonicalSourceTerminalOutcomeCore/1.json",
       "role": "schema",
-      "sha256": "adbc67c09173aa2199a6cb287d5f9b183184aa1bcb6357a88f82b53221467287"
+      "sha256": "95531006b3f5be8b04c04283cd3ba8a3ed4f33ec6844fe869231df1cf12161f2"
     },
     {
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/schema/CanonicalSourceTerminalOutcomeRecord/1.json",
       "role": "schema",
-      "sha256": "ee58effcabdfd98e8258fbde57b69c51c9dc7607de7bb01b84bc87ce5b21a1df"
+      "sha256": "38125de925192b7a2e95860f932ee2e2835bab7e45efe277d4da4eb35b31718f"
     },
     {
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/schema/CitationRecord/1.json",

@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.MemoryScope.v1","implementation_source_digest":"1496c299fc35a11beff30542625aef520209e0b6237e922c758d9c4ea2637f3c","role":"decoder","schema_id":"MemoryScope","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.MemoryScope.v1","implementation_source_digest":"60bb8f7dd4cb328f17e03ffbb1d03ec718fb597a66a51e903710bd7246a051fc","role":"decoder","schema_id":"MemoryScope","schema_version":"1","typed_root_kind":"model"}
