@@ -601,7 +601,7 @@ jobs:
             tests/unit/core/semantic_ingestion/test_graph_planning.py \
             tests/unit/core/semantic_ingestion/test_identity_lineage_prerequisites.py \
             -p no:cacheprovider | tail -n 1)"
-          [[ "$observed" == "87 tests collected in "* ]]
+          [[ "$observed" == "88 tests collected in "* ]]
 
       - name: Run exact projection-history closure
         working-directory: memorii
