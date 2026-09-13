@@ -168,9 +168,8 @@ writers finish; no current whole-candidate proof is claimed yet.
 
 ## Next Action
 
-Exercise the comparator through the real host-composed ProviderMemoryService
-and prove configured caller denial, scope isolation and revocation between
-continuation pages without protected-record disclosure.
+Resolve the linked graph-transaction authority rejection debugging WorkPlan,
+then resume the real host-composed comparator authorization/revocation proof.
 
 2026-09-08: root owns all code, generation, tests and commits. Read-only
 component reviews cover frozen90c58da62428f3caeab8ee7bca03116a24009d35e97aa705e1d757987a61362c.

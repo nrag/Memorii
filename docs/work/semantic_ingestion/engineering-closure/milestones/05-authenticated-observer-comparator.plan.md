@@ -39,10 +39,10 @@ inferred from an unobserved process completion.
 
 ## Next Action
 
-Exercise the comparator through the real host-composed ProviderMemoryService.
-Bind the configured context resolver to the actual host ingress, then prove
-caller denial, scope isolation and revocation between continuation pages
-without protected-record disclosure.
+Resolve the linked graph-transaction authority rejection at
+`../../graph-transaction-authority-debug/debugging.plan.md`, then exercise the
+comparator through the real host-composed ProviderMemoryService with configured
+caller denial, scope isolation and revocation between continuation pages.
 
 ## Public Comparator Foundation
 
@@ -106,6 +106,14 @@ Pyright pass, including missing, substituted, ambiguous and many-to-one
 alignment; terminal mismatch; missing/extra outcomes; and membership/count
 mutations. This remains bounded evidence until the real configured public route
 and remaining schema-specific record comparators pass.
+
+The first real-route integration attempt retained no draft. Three authoritative
+fixture combinations produced the same causal result: writer and observation
+activation authority were valid, but source sync returned
+`graph_transaction_authority_unavailable` before the configured graph authority
+provider was invoked, leaving one undrained preplanning control. Reversing the
+cutover order correctly refused ledger activation. The causal investigation is
+owned by the linked debugging WorkPlan; R17 remains partial.
 
 The linked `../../terminal-publication/closure.md` records bounded source closure
 with all three independent approvals, public same-CAS/restart/tamper/authority

@@ -98,6 +98,10 @@ warnings-as-errors cases plus Ruff and Pyright prove source/entity alignment,
 terminal joins, exact membership/count closure, and adversarial mismatch
 families under the fail-closed type-proof boundary.
 
-Next action: exercise the comparator through the real host-composed
-ProviderMemoryService and prove configured caller denial, scope isolation and
-revocation between continuation pages without protected-record disclosure.
+The real-route test is blocked by a reproducible graph-transaction authority
+rejection before the configured authority provider is invoked. No failing draft
+was retained. The separate debugging WorkPlan is
+`../graph-transaction-authority-debug/debugging.plan.md`.
+
+Next action: isolate and correct that authority rejection, then resume the real
+host-composed comparator authorization/revocation proof.
