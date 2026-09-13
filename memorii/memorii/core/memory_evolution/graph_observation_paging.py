@@ -285,7 +285,6 @@ class AuthenticatedGraphObservationPagingRuntime:
             except (
                 ObservationCohortUnavailableError,
                 TypedValueModelCodecCapacityError,
-                ValueError,
             ):
                 return self._failure("denied")
             finally:
@@ -356,7 +355,6 @@ class AuthenticatedGraphObservationPagingRuntime:
             except (
                 ObservationCohortUnavailableError,
                 TypedValueModelCodecCapacityError,
-                ValueError,
             ):
                 return self._failure("denied")
             finally:

@@ -19,6 +19,7 @@ from datetime import timedelta
 from types import SimpleNamespace
 
 import pytest
+from acceptance.structural_comparator import collect_graph_observation
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from memorii.core.memory_evolution.graph_effect_contracts import (
     IngestionObservationDelta,
@@ -567,6 +568,12 @@ def test_hermes_forwards_real_graph_observation_and_attestation_routes(backend):
     graph = hermes.observe_graph(
         host_ingress=_host_ingress(), request=backend.graph_request,
     )
+    collected = collect_graph_observation(
+        observer=hermes,
+        host_ingress=_host_ingress(),
+        request=backend.graph_request,
+        maximum_pages=_MAXIMUM_PAGES,
+    )
     attestations = hermes.observe_ingestion_time_attestations(
         host_ingress=_host_ingress(), request=backend.time_request,
     )
@@ -579,6 +586,9 @@ def test_hermes_forwards_real_graph_observation_and_attestation_routes(backend):
 
     assert isinstance(graph, GraphObservationPage)
     assert graph.kind == "page"
+    assert collected.first_page.kind == "page"
+    assert collected.records
+    assert collected.page_digests
     assert isinstance(attestations, IngestionTimeAttestationPage)
     assert attestations.kind == "page"
     _assert_non_disclosing_failure(denied, "denied")
