@@ -9,11 +9,9 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Protocol
-
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from typing import Literal, Protocol
 
 from memorii.core.memory_evolution.graph_observation_public_contracts import (
     GraphObservationPage,
@@ -23,7 +21,11 @@ from memorii.core.memory_evolution.graph_observation_public_contracts import (
 from memorii.core.memory_evolution.graph_observation_streams import (
     GraphObservationStreamRecord,
     OperationIntroductionStreamRecord,
+    OperationTerminalOutcomeStreamRecord,
+    SourceIntroductionStreamRecord,
+    SourceTerminalOutcomeStreamRecord,
 )
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class StructuralComparisonError(ValueError):
@@ -67,6 +69,96 @@ class ExpectedOperation(_ClosedExpectedModel):
         return self
 
 
+class ExpectedSourceIntroduction(_ClosedExpectedModel):
+    """Pre-ingest source/entity coordinates, deliberately without production IDs."""
+
+    record_key: str = Field(min_length=1, max_length=1024)
+    source_id: str = Field(min_length=1, max_length=16384)
+    source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    mention_span: str
+    entity_key: str = Field(min_length=1, max_length=1024)
+    operation_key: str = Field(min_length=1, max_length=1024)
+    independently_asserted_type_evidence_keys: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def _validate_coordinates(self) -> ExpectedSourceIntroduction:
+        try:
+            value = json.loads(self.mention_span)
+        except (json.JSONDecodeError, TypeError) as exc:
+            raise ValueError("expected source mention span is not canonical JSON") from exc
+        if _canonical_json(value) != self.mention_span:
+            raise ValueError("expected source mention span is not canonical JSON")
+        if self.independently_asserted_type_evidence_keys != tuple(
+            sorted(set(self.independently_asserted_type_evidence_keys))
+        ):
+            raise ValueError("expected source type-proof keys must be sorted and unique")
+        return self
+
+
+class ExpectedOperationTerminalOutcome(_ClosedExpectedModel):
+    """Pre-ingest terminal disposition for one already declared operation."""
+
+    record_key: str = Field(min_length=1, max_length=1024)
+    operation_key: str = Field(min_length=1, max_length=1024)
+    source_id: str = Field(min_length=1, max_length=16384)
+    source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    final_status: Literal["committed", "evidence_only", "rejected", "unresolved", "failed"]
+    graph_effect: Literal["exact_committed_delta", "no_graph_mutation"]
+    reason_codes: tuple[str, ...]
+
+    @model_validator(mode="after")
+    def _validate_reason_codes(self) -> ExpectedOperationTerminalOutcome:
+        if self.reason_codes != tuple(sorted(set(self.reason_codes))):
+            raise ValueError("expected operation terminal reason codes must be sorted and unique")
+        return self
+
+
+class ExpectedSourceTerminalOutcome(_ClosedExpectedModel):
+    """Pre-ingest source completion semantics without runtime digest coordinates."""
+
+    record_key: str = Field(min_length=1, max_length=1024)
+    source_id: str = Field(min_length=1, max_length=16384)
+    source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    operation_keys: tuple[str, ...]
+    final_status: Literal[
+        "fully_committed",
+        "partially_committed",
+        "evidence_only",
+        "rejected",
+        "unresolved",
+        "failed",
+    ]
+
+    @model_validator(mode="after")
+    def _validate_operation_keys(self) -> ExpectedSourceTerminalOutcome:
+        if not self.operation_keys or self.operation_keys != tuple(sorted(set(self.operation_keys))):
+            raise ValueError("expected source terminal operation keys must be sorted and unique")
+        return self
+
+
+class ExpectedObservationMembership(_ClosedExpectedModel):
+    """Closed-world logical membership for one independently declared observation."""
+
+    expected_record_keys: tuple[str, ...]
+    exact_record_counts_by_kind: tuple[tuple[str, int], ...]
+
+    @model_validator(mode="after")
+    def _validate_membership(self) -> ExpectedObservationMembership:
+        if len(set(self.expected_record_keys)) != len(self.expected_record_keys):
+            raise ValueError("expected observation record keys are duplicated")
+        count_kinds = tuple(kind for kind, _ in self.exact_record_counts_by_kind)
+        if len(set(count_kinds)) != len(count_kinds) or any(
+            not kind or type(count) is not int or count < 0
+            for kind, count in self.exact_record_counts_by_kind
+        ):
+            raise ValueError("expected observation record counts are invalid")
+        if sum(count for _, count in self.exact_record_counts_by_kind) != len(
+            self.expected_record_keys
+        ):
+            raise ValueError("expected observation counts do not close membership")
+        return self
+
+
 @dataclass(frozen=True)
 class CollectedGraphObservation:
     first_page: GraphObservationPage
@@ -78,6 +170,19 @@ class CollectedGraphObservation:
 class OperationAlignment:
     operation_ids: Mapping[str, str]
     operation_fence_ids: Mapping[str, str]
+
+
+@dataclass(frozen=True)
+class SourceEntityAlignment:
+    source_introduction_ids: Mapping[str, str]
+    entity_revision_ids: Mapping[str, str]
+    logical_entity_ids: Mapping[str, str]
+
+
+@dataclass(frozen=True)
+class TerminalOutcomeAlignment:
+    operation_terminal_outcome_ids: Mapping[str, str]
+    source_terminal_outcome_ids: Mapping[str, str]
 
 
 def canonical_expected_span(value: BaseModel | Mapping[str, object]) -> str:
@@ -207,6 +312,211 @@ def align_operations(
     return OperationAlignment(operation_ids, fence_matching)
 
 
+def align_source_introductions(
+    *,
+    expected: Sequence[ExpectedSourceIntroduction],
+    operation_alignment: OperationAlignment,
+    records: Sequence[GraphObservationStreamRecord],
+) -> SourceEntityAlignment:
+    """Align source introductions only through published fields and operation IDs."""
+    expected_values = tuple(expected)
+    _require_unique_expected_keys(
+        (item.record_key for item in expected_values), "expected source introduction keys"
+    )
+    introductions = tuple(
+        item for item in records if isinstance(item, SourceIntroductionStreamRecord)
+    )
+    if len(introductions) != len(expected_values):
+        raise StructuralComparisonError("source introduction count differs")
+    for item in expected_values:
+        if item.independently_asserted_type_evidence_keys:
+            raise StructuralComparisonError("unverifiable-type-proof: expected keys are nonempty")
+    if any(item.payload.independently_asserted_type_evidence_ids for item in introductions):
+        raise StructuralComparisonError("unverifiable-type-proof: observed IDs are nonempty")
+
+    candidates = {
+        item.record_key: {
+            introduction.primary_key
+            for introduction in introductions
+            if _source_introduction_matches(item, introduction, operation_alignment)
+        }
+        for item in expected_values
+    }
+    try:
+        matching = _unique_perfect_matching(candidates)
+    except StructuralComparisonError as exc:
+        if str(exc) == "operation alignment is ambiguous":
+            raise StructuralComparisonError("source introduction alignment is ambiguous") from exc
+        raise
+    if matching is None:
+        raise StructuralComparisonError("source introduction alignment has no solution")
+    by_primary_key = {item.primary_key: item for item in introductions}
+    entity_pairs: dict[str, set[tuple[str, str]]] = defaultdict(set)
+    for item in expected_values:
+        entity = by_primary_key[matching[item.record_key]].payload.entity
+        entity_pairs[item.entity_key].add((entity.entity_revision_id, entity.logical_entity_id))
+    if any(len(pairs) != 1 for pairs in entity_pairs.values()):
+        raise StructuralComparisonError("entity introduction alignment is inconsistent")
+    resolved_entity_pairs = {
+        entity_key: next(iter(pairs)) for entity_key, pairs in entity_pairs.items()
+    }
+    if len(set(resolved_entity_pairs.values())) != len(resolved_entity_pairs):
+        raise StructuralComparisonError("entity introduction alignment is many-to-one")
+    entity_revision_ids = {
+        entity_key: pair[0] for entity_key, pair in resolved_entity_pairs.items()
+    }
+    logical_entity_ids = {
+        entity_key: pair[1] for entity_key, pair in resolved_entity_pairs.items()
+    }
+    return SourceEntityAlignment(matching, entity_revision_ids, logical_entity_ids)
+
+
+def align_terminal_outcomes(
+    *,
+    expected_operations: Sequence[ExpectedOperationTerminalOutcome],
+    expected_sources: Sequence[ExpectedSourceTerminalOutcome],
+    operation_alignment: OperationAlignment,
+    records: Sequence[GraphObservationStreamRecord],
+) -> TerminalOutcomeAlignment:
+    """Require exact terminal semantics using only established operation mappings."""
+    operation_values = tuple(expected_operations)
+    source_values = tuple(expected_sources)
+    _require_unique_expected_keys(
+        (item.record_key for item in operation_values), "expected operation terminal keys"
+    )
+    _require_unique_expected_keys(
+        (item.operation_key for item in operation_values), "expected terminal operation keys"
+    )
+    _require_unique_expected_keys(
+        (item.record_key for item in source_values), "expected source terminal keys"
+    )
+    operation_outcomes = tuple(
+        item for item in records if isinstance(item, OperationTerminalOutcomeStreamRecord)
+    )
+    source_outcomes = tuple(
+        item for item in records if isinstance(item, SourceTerminalOutcomeStreamRecord)
+    )
+    if len(operation_outcomes) != len(operation_values):
+        raise StructuralComparisonError("operation terminal outcome count differs")
+    if len(source_outcomes) != len(source_values):
+        raise StructuralComparisonError("source terminal outcome count differs")
+
+    operation_candidates = {
+        item.record_key: {
+            outcome.primary_key
+            for outcome in operation_outcomes
+            if _operation_terminal_matches(item, outcome, operation_alignment)
+        }
+        for item in operation_values
+    }
+    operation_matching = _unique_perfect_matching(operation_candidates)
+    if operation_matching is None:
+        raise StructuralComparisonError("operation terminal outcome alignment has no solution")
+
+    source_candidates = {
+        item.record_key: {
+            outcome.primary_key
+            for outcome in source_outcomes
+            if _source_terminal_matches(item, outcome, operation_alignment)
+        }
+        for item in source_values
+    }
+    source_matching = _unique_perfect_matching(source_candidates)
+    if source_matching is None:
+        raise StructuralComparisonError("source terminal outcome alignment has no solution")
+    return TerminalOutcomeAlignment(operation_matching, source_matching)
+
+
+def validate_observation_membership(
+    *,
+    expected: ExpectedObservationMembership,
+    resolved_record_keys: Mapping[str, tuple[str, str]],
+    records: Sequence[GraphObservationStreamRecord],
+) -> None:
+    """Prove exact logical membership and counts against the observed cohort."""
+    expected_keys = set(expected.expected_record_keys)
+    if set(resolved_record_keys) != expected_keys:
+        raise StructuralComparisonError("resolved logical record membership differs")
+    observed_by_physical_key = {(item.record_kind, item.primary_key): item for item in records}
+    if len(observed_by_physical_key) != len(records):
+        raise StructuralComparisonError("observed record membership is duplicated")
+    resolved_physical_keys = tuple(resolved_record_keys.values())
+    if len(set(resolved_physical_keys)) != len(resolved_physical_keys):
+        raise StructuralComparisonError("logical record membership is many-to-one")
+    if set(resolved_physical_keys) != set(observed_by_physical_key):
+        raise StructuralComparisonError("closed-world observation membership differs")
+    actual_counts: dict[str, int] = defaultdict(int)
+    for kind, primary_key in resolved_physical_keys:
+        observed = observed_by_physical_key.get((kind, primary_key))
+        if observed is None or observed.record_kind != kind:
+            raise StructuralComparisonError("resolved record key does not name its observed kind")
+        actual_counts[kind] += 1
+    expected_counts = dict(expected.exact_record_counts_by_kind)
+    if actual_counts != expected_counts:
+        raise StructuralComparisonError("closed-world observation per-kind counts differ")
+
+
+def _require_unique_expected_keys(values: Iterable[str], label: str) -> None:
+    keys = tuple(values)
+    if len(set(keys)) != len(keys):
+        raise StructuralComparisonError(f"{label} are duplicated")
+
+
+def _source_introduction_matches(
+    expected: ExpectedSourceIntroduction,
+    observed: SourceIntroductionStreamRecord,
+    operation_alignment: OperationAlignment,
+) -> bool:
+    operation_id = operation_alignment.operation_ids.get(expected.operation_key)
+    if operation_id is None:
+        raise StructuralComparisonError("source introduction references an unmapped operation")
+    payload = observed.payload
+    return (
+        payload.source_id == expected.source_id
+        and payload.source_digest == expected.source_digest
+        and canonical_expected_span(payload.mention_span) == expected.mention_span
+        and payload.operation_id == operation_id
+    )
+
+
+def _operation_terminal_matches(
+    expected: ExpectedOperationTerminalOutcome,
+    observed: OperationTerminalOutcomeStreamRecord,
+    operation_alignment: OperationAlignment,
+) -> bool:
+    operation_id = operation_alignment.operation_ids.get(expected.operation_key)
+    if operation_id is None:
+        raise StructuralComparisonError("operation terminal outcome references an unmapped operation")
+    payload = observed.payload
+    expected_delta = expected.graph_effect == "exact_committed_delta"
+    return (
+        payload.operation_id == operation_id
+        and payload.source_id == expected.source_id
+        and payload.source_digest == expected.source_digest
+        and payload.final_status == expected.final_status
+        and (payload.graph_revision_delta_digest is not None) == expected_delta
+        and frozenset(payload.reason_codes) == frozenset(expected.reason_codes)
+    )
+
+
+def _source_terminal_matches(
+    expected: ExpectedSourceTerminalOutcome,
+    observed: SourceTerminalOutcomeStreamRecord,
+    operation_alignment: OperationAlignment,
+) -> bool:
+    try:
+        operation_ids = frozenset(operation_alignment.operation_ids[key] for key in expected.operation_keys)
+    except KeyError as exc:
+        raise StructuralComparisonError("source terminal outcome references an unmapped operation") from exc
+    payload = observed.payload
+    return (
+        payload.source_id == expected.source_id
+        and payload.source_digest == expected.source_digest
+        and frozenset(payload.operation_ids) == operation_ids
+        and payload.final_status == expected.final_status
+    )
+
+
 def _unique_perfect_matching(
     candidates: Mapping[str, set[str]], *, allow_ambiguous: bool = False
 ) -> dict[str, str] | None:
@@ -283,11 +593,20 @@ def _canonical_json(value: object) -> str:
 
 __all__ = [
     "CollectedGraphObservation",
+    "ExpectedObservationMembership",
     "ExpectedOperation",
+    "ExpectedOperationTerminalOutcome",
+    "ExpectedSourceIntroduction",
+    "ExpectedSourceTerminalOutcome",
     "OperationAlignment",
     "PublicGraphObservationPort",
+    "SourceEntityAlignment",
     "StructuralComparisonError",
+    "TerminalOutcomeAlignment",
+    "align_source_introductions",
+    "align_terminal_outcomes",
     "align_operations",
     "canonical_expected_span",
     "collect_graph_observation",
+    "validate_observation_membership",
 ]
