@@ -6,6 +6,9 @@ import json
 from pathlib import Path
 from typing import Any
 
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
 ROOT = Path(__file__).resolve().parents[4]
 REGISTRY = ROOT / "acceptance/resources/authority-schema-registry-v1.json"
 MANIFEST = ROOT / "acceptance/generated/authority-schema-manifest-v1.json"
@@ -36,6 +39,32 @@ def _encode(value: Any) -> bytes:
     raise ValueError("vector_type")
 
 
+def _lp(value: bytes) -> bytes:
+    return len(value).to_bytes(8, "big") + value
+
+
+def _unsigned(value: dict[str, Any], schema: dict[str, Any]) -> dict[str, Any]:
+    excluded = {schema["digest_field"], "signature"}
+    return {name: item for name, item in value.items() if name not in excluded}
+
+
+def _digest(domain: str, profile: dict[str, Any], value: object) -> str:
+    return hashlib.sha256(
+        _lp(domain.encode("ascii")) + _lp(_encode(profile)) + _lp(_encode(value))
+    ).hexdigest()
+
+
+def _preimage(value: dict[str, Any], schema: dict[str, Any], registry: dict[str, Any]) -> bytes:
+    signer = value[schema["signer_coordinate_field"]]
+    return _lp(schema["signature_domain"].encode("ascii")) + _lp(_encode({
+        "purpose": schema["purpose"],
+        "profile_binding": registry["profile"],
+        "signer_coordinate": signer,
+        "body_digest": value[schema["digest_field"]],
+        "unsigned_content": _unsigned(value, schema),
+    }))
+
+
 def main() -> None:
     registry_raw = REGISTRY.read_bytes()
     registry = json.loads(registry_raw)
@@ -58,9 +87,30 @@ def main() -> None:
         raise SystemExit("authority schema cardinality")
     if [vector["name"] for vector in vectors["vectors"][:13]] != [row["id"] for row in registry["schemas"]]:
         raise SystemExit("authority vector inventory")
+    if vectors.get("signing_key_id") != "fixture-authority-key":
+        raise SystemExit("authority vector signer")
+    verifier = Ed25519PublicKey.from_public_bytes(bytes.fromhex(vectors["public_key_hex"]))
     for vector, schema in zip(vectors["vectors"][:13], registry["schemas"], strict=True):
         if set(vector["value"]) != {field["name"] for field in schema["fields"]}:
             raise SystemExit(f"authority vector shape: {vector['name']}")
+        value = vector["value"]
+        digest = _digest(schema["digest_domain"], registry["profile"], _unsigned(value, schema))
+        if value[schema["digest_field"]] != digest:
+            raise SystemExit(f"authority vector digest: {vector['name']}")
+        signer_field = schema["signer_coordinate_field"]
+        if signer_field is not None:
+            try:
+                verifier.verify(bytes.fromhex(value["signature"]), _preimage(value, schema, registry))
+            except (InvalidSignature, ValueError) as exc:
+                raise SystemExit(f"authority vector signature: {vector['name']}") from exc
+            tampered = dict(value)
+            tampered["purpose"] = value["purpose"] + ".tampered"
+            try:
+                verifier.verify(bytes.fromhex(value["signature"]), _preimage(tampered, schema, registry))
+            except InvalidSignature:
+                pass
+            else:
+                raise SystemExit(f"authority vector mutation admitted: {vector['name']}")
     for vector in vectors["vectors"]:
         if _encode(vector["value"]).decode("utf-8") != vector["expected_ctv"]:
             raise SystemExit(f"authority vector mismatch: {vector['name']}")

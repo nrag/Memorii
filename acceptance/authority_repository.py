@@ -282,8 +282,11 @@ class SqliteAcceptanceAuthorityFence:
         return answer
 
     def current(self) -> tuple[int, str] | None:
-        with self._connect() as db:
+        db = self._connect()
+        try:
             rows = self._rows(db)
+        finally:
+            db.close()
         return None if not rows else rows[-1][:2]
 
     def compare_and_advance(
@@ -291,8 +294,9 @@ class SqliteAcceptanceAuthorityFence:
     ) -> None:
         if sequence < 1 or not _is_digest(digest):
             raise AuthorityRepositoryUnavailable("acceptance_fence_coordinate")
+        db = self._connect()
         try:
-            with self._connect() as db:
+            try:
                 db.execute("BEGIN IMMEDIATE")
                 rows = self._rows(db)
                 current = None if not rows else rows[-1][:2]
@@ -322,10 +326,12 @@ class SqliteAcceptanceAuthorityFence:
                     ),
                 )
                 db.execute("COMMIT")
-        except AuthorityRepositoryUnavailable:
-            raise
-        except sqlite3.Error as exc:
-            raise AuthorityRepositoryUnavailable("acceptance_fence") from exc
+            except AuthorityRepositoryUnavailable:
+                raise
+            except sqlite3.Error as exc:
+                raise AuthorityRepositoryUnavailable("acceptance_fence") from exc
+        finally:
+            db.close()
 
 
 class AcceptanceAuthorityRepository:

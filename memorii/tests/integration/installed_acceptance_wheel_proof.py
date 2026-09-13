@@ -132,6 +132,12 @@ def main() -> int:
         work,
         True,
     )
+    frozen_fixture = (
+        Path(__file__).resolve().parents[3]
+        / "docs/design/semantic_ingestion/acceptance_authority_vectors/multicell-v2.json"
+    )
+    frozen_proof = Path(__file__).with_name("installed_frozen_numeric_vector_proof.py")
+    _run([installed_python, str(frozen_proof), str(frozen_fixture)], work, True)
     args, receipts, authorizations, _ = _prepare(helpers=helpers, root=work / "success", config_path=config_path)
     result = _run([cli] + args, work, True)
     receipt_digest = result.stdout.strip()

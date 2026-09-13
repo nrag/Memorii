@@ -463,7 +463,9 @@ def _membership(value: Any) -> Membership:
 
 
 def _policy(raw: bytes, limits: TransportLimits) -> Policy:
-    row = _keys(_json(raw, limits), {f.name for f in fields(Policy)}, "policy")
+    row = _keys(_json(raw, limits), {f.name for f in fields(Policy)} | {"schema"}, "policy")
+    if row["schema"] != "statistical_acceptance_policy.v2":
+        raise WireRejected("policy_schema")
     for name, ceiling in (
         ("arithmetic_bits", limits.max_arithmetic_bits),
         ("arithmetic_operations", limits.max_operations),
@@ -506,7 +508,9 @@ def _policy(raw: bytes, limits: TransportLimits) -> Policy:
 
 
 def _evidence(raw: bytes, limits: TransportLimits) -> Evidence:
-    row = _keys(_json(raw, limits), {"events"}, "evidence")
+    row = _keys(_json(raw, limits), {"schema", "events"}, "evidence")
+    if row["schema"] != "statistical_acceptance_evidence.v2":
+        raise WireRejected("evidence_schema")
     if type(row["events"]) is not list:
         raise WireRejected("events")
     events = []

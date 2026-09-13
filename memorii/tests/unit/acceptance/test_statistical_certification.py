@@ -166,6 +166,7 @@ def inputs(
         "upper": q("metric", "1.00"),
     }
     policy = {
+        "schema": "statistical_acceptance_policy.v2",
         "arithmetic_bits": 1024,
         "arithmetic_operations": 40000,
         "precision": 8,
@@ -177,6 +178,7 @@ def inputs(
         "memberships": [member],
     }
     evidence = {
+        "schema": "statistical_acceptance_evidence.v2",
         "events": [
             {
                 "event_id": "event",
@@ -438,6 +440,39 @@ def test_evidence_missing_extra_and_wrong_types_reject(change, reason: str) -> N
     admitted = replace(binding, evidence_sha256=sha256(changed).hexdigest())
     with pytest.raises(WireRejected, match=reason):
         evaluate_certificate(BytesIO(p), BytesIO(changed), admitted, limits)
+
+
+@pytest.mark.parametrize(
+    "target,schema,reason",
+    (
+        ("policy", None, "policy_shape"),
+        ("policy", "statistical_acceptance_policy.v1", "policy_schema"),
+        ("evidence", None, "evidence_shape"),
+        ("evidence", "statistical_acceptance_evidence.v1", "evidence_schema"),
+    ),
+)
+def test_policy_and_evidence_require_explicit_v2_schema(
+    target: str, schema: str | None, reason: str
+) -> None:
+    p, e, binding, limits = inputs()
+    value = json.loads(p if target == "policy" else e)
+    if schema is None:
+        value.pop("schema")
+    else:
+        value["schema"] = schema
+    changed = raw(value)
+    admitted = replace(
+        binding,
+        policy_sha256=sha256(changed).hexdigest() if target == "policy" else binding.policy_sha256,
+        evidence_sha256=sha256(changed).hexdigest() if target == "evidence" else binding.evidence_sha256,
+    )
+    with pytest.raises(WireRejected, match=reason):
+        evaluate_certificate(
+            BytesIO(changed if target == "policy" else p),
+            BytesIO(changed if target == "evidence" else e),
+            admitted,
+            limits,
+        )
 
 
 @pytest.mark.parametrize(

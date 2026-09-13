@@ -23,6 +23,8 @@ def fixture_inputs() -> dict[str, object]:
         "gate_bytes": base64.b64decode(artifacts["capability_statistical_gate_manifest"]["canonical_bytes_base64"]),
         "sampling_frame_bytes": base64.b64decode(artifacts["capability_sampling_frame_manifest"]["canonical_bytes_base64"]),
         "signing_keys": {"fixture-key": base64.b64decode(value["public_key_base64"])},
+        "expected_signing_key_id": "fixture-key",
+        "expected_trust_policy_digest": "a" * 64,
     }
 
 
@@ -42,3 +44,19 @@ def test_v2_chain_rejects_tampered_signature(fixture_inputs: dict[str, object]) 
     value["coverage_bytes"] = bytes(raw)
     with pytest.raises(NumericContextAuthorityRejected):
         verify_numeric_context(**value)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    (
+        ("expected_signing_key_id", "other-key"),
+        ("expected_trust_policy_digest", "b" * 64),
+    ),
+)
+def test_v2_chain_rejects_mixed_signer_or_trust_policy(
+    fixture_inputs: dict[str, object], field: str, value: str
+) -> None:
+    changed = dict(fixture_inputs)
+    changed[field] = value
+    with pytest.raises(NumericContextAuthorityRejected, match="trust_policy|signer"):
+        verify_numeric_context(**changed)  # type: ignore[arg-type]

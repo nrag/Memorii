@@ -52,6 +52,14 @@ class DurableEvaluationAttemptStore(RegisteredEvaluationReceiptStore, Protocol):
 
 
 @runtime_checkable
+class NumericContextResolver(Protocol):
+    def resolve(
+        self, *, baseline_bytes: bytes, release_bytes: bytes,
+        policy_bytes: bytes, evidence_bytes: bytes,
+    ) -> HeldBinding: ...
+
+
+@runtime_checkable
 class LegacyEvaluationReceiptStore(Protocol):
     """Compatibility store for non-authoritative in-process evaluation."""
 
@@ -101,7 +109,7 @@ class AcceptanceEvaluator:
         self,
         *,
         approval_verifier: CapabilityBaselineApprovalVerifier,
-        numeric_binding: HeldBinding,
+        numeric_binding: HeldBinding | None,
         numeric_limits: TransportLimits,
         receipt_store: LegacyEvaluationReceiptStore | RegisteredEvaluationReceiptStore,
         deployment_issuer: DeploymentAuthorizationBridge | SerializedDeploymentAuthorizationBridge,
@@ -110,11 +118,16 @@ class AcceptanceEvaluator:
         evaluator_subject_id: str | None = None,
         artifact_signer: Callable[[bytes], str] | None = None,
         evaluator_signing_key_coordinate: str | None = None,
+        numeric_context_resolver: NumericContextResolver | None = None,
     ) -> None:
-        if type(numeric_binding) is not HeldBinding or type(numeric_limits) is not TransportLimits:
+        if (
+            type(numeric_limits) is not TransportLimits
+            or (type(numeric_binding) is HeldBinding) == isinstance(numeric_context_resolver, NumericContextResolver)
+        ):
             raise AcceptanceEvaluationError("acceptance_numeric_authority")
         self._approval_verifier = approval_verifier
         self._numeric_binding = numeric_binding
+        self._numeric_context_resolver = numeric_context_resolver
         self._numeric_limits = numeric_limits
         self._receipt_store = receipt_store
         self._deployment_issuer = deployment_issuer
@@ -170,7 +183,15 @@ class AcceptanceEvaluator:
             now = snapshot_time
         try:
             verified = self._approval_verifier.verify(release_bytes, baseline_bytes, now)
-            certificate = verify_certificate(BytesIO(certificate_bytes), BytesIO(policy_bytes), BytesIO(evidence_bytes), self._numeric_binding, self._numeric_limits)
+            binding = self._numeric_binding
+            if self._numeric_context_resolver is not None:
+                binding = self._numeric_context_resolver.resolve(
+                    baseline_bytes=baseline_bytes, release_bytes=release_bytes,
+                    policy_bytes=policy_bytes, evidence_bytes=evidence_bytes,
+                )
+            if type(binding) is not HeldBinding:
+                raise AcceptanceEvaluationError("acceptance_numeric_authority")
+            certificate = verify_certificate(BytesIO(certificate_bytes), BytesIO(policy_bytes), BytesIO(evidence_bytes), binding, self._numeric_limits)
         except (ApprovalRejected, WireRejected, ValueError) as exc:
             raise AcceptanceEvaluationError("acceptance_evaluation_rejected") from exc
         if not certificate.accepted:
@@ -440,6 +461,7 @@ __all__ = [
     "AcceptanceEvaluationError",
     "AcceptanceEvaluator",
     "DurableEvaluationAttemptStore",
+    "NumericContextResolver",
     "LegacyEvaluationReceiptStore",
     "RegisteredEvaluationReceiptStore",
     "SerializedDeploymentAuthorizationBridge",

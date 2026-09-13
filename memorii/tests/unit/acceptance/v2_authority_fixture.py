@@ -147,6 +147,7 @@ def build_v2_authority(
     verified = verify_numeric_context(
         baseline_bytes=baseline, release_bytes=release, coverage_bytes=coverage, gate_bytes=gates,
         sampling_frame_bytes=frame, signing_keys={coordinate: key.public_key().public_bytes_raw()},
+        expected_signing_key_id=coordinate, expected_trust_policy_digest=trust_digest,
     )
     binding = HeldBinding(sha256(policy).hexdigest(), sha256(evidence).hexdigest(), verified.certification_context.authority, verified.certification_context)
     return V2AuthorityFixture(policy, baseline, release, coverage, gates, frame, release_digest, binding)

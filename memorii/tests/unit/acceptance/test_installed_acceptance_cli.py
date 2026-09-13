@@ -228,14 +228,12 @@ def _installed_fixture(
     )
     certificate = candidate(numeric.policy, evidence, numeric.binding, limits)
     numeric_authority = {
-        "policy_sha256": sha256(numeric.policy).hexdigest(),
-        "evidence_sha256": sha256(evidence).hexdigest(),
-        "baseline": base64.b64encode(numeric.baseline).decode("ascii"),
-        "release": base64.b64encode(numeric.release).decode("ascii"),
         "coverage": base64.b64encode(numeric.coverage).decode("ascii"),
         "gates": base64.b64encode(numeric.gates).decode("ascii"),
         "sampling_frame": base64.b64encode(numeric.sampling_frame).decode("ascii"),
         "trust_keys": {coordinate: _public(authority_key)},
+        "signing_key_id": coordinate,
+        "trust_policy_digest": "9" * 64,
     }
     config = {
         "format": "memorii.acceptance.runtime.v2", "authority_repository_root": str(authority_root),

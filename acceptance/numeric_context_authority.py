@@ -18,7 +18,7 @@ from acceptance.schema_registry import decode_artifact, signing_preimage
 from acceptance.statistical_certification import (
     CanonicalDecimalQuantity, EncodingSpec, Gate, GateLocator, Membership,
     NumericAuthority,
-    PreverifiedNumericCertificationContext, PreverifiedNumericGate,
+    HeldBinding, PreverifiedNumericCertificationContext, PreverifiedNumericGate,
 )
 
 
@@ -114,6 +114,7 @@ def unsupported_cells_digest(rows: tuple[CoverageDisposition, ...]) -> str:
 def verify_numeric_context(
     *, baseline_bytes: bytes, release_bytes: bytes, coverage_bytes: bytes,
     gate_bytes: bytes, sampling_frame_bytes: bytes, signing_keys: Mapping[str, bytes],
+    expected_signing_key_id: str, expected_trust_policy_digest: str,
 ) -> VerifiedNumericContext:
     """Verify all signed manifests and project one complete certification context."""
     baseline, release, coverage, gates, frame = (
@@ -121,6 +122,12 @@ def verify_numeric_context(
         for raw, schema in zip((baseline_bytes, release_bytes, coverage_bytes, gate_bytes, sampling_frame_bytes), _SCHEMAS, strict=True)
     )
     assert all(isinstance(item, dict) for item in (baseline, release, coverage, gates, frame))
+    if any(
+        item["signing_key_id"] != expected_signing_key_id
+        or item["trust_policy_digest"] != expected_trust_policy_digest
+        for item in (baseline, coverage, gates, frame)
+    ) or release["acceptance_signing_key_reference"] != expected_signing_key_id:
+        raise NumericContextAuthorityRejected("numeric_context_trust_policy")
     baseline_digest = sha256(baseline_bytes).hexdigest()
     if release["approved_baseline_artifact_digest"] != baseline_digest:
         raise NumericContextAuthorityRejected("numeric_context_baseline_release_join")
@@ -184,3 +191,32 @@ def verify_numeric_context(
     )
     context = PreverifiedNumericCertificationContext(legacy_authority, specs, CanonicalDecimalQuantity(**frame["family_alpha"]), str(frame["family_alpha_spec_id"]), converted_gates, members)
     return VerifiedNumericContext(authority, rows, context)
+
+
+@dataclass(frozen=True)
+class FixedNumericManifestAuthority:
+    """Fixed trust and manifests; the fenced candidate selects release bytes."""
+
+    coverage_bytes: bytes
+    gate_bytes: bytes
+    sampling_frame_bytes: bytes
+    signing_keys: Mapping[str, bytes]
+    expected_signing_key_id: str
+    expected_trust_policy_digest: str
+
+    def resolve(
+        self, *, baseline_bytes: bytes, release_bytes: bytes,
+        policy_bytes: bytes, evidence_bytes: bytes,
+    ) -> HeldBinding:
+        verified = verify_numeric_context(
+            baseline_bytes=baseline_bytes, release_bytes=release_bytes,
+            coverage_bytes=self.coverage_bytes, gate_bytes=self.gate_bytes,
+            sampling_frame_bytes=self.sampling_frame_bytes,
+            signing_keys=self.signing_keys,
+            expected_signing_key_id=self.expected_signing_key_id,
+            expected_trust_policy_digest=self.expected_trust_policy_digest,
+        )
+        return HeldBinding(
+            sha256(policy_bytes).hexdigest(), sha256(evidence_bytes).hexdigest(),
+            verified.certification_context.authority, verified.certification_context,
+        )

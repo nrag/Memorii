@@ -41,7 +41,7 @@ from acceptance.evaluator import AcceptanceEvaluator, SerializedDeploymentAuthor
 from acceptance.deployment_bridge import configured_publisher
 from acceptance.production_revocation import IndependentProductionRevocationEvidenceVerifier
 from acceptance.production_revocation_bridge import configured_revocation_reader
-from acceptance.numeric_context_authority import verify_numeric_context
+from acceptance.numeric_context_authority import FixedNumericManifestAuthority
 from acceptance.statistical_certification import (
     CanonicalDecimalQuantity,
     EncodingSpec,
@@ -269,19 +269,31 @@ def _numeric_binding(value: object) -> HeldBinding:
         raise AcceptanceRuntimeConfigurationError("acceptance_runtime_numeric_binding") from exc
 
 
-def _v2_numeric_binding(value: object) -> HeldBinding:
-    """Only signed manifest bytes may define numeric certification semantics."""
-    required = {"policy_sha256", "evidence_sha256", "baseline", "release", "coverage", "gates", "sampling_frame", "trust_keys"}
+def _v2_numeric_authority(value: object) -> FixedNumericManifestAuthority:
+    """Decode immutable manifests and trust; the candidate supplies its release."""
+    required = {
+        "coverage", "gates", "sampling_frame", "trust_keys",
+        "signing_key_id", "trust_policy_digest",
+    }
     if type(value) is not dict or set(value) != required or type(value["trust_keys"]) is not dict:
         raise AcceptanceRuntimeConfigurationError("acceptance_runtime_numeric_authority")
     try:
-        raw = {name: base64.b64decode(value[name], validate=True) for name in ("baseline", "release", "coverage", "gates", "sampling_frame")}
+        raw = {
+            name: base64.b64decode(value[name], validate=True)
+            for name in ("coverage", "gates", "sampling_frame")
+        }
         keys = {name: _hex(key, "numeric_authority_key", 32) for name, key in value["trust_keys"].items()}
-        verified = verify_numeric_context(
-            baseline_bytes=raw["baseline"], release_bytes=raw["release"], coverage_bytes=raw["coverage"],
-            gate_bytes=raw["gates"], sampling_frame_bytes=raw["sampling_frame"], signing_keys=keys,
+        signing_key_id = value["signing_key_id"]
+        trust_policy_digest = value["trust_policy_digest"]
+        if not isinstance(signing_key_id, str) or signing_key_id not in keys:
+            raise ValueError("numeric_authority_signer")
+        _hex(trust_policy_digest, "numeric_authority_trust_policy", 32)
+        return FixedNumericManifestAuthority(
+            coverage_bytes=raw["coverage"], gate_bytes=raw["gates"],
+            sampling_frame_bytes=raw["sampling_frame"], signing_keys=keys,
+            expected_signing_key_id=signing_key_id,
+            expected_trust_policy_digest=trust_policy_digest,
         )
-        return HeldBinding(value["policy_sha256"], value["evidence_sha256"], verified.certification_context.authority, verified.certification_context)
     except (KeyError, TypeError, ValueError) as exc:
         raise AcceptanceRuntimeConfigurationError("acceptance_runtime_numeric_authority") from exc
 
@@ -367,7 +379,9 @@ class InstalledAcceptanceRuntime:
         )
         self._evaluator = AcceptanceEvaluator(
             approval_verifier=CapabilityBaselineApprovalVerifier(keys=keys, authority_repository=_DurableApprovalView(repository), limits=acceptance_limits),
-            numeric_binding=_v2_numeric_binding(config["numeric_authority"]), numeric_limits=numeric_limits,
+            numeric_binding=None,
+            numeric_context_resolver=_v2_numeric_authority(config["numeric_authority"]),
+            numeric_limits=numeric_limits,
             receipt_store=AtomicEvaluationReceiptStore(_absolute_path(config["receipt_root"], "receipt_root")),
             deployment_issuer=SerializedDeploymentAuthorizationBridge(issuer),
             now_provider=lambda: datetime.now(tz=UTC), authority_repository=repository,

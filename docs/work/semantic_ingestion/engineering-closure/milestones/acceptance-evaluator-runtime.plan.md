@@ -87,8 +87,9 @@ approval, qualifying measurements and final signatures remain release conditions
 
 ## Next Action
 
-Remediate the confirmed `aa41b0d2` review findings, then freeze a successor
-candidate and repeat all three independent reviews before promoting R14.
+Commit the complete Stage 1 V2 remediation candidate, repeat all three
+independent reviews on that exact revision, and reconcile every finding before
+promoting R14.
 
 ## Signed Numeric-Context V2 Preparation (2026-09-12)
 
@@ -389,6 +390,39 @@ cover all 13 registered artifacts; the signed multi-cell feasibility matrix,
 Ruff, first-party Pyright, and diff checks pass. R14 remains partial until the
 frozen successor receives independent specification, correctness, and test
 review. Next action: commit the successor and run those three reviews.
+
+## Stage 1 V2 Review Remediation Candidate (2026-09-13)
+
+The first frozen V2 runtime candidate at `531e4a80` passed its local gates but
+all three independent reviews identified two confirmed P2 defects: fixed
+configuration selected baseline/release bytes instead of the fenced candidate,
+and numeric artifacts were not constrained to one configured signer and trust
+policy. The test review also found unclosed SQLite fence connections and
+insufficient frozen-vector proof. The candidate was not promoted.
+
+The remediation makes fixed configuration own only coverage, gate and
+sampling-frame manifests, trust keys, expected signer, and trust-policy digest.
+After the repository lease selects the active release, the evaluator resolves
+the candidate baseline/release against those fixed manifests and hashes the
+exact V2-marked policy/evidence into its held binding. An installed successor
+release therefore requires no numeric configuration edit. Mixed signer/policy
+chains, unversioned or V1 policy/evidence, stale authority, and tampering fail
+closed. SQLite fence calls now close connections on every return and exception.
+
+The 13 registered authority vectors now contain valid deterministic Ed25519
+digests/signatures. Their acceptance-independent checker verifies each
+digest/signature and rejects a body mutation. A separate frozen signed V2
+corpus exercises five gates, four cells, ten memberships, explicit unsupported
+cells, non-uniform weighted clusters, exact-binomial and weighted-Hoeffding
+methods, and a successor release through the installed wheel. CI regenerates
+both frozen vector sets, rejects drift, and runs the isolated public wheel proof.
+
+Local remediation evidence: 242 acceptance/wire tests pass with warnings as
+errors; Ruff passes; explicit first-party Pyright reports zero errors; vector
+generation/checking and diff checks pass; and the isolated wheel proof publishes
+one signed receipt and deployment authorization while passing all 14 installed
+negative cases. This remains a review candidate; R14 is partial until fresh
+specification, correctness, and test reviews of the exact commit are reconciled.
 
 ## V2 Numeric Authority Cutover (in progress, 2026-09-12)
 

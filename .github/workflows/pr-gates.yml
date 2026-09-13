@@ -775,6 +775,13 @@ jobs:
           && python -m pip wheel . --no-deps --wheel-dir "${RUNNER_TEMP}/acceptance-wheel"
           && python -m venv "${RUNNER_TEMP}/acceptance-venv"
           && "${RUNNER_TEMP}/acceptance-venv/bin/python" -m pip install "${RUNNER_TEMP}"/acceptance-wheel/*.whl
+      - name: Verify frozen signed authority vectors
+        working-directory: memorii
+        run: >-
+          PYTHONPATH=.. python ../docs/design/semantic_ingestion/acceptance_authority_vectors/generate_manifest.py
+          && PYTHONPATH=.. python ../docs/design/semantic_ingestion/acceptance_authority_vectors/generate_multicell.py
+          && python ../docs/design/semantic_ingestion/acceptance_authority_vectors/check_vectors.py
+          && git diff --exit-code -- ../acceptance/generated/authority-schema-manifest-v1.json ../docs/design/semantic_ingestion/acceptance_authority_vectors
       - name: Prove installed provider and rejection boundaries
         working-directory: memorii
         run: >-
