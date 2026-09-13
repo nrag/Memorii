@@ -6,14 +6,24 @@ import json
 import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+from acceptance.ctv import encode_typed_value
 from acceptance.production_revocation import (
     IndependentProductionRevocationEvidenceVerifier,
     ProductionRevocationEvidenceError,
 )
 from acceptance.production_revocation_bridge import SerializedProductionRevocationEvidence
-from acceptance.schema_registry import canonical_digest, schema_for, signing_preimage, unsigned_artifact
+from acceptance.schema_registry import (
+    canonical_digest,
+    decode_artifact,
+    load_registry,
+    lp,
+    schema_for,
+    signing_preimage,
+    unsigned_artifact,
+)
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from memorii.core.memory_evolution.deployment_authorization import (
@@ -47,6 +57,34 @@ def _artifact(
     if not isinstance(digest, str):
         raise AssertionError("registered artifact digest is not text")
     return digest, _json(value)
+
+
+def _signed_unchecked_artifact(
+    schema: str, signer: Ed25519PrivateKey, coordinate: str, **fields: object
+) -> bytes:
+    """Sign bytes without invoking the acceptance descriptor validator."""
+    registered = schema_for(schema)
+    value = dict(fields)
+    digest_field = registered["digest_field"]
+    value[digest_field] = "0" * 64
+    value["signing_key_coordinate"] = coordinate
+    value["signature"] = "0" * 128
+    unsigned = unsigned_artifact(value, schema)
+    digest = canonical_digest(registered["digest_domain"], "registered", unsigned)
+    value[digest_field] = digest
+    preimage = lp(registered["signature_domain"].encode("ascii")) + lp(
+        encode_typed_value(
+            {
+                "purpose": registered["purpose"],
+                "profile_binding": load_registry()["profile"],
+                "signer_coordinate": coordinate,
+                "body_digest": digest,
+                "unsigned_content": unsigned,
+            }
+        )
+    )
+    value["signature"] = signer.sign(preimage).hex()
+    return _json(value)
 
 
 class _Reader:
@@ -256,6 +294,36 @@ def test_production_file_reader_requires_preprovisioned_secure_root(tmp_path: Pa
     assert not root.exists()
 
 
+def test_production_file_reader_exposes_no_mutation_capability(tmp_path: Path) -> None:
+    root = tmp_path / "read-only-production"
+    root.mkdir(mode=0o700)
+    reader = InstalledProductionRevocationReader().from_fixed_configuration(
+        {"reader_root": str(root)}
+    )
+    assert "_publish_revocation_evidence" not in vars(type(reader))
+    assert not (root / "objects").exists()
+    assert not (root / "current").exists()
+
+
+def test_production_file_reader_lease_preserves_caller_oserror(tmp_path: Path) -> None:
+    root = tmp_path / "read-only-production"
+    root.mkdir(mode=0o700)
+    now = datetime(2026, 9, 13, tzinfo=UTC)
+    reader = InstalledProductionRevocationReader().from_fixed_configuration(
+        {"reader_root": str(root)}
+    )
+    artifact = SimpleNamespace(
+        verified_capability_baseline_approval_release_digest="a" * 64,
+        expires_at=now + timedelta(minutes=1),
+    )
+    with (
+        pytest.raises(OSError, match="caller storage failure"),
+        reader.current_use(artifact=artifact, server_time=now) as current,
+    ):
+        assert current is True
+        raise OSError("caller storage failure")
+
+
 @pytest.mark.parametrize("mutation", ("signature", "unknown_key", "digest", "join"))
 def test_registered_production_publisher_rejects_forged_evidence_before_write(
     tmp_path: Path, mutation: str,
@@ -287,3 +355,108 @@ def test_registered_production_publisher_rejects_forged_evidence_before_write(
         )
     assert not (root / "objects").exists()
     assert not (root / "current").exists()
+
+
+@pytest.mark.parametrize("mutation", ("integer_maximum", "string_ceiling", "array_ceiling"))
+def test_registered_production_publisher_matches_frozen_schema_constraints_before_write(
+    tmp_path: Path, mutation: str,
+) -> None:
+    prior, receipt, checkpoint, _, key, coordinate = _evidence()
+    root = tmp_path / "production"
+    root.mkdir(mode=0o700)
+    public = key.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+    publisher = InstalledProductionRevocationPublisher().from_fixed_configuration({
+        "reader_root": str(root), "trust_keys": {coordinate: public.hex()},
+    })
+    if mutation == "integer_maximum":
+        value = json.loads(receipt)
+        receipt = _signed_unchecked_artifact(
+            "ProductionRevocationReceipt",
+            key,
+            coordinate,
+            **{
+                key_name: (2**63 if key_name == "prior_production_epoch" else item)
+                for key_name, item in value.items()
+                if key_name not in {"receipt_digest", "signing_key_coordinate", "signature"}
+            },
+        )
+        invalid_schema, invalid_raw = "ProductionRevocationReceipt", receipt
+    else:
+        value = json.loads(checkpoint)
+        if mutation == "string_ceiling":
+            invalid_coordinate = "k" * 16_385
+            fields = {
+                key_name: item
+                for key_name, item in value.items()
+                if key_name not in {"checkpoint_digest", "signing_key_coordinate", "signature"}
+            }
+        else:
+            invalid_coordinate = coordinate
+            fields = {
+                key_name: ([f"{index:064x}" for index in range(1_025)] if key_name == "active_authorization_digests" else item)
+                for key_name, item in value.items()
+                if key_name not in {"checkpoint_digest", "signing_key_coordinate", "signature"}
+            }
+        checkpoint = _signed_unchecked_artifact(
+            "ProductionEpochCheckpoint", key, invalid_coordinate, **fields
+        )
+        if mutation == "string_ceiling":
+            publisher = InstalledProductionRevocationPublisher().from_fixed_configuration({
+                "reader_root": str(root), "trust_keys": {invalid_coordinate: public.hex()},
+            })
+        invalid_schema, invalid_raw = "ProductionEpochCheckpoint", checkpoint
+    with pytest.raises(ValueError):
+        decode_artifact(invalid_raw, invalid_schema)
+    with pytest.raises(ValueError):
+        publisher.publish_verified(
+            prior_approval_release_digest=prior, receipt=receipt, checkpoint=checkpoint,
+        )
+    assert not (root / "objects").exists()
+    assert not (root / "current").exists()
+
+
+@pytest.mark.parametrize("zero_first_write", (False, True))
+def test_registered_production_publisher_handles_short_mapping_writes_and_retry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, zero_first_write: bool,
+) -> None:
+    prior, receipt, checkpoint, parents, key, coordinate = _evidence()
+    root = tmp_path / "production"
+    objects = root / "objects"
+    root.mkdir(mode=0o700)
+    objects.mkdir(mode=0o700)
+    for digest, raw in parents.items():
+        (objects / digest).write_bytes(raw)
+    public = key.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+    publisher = InstalledProductionRevocationPublisher().from_fixed_configuration({
+        "reader_root": str(root), "trust_keys": {coordinate: public.hex()},
+    })
+    real_write = os.write
+    calls = 0
+
+    def constrained_write(descriptor: int, payload: bytes) -> int:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            if zero_first_write:
+                return 0
+            return real_write(descriptor, payload[:7])
+        return real_write(descriptor, payload)
+
+    monkeypatch.setattr(os, "write", constrained_write)
+    if zero_first_write:
+        with pytest.raises(ValueError, match="production_revocation_publish"):
+            publisher.publish_verified(
+                prior_approval_release_digest=prior,
+                receipt=receipt,
+                checkpoint=checkpoint,
+            )
+        assert not (root / "current" / f"{prior}.json").exists()
+        monkeypatch.setattr(os, "write", real_write)
+    publisher.publish_verified(
+        prior_approval_release_digest=prior, receipt=receipt, checkpoint=checkpoint,
+    )
+    observed = InstalledProductionRevocationReader().from_fixed_configuration(
+        {"reader_root": str(root)}
+    ).read_for_prior_release(prior)
+    assert observed.receipt == receipt
+    assert observed.checkpoint == checkpoint

@@ -113,8 +113,40 @@ records, commits and pushes.
 
 ## Next Action
 
-Freeze and push the final R15 candidate, then obtain independent specification,
-correctness, and test reviews against that exact revision.
+Complete the consolidated R15 validation on the current remediation, freeze and
+push the candidate, then obtain independent specification, correctness, and test
+reviews against that exact revision.
+
+## Exact-Revision Review Remediation Round 5 (2026-09-13)
+
+Review of `34ae0a91d398c71f5f92fe07dfe1096af2a93450` confirmed four
+bounded production gaps. The current candidate corrects them without changing
+the public revocation wire format:
+
+- the fixed reader factory now returns a read/lease-only object with no storage
+  mutation method. A separate publisher-only storage capability owns object and
+  mapping publication, and it is constructed only behind the registered
+  authenticated publisher;
+- the production-owned verifier now enforces the frozen parser ceilings and
+  receipt/checkpoint descriptor constraints, including 64-bit integer maxima,
+  string and signature bounds, array bounds, node/depth limits, and rejection of
+  non-integer JSON numbers. Signed invalid artifacts rejected by acceptance are
+  also rejected before production storage;
+- the shared current-use lease translates only lock-acquisition failures.
+  Exceptions raised by the protected group operation retain their original type
+  and message;
+- mapping publication writes until the complete canonical payload is durable,
+  rejects zero or invalid progress, removes interrupted temporary files, and
+  permits an exact retry rather than leaving an unrecoverable coordinate.
+
+The focused production boundary suite reports 21 passing tests under
+warnings-as-errors. It includes reader-capability absence, signed schema-parity
+mutations, caller exception preservation, partial-write completion, zero-write
+failure, and successful recovery. The consolidated monitor, acceptance-host,
+and revocation-boundary gate reports 111 passing tests in 514.97 seconds under
+warnings-as-errors. Ruff and first-party Pyright are clean. R15 remains
+candidate complete pending fresh three-role review of the eventual exact
+revision.
 
 ## R15 Compatibility And Trust-Linearization Remediation (2026-09-13)
 
