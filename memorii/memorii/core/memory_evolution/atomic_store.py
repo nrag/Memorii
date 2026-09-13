@@ -102,6 +102,7 @@ from memorii.core.memory_plane.store import (
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility, TemporalValidityStatus
 
 if TYPE_CHECKING:
+    from memorii.core.memory_evolution.capability_monitoring import CapabilityStatus
     from memorii.core.memory_evolution.graph_ingestion_time_contracts import (
         TransactionGroupCommitTimeAttestation,
     )
@@ -13868,29 +13869,67 @@ class SemanticIngestionAtomicStore:
         with self._semantic_integrity_linearization.exclusive():
             return write()
 
+    def current_capability_status(
+        self, capability_fingerprint: str,
+    ) -> tuple[CapabilityStatus, str] | None:
+        """Return the validated mutable status and exact persisted record digest."""
+        from memorii.core.memory_evolution.capability_monitoring import CapabilityStatus
+
+        record = self._memory_plane.get_record(
+            "semantic_ingestion:capability-status:" + capability_fingerprint
+        )
+        if record is None or record.source_kind != "semantic_ingestion_capability_status":
+            return None
+        try:
+            status = CapabilityStatus.model_validate(record.content["status"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PreplanningStoreError("capability status authority is invalid") from exc
+        if status.capability_fingerprint != capability_fingerprint:
+            raise PreplanningStoreError("capability status authority is substituted")
+        return status, record_digest(record)
+
     def _capability_status_preconditions_for_group_commit(
         self, request: BootstrapGraphGroupCommitRequestV3,
     ) -> tuple[MemoryPlanePrecondition, ...]:
         """Load every sealed operation status and retain it as the group CAS read set."""
         from memorii.core.memory_evolution.capability_monitoring import CapabilityStatus
 
+        accepted_operation_ids = {
+            item.operation_id
+            for item in request.ordered_operation_inputs
+            if item.reduction.native_terminal.status == "accepted"
+        }
+        request_operation_ids = set(request.operation_ids)
         bindings = tuple(
             binding
             for binding in request.pre_execution_manifest_identity.core.capability_bindings
-            if binding.operation_id in request.operation_ids
+            if binding.operation_id in request_operation_ids
         )
-        if not bindings:
+        bound_operation_ids = {binding.operation_id for binding in bindings}
+        if not accepted_operation_ids and not bound_operation_ids:
             return ()
-        if {binding.operation_id for binding in bindings} != set(request.operation_ids):
+        if not accepted_operation_ids.issubset(bound_operation_ids):
             raise PreplanningStoreError("capability status bindings are incomplete")
         deduplicated = {}
         for binding in bindings:
             fingerprint = binding.capability_fingerprint
-            prior = deduplicated.setdefault(fingerprint, binding)
-            if prior != binding:
+            coordinates = (
+                binding.capability_status_revision,
+                binding.capability_status_record_digest,
+                binding.monitoring_policy_digest,
+                binding.evidence_freshness_digest,
+            )
+            prior = deduplicated.setdefault(fingerprint, coordinates)
+            if prior != coordinates:
                 raise PreplanningStoreError("capability status bindings disagree")
         preconditions: list[MemoryPlanePrecondition] = []
-        for fingerprint, binding in sorted(deduplicated.items()):
+        for fingerprint, coordinates in sorted(deduplicated.items()):
+            (
+                status_revision,
+                status_record_digest,
+                monitoring_policy_digest,
+                evidence_freshness_digest,
+            ) = coordinates
             record_id = "semantic_ingestion:capability-status:" + fingerprint
             record = self._memory_plane.get_record(record_id)
             if record is None or record.source_kind != "semantic_ingestion_capability_status":
@@ -13901,10 +13940,10 @@ class SemanticIngestionAtomicStore:
                 raise PreplanningStoreError("capability status authority is invalid") from exc
             if (
                 status.status != "active"
-                or str(status.status_revision) != binding.capability_status_revision
-                or record_digest(record) != binding.capability_status_record_digest
-                or status.monitoring_policy_digest != binding.monitoring_policy_digest
-                or status.evidence_freshness_digest != binding.evidence_freshness_digest
+                or str(status.status_revision) != status_revision
+                or record_digest(record) != status_record_digest
+                or status.monitoring_policy_digest != monitoring_policy_digest
+                or status.evidence_freshness_digest != evidence_freshness_digest
             ):
                 raise PreplanningStoreError("capability status binding is stale")
             preconditions.append(

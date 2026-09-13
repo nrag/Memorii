@@ -12,6 +12,15 @@ from memorii.core.memory_evolution.bootstrap_profile import (
     HostBootstrapMaterialVerifier,
     HostVerifiedBootstrapMaterial,
 )
+from memorii.core.memory_evolution.capability_monitoring import (
+    CapabilityEvidenceWindowProvider,
+    CapabilityMonitoringPolicy,
+)
+from memorii.core.memory_evolution.deployment_authorization import (
+    DeploymentAuthorizationArtifact,
+    DeploymentAuthorizationArtifactVerifier,
+    DeploymentAuthorizationError,
+)
 from memorii.core.memory_evolution.ingestion_contracts import (
     AuthenticatedIngressContextResolver,
     encode_typed_value,
@@ -26,6 +35,7 @@ _VERIFICATION_SYMBOL = (
     "HostBootstrapMaterialVerifier.verify"
 )
 _ISSUANCE_TOKEN = object()
+_MONITORING_ISSUANCE_TOKEN = object()
 
 
 @dataclass(frozen=True)
@@ -62,6 +72,84 @@ class VerifiedProductionHostAuthority:
     _ingress_resolver: AuthenticatedIngressContextResolver
     receipt: ProductionAuthorityCompositionReceipt
     _issuance_token: object
+
+
+@dataclass(frozen=True)
+class VerifiedCapabilityMonitoringAuthority:
+    """Signed capability-baseline authority plus its host evidence source."""
+
+    _policy: CapabilityMonitoringPolicy
+    _evidence_provider: CapabilityEvidenceWindowProvider
+    _deployment_artifact: DeploymentAuthorizationArtifact
+    _issuance_token: object
+
+
+def build_verified_capability_monitoring_authority(
+    *,
+    deployment_authorization_bytes: bytes,
+    deployment_authorization_verifier: DeploymentAuthorizationArtifactVerifier,
+    policy: CapabilityMonitoringPolicy,
+    evidence_provider: CapabilityEvidenceWindowProvider,
+    server_time: datetime,
+) -> VerifiedCapabilityMonitoringAuthority | None:
+    """Bind a monitor policy to a verified signed capability-baseline release."""
+
+    if not hasattr(evidence_provider, "load_evidence_windows"):
+        return None
+    try:
+        artifact = deployment_authorization_verifier.verify(
+            bytes(deployment_authorization_bytes), server_time=server_time
+        )
+    except (DeploymentAuthorizationError, TypeError, ValueError):
+        return None
+    if (
+        artifact.purpose != "semantic_ingestion_capability_baseline"
+        or artifact.target_kind != "capability_baseline"
+        or artifact.target_artifact_digest != policy.policy_digest
+        or artifact.capability_fingerprint != policy.capability_fingerprint
+        or artifact.verified_capability_baseline_approval_release_digest is None
+        or artifact.active_epoch != 1
+    ):
+        return None
+    return VerifiedCapabilityMonitoringAuthority(
+        _policy=policy,
+        _evidence_provider=evidence_provider,
+        _deployment_artifact=artifact,
+        _issuance_token=_MONITORING_ISSUANCE_TOKEN,
+    )
+
+
+def verified_capability_monitoring_authority_inputs(
+    authorities: tuple[VerifiedCapabilityMonitoringAuthority, ...],
+) -> tuple[
+    tuple[CapabilityMonitoringPolicy, ...],
+    CapabilityEvidenceWindowProvider | None,
+    tuple[tuple[str, str], ...],
+]:
+    """Return verified monitor inputs and signed initialization coordinates."""
+
+    if any(
+        type(authority) is not VerifiedCapabilityMonitoringAuthority
+        or authority._issuance_token is not _MONITORING_ISSUANCE_TOKEN
+        for authority in authorities
+    ):
+        raise ValueError("verified capability monitoring authority is invalid")
+    providers = {id(authority._evidence_provider) for authority in authorities}
+    if len(providers) > 1:
+        raise ValueError(
+            "verified capability monitoring authorities use different evidence providers"
+        )
+    return (
+        tuple(authority._policy for authority in authorities),
+        authorities[0]._evidence_provider if authorities else None,
+        tuple(
+            (
+                authority._policy.capability_fingerprint,
+                authority._deployment_artifact.authorization_digest,
+            )
+            for authority in authorities
+        ),
+    )
 
 
 def build_verified_production_host_authority(
@@ -169,6 +257,9 @@ __all__ = [
     "ProductionAuthorityCompositionReceipt",
     "ProductionAuthorityOperationToken",
     "VerifiedProductionHostAuthority",
+    "VerifiedCapabilityMonitoringAuthority",
+    "build_verified_capability_monitoring_authority",
     "build_verified_production_host_authority",
+    "verified_capability_monitoring_authority_inputs",
     "verified_production_authority_inputs",
 ]

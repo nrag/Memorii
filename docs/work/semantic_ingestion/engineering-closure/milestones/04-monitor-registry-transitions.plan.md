@@ -117,6 +117,48 @@ Freeze the R15 candidate revision and run independent specification,
 correctness, and test reviews against that exact revision. Reconcile every
 finding before deciding whether R15 is engineering complete.
 
+## Exact-Revision Review Remediation (2026-09-13)
+
+The first review of `a8ed3fa1` found four production-composition defects and
+five proof gaps. The coordinator confirmed them and implemented one converged
+remediation:
+
+- the default built-in graph execution now resolves the registered proposal
+  capability, requires its active status, and seals the exact status, policy,
+  freshness, route, registry and arbitration coordinates into every accepted
+  operation; the store requires bindings for all accepted operations and
+  deduplicates shared capability coordinates across a multi-operation group;
+- `VerifiedCapabilityMonitoringAuthority` is issued only after the existing
+  production deployment-artifact verifier authenticates a signed
+  `capability_baseline` authorization whose target digest and capability
+  fingerprint match the closed monitoring policy. The public arbitrary-status
+  initializer was removed;
+- `build_provider_memory_service_from_env` now composes verified monitoring
+  authority and the host evidence provider. `process_capability_monitoring` is
+  the bounded no-ingest scheduler entrypoint;
+- future authority timestamps fail closed, pause and label-pipeline expiry are
+  evaluated independently, and a repeated evidence/outcome coordinate reloads
+  the prior decision while crossing a freshness boundary creates a new
+  evaluation and demotion;
+- a real default built-in graph race proves the status digest is in the group
+  CAS, demotion blocks the stale publication, no group primary is written, and
+  subsequent durable state remains `evidence_only`; a standalone
+  standard-library oracle reads a frozen raw vector and recomputes the numeric
+  result without importing monitor code.
+
+Verification on the dirty remediation candidate:
+
+- monitor suite: 17 passed under warnings-as-errors;
+- provider service and semantic provider composition: 102 passed under
+  warnings-as-errors;
+- consolidated writer admission, policy migration, writer migration, monitor
+  and bootstrap atomic-store gate: 211 passed under warnings-as-errors;
+- Ruff, `git diff --check`, and scoped first-party Pyright: clean, with Pyright
+  reporting 0 errors, 0 warnings and 0 informations.
+
+The next action remains freezing this revision and running the three required
+independent reviews. R15 is not promoted until those reviews converge.
+
 ## R15 Writer Progress (2026-09-12)
 
 Implemented a bounded local R15 vertical slice without changing immutable

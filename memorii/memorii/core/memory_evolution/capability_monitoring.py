@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation, localcontext
 from hashlib import sha256
-from typing import Any, Literal, TypeVar
+from typing import Any, Literal, Protocol, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -55,6 +55,27 @@ def _create_digest_bound(
 
 def _status_id(capability_fingerprint: str) -> str:
     return "semantic_ingestion:capability-status:" + capability_fingerprint
+
+
+def _decision_outcome_id(
+    decision: CapabilityMonitoringDecision,
+    freshness: CapabilityEvidenceFreshness,
+) -> str:
+    return contract_digest(
+        b"memorii.semantic-ingestion.capability-monitor-outcome.v1",
+        {
+            "capability_fingerprint": decision.capability_fingerprint,
+            "monitoring_policy_digest": decision.monitoring_policy_digest,
+            "evidence_window_digest": decision.evidence_window_digest,
+            "metric_decision_digests": tuple(
+                item.decision_digest for item in decision.metric_decisions
+            ),
+            "evidence_freshness": decision.evidence_freshness,
+            "freshness_reason": freshness.freshness_reason,
+            "action": decision.action,
+            "reason_codes": decision.reason_codes,
+        },
+    )
 
 
 def _decimal(value: str) -> Decimal:
@@ -379,6 +400,14 @@ class CapabilityMonitorTickResult:
     writer_binding: SemanticWriterCommitBinding | None
 
 
+class CapabilityEvidenceWindowProvider(Protocol):
+    """Host scheduler port returning immutable windows ready for evaluation."""
+
+    def load_evidence_windows(
+        self, *, max_items: int
+    ) -> tuple[CapabilityEvidenceWindow, ...]: ...
+
+
 class CapabilityMonitor:
     """Evaluates only caller-supplied, content-bound policy and evidence."""
 
@@ -500,18 +529,29 @@ class CapabilityMonitor:
                 b"memorii.semantic-ingestion.capability-monitoring-decision.v1", decision_base
             ),
         )
-        decision_record_id = "semantic_ingestion:capability-monitor-decision:" + decision.decision_digest
+        decision_record_id = (
+            "semantic_ingestion:capability-monitor-decision:"
+            + _decision_outcome_id(decision, freshness)
+        )
         prior_decision_record = self._writers._memory_plane.get_record(decision_record_id)
         if prior_decision_record is not None:
             try:
                 prior_decision = CapabilityMonitoringDecision.model_validate_json(
                     json.dumps(prior_decision_record.content["decision"])
                 )
+                prior_freshness = CapabilityEvidenceFreshness.model_validate_json(
+                    json.dumps(prior_decision_record.content["freshness"])
+                )
             except (KeyError, TypeError, ValueError) as exc:
                 raise ValueError("capability monitor prior decision is corrupt") from exc
-            if prior_decision != decision:
+            if (
+                _decision_outcome_id(prior_decision, prior_freshness)
+                != decision_record_id.rsplit(":", 1)[1]
+            ):
                 raise ValueError("capability monitor decision identity is substituted")
-            return CapabilityMonitorTickResult(decision, freshness, current, None)
+            return CapabilityMonitorTickResult(
+                prior_decision, prior_freshness, current, None
+            )
         successor_status: Literal["active", "evidence_only"] = (
             "evidence_only" if action == "evidence_only" or current.status == "evidence_only" else "active"
         )
@@ -609,22 +649,36 @@ class CapabilityMonitor:
             evidence.latest_canary_success_at is not None
             and now - evidence.latest_canary_success_at < policy.maximum_canary_success_age
         )
-        if not labels_fresh or len(eligible) < policy.minimum_labeled_clusters_per_window:
+        authority_times = (
+            evidence.latest_independent_label_at,
+            evidence.latest_canary_success_at,
+            evidence.traffic_state_changed_at,
+            evidence.label_pipeline_state_changed_at,
+        )
+        pause_expired = (
+            evidence.traffic_state == "paused"
+            and now - evidence.traffic_state_changed_at
+            >= policy.paused_traffic_grace_period
+        )
+        outage_expired = (
+            evidence.label_pipeline_state == "outage"
+            and now - evidence.label_pipeline_state_changed_at
+            >= policy.label_pipeline_outage_grace_period
+        )
+        if any(value is not None and value > now for value in authority_times):
+            freshness, reason = "stale", "future_authority_timestamp"
+        elif pause_expired:
+            freshness, reason = "stale", "traffic_pause_expired"
+        elif outage_expired:
+            freshness, reason = "stale", "label_pipeline_outage_expired"
+        elif not labels_fresh or len(eligible) < policy.minimum_labeled_clusters_per_window:
             freshness, reason = "stale", "independent_labels_stale_or_insufficient"
         elif not canary_fresh:
             freshness, reason = "stale", "canary_stale"
         elif evidence.label_pipeline_state == "outage":
-            freshness, reason = (
-                ("grace", "label_pipeline_outage_grace")
-                if now - evidence.label_pipeline_state_changed_at < policy.label_pipeline_outage_grace_period
-                else ("stale", "label_pipeline_outage_expired")
-            )
+            freshness, reason = "grace", "label_pipeline_outage_grace"
         elif evidence.traffic_state == "paused":
-            freshness, reason = (
-                ("grace", "traffic_pause_grace")
-                if now - evidence.traffic_state_changed_at < policy.paused_traffic_grace_period
-                else ("stale", "traffic_pause_expired")
-            )
+            freshness, reason = "grace", "traffic_pause_grace"
         else:
             freshness, reason = "fresh", "fresh"
         base = {
@@ -724,6 +778,7 @@ __all__ = [
     "CAPABILITY_MONITOR_SEQUENTIAL_IMPLEMENTATION_FINGERPRINT",
     "CapabilityEvidenceFreshness",
     "CapabilityEvidenceWindow",
+    "CapabilityEvidenceWindowProvider",
     "CapabilityMonitor",
     "CapabilityMonitorTickResult",
     "CapabilityMonitoringDecision",

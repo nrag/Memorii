@@ -1,5 +1,9 @@
+import json
+import subprocess
+import sys
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, localcontext
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -13,6 +17,12 @@ from memorii.core.memory_evolution.capability_monitoring import (
     MonitoringObservation,
     SequentialTestManifest,
 )
+from memorii.core.memory_evolution.deployment_authorization import (
+    DeploymentAuthorizationArtifactVerifier,
+    DeploymentAuthorizationIssuer,
+    InMemoryDeploymentAuthorizationRepository,
+    IssuerAuthority,
+)
 from memorii.core.memory_evolution.writer_admission import (
     SemanticWriterAdmissionStore,
     bounded_preplanning_ownership_manifest,
@@ -24,18 +34,17 @@ from memorii.core.memory_plane.store import (
     RecordDigestPrecondition,
     record_digest,
 )
+from memorii.core.provider.factory import build_provider_memory_service_from_env
 from memorii.core.provider.models import ProviderOperation
 from memorii.core.provider.service import ProviderMemoryService
-from memorii.core.semantic_ingestion.bootstrap_graph_host import BootstrapGraphHostBundleBuilder
 from memorii.core.semantic_ingestion.contracts import (
-    OperationCapabilityExecutionBinding,
     ProviderEntityObject,
     ProviderFact,
     ProviderMention,
     ProviderSemanticProposal,
 )
-from tests.fixtures.semantic_ingestion.bootstrap_graph_v3_fixture import (
-    DeterministicBootstrapGraphAuthorityProviderV3,
+from memorii.core.semantic_ingestion.production_authority import (
+    build_verified_capability_monitoring_authority,
 )
 from tests.unit.core.semantic_ingestion.bootstrap_graph_production_roots_support import (
     provider_service,
@@ -52,6 +61,16 @@ from tests.unit.core.semantic_ingestion.test_semantic_provider_composition impor
 class _Clock:
     def __init__(self) -> None:
         self.now = datetime(2026, 1, 1, tzinfo=UTC)
+
+
+class _TestDeploymentSigner:
+    def sign(self, preimage: bytes) -> str:
+        return "signature:" + preimage.hex()
+
+    def verify(
+        self, *, signing_key_reference: str, preimage: bytes, signature: str
+    ) -> bool:
+        return signing_key_reference == "monitor-key" and signature == self.sign(preimage)
 
 
 def _monitor(memory_plane: MemoryPlaneService | None = None, *, activate_writer: bool = False):
@@ -135,6 +154,8 @@ def _window(
     traffic="active",
     outage="healthy",
     state_changed_at=None,
+    traffic_state_changed_at=None,
+    pipeline_state_changed_at=None,
 ):
     return CapabilityEvidenceWindow.create(
         capability_fingerprint=policy.capability_fingerprint,
@@ -153,9 +174,17 @@ def _window(
         latest_independent_label_at=clock.now if labels_at is None else labels_at,
         latest_canary_success_at=clock.now if canary_at is None else canary_at,
         traffic_state=traffic,
-        traffic_state_changed_at=clock.now if state_changed_at is None else state_changed_at,
+        traffic_state_changed_at=(
+            clock.now
+            if traffic_state_changed_at is None and state_changed_at is None
+            else traffic_state_changed_at or state_changed_at
+        ),
         label_pipeline_state=outage,
-        label_pipeline_state_changed_at=clock.now if state_changed_at is None else state_changed_at,
+        label_pipeline_state_changed_at=(
+            clock.now
+            if pipeline_state_changed_at is None and state_changed_at is None
+            else pipeline_state_changed_at or state_changed_at
+        ),
     )
 
 
@@ -189,6 +218,50 @@ def test_stale_labels_demote_even_with_healthy_canary_and_never_reactivate() -> 
     assert fresh.freshness.freshness == "fresh"
     assert fresh.status.status == "evidence_only"
     assert fresh.writer_binding is None
+
+
+def test_repeated_outcome_is_idempotent_but_deadline_crossing_is_re_evaluated() -> None:
+    clock, _, monitor, policy, implementation = _monitor()
+    evidence = _window(clock, policy, implementation, value="0.1")
+    first = monitor.tick(evidence=evidence)
+    clock.now += timedelta(seconds=1)
+    retry = monitor.tick(evidence=evidence)
+    assert retry.decision == first.decision
+    assert retry.freshness == first.freshness
+
+    clock.now += timedelta(days=1)
+    expired = monitor.tick(evidence=evidence)
+    assert expired.freshness.freshness == "stale"
+    assert expired.status.status == "evidence_only"
+
+
+def test_future_authority_time_and_overlapping_expired_pause_fail_closed() -> None:
+    clock, _, monitor, policy, implementation = _monitor()
+    future = monitor.tick(
+        evidence=_window(
+            clock,
+            policy,
+            implementation,
+            labels_at=clock.now + timedelta(seconds=1),
+        )
+    )
+    assert future.freshness.freshness_reason == "future_authority_timestamp"
+    assert future.status.status == "evidence_only"
+
+    clock, _, monitor, policy, implementation = _monitor()
+    overlap = monitor.tick(
+        evidence=_window(
+            clock,
+            policy,
+            implementation,
+            traffic="paused",
+            outage="outage",
+            traffic_state_changed_at=clock.now - timedelta(hours=1),
+            pipeline_state_changed_at=clock.now - timedelta(minutes=30),
+        )
+    )
+    assert overlap.freshness.freshness_reason == "traffic_pause_expired"
+    assert overlap.status.status == "evidence_only"
 
 
 @pytest.mark.parametrize("traffic,outage", [("paused", "healthy"), ("active", "outage")])
@@ -258,7 +331,7 @@ def test_policy_rejects_alpha_overflow_and_evidence_rejects_cross_metric_cluster
 
 
 def test_provider_monitor_tick_reaches_shared_writer_authority() -> None:
-    fingerprint = "d" * 64
+    fingerprint = "1" * 64
     implementation = CAPABILITY_MONITOR_SEQUENTIAL_IMPLEMENTATION_FINGERPRINT
     manifest = SequentialTestManifest.create(
         method="time_uniform_confidence_sequence",
@@ -293,7 +366,10 @@ def test_provider_monitor_tick_reaches_shared_writer_authority() -> None:
     )
     service = ProviderMemoryService(capability_monitoring_policies=(policy,))
     now = service._clock.now_utc()
-    service.initialize_capability_monitor_status(capability_fingerprint=fingerprint, evidence_freshness_digest="f" * 64)
+    service._ensure_writer_admission_record()
+    service._capability_monitor.initialize_active_status(
+        capability_fingerprint=fingerprint, evidence_freshness_digest="f" * 64
+    )
     result = service.run_capability_monitor_tick(
         evidence=_window(
             type("Clock", (), {"now": now})(),
@@ -303,6 +379,58 @@ def test_provider_monitor_tick_reaches_shared_writer_authority() -> None:
         ),
     )
     assert result.status.status == "evidence_only"
+    assert service._semantic_writer_admission.current().writer_epoch == 2
+
+
+def test_public_factory_schedules_windows_from_signed_baseline_authority() -> None:
+    clock, _, _, policy, implementation = _monitor()
+    evidence = _window(clock, policy, implementation, value="0.9")
+
+    class EvidenceProvider:
+        def load_evidence_windows(self, *, max_items: int):
+            return (evidence,)[:max_items]
+
+    signer = _TestDeploymentSigner()
+    artifact = DeploymentAuthorizationIssuer(
+        authority=IssuerAuthority(
+            "monitor-release", "monitor-key", "8" * 64, signer
+        ),
+        repository=InMemoryDeploymentAuthorizationRepository(),
+        now_provider=lambda: clock.now,
+    ).prepare_verified(
+        target_artifact_digest=policy.policy_digest,
+        deployment_manifest_digest="7" * 64,
+        capability_fingerprint=policy.capability_fingerprint,
+        verified_capability_baseline_approval_release_digest="6" * 64,
+        requested_active_epoch=1,
+        expires_at=clock.now + timedelta(days=1),
+    )
+    raw = json.dumps(
+        artifact.model_dump(mode="json"),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    ).encode("ascii")
+    authority = build_verified_capability_monitoring_authority(
+        deployment_authorization_bytes=raw,
+        deployment_authorization_verifier=DeploymentAuthorizationArtifactVerifier(
+            signer
+        ),
+        policy=policy,
+        evidence_provider=EvidenceProvider(),
+        server_time=clock.now,
+    )
+    assert authority is not None
+    service = build_provider_memory_service_from_env(
+        memory_plane=MemoryPlaneService(),
+        now_provider=lambda: clock.now,
+        verified_capability_monitoring_authorities=(authority,),
+    )
+
+    results = service.process_capability_monitoring(max_items=1)
+
+    assert len(results) == 1
+    assert results[0].status.status == "evidence_only"
     assert service._semantic_writer_admission.current().writer_epoch == 2
 
 
@@ -323,16 +451,71 @@ def test_group_commit_status_read_set_is_exact_and_stale_after_demotion() -> Non
     )
     request = SimpleNamespace(
         operation_ids=("operation",),
+        ordered_operation_inputs=(
+            SimpleNamespace(
+                operation_id="operation",
+                reduction=SimpleNamespace(
+                    native_terminal=SimpleNamespace(status="accepted")
+                ),
+            ),
+        ),
         pre_execution_manifest_identity=SimpleNamespace(core=SimpleNamespace(capability_bindings=(binding,))),
     )
 
-    preconditions = store._capability_status_preconditions_for_group_commit(request)
+    preconditions = store._capability_status_preconditions_for_group_commit(
+        request  # pyright: ignore[reportArgumentType] - focused internal fixture
+    )
     assert preconditions == (
         RecordDigestPrecondition(memory_id=status_record.memory_id, expected_digest=record_digest(status_record)),
     )
     monitor.tick(evidence=_window(clock, policy, implementation, value="0.9"))
     with pytest.raises(PreplanningStoreError, match="capability status binding is stale"):
-        store._capability_status_preconditions_for_group_commit(request)
+        store._capability_status_preconditions_for_group_commit(
+            request  # pyright: ignore[reportArgumentType] - focused internal fixture
+        )
+
+
+def test_group_commit_deduplicates_shared_capability_status_coordinates() -> None:
+    _, writers, _, policy, _ = _monitor()
+    store = SemanticIngestionAtomicStore(writers._memory_plane, writers)
+    status_record = writers._memory_plane.get_record(
+        "semantic_ingestion:capability-status:" + policy.capability_fingerprint
+    )
+    assert status_record is not None
+    coordinate = {
+        "capability_fingerprint": policy.capability_fingerprint,
+        "capability_status_revision": "1",
+        "capability_status_record_digest": record_digest(status_record),
+        "monitoring_policy_digest": policy.policy_digest,
+        "evidence_freshness_digest": "c" * 64,
+    }
+    bindings = tuple(
+        SimpleNamespace(operation_id=operation_id, **coordinate)
+        for operation_id in ("operation-a", "operation-b")
+    )
+    request = SimpleNamespace(
+        operation_ids=("operation-a", "operation-b"),
+        ordered_operation_inputs=tuple(
+            SimpleNamespace(
+                operation_id=operation_id,
+                reduction=SimpleNamespace(
+                    native_terminal=SimpleNamespace(status="accepted")
+                ),
+            )
+            for operation_id in ("operation-a", "operation-b")
+        ),
+        pre_execution_manifest_identity=SimpleNamespace(
+            core=SimpleNamespace(capability_bindings=bindings)
+        ),
+    )
+    assert store._capability_status_preconditions_for_group_commit(
+        request  # pyright: ignore[reportArgumentType] - focused internal fixture
+    ) == (
+        RecordDigestPrecondition(
+            memory_id=status_record.memory_id,
+            expected_digest=record_digest(status_record),
+        ),
+    )
 
 
 def test_time_uniform_bounds_match_independent_formula() -> None:
@@ -349,6 +532,30 @@ def test_time_uniform_bounds_match_independent_formula() -> None:
     assert Decimal(metric.estimate or "NaN") == Decimal("0.1")
     assert Decimal(metric.lower_bound or "NaN") == expected_lower
     assert Decimal(metric.upper_bound or "NaN") == expected_upper
+
+
+def test_time_uniform_bounds_match_external_frozen_oracle() -> None:
+    _, _, monitor, policy, implementation = _monitor()
+    metric = monitor.tick(
+        evidence=_window(_Clock(), policy, implementation, value="0.1")
+    ).decision.metric_decisions[0]
+    fixture_root = Path(__file__).parents[3] / "fixtures" / "semantic_ingestion"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(fixture_root / "capability_monitor_oracle.py"),
+            str(fixture_root / "capability_monitor_vector.json"),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    independent = json.loads(completed.stdout)
+    assert independent == {
+        "estimate": metric.estimate,
+        "lower_bound": metric.lower_bound,
+        "upper_bound": metric.upper_bound,
+    }
 
 
 def test_status_and_no_reactivation_survive_restart(tmp_path) -> None:
@@ -395,7 +602,7 @@ def test_status_cas_loss_fails_without_partial_publication(monkeypatch) -> None:
 def test_real_group_commit_status_precondition_conflicts_with_monitor_demotion(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
-    fingerprint = "d" * 64
+    fingerprint = "38a5be91af79d7e5ba9809bf383c699b6864ee50446239fe56a45e32b84638fe"
     implementation = CAPABILITY_MONITOR_SEQUENTIAL_IMPLEMENTATION_FINGERPRINT
     manifest = SequentialTestManifest.create(
         method="time_uniform_confidence_sequence",
@@ -456,40 +663,6 @@ def test_real_group_commit_status_precondition_conflicts_with_monitor_demotion(
         abstained=False,
     )
     normalization, _ = _v3_normalization_host_builder(proposal=proposal)
-    status_coordinates: dict[str, object] = {}
-
-    def build_bindings(source, operation_inputs):
-        status_record = status_coordinates["record"]
-        status = status_coordinates["status"]
-        routes = {route.segment_id: route.route_digest for route in source.segment_language_routes.routes}
-        return tuple(
-            OperationCapabilityExecutionBinding.create(
-                operation_id=item.operation_id,
-                source_dependency_group_id=item.dependency_group.group_id,
-                segment_id=item.operation_subject.segment_id,
-                segment_language_route_digest=routes[item.operation_subject.segment_id],
-                proposal_capability_fingerprint="1" * 64,
-                capability_fingerprint=fingerprint,
-                capability_selection_digest="2" * 64,
-                capability_registry_snapshot_digest="3" * 64,
-                capability_status_revision=str(status.status_revision),
-                capability_status_record_digest=record_digest(status_record),
-                monitoring_policy_digest=policy.policy_digest,
-                evidence_freshness_digest=status.evidence_freshness_digest,
-                nli_mode="disabled",
-                verifier_manifest_digest=None,
-                temporal_policy_snapshot_digest="4" * 64,
-                trust_policy_fingerprint="5" * 64,
-                trust_policy_snapshot_digest="6" * 64,
-                arbitration_as_of=TEST_NOW,
-            )
-            for item in operation_inputs
-        )
-
-    authority = DeterministicBootstrapGraphAuthorityProviderV3(
-        successful_calls=[],
-        capability_bindings_factory=build_bindings,
-    )
     store_path = tmp_path / "monitor-group-race"
     service = provider_service(
         memory_plane=MemoryPlaneService(record_store=JsonlMemoryPlaneStore(store_path)),
@@ -497,17 +670,15 @@ def test_real_group_commit_status_precondition_conflicts_with_monitor_demotion(
         host_bootstrap_capability=_built_in_local_capability(),
         host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
         source_normalization_host_bundle_builder=normalization,
-        bootstrap_graph_host_bundle_builder=BootstrapGraphHostBundleBuilder(authority_provider=authority),
         capability_monitoring_policies=(policy,),
     )
-    status = service.initialize_capability_monitor_status(
+    service._ensure_writer_admission_record()
+    service._capability_monitor.initialize_active_status(
         capability_fingerprint=fingerprint,
         evidence_freshness_digest="f" * 64,
     )
     status_record = service._memory_plane.get_record("semantic_ingestion:capability-status:" + fingerprint)
     assert status_record is not None
-    status_coordinates.update(record=status_record, status=status)
-
     observed_status_precondition = False
     demoted = False
     original = service._memory_plane.conditionally_write_records
@@ -555,7 +726,7 @@ def test_real_group_commit_status_precondition_conflicts_with_monitor_demotion(
         authenticated_host_ingress=_host_ingress(),
     )
 
-    assert observed_status_precondition
+    assert observed_status_precondition, result.blocked_reasons
     assert demoted
     assert result.blocked_reasons["semantic_ingestion"] == "graph_transaction_authority_unavailable"
     assert service._semantic_writer_admission.current().active_runtime_mode == "evidence_only"

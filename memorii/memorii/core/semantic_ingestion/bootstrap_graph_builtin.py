@@ -17,6 +17,7 @@ from memorii.core.memory_evolution.bootstrap_graph_planning import (
     BootstrapNativeTargetResolutionProjectorV3,
     BuiltInBootstrapGraphTargetMaterializationPlannerV3,
 )
+from memorii.core.memory_evolution.capability_monitoring import CapabilityStatus
 from memorii.core.memory_evolution.graph_planning import GraphPlanningState
 from memorii.core.memory_evolution.transaction_coordinator import GraphReadSetToken, SealedGraphStateSnapshot
 from memorii.core.semantic_ingestion.bootstrap_graph_coordinator import BootstrapGraphDependentCoordinatorV3
@@ -65,6 +66,7 @@ from memorii.core.semantic_ingestion.contracts import (
     BootstrapTransactionGroupPlanV3,
     GraphDependentExecutionPolicyReferenceV3,
     GraphSemanticSnapshotBundleV3,
+    OperationCapabilityExecutionBinding,
     contract_digest,
     decode_bootstrap_graph_atomic_member_payload_v3,
 )
@@ -72,6 +74,92 @@ from memorii.core.semantic_ingestion.contracts import (
 
 def _digest(value: object) -> str:
     return sha256(repr(value).encode("utf-8")).hexdigest()
+
+
+def _active_capability_bindings(
+    *,
+    atomic_store: object,
+    source: object,
+    operation_inputs: tuple[object, ...],
+    compilation: _BuiltInCompilation,
+    capability_registry: object,
+) -> tuple[OperationCapabilityExecutionBinding, ...] | None:
+    """Seal active status coordinates for every operation that may promote."""
+    accepted_ids = {
+        reduction.operation_id
+        for reduction in compilation.native.operation_reductions
+        if reduction.native_terminal.status == "accepted"
+    }
+    if not accepted_ids:
+        return ()
+    status_reader = getattr(atomic_store, "current_capability_status", None)
+    if not callable(status_reader):
+        return None
+    registered = {
+        entry.capability_fingerprint
+        for entry in capability_registry.capabilities
+    }
+    routes = {
+        route.segment_id: route.route_digest
+        for route in source.segment_language_routes.routes
+    }
+    bindings = []
+    for item in operation_inputs:
+        if item.operation_id not in accepted_ids:
+            continue
+        proposal_fingerprint = (
+            item.operation_subject.bootstrap_analysis_provenance
+            .proposal_capability_fingerprint
+        )
+        if proposal_fingerprint not in registered:
+            return None
+        status_coordinate = status_reader(proposal_fingerprint)
+        authority = item.planning_construction_authority
+        bundle = (
+            None if authority is None else authority.arbitration_policy_bundle
+        )
+        route_digest = routes.get(item.operation_subject.segment_id)
+        if status_coordinate is None or bundle is None or route_digest is None:
+            return None
+        raw_status, status_record_digest = status_coordinate
+        status = CapabilityStatus.model_validate(raw_status)
+        if status.status != "active":
+            return None
+        selection_digest = contract_digest(
+            b"memorii.semantic-ingestion.builtin-capability-selection.v1",
+            {
+                "operation_id": item.operation_id,
+                "capability_fingerprint": proposal_fingerprint,
+                "capability_registry_snapshot_digest": (
+                    capability_registry.snapshot_digest
+                ),
+                "capability_status_revision": str(status.status_revision),
+                "capability_status_record_digest": status_record_digest,
+                "monitoring_policy_digest": status.monitoring_policy_digest,
+                "evidence_freshness_digest": status.evidence_freshness_digest,
+            },
+        )
+        bindings.append(OperationCapabilityExecutionBinding.create(
+            operation_id=item.operation_id,
+            source_dependency_group_id=item.dependency_group.group_id,
+            segment_id=item.operation_subject.segment_id,
+            segment_language_route_digest=route_digest,
+            proposal_capability_fingerprint=proposal_fingerprint,
+            capability_fingerprint=proposal_fingerprint,
+            capability_selection_digest=selection_digest,
+            capability_registry_snapshot_digest=capability_registry.snapshot_digest,
+            capability_status_revision=str(status.status_revision),
+            capability_status_record_digest=status_record_digest,
+            monitoring_policy_digest=status.monitoring_policy_digest,
+            evidence_freshness_digest=status.evidence_freshness_digest,
+            nli_mode="disabled",
+            verifier_manifest_digest=None,
+            temporal_policy_snapshot_digest=bundle.temporal_policy.snapshot_digest,
+            trust_policy_fingerprint=bundle.trust_policy.fingerprint,
+            trust_policy_snapshot_digest=bundle.trust_policy.snapshot_digest,
+            arbitration_as_of=bundle.arbitration_as_of,
+        ))
+    return tuple(sorted(bindings, key=lambda binding: binding.operation_id))
 
 
 @dataclass(frozen=True)
@@ -335,6 +423,7 @@ class _Compiler:
 @dataclass(frozen=True)
 class _Authorizer:
     compilation: _BuiltInCompilation
+    capability_bindings: tuple[OperationCapabilityExecutionBinding, ...]
 
     def authorize(self, *, request: object, control_epoch: object, reloaded_plan: object) -> BootstrapGraphPlanAuthorizationSetV3:
         core = reloaded_plan.core
@@ -350,7 +439,11 @@ class _Authorizer:
                 b"memorii.bootstrap-graph.builtin.admission-authority.v3",
                 {"request_digest": request.request_digest, "transaction_group_id": member.transaction_group_id,
                  "plan_digest": plan.plan_digest},
-            ), capability_binding_digests=(),
+            ), capability_binding_digests=tuple(
+                binding.binding_digest
+                for binding in self.capability_bindings
+                if binding.operation_id in member.operation_ids
+            ),
             reservation_use_authority=BootstrapNoReservationUseV3.create(
                 kind="none", transaction_group_id=member.transaction_group_id,
                 planned_identity_reservation_digests=(),
@@ -524,6 +617,15 @@ class _BuiltInBootstrapGraphExecutionBuilderV3:
         )
         source = request.prepared_source
         artifact = source.governance_carrier_artifact
+        capability_bindings = _active_capability_bindings(
+            atomic_store=atomic_store,
+            source=source,
+            operation_inputs=operation_inputs,
+            compilation=compilation,
+            capability_registry=authority.capability_registry_snapshot,
+        )
+        if capability_bindings is None:
+            return None
         # The terminal binds back to the admission seal through its registered
         # digest only: an absent member keeps the legacy schema-1 outcome, and
         # a substituted member fails closed inside the store accessor.
@@ -548,7 +650,8 @@ class _BuiltInBootstrapGraphExecutionBuilderV3:
             segment_language_routes=source.segment_language_routes,
             segment_governance_carriers=source.segment_governance_carriers,
             message_admission_carriers=source.message_admission_carriers,
-            governance_carrier_artifact=artifact, capability_bindings=(),
+            governance_carrier_artifact=artifact,
+            capability_bindings=capability_bindings,
             required_outcome_scopes=artifact.required_outcome_scopes,
             operation_fence_binding=request.operation_fence_binding,
         )
@@ -556,7 +659,8 @@ class _BuiltInBootstrapGraphExecutionBuilderV3:
         coordinator = BootstrapGraphDependentCoordinatorV3(
             epoch_repository=epochs, plan_repository=AtomicStoreBootstrapGraphPlanRepositoryV3(atomic_store=atomic_store),
             terminal_port=AtomicStoreBootstrapGraphTerminalPersistencePortV3(atomic_store=atomic_store),
-            compiler=_Compiler(operation_inputs, sealed_snapshot, canonical_reload), authorizer=_Authorizer(compilation),
+            compiler=_Compiler(operation_inputs, sealed_snapshot, canonical_reload),
+            authorizer=_Authorizer(compilation, capability_bindings),
             group_commit_repository=AtomicStoreBootstrapGraphGroupCommitRepositoryV3(atomic_store=atomic_store),
             terminal_preparer=DeterministicBootstrapGraphTerminalPreparationV3(
                 source_observation_intent_factory=(

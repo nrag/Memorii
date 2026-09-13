@@ -12,6 +12,10 @@ from memorii.core.memory_evolution.bootstrap_profile import (
     HostBootstrapCapability,
     HostBootstrapMaterialVerifier,
 )
+from memorii.core.memory_evolution.capability_monitoring import (
+    CapabilityEvidenceWindowProvider,
+    CapabilityMonitoringPolicy,
+)
 from memorii.core.memory_evolution.conflict_attention import (
     ConflictAttentionObservabilitySink,
 )
@@ -37,6 +41,7 @@ from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.scoped_context.authority import ScopedHostReadAuthority
 from memorii.core.semantic_ingestion.production_authority import (
+    VerifiedCapabilityMonitoringAuthority,
     VerifiedProductionHostAuthority,
 )
 from memorii.core.semantic_ingestion.source_normalization_host import SourceNormalizationHostBundleBuilder
@@ -73,6 +78,12 @@ def build_provider_memory_service_from_env(
     scoped_read_authority: ScopedHostReadAuthority | None = None,
     graph_observation_runtime: AuthenticatedGraphObservationPagingRuntime
     | None = None,
+    capability_monitoring_policies: tuple[CapabilityMonitoringPolicy, ...] = (),
+    capability_monitoring_evidence_provider: CapabilityEvidenceWindowProvider
+    | None = None,
+    verified_capability_monitoring_authorities: tuple[
+        VerifiedCapabilityMonitoringAuthority, ...
+    ] = (),
 ) -> ProviderMemoryService:
     """Build the source-only governed-source admission provider composition without ambient model dependencies."""
 
@@ -135,6 +146,9 @@ def build_provider_memory_service_from_env(
         clock=clock,
         scoped_read_authority=scoped_read_authority,
         graph_observation_runtime=graph_observation_runtime,
+        capability_monitoring_policies=capability_monitoring_policies,
+        capability_monitoring_evidence_provider=capability_monitoring_evidence_provider,
+        verified_capability_monitoring_authorities=verified_capability_monitoring_authorities,
     )
 
 

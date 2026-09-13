@@ -49,10 +49,10 @@ from memorii.core.memory_evolution.bootstrap_profile import (
 )
 from memorii.core.memory_evolution.capability_monitoring import (
     CapabilityEvidenceWindow,
+    CapabilityEvidenceWindowProvider,
     CapabilityMonitor,
     CapabilityMonitoringPolicy,
     CapabilityMonitorTickResult,
-    CapabilityStatus,
 )
 from memorii.core.memory_evolution.composite_conflict_listing import (
     CompositeConflictListingRepository,
@@ -187,7 +187,9 @@ from memorii.core.semantic_ingestion.capability import (
     HostSemanticIngestionRuntimeBuilder,
 )
 from memorii.core.semantic_ingestion.production_authority import (
+    VerifiedCapabilityMonitoringAuthority,
     VerifiedProductionHostAuthority,
+    verified_capability_monitoring_authority_inputs,
     verified_production_authority_inputs,
 )
 from memorii.core.semantic_ingestion.source_normalization_host import (
@@ -312,6 +314,11 @@ class ProviderMemoryService:
         graph_observation_runtime: AuthenticatedGraphObservationPagingRuntime
         | None = None,
         capability_monitoring_policies: tuple[CapabilityMonitoringPolicy, ...] = (),
+        capability_monitoring_evidence_provider: CapabilityEvidenceWindowProvider
+        | None = None,
+        verified_capability_monitoring_authorities: tuple[
+            VerifiedCapabilityMonitoringAuthority, ...
+        ] = (),
         _host_construction: object | None = None,
     ) -> None:
         self._memory_plane = memory_plane or MemoryPlaneService()
@@ -319,6 +326,22 @@ class ProviderMemoryService:
         self._canonical_evidence_requested = canonical_evidence_enabled
         verified_material = None
         verified_ingress_resolver = None
+        monitoring_initializations: tuple[tuple[str, str], ...] = ()
+        if verified_capability_monitoring_authorities:
+            if (
+                capability_monitoring_policies
+                or capability_monitoring_evidence_provider is not None
+            ):
+                raise ValueError(
+                    "verified capability monitoring authority rejects direct monitor inputs"
+                )
+            (
+                capability_monitoring_policies,
+                capability_monitoring_evidence_provider,
+                monitoring_initializations,
+            ) = verified_capability_monitoring_authority_inputs(
+                verified_capability_monitoring_authorities
+            )
         if verified_production_host_authority is not None:
             if any(
                 value is not None
@@ -647,6 +670,16 @@ class ProviderMemoryService:
             now=self._clock.now_utc,
             policies=capability_monitoring_policies,
         )
+        self._capability_monitoring_evidence_provider = (
+            capability_monitoring_evidence_provider
+        )
+        if monitoring_initializations:
+            self._ensure_writer_admission_record()
+            for capability_fingerprint, freshness_digest in monitoring_initializations:
+                self._capability_monitor.initialize_active_status(
+                    capability_fingerprint=capability_fingerprint,
+                    evidence_freshness_digest=freshness_digest,
+                )
         self._semantic_runtime_validated_after_ingress = False
         self._conflict_clarification_processor: ConflictClarificationProcessor | None = None
         if self._conflict_attention_enabled and conflict_clarification_pipeline is not None:
@@ -690,17 +723,21 @@ class ProviderMemoryService:
         """Run one bounded host-scheduled monitor evaluation without ingest traffic."""
         return self._capability_monitor.tick(evidence=evidence)
 
-    def initialize_capability_monitor_status(
-        self,
-        *,
-        capability_fingerprint: str,
-        evidence_freshness_digest: str,
-    ) -> CapabilityStatus:
-        """Provision explicit host-approved active status; policy values are required."""
-        self._ensure_writer_admission_record()
-        return self._capability_monitor.initialize_active_status(
-            capability_fingerprint=capability_fingerprint,
-            evidence_freshness_digest=evidence_freshness_digest,
+    def process_capability_monitoring(
+        self, *, max_items: int = 1
+    ) -> tuple[CapabilityMonitorTickResult, ...]:
+        """Run one bounded no-ingest scheduler pass over host evidence windows."""
+
+        if max_items < 1 or max_items > 256:
+            raise ValueError("max_items must be between 1 and 256")
+        provider = self._capability_monitoring_evidence_provider
+        if provider is None:
+            return ()
+        windows = provider.load_evidence_windows(max_items=max_items)
+        if len(windows) > max_items:
+            raise ValueError("capability monitoring evidence provider exceeded max_items")
+        return tuple(
+            self._capability_monitor.tick(evidence=window) for window in windows
         )
 
     def observe_graph(
