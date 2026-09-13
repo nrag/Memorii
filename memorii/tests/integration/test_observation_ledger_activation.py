@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
@@ -1129,25 +1130,22 @@ def test_public_drain_preserves_live_operation_and_rejects_new_old_epoch_work(tm
     assert reopened.activate_observation_ledger() == activated
 
 
-@pytest.mark.parametrize(
-    "mutation",
-    (None, "activation_digest", "writer_epoch"),
-    ids=("positive", "activation_digest", "writer_epoch"),
-)
-def test_demoted_activated_graph_lineage_reopens_and_rejects_tampered_controls(
-    tmp_path, monkeypatch, mutation: str | None,
-) -> None:
-    """Post-demotion reload admits only the exact activated graph-control lineage."""
+@pytest.fixture(scope="module")
+def demoted_activated_graph_jsonl_fixture(tmp_path_factory):
+    """Build the expensive real graph once, then retain copyable JSONL states."""
+    from _pytest.monkeypatch import MonkeyPatch
     from memorii.core.provider.models import ProviderOperation
     from tests.unit.core.semantic_ingestion.test_semantic_provider_composition import (
         _host_ingress,
     )
 
+    monkeypatch = MonkeyPatch()
+    root = tmp_path_factory.mktemp("demoted-activated-graph")
     authority = _signed_monitoring_authority()
     unsigned_build, _, _ = _provider_factory(
-        tmp_path, monkeypatch, normalization=True, complete_registry=True,
+        root, monkeypatch, normalization=True, complete_registry=True,
     )
-    path = tmp_path / "demoted-activated-graph"
+    path = root / "retained"
     backing = JsonlMemoryPlaneStore(path)
     unsigned_service = unsigned_build(MemoryPlaneService(record_store=backing))
     _seed_provider(unsigned_service)
@@ -1156,7 +1154,7 @@ def test_demoted_activated_graph_lineage_reopens_and_rejects_tampered_controls(
         unsigned_service._memory_plane,
         capability_monitoring_predecessor_ownership_manifest(),
     )
-    config = tmp_path / "demoted-activated-graph-config"
+    config = root / "config"
     config.mkdir()
     build, _, clock = _provider_factory(
         config,
@@ -1194,32 +1192,70 @@ def test_demoted_activated_graph_lineage_reopens_and_rejects_tampered_controls(
     control = controls[0]
     activated_epoch = control.content["control"]["writer_binding"]["expected_writer_epoch"]
     assert isinstance(activated_epoch, int)
+    active_path = root / "active"
+    shutil.copytree(path, active_path)
 
     clock[0] += timedelta(days=2)
     demoted = service._capability_monitor.tick(evidence=authority._initial_evidence)
     assert demoted.status.status == "evidence_only"
     current = service._semantic_writer_admission.current()
     assert current.writer_epoch == activated_epoch + 1
-    reopened = build(MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path)))
-    assert reopened.activate_observation_ledger().activation_digest == activated.activation_digest
+    yield {
+        "active_path": active_path,
+        "build": build,
+        "control_memory_id": control.memory_id,
+        "activated_epoch": activated_epoch,
+        "activation_digest": activated.activation_digest,
+        "retained_path": path,
+        "authority": authority,
+        "clock": clock,
+    }
+    monkeypatch.undo()
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (None, "activation_digest", "writer_epoch", "admission_digest", "nonterminal"),
+    ids=("positive", "activation_digest", "writer_epoch", "admission_digest", "nonterminal"),
+)
+def test_demoted_activated_graph_lineage_reopens_and_rejects_tampered_controls(
+    tmp_path, demoted_activated_graph_jsonl_fixture, mutation: str | None,
+) -> None:
+    """Each retained JSONL copy has one exact closed graph-control lineage."""
+    source = demoted_activated_graph_jsonl_fixture["retained_path"]
+    path = tmp_path / "replay"
+    shutil.copytree(source, path)
+    backing = JsonlMemoryPlaneStore(path)
+    build = demoted_activated_graph_jsonl_fixture["build"]
+    activation_digest = demoted_activated_graph_jsonl_fixture["activation_digest"]
     if mutation is None:
+        reopened = build(MemoryPlaneService(record_store=backing))
+        assert reopened.activate_observation_ledger().activation_digest == activation_digest
         return
 
     rewritten = []
     for batch in backing._read_batches_unlocked():
         records = []
         for record in batch.records:
-            if record.memory_id == control.memory_id:
+            if record.memory_id == demoted_activated_graph_jsonl_fixture["control_memory_id"]:
                 binding = dict(record.content["control"]["writer_binding"])
-                binding["activation_digest" if mutation == "activation_digest" else "expected_writer_epoch"] = (
-                    "f" * 64 if mutation == "activation_digest" else activated_epoch + 2
-                )
+                control = dict(record.content["control"])
+                if mutation == "activation_digest":
+                    binding["activation_digest"] = "f" * 64
+                elif mutation == "writer_epoch":
+                    binding["expected_writer_epoch"] = (
+                        demoted_activated_graph_jsonl_fixture["activated_epoch"] + 2
+                    )
+                elif mutation == "admission_digest":
+                    binding["admission_digest"] = "e" * 64
+                else:
+                    control["state"] = "preplanning"
                 record = record.model_copy(
                     update={
                         "content": {
                             **record.content,
                             "control": {
-                                **record.content["control"],
+                                **control,
                                 "writer_binding": binding,
                             },
                         }
@@ -1238,6 +1274,67 @@ def test_demoted_activated_graph_lineage_reopens_and_rejects_tampered_controls(
     damaged = build(MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path)))
     with pytest.raises(PreplanningStoreError, match="activation reload is partial or mismatched"):
         damaged.activate_observation_ledger()
+    assert backing._records_path.read_bytes() == before
+
+
+def test_demoted_activation_with_held_graph_lease_fails_closed_on_reopen(
+    tmp_path, demoted_activated_graph_jsonl_fixture, monkeypatch,
+) -> None:
+    """A demotion cannot turn an in-flight activated graph control into replayable history."""
+    from concurrent.futures import ThreadPoolExecutor
+    from contextlib import suppress
+    from threading import Event
+
+    from memorii.core.provider.models import ProviderOperation
+    from tests.unit.core.semantic_ingestion.test_semantic_provider_composition import (
+        _host_ingress,
+    )
+
+    path = tmp_path / "held-lease"
+    shutil.copytree(demoted_activated_graph_jsonl_fixture["active_path"], path)
+    backing = JsonlMemoryPlaneStore(path)
+    build = demoted_activated_graph_jsonl_fixture["build"]
+    clock = demoted_activated_graph_jsonl_fixture["clock"]
+    clock[0] = TEST_NOW + timedelta(minutes=1)
+    service = build(MemoryPlaneService(record_store=backing))
+    runtime = service._composed_semantic_runtime
+    assert runtime is not None and runtime.atomic_store is not None
+    acquire = runtime.atomic_store.acquire_lease
+    acquired, release = Event(), Event()
+
+    def hold_after_lease(**kwargs):
+        control = acquire(**kwargs)
+        acquired.set()
+        assert release.wait(timeout=60), "held graph operation was not released"
+        return control
+
+    monkeypatch.setattr(runtime.atomic_store, "acquire_lease", hold_after_lease)
+
+    def ingest() -> object:
+        return service.sync_event(
+            operation=ProviderOperation.CHAT_USER_TURN,
+            content="Atlas owner is Carol.",
+            operation_id="held-demotion-graph",
+            task_id="task:one",
+            user_id="user:alice",
+            authenticated_host_ingress=_host_ingress(),
+        )
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(ingest)
+        assert acquired.wait(timeout=60), "graph operation did not acquire a real lease"
+        clock[0] += timedelta(days=2)
+        demoted = service._capability_monitor.tick(
+            evidence=demoted_activated_graph_jsonl_fixture["authority"]._initial_evidence
+        )
+        assert demoted.status.status == "evidence_only"
+        release.set()
+        with suppress(Exception):
+            future.result(timeout=120)
+    before = backing._records_path.read_bytes()
+    reopened = build(MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path)))
+    with pytest.raises(PreplanningStoreError, match="activation reload is partial or mismatched"):
+        reopened.activate_observation_ledger()
     assert backing._records_path.read_bytes() == before
 
 

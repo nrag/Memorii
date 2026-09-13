@@ -1414,24 +1414,27 @@ class SemanticIngestionAtomicStore:
         def is_activation_lineage(binding: SemanticWriterCommitBinding) -> bool:
             if activation_digest is None or activation_target_epoch is None or current_binding is None:
                 return False
-            target_epoch = activation_target_epoch
-            current = current_binding
-            if (
-                binding.admission_id != current_binding.admission_id
-                or binding.writer_namespace != current_binding.writer_namespace
-                or binding.writer_implementation_fingerprint
-                != current_binding.writer_implementation_fingerprint
-                or binding.graph_schema_fingerprint
-                != current_binding.graph_schema_fingerprint
-                or binding.activation_digest != activation_digest
-                or not activation_target_epoch
-                <= binding.expected_writer_epoch
-                <= current.expected_writer_epoch
-            ):
-                return False
-            if binding.expected_writer_epoch == target_epoch:
-                return binding.runtime_mode == predecessor.runtime_mode
-            return binding.runtime_mode == "evidence_only"
+            target_binding = SemanticWriterCommitBinding(
+                admission_id=current_binding.admission_id,
+                admission_digest=current_binding.admission_digest
+                if current_binding.expected_writer_epoch == activation_target_epoch
+                else current_previous_admission_digest or "",
+                writer_namespace=current_binding.writer_namespace,
+                expected_writer_epoch=activation_target_epoch,
+                runtime_mode=predecessor.runtime_mode,
+                writer_implementation_fingerprint=(
+                    current_binding.writer_implementation_fingerprint
+                ),
+                graph_schema_fingerprint=current_binding.graph_schema_fingerprint,
+                activation_digest=activation_digest,
+            )
+            if binding == target_binding:
+                return True
+            return (
+                current_binding.expected_writer_epoch == activation_target_epoch + 1
+                and current_binding.runtime_mode == "evidence_only"
+                and binding == current_binding
+            )
 
         for record in snapshot:
             if record.source_kind != "semantic_ingestion_preplanning_control":
@@ -1441,17 +1444,8 @@ class SemanticIngestionAtomicStore:
             if is_activation_lineage(control.writer_binding):
                 if record.memory_id not in {_control_id(fence), _legacy_control_id(fence)} or fence.binding_digest in active_fences:
                     raise PreplanningStoreError("active observation control identity is mismatched")
-                if (
-                    activation_target_epoch is not None
-                    and current_binding is not None
-                    and
-                    control.writer_binding.expected_writer_epoch
-                    == activation_target_epoch
-                    and current_binding.expected_writer_epoch > activation_target_epoch
-                    and control.writer_binding.admission_digest
-                    != current_previous_admission_digest
-                ):
-                    raise PreplanningStoreError("activation lineage predecessor is mismatched")
+                if control.state not in {"terminal", "lease_recovery_exhausted"} or control.lease is not None:
+                    raise PreplanningStoreError("activated observation control is not drained")
                 active_fences.add(fence.binding_digest)
                 controls[fence.binding_digest] = control
                 active_record_ids.add(record.memory_id)
@@ -1469,6 +1463,7 @@ class SemanticIngestionAtomicStore:
             controls[fence.binding_digest] = control
         terminal_ids: set[str] = set()
         terminal_fences: set[str] = set()
+        active_terminal_fences: set[str] = set()
         for record in snapshot:
             if record.source_kind != "semantic_ingestion_bootstrap_graph_v3_terminal_locator" or not record.memory_id.startswith("semantic_ingestion:bootstrap-graph-v3:terminal-locator:"):
                 continue
@@ -1496,6 +1491,9 @@ class SemanticIngestionAtomicStore:
                     expected_operation_lease_binding_digest=control.last_completed_lease_binding_digest,
                     snapshot_records=records,
                 )
+                if terminal.operation_fence_binding_digest in active_terminal_fences:
+                    raise PreplanningStoreError("activated observation terminal is duplicated")
+                active_terminal_fences.add(terminal.operation_fence_binding_digest)
                 active_record_ids.update((record.memory_id, _bootstrap_graph_v3_terminal_control_id(locator)))
                 continue
             if (
@@ -1515,6 +1513,8 @@ class SemanticIngestionAtomicStore:
             )
             terminal_ids.add(_bootstrap_graph_v3_terminal_control_id(locator))
             terminal_fences.add(terminal.operation_fence_binding_digest)
+        if active_terminal_fences != active_fences:
+            raise PreplanningStoreError("activated observation terminal is absent")
         if terminal_ids != {record.memory_id for record in snapshot
                             if record.source_kind == "semantic_ingestion_bootstrap_graph_v3_terminal_control"
                             and record.memory_id not in active_record_ids}:
@@ -1568,7 +1568,10 @@ class SemanticIngestionAtomicStore:
                 or predecessor.activation_digest is not None
                 or predecessor.admission_digest != activation.previous_writer_admission_digest
                 or predecessor.expected_writer_epoch + 1 != activation.target_writer_epoch
-                or current.writer_epoch < activation.target_writer_epoch
+                or current.writer_epoch not in {
+                    activation.target_writer_epoch,
+                    activation.target_writer_epoch + 1,
+                }
                 or (
                     current.writer_epoch == activation.target_writer_epoch
                     and current.previous_admission_digest
@@ -1576,7 +1579,10 @@ class SemanticIngestionAtomicStore:
                 )
                 or (
                     current.writer_epoch > activation.target_writer_epoch
-                    and current.active_runtime_mode != "evidence_only"
+                    and (
+                        current.active_runtime_mode != "evidence_only"
+                        or current.previous_admission_digest is None
+                    )
                 )
                 or current.admission_id != predecessor.admission_id
                 or current.writer_namespace != predecessor.writer_namespace

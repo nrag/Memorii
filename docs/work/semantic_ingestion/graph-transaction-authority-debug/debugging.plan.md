@@ -298,9 +298,9 @@ emission-scope thread isolation.
 
 ## Next Action
 
-Freeze the closed post-activation lineage correction and hand its exact
-revision, changed-surface ledger, and focused evidence to the independent
-reviewers.
+Require exact per-epoch admission bindings and complete terminal closure for the
+post-activation lineage, then refactor the expensive graph seed into one retained
+JSONL fixture so mutation/reopen negatives complete within the gate budget.
 
 ## Exact-Revision Review At `43281a9e`
 
@@ -542,3 +542,45 @@ reviewers.
   initial direct Pyright invocation without that interpreter reported existing
   import/type-environment errors; the repository-prescribed invocation passed
   `0 errors, 0 warnings, 0 informations`.
+
+## Exact-Revision Review At `3eb970aa`
+
+- The specification reviewer confirmed a P2 recovery defect: demotion may race
+  an activated in-flight operation, and reload excludes a nonterminal lineage
+  control from legacy inventory without requiring terminal, lease-released
+  schema-3 closure.
+- Correctness confirmed a P2 binding defect: target-epoch lineage matching does
+  not require the exact activated admission digest. Target epoch must match the
+  activation successor digest; the later demoted epoch must match the exact
+  current binding.
+- The two real mutation parameters exceeded the seven-minute cap because each
+  rebuilt the complete signed graph fixture. Their assertions remain unproved.
+  Seed the positive graph-before-demotion state once, copy retained JSONL for
+  each mutation, and exercise only reopen/reload per variant.
+
+## Exact Binding And Terminal Closure Evidence
+
+- The closed lineage is now deliberately narrow: the target epoch must equal
+  the binding reconstructed from the retained current admission's exact
+  predecessor digest and the activated predecessor runtime; the only later
+  accepted binding is the exact current `evidence_only` binding at target + 1.
+  Coordinate-equivalent substitutions are not lineage members.
+- Every accepted activated control must already be terminal (or terminal
+  recovery exhausted), lease-free, and have one exact schema-3 locator/control
+  closure. Missing, duplicate, or nonterminal activated controls fail before
+  the legacy inventory digest is computed; completed controls still execute
+  the exact terminal replay validator.
+- A module-retained real JSONL fixture performs signed activation and one real
+  provider graph observation once, snapshots active and demoted states, and
+  copies the demoted state for each reopen. The copied positive,
+  `activation_digest`, `writer_epoch`, `admission_digest`, and `nonterminal`
+  variants passed (`5 passed`) in the dedicated selector; the four mutations
+  recompute each JSONL batch before verifying failure and byte identity.
+- The held-lease regression initially failed before lease acquisition because
+  the fixture clock was still two days ahead of its copied active status. The
+  harness now resets the copied active clock before starting `sync_event` and
+  advances it only after the real lease is held. The corrected held-lease path
+  remains unexecuted because the coordinator's one permitted seed was used;
+  do not claim it as proof until a bounded fresh fixture execution completes.
+- Scoped Ruff, atomic-store first-party Pyright, `git diff --check`, and JSON
+  parsing passed after the exact-binding correction.
