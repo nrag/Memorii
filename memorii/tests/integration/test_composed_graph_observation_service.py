@@ -383,17 +383,12 @@ def test_configured_authorizer_denies_before_graph_or_attestation_snapshot_read(
     _assert_non_disclosing_failure(attestations, "denied")
 
 
-def test_tampered_immutable_group_record_is_non_disclosing(backend, monkeypatch):
-    """A detached public read rejects a changed retained group record without disclosure."""
+def test_tampered_immutable_group_record_denies_each_public_route_without_capacity_leak(backend, monkeypatch):
+    """Both detached routes reject tampering and a later intact read still succeeds."""
     original = backend.plane.read_timed_write_snapshot
-    snapshots = 0
 
     def tampered_snapshot(*, now):
-        nonlocal snapshots
         timed = original(now=now)
-        snapshots += 1
-        if snapshots > 1:
-            return timed
         changed = False
         altered = []
         for record in timed.records:
@@ -407,11 +402,25 @@ def test_tampered_immutable_group_record_is_non_disclosing(backend, monkeypatch)
         assert changed
         return replace(timed, records=tuple(altered))
 
-    monkeypatch.setattr(backend.plane, "read_timed_write_snapshot", tampered_snapshot)
-    response = backend.service.observe_graph(
+    with monkeypatch.context() as patch:
+        patch.setattr(backend.plane, "read_timed_write_snapshot", tampered_snapshot)
+        response = backend.service.observe_graph(
+            host_ingress=_host_ingress(), request=backend.graph_request,
+        )
+        _assert_non_disclosing_failure(response, "denied")
+    assert isinstance(backend.service.observe_graph(
         host_ingress=_host_ingress(), request=backend.graph_request,
-    )
-    _assert_non_disclosing_failure(response, "denied")
+    ), GraphObservationPage)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(backend.plane, "read_timed_write_snapshot", tampered_snapshot)
+        response = backend.service.observe_ingestion_time_attestations(
+            host_ingress=_host_ingress(), request=backend.time_request,
+        )
+        _assert_non_disclosing_failure(response, "denied")
+    assert isinstance(backend.service.observe_ingestion_time_attestations(
+        host_ingress=_host_ingress(), request=backend.time_request,
+    ), IngestionTimeAttestationPage)
 
 
 def test_configured_service_observe_graph_returns_real_page(backend):

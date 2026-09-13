@@ -221,7 +221,7 @@ Focused proof for that boundary:
   observation checkpoint and ledger replay, canonical codec/arena lifecycle,
   detached scope lifecycle, and the unsigned monitor fail-closed integration.
 
-## Next Action
+## Historical Next Action At `57669a0a`
 
 Remediate the exact-revision review findings in one bounded writer round:
 support only the identified historical V2 manifest as an activation-migration
@@ -298,4 +298,51 @@ emission-scope thread isolation.
 
 ## Next Action
 
-Submit the resulting exact revision for the required independent review rerun.
+Hand this bounded exact-review remediation, its focused test evidence, and the
+current dirty diff to fresh independent reviewers before any closure claim.
+
+## Exact-Revision Review At `43281a9e`
+
+- The specification auditor approved the bounded remediation and found no
+  additional contract gap.
+- The correctness reviewer confirmed a P2 compatibility/authority defect:
+  including the historical predecessor in general supported-manifest checks
+  lets normal `current()` and `require_current()` authorization initialize
+  capability-monitor records before ledger cutover. The predecessor must be
+  readable only by the dedicated drain/activation migration path.
+- The test reviewer confirmed three missing public proofs: a recomputed foreign
+  body with the same V2 revision must fail without persisted change; the public
+  cutover must be observed as one JSONL batch containing successor writer,
+  activation, and genesis head; immutable-group tampering must return the exact
+  non-disclosing response through ingestion-time paging as well as graph paging.
+
+## Exact-Revision Remediation Evidence
+
+- General `current()` and `require_current()` acceptance now excludes the
+  pinned retained predecessor. A dedicated activation binding/read path alone
+  accepts it for the drain and cutover CAS; the governed-write policy permits
+  that manifest only for the private transition owner. The normal current
+  observation-ledger successor remains readable for idempotent public
+  activation reload.
+- `ProviderMemoryService` detects only the exact retained predecessor and
+  defers verified capability-monitor initialization. Construction performs no
+  writes; successful ledger activation commits the successor/activation/head
+  batch before the separately validated monitor baseline is persisted.
+- New public JSONL regressions prove: a recomputed same-revision foreign body
+  fails activation with byte-identical storage and no activation/head; exactly
+  one batch contains successor writer, activation, and genesis head with no
+  earlier successor activation digest; and signed-monitor reopen makes zero
+  pre-cutover writes or capability records before one cutover batch.
+- The immutable retained-group tamper proof now covers both public graph and
+  ingestion-time routes. Each response is the exact non-disclosing denial, and
+  an untampered request immediately after each failure returns its real page,
+  proving the denied request did not retain paging capacity.
+- Focused verification: the activation regression set initially exposed an
+  idempotent reopened-successor defect, which was corrected rather than
+  treated as evidence; the five-test retained-predecessor, foreign-body,
+  one-batch, signed-construction, and live-drain replay selector then passed
+  in 99.66 seconds. The public graph/ingestion tamper regression passed in
+  227.43 seconds, below the six-minute cap. Ruff, `git diff --check`, and
+  scoped Pyright for `writer_admission.py`, `provider/service.py`, and
+  `semantic_ingestion/capability.py` passed cleanly (`0 errors, 0 warnings,
+  0 informations`).

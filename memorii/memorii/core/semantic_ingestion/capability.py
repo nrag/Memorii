@@ -194,7 +194,7 @@ class AuthorizedSemanticIngestionRuntime:
         ) is None:
             raise PreplanningStoreError("observation ledger activation deployment authorization is unavailable")
         return self.atomic_store.activate_observation_ledger(
-            writer_binding=self.writer_admission.commit_binding(self.writer_admission.current())
+            writer_binding=self.writer_admission.observation_ledger_activation_binding()
         )
 
     def verify_authorization(

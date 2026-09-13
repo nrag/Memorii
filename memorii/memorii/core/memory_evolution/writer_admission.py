@@ -305,9 +305,43 @@ class SemanticWriterAdmissionStore:
     def _is_supported_manifest(manifest: SemanticRecordOwnershipManifest) -> bool:
         return manifest in (
             bounded_preplanning_ownership_manifest(),
-            capability_monitoring_predecessor_ownership_manifest(),
             observation_ledger_ownership_manifest(),
         )
+
+    def observation_ledger_activation_binding(self) -> SemanticWriterCommitBinding:
+        """Read the exact retained predecessor only for the ledger cutover."""
+        record = self._memory_plane.get_record(writer_admission_memory_id())
+        if record is None:
+            raise SemanticWriterAdmissionError("semantic writer is unbound")
+        admission, manifest = writer_admission_from_record(record)
+        if not (
+            _is_ledger_activation_predecessor_manifest(manifest)
+            or manifest == observation_ledger_ownership_manifest()
+        ):
+            raise SemanticWriterAdmissionError("semantic writer manifest is not an activation predecessor")
+        return self.commit_binding(admission)
+
+    def has_retained_capability_monitoring_predecessor(self) -> bool:
+        """Tell composition to defer monitor initialization until the ledger cutover."""
+        record = self._memory_plane.get_record(writer_admission_memory_id())
+        if record is None:
+            return False
+        _, manifest = writer_admission_from_record(record)
+        return manifest == capability_monitoring_predecessor_ownership_manifest()
+
+    def _require_observation_ledger_activation_predecessor(
+        self, binding: SemanticWriterCommitBinding,
+    ) -> CanonicalMemoryRecord:
+        record = self._memory_plane.get_record(writer_admission_memory_id())
+        if record is None:
+            raise SemanticWriterAdmissionError("semantic writer is unbound")
+        admission, manifest = writer_admission_from_record(record)
+        if (
+            not _is_ledger_activation_predecessor_manifest(manifest)
+            or self.commit_binding(admission) != binding
+        ):
+            raise SemanticWriterAdmissionError("semantic writer activation predecessor is stale or mismatched")
+        return record
 
     def governed_write_policy(self) -> SemanticGovernedWritePolicy:
         return SemanticGovernedWritePolicy(self)
@@ -828,11 +862,11 @@ class SemanticWriterAdmissionStore:
             raise SemanticWriterAdmissionError("observation ledger activation target authority is not configured")
         if max_rescans <= 0:
             raise SemanticWriterAdmissionError("observation ledger activation retry bound is invalid")
-        current_record = self.require_current(expected)
+        current_record = self._require_observation_ledger_activation_predecessor(expected)
         current, manifest = writer_admission_from_record(current_record)
         if (
             not _is_ledger_activation_predecessor_manifest(manifest)
-            or current != self.current()
+            or self.commit_binding(current) != expected
             or not current_record.content.get("draining", False)
         ):
             raise SemanticWriterAdmissionError("semantic writer binding is stale or mismatched")
@@ -880,7 +914,7 @@ class SemanticWriterAdmissionStore:
     def _begin_observation_ledger_drain(self, expected: SemanticWriterCommitBinding) -> None:
         if self._observation_activation_target is None:
             raise SemanticWriterAdmissionError("observation ledger activation target authority is not configured")
-        current_record = self.require_current(expected)
+        current_record = self._require_observation_ledger_activation_predecessor(expected)
         current, manifest = writer_admission_from_record(current_record)
         if not _is_ledger_activation_predecessor_manifest(manifest):
             raise SemanticWriterAdmissionError("semantic writer manifest is mismatched")
@@ -939,7 +973,10 @@ class SemanticGovernedWritePolicy:
             return
         if not isinstance(authorization, SemanticWriterWriteAuthorization):
             raise SemanticWriterAdmissionError("governed semantic write is not authorized")
-        if not self._admissions._is_supported_manifest(authorization.manifest):
+        if not self._admissions._is_supported_manifest(authorization.manifest) and not (
+            authorization.owner is self._admissions._transition_owner
+            and authorization.manifest == capability_monitoring_predecessor_ownership_manifest()
+        ):
             raise SemanticWriterAdmissionError("governed semantic manifest is mismatched")
         if authorization.lease_expires_at is not None and (
             authorization.server_now is None or authorization.lease_expires_at <= authorization.server_now()
@@ -1068,7 +1105,10 @@ class SemanticGovernedWritePolicy:
             raise SemanticWriterAdmissionError("governed semantic writer is not the atomic owner")
         if authorization.admission != current_admission or authorization.manifest != current_manifest:
             raise SemanticWriterAdmissionError("governed semantic authorization is stale")
-        if _is_capability_monitor_observation_write(governed):
+        if (
+            _is_capability_monitor_observation_write(governed)
+            or _is_capability_monitor_status_initialization_write(governed)
+        ):
             return
         if current_admission.activation_digest is not None:
             registered_snapshot_validator = self._admissions._activated_observation_snapshot_validators.get(authorization.owner)

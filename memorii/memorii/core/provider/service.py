@@ -682,30 +682,17 @@ class ProviderMemoryService:
         self._capability_monitoring_evidence_provider = (
             capability_monitoring_evidence_provider
         )
+        self._pending_capability_monitoring_initializations = monitoring_initializations
         if verified_capability_monitoring_authorities:
             self._semantic_atomic_store.install_capability_authorization_guard(
                 self._require_current_capability_authorizations_for_group
             )
-        if monitoring_initializations:
+        if (
+            monitoring_initializations
+            and not self._semantic_writer_admission.has_retained_capability_monitoring_predecessor()
+        ):
             self._ensure_writer_admission_record()
-            authorities_by_fingerprint = {
-                authority._policy.capability_fingerprint: authority
-                for authority in verified_capability_monitoring_authorities
-            }
-            for initial_evidence in monitoring_initializations:
-                authority = authorities_by_fingerprint[
-                    initial_evidence.capability_fingerprint
-                ]
-                # Active status/checkpoint creation is a durable authority
-                # write. Hold the same host revocation linearizer used by the
-                # group CAS across this initial write as well.
-                with capability_monitoring_authority_current_use(
-                    authority, server_time=self._clock.now_utc()
-                ) as current:
-                    if current:
-                        self._capability_monitor.initialize_active_from_verified_evidence(
-                            evidence=initial_evidence,
-                        )
+            self._initialize_pending_capability_monitoring()
         self._semantic_runtime_validated_after_ingress = False
         self._conflict_clarification_processor: ConflictClarificationProcessor | None = None
         if self._conflict_attention_enabled and conflict_clarification_pipeline is not None:
@@ -739,7 +726,32 @@ class ProviderMemoryService:
         """Explicit trusted-host cutover; never exposed as a provider tool."""
         if self._composed_semantic_runtime is None:
             raise PreplanningStoreError("observation ledger activation target authority is not configured")
-        return self._composed_semantic_runtime.activate_observation_ledger()
+        activated = self._composed_semantic_runtime.activate_observation_ledger()
+        self._writer_admission_record_initialized = True
+        self._initialize_pending_capability_monitoring()
+        return activated
+
+    def _initialize_pending_capability_monitoring(self) -> None:
+        """Persist signed monitor status only after any retained cutover succeeds."""
+        initializations = self._pending_capability_monitoring_initializations
+        if not initializations:
+            return
+        authorities_by_fingerprint = {
+            authority._policy.capability_fingerprint: authority
+            for authority in self._verified_capability_monitoring_authorities
+        }
+        for initial_evidence in initializations:
+            authority = authorities_by_fingerprint[initial_evidence.capability_fingerprint]
+            # Active status/checkpoint creation is a durable authority write.
+            # Hold the same host revocation linearizer used by the group CAS.
+            with capability_monitoring_authority_current_use(
+                authority, server_time=self._clock.now_utc()
+            ) as current:
+                if current:
+                    self._capability_monitor.initialize_active_from_verified_evidence(
+                        evidence=initial_evidence,
+                    )
+        self._pending_capability_monitoring_initializations = ()
 
     def run_capability_monitor_tick(
         self,

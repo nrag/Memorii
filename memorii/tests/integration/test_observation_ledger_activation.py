@@ -9,6 +9,10 @@ from pathlib import Path
 
 import pytest
 from memorii.core.memory_evolution.atomic_store import PreplanningStoreError, SemanticIngestionAtomicStore
+from memorii.core.memory_evolution.ingestion_contracts import (
+    SemanticRecordOwnershipManifest,
+    encode_typed_value,
+)
 from memorii.core.memory_evolution.observation_activation_configuration import (
     resolve_verified_observation_activation_target,
 )
@@ -53,6 +57,57 @@ from tests.unit.core.memory_evolution.test_typed_value_artifact_integrity import
 )
 from tests.unit.core.semantic_ingestion.test_semantic_atomic_store import _handoff
 from tests.unit.core.semantic_ingestion.test_semantic_provider_composition import TEST_NOW, _built_in_local_capability
+
+
+def _signed_monitoring_authority():
+    """Issue the monitor authority that a production graph host receives."""
+    from tests.unit.core.semantic_ingestion.test_capability_monitoring import (
+        _monitor,
+        _signed_monitoring_authority,
+        _TestDeploymentSigner,
+        _window,
+    )
+
+    fingerprint = "38a5be91af79d7e5ba9809bf383c699b6864ee50446239fe56a45e32b84638fe"
+    clock, _, _, policy, implementation = _monitor(fingerprint=fingerprint)
+    clock.now = TEST_NOW
+
+    class EvidenceProvider:
+        def load_evidence_windows(self, *, max_items: int):
+            return (_window(clock, policy, implementation, value="0.1"),)[:max_items]
+
+    return _signed_monitoring_authority(
+        clock=clock,
+        policy=policy,
+        implementation=implementation,
+        evidence_provider=EvidenceProvider(),
+        signer=_TestDeploymentSigner(),
+    )
+
+
+def _replace_jsonl_writer_manifest(
+    backing: JsonlMemoryPlaneStore,
+    plane: MemoryPlaneService,
+    manifest: SemanticRecordOwnershipManifest,
+) -> None:
+    """Rehydrate a historical writer body without granting a new write."""
+    revision, records = plane.read_write_snapshot()
+    persisted_batch = backing._read_batches_unlocked()[-1]
+    writer = next(record for record in records if record.memory_id == writer_admission_memory_id())
+    replacement = writer.model_copy(update={"content": {
+        **writer.content,
+        "manifest": {
+            "manifest_revision": manifest.manifest_revision,
+            "governed_record_kinds": sorted(manifest.governed_record_kinds),
+            "semantic_store_methods": sorted(manifest.semantic_store_methods),
+            "manifest_digest": manifest.manifest_digest,
+        },
+    }})
+    backing._replace_batches([_PersistedBatch.create(
+        revision=revision,
+        data_revision=persisted_batch.data_revision,
+        records=tuple(replacement if record is writer else record for record in records),
+    )])
 
 
 def _registry_configuration(tmp_path: Path, *, complete=False):
@@ -162,30 +217,119 @@ def test_activation_rotates_only_the_retained_capability_monitor_predecessor(
     plane = MemoryPlaneService(record_store=backing)
     service = build(plane)
     initial = _seed_provider(service)
-    revision, records = plane.read_write_snapshot()
-    persisted_batch = backing._read_batches_unlocked()[-1]
     predecessor = capability_monitoring_predecessor_ownership_manifest()
-    writer = next(record for record in records if record.memory_id == writer_admission_memory_id())
-    historical_writer = writer.model_copy(update={"content": {
-        **writer.content,
-        "manifest": {
-            "manifest_revision": predecessor.manifest_revision,
-            "governed_record_kinds": sorted(predecessor.governed_record_kinds),
-            "semantic_store_methods": sorted(predecessor.semantic_store_methods),
-            "manifest_digest": predecessor.manifest_digest,
-        },
-    }})
-    backing._replace_batches([_PersistedBatch.create(
-        revision=revision,
-        data_revision=persisted_batch.data_revision,
-        records=tuple(historical_writer if record is writer else record for record in records),
-    )])
+    _replace_jsonl_writer_manifest(backing, plane, predecessor)
 
     reopened = build(MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "retained-predecessor")))
     assert reopened.activate_observation_ledger().expected_writer_epoch == initial.expected_writer_epoch + 1
     persisted = reopened._memory_plane.get_record(writer_admission_memory_id())
     assert persisted is not None
     assert persisted.content["manifest"]["manifest_digest"] != predecessor.manifest_digest
+
+
+def test_activation_rejects_recomputed_same_revision_writer_manifest_without_writing(
+    tmp_path, monkeypatch,
+) -> None:
+    """A foreign V2 body cannot use the retained predecessor's revision label."""
+    build, _, _ = _provider_factory(tmp_path, monkeypatch)
+    backing = JsonlMemoryPlaneStore(tmp_path / "foreign-predecessor")
+    plane = MemoryPlaneService(record_store=backing)
+    service = build(plane)
+    _seed_provider(service)
+    current = bounded_preplanning_ownership_manifest()
+    foreign_methods = current.semantic_store_methods - frozenset({"apply_batch"})
+    foreign = SemanticRecordOwnershipManifest(
+        manifest_revision=current.manifest_revision,
+        governed_record_kinds=current.governed_record_kinds,
+        semantic_store_methods=foreign_methods,
+        manifest_digest=sha256(encode_typed_value({
+            "manifest_revision": current.manifest_revision,
+            "governed_record_kinds": current.governed_record_kinds,
+            "semantic_store_methods": foreign_methods,
+        })).hexdigest(),
+    )
+    _replace_jsonl_writer_manifest(backing, plane, foreign)
+    before = backing._records_path.read_bytes()
+    with pytest.raises(SemanticWriterAdmissionError, match="not an activation predecessor"):
+        service.activate_observation_ledger()
+    assert backing._records_path.read_bytes() == before
+    reopened = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "foreign-predecessor"))
+    assert _ledger_records(reopened) == ()
+    assert reopened.get_record(observation_ledger_head_memory_id("semantic_ingestion")) is None
+
+
+def test_signed_monitor_construction_defers_retained_predecessor_writes_until_cutover(
+    tmp_path, monkeypatch,
+) -> None:
+    """Signed monitor setup cannot mutate the retained predecessor before activation."""
+    unsigned_build, _, _ = _provider_factory(tmp_path, monkeypatch)
+    backing = JsonlMemoryPlaneStore(tmp_path / "deferred-monitor")
+    plane = MemoryPlaneService(record_store=backing)
+    initial_service = unsigned_build(plane)
+    _seed_provider(initial_service)
+    _replace_jsonl_writer_manifest(
+        backing, plane, capability_monitoring_predecessor_ownership_manifest(),
+    )
+    before = backing._records_path.read_bytes()
+    signed_config = tmp_path / "signed-config"
+    signed_config.mkdir()
+    signed_build, _, _ = _provider_factory(
+        signed_config, monkeypatch,
+        complete_registry=True,
+        verified_capability_monitoring_authorities=(_signed_monitoring_authority(),),
+    )
+    reopened = signed_build(MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "deferred-monitor")))
+    assert backing._records_path.read_bytes() == before
+    assert not any(
+        record.source_kind.startswith("semantic_ingestion_capability")
+        for record in reopened._memory_plane.list_records()
+    )
+    activated = reopened.activate_observation_ledger()
+    batches = JsonlMemoryPlaneStore(tmp_path / "deferred-monitor")._read_batches_unlocked()
+    cutovers = [
+        batch for batch in batches
+        if any(
+            record.memory_id == writer_admission_memory_id()
+            and record.content.get("admission", {}).get("activation_digest") == activated.activation_digest
+            for record in batch.records
+        )
+    ]
+    assert len(cutovers) == 1
+    assert any(record.source_kind.startswith("semantic_ingestion_capability") for record in reopened._memory_plane.list_records())
+
+
+def test_jsonl_cutover_writes_successor_activation_and_head_in_one_batch(tmp_path, monkeypatch) -> None:
+    """The durable cutover has no separately persisted activated writer state."""
+    build, _, _ = _provider_factory(tmp_path, monkeypatch)
+    backing = JsonlMemoryPlaneStore(tmp_path / "atomic-cutover")
+    plane = MemoryPlaneService(record_store=backing)
+    service = build(plane)
+    _seed_provider(service)
+    activated = service.activate_observation_ledger()
+    batches = backing._read_batches_unlocked()
+    successor_batches = [
+        batch for batch in batches
+        if any(
+            record.memory_id == writer_admission_memory_id()
+            and record.content.get("admission", {}).get("activation_digest") == activated.activation_digest
+            for record in batch.records
+        )
+    ]
+    assert len(successor_batches) == 1
+    cutover = successor_batches[0]
+    assert {
+        record.source_kind for record in cutover.records
+    } >= {
+        "semantic_ingestion_writer_admission",
+        "semantic_ingestion_observation_ledger_activation",
+        "semantic_ingestion_observation_ledger_head",
+    }
+    assert all(
+        record.content.get("admission", {}).get("activation_digest") is None
+        for batch in batches[:batches.index(cutover)]
+        for record in batch.records
+        if record.memory_id == writer_admission_memory_id()
+    )
 
 
 def _runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, max_rescans: int = 3):
