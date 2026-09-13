@@ -17,6 +17,17 @@ Read:
 
 Create or resume a WorkPlan whose work type is `implementation`.
 
+## Select Delivery Fidelity
+
+Apply the delivery-fidelity contract in `AGENTS.md` before constructing
+milestones or validation. Scale the implementation and reviewer cohort to that
+level. For Level 2, prioritize the shortest production-shaped path to one real
+integration, retain universal invariants and reachable trust-boundary checks,
+and use focused regressions. Do not make exhaustive family closure, complete
+host matrices, final packaging, or exact-release approval prerequisites unless
+they are necessary for the real test or explicitly requested. Record those as
+Level 3 follow-up instead.
+
 The main thread is the coordinator. Use exactly one writer at a time for
 overlapping code, tests, documents, prompts, schemas, configuration, migrations,
 and generated artifacts.
@@ -268,7 +279,7 @@ Satisfy the candidate freeze gate in `.agents/PLANS.md` before launching the
 reviewer cohort. A moving candidate receives mapping or a bounded consultation,
 not a full milestone review.
 
-After a coherent milestone, run concurrently:
+At Levels 3 and 4, after a coherent milestone, run concurrently:
 
 - `spec_auditor`
 - `correctness_reviewer`
@@ -282,7 +293,14 @@ integration scope, give reviewers the frozen Spark preflight binding ledger.
 They must challenge its coverage and exact path proof rather than repeat general
 repository mapping.
 
-Run these full reviewers once for the coherent milestone. After a bounded
+At Levels 1 and 2, use targeted review only when the changed path crosses a
+universal invariant or reachable security, authorization, persistence, or
+data-integrity boundary, or when the user requests it. One reviewer may cover a
+small bounded slice. Do not create a full three-role closure loop for each
+early-integration correction.
+
+Run full reviewers once for the coherent milestone when the selected level
+requires them. After a bounded
 remediation, use targeted delta review by the affected reviewer roles; do not
 repeat all three whole-scope reviews unless the correction materially changes
 the contract or execution boundary.
@@ -349,6 +367,10 @@ replace special cases with a closed grammar, typed contract, state machine, or
 owner rule. If that changes approved semantics, reopen design instead.
 
 ## Phase 8: Final Branch Review
+
+This phase is required for Level 3 or 4 approval. At Level 1 or 2, replace it
+with a focused review of the representative runnable or real-integration path,
+record deferred higher-level gates, and report readiness only at that level.
 
 When all milestones appear complete:
 

@@ -2,14 +2,15 @@
 
 - Work ID: semantic-ingestion-engineering-closure
 - Work type: implementation
-- Status: active; Stage 5 authenticated observer/comparator implementation
+- Delivery fidelity: Level 2 - early real-world testing
+- Status: active; shortest-path Hermes integration readiness
 - Coordinator: Codex main thread
 - Created: 2026-09-06
 - Last updated: 2026-09-13
 - Parent WorkPlan: `docs/work/semantic_ingestion/implementation.plan.md`
 - Related WorkPlans: `docs/work/semantic_ingestion_completion_readiness/closure-plan.md`, `docs/work/semantic_ingestion/acceptance-authority-persistence/design.plan.md`
 - Canonical inputs: frozen SIA architecture and closure plan
-- Expected outputs: six bounded implementation packages and fail-closed activation
+- Expected outputs: one production-shaped Hermes semantic-ingestion and observation path with focused fail-closed proof
 - Current resume packet: `docs/work/semantic_ingestion/engineering-closure/resume.md`
 - Active milestone packet: `docs/work/semantic_ingestion/engineering-closure/milestones/05-authenticated-observer-comparator.plan.md`
 
@@ -27,16 +28,22 @@ All root invariants, strict schema and trust boundaries remain applicable.
 
 ## Objective
 
-Complete user-authorized engineering work for all SIA-R01..R23. Retain complete
-behavior and defer only real signatures, trusted deployment material, and
-signed release issuance.
+Make the existing semantic-ingestion design testable through one representative
+real Hermes integration. Retain completed behavior and universal trust,
+persistence, and data-integrity invariants. Defer exhaustive host/failure-family
+closure, final evidence packaging, operational hardening, and release ceremony
+to Level 3.
 
 ## Completion Contract
 
-Every package proves its bounded requirements through canonical production
-paths. A runtime or persistence claim requires a current
-`production_entrypoint_bindings` entry proving a non-test caller reaches the
-canonical owner with required authority and observed outcome.
+The Level 2 campaign completes when Hermes reaches the production-shaped public
+ingestion, ledger/monitor, observation, and retrieval owners; one representative
+real integration passes; and focused denial, revocation, persistence/reopen,
+and data-integrity regressions pass. A runtime or persistence claim still
+requires a current `production_entrypoint_bindings` entry proving a non-test
+caller reaches the canonical owner with required authority and observed
+outcome. Level 3 package breadth and exact-release approval remain recorded
+follow-up and do not block this learning milestone.
 
 ## Packages
 

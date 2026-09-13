@@ -1,10 +1,14 @@
 # Package 5: Authenticated Observer And Comparator
 
 - Parent WorkPlan: `docs/work/semantic_ingestion/engineering-closure/implementation.plan.md`
+- Delivery fidelity: Level 2 - early real-world testing
 - Status: active; authenticated public observation and independent comparator closure
 - Requirements: R03, R13, R17
 
-Implement scoped observer and independent comparator with pagination and revocation failure proof.
+Enable one production-shaped Hermes observation/comparison trial with scoped
+pagination and focused authorization/revocation failure proof. Complete
+record-family and platform matrices remain Level 3 follow-up unless the trial
+exposes a required gap.
 
 ## Active Native Persistence Slice
 

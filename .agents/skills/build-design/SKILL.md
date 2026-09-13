@@ -5,6 +5,17 @@ description: Build or substantially revise a Memorii technical design through re
 
 # Build A Memorii Design
 
+## Select Delivery Fidelity
+
+Apply the delivery-fidelity contract in root `AGENTS.md` before setting design
+scope. At Levels 1 and 2, design the smallest replaceable contract that enables
+the runnable or real-world learning objective while preserving universal
+invariants and reachable trust boundaries. Keep production rollout,
+compatibility breadth, exhaustive attack matrices, and final evidence machinery
+as explicit Level 3 or 4 follow-up unless they are needed for the selected
+test. Review design completeness against the selected level rather than the
+eventual maximum-fidelity system.
+
 Read:
 
 - root `AGENTS.md`

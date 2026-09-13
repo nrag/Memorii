@@ -1,22 +1,26 @@
 # Semantic Ingestion Closure Resume
 
-Work type: implementation. Coordinator: root. Status: active Stage 5, not
-closed.
-Current product baseline: `61f12cffde746be4bdfd3d6677aeda3046f59119`
+Work type: implementation. Delivery fidelity: Level 2 early real-world testing.
+Coordinator: root. Status: active Hermes integration readiness, not closed.
+Current product baseline: `ebea5618`
 on `semantic_ingestion_m5`. Index: `implementation.plan.md`. Active packet:
 `milestones/05-authenticated-observer-comparator.plan.md`. Previous resume preserved at
 `archive/resume-ac8819eaa31c8adadc54db2ca8a7ae60376d5b9e90752e4c0106cae995302039.md`.
 
 ## Current State
 
-The 23-row table records 17 engineering-complete requirements and six open:
+The 23-row Level 3 closure table records 17 engineering-complete requirements and six open:
 R03, R08, R13, R16, R17 and R19. R15 monitoring and authenticated revocation
 publication are engineering complete at `6224935e` after a 111-test consolidated
 gate and exact-revision specification, correctness and test approval. The
 remaining closure sequence is R17 comparator/authentication, complete host
 composition for R08/R16/R19, then frozen evidence/release preparation for
 R03/R13. Actual production keys, signatures and qualifying release measurements
-remain release conditions.
+remain release conditions. For the active Level 2 milestone, those six rows are
+not six separate blockers: completion requires one production-shaped Hermes
+ingestion/monitor/observation/retrieval path plus focused trust, persistence,
+reopen, denial, and revocation checks. Exhaustive record-family and host matrices,
+final evidence packaging, and exact-release review are deferred to Level 3.
 
 Stage 1 has a complete V2 remediation candidate: an installed evaluator,
 registered schema and profile authority, signed immutable object repository,
@@ -98,10 +102,13 @@ warnings-as-errors cases plus Ruff and Pyright prove source/entity alignment,
 terminal joins, exact membership/count closure, and adversarial mismatch
 families under the fail-closed type-proof boundary.
 
-The real-route test is blocked by a reproducible graph-transaction authority
-rejection before the configured authority provider is invoked. No failing draft
-was retained. The separate debugging WorkPlan is
+The graph-transaction authority rejection is resolved. Exact revision
+`92b33d37979c428921659fa2540e3848c798739b` preserves exact activated terminal
+lineage, accepts lease-free exhausted controls without false terminal
+attachments, and passes independent specification, correctness, and test
+review. Its review record is in
 `../graph-transaction-authority-debug/debugging.plan.md`.
 
-Next action: isolate and correct that authority rejection, then resume the real
-host-composed comparator authorization/revocation proof.
+Next action: add the smallest missing Hermes public forwards and exercise one
+real host-composed comparator authorization/revocation flow; do not expand into
+the Level 3 family or host matrix.

@@ -18,6 +18,16 @@ Create or resume a WorkPlan whose work type is `testing` when the work is
 long-running. Keep product-semantic changes in a separate design,
 implementation, or debugging WorkPlan.
 
+## Select Delivery Fidelity
+
+Apply the delivery-fidelity contract in root `AGENTS.md`. Level 1 needs a fast
+runnable signal. Level 2 needs focused contract checks plus one representative
+production-shaped real integration. Preserve tests for universal invariants and
+reachable trust boundaries, but defer exhaustive platform matrices, final
+packaging evidence, and full regression topology to Level 3. Level 4 adds
+compatibility and persisted-data regression breadth for already shipped
+behavior.
+
 ## Cost-Aware Test Architecture
 
 Keep exactly one writer for overlapping test, timing, and workflow artifacts.

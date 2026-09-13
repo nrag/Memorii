@@ -113,6 +113,33 @@ Examples:
 Do not silently convert the type of an active WorkPlan after meaningful work
 has begun.
 
+## Delivery Fidelity
+
+Select and record one fidelity level before deciding how much design, proof,
+review, and operational work the task needs. Follow an explicit user choice;
+otherwise infer the lowest level that safely supports the stated objective.
+
+| Level | Stage | Required bar |
+| --- | --- | --- |
+| 1 | Early development | Reach the shortest runnable learning loop. Use focused checks and replaceable local fixtures. Record important limitations; do not claim real-world or production readiness. |
+| 2 | Early real-world testing | Use production-shaped public paths and one representative real integration. Preserve security, authorization, data-integrity, persistence, and fail-closed boundaries. Add focused regressions for defects found in the trial. Defer exhaustive matrices, final evidence packaging, release ceremony, and speculative hardening. |
+| 3 | First production rollout | Cover every supported production root and failure family. Require migration, rollback, operability, security, broad gates, exact release artifacts, and revision-bound approval evidence. |
+| 4 | Updates to a shipped product | Meet Level 3 and protect established compatibility and behavior with comprehensive regression, upgrade/downgrade, persisted-data, and rollout evidence. |
+
+Higher fidelity is cumulative, but later-stage obligations must not be pulled
+into an earlier level merely because they may eventually matter. Universal
+Memorii invariants and reachable trust-boundary validation apply at every
+level. Classify deferred higher-level work explicitly; it does not block the
+selected level and must not be reported as completed.
+
+Reviewers must judge against the selected level. At Levels 1 and 2, request a
+change only for behavior needed to run the stated test, a demonstrated P1/P2
+defect in that path, a universal invariant violation, or a reachable security,
+authorization, persistence, or data-integrity failure. Record exhaustive
+coverage, release evidence, compatibility breadth, and speculative operability
+work as later-level follow-up. Exact-release and whole-branch approval remain
+Level 3 or 4 activities unless the user explicitly requests them earlier.
+
 ## Long-Running Work Rules
 
 The main Codex thread is the coordinator.

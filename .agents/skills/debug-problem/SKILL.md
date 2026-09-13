@@ -16,6 +16,16 @@ Read:
 
 Create or resume a WorkPlan whose work type is `debugging`.
 
+## Select Delivery Fidelity
+
+Apply the delivery-fidelity contract in root `AGENTS.md`. At Level 2, reproduce
+and fix the defect on the representative production-shaped integration path,
+preserve universal invariants and reachable trust boundaries, and add focused
+regression proof. Stop when that path is safe and testable. Record exhaustive
+sibling matrices, final packaging, rollout hardening, and whole-branch review as
+Level 3 follow-up unless evidence shows they are required by the same root
+cause.
+
 The main thread is the coordinator. Use one writer at a time for overlapping
 code, tests, fixtures, and documentation.
 
@@ -164,6 +174,12 @@ all scope-required GitHub and external acceptance gates even when the original
 defect was not a CI failure.
 
 ## Phase 8: Independent Closure Review
+
+The full three-role closure cohort is required at Levels 3 and 4. At Levels 1
+and 2, use the smallest targeted independent review warranted by the changed
+boundary; skip it for low-risk local corrections. Do not repeat review rounds
+after focused checks pass unless a reviewer demonstrates another in-scope
+defect.
 
 Satisfy the candidate freeze gate in `.agents/PLANS.md` before launching the
 closure cohort.

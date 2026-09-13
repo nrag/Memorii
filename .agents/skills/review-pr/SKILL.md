@@ -15,6 +15,13 @@ asks for corrections. Maintaining the review WorkPlan is permitted. Route
 corrections to the appropriate implementation, testing, or debugging workflow
 and review the new head only after those changes complete.
 
+Record the delivery fidelity from the governing WorkPlan or explicit user
+decision. Level 2 review asks whether the representative production-shaped real
+integration is safe and usable for learning; exhaustive host matrices, final
+release artifacts, and shipped-product compatibility are follow-up unless the
+PR claims them. Full merge/release approval predicates below apply to Level 3
+or 4, or when the user explicitly requests production approval.
+
 ## 1. Freeze The Review Identity
 
 Record repository, PR number, base branch and SHA, head branch and SHA,
