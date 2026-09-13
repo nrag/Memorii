@@ -99,6 +99,8 @@ _KINDS = (
             "bootstrap_graph_v3_terminal_locator",
             "bootstrap_graph_v3_terminal_control",
             "bootstrap_graph_v3_terminal_identity",
+            "capability_status",
+            "capability_monitor_decision",
         }
     )
     | _SEMANTIC_PROJECTION_SOURCE_KINDS
@@ -631,6 +633,89 @@ class SemanticWriterAdmissionStore:
         )
         return successor
 
+    def demote_capability_monitor(
+        self,
+        *,
+        expected: SemanticWriterCommitBinding,
+        status_record: CanonicalMemoryRecord,
+        decision_record: CanonicalMemoryRecord,
+        expected_status_digest: str,
+        monitor_transition_digest: str,
+    ) -> SemanticWriterAdmission:
+        """Atomically fence every writer after a capability monitor demotion."""
+        if (
+            not isinstance(expected_status_digest, str)
+            or len(expected_status_digest) != 64
+            or not isinstance(monitor_transition_digest, str)
+            or len(monitor_transition_digest) != 64
+        ):
+            raise SemanticWriterAdmissionError(
+                "capability monitor transition digest is invalid"
+            )
+        current_record = self.require_current(expected)
+        current, manifest = writer_admission_from_record(current_record)
+        if not self._is_supported_manifest(manifest):
+            raise SemanticWriterAdmissionError("semantic writer manifest is mismatched")
+        status_id = status_record.memory_id
+        prior_status = self._memory_plane.get_record(status_id)
+        if prior_status is None or record_digest(prior_status) != expected_status_digest:
+            raise SemanticWriterAdmissionError("capability monitor status is stale")
+        at = self._now()
+        successor = SemanticWriterAdmission(
+            admission_id=current.admission_id,
+            writer_namespace=current.writer_namespace,
+            active_runtime_mode="evidence_only",
+            active_writer_implementation_fingerprint=(
+                current.active_writer_implementation_fingerprint
+            ),
+            accepted_graph_schema_fingerprint=(
+                current.accepted_graph_schema_fingerprint
+            ),
+            writer_epoch=current.writer_epoch + 1,
+            activated_at=at,
+            previous_admission_digest=current.admission_digest,
+            activation_digest=current.activation_digest,
+            admission_digest=_admission_digest(
+                current.admission_id,
+                "evidence_only",
+                current.active_writer_implementation_fingerprint,
+                current.accepted_graph_schema_fingerprint,
+                current.writer_epoch + 1,
+                at,
+                current.admission_digest,
+                current.activation_digest,
+            ),
+        )
+        self._memory_plane.conditionally_write_records(
+            (
+                _record(
+                    successor,
+                    manifest,
+                    at,
+                    policy_activation_digest=monitor_transition_digest,
+                ),
+                status_record,
+                decision_record,
+            ),
+            preconditions=(
+                RecordDigestPrecondition(
+                    memory_id=current_record.memory_id,
+                    expected_digest=record_digest(current_record),
+                ),
+                RecordDigestPrecondition(
+                    memory_id=status_id,
+                    expected_digest=expected_status_digest,
+                ),
+                RecordAbsentPrecondition(memory_id=decision_record.memory_id),
+            ),
+            authorization=SemanticWriterWriteAuthorization(
+                admission=current,
+                manifest=manifest,
+                owner=self._transition_owner,
+            ),
+        )
+        return successor
+
     def _register_atomic_owner(self) -> object:
         capability = object()
         self._atomic_owners.add(capability)
@@ -845,6 +930,13 @@ class SemanticGovernedWritePolicy:
                 target=self._admissions._observation_activation_target,
             ):
                 return
+            if (
+                proposed_record.content.get("policy_activation_digest") is not None
+                and _is_capability_monitor_demotion_write(
+                    tuple(records), current_admission, proposed, current_record
+                )
+            ):
+                return
             if current_admission.activation_digest is not None:
                 raise SemanticWriterAdmissionError("legacy writer mutation grammar is retired after ledger activation")
             policy_records = tuple(record for record in records if record not in writer_records)
@@ -858,6 +950,10 @@ class SemanticGovernedWritePolicy:
                 "policy_activation_digest"
             )
             if policy_activation_digest is not None:
+                if _is_capability_monitor_demotion_write(
+                    tuple(records), current_admission, proposed, current_record
+                ):
+                    return
                 if (
                     not isinstance(policy_activation_digest, str)
                     or manifest != current_manifest
@@ -906,6 +1002,8 @@ class SemanticGovernedWritePolicy:
             raise SemanticWriterAdmissionError("governed semantic writer is not the atomic owner")
         if authorization.admission != current_admission or authorization.manifest != current_manifest:
             raise SemanticWriterAdmissionError("governed semantic authorization is stale")
+        if _is_capability_monitor_observation_write(governed):
+            return
         if current_admission.activation_digest is not None:
             registered_snapshot_validator = self._admissions._activated_observation_snapshot_validators.get(authorization.owner)
             if _is_activated_observation_ledger_write(
@@ -932,7 +1030,10 @@ class SemanticGovernedWritePolicy:
             )
         if any(record.source_kind == "semantic_ingestion_writer_admission" for record in governed):
             raise SemanticWriterAdmissionError("writer admission transition lacks transition authority")
-        if any(semantic_control_class(record) == "unknown" for record in governed):
+        if (
+            not _is_capability_monitor_status_initialization_write(governed)
+            and any(semantic_control_class(record) == "unknown" for record in governed)
+        ):
             raise SemanticWriterAdmissionError("unknown semantic control namespace is forbidden")
         projection_records = [
             record
@@ -951,6 +1052,10 @@ class SemanticGovernedWritePolicy:
             if record.content.get("semantic_ingestion_kind") == "preplanning_operation_control"
         ]
         if len(controls) != 1:
+            if _is_capability_monitor_status_initialization_write(governed):
+                return
+            if _is_capability_monitor_observation_write(governed):
+                return
             if _is_atomic_admission_only_write(
                 governed,
                 self._admissions.commit_binding(current_admission),
@@ -3017,6 +3122,150 @@ def _is_atomic_admission_only_write(
     except (KeyError, TypeError, ValueError, SemanticWriterAdmissionError):
         return False
     return True
+
+
+def _is_capability_monitor_demotion_write(
+    records: tuple[CanonicalMemoryRecord, ...],
+    current: SemanticWriterAdmission,
+    successor: SemanticWriterAdmission,
+    current_record: CanonicalMemoryRecord,
+) -> bool:
+    """Recognize the monitor's closed status, decision, and writer CAS grammar."""
+    writer_records = [
+        record
+        for record in records
+        if record.memory_id == writer_admission_memory_id()
+    ]
+    status_records = [
+        record
+        for record in records
+        if record.source_kind == "semantic_ingestion_capability_status"
+    ]
+    decision_records = [
+        record
+        for record in records
+        if record.source_kind == "semantic_ingestion_capability_monitor_decision"
+    ]
+    if (
+        len(writer_records) != 1
+        or len(status_records) != 1
+        or len(decision_records) != 1
+        or len(records) != 3
+    ):
+        return False
+    status, decision = status_records[0], decision_records[0]
+    try:
+        from memorii.core.memory_evolution.capability_monitoring import (
+            CapabilityEvidenceFreshness,
+            CapabilityMonitoringDecision,
+            CapabilityStatus,
+        )
+
+        status_body = CapabilityStatus.model_validate_json(
+            json.dumps(status.content["status"])
+        )
+        decision_body = CapabilityMonitoringDecision.model_validate_json(
+            json.dumps(decision.content["decision"])
+        )
+        freshness = CapabilityEvidenceFreshness.model_validate_json(
+            json.dumps(decision.content["freshness"])
+        )
+        return (
+            current_record.content.get("draining", False) is False
+            and successor.admission_id == current.admission_id
+            and successor.writer_epoch == current.writer_epoch + 1
+            and successor.previous_admission_digest == current.admission_digest
+            and successor.active_runtime_mode == "evidence_only"
+            and successor.activation_digest == current.activation_digest
+            and successor.active_writer_implementation_fingerprint
+            == current.active_writer_implementation_fingerprint
+            and successor.accepted_graph_schema_fingerprint
+            == current.accepted_graph_schema_fingerprint
+            and status_body.status == "evidence_only"
+            and decision_body.action == "evidence_only"
+            and status_body.capability_fingerprint
+            == decision_body.capability_fingerprint
+            and status_body.monitoring_policy_digest
+            == decision_body.monitoring_policy_digest
+            and status_body.evidence_freshness_digest == freshness.evidence_digest
+            and status.content.get("previous_status_record_digest") is not None
+            and decision.content.get("status_record_digest")
+            == status.content.get("previous_status_record_digest")
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
+def _is_capability_monitor_status_initialization_write(
+    records: list[CanonicalMemoryRecord],
+) -> bool:
+    if len(records) != 1:
+        return False
+    record = records[0]
+    try:
+        from memorii.core.memory_evolution.capability_monitoring import CapabilityStatus
+
+        status = CapabilityStatus.model_validate(record.content["status"])
+        return (
+            record.source_kind == "semantic_ingestion_capability_status"
+            and record.content.get("semantic_ingestion_kind") == "capability_status"
+            and set(record.content) == {"semantic_ingestion_kind", "status"}
+            and status.status == "active"
+            and status.status_revision == 1
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
+def _is_capability_monitor_observation_write(
+    records: list[CanonicalMemoryRecord],
+) -> bool:
+    if len(records) != 2:
+        return False
+    status_records = [
+        record
+        for record in records
+        if record.source_kind == "semantic_ingestion_capability_status"
+    ]
+    decision_records = [
+        record
+        for record in records
+        if record.source_kind == "semantic_ingestion_capability_monitor_decision"
+    ]
+    if len(status_records) != 1 or len(decision_records) != 1:
+        return False
+    status, decision = status_records[0], decision_records[0]
+    try:
+        from memorii.core.memory_evolution.capability_monitoring import (
+            CapabilityEvidenceFreshness,
+            CapabilityMonitoringDecision,
+            CapabilityStatus,
+        )
+
+        status_body = CapabilityStatus.model_validate_json(
+            json.dumps(status.content["status"])
+        )
+        decision_body = CapabilityMonitoringDecision.model_validate_json(
+            json.dumps(decision.content["decision"])
+        )
+        freshness = CapabilityEvidenceFreshness.model_validate_json(
+            json.dumps(decision.content["freshness"])
+        )
+        return (
+            status.content.get("semantic_ingestion_kind") == "capability_status"
+            and decision.content.get("semantic_ingestion_kind")
+            == "capability_monitor_decision"
+            and status.content.get("previous_status_record_digest")
+            == decision.content.get("status_record_digest")
+            and status_body.capability_fingerprint
+            == decision_body.capability_fingerprint
+            and status_body.monitoring_policy_digest
+            == decision_body.monitoring_policy_digest
+            and status_body.evidence_freshness_digest == freshness.evidence_digest
+            and status_body.status in {"active", "evidence_only"}
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
 
 
 def _admission_digest(

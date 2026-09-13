@@ -1049,6 +1049,9 @@ class DeterministicBootstrapGraphAuthorityProviderV3:
     current_scope_digest: Callable[[], str] | None = None
     before_epoch_created: Callable[[object], None] | None = None
     after_epoch_created: Callable[[object, object, object], object] | None = None
+    capability_bindings_factory: (
+        Callable[[object, tuple[object, ...]], tuple[object, ...]] | None
+    ) = None
     acquire_errors: list[str] | None = None
     _related_conflict_emitted: bool = False
     _successful_group_commits: int = 0
@@ -1210,9 +1213,17 @@ class DeterministicBootstrapGraphAuthorityProviderV3:
                 operation_inputs=operation_inputs,
                 accepted_materialization=materialized,
             )
+            capability_bindings = (
+                self.capability_bindings_factory(
+                    request.prepared_source, operation_inputs
+                )
+                if self.capability_bindings_factory is not None
+                else ()
+            )
             host_authority = build_bootstrap_graph_terminal_host_authority_v3(
                 source=request.prepared_source,
                 operation_fence_binding=request.operation_fence_binding,
+                capability_bindings=capability_bindings,
             )
             group_commits = AtomicStoreBootstrapGraphGroupCommitRepositoryV3(
                 atomic_store=atomic_store

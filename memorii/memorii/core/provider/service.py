@@ -47,6 +47,13 @@ from memorii.core.memory_evolution.bootstrap_profile import (
     VerifiedBootstrapProfile,
     verify_bootstrap_profile,
 )
+from memorii.core.memory_evolution.capability_monitoring import (
+    CapabilityEvidenceWindow,
+    CapabilityMonitor,
+    CapabilityMonitoringPolicy,
+    CapabilityMonitorTickResult,
+    CapabilityStatus,
+)
 from memorii.core.memory_evolution.composite_conflict_listing import (
     CompositeConflictListingRepository,
 )
@@ -304,6 +311,7 @@ class ProviderMemoryService:
         canonical_evidence_enabled: bool | None = None,
         graph_observation_runtime: AuthenticatedGraphObservationPagingRuntime
         | None = None,
+        capability_monitoring_policies: tuple[CapabilityMonitoringPolicy, ...] = (),
         _host_construction: object | None = None,
     ) -> None:
         self._memory_plane = memory_plane or MemoryPlaneService()
@@ -634,6 +642,11 @@ class ProviderMemoryService:
             semantic_runtime=semantic_runtime,
             canonical_evidence_arena_factory=self._new_canonical_evidence_arena,
         )
+        self._capability_monitor = CapabilityMonitor(
+            writers=self._semantic_writer_admission,
+            now=self._clock.now_utc,
+            policies=capability_monitoring_policies,
+        )
         self._semantic_runtime_validated_after_ingress = False
         self._conflict_clarification_processor: ConflictClarificationProcessor | None = None
         if self._conflict_attention_enabled and conflict_clarification_pipeline is not None:
@@ -668,6 +681,27 @@ class ProviderMemoryService:
         if self._composed_semantic_runtime is None:
             raise PreplanningStoreError("observation ledger activation target authority is not configured")
         return self._composed_semantic_runtime.activate_observation_ledger()
+
+    def run_capability_monitor_tick(
+        self,
+        *,
+        evidence: CapabilityEvidenceWindow,
+    ) -> CapabilityMonitorTickResult:
+        """Run one bounded host-scheduled monitor evaluation without ingest traffic."""
+        return self._capability_monitor.tick(evidence=evidence)
+
+    def initialize_capability_monitor_status(
+        self,
+        *,
+        capability_fingerprint: str,
+        evidence_freshness_digest: str,
+    ) -> CapabilityStatus:
+        """Provision explicit host-approved active status; policy values are required."""
+        self._ensure_writer_admission_record()
+        return self._capability_monitor.initialize_active_status(
+            capability_fingerprint=capability_fingerprint,
+            evidence_freshness_digest=evidence_freshness_digest,
+        )
 
     def observe_graph(
         self,

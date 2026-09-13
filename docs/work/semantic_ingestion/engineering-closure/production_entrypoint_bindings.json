@@ -60,11 +60,13 @@
     {
       "requirement": "R15",
       "package": "04",
-      "status": "unmapped",
-      "canonical_owner": null,
-      "production_caller": null,
-      "authority": null,
-      "outcome_proof": null
+      "status": "candidate_complete_pending_exact_revision_review",
+      "canonical_owner": "memorii.core.memory_evolution.capability_monitoring.CapabilityMonitor -> SemanticWriterAdmissionStore.demote_capability_monitor; SemanticIngestionAtomicStore._capability_status_preconditions_for_group_commit",
+      "production_caller": "ProviderMemoryService.run_capability_monitor_tick -> CapabilityMonitor.tick; ProviderMemoryService.sync_event -> ProviderIngestionCoordinator -> BootstrapGraphTransactionCoordinatorV3 -> AtomicStoreBootstrapGraphRepositoryV3.commit_or_reload -> SemanticIngestionAtomicStore.commit_or_reload_bootstrap_graph_group_v3",
+      "production_caller_count": 2,
+      "authority": "The monitor accepts only supplied digest-bound policy and immutable evidence window plus ProviderMemoryService's protected IngestionTimeClock. It loads the per-capability status record, and a demotion atomically persists successor status/decision while advancing the current writer epoch. Group commits traverse sealed OperationCapabilityExecutionBinding-shaped values, validate active status revision, record digest, policy and freshness against the same-store record, and add RecordDigestPrecondition to their CAS.",
+      "outcome_proof": "The capability-monitor suite passes 12 cases: warning, breach, verified-writer demotion, stale labels with healthy canary, pause/outage expiry, no auto-reactivation, JSONL restart, injected monitor CAS loss, independent confidence-sequence recomputation, ProviderMemoryService tick, and a real sealed bootstrap-group interleaving. The real group path retains the exact status RecordDigestPrecondition, a monitor demotion wins before storage CAS, group publication fails, and durable reopen observes evidence_only with no group primary. The consolidated admission/migration/monitor/atomic-store gate passes 178 tests; Ruff, py_compile, diff validation, and scoped Pyright pass with zero diagnostics.",
+      "remaining": "Exact-revision specification, correctness, and test reviews. Policy thresholds, approved initial activation, explicit recovery authorization, qualifying evidence, and signatures are externally supplied release/Stage-4 authority inputs rather than implementation defaults."
     },
     {
       "requirement": "R16",

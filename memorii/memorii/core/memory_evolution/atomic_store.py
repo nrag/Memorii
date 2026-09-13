@@ -13103,6 +13103,10 @@ class SemanticIngestionAtomicStore:
         if existing is not None:
             return self._reload_bootstrap_graph_group_receipt(existing, request)
 
+        status_preconditions = self._capability_status_preconditions_for_group_commit(
+            request
+        )
+
         def write(*, retried_after_cas_conflict: bool = False) -> BootstrapGraphGroupCommitReloadV3:
             # The transaction-start instant is one protected-clock sample taken
             # at entry to the winning attempt, after the reload discrimination
@@ -13836,6 +13840,7 @@ class SemanticIngestionAtomicStore:
                     preconditions=(
                         RecordDigestPrecondition(memory_id=control_record.memory_id, expected_digest=record_digest(control_record)),
                         RecordDigestPrecondition(memory_id=writer_record.memory_id, expected_digest=record_digest(writer_record)),
+                        *status_preconditions,
                         *(RecordAbsentPrecondition(memory_id=record.memory_id) for record in records[1:]
                           if record not in (*canonical_event_records, *native_projection_records, *ledger_records)),
                         *canonical_event_preconditions,
@@ -13862,6 +13867,53 @@ class SemanticIngestionAtomicStore:
             return write()
         with self._semantic_integrity_linearization.exclusive():
             return write()
+
+    def _capability_status_preconditions_for_group_commit(
+        self, request: BootstrapGraphGroupCommitRequestV3,
+    ) -> tuple[MemoryPlanePrecondition, ...]:
+        """Load every sealed operation status and retain it as the group CAS read set."""
+        from memorii.core.memory_evolution.capability_monitoring import CapabilityStatus
+
+        bindings = tuple(
+            binding
+            for binding in request.pre_execution_manifest_identity.core.capability_bindings
+            if binding.operation_id in request.operation_ids
+        )
+        if not bindings:
+            return ()
+        if {binding.operation_id for binding in bindings} != set(request.operation_ids):
+            raise PreplanningStoreError("capability status bindings are incomplete")
+        deduplicated = {}
+        for binding in bindings:
+            fingerprint = binding.capability_fingerprint
+            prior = deduplicated.setdefault(fingerprint, binding)
+            if prior != binding:
+                raise PreplanningStoreError("capability status bindings disagree")
+        preconditions: list[MemoryPlanePrecondition] = []
+        for fingerprint, binding in sorted(deduplicated.items()):
+            record_id = "semantic_ingestion:capability-status:" + fingerprint
+            record = self._memory_plane.get_record(record_id)
+            if record is None or record.source_kind != "semantic_ingestion_capability_status":
+                raise PreplanningStoreError("capability status authority is unavailable")
+            try:
+                status = CapabilityStatus.model_validate(record.content["status"])
+            except (KeyError, TypeError, ValueError) as exc:
+                raise PreplanningStoreError("capability status authority is invalid") from exc
+            if (
+                status.status != "active"
+                or str(status.status_revision) != binding.capability_status_revision
+                or record_digest(record) != binding.capability_status_record_digest
+                or status.monitoring_policy_digest != binding.monitoring_policy_digest
+                or status.evidence_freshness_digest != binding.evidence_freshness_digest
+            ):
+                raise PreplanningStoreError("capability status binding is stale")
+            preconditions.append(
+                RecordDigestPrecondition(
+                    memory_id=record.memory_id,
+                    expected_digest=record_digest(record),
+                )
+            )
+        return tuple(preconditions)
 
     def reload_exact_bootstrap_graph_group_v3(
         self, *, source_operation_id: str, transaction_group_id: str,
