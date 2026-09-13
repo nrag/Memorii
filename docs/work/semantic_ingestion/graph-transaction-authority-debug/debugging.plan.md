@@ -2,7 +2,7 @@
 
 - Work ID: semantic-ingestion-graph-transaction-authority-debug
 - Work type: debugging
-- Status: active
+- Status: complete at `92b33d37979c428921659fa2540e3848c798739b`
 - Coordinator: root
 - Created: 2026-09-13
 - Last updated: 2026-09-13
@@ -599,7 +599,7 @@ changed-surface ledger, and bounded evidence to the independent reviewers.
 - Scoped Ruff, atomic-store first-party Pyright, `git diff --check`, and JSON
   parsing passed after the exact-binding correction.
 
-## Exhausted Activated Control Follow-Up
+## Historical Exhausted Activated Control Follow-Up
 
 - Activated `lease_recovery_exhausted` controls are now treated as immutable,
   lease-free, noncommitting lineage members: they are excluded from legacy
@@ -655,5 +655,26 @@ changed-surface ledger, and bounded evidence to the independent reviewers.
 
 ## Next Action
 
-Hand the exact exhausted-lineage revision and focused evidence to independent
-review; do not schedule another graph seed for this bounded slice.
+Resume the parent implementation campaign and refresh R17 against its complete
+observer/comparator and configured-host evidence; do not schedule another graph
+seed for this completed debugging slice.
+
+## Exact-Revision Closure Review At `92b33d37`
+
+- Specification, correctness, and test reviewers independently approved exact
+  revision `92b33d37979c428921659fa2540e3848c798739b` for this bounded recovery
+  correction. They reported no demonstrated P1/P2 defect, no approval-governance
+  gap, and no required change.
+- The correctness reviewer traced the public path from
+  `ProviderMemoryService.activate_observation_ledger` through activation reload
+  and inventory validation. It confirmed that the exception is limited to an
+  exact activated, lease-free `lease_recovery_exhausted` lineage member and does
+  not treat that member as a committed graph terminal.
+- The test reviewer independently ran the four focused public-composition cases:
+  all passed in 72.92 seconds. Its review confirmed real composed admission,
+  persisted lease exhaustion, monitor demotion, byte-preserving public reopen,
+  both attachment failures, and a clean-interpreter grammar rebuild.
+- The specification reviewer confirmed that this terminal class may reopen
+  without a locator and that both locator and terminal-control attachments must
+  fail closed. Parent R17 and M5 promotion remain separate implementation-campaign
+  decisions rather than claims made by this debug packet.
