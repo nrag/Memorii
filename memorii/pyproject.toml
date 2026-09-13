@@ -19,7 +19,7 @@ dependencies = [
 [project.scripts]
 memorii-acceptance-evaluate = "acceptance.cli:main"
 memorii-acceptance-authority-publish = "acceptance.authority_cli:main"
-memorii-semantic-ingestion-revocation-publish = "memorii.tools.semantic_ingestion_revocation_publish:main"
+memorii-semantic-ingestion-revocation-publish = "acceptance.revocation_cli:main"
 
 [project.entry-points."memorii.acceptance_evaluator_runtime"]
 installed = "acceptance.host_runtime:InstalledAcceptanceRuntime"
@@ -29,6 +29,9 @@ installed = "memorii.core.memory_evolution.deployment_authorization:InstalledDep
 
 [project.entry-points."memorii.acceptance_production_revocation_reader"]
 installed = "memorii.core.memory_evolution.deployment_authorization:InstalledProductionRevocationReader"
+
+[project.entry-points."memorii.acceptance_production_revocation_publisher"]
+installed = "memorii.core.memory_evolution.deployment_authorization:InstalledProductionRevocationPublisher"
 
 [project.optional-dependencies]
 local = [

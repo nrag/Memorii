@@ -737,6 +737,15 @@ class CapabilityMonitor:
                 return freshness
         raise ValueError("capability monitor freshness authority is unavailable")
 
+    def _fence_corrupt_replay(
+        self, *, current: CapabilityStatus, policy: CapabilityMonitoringPolicy
+    ) -> None:
+        """Durably fence a previously active writer on invalid retained replay state."""
+        if current.status == "active":
+            self.demote_untrusted_authority(
+                capability_fingerprint=policy.capability_fingerprint
+            )
+
     def _initialize_active_status(
         self,
         *,
@@ -1010,11 +1019,16 @@ class CapabilityMonitor:
                     json.dumps(prior_decision_record.content["freshness"])
                 )
             except (KeyError, TypeError, ValueError) as exc:
+                # A retained replay result is authority state. Fence a writer
+                # before exposing its corruption to the scheduler caller so a
+                # prior healthy ingress cannot keep committing after detection.
+                self._fence_corrupt_replay(current=current, policy=policy)
                 raise ValueError("capability monitor prior decision is corrupt") from exc
             if (
                 _decision_outcome_id(prior_decision, prior_freshness)
                 != decision_record_id.rsplit(":", 1)[1]
             ):
+                self._fence_corrupt_replay(current=current, policy=policy)
                 raise ValueError("capability monitor decision identity is substituted")
             return CapabilityMonitorTickResult(
                 prior_decision, prior_freshness, current, None

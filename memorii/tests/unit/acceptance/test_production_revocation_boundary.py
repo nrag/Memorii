@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -39,7 +40,10 @@ def _artifact(
         registered["digest_domain"], "registered", unsigned_artifact(value, schema)
     )
     value["signature"] = signer.sign(signing_preimage(schema, value, coordinate)).hex()
-    return value[digest_field], _json(value)
+    digest = value[digest_field]
+    if not isinstance(digest, str):
+        raise AssertionError("registered artifact digest is not text")
+    return digest, _json(value)
 
 
 class _Reader:
@@ -217,3 +221,24 @@ def test_production_file_reader_returns_only_canonical_current_mapping(tmp_path:
     (current / f"{prior}.json").write_bytes(b"{}")
     with pytest.raises(ValueError, match="production_revocation_current"):
         reader.read_for_prior_release(prior)
+
+
+def test_production_file_reader_rejects_insecure_root_or_ancestor_before_io(tmp_path: Path) -> None:
+    insecure_root = tmp_path / "insecure-root"
+    insecure_root.mkdir(mode=0o700)
+    os.chmod(insecure_root, 0o777)
+    with pytest.raises(ValueError, match="production_revocation_reader_path"):
+        InstalledProductionRevocationReader().from_fixed_configuration(
+            {"reader_root": str(insecure_root)}
+        )
+
+    secure_root = tmp_path / "secure-root"
+    secure_root.mkdir(mode=0o700)
+    insecure_parent = secure_root / "insecure-parent"
+    insecure_parent.mkdir(mode=0o700)
+    os.chmod(insecure_parent, 0o775)
+    with pytest.raises(ValueError, match="production_revocation_reader_path"):
+        InstalledProductionRevocationReader().from_fixed_configuration(
+            {"reader_root": str(insecure_parent / "leaf")}
+        )
+    assert not (insecure_parent / "leaf" / "current").exists()

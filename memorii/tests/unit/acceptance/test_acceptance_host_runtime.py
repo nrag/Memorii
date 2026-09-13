@@ -17,6 +17,15 @@ def _cross_package_imports(path: Path, forbidden_root: str) -> list[str]:
             imports.extend(alias.name for alias in node.names)
         elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
             imports.append(node.module)
+        elif (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id in {"__import__", "import_module"}
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str)
+        ):
+            imports.append(node.args[0].value)
     return [name for name in imports if name == forbidden_root or name.startswith(f"{forbidden_root}.")]
 
 
@@ -71,3 +80,6 @@ def test_serialized_import_boundary_detects_nested_import_forms(tmp_path: Path) 
     production_nested.write_text("import acceptance.production_revocation\n")
     assert _cross_package_imports(acceptance_nested, "memorii") == ["memorii.core.memory_evolution"]
     assert _cross_package_imports(production_nested, "acceptance") == ["acceptance.production_revocation"]
+    production_dynamic = tmp_path / "memorii" / "core" / "dynamic.py"
+    production_dynamic.write_text("import_module('acceptance.production_revocation')\n")
+    assert _cross_package_imports(production_dynamic, "acceptance") == ["acceptance.production_revocation"]

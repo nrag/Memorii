@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import stat
 from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
@@ -51,6 +52,75 @@ def _secure_path(path: Path, failure: str) -> None:
         if current.parent == current:
             return
         current = current.parent
+
+
+def _secure_storage_directory(path: Path, failure: str) -> None:
+    """Create or admit an operator-owned private directory without aliases."""
+    if not path.is_absolute():
+        raise DeploymentAuthorizationError(failure)
+    missing: list[Path] = []
+    current = path
+    while True:
+        try:
+            metadata = os.lstat(current)
+            break
+        except FileNotFoundError:
+            if current.parent == current:
+                raise DeploymentAuthorizationError(failure) from None
+            missing.append(current)
+            current = current.parent
+        except OSError as exc:
+            raise DeploymentAuthorizationError(failure) from exc
+    while True:
+        if (
+            stat.S_ISLNK(metadata.st_mode)
+            or not stat.S_ISDIR(metadata.st_mode)
+            or metadata.st_uid not in {os.geteuid(), 0}
+            or stat.S_IMODE(metadata.st_mode) & 0o022
+        ):
+            raise DeploymentAuthorizationError(failure)
+        if current.parent == current:
+            break
+        current = current.parent
+        try:
+            metadata = os.lstat(current)
+        except OSError as exc:
+            raise DeploymentAuthorizationError(failure) from exc
+    for directory in reversed(missing):
+        try:
+            os.mkdir(directory, 0o700)
+        except FileExistsError:
+            pass
+        except OSError as exc:
+            raise DeploymentAuthorizationError(failure) from exc
+        try:
+            metadata = os.lstat(directory)
+        except OSError as exc:
+            raise DeploymentAuthorizationError(failure) from exc
+        if (
+            stat.S_ISLNK(metadata.st_mode)
+            or not stat.S_ISDIR(metadata.st_mode)
+            or metadata.st_uid not in {os.geteuid(), 0}
+            or stat.S_IMODE(metadata.st_mode) & 0o022
+        ):
+            raise DeploymentAuthorizationError(failure)
+
+
+def _secure_storage_file(path: Path, failure: str) -> None:
+    _secure_storage_directory(path.parent, failure)
+    try:
+        metadata = os.lstat(path)
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        raise DeploymentAuthorizationError(failure) from exc
+    if (
+        stat.S_ISLNK(metadata.st_mode)
+        or not stat.S_ISREG(metadata.st_mode)
+        or metadata.st_uid not in {os.geteuid(), 0}
+        or stat.S_IMODE(metadata.st_mode) & 0o022
+    ):
+        raise DeploymentAuthorizationError(failure)
 
 
 def _fsync_directory(path: Path) -> None:
@@ -552,7 +622,7 @@ class _FileProductionRevocationReader:
     """Least-privilege read-only owner of production revocation evidence."""
 
     def __init__(self, root: Path, *, now_provider: Callable[[], datetime] | None = None) -> None:
-        _secure_path(root, "production_revocation_reader_path")
+        _secure_storage_directory(root, "production_revocation_reader_path")
         self._root = root
         self._now_provider = now_provider
         # This coordinate is shared with the only installed mapping publisher.
@@ -565,7 +635,8 @@ class _FileProductionRevocationReader:
         if fcntl is None:
             raise DeploymentAuthorizationError("production_revocation_lock_unsupported")
         try:
-            self._root.mkdir(parents=True, exist_ok=True)
+            _secure_storage_directory(self._root, "production_revocation_reader_path")
+            _secure_storage_file(self._lock_path, "production_revocation_reader_path")
             descriptor = os.open(self._lock_path, os.O_CREAT | os.O_RDWR, 0o600)
         except OSError as exc:
             raise DeploymentAuthorizationError("production_revocation_lock") from exc
@@ -584,7 +655,7 @@ class _FileProductionRevocationReader:
         if not _DIGEST.fullmatch(digest):
             raise DeploymentAuthorizationError("production_revocation_coordinate")
         path = self._root / "objects" / digest
-        _secure_path(path, "production_revocation_reader_path")
+        _secure_storage_file(path, "production_revocation_reader_path")
         try:
             value = path.read_bytes()
         except OSError as exc:
@@ -648,7 +719,7 @@ class _FileProductionRevocationReader:
         if not _DIGEST.fullmatch(prior_approval_release_digest):
             raise DeploymentAuthorizationError("production_revocation_coordinate")
         mapping_path = self._root / "current" / f"{prior_approval_release_digest}.json"
-        _secure_path(mapping_path, "production_revocation_reader_path")
+        _secure_storage_file(mapping_path, "production_revocation_reader_path")
         try:
             raw = mapping_path.read_bytes()
             value = json.loads(raw)
@@ -685,7 +756,7 @@ class _FileProductionRevocationReader:
 
     def _is_current_locked(self, release: str) -> bool:
         mapping_path = self._root / "current" / f"{release}.json"
-        _secure_path(mapping_path, "production_revocation_reader_path")
+        _secure_storage_file(mapping_path, "production_revocation_reader_path")
         # Absence is the normal state for an active release. A present mapping
         # is a revocation coordinate; malformed evidence is never active.
         if not mapping_path.exists():
@@ -714,8 +785,8 @@ class _FileProductionRevocationReader:
     def _publish_object_locked(self, *, digest: str, raw: bytes) -> None:
         directory = self._root / "objects"
         path = directory / digest
-        _secure_path(path, "production_revocation_reader_path")
-        directory.mkdir(parents=True, exist_ok=True)
+        _secure_storage_directory(directory, "production_revocation_reader_path")
+        _secure_storage_file(path, "production_revocation_reader_path")
         if path.exists():
             if path.read_bytes() != raw:
                 raise DeploymentAuthorizationError("production_revocation_conflict")
@@ -785,9 +856,9 @@ class _FileProductionRevocationReader:
         })
         directory = self._root / "current"
         path = directory / f"{prior_approval_release_digest}.json"
-        _secure_path(path, "production_revocation_reader_path")
+        _secure_storage_directory(directory, "production_revocation_reader_path")
+        _secure_storage_file(path, "production_revocation_reader_path")
         try:
-            directory.mkdir(parents=True, exist_ok=True)
             if path.exists():
                 if path.read_bytes() != payload:
                     raise DeploymentAuthorizationError(
@@ -891,6 +962,33 @@ class InstalledProductionRevocationReader:
         return _FileProductionRevocationReader(root, now_provider=now_provider)
 
 
+class _SerializedProductionRevocationPublisher:
+    """Opaque write endpoint; acceptance alone establishes evidence validity."""
+
+    _acceptance_serialized_bridge = True
+
+    def __init__(self, reader: _FileProductionRevocationReader) -> None:
+        self._reader = reader
+
+    def publish_verified(
+        self, *, prior_approval_release_digest: str, receipt: bytes, checkpoint: bytes
+    ) -> None:
+        self._reader.publish_revocation_evidence(
+            prior_approval_release_digest=prior_approval_release_digest,
+            receipt=receipt,
+            checkpoint=checkpoint,
+        )
+
+
+class InstalledProductionRevocationPublisher:
+    """Fixed production publisher for already acceptance-verified bytes."""
+
+    def from_fixed_configuration(self, configuration: object) -> _SerializedProductionRevocationPublisher:
+        return _SerializedProductionRevocationPublisher(
+            InstalledProductionRevocationReader().from_fixed_configuration(configuration)
+        )
+
+
 class _RawEd25519Signer:
     def __init__(self, key: object) -> None:
         self._key = key
@@ -916,4 +1014,5 @@ __all__ = [
     "IssuerAuthority",
     "InstalledDeploymentAuthorizationPublisher",
     "InstalledProductionRevocationReader",
+    "InstalledProductionRevocationPublisher",
 ]

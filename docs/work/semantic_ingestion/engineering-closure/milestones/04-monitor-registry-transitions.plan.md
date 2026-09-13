@@ -571,3 +571,80 @@ Final candidate validation after the discriminating forged-wire rewrite:
 The sole next action is to freeze and push this candidate, then obtain
 independent specification, correctness, and test reviews against that exact
 revision.
+
+## R15 Isolation And Storage Remediation (2026-09-13)
+
+The revocation publication trust boundary is now correctly split. The public
+`memorii-semantic-ingestion-revocation-publish` command is owned by
+`acceptance.revocation_cli`; its fixed, public-only acceptance configuration
+selects the trusted Ed25519 keys and one serialized storage configuration
+passed identically to both reader and publisher bridges. Acceptance rejects a
+split reader/publisher configuration before either path is opened, then verifies registered canonical receipt/checkpoint
+schemas, digest and signing preimages, signatures, timestamp/epoch/history,
+and the receipt/checkpoint join before it passes those exact bytes through the
+registered production publisher bridge. Production owns only the opaque object
+and current-mapping transaction and contains no static or dynamic acceptance
+import. Import-boundary tests now detect literal `import_module` and
+`__import__` bypasses.
+
+The production revocation root, lock, object and mapping paths reject
+symlinks, group/world-writable or foreign-owned existing coordinates; missing
+private leaves are created with mode 0700. The reader applies this validation
+before every read, lease, lock and publication. Tests prove insecure roots and
+ancestors fail before a mapping is visible. The interprocess lease proof now
+uses a child nonblocking exclusive `flock` probe that reports `EWOULDBLOCK`
+while production holds the shared current-use lease, followed by the real
+blocking publisher and immutable retry/conflict checks.
+
+Persisted monitoring decisions are replay/idempotency records read only by the
+policy scheduler; normal `sync_event` group authorization consumes the current
+status and authorization checkpoint instead. The canonical scheduler reader
+rejects a malformed retained decision and atomically writes the normal
+`evidence_only` status/writer successor before returning the corruption error.
+A real `sync_event` that had previously committed a group then fails closed
+with `graph_transaction_authority_unavailable` and creates no accepted
+operation, effect or group. This replaces the previous overstatement that
+ingress itself decoded retained decisions.
+
+Focused proof on the candidate reports 10 passed under warnings-as-errors for
+the acceptance bridge, valid/forged signed CLI publication, digest-consistent
+but join-mismatched checkpoint rejection before object/mapping creation,
+byte-identical idempotent retry, secure-path rejection, the OS lock boundary,
+and scheduler/ingress persisted-decision behavior.
+
+Final validation on this bounded delta:
+
+- `PYTHONPATH=memorii .venv/bin/pytest -q -W error
+  memorii/tests/unit/core/semantic_ingestion/test_capability_monitoring.py
+  memorii/tests/unit/acceptance/test_production_revocation_boundary.py
+  memorii/tests/unit/acceptance/test_acceptance_host_runtime.py`: 93 passed in
+  361.17 seconds;
+- targeted Ruff: clean; scoped first-party Pyright: 0 errors, 0 warnings and
+  0 informations; acceptance bridge modules compile successfully;
+- binding-ledger JSON parsing and `git diff --check`: clean.
+
+## R15 Coordinator-Review Refinement (2026-09-13)
+
+The acceptance CLI now has exactly one `storage` configuration member. It
+passes that same object to both registered bridges; legacy or mismatched
+`reader`/`publisher` configurations are rejected before either root can be
+created or receive a mapping. The focused acceptance publisher test proves
+both configured roots remain unpublished.
+
+The retained-decision proof now starts with a real checkpoint-bound service
+that successfully calls `sync_event` and publishes one group. When the
+canonical scheduler rereads a malformed retained decision, the monitor first
+uses its existing untrusted-authority demotion path to persist the
+`evidence_only` writer/status fence, then reports the corruption. A second
+real `sync_event` returns `graph_transaction_authority_unavailable`, and exact
+accepted-operation, effect and group counts remain unchanged.
+
+Focused validation after this refinement reports 10 passed under
+warnings-as-errors, including malformed and digest-valid identity-substituted
+replay decisions. The two retained-decision variants pass in 92.24 seconds.
+Targeted Ruff is clean and scoped
+first-party Pyright reports 0 errors and 0 warnings.
+
+The sole next action is for the coordinator to freeze this candidate and
+obtain the required exact-revision specification, correctness and test
+reviews.

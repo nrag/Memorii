@@ -1,5 +1,6 @@
 import fcntl
 import json
+import os
 import subprocess
 import sys
 from collections.abc import Iterator
@@ -82,7 +83,6 @@ from memorii.core.semantic_ingestion.source_normalization_authority import (
 )
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
 from memorii.integrations.hermes_provider import HermesMemoryProvider
-from memorii.tools import semantic_ingestion_revocation_publish as revocation_publish
 from tests.unit.core.semantic_ingestion.bootstrap_graph_production_roots_support import (
     provider_service,
 )
@@ -93,6 +93,8 @@ from tests.unit.core.semantic_ingestion.test_semantic_provider_composition impor
     _host_ingress,
     _v3_normalization_host_builder,
 )
+
+revocation_publish = import_module("acceptance.revocation_cli")
 
 
 class _Clock:
@@ -142,8 +144,23 @@ def _publish_revocation_in_child(
     queue.put("published")  # type: ignore[union-attr]
 
 
+def _probe_revocation_exclusive_lock(root: str, queue: object) -> None:
+    descriptor = os.open(Path(root) / ".production-revocation.lock", os.O_RDWR)
+    try:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            queue.put("blocked")  # type: ignore[union-attr]
+        else:
+            queue.put("acquired")  # type: ignore[union-attr]
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+    finally:
+        os.close(descriptor)
+
+
 def _signed_production_revocation_evidence(
     key: Ed25519PrivateKey, *, release: str = "6" * 64,
+    checkpoint_receipt_digests: list[str] | None = None,
 ) -> tuple[bytes, bytes]:
     """Produce independently registered, signed artifacts for installed CLI proof."""
     registry = import_module("acceptance.schema_registry")
@@ -175,7 +192,7 @@ def _signed_production_revocation_evidence(
         "predecessor_checkpoint_digest": None,
         "active_production_epoch": 2,
         "active_authorization_digests": ["8" * 64],
-        "revocation_receipt_digests": [receipt["receipt_digest"]],
+        "revocation_receipt_digests": checkpoint_receipt_digests or [receipt["receipt_digest"]],
         "observed_at": "2026-01-01T00:02:00+00:00",
         "signing_key_coordinate": coordinate,
         "signature": "0" * 128,
@@ -203,8 +220,8 @@ def _installed_revocation_publisher_config(
         serialization.Encoding.Raw, serialization.PublicFormat.Raw
     )
     config.write_bytes(json.dumps({
-        "format": "memorii.semantic-ingestion.revocation-publisher.v1",
-        "reader_root": str(root),
+        "format": "memorii.acceptance.revocation-publisher.v1",
+        "storage": {"reader_root": str(root)},
         "trust_keys": {"acceptance-key": public.hex()},
     }, sort_keys=True, separators=(",", ":")).encode("ascii"))
     return config, root
@@ -517,6 +534,87 @@ def test_warning_retains_status_but_breach_atomically_fences_writer() -> None:
     assert breached.status.status == "evidence_only"
     assert breached.writer_binding is not None
     assert breached.writer_binding.expected_writer_epoch == before.expected_writer_epoch + 1
+
+
+@pytest.mark.parametrize(
+    ("mutation", "error"),
+    (("malformed", "prior decision is corrupt"), ("substituted", "identity is substituted")),
+)
+def test_corrupt_retained_monitor_decision_durably_fences_previously_healthy_ingress(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str, error: str,
+) -> None:
+    """A corrupt retained decision cannot be replayed; ingress has no decision reader."""
+    clock, _, _, policy, implementation = _monitor(
+        fingerprint="38a5be91af79d7e5ba9809bf383c699b6864ee50446239fe56a45e32b84638fe"
+    )
+
+    class Provider:
+        def load_evidence_windows(self, *, max_items: int):
+            return (_window(clock, policy, implementation, value="0.1"),)
+
+    authority = _signed_monitoring_authority(
+        clock=clock,
+        policy=policy,
+        implementation=implementation,
+        evidence_provider=Provider(),
+        signer=_TestDeploymentSigner(),
+    )
+    plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "retained-decision"))
+    service = _service_for_joined_monitoring_ingress(
+        plane=plane, clock=clock, authority=authority
+    )
+    baseline = _joined_monitoring_sync(service, operation_id="retained-decision-baseline")
+    assert baseline.blocked_reasons["semantic_ingestion"] == "source_only"
+    before = {
+        source_kind: len(plane.list_records(source_kind=source_kind))
+        for source_kind in (
+            "semantic_ingestion_accepted_identity_operation",
+            "semantic_ingestion_effect",
+            "semantic_ingestion_bootstrap_graph_v3_group_commit_primary",
+        )
+    }
+    assert before["semantic_ingestion_bootstrap_graph_v3_group_commit_primary"] == 1
+    assert len(service.process_capability_monitoring(max_items=1)) == 1
+    retained = plane.list_records(
+        source_kind="semantic_ingestion_capability_monitor_decision"
+    )
+    assert len(retained) == 1
+    original_get = plane.get_record
+
+    def corrupting_get(memory_id: str):
+        record = original_get(memory_id)
+        if record is not None and memory_id == retained[0].memory_id:
+            if mutation == "substituted":
+                decision = CapabilityMonitoringDecision.model_validate(record.content["decision"])
+                body = decision.model_dump(mode="python", exclude={"decision_digest"})
+                body["evaluation_kind"] = "missing_window"
+                replacement = CapabilityMonitoringDecision(
+                    **body,
+                    decision_digest=contract_digest(
+                        b"memorii.semantic-ingestion.capability-monitoring-decision.v2", body
+                    ),
+                )
+                return record.model_copy(
+                    update={"content": {**record.content, "decision": replacement.model_dump(mode="json")}}
+                )
+            return record.model_copy(
+                update={"content": {**record.content, "decision": {"malformed": True}}}
+            )
+        return record
+
+    monkeypatch.setattr(plane, "get_record", corrupting_get)
+    with pytest.raises(ValueError, match=error):
+        service.process_capability_monitoring(max_items=1)
+    assert service._semantic_writer_admission.current().active_runtime_mode == "evidence_only"
+    # This real public ingress previously committed a group. It now fails
+    # through the corruption-triggered durable writer fence and adds no
+    # operation, effect, or group records.
+    outcome = _joined_monitoring_sync(service, operation_id="retained-decision-ingress")
+    assert outcome.blocked_reasons["semantic_ingestion"] == "graph_transaction_authority_unavailable"
+    assert {
+        source_kind: len(plane.list_records(source_kind=source_kind))
+        for source_kind in before
+    } == before
 
 
 def test_breach_changes_verified_writer_to_evidence_only() -> None:
@@ -2666,6 +2764,11 @@ def test_installed_revocation_publication_is_interprocess_linearized_and_monoton
     checkpoint = "b" * 64
     with reader.current_use(artifact=artifact, server_time=clock.now) as current:
         assert current
+        probe = context.Process(target=_probe_revocation_exclusive_lock, args=(root, queue))
+        probe.start()
+        assert queue.get(timeout=5) == "blocked"
+        probe.join(timeout=5)
+        assert probe.exitcode == 0
         child = context.Process(
             target=_publish_revocation_in_child,
             args=(root, release, receipt, checkpoint, queue),
@@ -2721,6 +2824,45 @@ def test_installed_revocation_publish_cli_persists_opaque_evidence_before_mappin
         "receipt_digest": receipt_value["receipt_digest"],
         "checkpoint_digest": checkpoint_value["checkpoint_digest"],
     }
+    # The acceptance bridge may retry the exact verified transaction; both
+    # immutable objects and the mapping retain byte identity.
+    mapping = (root / "current" / f"{release}.json").read_bytes()
+    receipt_object = (root / "objects" / receipt_value["receipt_digest"]).read_bytes()
+    checkpoint_object = (root / "objects" / checkpoint_value["checkpoint_digest"]).read_bytes()
+    assert revocation_publish.main([
+        "--prior-approval-release-digest", release,
+        "--receipt", str(receipt_path), "--checkpoint", str(checkpoint_path),
+    ]) == 0
+    assert (root / "current" / f"{release}.json").read_bytes() == mapping
+    assert (root / "objects" / receipt_value["receipt_digest"]).read_bytes() == receipt_object
+    assert (root / "objects" / checkpoint_value["checkpoint_digest"]).read_bytes() == checkpoint_object
+
+
+def test_installed_revocation_publish_cli_rejects_split_reader_publisher_configuration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    release = "6" * 64
+    key = Ed25519PrivateKey.generate()
+    config, root = _installed_revocation_publisher_config(tmp_path, key)
+    value = json.loads(config.read_bytes())
+    value.pop("storage")
+    value["reader"] = {"reader_root": str(root)}
+    alternate = tmp_path / "alternate-revocations"
+    value["publisher"] = {"reader_root": str(alternate)}
+    config.write_bytes(json.dumps(value, sort_keys=True, separators=(",", ":")).encode("ascii"))
+    monkeypatch.setattr(revocation_publish, "revocation_publisher_config_path", lambda: config)
+    receipt, checkpoint = _signed_production_revocation_evidence(key, release=release)
+    receipt_path = tmp_path / "receipt.json"
+    checkpoint_path = tmp_path / "checkpoint.json"
+    receipt_path.write_bytes(receipt)
+    checkpoint_path.write_bytes(checkpoint)
+    with pytest.raises(SystemExit):
+        revocation_publish.main([
+            "--prior-approval-release-digest", release,
+            "--receipt", str(receipt_path), "--checkpoint", str(checkpoint_path),
+        ])
+    assert not (root / "current" / f"{release}.json").exists()
+    assert not (alternate / "current" / f"{release}.json").exists()
     with pytest.raises(SystemExit):
         revocation_publish.main([
             "--root", str(tmp_path / "caller-selected-root"),
@@ -2761,15 +2903,21 @@ def test_installed_revocation_publish_cli_never_exposes_mapping_on_invalid_objec
         value["unexpected"] = "rejected"
         receipt_path.write_bytes(json.dumps(value, sort_keys=True, separators=(",", ":")).encode("ascii"))
     else:
-        value = json.loads(checkpoint)
-        value["revocation_receipt_digests"] = ["c" * 64]
-        checkpoint_path.write_bytes(json.dumps(value, sort_keys=True, separators=(",", ":")).encode("ascii"))
+        # This remains digest-consistent and signed by the configured key;
+        # acceptance must reject the semantic receipt/checkpoint join before
+        # production can create either opaque object or the current mapping.
+        receipt, checkpoint = _signed_production_revocation_evidence(
+            key, release=release, checkpoint_receipt_digests=["c" * 64]
+        )
+        receipt_path.write_bytes(receipt)
+        checkpoint_path.write_bytes(checkpoint)
     with pytest.raises(SystemExit):
         revocation_publish.main([
             "--prior-approval-release-digest", release,
             "--receipt", str(receipt_path), "--checkpoint", str(checkpoint_path),
         ])
     assert not (root / "current" / f"{release}.json").exists()
+    assert not (root / "objects").exists()
     # A corrected exact retry remains possible after every rejected candidate.
     receipt, checkpoint = _signed_production_revocation_evidence(key, release=release)
     receipt_path.write_bytes(receipt)
