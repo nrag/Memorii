@@ -11,7 +11,8 @@ from __future__ import annotations
 import json
 import os
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from hashlib import sha256
@@ -180,6 +181,10 @@ class DeploymentAuthorizationCurrentTrustCheck(Protocol):
         self, *, artifact: DeploymentAuthorizationArtifact, server_time: datetime
     ) -> bool: ...
 
+    def current_use(
+        self, *, artifact: DeploymentAuthorizationArtifact, server_time: datetime
+    ) -> AbstractContextManager[bool]: ...
+
 
 class DeploymentAuthorizationCurrentTrustVerifier(Protocol):
     """Live deployment-authority port for every use, not only construction."""
@@ -196,6 +201,19 @@ class DeploymentAuthorizationCurrentTrustVerifier(Protocol):
         authority_snapshot_digest: str,
         active_epoch: int,
     ) -> DeploymentAuthorizationArtifact | None: ...
+
+    def verify_current_use(
+        self,
+        *,
+        raw: bytes,
+        server_time: datetime,
+        purpose: _Purpose,
+        target_kind: _TargetKind,
+        target_artifact_digest: str,
+        capability_fingerprint: str,
+        authority_snapshot_digest: str,
+        active_epoch: int,
+    ) -> AbstractContextManager[DeploymentAuthorizationArtifact | None]: ...
 
 
 class ArtifactDeploymentAuthorizationCurrentTrustVerifier:
@@ -234,6 +252,35 @@ class ArtifactDeploymentAuthorizationCurrentTrustVerifier:
         ):
             return None
         return artifact
+
+    @contextmanager
+    def verify_current_use(
+        self,
+        *, raw: bytes, server_time: datetime, purpose: _Purpose,
+        target_kind: _TargetKind, target_artifact_digest: str,
+        capability_fingerprint: str, authority_snapshot_digest: str,
+        active_epoch: int,
+    ) -> Iterator[DeploymentAuthorizationArtifact | None]:
+        """Hold the host revocation linearizer through a durable write."""
+        try:
+            artifact = self._artifact_verifier.verify(raw, server_time=server_time)
+        except DeploymentAuthorizationError:
+            yield None
+            return
+        if (
+            artifact.purpose != purpose
+            or artifact.target_kind != target_kind
+            or artifact.target_artifact_digest != target_artifact_digest
+            or artifact.capability_fingerprint != capability_fingerprint
+            or artifact.authority_snapshot_digest != authority_snapshot_digest
+            or artifact.active_epoch != active_epoch
+        ):
+            yield None
+            return
+        with self._current_trust_check.current_use(
+            artifact=artifact, server_time=server_time
+        ) as current:
+            yield artifact if current else None
 
 
 class DeploymentAuthorizationRepository(Protocol):

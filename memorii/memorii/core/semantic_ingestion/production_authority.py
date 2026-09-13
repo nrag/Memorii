@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from hashlib import sha256
@@ -104,6 +106,25 @@ def capability_monitoring_authority_is_current(
         authority_snapshot_digest=artifact.authority_snapshot_digest,
         active_epoch=artifact.active_epoch,
     ) == artifact
+
+
+@contextmanager
+def capability_monitoring_authority_current_use(
+    authority: VerifiedCapabilityMonitoringAuthority, *, server_time: datetime
+) -> Iterator[bool]:
+    """Hold the host-owned revocation linearizer for one group CAS."""
+    artifact = authority._deployment_artifact
+    with authority._current_trust_verifier.verify_current_use(
+        raw=authority._deployment_authorization_bytes,
+        server_time=server_time,
+        purpose="semantic_ingestion_capability_baseline",
+        target_kind="capability_baseline",
+        target_artifact_digest=artifact.target_artifact_digest,
+        capability_fingerprint=authority._policy.capability_fingerprint,
+        authority_snapshot_digest=artifact.authority_snapshot_digest,
+        active_epoch=artifact.active_epoch,
+    ) as current:
+        yield current == artifact
 
 
 def capability_monitoring_authority_checkpoint(

@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import json
 from collections.abc import Callable
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
@@ -1106,7 +1107,7 @@ class SemanticIngestionAtomicStore:
         if type(activation_max_rescans) is not int or activation_max_rescans <= 0:
             raise ValueError("activation max rescans must be a positive integer")
         self._memory_plane = memory_plane
-        self._capability_authorization_guard: Callable[[tuple[str, ...]], None] | None = None
+        self._capability_authorization_guard: Callable[[tuple[str, ...]], AbstractContextManager[None]] | None = None
         self._writers = writer_admission
         if typed_value_registry_history is not writer_admission._typed_value_registry_history:
             raise TypedValueRegistryConfigurationError("atomic store and writer typed value registry histories differ")
@@ -13831,30 +13832,37 @@ class SemanticIngestionAtomicStore:
                 *native_audit_records,
                 *ledger_records,
             )
-            if self._capability_authorization_guard is not None:
-                self._capability_authorization_guard(tuple(sorted({
-                    binding.capability_fingerprint
-                    for binding in request.pre_execution_manifest_identity.core.capability_bindings
-                })))
-            writer_record = self._writers.require_current(request.writer_commit_binding)
-            authorization = self._writers._authorize_atomic(
-                request.writer_commit_binding, capability=self._write_capability,
-                lease_expires_at=request.operation_lease_binding.lease_expires_at, server_now=self._now,
+            fingerprints = tuple(sorted({
+                binding.capability_fingerprint
+                for binding in request.pre_execution_manifest_identity.core.capability_bindings
+            }))
+            guard = (
+                self._capability_authorization_guard(fingerprints)
+                if self._capability_authorization_guard is not None
+                else nullcontext()
             )
             try:
-                self._memory_plane.conditionally_write_records(
-                    records,
-                    preconditions=(
-                        RecordDigestPrecondition(memory_id=control_record.memory_id, expected_digest=record_digest(control_record)),
-                        RecordDigestPrecondition(memory_id=writer_record.memory_id, expected_digest=record_digest(writer_record)),
-                        *status_preconditions,
-                        *(RecordAbsentPrecondition(memory_id=record.memory_id) for record in records[1:]
-                          if record not in (*canonical_event_records, *native_projection_records, *ledger_records)),
-                        *canonical_event_preconditions,
-                        *native_projection_preconditions,
-                        *ledger_preconditions,
-                    ), authorization=authorization,
-                )
+                # The lease covers the final writer check and the actual group
+                # CAS, so host revocation cannot pass between them.
+                with guard:
+                    writer_record = self._writers.require_current(request.writer_commit_binding)
+                    authorization = self._writers._authorize_atomic(
+                        request.writer_commit_binding, capability=self._write_capability,
+                        lease_expires_at=request.operation_lease_binding.lease_expires_at, server_now=self._now,
+                    )
+                    self._memory_plane.conditionally_write_records(
+                        records,
+                        preconditions=(
+                            RecordDigestPrecondition(memory_id=control_record.memory_id, expected_digest=record_digest(control_record)),
+                            RecordDigestPrecondition(memory_id=writer_record.memory_id, expected_digest=record_digest(writer_record)),
+                            *status_preconditions,
+                            *(RecordAbsentPrecondition(memory_id=record.memory_id) for record in records[1:]
+                              if record not in (*canonical_event_records, *native_projection_records, *ledger_records)),
+                            *canonical_event_preconditions,
+                            *native_projection_preconditions,
+                            *ledger_preconditions,
+                        ), authorization=authorization,
+                    )
             except MemoryPlaneRevisionConflictError as exc:
                 found = self._memory_plane.get_record(primary_id)
                 if found is not None:
@@ -13876,7 +13884,7 @@ class SemanticIngestionAtomicStore:
             return write()
 
     def install_capability_authorization_guard(
-        self, guard: Callable[[tuple[str, ...]], None]
+        self, guard: Callable[[tuple[str, ...]], AbstractContextManager[None]]
     ) -> None:
         """Install the provider-owned live-trust check before group storage CAS."""
         if not callable(guard):
@@ -13963,6 +13971,8 @@ class SemanticIngestionAtomicStore:
             ):
                 raise PreplanningStoreError("capability status binding is stale")
             checkpoint_digest = status.authorization_checkpoint_digest
+            if checkpoint_digest is None:
+                raise PreplanningStoreError("capability authorization checkpoint is unavailable")
             if checkpoint_digest is not None:
                 checkpoint_record = self._memory_plane.get_record(
                     "semantic_ingestion:capability-authorization-checkpoint:" + fingerprint

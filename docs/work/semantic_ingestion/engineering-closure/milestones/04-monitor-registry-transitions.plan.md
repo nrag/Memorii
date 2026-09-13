@@ -117,6 +117,56 @@ Freeze the R15 candidate revision and run independent specification,
 correctness, and test reviews against that exact revision. Reconcile every
 finding before deciding whether R15 is engineering complete.
 
+## R15 Compatibility And Trust-Linearization Remediation (2026-09-13)
+
+The candidate now closes the final confirmed review gaps without changing
+registry bytes:
+
+- capability status, monitor decision, and evidence freshness have explicit
+  V1/V2 digest domains. Both pre-field V1 and the e0/c9 extended-but-still-V1
+  wire shapes validate against their exact original V1 preimage before
+  deterministic upcast; only newly emitted records use explicit V2;
+- an actual pre-checkpoint JSONL batch containing V1 status, decision and
+  freshness payloads/digests reopens successfully. The legacy active status
+  has no authorization checkpoint and its V1 freshness lacks transition
+  instants, so the missing-window path atomically demotes it and advances the
+  writer to `evidence_only` rather than reconstructing grace or admitting
+  learned work;
+- an actual e0-era JSONL batch containing the extended V1 status, decision,
+  freshness and authorization-checkpoint shapes reopens under their V1
+  digests. It continues monitoring into an explicit V2 successor and retains
+  both status and checkpoint preconditions for group admission;
+- group commit authority uses a host-owned current-use lease held from live
+  deployment-authorization verification through the final writer validation
+  and conditional group write. A deterministic two-thread production ingress
+  proof pauses after lease acquisition and before the group CAS, shows a
+  concurrent revocation cannot publish while that CAS is paused, then proves
+  the completed revocation fences and demotes every later group attempt;
+- the external evidence-provider boundary catches every ordinary `Exception`
+  (never `BaseException`) and converts it to complete-inventory typed provider
+  failure. Signed public-factory coverage includes `RuntimeError`, `KeyError`,
+  and a custom ordinary exception.
+
+Evidence on the dirty candidate:
+
+- `PYTHONPATH=memorii .venv/bin/pytest -q -W error
+  memorii/tests/unit/core/semantic_ingestion/test_capability_monitoring.py`
+  from repository root: 47 passed in 108.42 seconds;
+- targeted Ruff over the six changed runtime/test files: clean;
+- `../.venv/bin/pyright --pythonpath ../.venv/bin/python` from `memorii/`:
+  0 errors, 0 warnings, 0 informations;
+- `PYTHONPATH=memorii .venv/bin/python -m py_compile` over the five changed
+  runtime modules and `git diff --check`: clean.
+- the consolidated affected-family gate covering capability monitoring,
+  provider composition, writer admission, writer migration, policy migration,
+  and bootstrap graph atomic storage: 290 passed under warnings-as-errors in
+  1048.94 seconds.
+
+The sole next action is to commit and push this candidate, then obtain fresh
+specification, correctness, and test reviews of that exact revision. R15
+remains `candidate_complete_pending_exact_revision_review` until all three
+reviews converge.
+
 ## Exact-Revision Review Remediation Round 2 (2026-09-13)
 
 The review of `88a20765` confirmed two production gaps and six proof gaps. The

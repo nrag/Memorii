@@ -65,21 +65,26 @@ def _decision_outcome_id(
     decision: CapabilityMonitoringDecision,
     freshness: CapabilityEvidenceFreshness,
 ) -> str:
+    body: dict[str, object] = {
+        "capability_fingerprint": decision.capability_fingerprint,
+        "monitoring_policy_digest": decision.monitoring_policy_digest,
+        "evidence_window_digest": decision.evidence_window_digest,
+        "metric_decision_digests": tuple(
+            item.decision_digest for item in decision.metric_decisions
+        ),
+        "evidence_freshness": decision.evidence_freshness,
+        "freshness_reason": freshness.freshness_reason,
+        "action": decision.action,
+        "reason_codes": decision.reason_codes,
+    }
+    if decision.schema_version == 1:
+        return contract_digest(
+            b"memorii.semantic-ingestion.capability-monitor-outcome.v1", body
+        )
+    body["schema_version"] = decision.schema_version
+    body["evaluation_kind"] = decision.evaluation_kind
     return contract_digest(
-        b"memorii.semantic-ingestion.capability-monitor-outcome.v1",
-        {
-            "capability_fingerprint": decision.capability_fingerprint,
-            "monitoring_policy_digest": decision.monitoring_policy_digest,
-            "evidence_window_digest": decision.evidence_window_digest,
-            "metric_decision_digests": tuple(
-                item.decision_digest for item in decision.metric_decisions
-            ),
-            "evidence_freshness": decision.evidence_freshness,
-            "evaluation_kind": decision.evaluation_kind,
-            "freshness_reason": freshness.freshness_reason,
-            "action": decision.action,
-            "reason_codes": decision.reason_codes,
-        },
+        b"memorii.semantic-ingestion.capability-monitor-outcome.v2", body
     )
 
 
@@ -91,6 +96,15 @@ def _decimal(value: str) -> Decimal:
     if not result.is_finite():
         raise ValueError("monitoring numeric value must be finite")
     return result
+
+
+def _wire_datetime(value: object) -> object:
+    if not isinstance(value, str):
+        return value
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return value
 
 
 def _canonical_decimal(value: Decimal) -> str:
@@ -303,6 +317,10 @@ class CapabilityEvidenceWindow(BaseModel):
 
 
 class CapabilityEvidenceFreshness(BaseModel):
+    schema_version: Literal[1, 2] = 2
+    wire_generation: Literal["pre_field_v1", "extended_v1", "v2"] = Field(
+        default="v2", exclude=True
+    )
     capability_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     monitoring_policy_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     evaluated_at: datetime
@@ -320,10 +338,63 @@ class CapabilityEvidenceFreshness(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _upcast_legacy(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            return value
+        value = {
+            **value,
+            **{
+                field: _wire_datetime(value.get(field))
+                for field in (
+                    "evaluated_at", "latest_independent_label_at",
+                    "latest_canary_success_at", "traffic_state_changed_at",
+                    "label_pipeline_state_changed_at",
+                )
+                if field in value
+            },
+        }
+        if "schema_version" in value:
+            if value["schema_version"] == 1 and "wire_generation" not in value:
+                return {
+                    "wire_generation": (
+                        "extended_v1"
+                        if "traffic_state_changed_at" in value
+                        and "label_pipeline_state_changed_at" in value
+                        else "pre_field_v1"
+                    ),
+                    **value,
+                }
+            return value
+        if (
+            "traffic_state_changed_at" in value
+            and "label_pipeline_state_changed_at" in value
+        ):
+            return {"schema_version": 1, "wire_generation": "extended_v1", **value}
+        # V1 did not persist the state-transition instants.  Retain the
+        # original bytes/digest and fence deadline-derived uses below.
+        evaluated_at = value.get("evaluated_at")
+        return {
+            **value,
+            "schema_version": 1,
+            "wire_generation": "pre_field_v1",
+            "traffic_state_changed_at": evaluated_at,
+            "label_pipeline_state_changed_at": evaluated_at,
+        }
+
     @model_validator(mode="after")
     def _valid(self) -> CapabilityEvidenceFreshness:
-        if any(value.utcoffset() is None for value in (self.evaluated_at, self.traffic_state_changed_at, self.label_pipeline_state_changed_at)) or self.evidence_digest != _digest(
-            b"memorii.semantic-ingestion.capability-evidence-freshness.v1", self, "evidence_digest"
+        body = self.model_dump(mode="python", exclude={"evidence_digest"})
+        domain = b"memorii.semantic-ingestion.capability-evidence-freshness.v2"
+        if self.schema_version == 1:
+            body.pop("schema_version")
+            if self.wire_generation == "pre_field_v1":
+                body.pop("traffic_state_changed_at")
+                body.pop("label_pipeline_state_changed_at")
+            domain = b"memorii.semantic-ingestion.capability-evidence-freshness.v1"
+        if any(value.utcoffset() is None for value in (self.evaluated_at, self.traffic_state_changed_at, self.label_pipeline_state_changed_at)) or self.evidence_digest != contract_digest(
+            domain, body
         ):
             raise ValueError("capability evidence freshness is invalid")
         return self
@@ -353,18 +424,52 @@ class MonitoringMetricDecision(BaseModel):
 
 
 class CapabilityMonitoringDecision(BaseModel):
+    schema_version: Literal[1, 2] = 2
+    wire_generation: Literal["pre_field_v1", "extended_v1", "v2"] = Field(
+        default="v2", exclude=True
+    )
     capability_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     monitoring_policy_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     evidence_window_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     evaluated_at: datetime
     metric_decisions: tuple[MonitoringMetricDecision, ...]
     evidence_freshness: Literal["fresh", "grace", "stale"]
-    evaluation_kind: Literal["evidence_window", "missing_window", "provider_failure", "authorization_failure"]
+    evaluation_kind: Literal["evidence_window", "missing_window", "provider_failure", "authorization_failure"] = "evidence_window"
     action: Literal["remain_active", "evidence_only"]
     reason_codes: tuple[str, ...]
     decision_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _upcast_legacy(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            return value
+        value = {
+            **value,
+            "evaluated_at": _wire_datetime(value.get("evaluated_at")),
+            "metric_decisions": tuple(value.get("metric_decisions", ())),
+            "reason_codes": tuple(value.get("reason_codes", ())),
+        }
+        if "schema_version" in value:
+            if value["schema_version"] == 1 and "wire_generation" not in value:
+                return {
+                    "wire_generation": (
+                        "extended_v1"
+                        if "evaluation_kind" in value else "pre_field_v1"
+                    ),
+                    **value,
+                }
+            return value
+        if "evaluation_kind" in value:
+            return {"schema_version": 1, "wire_generation": "extended_v1", **value}
+        return {
+            **value,
+            "schema_version": 1,
+            "wire_generation": "pre_field_v1",
+            "evaluation_kind": "evidence_window",
+        }
 
     @model_validator(mode="after")
     def _valid(self) -> CapabilityMonitoringDecision:
@@ -372,11 +477,17 @@ class CapabilityMonitoringDecision(BaseModel):
             self.evaluated_at.utcoffset() is None
             or self.reason_codes != tuple(sorted(set(self.reason_codes)))
             or self.metric_decisions != tuple(sorted(self.metric_decisions, key=lambda item: item.metric_id))
-            or self.decision_digest
-            != _digest(
-                b"memorii.semantic-ingestion.capability-monitoring-decision.v1",
-                self,
-                "decision_digest",
+            or self.decision_digest != contract_digest(
+                (b"memorii.semantic-ingestion.capability-monitoring-decision.v1"
+                 if self.schema_version == 1 else b"memorii.semantic-ingestion.capability-monitoring-decision.v2"),
+                self.model_dump(
+                    mode="python", exclude=(
+                        ({"decision_digest", "schema_version", "evaluation_kind"}
+                         if self.wire_generation == "pre_field_v1"
+                         else {"decision_digest", "schema_version"})
+                        if self.schema_version == 1 else {"decision_digest"}
+                    ),
+                ),
             )
         ):
             raise ValueError("capability monitoring decision is invalid")
@@ -384,6 +495,10 @@ class CapabilityMonitoringDecision(BaseModel):
 
 
 class CapabilityStatus(BaseModel):
+    schema_version: Literal[1, 2] = 2
+    wire_generation: Literal["pre_field_v1", "extended_v1", "v2"] = Field(
+        default="v2", exclude=True
+    )
     capability_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     status: Literal["active", "evidence_only"]
     status_revision: int = Field(ge=1)
@@ -394,9 +509,41 @@ class CapabilityStatus(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _upcast_legacy(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            return value
+        if "schema_version" in value:
+            if value["schema_version"] == 1 and "wire_generation" not in value:
+                return {
+                    "wire_generation": (
+                        "extended_v1"
+                        if "authorization_checkpoint_digest" in value
+                        else "pre_field_v1"
+                    ),
+                    **value,
+                }
+            return value
+        if "authorization_checkpoint_digest" in value:
+            return {"schema_version": 1, "wire_generation": "extended_v1", **value}
+        return {
+            **value,
+            "schema_version": 1,
+            "wire_generation": "pre_field_v1",
+            "authorization_checkpoint_digest": None,
+        }
+
     @model_validator(mode="after")
     def _valid(self) -> CapabilityStatus:
-        if self.status_digest != _digest(b"memorii.semantic-ingestion.capability-status.v1", self, "status_digest"):
+        body = self.model_dump(mode="python", exclude={"status_digest"})
+        domain = b"memorii.semantic-ingestion.capability-status.v2"
+        if self.schema_version == 1:
+            body.pop("schema_version")
+            if self.wire_generation == "pre_field_v1":
+                body.pop("authorization_checkpoint_digest")
+            domain = b"memorii.semantic-ingestion.capability-status.v1"
+        if self.status_digest != contract_digest(domain, body):
             raise ValueError("capability status digest mismatch")
         return self
 
@@ -491,6 +638,12 @@ class CapabilityMonitor:
         if current.status == "evidence_only":
             return None
         freshness = self._load_current_freshness(current.evidence_freshness_digest)
+        if freshness.wire_generation == "pre_field_v1":
+            # The old wire shape has no durable transition instants, so its
+            # pause/outage grace cannot be reconstructed safely after restart.
+            return self.demote_untrusted_authority(
+                capability_fingerprint=capability_fingerprint
+            )
         now = self._now()
         if now.utcoffset() is None:
             raise ValueError("capability monitor clock must be timezone-aware")
@@ -601,7 +754,12 @@ class CapabilityMonitor:
             "authorization_checkpoint_digest": record_digest(checkpoint_record) if checkpoint_record is not None else None,
         }
         status = CapabilityStatus(
-            **base, status_digest=contract_digest(b"memorii.semantic-ingestion.capability-status.v1", base)
+            **base,
+            schema_version=2,
+            status_digest=contract_digest(
+                b"memorii.semantic-ingestion.capability-status.v2",
+                {"schema_version": 2, **base},
+            ),
         )
         record = CanonicalMemoryRecord(
             memory_id=_status_id(capability_fingerprint),
@@ -759,7 +917,8 @@ class CapabilityMonitor:
         reasons_list: list[str] = []
         if provider_failure_reason is not None:
             if evaluation_kind != "provider_failure" or provider_failure_reason not in {
-                "provider_failure_exception",
+                "provider_failure_known_exception",
+                "provider_failure_unexpected_exception",
                 "provider_failure_non_tuple",
                 "provider_failure_non_window",
                 "provider_failure_unknown_capability",
@@ -794,8 +953,10 @@ class CapabilityMonitor:
         }
         decision = CapabilityMonitoringDecision(
             **decision_base,
+            schema_version=2,
             decision_digest=contract_digest(
-                b"memorii.semantic-ingestion.capability-monitoring-decision.v1", decision_base
+                b"memorii.semantic-ingestion.capability-monitoring-decision.v2",
+                {"schema_version": 2, **decision_base},
             ),
         )
         decision_record_id = (
@@ -834,7 +995,11 @@ class CapabilityMonitor:
         }
         successor = CapabilityStatus(
             **successor_base,
-            status_digest=contract_digest(b"memorii.semantic-ingestion.capability-status.v1", successor_base),
+            schema_version=2,
+            status_digest=contract_digest(
+                b"memorii.semantic-ingestion.capability-status.v2",
+                {"schema_version": 2, **successor_base},
+            ),
         )
         status_record = CanonicalMemoryRecord(
             memory_id=_status_id(policy.capability_fingerprint),
@@ -968,7 +1133,11 @@ class CapabilityMonitor:
         }
         return CapabilityEvidenceFreshness(
             **base,
-            evidence_digest=contract_digest(b"memorii.semantic-ingestion.capability-evidence-freshness.v1", base),
+            schema_version=2,
+            evidence_digest=contract_digest(
+                b"memorii.semantic-ingestion.capability-evidence-freshness.v2",
+                {"schema_version": 2, **base},
+            ),
         )
 
     @staticmethod

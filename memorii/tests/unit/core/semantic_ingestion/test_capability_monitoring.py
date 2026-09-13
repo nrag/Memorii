@@ -1,9 +1,13 @@
 import json
 import subprocess
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, localcontext
+from hashlib import sha256
 from pathlib import Path
+from threading import Event, RLock, Thread
 from types import SimpleNamespace
 
 import pytest
@@ -14,8 +18,10 @@ from memorii.core.memory_evolution.atomic_store import (
 )
 from memorii.core.memory_evolution.capability_monitoring import (
     CAPABILITY_MONITOR_SEQUENTIAL_IMPLEMENTATION_FINGERPRINT,
+    CapabilityEvidenceFreshness,
     CapabilityEvidenceWindow,
     CapabilityMonitor,
+    CapabilityMonitoringDecision,
     CapabilityMonitoringPolicy,
     CapabilityStatus,
     MonitoringMetricGate,
@@ -40,7 +46,6 @@ from memorii.core.memory_plane.store import (
     JsonlMemoryPlaneStore,
     MemoryPlaneRevisionConflictError,
     RecordAbsentPrecondition,
-    RecordDigestPrecondition,
     record_digest,
 )
 from memorii.core.provider.factory import build_provider_memory_service_from_env
@@ -81,6 +86,10 @@ class _Clock:
         self.now = datetime(2026, 1, 1, tzinfo=UTC)
 
 
+class _UnexpectedEvidenceProviderError(Exception):
+    pass
+
+
 class _TestDeploymentSigner:
     def sign(self, preimage: bytes) -> str:
         return "signature:" + preimage.hex()
@@ -95,11 +104,22 @@ class _CurrentDeploymentTrust:
     def __init__(self, *, current: bool = True, sequence: list[bool] | None = None) -> None:
         self.current = current
         self.sequence = sequence or []
+        self._lock = RLock()
 
     def is_current(self, *, artifact, server_time: datetime) -> bool:
-        if self.sequence:
-            return self.sequence.pop(0) and artifact.expires_at > server_time
-        return self.current and artifact.expires_at > server_time
+        with self._lock:
+            if self.sequence:
+                return self.sequence.pop(0) and artifact.expires_at > server_time
+            return self.current and artifact.expires_at > server_time
+
+    @contextmanager
+    def current_use(self, *, artifact, server_time: datetime) -> Iterator[bool]:
+        with self._lock:
+            yield self.is_current(artifact=artifact, server_time=server_time)
+
+    def revoke(self) -> None:
+        with self._lock:
+            self.current = False
 
 
 def _current_trust_verifier(signer: _TestDeploymentSigner, trust: _CurrentDeploymentTrust | None = None):
@@ -863,8 +883,10 @@ def test_status_only_active_initialization_is_rejected_by_governed_store() -> No
     }
     status = CapabilityStatus(
         **status_base,
+        schema_version=2,
         status_digest=contract_digest(
-            b"memorii.semantic-ingestion.capability-status.v1", status_base
+            b"memorii.semantic-ingestion.capability-status.v2",
+            {"schema_version": 2, **status_base},
         ),
     )
     record = CanonicalMemoryRecord(
@@ -1061,8 +1083,18 @@ def test_signed_factory_direct_tick_revalidates_revoked_authority() -> None:
     )
 
 
-def test_scheduler_accounts_for_more_than_sixteen_active_policies_after_provider_failure() -> None:
-    """A provider failure cannot strand the seventeenth active capability."""
+@pytest.mark.parametrize(
+    ("exception_type", "diagnostic"),
+    [
+        (RuntimeError, "provider_failure_known_exception"),
+        (KeyError, "provider_failure_unexpected_exception"),
+        (_UnexpectedEvidenceProviderError, "provider_failure_unexpected_exception"),
+    ],
+)
+def test_scheduler_accounts_for_more_than_sixteen_active_policies_after_provider_failure(
+    exception_type: type[Exception], diagnostic: str
+) -> None:
+    """Every ordinary provider exception fails closed across signed inventory."""
     clock = _Clock()
     implementation = CAPABILITY_MONITOR_SEQUENTIAL_IMPLEMENTATION_FINGERPRINT
     manifest = SequentialTestManifest.create(
@@ -1094,7 +1126,7 @@ def test_scheduler_accounts_for_more_than_sixteen_active_policies_after_provider
 
     class FailingProvider:
         def load_evidence_windows(self, *, max_items: int):
-            raise RuntimeError("host evidence transport unavailable")
+            raise exception_type("host evidence transport unavailable")
 
     provider = FailingProvider()
     signer = _TestDeploymentSigner()
@@ -1109,8 +1141,9 @@ def test_scheduler_accounts_for_more_than_sixteen_active_policies_after_provider
         )
         for policy in policies
     )
+    plane = MemoryPlaneService()
     service = build_provider_memory_service_from_env(
-        memory_plane=MemoryPlaneService(),
+        memory_plane=plane,
         now_provider=lambda: clock.now,
         verified_capability_monitoring_authorities=authorities,
     )
@@ -1122,6 +1155,11 @@ def test_scheduler_accounts_for_more_than_sixteen_active_policies_after_provider
     }
     assert all(result.status.status == "evidence_only" for result in results)
     assert all(result.decision.evaluation_kind == "provider_failure" for result in results)
+    assert all(diagnostic in result.decision.reason_codes for result in results)
+    assert not plane.list_records(source_kind="semantic_ingestion_source")
+    assert not plane.list_records(
+        source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+    )
 
 
 def test_group_commit_status_read_set_is_exact_and_stale_after_demotion() -> None:
@@ -1153,12 +1191,10 @@ def test_group_commit_status_read_set_is_exact_and_stale_after_demotion() -> Non
         pre_execution_manifest_identity=SimpleNamespace(core=SimpleNamespace(capability_bindings=(binding,))),
     )
 
-    preconditions = store._capability_status_preconditions_for_group_commit(
-        request  # pyright: ignore[reportArgumentType] - focused internal fixture
-    )
-    assert preconditions == (
-        RecordDigestPrecondition(memory_id=status_record.memory_id, expected_digest=record_digest(status_record)),
-    )
+    with pytest.raises(PreplanningStoreError, match="checkpoint is unavailable"):
+        store._capability_status_preconditions_for_group_commit(
+            request  # pyright: ignore[reportArgumentType] - focused internal fixture
+        )
     monitor.tick(evidence=_window(clock, policy, implementation, value="0.9"))
     with pytest.raises(PreplanningStoreError, match="capability status binding is stale"):
         store._capability_status_preconditions_for_group_commit(
@@ -1200,14 +1236,10 @@ def test_group_commit_deduplicates_shared_capability_status_coordinates() -> Non
             core=SimpleNamespace(capability_bindings=bindings)
         ),
     )
-    assert store._capability_status_preconditions_for_group_commit(
-        request  # pyright: ignore[reportArgumentType] - focused internal fixture
-    ) == (
-        RecordDigestPrecondition(
-            memory_id=status_record.memory_id,
-            expected_digest=record_digest(status_record),
-        ),
-    )
+    with pytest.raises(PreplanningStoreError, match="checkpoint is unavailable"):
+        store._capability_status_preconditions_for_group_commit(
+            request  # pyright: ignore[reportArgumentType] - focused internal fixture
+        )
 
 
 def test_time_uniform_bounds_match_independent_formula() -> None:
@@ -1281,6 +1313,367 @@ def test_status_and_no_reactivation_survive_restart(tmp_path) -> None:
     assert reopened_writers.current().writer_epoch == 2
 
 
+def test_pre_checkpoint_v1_jsonl_restart_upcasts_and_fences_legacy_active_state(
+    tmp_path: Path,
+) -> None:
+    """A persisted pre-c9 monitor state remains readable but cannot admit work.
+
+    This writes the historical wire payload directly to JSONL before the
+    writer policy is installed.  It therefore exercises real reload parsing
+    and the original v1 digest preimages, rather than a model-only fixture.
+    """
+    clock, _, _, policy, _ = _monitor()
+    store_path = tmp_path / "pre-c9-monitor-state"
+    freshness_body = {
+        "capability_fingerprint": policy.capability_fingerprint,
+        "monitoring_policy_digest": policy.policy_digest,
+        "evaluated_at": clock.now,
+        "latest_independent_label_at": clock.now,
+        "latest_canary_success_at": clock.now,
+        "labeled_cluster_count_in_window": 20,
+        "traffic_state": "paused",
+        "label_pipeline_state": "healthy",
+        "freshness": "grace",
+        "freshness_reason": "traffic_pause_grace",
+        "status_revision": "1",
+    }
+    freshness = {
+        **freshness_body,
+        "evidence_digest": contract_digest(
+            b"memorii.semantic-ingestion.capability-evidence-freshness.v1",
+            freshness_body,
+        ),
+    }
+    freshness_record = CanonicalMemoryRecord(
+        memory_id="semantic_ingestion:capability-initial-freshness:" + freshness["evidence_digest"],
+        domain=MemoryDomain.EXECUTION,
+        text="",
+        content={
+            "semantic_ingestion_kind": "capability_initial_freshness",
+            "evidence_window_digest": "1" * 64,
+            "freshness": freshness,
+            "metric_decisions": (),
+        },
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_capability_initial_freshness",
+        timestamp=clock.now,
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+    decision_body = {
+        "capability_fingerprint": policy.capability_fingerprint,
+        "monitoring_policy_digest": policy.policy_digest,
+        "evidence_window_digest": "1" * 64,
+        "evaluated_at": clock.now,
+        "metric_decisions": (),
+        "evidence_freshness": "grace",
+        "action": "remain_active",
+        "reason_codes": (),
+    }
+    decision = {
+        **decision_body,
+        "decision_digest": contract_digest(
+            b"memorii.semantic-ingestion.capability-monitoring-decision.v1",
+            decision_body,
+        ),
+    }
+    decision_record = CanonicalMemoryRecord(
+        memory_id="semantic_ingestion:capability-monitor-decision:legacy-v1",
+        domain=MemoryDomain.EXECUTION,
+        text="",
+        content={
+            "semantic_ingestion_kind": "capability_monitor_decision",
+            "decision": decision,
+            "freshness": freshness,
+            "status_record_digest": "2" * 64,
+        },
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_capability_monitor_decision",
+        timestamp=clock.now,
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+    status_body = {
+        "capability_fingerprint": policy.capability_fingerprint,
+        "status": "active",
+        "status_revision": 1,
+        "monitoring_policy_digest": policy.policy_digest,
+        "evidence_freshness_digest": record_digest(freshness_record),
+    }
+    status_record = CanonicalMemoryRecord(
+        memory_id="semantic_ingestion:capability-status:" + policy.capability_fingerprint,
+        domain=MemoryDomain.EXECUTION,
+        text="",
+        content={
+            "semantic_ingestion_kind": "capability_status",
+            "status": {
+                **status_body,
+                "status_digest": contract_digest(
+                    b"memorii.semantic-ingestion.capability-status.v1", status_body
+                ),
+            },
+        },
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_capability_status",
+        timestamp=clock.now,
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+    # This is the exact JSONL batch envelope emitted by the historical store.
+    # Construct it as a fixture because current stores correctly reject an
+    # unauthorised semantic-control write before installing their policy.
+    batch_body = {
+        "revision": 1,
+        "data_revision": 0,
+        "records": [
+            record.model_dump(mode="json")
+            for record in (freshness_record, decision_record, status_record)
+        ],
+    }
+    batch = {
+        **batch_body,
+        "checksum": sha256(
+            json.dumps(batch_body, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest(),
+    }
+    store_path.mkdir()
+    (store_path / "memory_records.jsonl").write_text(
+        json.dumps(batch, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    persisted = (store_path / "memory_records.jsonl").read_text(encoding="utf-8")
+    assert "authorization_checkpoint_digest" not in persisted
+    assert "traffic_state_changed_at" not in persisted
+    assert "evaluation_kind" not in persisted
+
+    reopened_plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(store_path))
+    reopened_status = CapabilityStatus.model_validate(
+        reopened_plane.get_record(status_record.memory_id).content["status"]  # type: ignore[union-attr]
+    )
+    reopened_freshness = CapabilityEvidenceFreshness.model_validate(
+        reopened_plane.get_record(freshness_record.memory_id).content["freshness"]  # type: ignore[union-attr]
+    )
+    reopened_decision = CapabilityMonitoringDecision.model_validate(
+        reopened_plane.get_record(decision_record.memory_id).content["decision"]  # type: ignore[union-attr]
+    )
+    assert reopened_status.schema_version == 1
+    assert reopened_status.authorization_checkpoint_digest is None
+    assert reopened_freshness.schema_version == 1
+    assert reopened_decision.schema_version == 1
+    assert reopened_decision.evaluation_kind == "evidence_window"
+
+    writers = SemanticWriterAdmissionStore(
+        reopened_plane,
+        bounded_preplanning_ownership_manifest(),
+        now_provider=lambda: clock.now,
+    )
+    writers.create_initial_evidence_only(
+        admission_id="legacy-restart",
+        writer_implementation_fingerprint="legacy-restart",
+        graph_schema_fingerprint="legacy-restart",
+    )
+    monitor = CapabilityMonitor(writers=writers, now=lambda: clock.now, policies=(policy,))
+    demoted = monitor.tick_missing_window(
+        capability_fingerprint=policy.capability_fingerprint
+    )
+    assert demoted is not None
+    assert demoted.status.status == "evidence_only"
+    assert demoted.status.schema_version == 2
+    assert writers.current().active_runtime_mode == "evidence_only"
+    assert writers.current().writer_epoch == 2
+
+
+def test_extended_v1_jsonl_restart_preserves_v1_preimages_and_group_authority(
+    tmp_path: Path,
+) -> None:
+    """The e0/c9 unversioned field additions were still V1-digested values."""
+    clock, _, _, policy, implementation = _monitor()
+    store_path = tmp_path / "extended-v1-monitor-state"
+    freshness_body = {
+        "capability_fingerprint": policy.capability_fingerprint,
+        "monitoring_policy_digest": policy.policy_digest,
+        "evaluated_at": clock.now,
+        "latest_independent_label_at": clock.now,
+        "latest_canary_success_at": clock.now,
+        "labeled_cluster_count_in_window": 20,
+        "traffic_state": "active",
+        "traffic_state_changed_at": clock.now,
+        "label_pipeline_state": "healthy",
+        "label_pipeline_state_changed_at": clock.now,
+        "freshness": "fresh",
+        "freshness_reason": "fresh",
+        "status_revision": "1",
+    }
+    freshness = {
+        **freshness_body,
+        "evidence_digest": contract_digest(
+            b"memorii.semantic-ingestion.capability-evidence-freshness.v1",
+            freshness_body,
+        ),
+    }
+    freshness_record = CanonicalMemoryRecord(
+        memory_id="semantic_ingestion:capability-initial-freshness:" + freshness["evidence_digest"],
+        domain=MemoryDomain.EXECUTION,
+        text="",
+        content={
+            "semantic_ingestion_kind": "capability_initial_freshness",
+            "evidence_window_digest": "3" * 64,
+            "freshness": freshness,
+            "metric_decisions": (),
+        },
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_capability_initial_freshness",
+        timestamp=clock.now,
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+    decision_body = {
+        "capability_fingerprint": policy.capability_fingerprint,
+        "monitoring_policy_digest": policy.policy_digest,
+        "evidence_window_digest": "3" * 64,
+        "evaluated_at": clock.now,
+        "metric_decisions": (),
+        "evidence_freshness": "fresh",
+        "evaluation_kind": "evidence_window",
+        "action": "remain_active",
+        "reason_codes": (),
+    }
+    decision = {
+        **decision_body,
+        "decision_digest": contract_digest(
+            b"memorii.semantic-ingestion.capability-monitoring-decision.v1",
+            decision_body,
+        ),
+    }
+    checkpoint_record = CanonicalMemoryRecord(
+        memory_id=(
+            "semantic_ingestion:capability-authorization-checkpoint:"
+            + policy.capability_fingerprint
+        ),
+        domain=MemoryDomain.EXECUTION,
+        text="",
+        content={"semantic_ingestion_kind": "historical_capability_checkpoint"},
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_capability_authorization_checkpoint",
+        timestamp=clock.now,
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+    status_body = {
+        "capability_fingerprint": policy.capability_fingerprint,
+        "status": "active",
+        "status_revision": 1,
+        "monitoring_policy_digest": policy.policy_digest,
+        "evidence_freshness_digest": record_digest(freshness_record),
+        "authorization_checkpoint_digest": record_digest(checkpoint_record),
+    }
+    status_record = CanonicalMemoryRecord(
+        memory_id="semantic_ingestion:capability-status:" + policy.capability_fingerprint,
+        domain=MemoryDomain.EXECUTION,
+        text="",
+        content={
+            "semantic_ingestion_kind": "capability_status",
+            "status": {
+                **status_body,
+                "status_digest": contract_digest(
+                    b"memorii.semantic-ingestion.capability-status.v1", status_body
+                ),
+            },
+        },
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_capability_status",
+        timestamp=clock.now,
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+    decision_record = CanonicalMemoryRecord(
+        memory_id="semantic_ingestion:capability-monitor-decision:extended-v1",
+        domain=MemoryDomain.EXECUTION,
+        text="",
+        content={
+            "semantic_ingestion_kind": "capability_monitor_decision",
+            "decision": decision,
+            "freshness": freshness,
+            "status_record_digest": record_digest(status_record),
+        },
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_capability_monitor_decision",
+        timestamp=clock.now,
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+    batch_body = {
+        "revision": 1,
+        "data_revision": 0,
+        "records": [
+            record.model_dump(mode="json")
+            for record in (checkpoint_record, freshness_record, decision_record, status_record)
+        ],
+    }
+    batch = {
+        **batch_body,
+        "checksum": sha256(
+            json.dumps(batch_body, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest(),
+    }
+    store_path.mkdir()
+    (store_path / "memory_records.jsonl").write_text(
+        json.dumps(batch, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+
+    reopened_plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(store_path))
+    reopened_status = CapabilityStatus.model_validate(
+        reopened_plane.get_record(status_record.memory_id).content["status"]  # type: ignore[union-attr]
+    )
+    reopened_freshness = CapabilityEvidenceFreshness.model_validate(
+        reopened_plane.get_record(freshness_record.memory_id).content["freshness"]  # type: ignore[union-attr]
+    )
+    reopened_decision = CapabilityMonitoringDecision.model_validate(
+        reopened_plane.get_record(decision_record.memory_id).content["decision"]  # type: ignore[union-attr]
+    )
+    assert reopened_status.schema_version == 1
+    assert reopened_status.wire_generation == "extended_v1"
+    assert reopened_freshness.wire_generation == "extended_v1"
+    assert reopened_decision.wire_generation == "extended_v1"
+
+    writers = SemanticWriterAdmissionStore(
+        reopened_plane,
+        bounded_preplanning_ownership_manifest(),
+        now_provider=lambda: clock.now,
+    )
+    writers.create_initial_evidence_only(
+        admission_id="extended-v1-restart",
+        writer_implementation_fingerprint="extended-v1-restart",
+        graph_schema_fingerprint="extended-v1-restart",
+    )
+    monitor = CapabilityMonitor(writers=writers, now=lambda: clock.now, policies=(policy,))
+    assert monitor.tick_missing_window(
+        capability_fingerprint=policy.capability_fingerprint
+    ) is None
+    continued = monitor.tick(evidence=_window(clock, policy, implementation, value="0.1"))
+    assert continued.status.status == "active"
+    assert continued.status.schema_version == 2
+    assert continued.status.authorization_checkpoint_digest == record_digest(checkpoint_record)
+    current_record = reopened_plane.get_record(status_record.memory_id)
+    assert current_record is not None
+    store = SemanticIngestionAtomicStore(reopened_plane, writers, now_provider=lambda: clock.now)
+    binding = SimpleNamespace(
+        operation_id="operation",
+        capability_fingerprint=policy.capability_fingerprint,
+        capability_status_revision=str(continued.status.status_revision),
+        capability_status_record_digest=record_digest(current_record),
+        monitoring_policy_digest=policy.policy_digest,
+        evidence_freshness_digest=continued.status.evidence_freshness_digest,
+    )
+    request = SimpleNamespace(
+        operation_ids=("operation",),
+        ordered_operation_inputs=(SimpleNamespace(
+            operation_id="operation",
+            reduction=SimpleNamespace(native_terminal=SimpleNamespace(status="accepted")),
+        ),),
+        pre_execution_manifest_identity=SimpleNamespace(
+            core=SimpleNamespace(capability_bindings=(binding,))
+        ),
+    )
+    assert len(store._capability_status_preconditions_for_group_commit(
+        request  # pyright: ignore[reportArgumentType] - focused internal fixture
+    )) == 2
+
+
 def test_status_cas_loss_fails_without_partial_publication(monkeypatch) -> None:
     clock, writers, monitor, policy, implementation = _monitor()
     plane = writers._memory_plane
@@ -1302,7 +1695,7 @@ def test_status_cas_loss_fails_without_partial_publication(monkeypatch) -> None:
 
 
 def test_real_group_commit_status_precondition_conflicts_with_monitor_demotion(
-    tmp_path
+    tmp_path, monkeypatch
 ) -> None:
     fingerprint = "38a5be91af79d7e5ba9809bf383c699b6864ee50446239fe56a45e32b84638fe"
     implementation = CAPABILITY_MONITOR_SEQUENTIAL_IMPLEMENTATION_FINGERPRINT
@@ -1388,7 +1781,18 @@ def test_real_group_commit_status_precondition_conflicts_with_monitor_demotion(
         requested_active_epoch=1, expires_at=TEST_NOW + timedelta(days=1),
     )
     raw = json.dumps(artifact.model_dump(mode="json"), sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("ascii")
-    trust = _CurrentDeploymentTrust()
+    class LinearizedTrust(_CurrentDeploymentTrust):
+        def __init__(self) -> None:
+            super().__init__()
+            self.revocation_attempted = Event()
+            self.revocation_completed = Event()
+
+        def revoke(self) -> None:
+            self.revocation_attempted.set()
+            super().revoke()
+            self.revocation_completed.set()
+
+    trust = LinearizedTrust()
     authority = build_verified_capability_monitoring_authority(
         deployment_authorization_bytes=raw,
         deployment_authorization_verifier=DeploymentAuthorizationArtifactVerifier(signer),
@@ -1443,23 +1847,64 @@ def test_real_group_commit_status_precondition_conflicts_with_monitor_demotion(
     assert CapabilityRegistrySnapshot.model_validate(decode_typed_value(registry_before)).snapshot_digest
     status_record = service._memory_plane.get_record("semantic_ingestion:capability-status:" + fingerprint)
     assert status_record is not None
-    # The ingress check remains current; the immediately following guard,
-    # inside the group-write path, observes revocation and fences the writer.
-    trust.sequence = [True, False]
-    result = service.sync_event(
-        operation=ProviderOperation.CHAT_USER_TURN,
-        content=source_text,
-        operation_id="monitor-group-cas-race",
-        task_id="task:monitor",
-        user_id="user:alice",
-        authenticated_host_ingress=_host_ingress(),
-    )
+    cas_entered = Event()
+    allow_cas = Event()
+    original_cas = service._memory_plane.conditionally_write_records
 
-    assert result.blocked_reasons["semantic_ingestion"] == "graph_transaction_authority_unavailable"
-    assert service._semantic_writer_admission.current().active_runtime_mode == "evidence_only"
+    def pause_after_trust_lease(records, **kwargs):
+        if any(
+            record.source_kind
+            == "semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+            for record in records
+        ):
+            cas_entered.set()
+            assert allow_cas.wait(timeout=5)
+        return original_cas(records, **kwargs)
+
+    monkeypatch.setattr(
+        service._memory_plane, "conditionally_write_records", pause_after_trust_lease
+    )
+    outcomes = []
+    failures = []
+
+    def write_group() -> None:
+        try:
+            outcomes.append(service.sync_event(
+                operation=ProviderOperation.CHAT_USER_TURN,
+                content=source_text,
+                operation_id="monitor-group-cas-race",
+                task_id="task:monitor",
+                user_id="user:alice",
+                authenticated_host_ingress=_host_ingress(),
+            ))
+        except BaseException as exc:  # pragma: no cover - assertion surface below
+            failures.append(exc)
+
+    group_thread = Thread(target=write_group)
+    group_thread.start()
+    assert cas_entered.wait(timeout=60)
+    revocation_thread = Thread(target=trust.revoke)
+    revocation_thread.start()
+    assert trust.revocation_attempted.wait(timeout=5)
+    # `current_use()` still owns the host linearizer while the group CAS is
+    # paused, so revocation cannot become visible before publication finishes.
+    assert not trust.revocation_completed.is_set()
     assert len(service._memory_plane.list_records(
         source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
     )) == initial_group_count
+    allow_cas.set()
+    group_thread.join(timeout=60)
+    revocation_thread.join(timeout=5)
+    assert not group_thread.is_alive()
+    assert not revocation_thread.is_alive()
+    assert not failures
+    assert len(outcomes) == 1
+    assert outcomes[0].blocked_reasons["semantic_ingestion"] == "source_only"
+    assert trust.revocation_completed.is_set()
+    assert len(service._memory_plane.list_records(
+        source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+    )) == initial_group_count + 1
+
     second = service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content=source_text,
@@ -1469,9 +1914,10 @@ def test_real_group_commit_status_precondition_conflicts_with_monitor_demotion(
         authenticated_host_ingress=_host_ingress(),
     )
     assert second.blocked_reasons["semantic_ingestion"] == "graph_transaction_authority_unavailable"
+    assert service._semantic_writer_admission.current().active_runtime_mode == "evidence_only"
     assert len(service._memory_plane.list_records(
         source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
-    )) == initial_group_count
+    )) == initial_group_count + 1
     reopened = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(store_path))
     persisted_status = reopened.get_record(status_record.memory_id)
     assert persisted_status is not None
@@ -1489,4 +1935,4 @@ def test_real_group_commit_status_precondition_conflicts_with_monitor_demotion(
     assert CapabilityRegistrySnapshot.model_validate(decode_typed_value(registry_after)).snapshot_digest
     assert len(reopened.list_records(
         source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
-    )) == initial_group_count
+    )) == initial_group_count + 1

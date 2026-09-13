@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import ExitStack, contextmanager
 from dataclasses import replace
 from datetime import UTC, datetime
 from hashlib import sha256
@@ -190,6 +191,7 @@ from memorii.core.semantic_ingestion.production_authority import (
     VerifiedCapabilityMonitoringAuthority,
     VerifiedProductionHostAuthority,
     capability_monitoring_authority_checkpoint,
+    capability_monitoring_authority_current_use,
     capability_monitoring_authority_is_current,
     verified_capability_monitoring_authority_inputs,
     verified_production_authority_inputs,
@@ -757,7 +759,11 @@ class ProviderMemoryService:
             try:
                 candidate = provider.load_evidence_windows(max_items=limit)
             except (OSError, RuntimeError, TypeError, ValueError):
-                provider_failure_reason = "provider_failure_exception"
+                provider_failure_reason = "provider_failure_known_exception"
+            except Exception:
+                # The external evidence-provider port is fail-closed.  Do not
+                # expose exception messages or permit an unaccounted poll.
+                provider_failure_reason = "provider_failure_unexpected_exception"
             else:
                 if not isinstance(candidate, tuple):
                     provider_failure_reason = "provider_failure_non_tuple"
@@ -1030,10 +1036,11 @@ class ProviderMemoryService:
                     demotions.append(result)
         return tuple(demotions)
 
+    @contextmanager
     def _require_current_capability_authorizations_for_group(
         self, fingerprints: tuple[str, ...]
-    ) -> None:
-        """Linearize external trust with the group CAS by fencing first."""
+    ) -> Iterator[None]:
+        """Hold host revocation linearizers through the group write CAS."""
         now = self._clock.now_utc()
         authorities = {
             authority._policy.capability_fingerprint: authority
@@ -1043,13 +1050,23 @@ class ProviderMemoryService:
             fingerprint not in authorities for fingerprint in fingerprints
         ):
             raise PreplanningStoreError("capability deployment authorization is unavailable")
-        for fingerprint in fingerprints:
-            authority = authorities[fingerprint]
-            if not capability_monitoring_authority_is_current(authority, server_time=now):
-                self._capability_monitor.demote_untrusted_authority(
-                    capability_fingerprint=authority._policy.capability_fingerprint
-                )
-                raise PreplanningStoreError("capability deployment authorization is not current")
+        unavailable: list[str] = []
+        with ExitStack() as stack:
+            for fingerprint in fingerprints:
+                if not stack.enter_context(
+                    capability_monitoring_authority_current_use(
+                        authorities[fingerprint], server_time=now
+                    )
+                ):
+                    unavailable.append(fingerprint)
+            if not unavailable:
+                yield
+                return
+        for fingerprint in unavailable:
+            self._capability_monitor.demote_untrusted_authority(
+                capability_fingerprint=fingerprint
+            )
+        raise PreplanningStoreError("capability deployment authorization is not current")
 
     def _validate_semantic_runtime_after_ingress(self) -> None:
         if self._semantic_runtime_validated_after_ingress:
