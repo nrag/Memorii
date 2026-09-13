@@ -46,7 +46,7 @@ canonical owner with required authority and observed outcome.
 | 2 | release crypto/trust | R03, R08, R13, R16, R19 | partial; signing locally verified, host/review unfinished |
 | 3 | independent statistics | R05, R06, R14 | complete at `1a60848c`; independent spec/correctness/test approval |
 | 4 | monitor/registry | R08, R15, R16, R19 | R15 engineering complete at `6224935e`; related host rows remain partial |
-| 5 | observer/comparator | R03, R13, R17 | bounded source-finalization approved; group carrier implementation active; authenticated query/comparison pending |
+| 5 | observer/comparator | R03, R13, R17 | public paging and unique operation/fence comparator foundation committed at `eccb5bfc`; complete record comparison and real authorization matrix pending |
 | 6 | host closure | R01-R23 | blocked on incomplete packages |
 
 ## Initial Ledgers
@@ -168,9 +168,9 @@ writers finish; no current whole-candidate proof is claimed yet.
 
 ## Next Action
 
-Implement the independently authored closed-world structural comparator through
-the paginated public observation API, including configured authorization denial
-and between-page revocation proof, under the active observer/comparator packet.
+Extend the committed comparator foundation through source introductions, entity
+alignment, terminal outcomes and exact closed-world record membership, then
+exercise that slice through the real paginated ProviderMemoryService route.
 
 2026-09-08: root owns all code, generation, tests and commits. Read-only
 component reviews cover frozen90c58da62428f3caeab8ee7bca03116a24009d35e97aa705e1d757987a61362c.

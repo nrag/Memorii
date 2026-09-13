@@ -39,12 +39,36 @@ inferred from an unobserved process completion.
 
 ## Next Action
 
-Implement the acceptance-owned closed-world structural comparator against the
-paginated public ProviderMemoryService observation methods. Prove complete page
-consumption and first-divergence detection for missing, extra, temporal,
-provenance, projection-identity and fence mutations, then add configured caller
-denial, scope isolation and revocation between pages through an ordinary host
-root. Do not read stores directly or import production projection helpers.
+Extend the acceptance-owned comparator from operation/fence alignment through
+source introductions, entity alignment, terminal outcomes and exact
+closed-world record membership. Exercise it through the real paginated
+ProviderMemoryService route before adding the remaining schema-specific record
+families. Do not read stores directly or import production projection helpers.
+
+## Public Comparator Foundation
+
+Commit `eccb5bfc` adds the first bounded acceptance-owned comparator slice. It
+collects a complete public GraphObservationPage chain, independently validates
+frozen snapshot coordinates, half-open continuity, global ordering/uniqueness
+and exact cohort closure, and surfaces typed public failures between pages. Its
+pre-ingest ExpectedOperation declaration contains logical operation/fence keys
+and source-visible coordinates only. Alignment proves a unique global fence
+partition and unique operation bijection by removing selected matching edges;
+production IDs and later graph records cannot resolve ambiguity.
+
+Coordinator verification at `eccb5bfc` passed six focused cases under
+warnings-as-errors, Ruff and supported first-party Pyright with zero findings.
+The cases cover two-page collection, cohort/continuity mismatch, revocation
+between pages, stable unique matching, zero solutions, and ambiguous operation
+and fence mappings. This establishes only the comparator foundation. R17
+remains partial until source/entity alignment, all schema-specific comparisons,
+ingestion-time witnesses, structural mutation families and configured real-root
+authorization/revocation proof pass.
+
+Delegation record: `r17_comparator_slice` was the sole Terra writer for
+`acceptance/structural_comparator.py` and its focused unit test. The coordinator
+owned requirements reconciliation and independently reran its checks. No
+production, integration, or planning file overlapped the writer's ownership.
 
 The linked `../../terminal-publication/closure.md` records bounded source closure
 with all three independent approvals, public same-CAS/restart/tamper/authority

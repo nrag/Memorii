@@ -2,7 +2,7 @@
 
 Work type: implementation. Coordinator: root. Status: active Stage 5, not
 closed.
-Current committed baseline: `6224935e989f5880aba8afb1aa69d48d25e549a1`
+Current committed baseline: `eccb5bfcab7b6d7bc4184d17bded86c606e62a33`
 on `semantic_ingestion_m5`. Index: `implementation.plan.md`. Active packet:
 `milestones/05-authenticated-observer-comparator.plan.md`. Previous resume preserved at
 `archive/resume-ac8819eaa31c8adadc54db2ca8a7ae60376d5b9e90752e4c0106cae995302039.md`.
@@ -73,6 +73,12 @@ evidence, nonmutating lease-held evaluation snapshot, standard installed
 runtime, noninjectable command, CI job, and complete failure matrix. Root owns
 the current dirty candidate until one implementation writer resumes it.
 
-Next action: implement R17's acceptance-owned closed-world comparator through
-the paginated public observation API, including structural mutation detection,
-configured authorization denial, scope isolation, and between-page revocation.
+The first R17 comparator slice is committed at `eccb5bfc`: public page-chain
+collection and globally unique operation/fence alignment pass six focused
+warnings-as-errors cases plus Ruff and Pyright. R17 remains partial because the
+complete record-family comparator and real configured authorization matrix are
+not yet implemented.
+
+Next action: extend the comparator through source introductions, entity
+alignment, terminal outcomes and exact closed-world record membership, then
+exercise that slice through the real paginated ProviderMemoryService route.

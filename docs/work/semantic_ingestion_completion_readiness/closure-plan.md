@@ -293,8 +293,8 @@ progress labels, not release or final-candidate approval:
   requirement is unfinished.
 - **Not implemented (1):** R15's production monitoring/transition work remains.
 
-**Seven requirements remain open: R03, R08, R13, R15, R16, R17 and R19.**
-This is not a 16/23 final engineering-approval claim. Production signing alone
+**Six requirements remain open: R03, R08, R13, R16, R17 and R19.**
+This is not a 17/23 final engineering-approval claim. Production signing alone
 does not block any engineering status here. Quality measurement and final
 candidate proof remain separate obligations.
 
@@ -348,7 +348,7 @@ to complete by this production write/recovery checkpoint. Current details and ev
 | R14 | Engineering complete | Installed authority-publication and evaluation commands use protected signed authority, independently recompute the frozen four-cell corpus, publish immutable signed receipts and production authorizations, reject rollback, and pass 24 installed fail-closed cases; exact-revision spec, correctness and test reviews report no remaining finding | Parent closure record only; ordinary activation consumption remains allocated to R13/R15 host integration | Product policy approval/signature and qualifying measurements |
 | R15 | Engineering complete | A signed capability-baseline authorization binds the closed policy and exact initial evidence window; construction independently requires fresh, sufficient and acceptable baseline evidence before atomically publishing freshness plus active status; normal reconciliation schedules no-ingest expiry; the default built-in graph path seals active status coordinates and group CAS rejects in-flight or later ingestion after demotion; authenticated revocation publication uses a read-only reader and separately verified publisher-only storage; the 111-test consolidated gate passes and exact-revision spec, correctness and test reviews approve `6224935e` with no remaining finding | Parent closure record only; ordinary host-matrix completion remains allocated to R08, R16 and R19 | Approved monitoring policy, qualifying evidence windows and real production signatures |
 | R16 | Partial | Bootstrap topology, 181-schema/1269-role registered publication, native policy retention, installed package preparation and protected target activation are implemented | Bind the monitor/status owner across activation and use; close the configured ingress/root matrix and final package evidence | Approve/sign final bundle fingerprints |
-| R17 | Partial | All 17 graph observation families, registered projection identity reconstruction, event-derived intervals, scoped pagination, durable ingestion-time seals and public ProviderMemoryService methods are implemented; real activated JSONL composition and CI exercise the path | Add an independently authored closed-world structural comparator through the paginated public API; prove missing/extra/time/provenance/fence mutations and configured host-ingress rejection plus between-page revocation | Real caller trust and acceptance witnesses |
+| R17 | Partial | All 17 graph observation families, registered projection identity reconstruction, event-derived intervals, scoped pagination, durable ingestion-time seals and public ProviderMemoryService methods are implemented; real activated JSONL composition and CI exercise the path; acceptance-owned public page-chain collection and globally unique operation/fence alignment are committed at `eccb5bfc` with six focused warnings-as-errors cases plus Ruff/Pyright | Extend the comparator through source/entity/terminal alignment and every schema-specific record family; prove missing/extra/time/provenance/projection-identity mutations and configured host-ingress rejection plus between-page revocation through a real root | Real caller trust and acceptance witnesses |
 | R18 | Engineering complete | Historical/conflict/lineage replay retains M4 proof and current projection-history gates pass | Parent closure record only | None distinct |
 | R19 | Partial | Normal provider roots reach protected registry/target activation, atomic ledger writes/recovery, all 17 observations and ingestion-time attestations; installed package and host composition are CI exercised | Integrate monitor/status checks into every normal root and add meaningful configured ingress/revocation negatives; then refresh the caller ledger | Install approved real host configuration |
 | R20 | Engineering complete | Lease, retry, recovery and exhaustion behavior remain covered by current persistence/transaction gates | Parent closure record only | None distinct |
@@ -399,17 +399,19 @@ from release issuance. No completed milestone is reopened solely for signatures.
 
 The additive timed snapshot, structural-field design, registered projection
 identity, complete materializer, public provider methods and persisted
-ingestion-time attestations are implemented. R17 remains partial solely for the
-independent comparator and configured authorization/revocation proof described
-in the table. R19 remains partial for those host negatives and the missing
-monitor/status integration. After R14 completion, the refreshed count is 16
-engineering-complete and 7 partial/unimplemented; the remaining engineering work is explicit and is
-not collapsed into deferred production signing.
+ingestion-time attestations are implemented. The comparator's public page-chain
+and operation/fence foundation is committed at `eccb5bfc`; R17 remains partial
+for complete record-family comparison and configured authorization/revocation
+proof described in the table. R19 remains partial for those host negatives and
+the remaining host-matrix integration. After R15 completion, the refreshed count
+is 17 engineering-complete and 6 partial; the remaining engineering work is
+explicit and is not collapsed into deferred production signing.
 
 ## Evidence Progress Record (2026-09-12, PR #120 green at 4e524f31)
 
-This dated record originally closed no row; subsequent R14 completion is
-recorded in the current table and R14 bullet below.
+This dated record originally closed no row; subsequent R14 and R15 completion
+and the comparator foundation are recorded in the current table. Statements in
+the dated bullets describe the earlier revision and do not override that table.
 
 - R17 (observation/retrieval): the public construction is complete and
   CI-enforced — all 17 stream families produced through the registered
@@ -438,10 +440,11 @@ recorded in the current table and R14 bullet below.
   evaluator/authority publication, immutable result publication, rollback
   rejection and complete independent proof are approved. Qualifying release
   measurements and signatures remain release conditions.
-- R15 (monitor): unchanged — not implemented.
+- R15 (monitor, historical state): not implemented at this dated revision;
+  subsequently engineering complete at `6224935e` as recorded in the table.
 - R08 (host behaviors): unchanged beyond the factory/service observation
   path; matrix breadth open.
 
-Sequencing note: the monitor (R15) and comparator (R17 leg) are the two
-largest unbuilt production components; both were queued behind the contracts
-this campaign has now delivered.
+Sequencing note (historical): the monitor and comparator were the two largest
+unbuilt components at this dated revision. R15 is now engineering complete and
+the R17 comparator is the active implementation package.
