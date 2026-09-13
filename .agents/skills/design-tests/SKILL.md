@@ -29,6 +29,11 @@ platform matrices, final packaging evidence, and full regression topology to
 Level 3. Level 4 adds compatibility and persisted-data regression breadth for
 already shipped behavior.
 
+Allocate tests in the same order: working user journeys, common security and
+reliability failures, then rare/adversarial families. A third-tier matrix must
+not consume the active budget while first- or second-tier proof is missing,
+unless it covers an immediate risk to the selected path.
+
 ## Cost-Aware Test Architecture
 
 Keep exactly one writer for overlapping test, timing, and workflow artifacts.

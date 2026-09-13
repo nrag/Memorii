@@ -17,6 +17,11 @@ follow-up unless the design claims production readiness. Do not convert a
 Level 3 or 4 improvement into `Changes required` for a Level 1 or 2 learning
 objective.
 
+Label each finding as serving usability, security/reliability/quality, or
+corner/adversarial hardening. Review and recommend work in that order. A third-
+tier observation is follow-up while first- or second-tier behavior remains,
+unless it demonstrates an immediate risk to the selected path.
+
 Perform a read-only, evidence-backed review. Do not edit the canonical design,
 governing specifications, production code, or tests.
 

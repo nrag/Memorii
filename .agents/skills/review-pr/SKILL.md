@@ -24,6 +24,11 @@ final release artifacts, and shipped-product compatibility are follow-up unless
 the PR claims them. Full merge/release approval predicates below apply to Level
 3 or 4, or when the user explicitly requests production approval.
 
+Order findings by usability first, security/reliability/common-failure quality
+second, and rare/adversarial hardening third. Do not make third-tier hardening a
+Level 1 or 2 approval condition while first- or second-tier behavior remains,
+unless it demonstrates an immediate risk to the selected path.
+
 ## 1. Freeze The Review Identity
 
 Record repository, PR number, base branch and SHA, head branch and SHA,

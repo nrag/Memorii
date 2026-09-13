@@ -29,6 +29,11 @@ hardening, complete platform matrices, final packaging, or exact-release
 approval prerequisites unless the trial needs them or the user explicitly
 requests them. Record those as Level 3 follow-up instead.
 
+Sequence every milestone by the repository priority order: usability first;
+security, reliability, and common-failure quality second; rare/adversarial
+hardening third. Do not let a tier 3 review loop delay unfinished tier 1 or 2
+behavior unless it exposes an immediate risk to that behavior.
+
 The main thread is the coordinator. Use exactly one writer at a time for
 overlapping code, tests, documents, prompts, schemas, configuration, migrations,
 and generated artifacts.

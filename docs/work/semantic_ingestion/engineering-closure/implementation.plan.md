@@ -36,6 +36,11 @@ to Level 3.
 
 ## Completion Contract
 
+Priority is fixed for this Level 2 campaign: finish usable Hermes workflows,
+then their common security/reliability/quality failures, and defer rare or
+adversarial hardening. A spoof/tamper observation may enter the active milestone
+only when it demonstrates an immediate risk to the Hermes path under test.
+
 The Level 2 campaign completes when Hermes reaches the production-shaped public
 ingestion, ledger/monitor, observation, and retrieval owners; intended happy
 scenarios pass; and common missing-configuration, caller/scope denial,

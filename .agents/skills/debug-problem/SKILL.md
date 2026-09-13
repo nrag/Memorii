@@ -26,6 +26,11 @@ adversarial spoof/tamper siblings, hostile-storage hardening, exhaustive
 matrices, final packaging, rollout hardening, and whole-branch review as Level 3
 follow-up unless evidence shows they share the in-scope root cause.
 
+Fix usability blockers before expected-condition security, reliability, and
+quality defects; fix those before rare/adversarial variants. Do not extend a
+debugging loop into the third tier while the first two tiers remain incomplete,
+unless the new evidence demonstrates an immediate risk to the selected path.
+
 The main thread is the coordinator. Use one writer at a time for overlapping
 code, tests, fixtures, and documentation.
 

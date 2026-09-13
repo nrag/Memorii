@@ -17,6 +17,11 @@ hostile-storage hardening, and final evidence machinery as explicit Level 3 or
 4 follow-up unless needed for the selected test. Review design completeness
 against the selected level rather than the eventual maximum-fidelity system.
 
+Sequence the design around usable user journeys first, common security and
+reliability behavior second, and rare/adversarial hardening third. Do not make
+third-tier mechanisms prerequisites while first- or second-tier behavior is
+unresolved, unless they address an immediate risk to the selected path.
+
 Read:
 
 - root `AGENTS.md`

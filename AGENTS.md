@@ -119,6 +119,18 @@ Select and record one fidelity level before deciding how much design, proof,
 review, and operational work the task needs. Follow an explicit user choice;
 otherwise infer the lowest level that safely supports the stated objective.
 
+Within the selected level, prioritize work and review findings in this order:
+
+1. make the intended product workflow usable end to end
+2. make that workflow secure, reliable, and high quality under its expected
+   operating conditions and common failures
+3. cover rare corner cases, adversarial inputs, hostile environments, and
+   exhaustive permutations
+
+Do not begin or continue tier 3 work while known tier 1 or tier 2 work remains,
+unless the adversarial finding demonstrates an immediate risk to the path being
+tested or deployed. Reviewers must state which tier a proposed change serves.
+
 | Level | Stage | Required bar |
 | --- | --- | --- |
 | 1 | Early development | Reach the shortest runnable learning loop. Use focused checks and replaceable local fixtures. Record important limitations; do not claim real-world or production readiness. |
