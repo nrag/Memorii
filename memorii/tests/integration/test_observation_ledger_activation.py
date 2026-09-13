@@ -35,6 +35,9 @@ from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.memory_plane.store import InMemoryMemoryPlaneStore, JsonlMemoryPlaneStore
 from memorii.core.provider.service import ProviderMemoryService
+from memorii.core.semantic_ingestion.production_authority import (
+    VerifiedCapabilityMonitoringAuthority,
+)
 from memorii.domain.enums import CommitStatus, MemoryDomain
 from tests.fixtures.semantic_ingestion.host_bootstrap_authority import DeterministicTestHostBootstrapMaterialVerifier
 from tests.unit.core.memory_evolution.test_observation_activation_configuration import _signed_package
@@ -80,7 +83,16 @@ def _registry_configuration(tmp_path: Path, *, complete=False):
     return registry
 
 
-def _provider_factory(tmp_path, monkeypatch, *, normalization=False, complete_registry=False):
+def _provider_factory(
+    tmp_path,
+    monkeypatch,
+    *,
+    normalization=False,
+    complete_registry=False,
+    verified_capability_monitoring_authorities: tuple[
+        VerifiedCapabilityMonitoringAuthority, ...
+    ] = (),
+):
     registry = _registry_configuration(tmp_path, complete=complete_registry)
     target, _, _ = _signed_package(tmp_path, monkeypatch, verify_configured_typed_value_registry_history(registry))
     clock = [TEST_NOW]
@@ -99,6 +111,9 @@ def _provider_factory(tmp_path, monkeypatch, *, normalization=False, complete_re
                 typed_value_registry_configuration=registry,
                 observation_activation_target_configuration=target),
             host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+            verified_capability_monitoring_authorities=(
+                verified_capability_monitoring_authorities
+            ),
         )
     return build, target, clock
 

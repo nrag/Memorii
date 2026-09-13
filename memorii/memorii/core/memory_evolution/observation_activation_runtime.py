@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from hashlib import sha256
 from typing import Literal
 
@@ -76,7 +76,6 @@ from memorii.core.memory_evolution.typed_value_artifact_integrity import (
 from memorii.core.memory_evolution.typed_value_artifact_reader import ProtectedTypedValueArtifactReaderLimits
 from memorii.core.memory_evolution.typed_value_body_validation import ProtectedTypedValueBodyLimits
 from memorii.core.memory_evolution.typed_value_declarations import (
-    DigestSignatureRole,
     OrdinaryPolicy,
     SelfDigestPolicy,
     SignatureOnlyPolicy,
@@ -170,6 +169,113 @@ class RegisteredObservationArtifact:
     binding: CanonicalTypedValueProfileBinding
     canonical_value_bytes: bytes
     canonical_value_digest: str
+
+
+@dataclass(frozen=True)
+class ActivatedObservationArtifactProof:
+    """One fully verified selected artifact, bound to one replay callback."""
+
+    raw: bytes
+    root_schema_id: str
+    history_publication_digests: tuple[str, ...]
+    selected_publication_digest: str
+    selected_binding: CanonicalTypedValueProfileBinding
+    value: BaseModel
+    _callback_token: object = field(repr=False, compare=False)
+
+
+class ActivatedObservationArtifactProofContext:
+    """Call-local selected-artifact proofs for one activated snapshot callback.
+
+    Instances are intentionally constructed by the atomic snapshot validator;
+    they retain no data outside that invocation and reject foreign proofs.
+    """
+
+    def __init__(
+        self,
+        *,
+        history: ProtectedTypedValueRegistryHistory,
+        publication: VerifiedTypedValuePublication,
+        limits: ProtectedTypedValueArtifactReaderLimits,
+    ) -> None:
+        self._history = history
+        self._publication = publication
+        self._limits = limits
+        self._token = object()
+        self._proofs: dict[tuple[bytes, str], ActivatedObservationArtifactProof] = {}
+        self._history_publication_digests = tuple(
+            item.publication_manifest.publication_digest for item in history.publications
+        )
+        self._publication_digest = publication.publication_manifest.publication_digest
+
+    def selected_value(self, raw: bytes, *, schema_id: str) -> BaseModel:
+        if type(raw) is not bytes or type(schema_id) is not str:
+            raise ObservationActivationRuntimeError("registered observation proof input is invalid")
+        key = (raw, schema_id)
+        proof = self._proofs.get(key)
+        if proof is None:
+            checked = verify_protected_typed_value_artifact_integrity(
+                raw,
+                history=self._history,
+                route=TypedValueRegistryReadRoute.INTERNAL_REPLAY,
+                limits=self._limits,
+            )
+            value = checked.materialization.materialized.value
+            expected = _ROOT_TYPES.get(schema_id)
+            selected = checked.materialization.checked_artifact
+            if (
+                expected is None
+                or type(value) is not expected
+                or selected.selected_entry.publication != self._publication
+                or selected.binding.schema_id != schema_id
+                or selected.binding != _binding(selected.selected_entry)
+            ):
+                raise ObservationActivationRuntimeError(
+                    "registered observation artifact differs from selected publication"
+                )
+            proof = ActivatedObservationArtifactProof(
+                raw=raw,
+                root_schema_id=schema_id,
+                history_publication_digests=self._history_publication_digests,
+                selected_publication_digest=self._publication_digest,
+                selected_binding=selected.binding,
+                value=value,
+                _callback_token=self._token,
+            )
+            self._proofs[key] = proof
+        self._require_current(proof, raw=raw, schema_id=schema_id)
+        return proof.value
+
+    def matches_authority(
+        self,
+        *,
+        history: ProtectedTypedValueRegistryHistory,
+        publication: VerifiedTypedValuePublication,
+        limits: ProtectedTypedValueArtifactReaderLimits,
+    ) -> bool:
+        """Prove this ephemeral context belongs to this admission callback."""
+        return (
+            history is self._history
+            and publication is self._publication
+            and limits == self._limits
+            and tuple(
+                item.publication_manifest.publication_digest for item in history.publications
+            ) == self._history_publication_digests
+            and publication.publication_manifest.publication_digest == self._publication_digest
+        )
+
+    def _require_current(
+        self, proof: ActivatedObservationArtifactProof, *, raw: bytes, schema_id: str
+    ) -> None:
+        if (
+            proof._callback_token is not self._token
+            or proof.raw != raw
+            or proof.root_schema_id != schema_id
+            or proof.history_publication_digests != self._history_publication_digests
+            or proof.selected_publication_digest != self._publication_digest
+            or proof.selected_binding.schema_id != schema_id
+        ):
+            raise ObservationActivationRuntimeError("registered observation proof is foreign or stale")
 
 
 DEFAULT_OBSERVATION_ARTIFACT_LIMITS = ProtectedTypedValueArtifactReaderLimits(
@@ -623,10 +729,13 @@ def _binding(selected: ResolvedTypedValueRegistryHistoryEntry) -> CanonicalTyped
 
 
 def _digest_policy(selected: ResolvedTypedValueRegistryHistoryEntry) -> SelfDigestPolicy | OrdinaryPolicy | SignatureOnlyPolicy:
-    policies = [role.policy for role in selected.publication.compiled_registry.parsed_roles if isinstance(role, DigestSignatureRole) and role.schema_id == selected.entry.schema_id and role.schema_version == selected.entry.schema_version]
-    if len(policies) != 1 or not isinstance(policies[0], (SelfDigestPolicy, OrdinaryPolicy, SignatureOnlyPolicy)):
+    try:
+        policy = selected.publication.compiled_registry.digest_signature_role_for(selected.entry).policy
+    except KeyError as exc:
+        raise ObservationActivationRuntimeError("registered observation artifact integrity policy is invalid") from exc
+    if not isinstance(policy, (SelfDigestPolicy, OrdinaryPolicy, SignatureOnlyPolicy)):
         raise ObservationActivationRuntimeError("registered observation artifact integrity policy is invalid")
-    return policies[0]
+    return policy
 
 
 def _identifier_bytes(value: str) -> bytes:

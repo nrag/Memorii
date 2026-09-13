@@ -58,10 +58,26 @@ from memorii.core.memory_plane.store import (
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
 
 if TYPE_CHECKING:
+    from memorii.core.memory_evolution.observation_activation_runtime import (
+        ActivatedObservationArtifactProofContext,
+    )
     from memorii.core.memory_evolution.observation_ledger_contracts import (
         ObservationLedgerActivation,
         ObservationLedgerHead,
     )
+
+
+if TYPE_CHECKING:
+    ActivatedObservationSnapshotValidator = Callable[
+        [
+            tuple[CanonicalMemoryRecord, ...],
+            tuple[CanonicalMemoryRecord, ...],
+            ActivatedObservationArtifactProofContext,
+        ],
+        bool,
+    ]
+else:
+    ActivatedObservationSnapshotValidator = Callable[..., bool]
 
 _SEMANTIC_PROJECTION_SOURCE_KINDS = SEMANTIC_PROJECTION_SOURCE_KINDS
 
@@ -227,7 +243,9 @@ class SemanticWriterAdmissionStore:
         self._observation_artifact_limits = DEFAULT_OBSERVATION_ARTIFACT_LIMITS
         self._observation_artifact_limits_configured = False
         self._atomic_owners: set[object] = set()
-        self._activated_observation_snapshot_validators: dict[object, Callable[[tuple[CanonicalMemoryRecord, ...], tuple[CanonicalMemoryRecord, ...]], bool]] = {}
+        self._activated_observation_snapshot_validators: dict[
+            object, ActivatedObservationSnapshotValidator
+        ] = {}
         self._conflict_authority_administration_owner: object | None = None
         self._conflict_authority_administration_grant: (
             SemanticConflictAuthorityAdministrationGrant | None
@@ -727,7 +745,7 @@ class SemanticWriterAdmissionStore:
         self,
         *,
         capability: object,
-        validator: Callable[[tuple[CanonicalMemoryRecord, ...], tuple[CanonicalMemoryRecord, ...]], bool],
+        validator: ActivatedObservationSnapshotValidator,
     ) -> None:
         if capability not in self._atomic_owners or not callable(validator):
             raise SemanticWriterAdmissionError("activated observation validator is invalid")
@@ -4284,10 +4302,9 @@ def _is_activated_observation_ledger_write(
     history: ProtectedTypedValueRegistryHistory | None,
     target: VerifiedObservationActivationTarget | None,
     limits: ProtectedTypedValueArtifactReaderLimits,
-    snapshot_validator: Callable[[tuple[CanonicalMemoryRecord, ...], tuple[CanonicalMemoryRecord, ...]], bool] | None,
+    snapshot_validator: ActivatedObservationSnapshotValidator | None,
 ) -> bool:
     """Accept one verified source/group closure and its single ledger transition."""
-    from memorii.core.memory_evolution.observation_activation_runtime import validate_registered_artifact
     from memorii.core.memory_evolution.observation_ledger_contracts import (
         ObservationGroupResultLocator,
         ObservationLedgerEntry,
@@ -4327,13 +4344,18 @@ def _is_activated_observation_ledger_write(
             or type(head_record.content["artifact"]) is not str
         ):
             return False
-        from memorii.core.memory_evolution.observation_activation_runtime import emit_registered_observation_artifact
         entry_raw = entry_record.content["artifact"].encode("utf-8")
         head_raw = head_record.content["artifact"].encode("utf-8")
-        entry = validate_registered_artifact(entry_raw, schema_id="ObservationLedgerEntry", history=history, limits=limits)
-        next_head = validate_registered_artifact(head_raw, schema_id="ObservationLedgerHead", history=history, limits=limits)
+        proofs = _new_activated_observation_artifact_proofs(
+            history=history, target=target, limits=limits,
+        )
+        entry = proofs.selected_value(entry_raw, schema_id="ObservationLedgerEntry")
+        next_head = proofs.selected_value(head_raw, schema_id="ObservationLedgerHead")
         current_head_record = next(record for record in current if record.source_kind == "semantic_ingestion_observation_ledger_head")
-        current_head = validate_registered_artifact(current_head_record.content["artifact"].encode("utf-8"), schema_id="ObservationLedgerHead", history=history, limits=limits)
+        current_head = proofs.selected_value(
+            current_head_record.content["artifact"].encode("utf-8"),
+            schema_id="ObservationLedgerHead",
+        )
         writer_record = next(record for record in current if record.memory_id == writer_admission_memory_id())
         admission, manifest = writer_admission_from_record(writer_record)
         if (
@@ -4361,11 +4383,6 @@ def _is_activated_observation_ledger_write(
             ).hexdigest()
         ):
             return False
-        if (
-            emit_registered_observation_artifact(entry, schema_id="ObservationLedgerEntry", history=history, publication=target.publication, limits=limits).raw != entry_raw
-            or emit_registered_observation_artifact(next_head, schema_id="ObservationLedgerHead", history=history, publication=target.publication, limits=limits).raw != head_raw
-        ):
-            return False
         if is_group:
             primary = next(record for record in group_base if record.content.get("semantic_ingestion_kind") == "bootstrap_graph_v3_group_commit_primary")
             request = decode_semantic_contract(bytes.fromhex(primary.content["request_hex"]), BootstrapGraphGroupCommitRequestV3)
@@ -4388,7 +4405,9 @@ def _is_activated_observation_ledger_write(
                 and locator.transaction_group_id == request.transaction_group_id
                 and locator.operation_ids == request.operation_ids
                 and locator.request_ctv_digest == request.request_ctv_digest
-                and snapshot_validator(tuple(governed), current)
+                and _validate_activated_observation_snapshot_callback(
+                    snapshot_validator, tuple(governed), current, proofs
+                )
             )
         locator_record = next(record for record in base if record.content.get("semantic_ingestion_kind") == "bootstrap_graph_v3_terminal_locator" and "handoff_digest" in record.content)
         reload = BootstrapGraphTerminalReloadV3.model_validate_json(json.dumps(locator_record.content["reload"]), strict=True)
@@ -4419,10 +4438,38 @@ def _is_activated_observation_ledger_write(
             and locator.artifact_generation == reload.final_write_identity.publication_artifact_generation
             and locator.member_id == "canonical-source-result"
             and locator.publication_request_digest == reload.final_write_identity.atomic_write_digest
-            and snapshot_validator(tuple(governed), current)
+            and _validate_activated_observation_snapshot_callback(
+                snapshot_validator, tuple(governed), current, proofs
+            )
         )
     except (KeyError, StopIteration, TypeError, ValueError):
         return False
+
+
+def _new_activated_observation_artifact_proofs(
+    *,
+    history: ProtectedTypedValueRegistryHistory,
+    target: VerifiedObservationActivationTarget,
+    limits: ProtectedTypedValueArtifactReaderLimits,
+) -> ActivatedObservationArtifactProofContext:
+    """Create the one ephemeral proof context for a governed-write validation."""
+    from memorii.core.memory_evolution.observation_activation_runtime import (
+        ActivatedObservationArtifactProofContext,
+    )
+
+    return ActivatedObservationArtifactProofContext(
+        history=history, publication=target.publication, limits=limits
+    )
+
+
+def _validate_activated_observation_snapshot_callback(
+    validator: ActivatedObservationSnapshotValidator,
+    governed: tuple[CanonicalMemoryRecord, ...],
+    current: tuple[CanonicalMemoryRecord, ...],
+    proofs: ActivatedObservationArtifactProofContext,
+) -> bool:
+    """Call the registered validator synchronously with admission's exact proof."""
+    return validator(governed, current, proofs)
 
 
 def _is_native_group_projection_sidecar(record: CanonicalMemoryRecord) -> bool:

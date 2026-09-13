@@ -57,6 +57,12 @@ from tests.integration.test_observation_ledger_activation import (
     _provider_factory,
     _seed_provider,
 )
+from tests.unit.core.semantic_ingestion.test_capability_monitoring import (
+    _monitor,
+    _signed_monitoring_authority,
+    _TestDeploymentSigner,
+    _window,
+)
 from tests.unit.core.semantic_ingestion.test_semantic_provider_composition import (
     TEST_NOW,
     _host_ingress,
@@ -75,6 +81,9 @@ _NATIVE_KINDS = frozenset({
 })
 _FAILURE_FIELDS = {"kind", "reason", "request_correlation_token"}
 _MAXIMUM_PAGES = 32
+_GRAPH_PROPOSAL_FINGERPRINT = (
+    "38a5be91af79d7e5ba9809bf383c699b6864ee50446239fe56a45e32b84638fe"
+)
 
 
 class _FixedContextResolver:
@@ -122,6 +131,26 @@ def _assert_non_disclosing_failure(response, reason: str) -> None:
     assert set(response.model_dump()) == _FAILURE_FIELDS
 
 
+def _signed_graph_monitoring_authority():
+    """Issue the verified monitor authority required by the built-in graph route."""
+    clock, _, _, policy, implementation = _monitor(
+        fingerprint=_GRAPH_PROPOSAL_FINGERPRINT,
+    )
+    clock.now = TEST_NOW
+
+    class EvidenceProvider:
+        def load_evidence_windows(self, *, max_items: int):
+            return (_window(clock, policy, implementation, value="0.1"),)[:max_items]
+
+    return _signed_monitoring_authority(
+        clock=clock,
+        policy=policy,
+        implementation=implementation,
+        evidence_provider=EvidenceProvider(),
+        signer=_TestDeploymentSigner(),
+    )
+
+
 @pytest.fixture(scope="module")
 def backend(tmp_path_factory, request):
     """One activated provider, its host-composed observation runtime and service."""
@@ -131,12 +160,16 @@ def backend(tmp_path_factory, request):
     # test of this module finished; only then is it restored.
     request.addfinalizer(patch.undo)
     tmp_path = tmp_path_factory.mktemp("composed-observation")
+    monitoring_authority = _signed_graph_monitoring_authority()
     build, _, clock = _provider_factory(
-        tmp_path, patch, normalization=True, complete_registry=True,
+        tmp_path,
+        patch,
+        normalization=True,
+        complete_registry=True,
+        verified_capability_monitoring_authorities=(monitoring_authority,),
     )
     plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "ledger-store"))
     writer = build(plane)
-    _seed_provider(writer)
     writer.activate_observation_ledger()
     result = writer.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN, content="Atlas owner is Bob.",
@@ -243,6 +276,34 @@ def backend(tmp_path_factory, request):
         write_revision=write_revision,
         graph_revision=authority.graph.graph_revision,
         observation_revision=authority.observation.head.observation_revision,
+    )
+
+
+def test_unsigned_monitoring_authority_fails_closed_before_graph_commit(
+    tmp_path, monkeypatch,
+):
+    """An active ledger cannot make an unsigned capability eligible to commit."""
+    build, _, _ = _provider_factory(
+        tmp_path, monkeypatch, normalization=True, complete_registry=True,
+    )
+    plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "unsigned-ledger"))
+    writer = build(plane)
+    _seed_provider(writer)
+    writer.activate_observation_ledger()
+
+    result = writer.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="unsigned-monitor-source",
+        task_id="task:one",
+        user_id="user:alice",
+        authenticated_host_ingress=_host_ingress(),
+    )
+
+    assert result is not None
+    assert result.blocked_reasons["semantic_ingestion"] == "graph_transaction_authority_unavailable"
+    assert not plane.list_records(
+        source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary",
     )
 
 
@@ -459,4 +520,3 @@ def test_cross_purpose_cursor_denied(backend, monkeypatch):
         host_ingress=_host_ingress(), request=cross_purpose,
     )
     _assert_non_disclosing_failure(response, "invalid_cursor")
-

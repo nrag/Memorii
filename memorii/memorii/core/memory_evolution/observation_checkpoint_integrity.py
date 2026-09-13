@@ -24,10 +24,7 @@ from memorii.core.memory_evolution.observation_replay_contracts import (
 from memorii.core.memory_evolution.typed_value_artifact_integrity import (
     TrustedTypedValueArtifactVerificationKey,
 )
-from memorii.core.memory_evolution.typed_value_declarations import (
-    DigestSignatureRole,
-    ExternalSigningPreimagePolicy,
-)
+from memorii.core.memory_evolution.typed_value_declarations import ExternalSigningPreimagePolicy
 from memorii.core.memory_evolution.typed_value_model_codec import (
     TypedValueModelCodecError,
     encode_typed_value_model_candidate,
@@ -196,16 +193,13 @@ def _checkpoint_policy(
     entry = selected.entry
     if (entry.schema_id, entry.schema_version) != ("IngestionObservationReplayCheckpoint", "1"):
         raise ObservationCheckpointIntegrityError("observation_checkpoint_integrity_checkpoint_entry_invalid")
-    roles = tuple(
-        role
-        for role in selected.publication.compiled_registry.parsed_roles
-        if isinstance(role, DigestSignatureRole)
-        and role.schema_id == entry.schema_id
-        and role.schema_version == entry.schema_version
-    )
-    if len(roles) != 1 or not isinstance(roles[0].policy, ExternalSigningPreimagePolicy):
+    try:
+        role = selected.publication.compiled_registry.digest_signature_role_for(entry)
+    except KeyError as exc:
+        raise ObservationCheckpointIntegrityError("observation_checkpoint_integrity_policy_invalid") from exc
+    if not isinstance(role.policy, ExternalSigningPreimagePolicy):
         raise ObservationCheckpointIntegrityError("observation_checkpoint_integrity_policy_invalid")
-    policy = roles[0].policy
+    policy = role.policy
     if (
         policy.binding_kind != "observation_checkpoint_v1"
         or policy.preimage_schema_id != "ObservationCheckpointSigningPreimage"

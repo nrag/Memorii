@@ -74,6 +74,11 @@ def _nullable_body() -> bytes:
     return _raw(value)
 
 
+class _UnreadableTuple(tuple[object, ...]):
+    def __iter__(self):  # type: ignore[no-untyped-def]
+        raise AssertionError("registry source sequence was rescanned")
+
+
 def test_validates_every_type_family_and_returns_immutable_tree() -> None:
     registry = _registry()
     validated = validate_typed_value_body(_nullable_body(), registry=registry, entry=registry.entry_for("Root", "1"), limits=BODY_LIMITS)
@@ -81,6 +86,20 @@ def test_validates_every_type_family_and_returns_immutable_tree() -> None:
     assert validate_typed_value_body(_body().replace(b"2026-09-07T12:34:56.000001Z", b"0001-01-01T00:00:00.000000Z"), registry=registry, entry=registry.entry_for("Root", "1"), limits=BODY_LIMITS).raw_bytes
     with pytest.raises(TypeError):
         validated.tree["new"] = None  # type: ignore[index]
+
+
+def test_nested_validation_uses_compiled_indexes_without_rescanning_roles_or_entries() -> None:
+    registry = _registry()
+    entry = registry.entry_for("Root", "1")
+    # Prime both immutable indexes, then make the original sequences unreadable.
+    # Nested Root -> Alt validation must use only the canonical indexes.
+    assert registry.roles_for_entry(entry)[0].schema_id == "Root"
+    object.__setattr__(registry, "entries", _UnreadableTuple())
+    object.__setattr__(registry, "parsed_roles", _UnreadableTuple())
+
+    assert validate_typed_value_body(
+        _nullable_body(), registry=registry, entry=entry, limits=BODY_LIMITS
+    ).raw_bytes == _nullable_body()
 
 
 @pytest.mark.parametrize("mutate", [

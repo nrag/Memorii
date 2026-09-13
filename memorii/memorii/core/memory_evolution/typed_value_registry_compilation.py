@@ -10,7 +10,9 @@ from __future__ import annotations
 import json
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from functools import cached_property
 from hashlib import sha256
+from types import MappingProxyType
 from typing import TypeVar
 
 from memorii.core.memory_evolution.ingestion_contracts import length_prefixed
@@ -19,6 +21,7 @@ from memorii.core.memory_evolution.typed_value_declarations import (
     DeclarationRole,
     DecoderRole,
     DigestSignatureRole,
+    EnumDeclaration,
     EnumRefTypeExpr,
     EnumRole,
     ExternalSigningPreimagePolicy,
@@ -88,6 +91,9 @@ class CompiledRegistryEntry:
     read_status: str
 
 
+_IndexedRole = SchemaRole | EnumRole | OptionalRole | NumericRole | DigestSignatureRole
+
+
 @dataclass(frozen=True)
 class CompiledTypedValueRegistry:
     profile: CompiledProfile
@@ -96,10 +102,132 @@ class CompiledTypedValueRegistry:
     parsed_roles: tuple[ParsedDeclaration, ...]
 
     def entry_for(self, schema_id: str, schema_version: str) -> CompiledRegistryEntry:
+        return self.entry_index[(schema_id, schema_version)]
+
+    @cached_property
+    def entry_index(self) -> Mapping[Coordinate, CompiledRegistryEntry]:
+        """Return the closed immutable entry index, rejecting duplicate coordinates."""
+        entries: dict[Coordinate, CompiledRegistryEntry] = {}
         for entry in self.entries:
-            if (entry.schema_id, entry.schema_version) == (schema_id, schema_version):
-                return entry
-        raise KeyError((schema_id, schema_version))
+            coordinate = (entry.schema_id, entry.schema_version)
+            if coordinate in entries:
+                raise TypedValueRegistryCompilationError("registry_entry_coordinate_duplicate")
+            entries[coordinate] = entry
+        return MappingProxyType(entries)
+
+    @cached_property
+    def parsed_role_index(self) -> Mapping[tuple[str, str, str], _IndexedRole]:
+        """Return immutable parsed-role coordinates without rescanning source roles."""
+        roles: dict[tuple[str, str, str], _IndexedRole] = {}
+        for role in self.parsed_roles:
+            if not isinstance(
+                role,
+                (SchemaRole, EnumRole, OptionalRole, NumericRole, DigestSignatureRole),
+            ):
+                continue
+            coordinate = (role.schema_id, role.schema_version, role.role)
+            if coordinate in roles:
+                raise TypedValueRegistryCompilationError("registry_role_coordinate_duplicate")
+            roles[coordinate] = role
+        return MappingProxyType(roles)
+
+    def roles_for_entry(
+        self, entry: CompiledRegistryEntry
+    ) -> tuple[SchemaRole, OptionalRole, NumericRole, EnumRole]:
+        """Return the validation roles for a published entry or fail closed."""
+        coordinate = (entry.schema_id, entry.schema_version)
+        roles = self.parsed_role_index
+        schema = roles.get((*coordinate, "schema"))
+        optionals = roles.get((*coordinate, "optional"))
+        numerics = roles.get((*coordinate, "numeric"))
+        enums = roles.get((*coordinate, "enum"))
+        if not (
+            isinstance(schema, SchemaRole)
+            and isinstance(optionals, OptionalRole)
+            and isinstance(numerics, NumericRole)
+            and isinstance(enums, EnumRole)
+        ):
+            raise KeyError(coordinate)
+        return schema, optionals, numerics, enums
+
+    @cached_property
+    def digest_signature_role_index(self) -> Mapping[Coordinate, DigestSignatureRole]:
+        """Return immutable integrity policies keyed by their root coordinate."""
+        policies: dict[Coordinate, DigestSignatureRole] = {}
+        for role in self.parsed_role_index.values():
+            if isinstance(role, DigestSignatureRole):
+                coordinate = (role.schema_id, role.schema_version)
+                if coordinate in policies:
+                    raise TypedValueRegistryCompilationError("registry_role_coordinate_duplicate")
+                policies[coordinate] = role
+        return MappingProxyType(policies)
+
+    def reachable_coordinates_for(self, root: Coordinate) -> frozenset[Coordinate]:
+        """Walk the declared closure using the immutable coordinate index."""
+        roles = self.parsed_role_index
+        pending = [root]
+        seen: set[Coordinate] = set()
+        while pending:
+            coordinate = pending.pop()
+            if coordinate in seen:
+                continue
+            schema = roles.get((*coordinate, "schema"))
+            policy = roles.get((*coordinate, "digest-signature"))
+            if not isinstance(schema, SchemaRole) or not isinstance(policy, DigestSignatureRole):
+                raise KeyError(coordinate)
+            seen.add(coordinate)
+            for expression in _walk_types(field.type for field in schema.fields):
+                if isinstance(expression, ModelRefTypeExpr):
+                    pending.append((expression.schema_id, expression.schema_version))
+            if isinstance(policy.policy, ExternalSigningPreimagePolicy):
+                pending.append(
+                    (policy.policy.preimage_schema_id, policy.policy.preimage_schema_version)
+                )
+        return frozenset(seen)
+
+    def enum_for_coordinates(
+        self, coordinates: Iterable[Coordinate], qualified_id: str
+    ) -> EnumDeclaration | None:
+        """Return exactly one reachable enum declaration or no declaration."""
+        matches = [
+            enum
+            for coordinate in coordinates
+            for enum in _enum_role_for_coordinate(self.parsed_role_index, coordinate).enums
+            if enum.qualified_id == qualified_id
+        ]
+        return matches[0] if len(matches) == 1 else None
+
+    def digest_signature_role_for(self, entry: CompiledRegistryEntry) -> DigestSignatureRole:
+        """Return the exact committed root integrity role, or fail closed.
+
+        The cached role index is only an acceleration structure.  Recompute the
+        entry's declared policy digest from the indexed closure before handing a
+        policy to an authority-sensitive caller.
+        """
+        coordinate = (entry.schema_id, entry.schema_version)
+        role = self.parsed_role_index.get((*coordinate, "digest-signature"))
+        if not isinstance(role, DigestSignatureRole):
+            raise KeyError(coordinate)
+        closure = tuple(
+            sorted(self.reachable_coordinates_for(coordinate), key=_entry_coordinate_sort_key)
+        )
+        if (
+            _policy_digest(
+                "digest-signature", coordinate, closure, self.digest_signature_role_index
+            )
+            != entry.policy_digests.digest_signature_field_policy_digest
+        ):
+            raise KeyError(coordinate)
+        return role
+
+
+def _enum_role_for_coordinate(
+    roles: Mapping[tuple[str, str, str], _IndexedRole], coordinate: Coordinate
+) -> EnumRole:
+    role = roles.get((*coordinate, "enum"))
+    if not isinstance(role, EnumRole):
+        raise KeyError(coordinate)
+    return role
 
 
 @dataclass(frozen=True)

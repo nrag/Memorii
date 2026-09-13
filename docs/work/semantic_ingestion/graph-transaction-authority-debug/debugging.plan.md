@@ -19,58 +19,209 @@ preplanning, lease, registry and observation-ledger authority boundaries.
 
 ## Expected And Observed Behavior
 
-The scenario graph authority and signed observation registry/activation target
-compose successfully, and the writer is `verified_semantic`. A normal supported
-source should reach the configured graph authority and commit an observation
-delta. Instead `sync_event` returns
-`graph_transaction_authority_unavailable` before the deterministic graph
-authority provider is invoked. One preplanning control remains. Moving ledger
-activation after the rejected attempt fails correctly because the retiring
-writer is not drained.
+The configured observer must use the existing built-in graph execution with a
+complete typed registry, an activated observation ledger, and a current signed
+capability-monitor authority for proposal fingerprint
+`38a5be91af79d7e5ba9809bf383c699b6864ee50446239fe56a45e32b84638fe`.
+That authority initializes the fresh evidence-only writer's capability status;
+the ledger then activates that existing writer. A supported source can then
+reach the graph terminal and append its observation delta.
 
-The failure reproduced in the configured observer fixture under Python 3.12 on
-2026-09-13. Three fixture combinations produced the same causal signature; no
-draft test or product edit was retained.
+The former fixture activated a manually seeded writer without that signed
+monitor authority. Built-in graph execution correctly could not read an active
+capability status and returned the public
+`graph_transaction_authority_unavailable` result before graph-group commit.
+The initial generic reason therefore described a deliberate guard outcome,
+not a graph authority, lease, registry, or replay defect.
+
+After the monitor-authorized route reached terminal persistence, repeated
+validation rescanned every compiled declaration for each nested CTV model.
+The compiled registry now supplies immutable lazy coordinate indexes for
+entries and parsed roles; body validation and model materialization use those
+indexes for entry, role, reachable-closure, and enum lookup. Focused poisoned-
+source regressions prove nested validation and codec conversion no longer read
+the original entry or declaration sequences after the indexes are built.
 
 ## Hypotheses
 
-1. Observation-ledger activation changes writer or lease coordinates that the
-   pending V3 recovery control still expects, so the lease session is rejected
-   before graph authority execution.
-2. Mandatory capability-monitor/status authority is absent or bound to a
-   different writer epoch in the scenario host, and preflight converts that
-   mismatch to the generic graph-transaction authority result.
-3. Registry/activation replacement changes a digest incorporated into the V3
-   handoff or recovery replay, making the sealed replay fail before graph
-   authority acquisition.
-
-The generic public reason is not root-cause evidence. Experiments must inspect
-the retained control/recovery state and the smallest internal failure boundary
-without weakening the public non-disclosure contract.
+1. **Disproved:** observation-ledger activation changes writer or lease
+   coordinates. The unsigned route activates successfully before refusing the
+   graph group; no group primary is persisted.
+2. **Confirmed:** the fixture omitted the mandatory signed capability-monitor
+   authority. With no current capability status for the proposal fingerprint,
+   the built-in graph route rejects before group commit. A factory-issued
+   verified authority supplies the initial evidence and status through the
+   normal constructor path.
+3. **Disproved for the observed rejection:** registry/activation replacement
+   changes a replay digest. The positive composition passes registry and
+   activation construction and enters full terminal validation after the
+   signed authority is supplied; it no longer reproduces the original
+   immediate authority rejection.
+4. **Confirmed and corrected:** typed body validation and model conversion
+   rebuilt role maps and closure inputs by scanning the full compiled registry
+   at nested-model boundaries. The canonical immutable indexes remove those
+   scans while retaining typed missing and duplicate-coordinate rejection.
+5. **Confirmed, correction pending:** activated graph writes repeatedly run the
+   complete retained observation-prefix verifier. Its selected-artifact path
+   still scans all parsed declaration roles to select one digest/signature
+   policy and then fully materializes and re-encodes each byte-identical
+   registered artifact. This occurs inside governed-write admission before the
+   same graph write can commit; it is separate from terminal construction.
 
 ## Changed Surfaces And Ownership
 
-No product or test change is currently retained. One read-only debugger owns
-the causal trace. After root-cause confirmation, exactly one Terra writer may
-own the minimal production correction and focused regression test. The parent
-implementation WorkPlan retains comparator and host-closure state.
+The retained correction is a fixture/test gap, not a product defect:
+
+- `memorii/tests/integration/test_observation_ledger_activation.py` extends
+  `_provider_factory` with an empty-default typed tuple of verified monitoring
+  authorities and forwards it into the canonical service constructor.
+- `memorii/tests/integration/test_composed_graph_observation_service.py`
+  issues a signed authority for the fixed proposal fingerprint, removes the
+  incompatible manual seed from the positive fixture, and adds the unsigned
+  no-group fail-closed sibling.
+
+The parent implementation WorkPlan retains comparator and host-closure state.
 
 ## Verification Matrix
 
-- Deterministic reproducer: configured scenario graph authority plus signed
-  observation registry/activation target; provider must be invoked and one
-  observation delta must exist.
-- Failure siblings: ledger inactive/active, monitor authority absent/current,
-  stale writer epoch, substituted registry/target.
-- Preservation: rejected authority remains fail closed; undrained activation
-  remains rejected; no hidden fixture bypass.
-- Closure: focused warnings-as-errors tests, affected persistence/integration
-  shard, Ruff, Pyright, identity gate, then exact-revision spec/correctness/test
-  review.
+- Reproducer before correction: `PYTHONPATH=memorii .venv/bin/python -W error
+  -m pytest memorii/tests/integration/test_composed_graph_observation_service.py
+  -q` produced four fixture setup failures in 24.00 seconds because no
+  `IngestionObservationDelta` existed.
+- Failure sibling after correction: the unsigned monitor test passed under
+  warnings-as-errors in 40.40 seconds. It observes the public
+  `graph_transaction_authority_unavailable` reason and proves no
+  `semantic_ingestion_bootstrap_graph_v3_group_commit_primary` record exists.
+- Typed-registry regression proof: `PYTHONPATH=memorii .venv/bin/python -W
+  error -m pytest memorii/tests/unit/core/memory_evolution/test_typed_value_registry_compilation.py
+  memorii/tests/unit/core/memory_evolution/test_typed_value_body_validation.py
+  memorii/tests/unit/core/memory_evolution/test_typed_value_model_codec.py -q`
+  passed 56 tests in 8.19 seconds. Ruff passed. Scoped Pyright with the venv
+  interpreter passed with 0 errors and 0 warnings.
+- Positive discriminating experiment after the indexed-registry correction:
+  `PYTHONPATH=memorii .venv/bin/python -W error -m pytest
+  memorii/tests/integration/test_composed_graph_observation_service.py::test_configured_service_observe_graph_returns_real_page
+  -q` remained running after the five-minute ceiling and was interrupted at
+  320.05 seconds. The bounded traceback stopped in
+  `canonical_contract_value` while recursively lowering a dictionary in
+  `semantic_ingestion/contracts.py:152`. The typed-registry scan is therefore
+  corrected, but a separate terminal-persistence performance boundary remains.
+- A 90-second cumulative profile of the same signed route reached native group
+  publication. Registered typed-value encode/decode and canonical emission
+  dominated the sample; the graph group writer spent 40.49 seconds under the
+  profiler and native projection evidence spent 27.15 seconds. A subsequent
+  uninstrumented run was still active after 191.62 seconds.
+- A 60-second faulthandler snapshot located the uninstrumented run in governed
+  writer admission: `_validate_activated_observation_snapshot` replayed the
+  complete schema-3 prefix, `_selected_value` validated and then emitted a
+  registered artifact, and typed-value materialization re-ran a semantic
+  contract digest while decoding a byte-identical ledger artifact. This
+  disproves the narrower terminal-only hypothesis and identifies retained
+  ledger verification as the active cost center.
+- Static evidence: Ruff passes on both changed Python files. Direct Pyright on
+  those integration modules reports ten existing test-environment/type-narrowing
+  findings (including unresolved pytest and cryptography imports); this command
+  cannot establish a clean changed-surface Pyright result.
+
+## Root Cause And Classification
+
+Trigger: the configured observer fixture used a complete registry and ledger
+target but supplied no verified capability-monitor authority.
+
+Defective assumption: ledger activation and a manually seeded writer were
+assumed to make a built-in proposal eligible for graph execution. The built-in
+planner instead requires an active, fingerprint-matched capability status.
+
+Propagation: absent monitor initialization leaves that status unavailable;
+the planner rejects before graph-group persistence and intentionally projects
+the non-disclosing graph-authority-unavailable result. Existing tests had a
+normal positive observation assertion but no paired monitor-authorized setup
+or unsigned route check.
+
+Classification: fixture/test gap. No production guard was weakened or changed.
+
+The repeated typed-registry scan was a production performance defect. Its
+correction preserves registry bytes, digests, equality, wire schema, and
+fail-closed missing or duplicate-coordinate behavior. Remaining parsed-role
+scans in registered-artifact policy selection and repeated full verification
+of identical artifact bytes keep the positive production route above the
+bounded integration-test window. Any reuse correction must be operation-local,
+bound to exact bytes and the exact registry/publication/verification-key
+authority, and must never let a changed snapshot or substituted artifact
+inherit a result.
+
+The governed-write admission path now creates one
+`ActivatedObservationArtifactProofContext` for each policy validation and
+passes that exact typed context synchronously to the registered snapshot
+validator. Each
+proof begins with the full protected read, exact native materialize/reencode,
+and registered integrity policy verification; it binds the raw bytes, root
+schema, complete history publication identity, selected target publication,
+binding, and callback token. The context is not persisted or retained by the
+store. It reuses only byte-identical raw/schema selections within that callback
+and rejects foreign or stale proof state. Prefix membership, locator joins, and
+sequence validation remain in the complete replay path.
+
+The compiled registry also derives an immutable indexed digest-signature role
+table. Runtime artifact, activation, and checkpoint policy selection checks the
+policy's recomputed closure digest against the published entry before returning
+it, so an indexed lookup cannot weaken the committed declaration policy.
+
+Focused verification on the current dirty candidate:
+
+- `PYTHONPATH=memorii .venv/bin/pytest -q -W error memorii/tests/unit/core/memory_evolution/test_typed_value_registry_compilation.py memorii/tests/unit/core/memory_evolution/test_typed_value_artifact_integrity.py memorii/tests/unit/core/memory_evolution/test_observation_checkpoint_integrity.py memorii/tests/integration/test_observation_ledger_replay.py` passed 65 tests in 27.84 seconds. The writer-admission seam regression proves a fresh context per validation, exact identity into the synchronous callback, and false-callback rejection.
+- Ruff passed on the changed runtime and focused-test files; `git diff --check` passed.
+- Scoped Pyright passed with 0 errors and 0 warnings for the changed leaf runtime modules, including `writer_admission.py`. Pyright on `atomic_store.py` retains 23 pre-existing diagnostics outside this change's methods, so it is not a clean file-level gate.
+
+The signed configured-observer route now passes under warnings-as-errors in
+279.25 seconds. This is a correctness result rather than a bounded-runtime
+claim: it proves the monitor-authorized, activated-ledger route reaches the
+public detached observation path without weakening the retained artifact
+checks.
+
+After both detached-read lexical scopes were installed, the same signed route
+passed under warnings-as-errors in 213.72 seconds. Setup completed before the
+180-second diagnostic sample and the remaining work was in authenticated
+public paging. This freezes the performance remediation: the route is 65.53
+seconds faster than the first passing candidate and no longer exceeds the
+original five-minute ceiling.
+
+The detached observation reader had no lexical emission scope of its own, so
+the same raw registered artifact could repeat the final canonical re-encode at
+each detached authority consumer. `canonical_emission_scope` is now the codec
+owner's reusable lifecycle helper: it reuses an enclosing scope, or otherwise
+pushes one fresh bounded scope and pops and purges it in `finally`. The entire
+`read_detached_observation_authority` execution is enclosed. Unlimited
+byte-identical raw values can replay only their already-proved final re-encode
+verdict within that read; strict parse and complete typed decode still run on
+every call. Limited decodes remain outside the replay path, and no result is
+retained after a detached read returns or raises.
+
+The signed-observer route took 245.21 seconds before lexical digest-scope
+reuse was available. Its detached replay repeatedly validated
+content-addressed semantic contracts reconstructed from the same retained raw
+artifact. `canonical_digest_verification_scope()` now owns only that lexical
+validation reuse: it reuses an enclosing scope without owning it, or pushes a
+fresh thread-local scope and always pops and purges it. The detached reader
+nests it with `canonical_emission_scope` across the complete replay. It does
+not construct a `CanonicalEvidenceArena`, retain a result beyond the read,
+relax limited decoding, or allow an altered equal-declared-digest instance to
+inherit validation.
+
+Focused proof for that boundary:
+
+- `PYTHONPATH=memorii .venv/bin/python -W error -m pytest -q memorii/tests/unit/core/test_ingestion_contracts.py memorii/tests/unit/core/semantic_ingestion/test_canonical_evidence_arena.py memorii/tests/unit/core/memory_evolution/test_detached_observation_emission_scope.py` passed 79 tests in 5.72 seconds. It includes byte-identical, changed-byte, limited-decode, purge-on-success-and-error, nested-scope identity, new-invocation recomputation, thread-local isolation, decode-then-encode digest reuse, forged equal-declared-digest rejection, and detached-read push/pop/no-arena proofs while retaining map/set/wrapper/bool-int codec adversaries.
+- Ruff and `cd memorii && ../.venv/bin/pyright --pythonpath ../.venv/bin/python memorii/core/memory_evolution/ingestion_contracts.py memorii/core/memory_evolution/atomic_store.py` passed with 0 diagnostics; `git diff --check` passed.
+- A direct scoped Pyright run over the newly touched arena and detached-store
+  modules reports 22 existing diagnostics in `canonical_evidence_arena.py`
+  (the generic arena owner and pre-existing optional-scope typing); it reports
+  no diagnostic at the lexical helper or detached-read scope boundary.
+- The consolidated affected suite passed 165 tests in 40.23 seconds under
+  warnings-as-errors, covering typed-registry compilation/body/model/integrity,
+  observation checkpoint and ledger replay, canonical codec/arena lifecycle,
+  detached scope lifecycle, and the unsigned monitor fail-closed integration.
 
 ## Next Action
 
-Trace the rejection from `_run_semantic_ingestion` through recovery,
-lease-session and graph-bundle execution boundaries, and run one discriminating
-experiment that distinguishes writer/lease mismatch from monitor authority and
-registry/replay mismatch.
+Commit the verified debug slice, push the exact revision, and submit that
+frozen revision to independent spec, correctness, and test review.

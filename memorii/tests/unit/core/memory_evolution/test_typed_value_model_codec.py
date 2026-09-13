@@ -209,6 +209,11 @@ def _nested_body(publication: VerifiedTypedValuePublication):
     return validate_typed_value_body(raw, registry=publication.compiled_registry, entry=entry, limits=_BODY_LIMITS)
 
 
+class _UnreadableTuple(tuple[object, ...]):
+    def __iter__(self):  # type: ignore[no-untyped-def]
+        raise AssertionError("registry source sequence was rescanned")
+
+
 def test_materializes_real_native_public_root_and_reencodes_exact_bytes() -> None:
     publication = _publication()
     materialized = materialize_typed_value_model(_body(publication), publication=publication, maximum_bytes=10_000, maximum_nodes=200, maximum_depth=20)
@@ -282,6 +287,25 @@ def test_materializes_real_nested_model_and_source_modality_from_source_declarat
     assert isinstance(materialized.value, SegmentGovernanceCarrierSet)
     assert materialized.value.bindings[0].modality is SourceModality.ASSERTION
     assert reencode_materialized_typed_value_model(materialized, publication=publication, maximum_bytes=10_000, maximum_nodes=200, maximum_depth=20) == body.raw_bytes
+
+
+def test_nested_codec_uses_compiled_indexes_without_rescanning_roles_or_entries() -> None:
+    publication = _nested_publication()
+    body = _nested_body(publication)
+    registry = publication.compiled_registry
+    entry = registry.entry_for("SegmentGovernanceCarrierSet", "1")
+    assert registry.roles_for_entry(entry)[0].schema_id == "SegmentGovernanceCarrierSet"
+    object.__setattr__(registry, "entries", _UnreadableTuple())
+    object.__setattr__(registry, "parsed_roles", _UnreadableTuple())
+
+    materialized = materialize_typed_value_model(
+        body, publication=publication, maximum_bytes=10_000, maximum_nodes=200, maximum_depth=20
+    )
+
+    assert materialized.value == _nested_value()
+    assert reencode_materialized_typed_value_model(
+        materialized, publication=publication, maximum_bytes=10_000, maximum_nodes=200, maximum_depth=20
+    ) == body.raw_bytes
 
 
 def test_nested_model_rejects_wrong_source_identity_before_native_dispatch() -> None:

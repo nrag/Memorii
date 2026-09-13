@@ -4,14 +4,20 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
+from memorii.core.memory_evolution import observation_activation_runtime as activation_runtime
+from memorii.core.memory_evolution import writer_admission as writer_admission_runtime
 from memorii.core.memory_evolution.graph_effect_contracts import (
     CanonicalSourceTerminalOutcomeCore,
     CanonicalSourceTerminalOutcomeRecord,
     IngestionObservationDelta,
 )
 from memorii.core.memory_evolution.observation_activation_runtime import (
+    ActivatedObservationArtifactProofContext,
+    ObservationActivationRuntimeError,
     emit_registered_observation_artifact,
     observation_successor_revision,
     registered_genesis_head_artifact,
@@ -151,6 +157,79 @@ def test_complete_replay_requires_exact_head_and_all_immutable_joins(ledger):
         raise LookupError("immutable result missing")
     with pytest.raises(LookupError, match="immutable result missing"):
         replay_observation_ledger(**arguments, verify_immutable_result=missing_join)
+
+
+def test_call_local_artifact_proofs_reuse_only_exact_current_selection(ledger):
+    arguments, entries, _, _, _ = ledger
+    context = ActivatedObservationArtifactProofContext(
+        history=arguments["history"], publication=arguments["publication"], limits=arguments["limits"],
+    )
+    raw = entries[0].raw
+    with patch.object(
+        activation_runtime,
+        "verify_protected_typed_value_artifact_integrity",
+        wraps=activation_runtime.verify_protected_typed_value_artifact_integrity,
+    ) as validate:
+        first = context.selected_value(raw, schema_id="ObservationLedgerEntry")
+        assert context.selected_value(raw, schema_id="ObservationLedgerEntry") == first
+        assert validate.call_count == 1
+        # A changed raw value and root schema cannot inherit the first proof.
+        with pytest.raises((ObservationActivationRuntimeError, TypedValueArtifactIntegrityError)):
+            context.selected_value(raw + b" ", schema_id="ObservationLedgerEntry")
+        with pytest.raises((ObservationActivationRuntimeError, TypedValueArtifactIntegrityError)):
+            context.selected_value(raw, schema_id="ObservationLedgerHead")
+    proof = context._proofs[(raw, "ObservationLedgerEntry")]
+    context._proofs[(raw, "ObservationLedgerEntry")] = replace(
+        proof, selected_publication_digest="0" * 64
+    )
+    with pytest.raises(ObservationActivationRuntimeError, match="foreign or stale"):
+        context.selected_value(raw, schema_id="ObservationLedgerEntry")
+    # Each callback builds a fresh context, so a later callback must verify again.
+    fresh = ActivatedObservationArtifactProofContext(
+        history=arguments["history"], publication=arguments["publication"], limits=arguments["limits"],
+    )
+    with patch.object(
+        activation_runtime,
+        "verify_protected_typed_value_artifact_integrity",
+        wraps=activation_runtime.verify_protected_typed_value_artifact_integrity,
+    ) as validate:
+        assert fresh.selected_value(raw, schema_id="ObservationLedgerEntry") == first
+        assert validate.call_count == 1
+
+
+def test_writer_admission_proof_context_is_fresh_and_passed_by_identity(ledger, monkeypatch):
+    arguments, _, _, _, _ = ledger
+    created = []
+
+    class CountingProofContext:
+        def __init__(self, *, history, publication, limits):
+            self.history, self.publication, self.limits = history, publication, limits
+            created.append(self)
+
+    monkeypatch.setattr(
+        activation_runtime, "ActivatedObservationArtifactProofContext", CountingProofContext
+    )
+    target = SimpleNamespace(publication=arguments["publication"])
+    first = writer_admission_runtime._new_activated_observation_artifact_proofs(
+        history=arguments["history"], target=target, limits=arguments["limits"]
+    )
+    second = writer_admission_runtime._new_activated_observation_artifact_proofs(
+        history=arguments["history"], target=target, limits=arguments["limits"]
+    )
+    assert first is created[0]
+    assert second is created[1]
+    assert first is not second
+    received = []
+    assert writer_admission_runtime._validate_activated_observation_snapshot_callback(
+        lambda governed, current, proofs: received.append((governed, current, proofs)) or True,
+        (),
+        (),
+        first,
+    )
+    assert received == [((), (), first)]
+    assert not writer_admission_runtime._validate_activated_observation_snapshot_callback(
+        lambda governed, current, proofs: False, (), (), second
+    )
 
 
 @pytest.mark.parametrize("mutation", ["short", "extra", "reordered", "duplicate", "wrong-head", "wrong-activation"])

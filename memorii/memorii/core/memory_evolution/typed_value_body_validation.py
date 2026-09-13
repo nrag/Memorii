@@ -11,7 +11,7 @@ import base64
 import binascii
 import json
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -22,11 +22,9 @@ from memorii.core.memory_evolution.typed_numeric_values import (
 )
 from memorii.core.memory_evolution.typed_value_declarations import (
     CollectionTypeExpr,
-    DigestSignatureRole,
     EnumDeclaration,
     EnumRefTypeExpr,
     EnumRole,
-    ExternalSigningPreimagePolicy,
     FixedTupleTypeExpr,
     IntegerTypeExpr,
     LiteralInteger,
@@ -121,23 +119,10 @@ def _raw_limits(limits: ProtectedTypedValueBodyLimits) -> ProtectedDecoderSource
 def _roles_for_entry(
     registry: CompiledTypedValueRegistry, entry: CompiledRegistryEntry
 ) -> tuple[SchemaRole, OptionalRole, NumericRole, EnumRole]:
-    coordinate = (entry.schema_id, entry.schema_version)
-    role_items = (SchemaRole, OptionalRole, NumericRole, EnumRole)
-    roles = {
-        (item.schema_id, item.schema_version, item.role): item
-        for item in registry.parsed_roles
-        if isinstance(item, role_items)
-    }
     try:
-        schema = roles[(*coordinate, "schema")]
-        optionals = roles[(*coordinate, "optional")]
-        numerics = roles[(*coordinate, "numeric")]
-        enums = roles[(*coordinate, "enum")]
+        return registry.roles_for_entry(entry)
     except KeyError as exc:
         raise TypedValueBodyValidationError("typed_value_body_registry_roles_incomplete") from exc
-    if not isinstance(schema, SchemaRole) or not isinstance(optionals, OptionalRole) or not isinstance(numerics, NumericRole) or not isinstance(enums, EnumRole):
-        raise TypedValueBodyValidationError("typed_value_body_registry_roles_invalid")
-    return schema, optionals, numerics, enums
 
 
 def _validate_model(
@@ -231,71 +216,19 @@ def _registered_enum(
     reachable: frozenset[tuple[str, str]],
     qualified_id: str,
 ) -> EnumDeclaration | None:
-    matches = [
-        enum
-        for role in registry.parsed_roles
-        if isinstance(role, EnumRole)
-        and (role.schema_id, role.schema_version) in reachable
-        for enum in role.enums
-        if enum.qualified_id == qualified_id
-    ]
-    return matches[0] if len(matches) == 1 else None
+    try:
+        return registry.enum_for_coordinates(reachable, qualified_id)
+    except KeyError:
+        return None
 
 
 def _reachable_coordinates(
     registry: CompiledTypedValueRegistry, root: tuple[str, str]
 ) -> frozenset[tuple[str, str]]:
-    schemas = {
-        (role.schema_id, role.schema_version): role
-        for role in registry.parsed_roles
-        if isinstance(role, SchemaRole)
-    }
-    policies = {
-        (role.schema_id, role.schema_version): role
-        for role in registry.parsed_roles
-        if isinstance(role, DigestSignatureRole)
-    }
-    seen: set[tuple[str, str]] = set()
-    pending = [root]
-    while pending:
-        coordinate = pending.pop()
-        if coordinate in seen:
-            continue
-        schema = schemas.get(coordinate)
-        if schema is None:
-            raise TypedValueBodyValidationError("typed_value_body_registry_roles_incomplete")
-        seen.add(coordinate)
-        for expression in _walk_type_expressions(field.type for field in schema.fields):
-            if isinstance(expression, ModelRefTypeExpr):
-                pending.append((expression.schema_id, expression.schema_version))
-        policy = policies.get(coordinate)
-        if policy is None:
-            raise TypedValueBodyValidationError("typed_value_body_registry_roles_incomplete")
-        if isinstance(policy.policy, ExternalSigningPreimagePolicy):
-            pending.append(
-                (
-                    policy.policy.preimage_schema_id,
-                    policy.policy.preimage_schema_version,
-                )
-            )
-    return frozenset(seen)
-
-
-def _walk_type_expressions(expressions: Iterable[TypeExpr]) -> tuple[TypeExpr, ...]:
-    pending = list(expressions)
-    found: list[TypeExpr] = []
-    while pending:
-        current = pending.pop()
-        found.append(current)
-        if isinstance(current, CollectionTypeExpr):
-            pending.append(current.element)
-        elif isinstance(current, FixedTupleTypeExpr):
-            pending.extend(current.items)
-        elif isinstance(current, MapTypeExpr):
-            pending.append(current.value)
-        elif isinstance(current, UnionTypeExpr):
-            pending.extend(item.model for item in current.alternatives)
-    return tuple(found)
+    try:
+        return registry.reachable_coordinates_for(root)
+    except KeyError as exc:
+        raise TypedValueBodyValidationError("typed_value_body_registry_roles_incomplete") from exc
 
 
 def _validate_scalar(value: FrozenJsonValue, expression: ScalarTypeExpr, path: str) -> None:

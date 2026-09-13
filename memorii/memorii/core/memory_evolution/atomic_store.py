@@ -60,6 +60,7 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     DeliveryIdentity,
     OperationFenceBinding,
     SemanticWriterCommitBinding,
+    canonical_emission_scope,
     decode_typed_value,
     encode_typed_value,
 )
@@ -108,6 +109,9 @@ if TYPE_CHECKING:
         TransactionGroupCommitTimeAttestation,
     )
     from memorii.core.memory_evolution.ingestion_time_clock import IngestionTimeClock
+    from memorii.core.memory_evolution.observation_activation_runtime import (
+        ActivatedObservationArtifactProofContext,
+    )
     from memorii.core.memory_evolution.typed_value_publication import (
         VerifiedTypedValuePublication,
     )
@@ -8800,50 +8804,58 @@ class SemanticIngestionAtomicStore:
         from memorii.core.memory_evolution.observation_activation_runtime import validate_registered_artifact
         from memorii.core.memory_evolution.observation_ledger_contracts import ObservationGroupResultLocator
         from memorii.core.memory_plane.store import ReadOnlyMemoryPlaneSnapshotStore
-
-        plane = MemoryPlaneService(record_store=ReadOnlyMemoryPlaneSnapshotStore(
-            write_revision=write_revision, records=records,
-        ))
-        detached = tuple(plane.list_records())
-        by_id = {record.memory_id: record for record in detached}
-        observation = self._replay_schema3_observation_ledger(snapshot_records=by_id)
-        history = self._typed_value_registry_history
-        if history is None:
-            raise PreplanningStoreError("observation registry history is unavailable")
-        deltas: list[GraphRevisionDelta] = []
-        group_requests: list[BootstrapGraphGroupCommitRequestV3] = []
-        for entry in observation.entries:
-            delta = entry.delta
-            if not isinstance(delta, IngestionObservationDelta):
-                continue
-            locator = entry.result_locator
-            if not isinstance(locator, ObservationGroupResultLocator):
-                raise PreplanningStoreError("observation group locator is invalid")
-            primary = by_id.get(locator.immutable_record_id)
-            if primary is None:
-                raise PreplanningStoreError("observation group primary is absent")
-            group_requests.append(_bootstrap_graph_v3_group_commit_request_from_record(primary))
-            if delta.terminal_status != "committed":
-                continue
-            record = by_id.get(locator.immutable_record_id + ":graph-revision-delta")
-            if record is None or not isinstance(record.content.get("artifact"), str):
-                raise PreplanningStoreError("committed observation graph delta is absent")
-            value = validate_registered_artifact(
-                record.content["artifact"].encode("utf-8"), schema_id="GraphRevisionDelta",
-                history=history, limits=self._observation_artifact_limits,
-            )
-            if not isinstance(value, GraphRevisionDelta) or value.delta_digest != delta.graph_revision_delta_digest:
-                raise PreplanningStoreError("committed observation graph delta is substituted")
-            deltas.append(value)
-        return DetachedSemanticObservationAuthority(
-            write_revision=write_revision, records=detached,
-            graph=self._graph_state_snapshot_from(plane, system_as_of=snapshot_created_at),
-            semantic_state=self._semantic_replay_state_from(plane),
-            references=self._reference_integrity_snapshot_from(plane),
-            observation=observation, event_batches=self._semantic_event_batches_from(plane),
-            graph_deltas=tuple(deltas), group_requests=tuple(group_requests),
-            projection_history=self._detached_projection_history_from(plane),
+        from memorii.core.semantic_ingestion.canonical_evidence_arena import (
+            canonical_digest_verification_scope,
         )
+
+        # A detached snapshot has no long-lived request arena.  Replaying its
+        # fixed byte image can nevertheless verify the same registered raw
+        # artifact through several authority paths, so retain emission proofs
+        # only for this one read and purge them on every exit path.
+        with canonical_emission_scope(), canonical_digest_verification_scope():
+            plane = MemoryPlaneService(record_store=ReadOnlyMemoryPlaneSnapshotStore(
+                write_revision=write_revision, records=records,
+            ))
+            detached = tuple(plane.list_records())
+            by_id = {record.memory_id: record for record in detached}
+            observation = self._replay_schema3_observation_ledger(snapshot_records=by_id)
+            history = self._typed_value_registry_history
+            if history is None:
+                raise PreplanningStoreError("observation registry history is unavailable")
+            deltas: list[GraphRevisionDelta] = []
+            group_requests: list[BootstrapGraphGroupCommitRequestV3] = []
+            for entry in observation.entries:
+                delta = entry.delta
+                if not isinstance(delta, IngestionObservationDelta):
+                    continue
+                locator = entry.result_locator
+                if not isinstance(locator, ObservationGroupResultLocator):
+                    raise PreplanningStoreError("observation group locator is invalid")
+                primary = by_id.get(locator.immutable_record_id)
+                if primary is None:
+                    raise PreplanningStoreError("observation group primary is absent")
+                group_requests.append(_bootstrap_graph_v3_group_commit_request_from_record(primary))
+                if delta.terminal_status != "committed":
+                    continue
+                record = by_id.get(locator.immutable_record_id + ":graph-revision-delta")
+                if record is None or not isinstance(record.content.get("artifact"), str):
+                    raise PreplanningStoreError("committed observation graph delta is absent")
+                value = validate_registered_artifact(
+                    record.content["artifact"].encode("utf-8"), schema_id="GraphRevisionDelta",
+                    history=history, limits=self._observation_artifact_limits,
+                )
+                if not isinstance(value, GraphRevisionDelta) or value.delta_digest != delta.graph_revision_delta_digest:
+                    raise PreplanningStoreError("committed observation graph delta is substituted")
+                deltas.append(value)
+            return DetachedSemanticObservationAuthority(
+                write_revision=write_revision, records=detached,
+                graph=self._graph_state_snapshot_from(plane, system_as_of=snapshot_created_at),
+                semantic_state=self._semantic_replay_state_from(plane),
+                references=self._reference_integrity_snapshot_from(plane),
+                observation=observation, event_batches=self._semantic_event_batches_from(plane),
+                graph_deltas=tuple(deltas), group_requests=tuple(group_requests),
+                projection_history=self._detached_projection_history_from(plane),
+            )
 
     @staticmethod
     def _detached_projection_history_from(
@@ -12391,10 +12403,16 @@ class SemanticIngestionAtomicStore:
         return reload
 
     def _replay_schema3_observation_ledger(
-        self, *, snapshot_records: dict[str, CanonicalMemoryRecord],
+        self,
+        *,
+        snapshot_records: dict[str, CanonicalMemoryRecord],
+        selected_artifact_proofs: ActivatedObservationArtifactProofContext | None = None,
     ) -> ObservationReplayState:
         """Run the complete prefix verifier against one detached record snapshot."""
-        from memorii.core.memory_evolution.observation_activation_runtime import validate_registered_artifact
+        from memorii.core.memory_evolution.observation_activation_runtime import (
+            ActivatedObservationArtifactProofContext,
+            validate_registered_artifact,
+        )
         from memorii.core.memory_evolution.observation_ledger_contracts import ObservationLedgerActivation
         from memorii.core.memory_evolution.observation_ledger_replay import replay_observation_ledger
         from memorii.core.memory_evolution.observation_replay_contracts import ObservationReplayState
@@ -12414,6 +12432,10 @@ class SemanticIngestionAtomicStore:
             raise PreplanningStoreError("schema-3 observation replay authority is incomplete")
         if resolve_verified_observation_activation_target(target.configuration, history) != target:
             raise PreplanningStoreError("observation replay target authority is substituted")
+        if selected_artifact_proofs is not None and not isinstance(
+            selected_artifact_proofs, ActivatedObservationArtifactProofContext
+        ):
+            raise PreplanningStoreError("observation replay artifact proofs are invalid")
         if any(key != record.memory_id for key, record in snapshot_records.items()):
             raise PreplanningStoreError("observation replay snapshot identity is substituted")
         admission, _, _ = self._activation_snapshot_admission(tuple(snapshot_records.values()))
@@ -12427,13 +12449,26 @@ class SemanticIngestionAtomicStore:
         ):
             raise PreplanningStoreError("observation replay prefix exceeds protected limits or has invalid records")
         try:
-            activation = validate_registered_artifact(
-                activation_records[0].content["artifact"].encode("utf-8"),
-                schema_id="ObservationLedgerActivation", history=history,
-                limits=self._observation_artifact_limits,
+            activation_raw = activation_records[0].content["artifact"].encode("utf-8")
+            activation = (
+                selected_artifact_proofs.selected_value(
+                    activation_raw, schema_id="ObservationLedgerActivation"
+                )
+                if selected_artifact_proofs is not None
+                else validate_registered_artifact(
+                    activation_raw,
+                    schema_id="ObservationLedgerActivation",
+                    history=history,
+                    limits=self._observation_artifact_limits,
+                )
             )
             entries = tuple(sorted(
-                (_ledger_entry_from_record(record, history=history, limits=self._observation_artifact_limits)
+                (_ledger_entry_from_record(
+                    record,
+                    history=history,
+                    limits=self._observation_artifact_limits,
+                    selected_artifact_proofs=selected_artifact_proofs,
+                )
                  for record in entry_records),
                 key=lambda value: value.sequence,
             ))
@@ -12464,6 +12499,7 @@ class SemanticIngestionAtomicStore:
                 verify_immutable_result=lambda entry: self._verify_schema3_source_entry_snapshot(
                     entry=entry, snapshot_records=snapshot_records,
                 ),
+                selected_artifact_proofs=selected_artifact_proofs,
             )
             if not isinstance(replay.value, ObservationReplayState):
                 raise ValueError("observation replay state type is invalid")
@@ -12475,14 +12511,35 @@ class SemanticIngestionAtomicStore:
         self,
         proposed: tuple[CanonicalMemoryRecord, ...],
         current: tuple[CanonicalMemoryRecord, ...],
+        selected_artifact_proofs: ActivatedObservationArtifactProofContext,
     ) -> bool:
         """Validate a proposed CAS against one merged detached snapshot."""
+        from memorii.core.memory_evolution.observation_activation_runtime import (
+            ActivatedObservationArtifactProofContext,
+        )
+
         if len({record.memory_id for record in proposed}) != len(proposed):
+            return False
+        target, history = self._observation_activation_target, self._typed_value_registry_history
+        if (
+            target is None
+            or history is None
+            or not isinstance(
+                selected_artifact_proofs, ActivatedObservationArtifactProofContext
+            )
+            or not selected_artifact_proofs.matches_authority(
+                history=history,
+                publication=target.publication,
+                limits=self._observation_artifact_limits,
+            )
+        ):
             return False
         snapshot = {record.memory_id: record for record in current}
         snapshot.update({record.memory_id: record for record in proposed})
         try:
-            self._replay_schema3_observation_ledger(snapshot_records=snapshot)
+            self._replay_schema3_observation_ledger(
+                snapshot_records=snapshot, selected_artifact_proofs=selected_artifact_proofs
+            )
         except (PreplanningStoreError, ValueError):
             return False
         return True
@@ -17018,8 +17075,12 @@ def _observation_ledger_head_record(
 def _ledger_entry_from_record(
     record: CanonicalMemoryRecord, *, history: ProtectedTypedValueRegistryHistory | None,
     limits: ProtectedTypedValueArtifactReaderLimits | None = None,
+    selected_artifact_proofs: ActivatedObservationArtifactProofContext | None = None,
 ):
-    from memorii.core.memory_evolution.observation_activation_runtime import validate_registered_artifact
+    from memorii.core.memory_evolution.observation_activation_runtime import (
+        ActivatedObservationArtifactProofContext,
+        validate_registered_artifact,
+    )
     from memorii.core.memory_evolution.observation_ledger_contracts import ObservationLedgerEntry
 
     if (
@@ -17030,18 +17091,28 @@ def _ledger_entry_from_record(
         or type(record.content.get("artifact")) is not str
     ):
         raise PreplanningStoreError("observation ledger entry record is invalid")
-    value = validate_registered_artifact(
-        record.content["artifact"].encode("utf-8"),
-        schema_id="ObservationLedgerEntry",
-        history=history,
-        limits=(
+    raw = record.content["artifact"].encode("utf-8")
+    artifact_limits = (
             ProtectedTypedValueArtifactReaderLimits(
                 2 * 1024 * 1024, 64_000, 32,
                 ProtectedTypedValueBodyLimits(2 * 1024 * 1024, 64_000, 32),
             )
             if limits is None
             else limits
-        ),
+    )
+    if selected_artifact_proofs is not None and not isinstance(
+        selected_artifact_proofs, ActivatedObservationArtifactProofContext
+    ):
+        raise PreplanningStoreError("observation ledger entry proof context is invalid")
+    value = (
+        selected_artifact_proofs.selected_value(raw, schema_id="ObservationLedgerEntry")
+        if selected_artifact_proofs is not None
+        else validate_registered_artifact(
+            raw,
+            schema_id="ObservationLedgerEntry",
+            history=history,
+            limits=artifact_limits,
+        )
     )
     if type(value) is not ObservationLedgerEntry or record.memory_id != _observation_ledger_entry_memory_id(value.repository_id, value.delta.observation_delta_id):
         raise PreplanningStoreError("observation ledger entry record is substituted")

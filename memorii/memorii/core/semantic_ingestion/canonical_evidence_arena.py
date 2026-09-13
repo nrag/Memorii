@@ -5,7 +5,8 @@ from __future__ import annotations
 import collections
 import typing
 from collections import deque
-from contextlib import AbstractContextManager
+from collections.abc import Iterator
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 from hashlib import sha256
 from secrets import token_hex
@@ -375,6 +376,29 @@ def _pop_digest_verification_scope(
     if stack is None or not stack or stack[-1] is not scope:
         raise RuntimeError("digest verification scope stack is unbalanced")
     stack.pop()
+
+
+@contextmanager
+def canonical_digest_verification_scope() -> Iterator[CanonicalDigestVerificationScope]:
+    """Provide bounded lexical digest-verification reuse for one validation.
+
+    An enclosing operation owns its scope.  A top-level validation receives a
+    fresh scope which is removed and purged on every exit, including failures.
+    This helper deliberately manages only digest-validation reuse; it neither
+    creates nor changes the lifecycle of a ``CanonicalEvidenceArena``.
+    """
+
+    existing = current_digest_verification_scope()
+    if existing is not None:
+        yield existing
+        return
+    scope = CanonicalDigestVerificationScope()
+    _push_digest_verification_scope(scope)
+    try:
+        yield scope
+    finally:
+        _pop_digest_verification_scope(scope)
+        scope.purge()
 
 
 def record_certified_instance(value: object) -> None:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from dataclasses import replace
 from hashlib import sha256
 
 import pytest
@@ -9,6 +10,7 @@ from memorii.core.memory_evolution import typed_value_registry_compilation as co
 from memorii.core.memory_evolution.typed_value_declarations import (
     GrammarRole,
     ProtectedDeclarationParseLimits,
+    SchemaRole,
     parse_typed_value_declaration,
 )
 
@@ -123,6 +125,42 @@ def test_compiles_reparsed_complete_sources_with_active_entry() -> None:
     assert registry.entries[0].read_status == "active"
     assert registry.entries[0].decoder_id == "decode-x"
     assert registry.entries[0].implementation_source_digest == "a" * 64
+
+
+def test_compiled_registry_indexes_are_immutable_and_fail_closed_for_adversarial_coordinates() -> None:
+    registry = compilation.compile_typed_value_registry(_complete_sources(), limits=LIMITS)
+    entry = registry.entries[0]
+
+    assert registry.entry_for("X", "1") is entry
+    assert registry.roles_for_entry(entry)[0].schema_id == "X"
+    with pytest.raises(TypeError):
+        registry.entry_index[("other", "1")] = entry  # type: ignore[index]
+    with pytest.raises(KeyError):
+        registry.entry_for("missing", "1")
+    with pytest.raises(KeyError):
+        registry.roles_for_entry(replace(entry, schema_id="missing"))
+
+    duplicate_entry = replace(registry, entries=(entry, entry))
+    with pytest.raises(compilation.TypedValueRegistryCompilationError, match="entry_coordinate_duplicate"):
+        duplicate_entry.entry_for("X", "1")
+    schema = next(item for item in registry.parsed_roles if isinstance(item, SchemaRole))
+    duplicate_role = replace(registry, parsed_roles=(*registry.parsed_roles, schema))
+    with pytest.raises(compilation.TypedValueRegistryCompilationError, match="role_coordinate_duplicate"):
+        duplicate_role.roles_for_entry(entry)
+
+
+def test_digest_signature_lookup_uses_the_immutable_role_indexes_after_priming() -> None:
+    registry = compilation.compile_typed_value_registry(_complete_sources(), limits=LIMITS)
+    entry = registry.entries[0]
+    role = registry.digest_signature_role_for(entry)
+    assert role.schema_id == entry.schema_id
+
+    class UnreadableRoles(tuple):
+        def __iter__(self):
+            raise AssertionError("parsed roles were rescanned after indexes were built")
+
+    object.__setattr__(registry, "parsed_roles", UnreadableRoles())
+    assert registry.digest_signature_role_for(entry) == role
 
 
 def test_authors_canonical_registry_role_that_round_trips_through_compilation() -> None:

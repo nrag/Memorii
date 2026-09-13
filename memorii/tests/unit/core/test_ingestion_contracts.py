@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 import pytest
+from memorii.core.memory_evolution import ingestion_contracts
 from memorii.core.memory_evolution.ingestion_contracts import (
+    CanonicalEmissionScope,
     CanonicalTypedValueError,
+    canonical_emission_scope,
+    current_emission_scope,
     decode_typed_value,
     encode_typed_value,
+    pop_emission_scope,
+    push_emission_scope,
 )
 
 
@@ -158,3 +164,63 @@ def test_ctv_nested_set_and_frozenset_bool_integer_collisions_are_tag_aware() ->
     decoded = decode_typed_value(raw)
     assert len(decoded) == 2
     assert encode_typed_value(decoded) == raw
+
+
+def test_local_emission_scope_reuses_only_verified_unlimited_raw(monkeypatch) -> None:
+    raw = encode_typed_value({"bytes": b"proof", "when": "2026-09-13T00:00:00Z"})
+    changed_raw = encode_typed_value({"bytes": b"changed", "when": "2026-09-13T00:00:00Z"})
+    strict_parse_calls = 0
+    reencode_calls = 0
+    original_parse = ingestion_contracts._strict_json
+    original_normalize = ingestion_contracts._normalized_typed_json
+
+    def count_parse(*args, **kwargs):
+        nonlocal strict_parse_calls
+        strict_parse_calls += 1
+        return original_parse(*args, **kwargs)
+
+    def count_normalize(*args, **kwargs):
+        nonlocal reencode_calls
+        # Map-key ordering also normalizes scalar keys during typed decode.
+        # A decoded top-level map is only normalized by the final equality
+        # proof, so this isolates the re-encode under test.
+        if isinstance(args[0], dict):
+            reencode_calls += 1
+        return original_normalize(*args, **kwargs)
+
+    monkeypatch.setattr(ingestion_contracts, "_strict_json", count_parse)
+    monkeypatch.setattr(ingestion_contracts, "_normalized_typed_json", count_normalize)
+
+    with canonical_emission_scope():
+        assert decode_typed_value(raw) == decode_typed_value(raw)
+        assert decode_typed_value(changed_raw) != decode_typed_value(raw, max_nodes=100)
+
+    # Every call did strict parsing and full typed construction.  Only the
+    # byte-identical unlimited replay skipped its final canonical comparison.
+    assert strict_parse_calls == 4
+    assert reencode_calls == 3
+
+
+def test_local_emission_scope_purges_and_reuses_enclosing_scope() -> None:
+    raw = encode_typed_value({"value": "retained only lexically"})
+    created: CanonicalEmissionScope | None = None
+    with canonical_emission_scope() as scope:
+        created = scope
+        decode_typed_value(raw)
+        assert scope.canonicity_verified(raw)
+    assert created is not None
+    assert current_emission_scope() is None
+    assert not created.canonicity_verified(raw)
+    assert created.emitted_entries == 0
+
+    enclosing = CanonicalEmissionScope()
+    push_emission_scope(enclosing)
+    try:
+        with canonical_emission_scope() as reused:
+            assert reused is enclosing
+            decode_typed_value(raw)
+        assert current_emission_scope() is enclosing
+        assert enclosing.canonicity_verified(raw)
+    finally:
+        pop_emission_scope(enclosing)
+        enclosing.purge()

@@ -18,6 +18,7 @@ from memorii.core.memory_evolution.graph_effect_contracts import (
     IngestionObservationDelta,
 )
 from memorii.core.memory_evolution.observation_activation_runtime import (
+    ActivatedObservationArtifactProofContext,
     RegisteredObservationArtifact,
     emit_registered_observation_artifact,
     observation_successor_revision,
@@ -52,6 +53,7 @@ def replay_observation_ledger(
     publication: VerifiedTypedValuePublication,
     limits: ProtectedTypedValueArtifactReaderLimits,
     verify_immutable_result: Callable[[ObservationLedgerEntry], None],
+    selected_artifact_proofs: ActivatedObservationArtifactProofContext | None = None,
 ) -> RegisteredObservationArtifact:
     """Return registered replay state only after every exact result join passes.
 
@@ -69,9 +71,11 @@ def replay_observation_ledger(
         raise ObservationLedgerReplayError("observation replay prefix exceeds protected limits")
     activation = _selected_value(
         activation_artifact, "ObservationLedgerActivation", history, publication, limits,
+        selected_artifact_proofs,
     )
     expected_head = _selected_value(
         expected_head_artifact, "ObservationLedgerHead", history, publication, limits,
+        selected_artifact_proofs,
     )
     if not isinstance(activation, ObservationLedgerActivation) or not isinstance(expected_head, ObservationLedgerHead):
         raise ObservationLedgerReplayError("observation authority type is invalid")
@@ -92,7 +96,9 @@ def replay_observation_ledger(
     finalized_sources: set[str] = set()
     source_groups: dict[str, list[ObservationLedgerEntry]] = {}
     for raw in entry_artifacts:
-        entry = _selected_value(raw, "ObservationLedgerEntry", history, publication, limits)
+        entry = _selected_value(
+            raw, "ObservationLedgerEntry", history, publication, limits, selected_artifact_proofs
+        )
         if not isinstance(entry, ObservationLedgerEntry):
             raise ObservationLedgerReplayError("observation entry type is invalid")
         delta = entry.delta
@@ -176,7 +182,16 @@ def replay_observation_ledger(
     )
 
 
-def _selected_value(raw: bytes, schema_id: str, history: ProtectedTypedValueRegistryHistory, publication: VerifiedTypedValuePublication, limits: ProtectedTypedValueArtifactReaderLimits) -> BaseModel:
+def _selected_value(
+    raw: bytes,
+    schema_id: str,
+    history: ProtectedTypedValueRegistryHistory,
+    publication: VerifiedTypedValuePublication,
+    limits: ProtectedTypedValueArtifactReaderLimits,
+    selected_artifact_proofs: ActivatedObservationArtifactProofContext | None,
+) -> BaseModel:
+    if selected_artifact_proofs is not None:
+        return selected_artifact_proofs.selected_value(raw, schema_id=schema_id)
     value = validate_registered_artifact(raw, schema_id=schema_id, history=history, limits=limits)
     selected = emit_registered_observation_artifact(value, schema_id=schema_id, history=history, publication=publication, limits=limits)
     if selected.raw != raw:

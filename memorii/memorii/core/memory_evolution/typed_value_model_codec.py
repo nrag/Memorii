@@ -37,11 +37,9 @@ from memorii.core.memory_evolution.typed_value_body_validation import (
 )
 from memorii.core.memory_evolution.typed_value_declarations import (
     CollectionTypeExpr,
-    DigestSignatureRole,
     EnumDeclaration,
     EnumRefTypeExpr,
     EnumRole,
-    ExternalSigningPreimagePolicy,
     FixedTupleTypeExpr,
     IntegerTypeExpr,
     LiteralInteger,
@@ -402,61 +400,25 @@ def _encode_enum_member(value: object, qualified_id: str) -> str:
 
 
 def _roles_for_entry(registry: CompiledTypedValueRegistry, entry: CompiledRegistryEntry) -> tuple[SchemaRole, OptionalRole, NumericRole, EnumRole]:
-    coordinate = (entry.schema_id, entry.schema_version)
-    matches = {
-        role.role: role
-        for role in registry.parsed_roles
-        if isinstance(role, (SchemaRole, OptionalRole, NumericRole, EnumRole))
-        and (role.schema_id, role.schema_version) == coordinate
-    }
-    schema, optionals, numerics, enums = (matches.get("schema"), matches.get("optional"), matches.get("numeric"), matches.get("enum"))
-    if not isinstance(schema, SchemaRole) or not isinstance(optionals, OptionalRole) or not isinstance(numerics, NumericRole) or not isinstance(enums, EnumRole):
-        raise TypedValueModelCodecError("typed_value_model_codec_registry_roles_invalid")
-    return schema, optionals, numerics, enums
+    try:
+        return registry.roles_for_entry(entry)
+    except KeyError as exc:
+        raise TypedValueModelCodecError("typed_value_model_codec_registry_roles_invalid") from exc
 
 
 def _find_enum(registry: CompiledTypedValueRegistry, root_entry: CompiledRegistryEntry, qualified_id: str) -> EnumDeclaration | None:
     reachable = _reachable_coordinates(registry, (root_entry.schema_id, root_entry.schema_version))
-    matches = [enum for role in registry.parsed_roles if isinstance(role, EnumRole) and (role.schema_id, role.schema_version) in reachable for enum in role.enums if enum.qualified_id == qualified_id]
-    return matches[0] if len(matches) == 1 else None
+    try:
+        return registry.enum_for_coordinates(reachable, qualified_id)
+    except KeyError:
+        return None
 
 
 def _reachable_coordinates(registry: CompiledTypedValueRegistry, root: tuple[str, str]) -> frozenset[tuple[str, str]]:
-    schemas = {(role.schema_id, role.schema_version): role for role in registry.parsed_roles if isinstance(role, SchemaRole)}
-    policies = {(role.schema_id, role.schema_version): role for role in registry.parsed_roles if isinstance(role, DigestSignatureRole)}
-    pending = [root]
-    seen: set[tuple[str, str]] = set()
-    while pending:
-        coordinate = pending.pop()
-        if coordinate in seen:
-            continue
-        schema = schemas.get(coordinate)
-        policy = policies.get(coordinate)
-        if schema is None or policy is None:
-            raise TypedValueModelCodecError("typed_value_model_codec_registry_roles_invalid")
-        seen.add(coordinate)
-        pending.extend((item.schema_id, item.schema_version) for item in _walk_model_refs(field.type for field in schema.fields))
-        if isinstance(policy.policy, ExternalSigningPreimagePolicy):
-            pending.append((policy.policy.preimage_schema_id, policy.policy.preimage_schema_version))
-    return frozenset(seen)
-
-
-def _walk_model_refs(expressions: Iterable[TypeExpr]) -> tuple[ModelRefTypeExpr, ...]:
-    pending = list(expressions)
-    found: list[ModelRefTypeExpr] = []
-    while pending:
-        expression = pending.pop()
-        if isinstance(expression, ModelRefTypeExpr):
-            found.append(expression)
-        elif isinstance(expression, CollectionTypeExpr):
-            pending.append(expression.element)
-        elif isinstance(expression, FixedTupleTypeExpr):
-            pending.extend(expression.items)
-        elif isinstance(expression, MapTypeExpr):
-            pending.append(expression.value)
-        elif isinstance(expression, UnionTypeExpr):
-            pending.extend(item.model for item in expression.alternatives)
-    return tuple(found)
+    try:
+        return registry.reachable_coordinates_for(root)
+    except KeyError as exc:
+        raise TypedValueModelCodecError("typed_value_model_codec_registry_roles_invalid") from exc
 
 
 def _entries(value: object, tag: str) -> tuple[tuple[str, object], ...]:

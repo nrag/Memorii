@@ -25,7 +25,6 @@ from memorii.core.memory_evolution.typed_value_artifact_reader import (
 )
 from memorii.core.memory_evolution.typed_value_body_validation import canonical_bytes
 from memorii.core.memory_evolution.typed_value_declarations import (
-    DigestSignatureRole,
     ExternalSigningPreimagePolicy,
     OrdinaryPolicy,
     SelfDigestPolicy,
@@ -115,19 +114,16 @@ def _selected_root_policy(
     checked: CheckedTypedValueArtifact,
 ) -> OrdinaryPolicy | SelfDigestPolicy | SignatureOnlyPolicy | ExternalSigningPreimagePolicy:
     entry = checked.selected_entry.entry
-    roles = tuple(
-        item
-        for item in checked.selected_entry.publication.compiled_registry.parsed_roles
-        if isinstance(item, DigestSignatureRole)
-        and item.schema_id == entry.schema_id
-        and item.schema_version == entry.schema_version
-    )
-    if len(roles) != 1 or not isinstance(
-        roles[0].policy,
+    try:
+        role = checked.selected_entry.publication.compiled_registry.digest_signature_role_for(entry)
+    except KeyError as exc:
+        raise TypedValueArtifactIntegrityError("typed_value_artifact_integrity_root_policy_invalid") from exc
+    if not isinstance(
+        role.policy,
         (OrdinaryPolicy, SelfDigestPolicy, SignatureOnlyPolicy, ExternalSigningPreimagePolicy),
     ):
         raise TypedValueArtifactIntegrityError("typed_value_artifact_integrity_root_policy_invalid")
-    return roles[0].policy
+    return role.policy
 
 
 def _verify_self_digest(

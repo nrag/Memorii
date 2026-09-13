@@ -10,7 +10,8 @@ from __future__ import annotations
 import base64
 import json
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta  # type: ignore[attr-defined]
 from functools import lru_cache
@@ -185,6 +186,28 @@ def pop_emission_scope(scope: CanonicalEmissionScope) -> None:
     if stack is None or not stack or stack[-1] is not scope:
         raise RuntimeError("canonical emission scope stack is empty or substituted")
     stack.pop()
+
+
+@contextmanager
+def canonical_emission_scope() -> Iterator[CanonicalEmissionScope]:
+    """Provide a bounded lexical emission scope for one complete operation.
+
+    An enclosing caller owns its scope and its lifetime.  A top-level caller
+    receives a new scope which is always purged before control leaves this
+    context, including when validation fails partway through the operation.
+    """
+
+    existing = current_emission_scope()
+    if existing is not None:
+        yield existing
+        return
+    scope = CanonicalEmissionScope()
+    push_emission_scope(scope)
+    try:
+        yield scope
+    finally:
+        pop_emission_scope(scope)
+        scope.purge()
 
 
 class _HashableCtvMap(tuple[tuple[str, Any], ...]):
