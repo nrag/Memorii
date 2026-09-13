@@ -1409,6 +1409,7 @@ class SemanticIngestionAtomicStore:
         records = {record.memory_id: record for record in snapshot}
         controls: dict[str, PreplanningOperationControl] = {}
         active_fences: set[str] = set()
+        active_exhausted_fences: set[str] = set()
         active_record_ids: set[str] = set()
 
         def is_activation_lineage(binding: SemanticWriterCommitBinding) -> bool:
@@ -1447,6 +1448,8 @@ class SemanticIngestionAtomicStore:
                 if control.state not in {"terminal", "lease_recovery_exhausted"} or control.lease is not None:
                     raise PreplanningStoreError("activated observation control is not drained")
                 active_fences.add(fence.binding_digest)
+                if control.state == "lease_recovery_exhausted":
+                    active_exhausted_fences.add(fence.binding_digest)
                 controls[fence.binding_digest] = control
                 active_record_ids.add(record.memory_id)
                 continue
@@ -1469,12 +1472,21 @@ class SemanticIngestionAtomicStore:
                 continue
             if record.content.get("semantic_ingestion_kind") != "bootstrap_graph_v3_terminal_locator":
                 raise PreplanningStoreError("observation ledger terminal locator kind is invalid")
+            raw_reload = record.content.get("reload")
+            if (
+                isinstance(raw_reload, dict)
+                and raw_reload.get("operation_fence_binding_digest")
+                in active_exhausted_fences
+            ):
+                raise PreplanningStoreError("exhausted activated observation has terminal attachment")
             try:
                 terminal = BootstrapGraphTerminalReloadV3.model_validate(record.content["reload"], strict=False)
             except (KeyError, TypeError, ValueError) as exc:
                 raise PreplanningStoreError("observation ledger terminal locator is corrupt") from exc
             control = controls.get(terminal.operation_fence_binding_digest)
             locator = terminal.atomic_write_locator_digest
+            if terminal.operation_fence_binding_digest in active_exhausted_fences:
+                raise PreplanningStoreError("exhausted activated observation has terminal attachment")
             if terminal.operation_fence_binding_digest in active_fences:
                 if (
                     control is None
@@ -1513,7 +1525,7 @@ class SemanticIngestionAtomicStore:
             )
             terminal_ids.add(_bootstrap_graph_v3_terminal_control_id(locator))
             terminal_fences.add(terminal.operation_fence_binding_digest)
-        if active_terminal_fences != active_fences:
+        if active_terminal_fences != active_fences - active_exhausted_fences:
             raise PreplanningStoreError("activated observation terminal is absent")
         if terminal_ids != {record.memory_id for record in snapshot
                             if record.source_kind == "semantic_ingestion_bootstrap_graph_v3_terminal_control"
@@ -1616,6 +1628,8 @@ class SemanticIngestionAtomicStore:
                     raise ValueError("activation genesis is substituted")
             else:
                 self._replay_schema3_observation_ledger(snapshot_records=records)
+        except PreplanningStoreError:
+            raise
         except (KeyError, TypeError, ValueError) as exc:
             raise PreplanningStoreError("observation ledger activation reload is partial or mismatched") from exc
         return self._writers.commit_binding(current)

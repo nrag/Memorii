@@ -296,11 +296,10 @@ emission-scope thread isolation.
   existing optional-digest and decoded-BaseModel narrowing diagnostics; none
   are on the new signed-authority setup.
 
-## Next Action
+## Historical Next Action At `43281a9e`
 
-Require exact per-epoch admission bindings and complete terminal closure for the
-post-activation lineage, then refactor the expensive graph seed into one retained
-JSONL fixture so mutation/reopen negatives complete within the gate budget.
+Freeze the activated-terminal replay corrections and hand the exact revision,
+changed-surface ledger, and bounded evidence to the independent reviewers.
 
 ## Exact-Revision Review At `43281a9e`
 
@@ -558,6 +557,21 @@ JSONL fixture so mutation/reopen negatives complete within the gate budget.
   Seed the positive graph-before-demotion state once, copy retained JSONL for
   each mutation, and exercise only reopen/reload per variant.
 
+## Exact-Revision Review At `8986cae8`
+
+- Specification found no further exact-binding defect but rejected the retained
+  replay evidence because the fixture replaced production grammar rebuilding
+  with a no-op. Positive and held-lease recovery need fresh-process proof with
+  the real rebuild.
+- The held-lease selector failed before its patched lease call after 390.68
+  seconds and suppressed the worker outcome. It must assert the actual retained
+  leased/nonterminal state and the precise worker result or exception.
+- Correctness confirmed a P2 terminal-class defect: an activated
+  `lease_recovery_exhausted` control is terminal, immutable, lease-free, and
+  intentionally noncommitting, but reload currently requires a schema-3 locator
+  for it. Recovery must accept it without a locator and reject any locator or
+  terminal-control attachment.
+
 ## Exact Binding And Terminal Closure Evidence
 
 - The closed lineage is now deliberately narrow: the target epoch must equal
@@ -584,3 +598,62 @@ JSONL fixture so mutation/reopen negatives complete within the gate budget.
   do not claim it as proof until a bounded fresh fixture execution completes.
 - Scoped Ruff, atomic-store first-party Pyright, `git diff --check`, and JSON
   parsing passed after the exact-binding correction.
+
+## Exhausted Activated Control Follow-Up
+
+- Activated `lease_recovery_exhausted` controls are now treated as immutable,
+  lease-free, noncommitting lineage members: they are excluded from legacy
+  inventory without requiring a schema-3 locator. Any locator attached to an
+  exhausted activated fence fails closed; its terminal-control record remains
+  orphaned and also fails closure validation.
+- The held-lease harness no longer suppresses the worker outcome. It resets
+  the copied active clock before ingress, records the real acquired control,
+  asserts its persisted lease/nonterminal state before demotion, and consumes
+  the worker result after release. This correction awaits its bounded
+  fresh-process execution; do not treat it as completed race evidence.
+- Scoped Ruff, atomic-store first-party Pyright, and `git diff --check` pass
+  for this follow-up. The production grammar rebuild was restored by removing
+  the fixture monkeypatch; no new long integration run was completed in this
+  turn.
+
+## Exhausted Lineage Boundary Evidence
+
+- The held-sync proof was replaced with a deterministic composed-runtime
+  boundary. It constructs a normal `ProviderMemoryService`, uses its real
+  governed-source `prepare_atomic` and `SemanticIngestionAtomicStore.admit_source`
+  owners to persist an activated control, then acquires and expires real leases
+  until the store records `lease_recovery_exhausted`. No graph compilation or
+  mocked reload validator is involved.
+- The retained control is lease-free and has no terminal locator. After a real
+  capability-monitor demotion, a new public `ProviderMemoryService` reopens
+  the JSONL store through `activate_observation_ledger`; activation succeeds
+  and the retained JSONL bytes remain unchanged. This proves the intended
+  activated exhausted-control exception through the composition root.
+- Separate recomputed JSONL batches append a terminal-locator-shaped record
+  and an orphan terminal-control record. Each public reopen fails closed and
+  leaves the damaged bytes unchanged. Before parsing a locator, the replay
+  reads only its raw fence digest and rejects an exhausted activated fence with
+  the precise `exhausted activated observation has terminal attachment` error.
+  It does not accept malformed locator data; other fences still continue to
+  full terminal parsing. The orphan-control negative exercises the exact
+  terminal-control closure inventory check.
+- A separate subprocess test copies the retained positive JSONL path, creates
+  a new production factory with no inherited grammar, and calls public
+  `activate_observation_ledger`. It rebuilt the configured registry/grammar
+  in that process and passed under the 12-minute subprocess cap.
+- Consolidated focused command: `PYTHONPATH=memorii .venv/bin/python -W error
+  -m pytest -q memorii/tests/integration/test_observation_ledger_activation.py::test_demoted_activated_exhausted_control_reopens_without_terminal_locator
+  memorii/tests/integration/test_observation_ledger_activation.py::test_exhausted_activated_control_rejects_terminal_attachment
+  memorii/tests/integration/test_observation_ledger_activation.py::test_fresh_process_publicly_reopens_retained_activated_ledger`
+  passed `4` in `86.76s`. A first standalone fresh-process selector passed `1`
+  in `45.24s`; the no-locator plus attachment selector passed `3` in `40.46s`.
+  After the pre-parse rejection correction, the three no-locator/attachment
+  selectors passed `3` in `40.64s` and assert both precise rejection messages.
+  `compileall`, scoped Ruff, and `git diff --check` pass. Scoped Pyright on the
+  full integration module still reports five pre-existing optional-digest and
+  decoded-model narrowing diagnostics outside this delta.
+
+## Next Action
+
+Hand the exact exhausted-lineage revision and focused evidence to independent
+review; do not schedule another graph seed for this bounded slice.

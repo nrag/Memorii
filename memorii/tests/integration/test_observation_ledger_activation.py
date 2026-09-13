@@ -12,6 +12,10 @@ from pathlib import Path
 import pytest
 from memorii.core.memory_evolution.atomic_store import PreplanningStoreError, SemanticIngestionAtomicStore
 from memorii.core.memory_evolution.ingestion_contracts import (
+    AuthenticatedIngressContext,
+    DeliveryIdentity,
+    DeliveryPrincipalBinding,
+    RequiredOutcomeScopeSet,
     SemanticRecordOwnershipManifest,
     encode_typed_value,
 )
@@ -50,7 +54,7 @@ from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.semantic_ingestion.production_authority import (
     VerifiedCapabilityMonitoringAuthority,
 )
-from memorii.domain.enums import CommitStatus, MemoryDomain
+from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
 from tests.fixtures.semantic_ingestion.host_bootstrap_authority import DeterministicTestHostBootstrapMaterialVerifier
 from tests.unit.core.memory_evolution.test_observation_activation_configuration import _signed_package
 from tests.unit.core.memory_evolution.test_typed_value_artifact_integrity import (
@@ -1025,6 +1029,38 @@ for kind, schema in (("activation", "ObservationLedgerActivation"), ("head", "Ob
     assert completed.returncode == 0, completed.stdout + completed.stderr
 
 
+def _assert_fresh_process_public_activation(root: Path, path: Path, activation_digest: str) -> None:
+    """Rebuild the production composition in a new interpreter before reopening."""
+    import subprocess
+    import sys
+
+    code = """
+import sys
+from pathlib import Path
+from _pytest.monkeypatch import MonkeyPatch
+from memorii.core.memory_plane.service import MemoryPlaneService
+from memorii.core.memory_plane.store import JsonlMemoryPlaneStore
+from tests.integration.test_observation_ledger_activation import _provider_factory, _signed_monitoring_authority
+root = Path(sys.argv[1]) / "fresh-process-config"
+root.mkdir()
+patch = MonkeyPatch()
+try:
+    build, _, _ = _provider_factory(
+        root, patch,
+        verified_capability_monitoring_authorities=(_signed_monitoring_authority(),),
+    )
+    service = build(MemoryPlaneService(record_store=JsonlMemoryPlaneStore(Path(sys.argv[2]))))
+    assert service.activate_observation_ledger().activation_digest == sys.argv[3]
+finally:
+    patch.undo()
+"""
+    completed = subprocess.run(
+        [sys.executable, "-W", "error", "-c", code, str(root), str(path), activation_digest],
+        cwd=Path(__file__).resolve().parents[2], capture_output=True, text=True, timeout=720,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+
+
 
 def test_public_drain_preserves_live_operation_and_rejects_new_old_epoch_work(tmp_path, monkeypatch) -> None:
     from concurrent.futures import ThreadPoolExecutor
@@ -1165,12 +1201,6 @@ def demoted_activated_graph_jsonl_fixture(tmp_path_factory):
     )
     service = build(MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path)))
     activated = service.activate_observation_ledger()
-    # The production activation above completes the one-time schema rebuild.
-    # Reopens exercise retained replay, so reuse the built exact grammar.
-    monkeypatch.setattr(
-        "memorii.core.semantic_ingestion.contracts.rebuild_bootstrap_graph_effect_contracts",
-        lambda: None,
-    )
     committed = service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="Atlas owner is Bob.",
@@ -1277,65 +1307,194 @@ def test_demoted_activated_graph_lineage_reopens_and_rejects_tampered_controls(
     assert backing._records_path.read_bytes() == before
 
 
-def test_demoted_activation_with_held_graph_lease_fails_closed_on_reopen(
-    tmp_path, demoted_activated_graph_jsonl_fixture, monkeypatch,
-) -> None:
-    """A demotion cannot turn an in-flight activated graph control into replayable history."""
-    from concurrent.futures import ThreadPoolExecutor
-    from contextlib import suppress
-    from threading import Event
-
-    from memorii.core.provider.models import ProviderOperation
-    from tests.unit.core.semantic_ingestion.test_semantic_provider_composition import (
-        _host_ingress,
-    )
-
-    path = tmp_path / "held-lease"
-    shutil.copytree(demoted_activated_graph_jsonl_fixture["active_path"], path)
-    backing = JsonlMemoryPlaneStore(path)
-    build = demoted_activated_graph_jsonl_fixture["build"]
-    clock = demoted_activated_graph_jsonl_fixture["clock"]
-    clock[0] = TEST_NOW + timedelta(minutes=1)
-    service = build(MemoryPlaneService(record_store=backing))
+def _admit_activated_control(
+    service: ProviderMemoryService,
+    *,
+    writer_binding,
+    operation_id: str,
+):
+    """Use the composed atomic admission boundary without invoking graph compilation."""
     runtime = service._composed_semantic_runtime
     assert runtime is not None and runtime.atomic_store is not None
-    acquire = runtime.atomic_store.acquire_lease
-    acquired, release = Event(), Event()
+    principal = DeliveryPrincipalBinding.create(
+        principal_subject_id="principal:exhausted-control",
+        tenant_partition_id="tenant:exhausted-control",
+        provider_identity="provider:test",
+    )
+    identity = DeliveryIdentity.create(principal, f"delivery:{operation_id}")
+    scopes = RequiredOutcomeScopeSet.create(
+        tenant_partition_id=principal.tenant_partition_id,
+        scopes={"task:one"},
+    )
+    source = CanonicalMemoryRecord(
+        memory_id=f"tx:{operation_id}",
+        domain=MemoryDomain.TRANSCRIPT,
+        text="activated control admission",
+        content={"text": "activated control admission"},
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_source",
+        timestamp=TEST_NOW,
+        is_raw_event=True,
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+    prepared = service._semantic_ingestion_admission.prepare_atomic(
+        source=source,
+        delivery_identity=identity,
+        ingress=AuthenticatedIngressContext(
+            delivery_principal_binding=principal,
+            required_outcome_scopes=scopes,
+            current_authorized_scopes=scopes,
+        ),
+        operation_id=operation_id,
+        evidence_only=True,
+    )
+    runtime.atomic_store.admit_source(prepared=prepared, writer_binding=writer_binding)
+    return runtime.atomic_store, prepared.accepted.operation_fence_binding
 
-    def hold_after_lease(**kwargs):
-        control = acquire(**kwargs)
-        acquired.set()
-        assert release.wait(timeout=60), "held graph operation was not released"
-        return control
 
-    monkeypatch.setattr(runtime.atomic_store, "acquire_lease", hold_after_lease)
+@pytest.fixture(scope="module")
+def exhausted_activated_control_jsonl_fixture(
+    tmp_path_factory,
+):
+    """Retain one demoted, activated exhausted control with no terminal locator."""
+    from _pytest.monkeypatch import MonkeyPatch
 
-    def ingest() -> object:
-        return service.sync_event(
-            operation=ProviderOperation.CHAT_USER_TURN,
-            content="Atlas owner is Carol.",
-            operation_id="held-demotion-graph",
-            task_id="task:one",
-            user_id="user:alice",
-            authenticated_host_ingress=_host_ingress(),
-        )
+    root = tmp_path_factory.mktemp("exhausted-activated-control")
+    path = root / "retained"
+    configuration_root = root / "config"
+    configuration_root.mkdir()
+    monkeypatch = MonkeyPatch()
+    authority = _signed_monitoring_authority()
+    build, _, clock = _provider_factory(
+        configuration_root, monkeypatch,
+        verified_capability_monitoring_authorities=(authority,),
+    )
+    backing = JsonlMemoryPlaneStore(path)
+    clock[0] = TEST_NOW + timedelta(minutes=1)
+    service = build(MemoryPlaneService(record_store=backing))
+    activated = service.activate_observation_ledger()
+    atomic, fence = _admit_activated_control(
+        service, writer_binding=activated, operation_id="activated-exhausted-control",
+    )
+    first = atomic.acquire_lease(
+        operation_fence=fence, writer_binding=activated, execution_token="first",
+        owner_id="worker", duration=timedelta(minutes=1),
+    )
+    assert first.state == "preplanning" and first.lease is not None
+    assert atomic.get_operation(fence) == first
+    clock[0] += timedelta(minutes=2)
+    recovered = atomic.acquire_lease(
+        operation_fence=fence, writer_binding=activated, execution_token="second",
+        owner_id="worker", duration=timedelta(minutes=1),
+    )
+    assert recovered.state == "preplanning" and recovered.lease is not None
+    clock[0] += timedelta(minutes=2)
+    exhausted = atomic.acquire_lease(
+        operation_fence=fence, writer_binding=activated, execution_token="third",
+        owner_id="worker", duration=timedelta(minutes=1),
+    )
+    assert exhausted.state == "lease_recovery_exhausted" and exhausted.lease is None
+    assert atomic.get_operation(fence) == exhausted
 
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(ingest)
-        assert acquired.wait(timeout=60), "graph operation did not acquire a real lease"
-        clock[0] += timedelta(days=2)
-        demoted = service._capability_monitor.tick(
-            evidence=demoted_activated_graph_jsonl_fixture["authority"]._initial_evidence
-        )
-        assert demoted.status.status == "evidence_only"
-        release.set()
-        with suppress(Exception):
-            future.result(timeout=120)
+    clock[0] += timedelta(days=2)
+    demoted = service._capability_monitor.tick(
+        evidence=authority._initial_evidence
+    )
+    assert demoted.status.status == "evidence_only"
+    yield {
+        "path": path,
+        "build": build,
+        "activation_digest": activated.activation_digest,
+        "control_memory_id": f"semantic_ingestion:operation:{fence.operation_fence_id}",
+        "fence_binding_digest": fence.binding_digest,
+    }
+    monkeypatch.undo()
+
+
+def test_demoted_activated_exhausted_control_reopens_without_terminal_locator(
+    tmp_path, exhausted_activated_control_jsonl_fixture,
+) -> None:
+    """An exhausted activated control is closed history only when no terminal is attached."""
+    path = tmp_path / "exhausted-control"
+    shutil.copytree(exhausted_activated_control_jsonl_fixture["path"], path)
+    backing = JsonlMemoryPlaneStore(path)
     before = backing._records_path.read_bytes()
-    reopened = build(MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path)))
-    with pytest.raises(PreplanningStoreError, match="activation reload is partial or mismatched"):
-        reopened.activate_observation_ledger()
+    reopened = exhausted_activated_control_jsonl_fixture["build"](
+        MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path))
+    )
+    assert reopened.activate_observation_ledger().activation_digest == (
+        exhausted_activated_control_jsonl_fixture["activation_digest"]
+    )
     assert backing._records_path.read_bytes() == before
+
+
+@pytest.mark.parametrize("artifact", ("locator", "terminal_control"))
+def test_exhausted_activated_control_rejects_terminal_attachment(
+    tmp_path, exhausted_activated_control_jsonl_fixture, artifact: str,
+) -> None:
+    """A retained locator or terminal-control cannot be attached to exhausted work."""
+    path = tmp_path / artifact
+    shutil.copytree(exhausted_activated_control_jsonl_fixture["path"], path)
+    backing = JsonlMemoryPlaneStore(path)
+    batches = backing._read_batches_unlocked()
+    if artifact == "locator":
+        replacement = CanonicalMemoryRecord(
+            memory_id="semantic_ingestion:bootstrap-graph-v3:terminal-locator:exhausted-attachment",
+            domain=MemoryDomain.EXECUTION,
+            text="",
+            content={
+                "semantic_ingestion_kind": "bootstrap_graph_v3_terminal_locator",
+                "reload": {"operation_fence_binding_digest": exhausted_activated_control_jsonl_fixture[
+                    "fence_binding_digest"
+                ]},
+            },
+            status=CommitStatus.COMMITTED,
+            source_kind="semantic_ingestion_bootstrap_graph_v3_terminal_locator",
+            timestamp=TEST_NOW,
+            visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+        )
+    else:
+        replacement = CanonicalMemoryRecord(
+            memory_id="semantic_ingestion:bootstrap-graph-v3:terminal-control:orphaned-exhausted",
+            domain=MemoryDomain.EXECUTION,
+            text="",
+            content={"semantic_ingestion_kind": "bootstrap_graph_v3_terminal_control"},
+            status=CommitStatus.COMMITTED,
+            source_kind="semantic_ingestion_bootstrap_graph_v3_terminal_control",
+            timestamp=TEST_NOW,
+            visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+        )
+    rewritten = []
+    for batch in batches:
+        records = batch.records
+        if batch.revision == batches[-1].revision:
+            records = (*records, replacement)
+        rewritten.append(_PersistedBatch.create(
+            revision=batch.revision, data_revision=batch.data_revision, records=records,
+        ))
+    backing._replace_batches(rewritten)
+    before = backing._records_path.read_bytes()
+    damaged = exhausted_activated_control_jsonl_fixture["build"](
+        MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path))
+    )
+    expected_error = (
+        "exhausted activated observation has terminal attachment"
+        if artifact == "locator" else "observation ledger terminal control is orphaned"
+    )
+    with pytest.raises(PreplanningStoreError, match=expected_error):
+        damaged.activate_observation_ledger()
+    assert backing._records_path.read_bytes() == before
+
+
+def test_fresh_process_publicly_reopens_retained_activated_ledger(
+    tmp_path, exhausted_activated_control_jsonl_fixture,
+) -> None:
+    """A clean interpreter performs production public activation with a real grammar rebuild."""
+    path = tmp_path / "fresh-process-activation"
+    shutil.copytree(exhausted_activated_control_jsonl_fixture["path"], path)
+    _assert_fresh_process_public_activation(
+        tmp_path, path, exhausted_activated_control_jsonl_fixture["activation_digest"],
+    )
 
 
 def test_public_activation_preserves_captured_jsonl_history_bytes(tmp_path, monkeypatch) -> None:
