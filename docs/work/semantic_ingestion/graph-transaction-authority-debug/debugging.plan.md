@@ -298,7 +298,7 @@ emission-scope thread isolation.
 
 ## Next Action
 
-Hand the serialized deferred-initialization remediation and focused evidence to
+Hand the durable monitor-baseline recovery remediation and focused evidence to
 fresh independent reviewers before refreezing the debug candidate.
 
 ## Exact-Revision Review At `43281a9e`
@@ -381,3 +381,37 @@ fresh independent reviewers before refreezing the debug candidate.
   concurrent public activation calls. The failed-suffix retry passed in 26.30
   seconds; the signed pre-cutover and concurrent initialization selectors passed
   in the preceding focused run. No capability baseline is duplicated.
+
+## Exact-Revision Review At `8c4d6e04`
+
+- The specification auditor approved the bounded lifecycle contract with no
+  P1/P2 finding.
+- The correctness reviewer confirmed a P2 restart/multi-host recovery defect:
+  pending progress is only instance-local. After one baseline persists and a
+  later baseline fails, a new service rebuilds the full tuple and replays the
+  first baseline at a new clock value; byte reconciliation then rejects it and
+  strands the remaining suffix.
+- The test reviewer confirmed the retry test can miss prefix replay because it
+  replaces a private initializer and checks only final equality, while the
+  concurrency test lacks a barrier at the real conditional-write boundary.
+- The root cause now includes durable baseline identity and cross-instance
+  recovery. Instance-local queue progress remains only an optimization, not the
+  source of recovery truth.
+
+## Durable Deferred Initialization Evidence
+
+- `CapabilityMonitor.has_verified_initialization` accepts a completed baseline
+  only from schema-2 active status, digest-linked freshness bound to the exact
+  evidence/capability/policy, and the matching signed checkpoint. Partial or
+  mismatched provenance fails closed.
+- The JSONL two-authority retry test now discards and reopens the service after
+  a second-baseline failure, advances the clock, and resumes the suffix through
+  public activation while preserving the first immutable trio. It passed in
+  21.42 seconds; Ruff and `git diff --check` passed.
+- The independent-host JSONL race now holds host A at the real capability-status
+  conditional-write boundary, starts host B's public activation, then releases.
+  Both hosts converge without deadlock on one persisted status/trio and can
+  replay public activation without byte-divergent initialization; it passed in
+  18.65 seconds. The test removes only the host trust linearizer so both
+  independently composed hosts reach the real JSONL conditional-write race;
+  durable store CAS and loser reload remain under test.

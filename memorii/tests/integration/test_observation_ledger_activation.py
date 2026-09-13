@@ -378,15 +378,19 @@ def test_deferred_monitor_retry_keeps_only_the_failed_suffix(tmp_path, monkeypat
     first_status = next(record for record in service._memory_plane.list_records(
         source_kind="semantic_ingestion_capability_status",
     ) if record.content["status"]["capability_fingerprint"] == first._policy.capability_fingerprint)
+    # Discard the failed host: recovery must derive the completed prefix from JSONL.
+    service = build(MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "failed-suffix")))
     clock[0] += timedelta(minutes=1)
     assert service.activate_observation_ledger().activation_digest is not None
     assert service._pending_capability_monitoring_initializations == ()
     assert service._memory_plane.get_record(first_status.memory_id) == first_status
 
 
-def test_concurrent_activation_initializes_each_deferred_monitor_once(tmp_path, monkeypatch) -> None:
-    """Concurrent public cutovers serialize deferred monitor initialization."""
+def test_independent_hosts_converge_on_one_durable_deferred_baseline(tmp_path, monkeypatch) -> None:
+    """Two independently composed hosts reload the one JSONL baseline after a CAS race."""
     from concurrent.futures import ThreadPoolExecutor
+    from contextlib import contextmanager
+    from threading import Event
 
     authority = _signed_monitoring_authority()
     unsigned_build, _, _ = _provider_factory(tmp_path, monkeypatch)
@@ -400,14 +404,53 @@ def test_concurrent_activation_initializes_each_deferred_monitor_once(tmp_path, 
         config, monkeypatch, complete_registry=True,
         verified_capability_monitoring_authorities=(authority,),
     )
-    service = build(MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "concurrent-monitor")))
+    path = tmp_path / "concurrent-monitor"
+    store_a = JsonlMemoryPlaneStore(path)
+    store_b = JsonlMemoryPlaneStore(path)
+    service_a = build(MemoryPlaneService(record_store=store_a))
+    service_b = build(MemoryPlaneService(record_store=store_b))
+    @contextmanager
+    def independent_current_use(*args, **kwargs):
+        yield True
+    monkeypatch.setattr(
+        "memorii.core.provider.service.capability_monitoring_authority_current_use",
+        independent_current_use,
+    )
+    entered, second_committed, release = Event(), Event(), Event()
+    attempts = []
+    apply = store_a.apply_batch
+
+    def hold_first_baseline(records, **kwargs):
+        if any(record.source_kind == "semantic_ingestion_capability_status" for record in records):
+            attempts.append("a")
+            entered.set()
+            assert release.wait(timeout=30), "baseline race was not released"
+        return apply(records, **kwargs)
+
+    apply_b = store_b.apply_batch
+
+    def commit_second_baseline(records, **kwargs):
+        result = apply_b(records, **kwargs)
+        if any(record.source_kind == "semantic_ingestion_capability_status" for record in records):
+            attempts.append("b")
+            second_committed.set()
+        return result
+
+    monkeypatch.setattr(store_a, "apply_batch", hold_first_baseline)
+    monkeypatch.setattr(store_b, "apply_batch", commit_second_baseline)
     with ThreadPoolExecutor(max_workers=2) as executor:
-        first, second = tuple(executor.map(lambda _: service.activate_observation_ledger(), range(2)))
+        first_future = executor.submit(service_a.activate_observation_ledger)
+        assert entered.wait(timeout=30), "host A did not reach the baseline CAS"
+        second_future = executor.submit(service_b.activate_observation_ledger)
+        assert second_committed.wait(timeout=30), "host B did not commit the winning baseline"
+        release.set()
+        first, second = first_future.result(timeout=60), second_future.result(timeout=60)
     assert first == second
-    status = [record for record in service._memory_plane.list_records(
+    status = [record for record in service_a._memory_plane.list_records(
         source_kind="semantic_ingestion_capability_status",
     ) if record.content["status"]["capability_fingerprint"] == authority._policy.capability_fingerprint]
-    assert len(status) == 1
+    assert attempts == ["a", "b"] and len(status) == 1
+    assert service_a.activate_observation_ledger() == service_b.activate_observation_ledger() == first
 
 
 def _runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, max_rescans: int = 3):

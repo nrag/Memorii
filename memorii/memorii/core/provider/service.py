@@ -743,6 +743,11 @@ class ProviderMemoryService:
             while self._pending_capability_monitoring_initializations:
                 initial_evidence = self._pending_capability_monitoring_initializations[0]
                 authority = authorities_by_fingerprint[initial_evidence.capability_fingerprint]
+                if self._capability_monitor.has_verified_initialization(evidence=initial_evidence):
+                    self._pending_capability_monitoring_initializations = (
+                        self._pending_capability_monitoring_initializations[1:]
+                    )
+                    continue
                 # Active status/checkpoint creation is a durable authority write.
                 # Hold the same host revocation linearizer used by the group CAS.
                 with capability_monitoring_authority_current_use(

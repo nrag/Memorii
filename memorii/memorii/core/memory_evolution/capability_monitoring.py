@@ -880,6 +880,59 @@ class CapabilityMonitor:
             return loaded
         return status
 
+    def has_verified_initialization(self, *, evidence: CapabilityEvidenceWindow) -> bool:
+        """Recognize only a complete persisted baseline for this exact evidence."""
+        evidence = CapabilityEvidenceWindow.model_validate_json(evidence.model_dump_json())
+        policy = self._policies.get(evidence.capability_fingerprint)
+        if policy is None or evidence.monitoring_policy_digest != policy.policy_digest:
+            raise ValueError("capability monitor policy/evidence mismatch")
+        status_record = self._writers._memory_plane.get_record(_status_id(evidence.capability_fingerprint))
+        if status_record is None:
+            return False
+        try:
+            status = CapabilityStatus.model_validate(status_record.content["status"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("capability status authority is corrupt") from exc
+        if (
+            status.schema_version != 2 or status.status != "active" or status.status_revision != 1
+            or status.capability_fingerprint != evidence.capability_fingerprint
+            or status.monitoring_policy_digest != policy.policy_digest
+        ):
+            raise ValueError("capability status is not the verified initial baseline")
+        freshness_record = next((record for record in self._writers._memory_plane.list_records(
+            source_kind="semantic_ingestion_capability_initial_freshness"
+        ) if record_digest(record) == status.evidence_freshness_digest), None)
+        if freshness_record is None:
+            raise ValueError("capability initial freshness authority is unavailable")
+        try:
+            freshness = CapabilityEvidenceFreshness.model_validate(freshness_record.content["freshness"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("capability initial freshness authority is corrupt") from exc
+        if (
+            freshness_record.content.get("evidence_window_digest") != evidence.evidence_window_digest
+            or freshness.capability_fingerprint != evidence.capability_fingerprint
+            or freshness.monitoring_policy_digest != policy.policy_digest
+            or freshness.freshness != "fresh"
+        ):
+            raise ValueError("capability initial freshness is not bound to verified evidence")
+        checkpoint = self._authorization_checkpoints.get(evidence.capability_fingerprint)
+        if checkpoint is None:
+            if status.authorization_checkpoint_digest is not None:
+                raise ValueError("capability authorization checkpoint is mismatched")
+        else:
+            record = self._writers._memory_plane.get_record(_authorization_checkpoint_id(evidence.capability_fingerprint))
+            if record is None or record_digest(record) != status.authorization_checkpoint_digest:
+                raise ValueError("capability authorization checkpoint is unavailable")
+            try:
+                persisted = CapabilityAuthorizationCheckpoint.model_validate_json(
+                    json.dumps(record.content["checkpoint"])
+                )
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ValueError("capability authorization checkpoint is corrupt") from exc
+            if persisted != checkpoint:
+                raise ValueError("capability authorization checkpoint is mismatched")
+        return True
+
     def initialize_active_from_verified_evidence(
         self, *, evidence: CapabilityEvidenceWindow
     ) -> CapabilityStatus:
