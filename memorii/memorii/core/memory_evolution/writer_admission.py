@@ -100,6 +100,7 @@ _KINDS = (
             "bootstrap_graph_v3_terminal_control",
             "bootstrap_graph_v3_terminal_identity",
             "capability_status",
+            "capability_initial_freshness",
             "capability_monitor_decision",
         }
     )
@@ -3199,19 +3200,62 @@ def _is_capability_monitor_demotion_write(
 def _is_capability_monitor_status_initialization_write(
     records: list[CanonicalMemoryRecord],
 ) -> bool:
-    if len(records) != 1:
+    if len(records) not in {1, 2}:
         return False
-    record = records[0]
+    status_records = [
+        record
+        for record in records
+        if record.source_kind == "semantic_ingestion_capability_status"
+    ]
+    freshness_records = [
+        record
+        for record in records
+        if record.source_kind == "semantic_ingestion_capability_initial_freshness"
+    ]
+    if len(status_records) != 1 or len(freshness_records) != len(records) - 1:
+        return False
+    record = status_records[0]
     try:
-        from memorii.core.memory_evolution.capability_monitoring import CapabilityStatus
+        from memorii.core.memory_evolution.capability_monitoring import (
+            CapabilityEvidenceFreshness,
+            CapabilityStatus,
+            MonitoringMetricDecision,
+        )
 
         status = CapabilityStatus.model_validate(record.content["status"])
-        return (
+        valid_status = (
             record.source_kind == "semantic_ingestion_capability_status"
             and record.content.get("semantic_ingestion_kind") == "capability_status"
             and set(record.content) == {"semantic_ingestion_kind", "status"}
             and status.status == "active"
             and status.status_revision == 1
+        )
+        if not valid_status or not freshness_records:
+            return valid_status
+        freshness_record = freshness_records[0]
+        freshness = CapabilityEvidenceFreshness.model_validate_json(
+            json.dumps(freshness_record.content["freshness"])
+        )
+        metrics = tuple(
+            MonitoringMetricDecision.model_validate_json(json.dumps(value))
+            for value in freshness_record.content["metric_decisions"]
+        )
+        return (
+            set(freshness_record.content)
+            == {
+                "semantic_ingestion_kind",
+                "evidence_window_digest",
+                "freshness",
+                "metric_decisions",
+            }
+            and freshness_record.content.get("semantic_ingestion_kind")
+            == "capability_initial_freshness"
+            and freshness.freshness == "fresh"
+            and freshness.status_revision == "1"
+            and all(metric.status in {"healthy", "warning"} for metric in metrics)
+            and status.capability_fingerprint == freshness.capability_fingerprint
+            and status.monitoring_policy_digest == freshness.monitoring_policy_digest
+            and status.evidence_freshness_digest == record_digest(freshness_record)
         )
     except (KeyError, TypeError, ValueError):
         return False

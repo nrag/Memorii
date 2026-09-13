@@ -104,9 +104,9 @@ jobs:
           --registry docs/design/semantic_ingestion/traceability_registry/registry-v1.json
           --authority docs/design/semantic_ingestion/traceability_golden_vectors/ctv-binding-authority-v2.json
           --validator docs/design/semantic_ingestion/traceability_golden_vectors/validate_ctv_binding_authority_v2.py
-          --expected-design-sha256 a7770e627e2dc627c772b8c54dd5998ce83c1baf43079a210056826b5ebce626
+          --expected-design-sha256 6fbb7f2b59c0ba4f29534d88539905cd730870326a2d9757441fcf1483e7eb70
           --expected-registry-sha256 70143b278e0fd72886362f4174c726c9ecf877b1e288d3dd2c196a78f385413e
-          --expected-authority-sha256 f0b03bbe49fc2ca905ccc029ff04bd2ae6c2f3156c49e34382f8387b4ca4eff5
+          --expected-authority-sha256 9c9368bf008997288574afe45ff91eb8a45933fa379418c418b826223f501f79
           --expected-validator-sha256 3066e6ffb015823283e57945863c22d4ecf32164c52ae8199eb1535c7798f145
           --expected-checker-sha256 e2c35870a99e587f34cbffc701f42587520ee015009cd51647367da56716c732
 
@@ -117,7 +117,7 @@ jobs:
           --matrix docs/design/semantic_ingestion/traceability_golden_vectors/cgs_verification_attack_matrix-v1.json
           --fixture docs/design/semantic_ingestion/traceability_golden_vectors/lifecycle-root-signer-provenance-witness-v1.json
           --validator docs/design/semantic_ingestion/traceability_golden_vectors/validate_lifecycle_root_signer_provenance_v1.py
-          --expected-checker-sha256 d5036cf9426886cd47665c29b77de14a2acbcc7649d2fb8bb0c0e0d78aada8f0
+          --expected-checker-sha256 afe53c9d296472d647fc194d343a0d6254193c8aaced1a99dc795068d6fe6d87
           --self-test
 
       - name: Verify structural manifest contract
@@ -129,7 +129,7 @@ jobs:
           --matrix docs/design/semantic_ingestion/traceability_golden_vectors/cgs_verification_attack_matrix-v1.json
           --prototype docs/design/semantic_ingestion/traceability_golden_vectors/cgs_structural_manifest_prototype.py
           --vector docs/design/semantic_ingestion/traceability_golden_vectors/cgs-structural-manifest-prototype-v1.json
-          --expected-checker-sha256 f5c5ecafc804a96c7bd3e5c3717a87e8386e4cbc78334cede097b37caeebaaf7
+          --expected-checker-sha256 61aa594f0c4bbdd255a767d2d5a19ebb8cd6f0bb41ab2fde6ca1d245ba805c1c
           --self-test
 
   static-analysis:

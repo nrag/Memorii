@@ -117,6 +117,51 @@ Freeze the R15 candidate revision and run independent specification,
 correctness, and test reviews against that exact revision. Reconcile every
 finding before deciding whether R15 is engineering complete.
 
+## Exact-Revision Review Remediation Round 2 (2026-09-13)
+
+The review of `88a20765` confirmed two production gaps and six proof gaps. The
+coordinator corrected them as one bounded R15 revision:
+
+- a signed baseline now binds both the monitoring-policy digest and the exact
+  initial evidence-window digest. Service construction revalidates the closed
+  policy/window models, independently evaluates freshness and every metric,
+  rejects stale, insufficient, breached, future, unknown-metric or
+  implementation-mismatched input, and atomically persists the initial
+  freshness record with the active status;
+- `ProviderMemoryService.reconcile_memory_evolution` invokes the bounded
+  monitoring scheduler before the existing clarification and evolution
+  reconciliation work. A fake-clock test advances a healthy signed baseline to
+  expiry without any ingress call and proves atomic demotion with no source,
+  accepted-operation or graph-group publication;
+- the negative matrix now covers malformed authorization, forged signature,
+  signed wrong target, expiry, forged policy binding, stale initial evidence,
+  exact before/at/after label, canary, pause and outage boundaries, zero
+  observations, insufficient clusters, implementation mismatch, unknown
+  metric, nonfinite values and post-demotion ingress;
+- exact retry proof now compares memory-plane revision, every record digest and
+  writer epoch. The real graph race performs another normal ingress after the
+  monitor wins and proves no group primary can appear;
+- the architecture-byte change is propagated through the CTV authority,
+  equal-version decision, lifecycle checker, structural known-answer vector,
+  checker identities, workflow pins, tests and static-tooling documentation.
+
+Verification on the dirty round-2 candidate:
+
+- monitor plus equal-version decision: 63 passed under warnings-as-errors;
+- provider service and semantic provider composition: 86 passed under
+  warnings-as-errors;
+- admission, migration, monitor and bootstrap atomic-store family: 229 passed
+  under warnings-as-errors;
+- CTV gate reports 56 schemas and 249 enum rows; lifecycle provenance reports
+  six accepted and 41 rejected witnesses; CGS structural self-test passes;
+- CTV PR-gate and independent reference-compiler family: 279 passed under
+  warnings-as-errors.
+
+The next action is to run Ruff, scoped first-party Pyright and diff checks,
+freeze and push the revision, then obtain the required exact-revision
+specification, correctness and test reviews. R15 remains candidate complete
+until those reviews converge.
+
 ## Exact-Revision Review Remediation (2026-09-13)
 
 The first review of `a8ed3fa1` found four production-composition defects and

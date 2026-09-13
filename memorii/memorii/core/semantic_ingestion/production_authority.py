@@ -13,6 +13,7 @@ from memorii.core.memory_evolution.bootstrap_profile import (
     HostVerifiedBootstrapMaterial,
 )
 from memorii.core.memory_evolution.capability_monitoring import (
+    CapabilityEvidenceWindow,
     CapabilityEvidenceWindowProvider,
     CapabilityMonitoringPolicy,
 )
@@ -25,6 +26,7 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     AuthenticatedIngressContextResolver,
     encode_typed_value,
 )
+from memorii.core.semantic_ingestion.contracts import contract_digest
 
 _FACTORY_SYMBOL = (
     "memorii.core.semantic_ingestion.production_authority."
@@ -79,6 +81,7 @@ class VerifiedCapabilityMonitoringAuthority:
     """Signed capability-baseline authority plus its host evidence source."""
 
     _policy: CapabilityMonitoringPolicy
+    _initial_evidence: CapabilityEvidenceWindow
     _evidence_provider: CapabilityEvidenceWindowProvider
     _deployment_artifact: DeploymentAuthorizationArtifact
     _issuance_token: object
@@ -89,6 +92,7 @@ def build_verified_capability_monitoring_authority(
     deployment_authorization_bytes: bytes,
     deployment_authorization_verifier: DeploymentAuthorizationArtifactVerifier,
     policy: CapabilityMonitoringPolicy,
+    initial_evidence: CapabilityEvidenceWindow,
     evidence_provider: CapabilityEvidenceWindowProvider,
     server_time: datetime,
 ) -> VerifiedCapabilityMonitoringAuthority | None:
@@ -97,22 +101,38 @@ def build_verified_capability_monitoring_authority(
     if not hasattr(evidence_provider, "load_evidence_windows"):
         return None
     try:
+        policy = CapabilityMonitoringPolicy.model_validate_json(
+            policy.model_dump_json()
+        )
+        initial_evidence = CapabilityEvidenceWindow.model_validate_json(
+            initial_evidence.model_dump_json()
+        )
         artifact = deployment_authorization_verifier.verify(
             bytes(deployment_authorization_bytes), server_time=server_time
         )
     except (DeploymentAuthorizationError, TypeError, ValueError):
         return None
+    baseline_digest = contract_digest(
+        b"memorii.semantic-ingestion.capability-monitoring-baseline.v1",
+        {
+            "monitoring_policy_digest": policy.policy_digest,
+            "initial_evidence_window_digest": initial_evidence.evidence_window_digest,
+        },
+    )
     if (
         artifact.purpose != "semantic_ingestion_capability_baseline"
         or artifact.target_kind != "capability_baseline"
-        or artifact.target_artifact_digest != policy.policy_digest
+        or artifact.target_artifact_digest != baseline_digest
         or artifact.capability_fingerprint != policy.capability_fingerprint
+        or initial_evidence.capability_fingerprint != policy.capability_fingerprint
+        or initial_evidence.monitoring_policy_digest != policy.policy_digest
         or artifact.verified_capability_baseline_approval_release_digest is None
         or artifact.active_epoch != 1
     ):
         return None
     return VerifiedCapabilityMonitoringAuthority(
         _policy=policy,
+        _initial_evidence=initial_evidence,
         _evidence_provider=evidence_provider,
         _deployment_artifact=artifact,
         _issuance_token=_MONITORING_ISSUANCE_TOKEN,
@@ -124,7 +144,7 @@ def verified_capability_monitoring_authority_inputs(
 ) -> tuple[
     tuple[CapabilityMonitoringPolicy, ...],
     CapabilityEvidenceWindowProvider | None,
-    tuple[tuple[str, str], ...],
+    tuple[CapabilityEvidenceWindow, ...],
 ]:
     """Return verified monitor inputs and signed initialization coordinates."""
 
@@ -142,13 +162,7 @@ def verified_capability_monitoring_authority_inputs(
     return (
         tuple(authority._policy for authority in authorities),
         authorities[0]._evidence_provider if authorities else None,
-        tuple(
-            (
-                authority._policy.capability_fingerprint,
-                authority._deployment_artifact.authorization_digest,
-            )
-            for authority in authorities
-        ),
+        tuple(authority._initial_evidence for authority in authorities),
     )
 
 

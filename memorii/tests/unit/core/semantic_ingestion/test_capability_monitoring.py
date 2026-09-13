@@ -42,6 +42,7 @@ from memorii.core.semantic_ingestion.contracts import (
     ProviderFact,
     ProviderMention,
     ProviderSemanticProposal,
+    contract_digest,
 )
 from memorii.core.semantic_ingestion.production_authority import (
     build_verified_capability_monitoring_authority,
@@ -221,13 +222,20 @@ def test_stale_labels_demote_even_with_healthy_canary_and_never_reactivate() -> 
 
 
 def test_repeated_outcome_is_idempotent_but_deadline_crossing_is_re_evaluated() -> None:
-    clock, _, monitor, policy, implementation = _monitor()
+    clock, writers, monitor, policy, implementation = _monitor()
     evidence = _window(clock, policy, implementation, value="0.1")
     first = monitor.tick(evidence=evidence)
+    first_revision, first_records = writers._memory_plane.read_snapshot()
+    first_record_digests = tuple(record_digest(record) for record in first_records)
+    first_writer_epoch = writers.current().writer_epoch
     clock.now += timedelta(seconds=1)
     retry = monitor.tick(evidence=evidence)
     assert retry.decision == first.decision
     assert retry.freshness == first.freshness
+    retry_revision, retry_records = writers._memory_plane.read_snapshot()
+    assert retry_revision == first_revision
+    assert tuple(record_digest(record) for record in retry_records) == first_record_digests
+    assert writers.current().writer_epoch == first_writer_epoch
 
     clock.now += timedelta(days=1)
     expired = monitor.tick(evidence=evidence)
@@ -265,9 +273,18 @@ def test_future_authority_time_and_overlapping_expired_pause_fail_closed() -> No
 
 
 @pytest.mark.parametrize("traffic,outage", [("paused", "healthy"), ("active", "outage")])
-def test_pause_and_outage_expire_at_boundary(traffic: str, outage: str) -> None:
+@pytest.mark.parametrize(
+    "elapsed,expected",
+    [
+        (timedelta(hours=1) - timedelta(microseconds=1), "remain_active"),
+        (timedelta(hours=1), "evidence_only"),
+        (timedelta(hours=1) + timedelta(microseconds=1), "evidence_only"),
+    ],
+)
+def test_pause_and_outage_deadline_boundaries(
+    traffic: str, outage: str, elapsed: timedelta, expected: str
+) -> None:
     clock, _, monitor, policy, implementation = _monitor()
-    clock.now += timedelta(hours=1)
     result = monitor.tick(
         evidence=_window(
             clock,
@@ -275,10 +292,100 @@ def test_pause_and_outage_expire_at_boundary(traffic: str, outage: str) -> None:
             implementation,
             traffic=traffic,
             outage=outage,
-            state_changed_at=clock.now - timedelta(hours=1),
+            state_changed_at=clock.now - elapsed,
         )
     )
-    assert result.decision.action == "evidence_only"
+    assert result.decision.action == expected
+
+
+@pytest.mark.parametrize("authority", ["label", "canary"])
+@pytest.mark.parametrize(
+    "elapsed,expected",
+    [
+        (timedelta(days=1) - timedelta(microseconds=1), "remain_active"),
+        (timedelta(days=1), "evidence_only"),
+        (timedelta(days=1) + timedelta(microseconds=1), "evidence_only"),
+    ],
+)
+def test_label_and_canary_deadline_boundaries(
+    authority: str, elapsed: timedelta, expected: str
+) -> None:
+    clock, _, monitor, policy, implementation = _monitor()
+    kwargs = {"labels_at" if authority == "label" else "canary_at": clock.now - elapsed}
+    evidence = _window(clock, policy, implementation, **kwargs)
+    if authority == "label":
+        label_time = clock.now - elapsed
+        evidence = CapabilityEvidenceWindow.create(
+            **evidence.model_dump(
+                mode="python",
+                exclude={"evidence_window_digest", "observations"},
+            ),
+            observations=tuple(
+                item.model_copy(update={"observed_at": label_time})
+                for item in evidence.observations
+            ),
+        )
+    result = monitor.tick(evidence=evidence)
+    assert result.decision.action == expected
+
+
+def test_zero_traffic_unknown_metric_and_implementation_mismatch_fail_closed() -> None:
+    clock, _, monitor, policy, implementation = _monitor()
+    empty = _window(clock, policy, implementation).model_copy(update={"observations": ()})
+    empty = CapabilityEvidenceWindow.create(
+        **empty.model_dump(mode="python", exclude={"evidence_window_digest"})
+    )
+    assert monitor.tick(evidence=empty).decision.reason_codes == (
+        "insufficient_metric_evidence",
+        "stale_evidence",
+    )
+
+    clock, _, monitor, policy, implementation = _monitor()
+    mismatched = _window(clock, policy, implementation).model_copy(
+        update={"sequential_implementation_fingerprint": "b" * 64}
+    )
+    mismatched = CapabilityEvidenceWindow.create(
+        capability_fingerprint=mismatched.capability_fingerprint,
+        monitoring_policy_digest=mismatched.monitoring_policy_digest,
+        sequential_implementation_fingerprint=mismatched.sequential_implementation_fingerprint,
+        observations=mismatched.observations,
+        latest_independent_label_at=mismatched.latest_independent_label_at,
+        latest_canary_success_at=mismatched.latest_canary_success_at,
+        traffic_state=mismatched.traffic_state,
+        traffic_state_changed_at=mismatched.traffic_state_changed_at,
+        label_pipeline_state=mismatched.label_pipeline_state,
+        label_pipeline_state_changed_at=mismatched.label_pipeline_state_changed_at,
+    )
+    assert monitor.tick(evidence=mismatched).decision.reason_codes == (
+        "insufficient_metric_evidence",
+    )
+
+    clock, _, monitor, policy, implementation = _monitor()
+    unknown_observation = MonitoringObservation(
+        event_id="unknown-event",
+        metric_id="unknown",
+        cluster_id="unknown-cluster",
+        observed_at=clock.now,
+        value="0.1",
+    )
+    unknown = _window(clock, policy, implementation)
+    unknown = CapabilityEvidenceWindow.create(
+        **unknown.model_dump(mode="python", exclude={"evidence_window_digest", "observations"}),
+        observations=(*unknown.observations, unknown_observation),
+    )
+    assert monitor.tick(evidence=unknown).decision.reason_codes == ("unknown_metric",)
+
+
+@pytest.mark.parametrize("value", ["NaN", "Infinity", "-Infinity"])
+def test_nonfinite_observation_is_rejected(value: str) -> None:
+    with pytest.raises(ValueError, match="must be finite"):
+        MonitoringObservation(
+            event_id="nonfinite",
+            metric_id="error",
+            cluster_id="nonfinite",
+            observed_at=datetime(2026, 1, 1, tzinfo=UTC),
+            value=value,
+        )
 
 
 def test_policy_rejects_alpha_overflow_and_evidence_rejects_cross_metric_cluster() -> None:
@@ -384,6 +491,7 @@ def test_provider_monitor_tick_reaches_shared_writer_authority() -> None:
 
 def test_public_factory_schedules_windows_from_signed_baseline_authority() -> None:
     clock, _, _, policy, implementation = _monitor()
+    initial_evidence = _window(clock, policy, implementation, value="0.1")
     evidence = _window(clock, policy, implementation, value="0.9")
 
     class EvidenceProvider:
@@ -398,7 +506,13 @@ def test_public_factory_schedules_windows_from_signed_baseline_authority() -> No
         repository=InMemoryDeploymentAuthorizationRepository(),
         now_provider=lambda: clock.now,
     ).prepare_verified(
-        target_artifact_digest=policy.policy_digest,
+        target_artifact_digest=contract_digest(
+            b"memorii.semantic-ingestion.capability-monitoring-baseline.v1",
+            {
+                "monitoring_policy_digest": policy.policy_digest,
+                "initial_evidence_window_digest": initial_evidence.evidence_window_digest,
+            },
+        ),
         deployment_manifest_digest="7" * 64,
         capability_fingerprint=policy.capability_fingerprint,
         verified_capability_baseline_approval_release_digest="6" * 64,
@@ -417,6 +531,7 @@ def test_public_factory_schedules_windows_from_signed_baseline_authority() -> No
             signer
         ),
         policy=policy,
+        initial_evidence=initial_evidence,
         evidence_provider=EvidenceProvider(),
         server_time=clock.now,
     )
@@ -432,6 +547,191 @@ def test_public_factory_schedules_windows_from_signed_baseline_authority() -> No
     assert len(results) == 1
     assert results[0].status.status == "evidence_only"
     assert service._semantic_writer_admission.current().writer_epoch == 2
+    assert service._memory_plane.list_records(
+        source_kind="semantic_ingestion_capability_initial_freshness"
+    )
+    assert not service._memory_plane.list_records(source_kind="semantic_ingestion_source")
+    assert not service._memory_plane.list_records(
+        source_kind="semantic_ingestion_accepted_identity_operation"
+    )
+    assert not service._memory_plane.list_records(
+        source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+    )
+
+
+def test_signed_monitoring_authority_rejects_substitution_and_unacceptable_baseline() -> None:
+    clock, _, _, policy, implementation = _monitor()
+    initial_evidence = _window(clock, policy, implementation, value="0.1")
+
+    class EvidenceProvider:
+        def load_evidence_windows(self, *, max_items: int):
+            return ()
+
+    signer = _TestDeploymentSigner()
+    issuer = DeploymentAuthorizationIssuer(
+        authority=IssuerAuthority("monitor-release", "monitor-key", "8" * 64, signer),
+        repository=InMemoryDeploymentAuthorizationRepository(),
+        now_provider=lambda: clock.now,
+    )
+    baseline_digest = contract_digest(
+        b"memorii.semantic-ingestion.capability-monitoring-baseline.v1",
+        {
+            "monitoring_policy_digest": policy.policy_digest,
+            "initial_evidence_window_digest": initial_evidence.evidence_window_digest,
+        },
+    )
+
+    def encode(artifact) -> bytes:
+        return json.dumps(
+            artifact.model_dump(mode="json"),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        ).encode("ascii")
+
+    valid = issuer.prepare_verified(
+        target_artifact_digest=baseline_digest,
+        deployment_manifest_digest="7" * 64,
+        capability_fingerprint=policy.capability_fingerprint,
+        verified_capability_baseline_approval_release_digest="6" * 64,
+        requested_active_epoch=1,
+        expires_at=clock.now + timedelta(days=2),
+    )
+    verifier = DeploymentAuthorizationArtifactVerifier(signer)
+    arguments = {
+        "deployment_authorization_verifier": verifier,
+        "policy": policy,
+        "initial_evidence": initial_evidence,
+        "evidence_provider": EvidenceProvider(),
+        "server_time": clock.now,
+    }
+    invalid_signature = json.loads(encode(valid))
+    invalid_signature["signature"] = "forged"
+    invalid_signature_raw = json.dumps(
+        invalid_signature, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+    ).encode("ascii")
+    wrong_target = issuer.prepare_verified(
+        target_artifact_digest="0" * 64,
+        deployment_manifest_digest="7" * 64,
+        capability_fingerprint=policy.capability_fingerprint,
+        verified_capability_baseline_approval_release_digest="6" * 64,
+        requested_active_epoch=1,
+        expires_at=clock.now + timedelta(days=2),
+    )
+    for raw, server_time in (
+        (b"not-json", clock.now),
+        (invalid_signature_raw, clock.now),
+        (encode(wrong_target), clock.now),
+        (encode(valid), clock.now + timedelta(days=2)),
+    ):
+        assert build_verified_capability_monitoring_authority(
+            deployment_authorization_bytes=raw,
+            **{**arguments, "server_time": server_time},
+        ) is None
+
+    forged_evidence = initial_evidence.model_copy(
+        update={"monitoring_policy_digest": "0" * 64}
+    )
+    assert build_verified_capability_monitoring_authority(
+        deployment_authorization_bytes=encode(valid),
+        **{**arguments, "initial_evidence": forged_evidence},
+    ) is None
+
+    stale_evidence = _window(
+        clock,
+        policy,
+        implementation,
+        labels_at=clock.now - timedelta(days=1),
+    )
+    stale_artifact = issuer.prepare_verified(
+        target_artifact_digest=contract_digest(
+            b"memorii.semantic-ingestion.capability-monitoring-baseline.v1",
+            {
+                "monitoring_policy_digest": policy.policy_digest,
+                "initial_evidence_window_digest": stale_evidence.evidence_window_digest,
+            },
+        ),
+        deployment_manifest_digest="7" * 64,
+        capability_fingerprint=policy.capability_fingerprint,
+        verified_capability_baseline_approval_release_digest="6" * 64,
+        requested_active_epoch=1,
+        expires_at=clock.now + timedelta(days=2),
+    )
+    stale_authority = build_verified_capability_monitoring_authority(
+        deployment_authorization_bytes=encode(stale_artifact),
+        **{**arguments, "initial_evidence": stale_evidence},
+    )
+    assert stale_authority is not None
+    plane = MemoryPlaneService()
+    with pytest.raises(ValueError, match="initial evidence"):
+        build_provider_memory_service_from_env(
+            memory_plane=plane,
+            now_provider=lambda: clock.now,
+            verified_capability_monitoring_authorities=(stale_authority,),
+        )
+    assert not plane.list_records(source_kind="semantic_ingestion_capability_status")
+    assert not plane.list_records(
+        source_kind="semantic_ingestion_capability_initial_freshness"
+    )
+
+
+def test_normal_reconciliation_scheduler_expires_monitor_without_ingress() -> None:
+    clock, _, _, policy, implementation = _monitor()
+    initial_evidence = _window(clock, policy, implementation, value="0.1")
+
+    class EvidenceProvider:
+        def load_evidence_windows(self, *, max_items: int):
+            return (initial_evidence,)[:max_items]
+
+    signer = _TestDeploymentSigner()
+    artifact = DeploymentAuthorizationIssuer(
+        authority=IssuerAuthority("monitor-release", "monitor-key", "8" * 64, signer),
+        repository=InMemoryDeploymentAuthorizationRepository(),
+        now_provider=lambda: clock.now,
+    ).prepare_verified(
+        target_artifact_digest=contract_digest(
+            b"memorii.semantic-ingestion.capability-monitoring-baseline.v1",
+            {
+                "monitoring_policy_digest": policy.policy_digest,
+                "initial_evidence_window_digest": initial_evidence.evidence_window_digest,
+            },
+        ),
+        deployment_manifest_digest="7" * 64,
+        capability_fingerprint=policy.capability_fingerprint,
+        verified_capability_baseline_approval_release_digest="6" * 64,
+        requested_active_epoch=1,
+        expires_at=clock.now + timedelta(days=3),
+    )
+    authority = build_verified_capability_monitoring_authority(
+        deployment_authorization_bytes=json.dumps(
+            artifact.model_dump(mode="json"),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        ).encode("ascii"),
+        deployment_authorization_verifier=DeploymentAuthorizationArtifactVerifier(signer),
+        policy=policy,
+        initial_evidence=initial_evidence,
+        evidence_provider=EvidenceProvider(),
+        server_time=clock.now,
+    )
+    assert authority is not None
+    plane = MemoryPlaneService()
+    service = build_provider_memory_service_from_env(
+        memory_plane=plane,
+        now_provider=lambda: clock.now,
+        verified_capability_monitoring_authorities=(authority,),
+    )
+    clock.now += timedelta(days=1)
+
+    assert service.reconcile_memory_evolution() == []
+    status = plane.list_records(source_kind="semantic_ingestion_capability_status")
+    assert status[-1].content["status"]["status"] == "evidence_only"
+    assert not plane.list_records(source_kind="semantic_ingestion_source")
+    assert not plane.list_records(source_kind="semantic_ingestion_accepted_identity_operation")
+    assert not plane.list_records(
+        source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+    )
 
 
 def test_group_commit_status_read_set_is_exact_and_stale_after_demotion() -> None:
@@ -730,6 +1030,18 @@ def test_real_group_commit_status_precondition_conflicts_with_monitor_demotion(
     assert demoted
     assert result.blocked_reasons["semantic_ingestion"] == "graph_transaction_authority_unavailable"
     assert service._semantic_writer_admission.current().active_runtime_mode == "evidence_only"
+    assert not service._memory_plane.list_records(
+        source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+    )
+    second = service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="monitor-after-demotion",
+        task_id="task:monitor",
+        user_id="user:alice",
+        authenticated_host_ingress=_host_ingress(),
+    )
+    assert second.blocked_reasons["semantic_ingestion"] == "graph_transaction_authority_unavailable"
     assert not service._memory_plane.list_records(
         source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
     )

@@ -326,7 +326,7 @@ class ProviderMemoryService:
         self._canonical_evidence_requested = canonical_evidence_enabled
         verified_material = None
         verified_ingress_resolver = None
-        monitoring_initializations: tuple[tuple[str, str], ...] = ()
+        monitoring_initializations: tuple[CapabilityEvidenceWindow, ...] = ()
         if verified_capability_monitoring_authorities:
             if (
                 capability_monitoring_policies
@@ -675,10 +675,9 @@ class ProviderMemoryService:
         )
         if monitoring_initializations:
             self._ensure_writer_admission_record()
-            for capability_fingerprint, freshness_digest in monitoring_initializations:
-                self._capability_monitor.initialize_active_status(
-                    capability_fingerprint=capability_fingerprint,
-                    evidence_freshness_digest=freshness_digest,
+            for initial_evidence in monitoring_initializations:
+                self._capability_monitor.initialize_active_from_verified_evidence(
+                    evidence=initial_evidence,
                 )
         self._semantic_runtime_validated_after_ingress = False
         self._conflict_clarification_processor: ConflictClarificationProcessor | None = None
@@ -1764,6 +1763,7 @@ class ProviderMemoryService:
     def reconcile_memory_evolution(self) -> list[ProviderEvolutionOutcome]:
         """Retry pending and retryable failed evolution operations."""
 
+        self.process_capability_monitoring(max_items=16)
         self.process_pending_conflict_clarifications(max_items=16)
         return self._provider_ingestion.reconcile()
 

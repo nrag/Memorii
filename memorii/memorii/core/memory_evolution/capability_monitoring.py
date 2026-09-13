@@ -430,6 +430,7 @@ class CapabilityMonitor:
         *,
         capability_fingerprint: str,
         evidence_freshness_digest: str,
+        freshness_record: CanonicalMemoryRecord | None = None,
     ) -> CapabilityStatus:
         """Provision the one explicit active status; duplicates reload exactly."""
         policy = self._policies.get(capability_fingerprint)
@@ -460,6 +461,10 @@ class CapabilityMonitor:
             loaded = CapabilityStatus.model_validate(existing.content["status"])
             if loaded != status:
                 raise ValueError("capability status is already bound differently")
+            if freshness_record is not None and self._writers._memory_plane.get_record(
+                freshness_record.memory_id
+            ) != freshness_record:
+                raise ValueError("capability initial freshness authority is unavailable")
             return loaded
         authorization = self._writers._authorize_atomic(
             self._writers.commit_binding(self._writers.current()),
@@ -467,8 +472,13 @@ class CapabilityMonitor:
         )
         try:
             self._writers._memory_plane.conditionally_write_records(
-                (record,),
-                preconditions=(RecordAbsentPrecondition(memory_id=record.memory_id),),
+                (*((freshness_record,) if freshness_record is not None else ()), record),
+                preconditions=(
+                    *((
+                        RecordAbsentPrecondition(memory_id=freshness_record.memory_id),
+                    ) if freshness_record is not None else ()),
+                    RecordAbsentPrecondition(memory_id=record.memory_id),
+                ),
                 authorization=authorization,
             )
         except MemoryPlaneRevisionConflictError as exc:
@@ -478,10 +488,70 @@ class CapabilityMonitor:
             loaded = CapabilityStatus.model_validate(existing.content["status"])
             if loaded != status:
                 raise ValueError("capability status is already bound differently") from exc
+            if freshness_record is not None and self._writers._memory_plane.get_record(
+                freshness_record.memory_id
+            ) != freshness_record:
+                raise ValueError(
+                    "capability initial freshness authority is unavailable"
+                ) from exc
             return loaded
         return status
 
+    def initialize_active_from_verified_evidence(
+        self, *, evidence: CapabilityEvidenceWindow
+    ) -> CapabilityStatus:
+        """Create active status only from a fresh, sufficient baseline window."""
+
+        evidence = CapabilityEvidenceWindow.model_validate_json(
+            evidence.model_dump_json()
+        )
+        now = self._now()
+        if now.utcoffset() is None:
+            raise ValueError("capability monitor clock must be timezone-aware")
+        policy = self._policies.get(evidence.capability_fingerprint)
+        if policy is None or evidence.monitoring_policy_digest != policy.policy_digest:
+            raise ValueError("capability monitor policy/evidence mismatch")
+        freshness = self._freshness(policy, evidence, now, status_revision="1")
+        metrics = tuple(self._metric(policy, gate, evidence) for gate in policy.metric_gates)
+        declared_metrics = {gate.metric_id for gate in policy.metric_gates}
+        invalid = (
+            freshness.freshness != "fresh"
+            or any(item.status in {"insufficient_data", "breach"} for item in metrics)
+            or any(item.metric_id not in declared_metrics for item in evidence.observations)
+            or any(item.observed_at > now for item in evidence.observations)
+        )
+        if invalid:
+            raise ValueError("capability initial evidence is not fresh and acceptable")
+        freshness_record = CanonicalMemoryRecord(
+            memory_id=(
+                "semantic_ingestion:capability-initial-freshness:"
+                + freshness.evidence_digest
+            ),
+            domain=MemoryDomain.EXECUTION,
+            text="",
+            content={
+                "semantic_ingestion_kind": "capability_initial_freshness",
+                "evidence_window_digest": evidence.evidence_window_digest,
+                "freshness": freshness.model_dump(mode="json"),
+                "metric_decisions": tuple(
+                    item.model_dump(mode="json") for item in metrics
+                ),
+            },
+            status=CommitStatus.COMMITTED,
+            source_kind="semantic_ingestion_capability_initial_freshness",
+            timestamp=now,
+            visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+        )
+        return self.initialize_active_status(
+            capability_fingerprint=policy.capability_fingerprint,
+            evidence_freshness_digest=record_digest(freshness_record),
+            freshness_record=freshness_record,
+        )
+
     def tick(self, *, evidence: CapabilityEvidenceWindow) -> CapabilityMonitorTickResult:
+        evidence = CapabilityEvidenceWindow.model_validate_json(
+            evidence.model_dump_json()
+        )
         now = self._now()
         if now.utcoffset() is None:
             raise ValueError("capability monitor clock must be timezone-aware")
