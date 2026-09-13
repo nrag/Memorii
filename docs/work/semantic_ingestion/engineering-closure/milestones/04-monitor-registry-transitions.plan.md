@@ -648,3 +648,41 @@ first-party Pyright reports 0 errors and 0 warnings.
 The sole next action is for the coordinator to freeze this candidate and
 obtain the required exact-revision specification, correctness and test
 reviews.
+
+## R15 Exact-Review Provisioning And Durability Remediation (2026-09-13)
+
+The configured revocation root is now provisioning-only: it must already
+exist as a secure, operator-owned private directory before reader construction
+or installed monitoring composition. Runtime may create only secure children
+under that root. Missing configured roots fail before status/checkpoint
+activation or group mutation. First creation of `objects` or `current` fsyncs
+the parent/root directory entry before child use; object links and current
+mapping links retain their own directory fsyncs. The first-publication proof
+records root-before-child fsync ordering, exact retry re-fsyncs both object
+coordinates and the current mapping directory before success, and recovery
+from surviving objects plus an absent mapping does the same before returning.
+
+Acceptance CLI negatives now use valid signed inputs and prove that symlinked
+config files, writable config files, and writable containing directories fail
+before object/mapping publication. Its default config coordinate is absolute,
+fixed under platform data, and unaffected by an environment variable. The
+serialized import scanner now also recognizes literal
+`importlib.import_module(...)` and `builtins.__import__(...)` calls.
+
+Focused validation after the remediation reports 20 passed under
+warnings-as-errors for installed monitoring, publisher, first/recovered
+publication durability, production-reader and import-boundary proofs. Ruff,
+scoped Pyright, acceptance module compilation, JSON and diff checks pass.
+
+Final candidate validation after this exact-review remediation:
+
+- `PYTHONPATH=memorii .venv/bin/pytest -q -W error
+  memorii/tests/unit/core/semantic_ingestion/test_capability_monitoring.py
+  memorii/tests/unit/acceptance/test_production_revocation_boundary.py
+  memorii/tests/unit/acceptance/test_acceptance_host_runtime.py`: 100 passed
+  in 478.28 seconds;
+- focused static validation remains clean: Ruff, scoped first-party Pyright,
+  acceptance module compilation, binding-ledger JSON and diff checks.
+
+The sole next action is for the coordinator to freeze this candidate and
+obtain exact-revision specification, correctness and test reviews.

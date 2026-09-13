@@ -242,3 +242,12 @@ def test_production_file_reader_rejects_insecure_root_or_ancestor_before_io(tmp_
             {"reader_root": str(insecure_parent / "leaf")}
         )
     assert not (insecure_parent / "leaf" / "current").exists()
+
+
+def test_production_file_reader_requires_preprovisioned_secure_root(tmp_path: Path) -> None:
+    root = tmp_path / "operator-must-provision"
+    with pytest.raises(ValueError, match="production_revocation_reader_path"):
+        InstalledProductionRevocationReader().from_fixed_configuration(
+            {"reader_root": str(root)}
+        )
+    assert not root.exists()

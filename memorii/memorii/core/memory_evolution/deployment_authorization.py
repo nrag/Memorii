@@ -54,7 +54,9 @@ def _secure_path(path: Path, failure: str) -> None:
         current = current.parent
 
 
-def _secure_storage_directory(path: Path, failure: str) -> None:
+def _secure_storage_directory(
+    path: Path, failure: str, *, create_missing: bool = True
+) -> None:
     """Create or admit an operator-owned private directory without aliases."""
     if not path.is_absolute():
         raise DeploymentAuthorizationError(failure)
@@ -65,6 +67,8 @@ def _secure_storage_directory(path: Path, failure: str) -> None:
             metadata = os.lstat(current)
             break
         except FileNotFoundError:
+            if not create_missing:
+                raise DeploymentAuthorizationError(failure) from None
             if current.parent == current:
                 raise DeploymentAuthorizationError(failure) from None
             missing.append(current)
@@ -104,6 +108,12 @@ def _secure_storage_directory(path: Path, failure: str) -> None:
             or stat.S_IMODE(metadata.st_mode) & 0o022
         ):
             raise DeploymentAuthorizationError(failure)
+        # The directory name is itself durable authority state. Persist the
+        # parent entry before a child object or mapping can be published.
+        try:
+            _fsync_directory(directory.parent)
+        except OSError as exc:
+            raise DeploymentAuthorizationError(failure) from exc
 
 
 def _secure_storage_file(path: Path, failure: str) -> None:
@@ -622,7 +632,11 @@ class _FileProductionRevocationReader:
     """Least-privilege read-only owner of production revocation evidence."""
 
     def __init__(self, root: Path, *, now_provider: Callable[[], datetime] | None = None) -> None:
-        _secure_storage_directory(root, "production_revocation_reader_path")
+        # Root provisioning is an administrator action. Runtime creation of a
+        # configured root would make a typo or substituted path authoritative.
+        _secure_storage_directory(
+            root, "production_revocation_reader_path", create_missing=False
+        )
         self._root = root
         self._now_provider = now_provider
         # This coordinate is shared with the only installed mapping publisher.
@@ -790,6 +804,9 @@ class _FileProductionRevocationReader:
         if path.exists():
             if path.read_bytes() != raw:
                 raise DeploymentAuthorizationError("production_revocation_conflict")
+            # An idempotent acknowledgement must still establish that the
+            # pre-existing name is durable before it reports success.
+            _fsync_directory(directory)
             return
         temporary = directory / f".{digest}.{os.getpid()}.{os.urandom(8).hex()}.tmp"
         try:
@@ -864,6 +881,9 @@ class _FileProductionRevocationReader:
                     raise DeploymentAuthorizationError(
                         "production_revocation_conflict"
                     ) from None
+                # Recovery of an already published coordinate is only a
+                # successful acknowledgement after its directory is durable.
+                _fsync_directory(directory)
                 return
             temporary = directory / f".{prior_approval_release_digest}.tmp"
             descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)

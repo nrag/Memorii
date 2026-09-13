@@ -19,8 +19,15 @@ def _cross_package_imports(path: Path, forbidden_root: str) -> list[str]:
             imports.append(node.module)
         elif (
             isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Name)
-            and node.func.id in {"__import__", "import_module"}
+            and (
+                (isinstance(node.func, ast.Name) and node.func.id in {"__import__", "import_module"})
+                or (
+                    isinstance(node.func, ast.Attribute)
+                    and node.func.attr in {"__import__", "import_module"}
+                    and isinstance(node.func.value, ast.Name)
+                    and node.func.value.id in {"builtins", "importlib"}
+                )
+            )
             and node.args
             and isinstance(node.args[0], ast.Constant)
             and isinstance(node.args[0].value, str)
@@ -83,3 +90,13 @@ def test_serialized_import_boundary_detects_nested_import_forms(tmp_path: Path) 
     production_dynamic = tmp_path / "memorii" / "core" / "dynamic.py"
     production_dynamic.write_text("import_module('acceptance.production_revocation')\n")
     assert _cross_package_imports(production_dynamic, "acceptance") == ["acceptance.production_revocation"]
+    production_importlib = tmp_path / "memorii" / "core" / "importlib_dynamic.py"
+    production_importlib.write_text(
+        "import importlib\nimportlib.import_module('acceptance.production_revocation')\n"
+    )
+    assert _cross_package_imports(production_importlib, "acceptance") == ["acceptance.production_revocation"]
+    production_builtins = tmp_path / "memorii" / "core" / "builtins_dynamic.py"
+    production_builtins.write_text(
+        "import builtins\nbuiltins.__import__('acceptance.production_revocation')\n"
+    )
+    assert _cross_package_imports(production_builtins, "acceptance") == ["acceptance.production_revocation"]

@@ -15,6 +15,7 @@ from threading import Event, RLock, Thread
 from types import SimpleNamespace
 from typing import cast
 
+import memorii.core.memory_evolution.deployment_authorization as deployment_authorization
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -215,6 +216,7 @@ def _installed_revocation_publisher_config(
     tmp_path: Path, key: Ed25519PrivateKey,
 ) -> tuple[Path, Path]:
     root = tmp_path / "revocations"
+    root.mkdir(mode=0o700)
     config = tmp_path / "revocation-publisher-v1.json"
     public = key.public_key().public_bytes(
         serialization.Encoding.Raw, serialization.PublicFormat.Raw
@@ -225,6 +227,46 @@ def _installed_revocation_publisher_config(
         "trust_keys": {"acceptance-key": public.hex()},
     }, sort_keys=True, separators=(",", ":")).encode("ascii"))
     return config, root
+
+
+@pytest.mark.parametrize("configuration_failure", ("symlink", "writable", "writable_parent"))
+def test_installed_revocation_cli_rejects_insecure_fixed_configuration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, configuration_failure: str,
+) -> None:
+    release = "6" * 64
+    key = Ed25519PrivateKey.generate()
+    config, root = _installed_revocation_publisher_config(tmp_path, key)
+    if configuration_failure == "symlink":
+        target = tmp_path / "signed-config.json"
+        config.rename(target)
+        config.symlink_to(target)
+    elif configuration_failure == "writable":
+        os.chmod(config, 0o622)
+    else:
+        os.chmod(config.parent, 0o777)
+    monkeypatch.setattr(revocation_publish, "revocation_publisher_config_path", lambda: config)
+    receipt, checkpoint = _signed_production_revocation_evidence(key, release=release)
+    receipt_path = tmp_path / "receipt.json"
+    checkpoint_path = tmp_path / "checkpoint.json"
+    receipt_path.write_bytes(receipt)
+    checkpoint_path.write_bytes(checkpoint)
+    with pytest.raises(SystemExit):
+        revocation_publish.main([
+            "--prior-approval-release-digest", release,
+            "--receipt", str(receipt_path), "--checkpoint", str(checkpoint_path),
+        ])
+    assert not (root / "objects").exists()
+    assert not (root / "current" / f"{release}.json").exists()
+
+
+def test_installed_revocation_cli_default_config_is_fixed_and_has_no_env_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    expected = revocation_publish.revocation_publisher_config_path()
+    monkeypatch.setenv("MEMORII_REVOCATION_PUBLISHER_CONFIG", "/tmp/attacker.json")
+    assert revocation_publish.revocation_publisher_config_path() == expected
+    assert expected.is_absolute()
+    assert expected.parts[-4:] == ("etc", "memorii", "acceptance", "revocation-publisher-v1.json")
 
 
 class _CurrentDeploymentTrust:
@@ -2589,6 +2631,30 @@ def test_installed_monitoring_configuration_fails_closed(
         )
 
 
+def test_installed_monitoring_rejects_unprovisioned_revocation_root_before_activation(
+    tmp_path: Path,
+) -> None:
+    clock = _Clock()
+    configuration, _ = _installed_monitoring_configuration(tmp_path, clock=clock)
+    missing = tmp_path / "operator-must-provision-revocations"
+    configuration["revocation_reader_root"] = str(missing)
+    plane = MemoryPlaneService()
+    with pytest.raises(ValueError, match="installed capability monitoring authority"):
+        build_provider_memory_service_from_env(
+            memory_plane=plane,
+            now_provider=lambda: clock.now,
+            installed_capability_monitoring_configuration=configuration,
+        )
+    assert not missing.exists()
+    assert not plane.list_records(source_kind="semantic_ingestion_capability_status")
+    assert not plane.list_records(
+        source_kind="semantic_ingestion_capability_authorization_checkpoint"
+    )
+    assert not plane.list_records(
+        source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+    )
+
+
 def test_installed_monitoring_rejects_valid_signed_artifact_after_protected_clock_expiry(
     tmp_path: Path,
 ) -> None:
@@ -2836,6 +2902,44 @@ def test_installed_revocation_publish_cli_persists_opaque_evidence_before_mappin
     assert (root / "current" / f"{release}.json").read_bytes() == mapping
     assert (root / "objects" / receipt_value["receipt_digest"]).read_bytes() == receipt_object
     assert (root / "objects" / checkpoint_value["checkpoint_digest"]).read_bytes() == checkpoint_object
+
+
+def test_first_and_recovered_revocation_publication_fsyncs_directory_entries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    release = "6" * 64
+    key = Ed25519PrivateKey.generate()
+    config, root = _installed_revocation_publisher_config(tmp_path, key)
+    monkeypatch.setattr(revocation_publish, "revocation_publisher_config_path", lambda: config)
+    receipt, checkpoint = _signed_production_revocation_evidence(key, release=release)
+    receipt_path = tmp_path / "receipt.json"
+    checkpoint_path = tmp_path / "checkpoint.json"
+    receipt_path.write_bytes(receipt)
+    checkpoint_path.write_bytes(checkpoint)
+    calls: list[Path] = []
+    original_fsync = deployment_authorization._fsync_directory
+
+    def observed_fsync(path: Path) -> None:
+        calls.append(path)
+        original_fsync(path)
+
+    monkeypatch.setattr(deployment_authorization, "_fsync_directory", observed_fsync)
+    arguments = [
+        "--prior-approval-release-digest", release,
+        "--receipt", str(receipt_path), "--checkpoint", str(checkpoint_path),
+    ]
+    assert revocation_publish.main(arguments) == 0
+    objects, current = root / "objects", root / "current"
+    assert calls.index(root) < calls.index(objects)
+    assert calls.index(root, calls.index(objects) + 1) < calls.index(current)
+    calls.clear()
+    assert revocation_publish.main(arguments) == 0
+    assert calls == [objects, objects, current]
+    # Objects survived a simulated interruption before mapping publication.
+    calls.clear()
+    (current / f"{release}.json").unlink()
+    assert revocation_publish.main(arguments) == 0
+    assert calls == [objects, objects, current]
 
 
 def test_installed_revocation_publish_cli_rejects_split_reader_publisher_configuration(
