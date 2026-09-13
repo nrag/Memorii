@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
@@ -100,7 +100,10 @@ class _InstalledCapabilityEvidenceWindowProvider:
 
 
 def build_installed_capability_monitoring_authorities(
-    *, configuration: object, server_time: datetime
+    *,
+    configuration: object,
+    server_time: datetime,
+    now_provider: Callable[[], datetime],
 ) -> tuple[VerifiedCapabilityMonitoringAuthority, ...]:
     """Build monitoring only from a closed, operator-installed authority set.
 
@@ -157,7 +160,7 @@ def build_installed_capability_monitoring_authorities(
             artifact_path, failure="installed deployment authorization"
         )
         reader = InstalledProductionRevocationReader().from_fixed_configuration(
-            {"reader_root": str(revocation_root)}
+            {"reader_root": str(revocation_root)}, now_provider=now_provider
         )
         authority = build_verified_capability_monitoring_authority(
             deployment_authorization_bytes=raw_authorization,

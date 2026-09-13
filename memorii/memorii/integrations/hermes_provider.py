@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from datetime import datetime
 
 from memorii.core.filesystem_storage.bundle import build_filesystem_provider
@@ -60,6 +61,7 @@ class HermesMemoryProvider(MemoryProviderInterface):
             VerifiedCapabilityMonitoringAuthority, ...
         ] = (),
         installed_capability_monitoring_configuration: object | None = None,
+        now_provider: Callable[[], datetime] | None = None,
     ) -> None:
         if memory_plane is not None and storage_root is not None:
             raise ValueError("memory plane and filesystem storage root are mutually exclusive")
@@ -87,6 +89,7 @@ class HermesMemoryProvider(MemoryProviderInterface):
                 scoped_read_authority=scoped_read_authority,
                 verified_capability_monitoring_authorities=verified_capability_monitoring_authorities,
                 installed_capability_monitoring_configuration=installed_capability_monitoring_configuration,
+                now_provider=now_provider,
             )
         else:
             self._service = build_provider_memory_service_from_env(
@@ -98,6 +101,7 @@ class HermesMemoryProvider(MemoryProviderInterface):
                 scoped_read_authority=scoped_read_authority,
                 verified_capability_monitoring_authorities=verified_capability_monitoring_authorities,
                 installed_capability_monitoring_configuration=installed_capability_monitoring_configuration,
+                now_provider=now_provider,
             )
 
     def retrieve_context(

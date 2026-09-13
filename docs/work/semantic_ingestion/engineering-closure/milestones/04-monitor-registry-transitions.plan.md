@@ -457,5 +457,58 @@ The full capability-monitor suite passes 59 cases under warnings-as-errors in
 writer-admission, writer-migration, policy-migration and bootstrap-graph
 atomic-store gate passes 302 cases under warnings-as-errors in 1096.26 seconds.
 
-The sole next action is to freeze and push this candidate, then obtain exact-
-revision specification, correctness and test reviews.
+## R15 Revocation Publisher And Lease-Expiry Remediation (2026-09-13)
+
+The installed production path now binds
+`memorii-semantic-ingestion-revocation-publish` to the canonical
+`InstalledProductionRevocationReader.publish_revocation_evidence` owner. It
+accepts separately signed opaque receipt and epoch-checkpoint bytes, validates
+bounded canonical JSON and the stable identity/digest coordinates without
+importing acceptance schemas, fsyncs immutable content-addressed objects under
+the same exclusive revocation lock, then publishes the mapping. A failed object
+write cannot expose a mapping; identical retries are idempotent and conflicts
+fail closed. Current-use samples the protected host clock after acquiring its
+shared lease, making expiry while waiting unavailable before group CAS.
+
+The sole next action is to run the focused installed publisher and monitoring
+proof, then freeze and push the candidate for exact-revision reviews.
+
+## R15 Protected-Clock And Publisher Failure Delta (2026-09-13)
+
+Installed monitoring composition now passes one host `now_provider` from the
+factory into the fixed revocation reader. The post-lease current-use sample
+therefore never falls back to an ambient wall clock. Filesystem, Hermes, and
+canonical capture roots propagate that same clock to their provider service.
+
+Focused proof on the uncommitted candidate:
+
+- a genuinely Ed25519-signed artifact issued at T0 and expiring at T1 is
+  rejected at protected T2 without status or checkpoint publication (1 passed,
+  5.72 seconds);
+- each direct, factory, filesystem, and Hermes root invokes the public monitor
+  scheduler and has one durable active status plus matching checkpoint (1
+  passed, 5.53 seconds);
+- missing receipt, noncanonical/tampered receipt, and conflicting receipt
+  join each leave no current mapping and accept the repaired exact retry (3
+  independently invoked cases passed, about 15 seconds each);
+- a recomputed-checksum JSONL journal with a forged V2 status checkpoint,
+  decision evaluation kind, or freshness timestamp rejects signed service
+  construction before accepted-operation, effect, or graph-group publication
+  (3 passed, 11.43 seconds).
+
+The malformed pre-field and extended-V1 journal cases now reject forged
+status-checkpoint, decision-evaluation-kind, and freshness-timestamp fields
+before signed service ingress. An installed initial-activation race pauses the
+status CAS after lease entry, proves revocation publication remains blocked,
+then proves the live service demotes and subsequent installed construction is
+fenced. Focused checks for those deltas pass. The complete R15 monitor suite
+passes 74 cases under warnings-as-errors in 245.87 seconds. The installed CLI
+help path, Ruff, scoped first-party Pyright, JSON validation, and diff checks
+pass.
+
+The consolidated capability-monitor, provider-composition, writer-admission,
+writer-migration, policy-migration and bootstrap-graph atomic-store gate passes
+317 cases under warnings-as-errors in 1186.97 seconds.
+
+The sole next action is to freeze and push this candidate, then obtain fresh
+exact-revision specification, correctness and test reviews.

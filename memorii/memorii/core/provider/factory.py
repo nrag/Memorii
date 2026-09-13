@@ -108,10 +108,12 @@ def build_provider_memory_service_from_env(
     ):
         raise ValueError("installed monitoring rejects injected authorities")
     if installed_capability_monitoring_configuration is not None:
+        protected_now = now_provider or (lambda: datetime.now(UTC))
         verified_capability_monitoring_authorities = (
             build_installed_capability_monitoring_authorities(
                 configuration=installed_capability_monitoring_configuration,
-                server_time=(now_provider or (lambda: datetime.now(UTC)))(),
+                server_time=protected_now(),
+                now_provider=protected_now,
             )
         )
     audit_reader = None

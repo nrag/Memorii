@@ -65,6 +65,15 @@ def _canonical_bytes(value: object) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("ascii")
 
 
+def _unique_json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate_json_key")
+        result[key] = value
+    return result
+
+
 def _digest(domain: bytes, value: object) -> str:
     return sha256(domain + b"\0" + _canonical_bytes(value)).hexdigest()
 
@@ -542,9 +551,10 @@ class _SerializedProductionRevocationEvidence:
 class _FileProductionRevocationReader:
     """Least-privilege read-only owner of production revocation evidence."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, *, now_provider: Callable[[], datetime] | None = None) -> None:
         _secure_path(root, "production_revocation_reader_path")
         self._root = root
+        self._now_provider = now_provider
         # This coordinate is shared with the only installed mapping publisher.
         # A shared lock is held through the group CAS; publication takes the
         # exclusive lock before its atomic replacement.
@@ -581,6 +591,52 @@ class _FileProductionRevocationReader:
             raise DeploymentAuthorizationError("production_revocation_missing") from exc
         if not value:
             raise DeploymentAuthorizationError("production_revocation_missing")
+        return value
+
+    @staticmethod
+    def _bounded_canonical_object(raw: bytes, *, kind: str) -> dict[str, object]:
+        """Validate only the opaque coordinate shape owned by this runtime.
+
+        Acceptance owns signature and schema semantics.  The production
+        publisher deliberately checks just enough stable identity to prevent a
+        substituted arbitrary JSON blob from becoming a revocation object.
+        """
+        if not isinstance(raw, bytes) or not raw or len(raw) > 131072:
+            raise DeploymentAuthorizationError("production_revocation_object")
+        try:
+            value = json.loads(raw, object_pairs_hook=lambda pairs: _unique_json_object(pairs))
+        except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+            raise DeploymentAuthorizationError("production_revocation_object") from exc
+        if type(value) is not dict or _canonical_bytes(value) != raw:
+            raise DeploymentAuthorizationError("production_revocation_object")
+        if kind == "receipt":
+            required = {"schema_version", "purpose", "prior_approval_release_digest", "receipt_digest", "signing_key_coordinate", "signature"}
+            digest_field = "receipt_digest"
+            purpose = "production_revocation_receipt"
+        else:
+            required = {"schema_version", "purpose", "checkpoint_digest", "revocation_receipt_digests", "signing_key_coordinate", "signature"}
+            digest_field = "checkpoint_digest"
+            purpose = "production_epoch_checkpoint"
+        if not required.issubset(value) or value.get("purpose") != purpose:
+            raise DeploymentAuthorizationError("production_revocation_object")
+        if not isinstance(value.get("schema_version"), int) or value["schema_version"] < 1:
+            raise DeploymentAuthorizationError("production_revocation_object")
+        if not isinstance(value.get(digest_field), str) or not _DIGEST.fullmatch(value[digest_field]):
+            raise DeploymentAuthorizationError("production_revocation_object")
+        if not isinstance(value.get("signing_key_coordinate"), str) or not value["signing_key_coordinate"]:
+            raise DeploymentAuthorizationError("production_revocation_object")
+        if not isinstance(value.get("signature"), str) or not value["signature"]:
+            raise DeploymentAuthorizationError("production_revocation_object")
+        if kind == "receipt" and not isinstance(value.get("prior_approval_release_digest"), str):
+            raise DeploymentAuthorizationError("production_revocation_object")
+        if kind == "receipt" and not _DIGEST.fullmatch(value["prior_approval_release_digest"]):
+            raise DeploymentAuthorizationError("production_revocation_object")
+        if kind == "checkpoint":
+            receipts = value.get("revocation_receipt_digests")
+            if not isinstance(receipts, list) or not receipts or any(
+                not isinstance(item, str) or not _DIGEST.fullmatch(item) for item in receipts
+            ):
+                raise DeploymentAuthorizationError("production_revocation_object")
         return value
 
     def load_checkpoint(self, checkpoint_digest: str) -> bytes:
@@ -649,7 +705,60 @@ class _FileProductionRevocationReader:
             yield False
             return
         with self._locked(fcntl.LOCK_SH if fcntl is not None else 0):
-            yield self._is_current_locked(release)
+            # Production composition supplies a protected host clock.  The
+            # sample happens only after acquiring the lease, so an artifact
+            # expiring while publication held the exclusive lock cannot CAS.
+            now = self._now_provider() if self._now_provider is not None else server_time
+            yield artifact.expires_at > now and self._is_current_locked(release)
+
+    def _publish_object_locked(self, *, digest: str, raw: bytes) -> None:
+        directory = self._root / "objects"
+        path = directory / digest
+        _secure_path(path, "production_revocation_reader_path")
+        directory.mkdir(parents=True, exist_ok=True)
+        if path.exists():
+            if path.read_bytes() != raw:
+                raise DeploymentAuthorizationError("production_revocation_conflict")
+            return
+        temporary = directory / f".{digest}.{os.getpid()}.{os.urandom(8).hex()}.tmp"
+        try:
+            with temporary.open("xb") as output:
+                output.write(raw)
+                output.flush()
+                os.fsync(output.fileno())
+            try:
+                os.link(temporary, path)
+            except FileExistsError:
+                if path.read_bytes() != raw:
+                    raise DeploymentAuthorizationError("production_revocation_conflict") from None
+            _fsync_directory(directory)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    def publish_revocation_evidence(
+        self, *, prior_approval_release_digest: str, receipt: bytes, checkpoint: bytes
+    ) -> None:
+        """Durably publish opaque signed evidence before exposing its mapping."""
+        receipt_value = self._bounded_canonical_object(receipt, kind="receipt")
+        checkpoint_value = self._bounded_canonical_object(checkpoint, kind="checkpoint")
+        receipt_digest = receipt_value["receipt_digest"]
+        checkpoint_digest = checkpoint_value["checkpoint_digest"]
+        if (
+            not isinstance(receipt_digest, str) or not isinstance(checkpoint_digest, str)
+            or receipt_value["prior_approval_release_digest"] != prior_approval_release_digest
+            or not isinstance(checkpoint_value["revocation_receipt_digests"], list)
+            or receipt_digest not in checkpoint_value["revocation_receipt_digests"]
+        ):
+            raise DeploymentAuthorizationError("production_revocation_coordinate")
+        if not _DIGEST.fullmatch(prior_approval_release_digest):
+            raise DeploymentAuthorizationError("production_revocation_coordinate")
+        with self._locked(fcntl.LOCK_EX if fcntl is not None else 0):
+            self._publish_object_locked(digest=receipt_digest, raw=receipt)
+            self._publish_object_locked(digest=checkpoint_digest, raw=checkpoint)
+            self._publish_revocation_mapping_locked(
+                prior_approval_release_digest=prior_approval_release_digest,
+                receipt_digest=receipt_digest, checkpoint_digest=checkpoint_digest,
+            )
 
     def publish_revocation_mapping(
         self, *, prior_approval_release_digest: str, receipt_digest: str,
@@ -660,6 +769,15 @@ class _FileProductionRevocationReader:
             prior_approval_release_digest, receipt_digest, checkpoint_digest,
         )):
             raise DeploymentAuthorizationError("production_revocation_coordinate")
+        with self._locked(fcntl.LOCK_EX if fcntl is not None else 0):
+            self._publish_revocation_mapping_locked(
+                prior_approval_release_digest=prior_approval_release_digest,
+                receipt_digest=receipt_digest, checkpoint_digest=checkpoint_digest,
+            )
+
+    def _publish_revocation_mapping_locked(
+        self, *, prior_approval_release_digest: str, receipt_digest: str, checkpoint_digest: str,
+    ) -> None:
         payload = _canonical_bytes({
             "prior_approval_release_digest": prior_approval_release_digest,
             "receipt_digest": receipt_digest,
@@ -668,40 +786,37 @@ class _FileProductionRevocationReader:
         directory = self._root / "current"
         path = directory / f"{prior_approval_release_digest}.json"
         _secure_path(path, "production_revocation_reader_path")
-        with self._locked(fcntl.LOCK_EX if fcntl is not None else 0):
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+            if path.exists():
+                if path.read_bytes() != payload:
+                    raise DeploymentAuthorizationError(
+                        "production_revocation_conflict"
+                    ) from None
+                return
+            temporary = directory / f".{prior_approval_release_digest}.tmp"
+            descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             try:
-                directory.mkdir(parents=True, exist_ok=True)
-                if path.exists():
-                    if path.read_bytes() != payload:
-                        raise DeploymentAuthorizationError(
-                            "production_revocation_conflict"
-                        ) from None
-                    return
-                temporary = directory / f".{prior_approval_release_digest}.tmp"
-                descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-                try:
-                    os.write(descriptor, payload)
-                    os.fsync(descriptor)
-                finally:
-                    os.close(descriptor)
-                try:
-                    # Hard-link creation is publish-if-absent at the
-                    # filesystem boundary too; it never replaces a competing
-                    # coordinate if an external publisher violated the lock
-                    # protocol.
-                    os.link(temporary, path)
-                except FileExistsError:
-                    if path.read_bytes() != payload:
-                        raise DeploymentAuthorizationError(
-                            "production_revocation_conflict"
-                        ) from None
-                finally:
-                    temporary.unlink(missing_ok=True)
-                _fsync_directory(directory)
-            except DeploymentAuthorizationError:
-                raise
-            except OSError as exc:
-                raise DeploymentAuthorizationError("production_revocation_publish") from exc
+                os.write(descriptor, payload)
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+            try:
+                # Hard-link creation is publish-if-absent at the filesystem
+                # boundary too; it never replaces a competing coordinate.
+                os.link(temporary, path)
+            except FileExistsError:
+                if path.read_bytes() != payload:
+                    raise DeploymentAuthorizationError(
+                        "production_revocation_conflict"
+                    ) from None
+            finally:
+                temporary.unlink(missing_ok=True)
+            _fsync_directory(directory)
+        except DeploymentAuthorizationError:
+            raise
+        except OSError as exc:
+            raise DeploymentAuthorizationError("production_revocation_publish") from exc
 
 
 class _SerializedDeploymentPublisher:
@@ -766,14 +881,14 @@ class InstalledProductionRevocationReader:
     """Fixed entry-point factory for the independent acceptance reader port."""
 
     def from_fixed_configuration(
-        self, configuration: object
+        self, configuration: object, *, now_provider: Callable[[], datetime] | None = None
     ) -> _FileProductionRevocationReader:
         if type(configuration) is not dict or set(configuration) != {"reader_root"}:
             raise DeploymentAuthorizationError("production_revocation_configuration")
         root = Path(str(configuration["reader_root"]))
         if not root.is_absolute() or root.is_symlink():
             raise DeploymentAuthorizationError("production_revocation_configuration")
-        return _FileProductionRevocationReader(root)
+        return _FileProductionRevocationReader(root, now_provider=now_provider)
 
 
 class _RawEd25519Signer:

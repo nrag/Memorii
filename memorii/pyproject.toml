@@ -19,6 +19,7 @@ dependencies = [
 [project.scripts]
 memorii-acceptance-evaluate = "acceptance.cli:main"
 memorii-acceptance-authority-publish = "acceptance.authority_cli:main"
+memorii-semantic-ingestion-revocation-publish = "memorii.tools.semantic_ingestion_revocation_publish:main"
 
 [project.entry-points."memorii.acceptance_evaluator_runtime"]
 installed = "acceptance.host_runtime:InstalledAcceptanceRuntime"

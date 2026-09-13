@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 from collections.abc import Iterator
@@ -100,6 +101,11 @@ class _Clock:
 
 class _UnexpectedEvidenceProviderError(Exception):
     pass
+
+
+class _NoEvidenceProvider:
+    def load_evidence_windows(self, *, max_items: int) -> tuple[CapabilityEvidenceWindow, ...]:
+        return ()
 
 
 class _TestDeploymentSigner:
@@ -1092,6 +1098,138 @@ def test_historical_monitor_wires_reject_injected_generation_fields() -> None:
         CapabilityStatus.model_validate(
             {**pre_status, "authorization_checkpoint_digest": "d" * 64}
         )
+
+
+@pytest.mark.parametrize(
+    ("source_kind", "content_key", "forged_field"),
+    (
+        ("semantic_ingestion_capability_status", "status", "authorization_checkpoint_digest"),
+        ("semantic_ingestion_capability_monitor_decision", "decision", "evaluation_kind"),
+        ("semantic_ingestion_capability_initial_freshness", "freshness", "traffic_state_changed_at"),
+    ),
+)
+def test_forged_v2_monitor_wire_fields_fail_before_signed_ingress_publication(
+    tmp_path: Path, source_kind: str, content_key: str, forged_field: str,
+) -> None:
+    """A persisted authenticated V2 record cannot acquire a later wire field.
+
+    The JSONL checksum is recomputed to demonstrate that store integrity alone
+    is insufficient: contract verification must reject the forged value before
+    a real signed service can publish operation, effect, or group records.
+    """
+    clock, _, monitor, policy, implementation = _monitor(
+        MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "records")),
+        fingerprint="38a5be91af79d7e5ba9809bf383c699b6864ee50446239fe56a45e32b84638fe",
+    )
+    clock.now = TEST_NOW
+    monitor.tick(evidence=_window(clock, policy, implementation, value="0.1"))
+    journal = tmp_path / "records" / "memory_records.jsonl"
+    batches = [json.loads(line) for line in journal.read_text(encoding="utf-8").splitlines()]
+    changed = False
+    for batch in batches:
+        for record in batch["records"]:
+            if record["source_kind"] == source_kind:
+                record["content"][content_key][forged_field] = "f" * 64
+                changed = True
+        body = {key: value for key, value in batch.items() if key != "checksum"}
+        batch["checksum"] = sha256(
+            json.dumps(body, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+    assert changed
+    journal.write_text(
+        "".join(json.dumps(batch, sort_keys=True, separators=(",", ":")) + "\n" for batch in batches),
+        encoding="utf-8",
+    )
+    reopened = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "records"))
+    authority = _signed_monitoring_authority(
+        clock=clock, policy=policy, implementation=implementation,
+        evidence_provider=_NoEvidenceProvider(),
+        signer=_TestDeploymentSigner(),
+    )
+    with pytest.raises(ValueError):
+        _service_for_joined_monitoring_ingress(
+            plane=reopened, clock=clock, authority=authority
+        )
+    assert not reopened.list_records(
+        source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+    )
+    assert not reopened.list_records(source_kind="semantic_ingestion_accepted_identity_operation")
+    assert not reopened.list_records(source_kind="semantic_ingestion_effect")
+
+
+@pytest.mark.parametrize(
+    ("wire", "source_kind", "content_key", "forged_field"),
+    (
+        ("pre_field", "semantic_ingestion_capability_status", "status", "authorization_checkpoint_digest"),
+        ("pre_field", "semantic_ingestion_capability_monitor_decision", "decision", "evaluation_kind"),
+        ("pre_field", "semantic_ingestion_capability_initial_freshness", "freshness", "traffic_state_changed_at"),
+        ("extended", "semantic_ingestion_capability_status", "status", "authorization_checkpoint_digest"),
+        ("extended", "semantic_ingestion_capability_monitor_decision", "decision", "evaluation_kind"),
+        ("extended", "semantic_ingestion_capability_initial_freshness", "freshness", "traffic_state_changed_at"),
+    ),
+)
+def test_forged_legacy_monitor_wire_fields_fail_before_signed_ingress_publication(
+    tmp_path: Path, wire: str, source_kind: str, content_key: str, forged_field: str,
+) -> None:
+    """Legacy V1 preimages reject later fields even with a valid JSONL checksum."""
+    clock, _, monitor, policy, implementation = _monitor(
+        MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "records")),
+        fingerprint="38a5be91af79d7e5ba9809bf383c699b6864ee50446239fe56a45e32b84638fe",
+    )
+    clock.now = TEST_NOW
+    monitor.tick(evidence=_window(clock, policy, implementation, value="0.1"))
+    journal = tmp_path / "records" / "memory_records.jsonl"
+    batches = [json.loads(line) for line in journal.read_text(encoding="utf-8").splitlines()]
+    changed = False
+    for batch in batches:
+        for record in batch["records"]:
+            if record["source_kind"] != source_kind:
+                continue
+            current = record["content"][content_key]
+            body = {key: value for key, value in current.items() if key not in {
+                "schema_version", "wire_generation", "status_digest", "decision_digest", "evidence_digest",
+            }}
+            if wire == "pre_field":
+                body.pop("authorization_checkpoint_digest", None)
+                body.pop("evaluation_kind", None)
+                body.pop("traffic_state_changed_at", None)
+                body.pop("label_pipeline_state_changed_at", None)
+            domain = {
+                "status": b"memorii.semantic-ingestion.capability-status.v1",
+                "decision": b"memorii.semantic-ingestion.capability-monitoring-decision.v1",
+                "freshness": b"memorii.semantic-ingestion.capability-evidence-freshness.v1",
+            }[content_key]
+            digest_key = {
+                "status": "status_digest", "decision": "decision_digest", "freshness": "evidence_digest",
+            }[content_key]
+            legacy = {**body, digest_key: contract_digest(domain, body)}
+            legacy[forged_field] = "f" * 64
+            record["content"][content_key] = legacy
+            changed = True
+        body = {key: value for key, value in batch.items() if key != "checksum"}
+        batch["checksum"] = sha256(
+            json.dumps(body, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+    assert changed
+    journal.write_text(
+        "".join(json.dumps(batch, sort_keys=True, separators=(",", ":")) + "\n" for batch in batches),
+        encoding="utf-8",
+    )
+    reopened = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "records"))
+    authority = _signed_monitoring_authority(
+        clock=clock, policy=policy, implementation=implementation,
+        evidence_provider=_NoEvidenceProvider(),
+        signer=_TestDeploymentSigner(),
+    )
+    with pytest.raises(ValueError):
+        _service_for_joined_monitoring_ingress(
+            plane=reopened, clock=clock, authority=authority
+        )
+    assert not reopened.list_records(
+        source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+    )
+    assert not reopened.list_records(source_kind="semantic_ingestion_accepted_identity_operation")
+    assert not reopened.list_records(source_kind="semantic_ingestion_effect")
 
 
 def test_normal_reconciliation_scheduler_expires_monitor_without_ingress() -> None:
@@ -2251,6 +2389,33 @@ def test_installed_monitoring_configuration_fails_closed(
         )
 
 
+def test_installed_monitoring_rejects_valid_signed_artifact_after_protected_clock_expiry(
+    tmp_path: Path,
+) -> None:
+    """The lease samples the same host clock used at installed construction.
+
+    This is intentionally not a tamper case: the Ed25519 signature remains
+    valid at T2, while its signed expiry was at T1.
+    """
+    clock = _Clock()
+    expiry = clock.now + timedelta(minutes=1)
+    configuration, _ = _installed_monitoring_configuration(
+        tmp_path, clock=clock, expires_at=expiry
+    )
+    clock.now = expiry + timedelta(seconds=1)
+    plane = MemoryPlaneService()
+    with pytest.raises(ValueError, match="installed capability monitoring authority"):
+        build_provider_memory_service_from_env(
+            memory_plane=plane,
+            now_provider=lambda: clock.now,
+            installed_capability_monitoring_configuration=configuration,
+        )
+    assert not plane.list_records(source_kind="semantic_ingestion_capability_status")
+    assert not plane.list_records(
+        source_kind="semantic_ingestion_capability_authorization_checkpoint"
+    )
+
+
 def test_absent_installed_monitoring_configuration_leaves_service_evidence_only() -> None:
     service = build_provider_memory_service_from_env()
     assert service._capability_monitor is not None
@@ -2281,10 +2446,90 @@ def test_installed_monitoring_configuration_reaches_all_capture_roots(
     )
     hermes = HermesMemoryProvider(
         installed_capability_monitoring_configuration=configuration,
+        now_provider=lambda: clock.now,
     )
     for service in (direct, factory, filesystem, hermes._service):
         assert service._capability_monitor.configured_capability_fingerprints == (
             policy.capability_fingerprint,
+        )
+        # Initial construction has durably activated the signed capability;
+        # exercise the public scheduler rather than inspecting only wiring.
+        assert service.process_capability_monitoring(max_items=1) == ()
+        statuses = service._memory_plane.list_records(
+            source_kind="semantic_ingestion_capability_status"
+        )
+        checkpoints = service._memory_plane.list_records(
+            source_kind="semantic_ingestion_capability_authorization_checkpoint"
+        )
+        assert len(statuses) == len(checkpoints) == 1
+        assert statuses[0].content["status"]["status"] == "active"
+
+
+def test_installed_initial_activation_holds_revocation_lease_through_status_cas(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    """External revocation cannot become current between activation check and CAS."""
+    clock = _Clock()
+    configuration, _ = _installed_monitoring_configuration(tmp_path, clock=clock)
+    plane = MemoryPlaneService()
+    cas_entered = Event()
+    release_cas = Event()
+    original_write = plane.conditionally_write_records
+
+    def pause_initial_status(records, **kwargs):
+        if any(record.source_kind == "semantic_ingestion_capability_status" for record in records):
+            cas_entered.set()
+            assert release_cas.wait(timeout=5)
+        return original_write(records, **kwargs)
+
+    monkeypatch.setattr(plane, "conditionally_write_records", pause_initial_status)
+    errors: list[BaseException] = []
+    services = []
+
+    def construct() -> None:
+        try:
+            services.append(build_provider_memory_service_from_env(
+                memory_plane=plane, now_provider=lambda: clock.now,
+                installed_capability_monitoring_configuration=configuration,
+            ))
+        except BaseException as exc:  # pragma: no cover - asserted below
+            errors.append(exc)
+
+    activation = Thread(target=construct)
+    activation.start()
+    assert cas_entered.wait(timeout=10)
+    reader = InstalledProductionRevocationReader().from_fixed_configuration(
+        {"reader_root": configuration["revocation_reader_root"]}, now_provider=lambda: clock.now
+    )
+    published = Event()
+
+    def revoke() -> None:
+        reader.publish_revocation_mapping(
+            prior_approval_release_digest="6" * 64,
+            receipt_digest="a" * 64,
+            checkpoint_digest="b" * 64,
+        )
+        published.set()
+
+    revoker = Thread(target=revoke)
+    revoker.start()
+    assert not published.wait(timeout=0.2)
+    release_cas.set()
+    activation.join(timeout=10)
+    revoker.join(timeout=10)
+    assert not activation.is_alive() and not revoker.is_alive()
+    assert not errors
+    assert published.is_set()
+    assert len(services) == 1
+    demoted = services[0].process_capability_monitoring(max_items=1)
+    assert len(demoted) == 1
+    assert demoted[0].status.status == "evidence_only"
+    # Subsequent installed construction sees the current mapping and fails
+    # before a replacement status/checkpoint can be initialized.
+    with pytest.raises(ValueError, match="installed capability monitoring authority"):
+        build_provider_memory_service_from_env(
+            memory_plane=MemoryPlaneService(), now_provider=lambda: clock.now,
+            installed_capability_monitoring_configuration=configuration,
         )
 
 
@@ -2337,3 +2582,98 @@ def test_installed_revocation_publication_is_interprocess_linearized_and_monoton
         "receipt_digest": receipt,
         "checkpoint_digest": checkpoint,
     }
+
+
+def test_installed_revocation_publish_cli_persists_opaque_evidence_before_mapping(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "revocations"
+    release = "6" * 64
+    receipt_digest = "a" * 64
+    checkpoint_digest = "b" * 64
+    receipt = {
+        "schema_version": 1, "purpose": "production_revocation_receipt",
+        "prior_approval_release_digest": release, "receipt_digest": receipt_digest,
+        "signing_key_coordinate": "acceptance-key", "signature": "00",
+    }
+    checkpoint = {
+        "schema_version": 1, "purpose": "production_epoch_checkpoint",
+        "checkpoint_digest": checkpoint_digest,
+        "revocation_receipt_digests": [receipt_digest],
+        "signing_key_coordinate": "acceptance-key", "signature": "00",
+    }
+    receipt_path = tmp_path / "receipt.json"
+    checkpoint_path = tmp_path / "checkpoint.json"
+    for path, value in ((receipt_path, receipt), (checkpoint_path, checkpoint)):
+        path.write_bytes(json.dumps(value, sort_keys=True, separators=(",", ":")).encode("ascii"))
+    result = subprocess.run(
+        [sys.executable, "-m", "memorii.tools.semantic_ingestion_revocation_publish",
+         "--root", str(root), "--prior-approval-release-digest", release,
+         "--receipt", str(receipt_path), "--checkpoint", str(checkpoint_path)],
+        cwd=Path(__file__).parents[4],
+        env={**os.environ, "PYTHONPATH": str(Path(__file__).parents[4] / "memorii")},
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert (root / "objects" / receipt_digest).read_bytes() == receipt_path.read_bytes()
+    assert (root / "objects" / checkpoint_digest).read_bytes() == checkpoint_path.read_bytes()
+    assert json.loads((root / "current" / f"{release}.json").read_text()) == {
+        "prior_approval_release_digest": release,
+        "receipt_digest": receipt_digest,
+        "checkpoint_digest": checkpoint_digest,
+    }
+
+
+@pytest.mark.parametrize("mutation", ("missing", "tampered", "conflicting"))
+def test_installed_revocation_publish_cli_never_exposes_mapping_on_invalid_objects(
+    tmp_path: Path, mutation: str,
+) -> None:
+    root = tmp_path / "revocations"
+    release = "6" * 64
+    receipt_digest = "a" * 64
+    checkpoint_digest = "b" * 64
+    receipt = {
+        "schema_version": 1, "purpose": "production_revocation_receipt",
+        "prior_approval_release_digest": release, "receipt_digest": receipt_digest,
+        "signing_key_coordinate": "acceptance-key", "signature": "00",
+    }
+    checkpoint = {
+        "schema_version": 1, "purpose": "production_epoch_checkpoint",
+        "checkpoint_digest": checkpoint_digest,
+        "revocation_receipt_digests": [receipt_digest],
+        "signing_key_coordinate": "acceptance-key", "signature": "00",
+    }
+    receipt_path = tmp_path / "receipt.json"
+    checkpoint_path = tmp_path / "checkpoint.json"
+    receipt_path.write_bytes(json.dumps(receipt, sort_keys=True, separators=(",", ":")).encode("ascii"))
+    checkpoint_path.write_bytes(json.dumps(checkpoint, sort_keys=True, separators=(",", ":")).encode("ascii"))
+    if mutation == "missing":
+        receipt_path.unlink()
+    elif mutation == "tampered":
+        receipt_path.write_bytes(receipt_path.read_bytes() + b" ")
+    else:
+        checkpoint["revocation_receipt_digests"] = ["c" * 64]
+        checkpoint_path.write_bytes(json.dumps(checkpoint, sort_keys=True, separators=(",", ":")).encode("ascii"))
+    command = [
+        sys.executable, "-m", "memorii.tools.semantic_ingestion_revocation_publish",
+        "--root", str(root), "--prior-approval-release-digest", release,
+        "--receipt", str(receipt_path), "--checkpoint", str(checkpoint_path),
+    ]
+    result = subprocess.run(
+        command, cwd=Path(__file__).parents[4],
+        env={**os.environ, "PYTHONPATH": str(Path(__file__).parents[4] / "memorii")},
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode != 0
+    assert not (root / "current" / f"{release}.json").exists()
+    # An exact retry after correcting the original bytes remains possible.
+    receipt_path.write_bytes(json.dumps(receipt, sort_keys=True, separators=(",", ":")).encode("ascii"))
+    checkpoint["revocation_receipt_digests"] = [receipt_digest]
+    checkpoint_path.write_bytes(json.dumps(checkpoint, sort_keys=True, separators=(",", ":")).encode("ascii"))
+    repaired = subprocess.run(
+        command, cwd=Path(__file__).parents[4],
+        env={**os.environ, "PYTHONPATH": str(Path(__file__).parents[4] / "memorii")},
+        capture_output=True, text=True, check=False,
+    )
+    assert repaired.returncode == 0, repaired.stderr
+    assert (root / "current" / f"{release}.json").exists()

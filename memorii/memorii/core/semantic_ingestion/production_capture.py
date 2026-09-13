@@ -119,6 +119,7 @@ def _capture_child(
         monitoring_authorities = build_installed_capability_monitoring_authorities(
             configuration=cell.installed_capability_monitoring_configuration,
             server_time=cell.server_time,
+            now_provider=lambda: cell.server_time,
         )
     storage_root = cell.storage_root or Path(mkdtemp(prefix="memorii-canonical-evidence-"))
     service = _build_root(
@@ -172,12 +173,14 @@ def _build_root(
             memory_plane=memory_plane,
             verified_production_host_authority=authority,
             verified_capability_monitoring_authorities=monitoring_authorities,
+            now_provider=lambda: cell.server_time,
         )
     if cell.root == "factory":
         return build_provider_memory_service_from_env(
             memory_plane=memory_plane,
             verified_production_host_authority=authority,
             verified_capability_monitoring_authorities=monitoring_authorities,
+            now_provider=lambda: cell.server_time,
         )
     if cell.root == "filesystem":
         return build_filesystem_provider(
@@ -185,6 +188,7 @@ def _build_root(
             memory_plane=memory_plane,
             verified_production_host_authority=authority,
             verified_capability_monitoring_authorities=monitoring_authorities,
+            now_provider=lambda: cell.server_time,
         )
     if cell.root == "hermes":
         if cell.backend == "jsonl":
@@ -192,11 +196,13 @@ def _build_root(
                 storage_root=str(storage_root),
                 verified_production_host_authority=authority,
                 verified_capability_monitoring_authorities=monitoring_authorities,
+                now_provider=lambda: cell.server_time,
             )
         return HermesMemoryProvider(
             memory_plane=memory_plane,
             verified_production_host_authority=authority,
             verified_capability_monitoring_authorities=monitoring_authorities,
+            now_provider=lambda: cell.server_time,
         )
     raise ValueError("unsupported canonical evidence capture root")
 
