@@ -79,6 +79,13 @@ warnings-as-errors cases plus Ruff and Pyright. R17 remains partial because the
 complete record-family comparator and real configured authorization matrix are
 not yet implemented.
 
-Next action: extend the comparator through source introductions, entity
-alignment, terminal outcomes and exact closed-world record membership, then
-exercise that slice through the real paginated ProviderMemoryService route.
+Comparator slice 2 found a production contract gap before editing:
+source-introduction pages expose only opaque type-evidence IDs, while the
+approved alignment order requires independently authored semantic proof
+coordinates before later type records may participate. Treating those IDs as
+fixture coordinates was rejected as contrary to the design.
+
+Next action: add commit-time-derived semantic type-proof coordinates to the
+canonical and public source-introduction contracts, preserve legacy decoding,
+regenerate registered artifacts and prove public materialization; then resume
+source/entity comparator alignment.

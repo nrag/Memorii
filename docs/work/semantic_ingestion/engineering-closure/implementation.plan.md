@@ -168,9 +168,10 @@ writers finish; no current whole-candidate proof is claimed yet.
 
 ## Next Action
 
-Extend the committed comparator foundation through source introductions, entity
-alignment, terminal outcomes and exact closed-world record membership, then
-exercise that slice through the real paginated ProviderMemoryService route.
+Correct canonical and public source-introduction persistence to expose
+fixture-authorable type-proof coordinates without production IDs, including
+legacy decoding and registered artifacts; then resume source/entity comparator
+alignment.
 
 2026-09-08: root owns all code, generation, tests and commits. Read-only
 component reviews cover frozen90c58da62428f3caeab8ee7bca03116a24009d35e97aa705e1d757987a61362c.

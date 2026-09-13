@@ -39,11 +39,11 @@ inferred from an unobserved process completion.
 
 ## Next Action
 
-Extend the acceptance-owned comparator from operation/fence alignment through
-source introductions, entity alignment, terminal outcomes and exact
-closed-world record membership. Exercise it through the real paginated
-ProviderMemoryService route before adding the remaining schema-specific record
-families. Do not read stores directly or import production projection helpers.
+Correct the canonical and public source-introduction contracts to retain
+fixture-authorable type-proof coordinates alongside opaque evidence IDs. Derive
+them from commit-time planning authority, preserve authentic legacy decoding,
+regenerate registry artifacts and prove the public materialization. Then resume
+source/entity comparator alignment.
 
 ## Public Comparator Foundation
 
@@ -69,6 +69,18 @@ Delegation record: `r17_comparator_slice` was the sole Terra writer for
 `acceptance/structural_comparator.py` and its focused unit test. The coordinator
 owned requirements reconciliation and independently reran its checks. No
 production, integration, or planning file overlapped the writer's ownership.
+
+Comparator slice 2 stopped before editing when it proved that
+ObservedSourceIntroduction exposes only opaque
+`independently_asserted_type_evidence_ids`. The approved design requires
+fixture-authored type-proof coordinates during source-introduction alignment,
+before later type-evidence records may participate, and forbids production IDs
+in expected fixtures. A read-only mapper's suggestion to compare those IDs was
+rejected because it contradicts that contract. This is a determinate production
+schema and persistence gap, not a new policy decision. The sole writer
+`r17_source_type_proof_publication` owns the canonical/public contract,
+commit-time derivation, registered artifacts and focused production tests; it
+does not own the acceptance comparator or planning files.
 
 The linked `../../terminal-publication/closure.md` records bounded source closure
 with all three independent approvals, public same-CAS/restart/tamper/authority
