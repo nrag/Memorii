@@ -5,10 +5,11 @@
 - Status: active; authenticated public observation and independent comparator closure
 - Requirements: R03, R13, R17
 
-Enable one production-shaped Hermes observation/comparison trial with scoped
-pagination and focused authorization/revocation failure proof. Complete
-record-family and platform matrices remain Level 3 follow-up unless the trial
-exposes a required gap.
+Enable production-shaped Hermes observation/comparison happy scenarios with
+scoped pagination and common caller denial, revocation, stale cursor, restart,
+and partial/retry failure proof. Adversarial memory spoofing, forged internal
+topology, and complete record-family/platform tamper matrices remain Level 3
+follow-up unless real testing exposes a required gap.
 
 ## Active Native Persistence Slice
 

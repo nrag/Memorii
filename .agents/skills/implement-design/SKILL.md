@@ -21,12 +21,13 @@ Create or resume a WorkPlan whose work type is `implementation`.
 
 Apply the delivery-fidelity contract in `AGENTS.md` before constructing
 milestones or validation. Scale the implementation and reviewer cohort to that
-level. For Level 2, prioritize the shortest production-shaped path to one real
-integration, retain universal invariants and reachable trust-boundary checks,
-and use focused regressions. Do not make exhaustive family closure, complete
-host matrices, final packaging, or exact-release approval prerequisites unless
-they are necessary for the real test or explicitly requested. Record those as
-Level 3 follow-up instead.
+level. For Level 2, make the intended real integration work across its happy
+scenarios and common operational failures, retain basic caller/scope,
+persistence, retry, recovery, and data-integrity behavior, and use focused
+regressions. Do not make adversarial spoof/tamper families, hostile-storage
+hardening, complete platform matrices, final packaging, or exact-release
+approval prerequisites unless the trial needs them or the user explicitly
+requests them. Record those as Level 3 follow-up instead.
 
 The main thread is the coordinator. Use exactly one writer at a time for
 overlapping code, tests, documents, prompts, schemas, configuration, migrations,
@@ -293,11 +294,11 @@ integration scope, give reviewers the frozen Spark preflight binding ledger.
 They must challenge its coverage and exact path proof rather than repeat general
 repository mapping.
 
-At Levels 1 and 2, use targeted review only when the changed path crosses a
-universal invariant or reachable security, authorization, persistence, or
-data-integrity boundary, or when the user requests it. One reviewer may cover a
-small bounded slice. Do not create a full three-role closure loop for each
-early-integration correction.
+At Levels 1 and 2, use targeted review only when the changed path affects a
+happy scenario, common operational failure, basic caller/scope boundary,
+universal invariant, persistence, retry, recovery, or data-integrity behavior,
+or when the user requests it. One reviewer may cover a small bounded slice. Do
+not create a full three-role closure loop for each early-integration correction.
 
 Run full reviewers once for the coherent milestone when the selected level
 requires them. After a bounded

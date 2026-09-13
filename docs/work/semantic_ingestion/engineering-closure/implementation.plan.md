@@ -10,7 +10,7 @@
 - Parent WorkPlan: `docs/work/semantic_ingestion/implementation.plan.md`
 - Related WorkPlans: `docs/work/semantic_ingestion_completion_readiness/closure-plan.md`, `docs/work/semantic_ingestion/acceptance-authority-persistence/design.plan.md`
 - Canonical inputs: frozen SIA architecture and closure plan
-- Expected outputs: one production-shaped Hermes semantic-ingestion and observation path with focused fail-closed proof
+- Expected outputs: production-shaped Hermes semantic-ingestion, retrieval, and observation happy paths with common-failure proof
 - Current resume packet: `docs/work/semantic_ingestion/engineering-closure/resume.md`
 - Active milestone packet: `docs/work/semantic_ingestion/engineering-closure/milestones/05-authenticated-observer-comparator.plan.md`
 
@@ -37,13 +37,16 @@ to Level 3.
 ## Completion Contract
 
 The Level 2 campaign completes when Hermes reaches the production-shaped public
-ingestion, ledger/monitor, observation, and retrieval owners; one representative
-real integration passes; and focused denial, revocation, persistence/reopen,
-and data-integrity regressions pass. A runtime or persistence claim still
+ingestion, ledger/monitor, observation, and retrieval owners; intended happy
+scenarios pass; and common missing-configuration, caller/scope denial,
+provider/model failure, timeout/partial-work, retry, stale-state,
+persistence/reopen, and duplicate/data-loss regressions pass where applicable.
+A runtime or persistence claim still
 requires a current `production_entrypoint_bindings` entry proving a non-test
 caller reaches the canonical owner with required authority and observed
-outcome. Level 3 package breadth and exact-release approval remain recorded
-follow-up and do not block this learning milestone.
+outcome. Adversarial memory spoofing, forged internal topology, exhaustive
+tamper/host matrices, Level 3 package breadth, and exact-release approval remain
+recorded follow-up and do not block this learning milestone.
 
 ## Packages
 

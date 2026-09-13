@@ -17,10 +17,13 @@ remaining closure sequence is R17 comparator/authentication, complete host
 composition for R08/R16/R19, then frozen evidence/release preparation for
 R03/R13. Actual production keys, signatures and qualifying release measurements
 remain release conditions. For the active Level 2 milestone, those six rows are
-not six separate blockers: completion requires one production-shaped Hermes
-ingestion/monitor/observation/retrieval path plus focused trust, persistence,
-reopen, denial, and revocation checks. Exhaustive record-family and host matrices,
-final evidence packaging, and exact-release review are deferred to Level 3.
+not six separate blockers: completion requires the production-shaped Hermes
+ingestion/monitor/observation/retrieval happy scenarios plus common
+configuration, caller/scope, provider/model, partial/retry, stale-state,
+persistence/reopen, duplicate/data-loss, denial, and revocation checks.
+Adversarial memory spoofing, forged internal topology, exhaustive tamper,
+record-family, and host matrices, final evidence packaging, and exact-release
+review are deferred to Level 3.
 
 Stage 1 has a complete V2 remediation candidate: an installed evaluator,
 registered schema and profile authority, signed immutable object repository,

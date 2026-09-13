@@ -19,12 +19,12 @@ Create or resume a WorkPlan whose work type is `debugging`.
 ## Select Delivery Fidelity
 
 Apply the delivery-fidelity contract in root `AGENTS.md`. At Level 2, reproduce
-and fix the defect on the representative production-shaped integration path,
-preserve universal invariants and reachable trust boundaries, and add focused
-regression proof. Stop when that path is safe and testable. Record exhaustive
-sibling matrices, final packaging, rollout hardening, and whole-branch review as
-Level 3 follow-up unless evidence shows they are required by the same root
-cause.
+and fix defects in the production-shaped happy scenarios and common operational
+failures, preserve basic caller/scope, persistence, retry, recovery, data
+integrity, and universal invariants, and add focused regression proof. Record
+adversarial spoof/tamper siblings, hostile-storage hardening, exhaustive
+matrices, final packaging, rollout hardening, and whole-branch review as Level 3
+follow-up unless evidence shows they share the in-scope root cause.
 
 The main thread is the coordinator. Use one writer at a time for overlapping
 code, tests, fixtures, and documentation.

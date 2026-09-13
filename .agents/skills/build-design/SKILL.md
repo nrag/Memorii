@@ -8,13 +8,14 @@ description: Build or substantially revise a Memorii technical design through re
 ## Select Delivery Fidelity
 
 Apply the delivery-fidelity contract in root `AGENTS.md` before setting design
-scope. At Levels 1 and 2, design the smallest replaceable contract that enables
-the runnable or real-world learning objective while preserving universal
-invariants and reachable trust boundaries. Keep production rollout,
-compatibility breadth, exhaustive attack matrices, and final evidence machinery
-as explicit Level 3 or 4 follow-up unless they are needed for the selected
-test. Review design completeness against the selected level rather than the
-eventual maximum-fidelity system.
+scope. At Levels 1 and 2, design the smallest replaceable contract that makes
+the runnable or real-world workflow useful across happy scenarios and common
+operational failures while preserving basic authorization/scope, persistence,
+retry, recovery, data integrity, and universal invariants. Keep production
+rollout, compatibility breadth, adversarial spoof/tamper matrices,
+hostile-storage hardening, and final evidence machinery as explicit Level 3 or
+4 follow-up unless needed for the selected test. Review design completeness
+against the selected level rather than the eventual maximum-fidelity system.
 
 Read:
 

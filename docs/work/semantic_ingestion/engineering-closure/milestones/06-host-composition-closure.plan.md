@@ -5,8 +5,9 @@
 - Status: blocked on incomplete implementation packages
 - Requirements: R01-R23
 
-Wire and prove one representative real Hermes root for early testing. The full
-production-root matrix and final exact-candidate gates are Level 3 follow-up.
+Wire and prove the real Hermes root across intended happy scenarios and common
+operational failures for early testing. Exhaustive root/tamper matrices and
+final exact-candidate gates are Level 3 follow-up.
 
 ## Next Action
 

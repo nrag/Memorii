@@ -21,12 +21,13 @@ implementation, or debugging WorkPlan.
 ## Select Delivery Fidelity
 
 Apply the delivery-fidelity contract in root `AGENTS.md`. Level 1 needs a fast
-runnable signal. Level 2 needs focused contract checks plus one representative
-production-shaped real integration. Preserve tests for universal invariants and
-reachable trust boundaries, but defer exhaustive platform matrices, final
-packaging evidence, and full regression topology to Level 3. Level 4 adds
-compatibility and persisted-data regression breadth for already shipped
-behavior.
+runnable signal. Level 2 needs production-shaped integration coverage for happy
+scenarios and common operational failures, with focused basic authorization,
+scope, persistence, retry, recovery, and data-integrity checks. Defer
+adversarial memory-spoof/tamper matrices, hostile-storage hardening, exhaustive
+platform matrices, final packaging evidence, and full regression topology to
+Level 3. Level 4 adds compatibility and persisted-data regression breadth for
+already shipped behavior.
 
 ## Cost-Aware Test Architecture
 

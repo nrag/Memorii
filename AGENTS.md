@@ -122,7 +122,7 @@ otherwise infer the lowest level that safely supports the stated objective.
 | Level | Stage | Required bar |
 | --- | --- | --- |
 | 1 | Early development | Reach the shortest runnable learning loop. Use focused checks and replaceable local fixtures. Record important limitations; do not claim real-world or production readiness. |
-| 2 | Early real-world testing | Use production-shaped public paths and one representative real integration. Preserve security, authorization, data-integrity, persistence, and fail-closed boundaries. Add focused regressions for defects found in the trial. Defer exhaustive matrices, final evidence packaging, release ceremony, and speculative hardening. |
+| 2 | Early real-world testing | Make the intended real integration work well across its happy scenarios and common operational failures. Preserve basic authorization, scope isolation, data integrity, persistence, retry, and recovery behavior. Add focused regressions for defects found in trials. Defer adversarial spoof/tamper matrices, hostile-storage hardening, exhaustive platform/failure families, final evidence packaging, and release ceremony. |
 | 3 | First production rollout | Cover every supported production root and failure family. Require migration, rollback, operability, security, broad gates, exact release artifacts, and revision-bound approval evidence. |
 | 4 | Updates to a shipped product | Meet Level 3 and protect established compatibility and behavior with comprehensive regression, upgrade/downgrade, persisted-data, and rollout evidence. |
 
@@ -133,12 +133,14 @@ level. Classify deferred higher-level work explicitly; it does not block the
 selected level and must not be reported as completed.
 
 Reviewers must judge against the selected level. At Levels 1 and 2, request a
-change only for behavior needed to run the stated test, a demonstrated P1/P2
-defect in that path, a universal invariant violation, or a reachable security,
-authorization, persistence, or data-integrity failure. Record exhaustive
-coverage, release evidence, compatibility breadth, and speculative operability
-work as later-level follow-up. Exact-release and whole-branch approval remain
-Level 3 or 4 activities unless the user explicitly requests them earlier.
+change only for the stated happy scenarios, common operational failures, a
+demonstrated P1/P2 defect in those paths, or a universal invariant violation
+that prevents safe testing. Basic caller denial, scope isolation, persistence,
+retry, and recovery remain in Level 2. Record adversarial memory spoofing,
+forged internal topology, exhaustive tamper/abuse families, hostile-storage
+hardening, release evidence, and compatibility breadth as later-level follow-up.
+Exact-release and whole-branch approval remain Level 3 or 4 activities unless
+the user explicitly requests them earlier.
 
 ## Long-Running Work Rules
 

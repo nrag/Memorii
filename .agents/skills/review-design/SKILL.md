@@ -8,12 +8,14 @@ description: Independently review a Memorii technical design for requirements, c
 ## Select Delivery Fidelity
 
 Read the design or WorkPlan's delivery fidelity and review against that bar.
-For Level 2, require a production-shaped real-integration path, universal
-invariants, and reachable security/data-integrity boundaries. Treat exhaustive
-families, release packaging, operational breadth, and shipped-product
-compatibility as later-level follow-up unless the design claims production
-readiness. Do not convert a Level 3 or 4 improvement into `Changes required`
-for a Level 1 or 2 learning objective.
+For Level 2, require production-shaped happy scenarios, common operational
+failures, basic caller/scope isolation, persistence, retry, recovery, data
+integrity, and universal invariants. Treat adversarial memory spoofing and
+tamper matrices, hostile-storage hardening, exhaustive families, release
+packaging, platform breadth, and shipped-product compatibility as later-level
+follow-up unless the design claims production readiness. Do not convert a
+Level 3 or 4 improvement into `Changes required` for a Level 1 or 2 learning
+objective.
 
 Perform a read-only, evidence-backed review. Do not edit the canonical design,
 governing specifications, production code, or tests.
