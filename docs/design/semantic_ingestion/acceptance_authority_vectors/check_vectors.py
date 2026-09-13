@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -143,6 +144,68 @@ def _registered(value: dict[str, Any], schema: dict[str, Any], registry: dict[st
         _descriptor(value[field["name"]], field, registry["types"])
 
 
+def _descriptor_mutations(
+    value: object,
+    descriptor: dict[str, Any],
+    types: dict[str, Any],
+    path: str,
+) -> list[tuple[str, object]]:
+    """Return invalid replacements for every reachable descriptor boundary."""
+    kind = descriptor["type"]
+    mutations: list[tuple[str, object]] = [(f"{path}.kind", object())]
+    if kind == "integer":
+        mutations.append((f"{path}.integer", True))
+    elif kind == "boolean":
+        mutations.append((f"{path}.boolean", 0))
+    elif kind == "digest":
+        mutations.append((f"{path}.digest", "g" * 64))
+    elif kind == "hex":
+        mutations.append((f"{path}.hex", "g" * descriptor.get("minimum_length", 1)))
+    elif kind == "timestamp":
+        mutations.append((f"{path}.timestamp", "not-a-timestamp"))
+    elif kind == "string":
+        replacement = "__unknown_enum__" if "enum" in descriptor else ""
+        mutations.append((f"{path}.string", replacement))
+    elif kind == "array" and type(value) is list:
+        if value and descriptor.get("unique") and len(value) < descriptor.get("maximum_items", 1024):
+            mutations.append((f"{path}.unique", [*value, deepcopy(value[0])]))
+        if descriptor.get("sorted") and len(value) > 1:
+            reversed_value = list(reversed(value))
+            if [_encode(item) for item in reversed_value] != sorted(
+                _encode(item) for item in reversed_value
+            ):
+                mutations.append((f"{path}.sorted", reversed_value))
+        for index, item in enumerate(value):
+            for name, replacement in _descriptor_mutations(
+                item, descriptor["item"], types, f"{path}[{index}]"
+            ):
+                changed = deepcopy(value)
+                changed[index] = replacement
+                mutations.append((name, changed))
+    elif kind == "named":
+        named = types[descriptor.get("type_name", descriptor["name"])]
+        if named["type"] == "pair" and type(value) is list:
+            for index, (item, child) in enumerate(
+                zip(value, named["items"], strict=True)
+            ):
+                for name, replacement in _descriptor_mutations(
+                    item, child, types, f"{path}[{index}]"
+                ):
+                    changed = deepcopy(value)
+                    changed[index] = replacement
+                    mutations.append((name, changed))
+        elif named["type"] == "map" and type(value) is dict:
+            for child in named["fields"]:
+                child_name = child["name"]
+                for name, replacement in _descriptor_mutations(
+                    value[child_name], child, types, f"{path}.{child_name}"
+                ):
+                    changed = deepcopy(value)
+                    changed[child_name] = replacement
+                    mutations.append((name, changed))
+    return mutations
+
+
 def main() -> None:
     registry_raw = REGISTRY.read_bytes()
     registry = json.loads(registry_raw)
@@ -173,11 +236,16 @@ def main() -> None:
             raise SystemExit(f"authority vector shape: {vector['name']}")
         value = vector["value"]
         _registered(value, schema, registry)
-        for name, changed in (
+        mutations = [
             ("purpose", {**value, "purpose": str(value["purpose"]) + ".tampered"}),
             ("version", {**value, "schema_version": 0}),
-            ("type", {**value, schema["fields"][0]["name"]: object()}),
-        ):
+        ]
+        for field in schema["fields"]:
+            for name, replacement in _descriptor_mutations(
+                value[field["name"]], field, registry["types"], field["name"]
+            ):
+                mutations.append((name, {**value, field["name"]: replacement}))
+        for name, changed in mutations:
             try:
                 _registered(changed, schema, registry)
             except ValueError:

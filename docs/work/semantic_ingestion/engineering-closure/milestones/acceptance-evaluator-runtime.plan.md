@@ -87,8 +87,8 @@ approval, qualifying measurements and final signatures remain release conditions
 
 ## Next Action
 
-Commit the complete Stage 1 V2 remediation candidate and run the three targeted
-independent delta reviews on that exact revision.
+Commit the bounded round-2 review remediation and return it to the specification,
+correctness, and test reviewers for exact-revision delta verification.
 
 ## Signed Numeric-Context V2 Preparation (2026-09-12)
 
@@ -461,6 +461,41 @@ Ruff and the supported first-party Pyright selection pass; regenerated vectors
 pass the independent checker; and `git diff --check` passes. The candidate is
 not promoted. It requires an exact committed revision and targeted spec,
 correctness, and test delta reviews with no unresolved approval findings.
+
+## Stage 1 V2 Round 2 Review Reconciliation (2026-09-12)
+
+The specification and test reviews agreed that valid vectors traversed the
+descriptor grammar but the negative checker mutated only each schema's first
+integer field. They also required the authority-publication command's own
+zero/duplicate/nonconforming runtime-discovery failures and explicit assertions
+for the frozen corpus's four cells, unsupported disposition, two methods, and
+non-uniform weights. The correctness review found one confirmed P2 lifecycle
+defect: after a valid R1-to-R2 transition, a third commit could retain R2 as the
+history head while selecting still-valid historical R1 as active, if it also
+provided current revocation evidence for R2. This was an unauthorized rollback.
+No reviewer reported a P1 or an external blocker.
+
+All findings are confirmed `changes_required` actions. The repository now
+requires every changed non-null active release to equal the release-history
+head, directly supersede the predecessor active release, increment its sequence
+by one, and strictly advance its epoch. A unit transaction and the installed
+publication command both submit the validly formed R2-to-R1 rollback and prove
+that the fence/current pointer remains on R2. The independent vector checker
+recursively mutates every reachable scalar, array, named-map, pair, enum,
+uniqueness, sorting, and nested descriptor boundary. The frozen numeric proof
+pins the required cell/disposition/method/weight topology. The installed proof
+also rejects zero, duplicate, and nonconforming runtime discovery for the
+publication command before reading its deliberately missing commit file, with
+the authority pointer and object inventory unchanged.
+
+Coordinator evidence on the dirty correction: the rebuilt wheel passes its
+successor and rollback sequence plus 24 fail-closed cases; 182 acceptance, 76
+statistical-contract, and 119 authority/design feasibility tests pass with
+warnings as errors; Ruff and supported first-party Pyright pass; the expanded
+independent vector checker and `git diff --check` pass. The milestone remains
+under review until the correction is committed and the three affected reviewers
+verify the exact delta with `remaining_validated_p1_p2: []` and no unresolved
+approval finding.
 
 ## V2 Numeric Authority Cutover (in progress, 2026-09-12)
 

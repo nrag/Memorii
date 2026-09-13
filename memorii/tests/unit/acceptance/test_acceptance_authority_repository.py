@@ -399,6 +399,73 @@ def test_terminal_transition_appends_exactly_one_pair_and_revalidates_on_reopen(
     )
     second_digest = json.loads(second)["commit_digest"]
 
+    rollback_receipt = _artifact(
+        "ProductionRevocationReceipt",
+        prior_approval_release_digest=successor_digest,
+        prior_production_epoch=2,
+        advanced_production_epoch=3,
+    )
+    rollback_receipt_digest = json.loads(rollback_receipt)["receipt_digest"]
+    rollback_production_checkpoint = _artifact(
+        "ProductionEpochCheckpoint",
+        checkpoint_generation=2,
+        predecessor_checkpoint_digest=production_checkpoint_digest,
+        active_production_epoch=3,
+        revocation_receipt_digests=[receipt_digest, rollback_receipt_digest],
+    )
+    rollback_production_checkpoint_digest = json.loads(
+        rollback_production_checkpoint
+    )["checkpoint_digest"]
+    rollback_checkpoint_value = json.loads(checkpoint)
+    rollback_checkpoint_value.update(
+        checkpoint_generation=3,
+        predecessor_checkpoint_digest=checkpoint_digest,
+        active_release_digest=old_release,
+        active_epoch=1,
+        active_sequence=1,
+        production_revocation_evidence=[
+            [receipt_digest, production_checkpoint_digest],
+            [rollback_receipt_digest, rollback_production_checkpoint_digest],
+        ],
+    )
+    rollback_checkpoint_value.pop("checkpoint_digest")
+    rollback_checkpoint_value.pop("signature")
+    rollback_checkpoint = _artifact(
+        "AcceptanceCurrentCheckpoint", **rollback_checkpoint_value
+    )
+    rollback_checkpoint_digest = json.loads(rollback_checkpoint)["checkpoint_digest"]
+    rollback_value = json.loads(second)
+    rollback_value.update(
+        transaction_sequence=3,
+        predecessor_commit_digest=second_digest,
+        active_release_digest=old_release,
+        active_release_epoch=1,
+        active_release_sequence=1,
+        current_checkpoint_digest=rollback_checkpoint_digest,
+        approval_release_digest=old_release,
+        production_revocation_evidence=[
+            [receipt_digest, production_checkpoint_digest],
+            [rollback_receipt_digest, rollback_production_checkpoint_digest],
+        ],
+    )
+    rollback_value.pop("commit_digest")
+    rollback_commit = _artifact("AcceptanceAuthorityCommit", **rollback_value)
+    with pytest.raises(
+        AuthorityRepositoryUnavailable, match="active_release_transition"
+    ):
+        repo.compare_and_publish(
+            prepared_objects={
+                rollback_receipt_digest: rollback_receipt,
+                rollback_production_checkpoint_digest: rollback_production_checkpoint,
+                rollback_checkpoint_digest: rollback_checkpoint,
+            },
+            expected_commit_digest=second_digest,
+            expected_key_head=first_value["key_history_head_digest"],
+            expected_status_generation=2,
+            next_commit=rollback_commit,
+        )
+    assert repo.load_current()[1] == second_digest
+
     def invalid_follow_up(pairs: list[list[str]]) -> bytes:
         value = json.loads(second)
         value.update(
@@ -430,11 +497,11 @@ def test_terminal_transition_appends_exactly_one_pair_and_revalidates_on_reopen(
                 expected_status_generation=2,
                 next_commit=invalid_follow_up(invalid_pairs),
             )
-    # One check binds the prepared bytes before the fence; one validates the
-    # staged commit. Reopen must independently invoke it again.
-    assert verifier.calls == 5
+    # Prepared and staged transition checks validate current production bytes,
+    # including the rejected rollback. Reopen invokes the verifier again.
+    assert verifier.calls == 9
     repo.load_current()
-    assert verifier.calls == 6
+    assert verifier.calls == 10
 
 
 def test_snapshot_is_opaque_and_enforces_observation_order(tmp_path: Path) -> None:

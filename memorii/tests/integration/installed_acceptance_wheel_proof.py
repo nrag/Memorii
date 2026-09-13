@@ -93,6 +93,14 @@ def _clean_env() -> dict[str, str]:
     return environment
 
 
+def _authority_state(config_path: Path) -> tuple[bytes, tuple[str, ...]]:
+    config = json.loads(config_path.read_bytes())
+    root = Path(config["authority_repository_root"])
+    return (root / "current.json").read_bytes(), tuple(
+        sorted(path.name for path in (root / "objects").iterdir())
+    )
+
+
 def _inventory_evaluation_imports(
     *, installed_python: Path, args: list[str], cwd: Path, output: Path
 ) -> None:
@@ -237,6 +245,113 @@ def _advance_to_successor(
         command.extend(("--object", f"{digest}={path}"))
     result = _run(command, root, True)
     assert result.stdout.strip() == commit_digest
+
+    rollback_receipt_digest, rollback_receipt = helpers._artifact(  # type: ignore[attr-defined]
+        "ProductionRevocationReceipt",
+        production_key,
+        production_coordinate,
+        schema_version=1,
+        purpose="production_revocation_receipt",
+        prior_approval_release_digest=numeric.release_digest,
+        withdrawal_requested_at=helpers._time(now),  # type: ignore[attr-defined]
+        prior_production_epoch=2,
+        advanced_production_epoch=3,
+        completed_at=helpers._time(now + timedelta(seconds=1)),  # type: ignore[attr-defined]
+    )
+    rollback_production_checkpoint_digest, rollback_production_checkpoint = (
+        helpers._artifact(  # type: ignore[attr-defined]
+            "ProductionEpochCheckpoint",
+            production_key,
+            production_coordinate,
+            schema_version=1,
+            purpose="production_epoch_checkpoint",
+            production_authority_snapshot_digest="b" * 64,
+            checkpoint_generation=2,
+            predecessor_checkpoint_digest=production_checkpoint_digest,
+            active_production_epoch=3,
+            active_authorization_digests=["d" * 64],
+            revocation_receipt_digests=[receipt_digest, rollback_receipt_digest],
+            observed_at=helpers._time(now + timedelta(seconds=2)),  # type: ignore[attr-defined]
+        )
+    )
+    for digest, raw in (
+        (rollback_receipt_digest, rollback_receipt),
+        (rollback_production_checkpoint_digest, rollback_production_checkpoint),
+    ):
+        (reader_root / "objects" / digest).write_bytes(raw)
+    (reader_root / "current" / f"{numeric.release_digest}.json").write_bytes(
+        helpers._json({  # type: ignore[attr-defined]
+            "prior_approval_release_digest": numeric.release_digest,
+            "receipt_digest": rollback_receipt_digest,
+            "checkpoint_digest": rollback_production_checkpoint_digest,
+        })
+    )
+    rollback_checkpoint_value = json.loads(checkpoint)
+    rollback_checkpoint_value.pop("checkpoint_digest")
+    rollback_checkpoint_value.pop("signature")
+    rollback_checkpoint_value.update({
+        "checkpoint_generation": 3,
+        "predecessor_checkpoint_digest": checkpoint_digest,
+        "active_release_digest": first["active_release_digest"],
+        "active_epoch": first["active_release_epoch"],
+        "active_sequence": first["active_release_sequence"],
+        "production_revocation_evidence": [
+            [receipt_digest, production_checkpoint_digest],
+            [rollback_receipt_digest, rollback_production_checkpoint_digest],
+        ],
+        "observed_at": helpers._time(now + timedelta(seconds=3)),  # type: ignore[attr-defined]
+    })
+    rollback_checkpoint_digest, rollback_checkpoint = helpers._artifact(  # type: ignore[attr-defined]
+        "AcceptanceCurrentCheckpoint",
+        authority_key,
+        coordinate,
+        **rollback_checkpoint_value,
+    )
+    rollback_commit_value = json.loads(commit)
+    rollback_commit_value.pop("commit_digest")
+    rollback_commit_value.update({
+        "transaction_sequence": 3,
+        "predecessor_commit_digest": commit_digest,
+        "active_release_digest": first["active_release_digest"],
+        "active_release_epoch": first["active_release_epoch"],
+        "active_release_sequence": first["active_release_sequence"],
+        "current_checkpoint_digest": rollback_checkpoint_digest,
+        "approval_release_digest": first["active_release_digest"],
+        "production_revocation_evidence": [
+            [receipt_digest, production_checkpoint_digest],
+            [rollback_receipt_digest, rollback_production_checkpoint_digest],
+        ],
+    })
+    _, rollback_commit = helpers._artifact(  # type: ignore[attr-defined]
+        "AcceptanceAuthorityCommit", None, None, **rollback_commit_value
+    )
+    rollback_publication = root / "rollback-publication"
+    rollback_publication.mkdir()
+    rollback_objects = {
+        rollback_receipt_digest: rollback_receipt,
+        rollback_production_checkpoint_digest: rollback_production_checkpoint,
+        rollback_checkpoint_digest: rollback_checkpoint,
+    }
+    rollback_command = [
+        str(authority_cli),
+        "--commit",
+        str(rollback_publication / "commit.json"),
+        "--expected-commit-digest",
+        commit_digest,
+        "--expected-key-head",
+        first["key_history_head_digest"],
+        "--expected-status-generation",
+        "2",
+    ]
+    (rollback_publication / "commit.json").write_bytes(rollback_commit)
+    for digest, raw in rollback_objects.items():
+        path = rollback_publication / digest
+        path.write_bytes(raw)
+        rollback_command.extend(("--object", f"{digest}={path}"))
+    rollback_result = _run(rollback_command, root, False)
+    assert "acceptance_active_release_transition" in rollback_result.stderr
+    assert json.loads((authority_root / "current.json").read_bytes())["digest"] == commit_digest
+
     _, _, _, limits = helpers.inputs("0.00")  # type: ignore[attr-defined]
     certificate = helpers.candidate(  # type: ignore[attr-defined]
         numeric.policy, values["evidence"], numeric.binding, limits
@@ -484,6 +599,14 @@ def main() -> int:
             ).strip() == "0"
             _run([cli] + args, work, False)
             _assert_empty(receipts, authorizations)
+            if group == "memorii.acceptance_evaluator_runtime":
+                authority_before = _authority_state(config_path)
+                _run(
+                    [str(authority_cli), "--commit", str(work / "must-not-read")],
+                    work,
+                    False,
+                )
+                assert _authority_state(config_path) == authority_before
         finally:
             entry_points.write_text(original_entry_points, encoding="utf-8")
     args, receipts, authorizations, _ = _prepare(
@@ -499,9 +622,40 @@ def main() -> int:
     try:
         _run([cli] + args, work, False)
         _assert_empty(receipts, authorizations)
+        authority_before = _authority_state(config_path)
+        _run(
+            [str(authority_cli), "--commit", str(work / "must-not-read")],
+            work,
+            False,
+        )
+        assert _authority_state(config_path) == authority_before
     finally:
         entry_points.write_text(original_entry_points, encoding="utf-8")
-    print(json.dumps({"receipt_digest": receipt_digest, "negatives": 23}, sort_keys=True))
+
+    args, receipts, authorizations, _ = _prepare(
+        helpers=helpers,
+        root=work / "nonconforming-authority-provider",
+        config_path=config_path,
+    )
+    entry_points.write_text(
+        original_entry_points.replace(
+            "installed = acceptance.host_runtime:InstalledAcceptanceRuntime",
+            "installed = acceptance.host_runtime:AcceptanceRuntimeConfigurationError",
+        ),
+        encoding="utf-8",
+    )
+    try:
+        authority_before = _authority_state(config_path)
+        _run(
+            [str(authority_cli), "--commit", str(work / "must-not-read")],
+            work,
+            False,
+        )
+        _assert_empty(receipts, authorizations)
+        assert _authority_state(config_path) == authority_before
+    finally:
+        entry_points.write_text(original_entry_points, encoding="utf-8")
+    print(json.dumps({"receipt_digest": receipt_digest, "negatives": 24}, sort_keys=True))
     return 0
 
 

@@ -168,8 +168,8 @@ writers finish; no current whole-candidate proof is claimed yet.
 
 ## Next Action
 
-Commit the complete Stage 1 V2 round-2 remediation candidate and run targeted
-specification, correctness, and test delta reviews on that exact revision.
+Commit the bounded Stage 1 round-2 review correction and return that exact
+revision to the specification, correctness, and test reviewers.
 
 2026-09-08: root owns all code, generation, tests and commits. Read-only
 component reviews cover frozen90c58da62428f3caeab8ee7bca03116a24009d35e97aa705e1d757987a61362c.

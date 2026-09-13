@@ -117,6 +117,7 @@ def main() -> int:
     release = raw("capability_release")
     successor_release = raw("capability_release_successor")
     coverage = raw("capability_coverage_manifest")
+    coverage_value = json.loads(coverage)
     gate_bytes = raw("capability_statistical_gate_manifest")
     frame_bytes = raw("capability_sampling_frame_manifest")
     frame = json.loads(frame_bytes)
@@ -124,6 +125,37 @@ def main() -> int:
     policy = base64.b64decode(value["policy_base64"])
     evidence = base64.b64decode(value["evidence_base64"])
     assert (policy, evidence) == _policy_and_evidence(frame, gates)
+    policy_value = json.loads(policy)
+    coverage_cells = {
+        cell["coverage_cell_id"] for cell in coverage_value["cells"]
+    }
+    gate_cells = {
+        gate["coverage_cell_id"] for gate in gates["metric_gates"]
+    }
+    frame_cells = {
+        membership["coverage_cell_id"] for membership in frame["memberships"]
+    }
+    policy_cells = {
+        gate["locator"]["cell_id"] for gate in policy_value["gates"]
+    }
+    if (
+        len(coverage_cells) != 4
+        or gate_cells != coverage_cells
+        or frame_cells != coverage_cells
+        or policy_cells != coverage_cells
+        or "explicitly_unsupported"
+        not in {cell["disposition"] for cell in coverage_value["cells"]}
+        or {gate["test_method"] for gate in gates["metric_gates"]}
+        != {"exact_binomial", "weighted_hoeffding"}
+        or len(
+            {
+                membership["weight"]["fixed_scale_value"]
+                for membership in frame["memberships"]
+            }
+        )
+        < 2
+    ):
+        raise AssertionError("frozen_numeric_vector_topology")
     authority = FixedNumericManifestAuthority(
         coverage_bytes=coverage,
         gate_bytes=gate_bytes,

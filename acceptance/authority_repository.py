@@ -631,6 +631,25 @@ class AcceptanceAuthorityRepository:
                 or active_release["acceptance_release_sequence"] != c["active_release_sequence"]
             ):
                 raise AuthorityRepositoryUnavailable("acceptance_active_release_history")
+            if (
+                predecessor_commit is not None
+                and active != predecessor_commit["active_release_digest"]
+                and (
+                    predecessor_commit["active_release_digest"] is None
+                    or type(predecessor_commit["active_release_sequence"]) is not int
+                    or type(predecessor_commit["active_release_epoch"]) is not int
+                    or active != c["release_history_head_digest"]
+                    or active_release["supersedes_release_digest"]
+                    != predecessor_commit["active_release_digest"]
+                    or active_release["acceptance_release_sequence"]
+                    != predecessor_commit["active_release_sequence"] + 1
+                    or active_release["acceptance_release_epoch"]
+                    <= predecessor_commit["active_release_epoch"]
+                )
+            ):
+                raise AuthorityRepositoryUnavailable(
+                    "acceptance_active_release_transition"
+                )
         if c["issuance_snapshot_digest"] is not None:
             issued = self._artifact(
                 c["issuance_snapshot_digest"], "AcceptanceApprovalIssuanceSnapshot"
