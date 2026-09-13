@@ -1,0 +1,22 @@
+{
+  "name": "delta-scoped-tests",
+  "argv": [
+    "/Users/nandaraghunathan/Code/Memorii/Memorii/.venv/bin/python",
+    "-W",
+    "error",
+    "-m",
+    "pytest",
+    "-q",
+    "tests/unit/core/test_scoped_context_activation.py",
+    "tests/integration/test_scoped_context_production_binding.py",
+    "-p",
+    "no:cacheprovider"
+  ],
+  "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii",
+  "exit_status": 0,
+  "elapsed_seconds": 22.93,
+  "log_sha256": "caf9bf18a222f9ebd2f1b20732a436aeda9890313098842bbbcc5546fb3fc0af",
+  "source_revision_label": "b4f6c24b091a28bd3d1f65102c742478fc7276b3",
+  "candidate_manifest_sha256": "9ab323c49139b432cb4291020d0c0b92d76760cde1a45be0552239d4bf6fc7f6",
+  "evidence": "local working-tree execution only"
+}

@@ -1,0 +1,70 @@
+RECOVERY_EXCEPTION 2597 ValidationError 1 validation error for BootstrapNormalizationReadyControlRecordV3
+  Value error, bootstrap normalization-ready control record is invalid [type=value_error, input_value={'schema_version': 3, 're...c52ca83f0acf4401b48071'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.13/v/value_error
+RECOVERY_EXCEPTION 2597 ValidationError 1 validation error for BootstrapNormalizationReadyControlRecordV3
+  Value error, bootstrap normalization-ready control record is invalid [type=value_error, input_value={'schema_version': 3, 're...c673f43dc195ec6bb62573'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.13/v/value_error
+F
+=================================== FAILURES ===================================
+__ test_direct_provider_root_publishes_and_reloads_bootstrap_v3_normalization __
+
+    def test_direct_provider_root_publishes_and_reloads_bootstrap_v3_normalization() -> None:
+        """The public provider root reaches the V3 owner and its atomic reload."""
+        builder, calls = _v3_normalization_host_builder(
+            proposal=_bob_owner_proposal()
+        )
+        service = ProviderMemoryService._from_scenario_test_host(
+            memory_plane=MemoryPlaneService(),
+            now_provider=lambda: TEST_NOW,
+            host_bootstrap_capability=_built_in_local_capability(scenario_test=True),
+            host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+            source_normalization_host_bundle_builder=builder,
+            bootstrap_graph_host_bundle_builder=_deterministic_graph_bundle_builder(),
+        )
+        result = service.sync_event(
+            operation=ProviderOperation.CHAT_USER_TURN,
+            content="Atlas owner is Bob.",
+            operation_id="provider-v3-normalization",
+            task_id="task:one",
+            user_id="user:alice",
+            authenticated_host_ingress=_host_ingress(),
+        )
+>       assert result.blocked_reasons.get("semantic_ingestion") != "source_alignment_authority_unavailable", (
+            _direct_v3_recovery_probe(service),
+            calls,
+            tuple(
+                record.source_kind
+                for record in service._memory_plane.list_records()
+                if "bootstrap" in record.source_kind or "prepared" in record.source_kind
+            ),
+            tuple(
+                (
+                    record.content["state"], record.content.get("claim_digest"),
+                    record.content.get("claim_nonce"), record.content.get("renewal_count"),
+                    record.content.get("expires_monotonic_tick"),
+                )
+                for record in service._memory_plane.list_records(
+                    source_kind="semantic_ingestion_bootstrap_v3_recovery_index"
+                )
+            ),
+            tuple(
+                (
+                    record.content["marker"]["recovery_key_digest"],
+                        record.content["marker"]["expected_predecessor_operation_generation"],
+                        record.content["marker"]["expected_predecessor_artifact_generation"],
+                )
+                for record in service._memory_plane.list_records(
+                    source_kind="semantic_ingestion_bootstrap_handoff_marker"
+                )
+            ),
+        )
+E       AssertionError: (('BootstrapRecoveryUnavailableV3', 'index_corrupt'), {'predicate': 0, 'proposal': 0, 'spacy': 0, 'stanza': 0, ...}, (...('unclaimed', None, None, None, None),), (('71a9200d1d33154aa8b72f1ab4f5747220d37875aa11d2fb7e14042cf0027000', 1, 1),))
+E       assert 'source_alignment_authority_unavailable' != 'source_alignment_authority_unavailable'
+E        +  where 'source_alignment_authority_unavailable' = <built-in method get of dict object at 0x10e21c680>('semantic_ingestion')
+E        +    where <built-in method get of dict object at 0x10e21c680> = {'episodic': "operation 'chat_user_turn' blocks direct 'episodic' commit in provider ingestion path", 'semantic': "ope...nt_authority_unavailable', 'user': "operation 'chat_user_turn' blocks direct 'user' commit in provider ingestion path"}.get
+E        +      where {'episodic': "operation 'chat_user_turn' blocks direct 'episodic' commit in provider ingestion path", 'semantic': "ope...nt_authority_unavailable', 'user': "operation 'chat_user_turn' blocks direct 'user' commit in provider ingestion path"} = ProviderSyncResult(transcript_ids=['semantic_ingestion:source:95f63b626826f98b7633f938670f5bd3fe1cfc712ce3270ba5da2787...Domain.EPISODIC: 'episodic'>, <MemoryDomain.SEMANTIC: 'semantic'>, <MemoryDomain.USER: 'user'>], evolution_outcomes=[]).blocked_reasons
+
+tests/unit/core/semantic_ingestion/test_semantic_provider_composition.py:1406: AssertionError
+=========================== short test summary info ============================
+FAILED tests/unit/core/semantic_ingestion/test_semantic_provider_composition.py::test_direct_provider_root_publishes_and_reloads_bootstrap_v3_normalization
+1 failed in 19.81s

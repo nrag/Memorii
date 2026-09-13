@@ -1,0 +1,7 @@
+{
+  "scope": "proposal-only exact-map feasibility, not production codec or independent compiler parity",
+  "positive": 5,
+  "negative": 14,
+  "binary64_sha256": "aba66328301dc4d2f99bc8919e9af9f086a83e20ab173651d22259e9e5208f6e",
+  "decimal_sha256": "8cb201d0e983a0fe6300a5f90a3d053ed5951d5e4db5a93e356aa4fd04fa6db5"
+}

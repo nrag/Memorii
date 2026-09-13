@@ -1,0 +1,329 @@
+diff --git a/memorii/memorii/core/provider/service.py b/memorii/memorii/core/provider/service.py
+index 3358e642..a1b61ba6 100644
+--- a/memorii/memorii/core/provider/service.py
++++ b/memorii/memorii/core/provider/service.py
+@@ -7,6 +7,7 @@ from dataclasses import replace
+ from datetime import UTC, datetime
+ from hashlib import sha256
+ from pathlib import Path
++from secrets import token_urlsafe
+ from typing import Any, Protocol, cast
+ 
+ from pydantic import ValidationError
+@@ -85,6 +86,13 @@ from memorii.core.memory_evolution.conflict_integrity import (
+     FileConflictIntegrityRepository,
+     PrivilegedSemanticIntegrityLifecycle,
+ )
++from memorii.core.memory_evolution.graph_observation_contracts import GraphObservationFailure
++from memorii.core.memory_evolution.graph_observation_public_contracts import (
++    GraphObservationRequest,
++    GraphObservationResponse,
++    IngestionTimeAttestationRequest,
++    IngestionTimeAttestationResponse,
++)
+ from memorii.core.memory_evolution.identity_lineage import (
+     IdentityLineageAuditScopeSnapshot,
+     IdentityLineageAuditView,
+@@ -635,6 +643,32 @@ class ProviderMemoryService:
+             raise PreplanningStoreError("observation ledger activation target authority is not configured")
+         return self._composed_semantic_runtime.activate_observation_ledger()
+ 
++    def observe_graph(
++        self, *, host_ingress: AuthenticatedHostIngress, request: GraphObservationRequest
++    ) -> GraphObservationResponse:
++        """Read structural records through the host-authenticated snapshot owner."""
++        runtime = self._composed_semantic_runtime
++        if runtime is None or runtime.graph_observation_runtime is None:
++            return GraphObservationFailure(
++                reason="revoked_access" if request.cursor is not None else "denied",
++                request_correlation_token=token_urlsafe(24),
++            )
++        return runtime.graph_observation_runtime.observe_graph(host_ingress=host_ingress, request=request)
++
++    def observe_ingestion_time_attestations(
++        self, *, host_ingress: AuthenticatedHostIngress, request: IngestionTimeAttestationRequest
++    ) -> IngestionTimeAttestationResponse:
++        """Read retained timing evidence under its distinct authorization purpose."""
++        runtime = self._composed_semantic_runtime
++        if runtime is None or runtime.graph_observation_runtime is None:
++            return GraphObservationFailure(
++                reason="revoked_access" if request.cursor is not None else "denied",
++                request_correlation_token=token_urlsafe(24),
++            )
++        return runtime.graph_observation_runtime.observe_ingestion_time_attestations(
++            host_ingress=host_ingress, request=request
++        )
++
+     def retrieve_context(
+         self,
+         request: ScopedContextRequest,
+diff --git a/memorii/memorii/core/semantic_ingestion/capability.py b/memorii/memorii/core/semantic_ingestion/capability.py
+index 84668f1f..8cedfd8c 100644
+--- a/memorii/memorii/core/semantic_ingestion/capability.py
++++ b/memorii/memorii/core/semantic_ingestion/capability.py
+@@ -6,7 +6,7 @@ from collections.abc import Callable
+ from dataclasses import dataclass, field
+ from datetime import datetime
+ from hashlib import sha256
+-from typing import Literal, Protocol
++from typing import TYPE_CHECKING, Literal, Protocol
+ 
+ from pydantic import BaseModel, ConfigDict, Field, model_validator
+ 
+@@ -62,6 +62,10 @@ from memorii.core.semantic_ingestion.source_preparation import (
+     TextPreparationService,
+ )
+ 
++if TYPE_CHECKING:
++    from memorii.core.memory_evolution.graph_observation_host import ProtectedGraphObservationConfiguration
++    from memorii.core.memory_evolution.graph_observation_paging import AuthenticatedGraphObservationPagingRuntime
++
+ 
+ class SemanticDeploymentAuthorizationUse(BaseModel):
+     profile_manifest_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+@@ -153,6 +157,7 @@ class AuthorizedSemanticIngestionRuntime:
+     observation_activation_target: VerifiedObservationActivationTarget | None = None
+     bootstrap_profile: VerifiedBootstrapProfile | None = None
+     now_provider: Callable[[], datetime] | None = None
++    graph_observation_runtime: AuthenticatedGraphObservationPagingRuntime | None = None
+     _conflict_authority_administration_grant: (
+         SemanticConflictAuthorityAdministrationGrant | None
+     ) = field(default=None, init=False, repr=False, compare=False)
+@@ -183,6 +188,15 @@ class AuthorizedSemanticIngestionRuntime:
+         store_target = self.atomic_store._observation_activation_target if self.atomic_store is not None else None
+         if self.observation_activation_target is not writer_target or self.observation_activation_target is not store_target:
+             raise ObservationActivationTargetConfigurationError("semantic runtime activation targets differ")
++        observer = self.graph_observation_runtime
++        if observer is not None and (
++            self.atomic_store is None
++            or self.observation_activation_target is None
++            or observer._memory_plane is not self.atomic_store._memory_plane
++            or observer._history is not self.typed_value_registry_history
++            or observer._publication is not self.observation_activation_target.publication
++        ):
++            raise ObservationActivationTargetConfigurationError("semantic observer authority differs")
+ 
+     def activate_observation_ledger(self) -> SemanticWriterCommitBinding:
+         if self.observation_activation_target is None or self.writer_admission is None or self.atomic_store is None:
+@@ -324,6 +338,7 @@ class BuiltInLocalHostSemanticIngestionCapability:
+     bootstrap_graph_host_bundle_builder: BootstrapGraphHostBundleBuilder | None = None
+     typed_value_registry_configuration: ProtectedTypedValueRegistryConfiguration | None = None
+     observation_activation_target_configuration: ObservationActivationTargetConfiguration | None = None
++    graph_observation_configuration: ProtectedGraphObservationConfiguration | None = None
+ 
+     def load_bootstrap_material_presentation(self) -> HostBootstrapMaterialPresentation:
+         return self.bootstrap_material_presentation
+@@ -350,6 +365,7 @@ class BuiltInLocalHostSemanticIngestionCapability:
+             return None
+         if material_profile != bootstrap_profile or not material_profile.enabled:
+             return None
++        from memorii.core.memory_evolution.graph_observation_host import build_host_graph_observation_runtime
+         from memorii.core.memory_evolution.writer_admission import (
+             SemanticWriterAdmissionStore,
+             bounded_preplanning_ownership_manifest,
+@@ -373,6 +389,10 @@ class BuiltInLocalHostSemanticIngestionCapability:
+             observation_activation_target = resolve_verified_observation_activation_target(
+                 self.observation_activation_target_configuration, typed_value_registry_history
+             )
++        if self.graph_observation_configuration is not None and (
++            typed_value_registry_history is None or observation_activation_target is None
++        ):
++            raise ObservationActivationTargetConfigurationError("graph observation requires registry and activation target")
+         writers = SemanticWriterAdmissionStore(
+             memory_plane,
+             bounded_preplanning_ownership_manifest(),
+@@ -449,6 +469,20 @@ class BuiltInLocalHostSemanticIngestionCapability:
+             bootstrap_graph_host_bundle=graph_bundle,
+             typed_value_registry_history=typed_value_registry_history,
+             observation_activation_target=observation_activation_target,
++            graph_observation_runtime=(
++                build_host_graph_observation_runtime(
++                    configuration=self.graph_observation_configuration,
++                    memory_plane=memory_plane,
++                    atomic_store=store,
++                    registry_history=typed_value_registry_history,
++                    activation_target=observation_activation_target,
++                    now_provider=now_provider,
++                )
++                if self.graph_observation_configuration is not None
++                and typed_value_registry_history is not None
++                and observation_activation_target is not None
++                else None
++            ),
+         )
+         return runtime
+ 
+@@ -466,6 +500,7 @@ def build_authorized_local_semantic_runtime(
+     bootstrap_graph_host_bundle: BootstrapGraphHostBundle | None = None,
+     typed_value_registry_history: ProtectedTypedValueRegistryHistory | None = None,
+     observation_activation_target: VerifiedObservationActivationTarget | None = None,
++    graph_observation_runtime: AuthenticatedGraphObservationPagingRuntime | None = None,
+ ) -> AuthorizedSemanticIngestionRuntime:
+     """Build the ordinary zero-egress production semantic ingestion composition."""
+ 
+@@ -514,6 +549,7 @@ def build_authorized_local_semantic_runtime(
+         observation_activation_target=observation_activation_target,
+         bootstrap_profile=bootstrap_profile,
+         now_provider=now_provider,
++        graph_observation_runtime=graph_observation_runtime,
+     )
+ 
+ 
+diff --git a/memorii/memorii/core/memory_evolution/graph_observation_host.py b/memorii/memorii/core/memory_evolution/graph_observation_host.py
+new file mode 100644
+index 00000000..7a932ad7
+--- /dev/null
++++ b/memorii/memorii/core/memory_evolution/graph_observation_host.py
+@@ -0,0 +1,97 @@
++"""Protected host composition for the registered structural observation route."""
++
++from __future__ import annotations
++
++from collections.abc import Callable
++from dataclasses import dataclass
++from datetime import datetime
++from secrets import token_urlsafe
++
++from cryptography.hazmat.primitives import serialization
++from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
++
++from memorii.core.memory_evolution.atomic_store import SemanticIngestionAtomicStore
++from memorii.core.memory_evolution.graph_observation_paging import (
++    AuthenticatedGraphObservationPagingRuntime,
++    GrantBackedGraphObservationAuthorizer,
++    GraphObservationContextResolver,
++    ObservationRetentionBudget,
++)
++from memorii.core.memory_evolution.observation_activation_configuration import VerifiedObservationActivationTarget
++from memorii.core.memory_evolution.typed_value_artifact_integrity import TrustedTypedValueArtifactVerificationKey
++from memorii.core.memory_evolution.typed_value_artifact_reader import ProtectedTypedValueArtifactReaderLimits
++from memorii.core.memory_evolution.typed_value_registry_history import ProtectedTypedValueRegistryHistory
++from memorii.core.memory_plane.service import MemoryPlaneService
++
++
++@dataclass(frozen=True)
++class ProtectedGraphObservationConfiguration:
++    """Host-held authorities; never accepted as public request arguments.
++
++    The host resolves identity and current access policy. The built-in runtime
++    owns the store, selected publication, concrete cohort provider and retention.
++    """
++
++    context_resolver: GraphObservationContextResolver
++    authorizer: GrantBackedGraphObservationAuthorizer
++    cursor_signing_key: Ed25519PrivateKey
++    cursor_verification_key: TrustedTypedValueArtifactVerificationKey
++    reader_limits: ProtectedTypedValueArtifactReaderLimits
++    retention_budget: ObservationRetentionBudget
++
++    def __post_init__(self) -> None:
++        public_key = self.cursor_signing_key.public_key().public_bytes(
++            serialization.Encoding.Raw, serialization.PublicFormat.Raw
++        )
++        if public_key != self.cursor_verification_key.public_key:
++            raise ValueError("observation cursor signing and verification keys differ")
++
++
++@dataclass(frozen=True)
++class _HostObservationClock:
++    now_provider: Callable[[], datetime]
++
++    def now(self) -> datetime:
++        return self.now_provider()
++
++
++def build_host_graph_observation_runtime(
++    *,
++    configuration: ProtectedGraphObservationConfiguration,
++    memory_plane: MemoryPlaneService,
++    atomic_store: SemanticIngestionAtomicStore,
++    registry_history: ProtectedTypedValueRegistryHistory,
++    activation_target: VerifiedObservationActivationTarget,
++    now_provider: Callable[[], datetime],
++) -> AuthenticatedGraphObservationPagingRuntime:
++    """Compose the concrete reader against the writer's exact authorities."""
++    from memorii.core.memory_evolution.graph_observation_materializer import (
++        AtomicStoreGraphObservationCohortProvider,
++    )
++
++    if (
++        atomic_store._memory_plane is not memory_plane
++        or atomic_store._typed_value_registry_history is not registry_history
++        or atomic_store._observation_activation_target is not activation_target
++    ):
++        raise ValueError("observation runtime differs from semantic writer authority")
++    cohort_provider = AtomicStoreGraphObservationCohortProvider(
++        atomic_store=atomic_store,
++        registry_history=registry_history,
++        registry_publication=activation_target.publication,
++        reader_limits=configuration.reader_limits,
++    )
++    return AuthenticatedGraphObservationPagingRuntime(
++        memory_plane=memory_plane,
++        context_resolver=configuration.context_resolver,
++        authorizer=configuration.authorizer,
++        cohort_provider=cohort_provider,
++        protected_clock=_HostObservationClock(now_provider),
++        registry_history=registry_history,
++        registry_publication=activation_target.publication,
++        cursor_signing_key=configuration.cursor_signing_key,
++        cursor_verification_key=configuration.cursor_verification_key,
++        reader_limits=configuration.reader_limits,
++        correlation_token_factory=lambda: token_urlsafe(24),
++        retention_budget=configuration.retention_budget,
++    )
+diff --git a/memorii/tests/unit/core/test_provider_observation.py b/memorii/tests/unit/core/test_provider_observation.py
+new file mode 100644
+index 00000000..7fe46f95
+--- /dev/null
++++ b/memorii/tests/unit/core/test_provider_observation.py
+@@ -0,0 +1,49 @@
++"""Public observation fails closed when protected host composition is absent."""
++
++from datetime import UTC, datetime
++
++import pytest
++from memorii.core.memory_evolution.graph_observation_contracts import GraphObservationCohortSelector
++from memorii.core.memory_evolution.graph_observation_public_contracts import (
++    GraphObservationRequest,
++    IngestionTimeAttestationRequest,
++)
++from memorii.core.memory_evolution.ingestion_contracts import AuthenticatedHostIngress
++from memorii.core.memory_evolution.models import MemoryScope
++from memorii.core.provider.factory import build_provider_memory_service_from_env
++
++
++@pytest.mark.parametrize("cursor", (None, "untrusted-token"))
++def test_unconfigured_public_observation_never_reads_seeds(monkeypatch, cursor):
++    service = build_provider_memory_service_from_env()
++
++    def unexpected_read():
++        raise AssertionError("unconfigured observation read the memory plane")
++
++    monkeypatch.setattr(service._memory_plane, "read_write_snapshot", unexpected_read)
++    now = datetime(2026, 9, 8, tzinfo=UTC)
++    ingress = AuthenticatedHostIngress(
++        provider_identity="host", principal_handle=object(), session_handle=object(), received_at=now,
++    )
++    selector = GraphObservationCohortSelector(
++        seed_source_ids=("unknown",), seed_operation_ids=(), include_referenced_boundary_entities=True,
++    )
++    graph_request = GraphObservationRequest(
++        scope_constraint=MemoryScope(user_id="alice"), cohort_selector=selector,
++        expected_graph_revision="graph", expected_observation_revision="observation",
++        total_page_size=1, cursor=cursor, view="current", valid_at=None, system_as_of=now,
++    )
++    time_request = IngestionTimeAttestationRequest(
++        scope_constraint=graph_request.scope_constraint, cohort_selector=selector,
++        expected_graph_revision="graph", expected_observation_revision="observation",
++        total_page_size=1, cursor=cursor,
++    )
++    responses = (
++        service.observe_graph(host_ingress=ingress, request=graph_request),
++        service.observe_ingestion_time_attestations(host_ingress=ingress, request=time_request),
++    )
++    for response in responses:
++        assert response.kind == "failure"
++        assert response.reason == ("denied" if cursor is None else "revoked_access")
++        assert set(response.model_dump()) == {"kind", "reason", "request_correlation_token"}
++    assert responses[0].request_correlation_token != responses[1].request_correlation_token

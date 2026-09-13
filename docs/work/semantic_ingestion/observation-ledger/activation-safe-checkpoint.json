@@ -1,0 +1,30 @@
+{
+  "status": "BLOCKED_TARGET_AUTHORITY_SAFE_CHECKPOINT",
+  "files": {
+    "memorii/memorii/core/memory_evolution/ingestion_contracts.py": "c44a2baf2e11712a844d06ea2fb0b315b59fb464d8880b7f32ad3d62c48438f5",
+    "memorii/memorii/core/memory_evolution/writer_admission.py": "3c376a6dfde0d38ea7c6064122185ea90bb4e0cd8d2eb4d72d84d5fec84dfd94",
+    "memorii/memorii/core/memory_evolution/atomic_store.py": "1867f0a2cadfff395e3292eff53f848ecb2cd4a9b586628b4c0546c2cb1249fd",
+    "memorii/memorii/core/memory_plane/semantic_control.py": "7d4fbf10a6328f27240e57a3c89f738877daa98d37b854328a97c5075eabcf6f",
+    "memorii/memorii/core/memory_evolution/observation_ledger_contracts.py": "85e27e5a96f10a4b5e64343fc4c40dee068096cd04cde031ebd381d0872cf1fc",
+    "memorii/tests/unit/core/memory_evolution/test_observation_ledger_contracts.py": "5db826c847159786b3708e131857761193900234fec912a23cf77e2ee0bf37ec",
+    "memorii/tests/unit/core/semantic_ingestion/test_semantic_atomic_store.py": "f5d510d2e2803709df4f6d2a9482729ec8fbf663ba6b05a889fb500d3b433688"
+  },
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "tree": "authorized dirty tree",
+  "evidence": [
+    "Root ledger/replay/checkpoint/writeradmission regression166passed7.91s",
+    "Root actualstore unavailableactivation public/private no-write1passed5.03s",
+    "Root scopedRuff and configured5-production-filePyright0errors0warnings",
+    "Importcycle introducedduringconstruction corrected; directimports andexecutedtests pass",
+    "Configured identity-hygiene exits0 after safecheckpoint",
+    "Refreshed registry full179entry equality and58vectors passed; vector manifest4ff6a2d003c1944dac79f31e5484fcabec845f2e0fdd971936187359c0628a0d"
+  ],
+  "not_implemented": [
+    "trusted targetidentity contract",
+    "actual operational activation andregisteredartifact publication",
+    "full activationtransaction/JSONL faultmatrix",
+    "global append/replay/publicretrieval"
+  ],
+  "decision": "../activation-target-identity/decision.md",
+  "closure_claim": false
+}

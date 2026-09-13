@@ -1,0 +1,22 @@
+{
+  "result": "11 passed in 5.75s",
+  "exit_status": 0,
+  "command": "../.venv/bin/python -W error -m pytest tests/unit/tools/test_semantic_ingestion_observation_source_draft.py tests/unit/core/memory_evolution/test_graph_ingestion_time_contracts.py tests/unit/core/memory_evolution/test_graph_observation_public_contracts.py -q -p no:cacheprovider",
+  "cwd": "memorii",
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "tree": "authorized dirty tree",
+  "sha256": {
+    "memorii/memorii/tools/semantic_ingestion_observation_source_draft.py": "47ef5b0ce8a1df4f48e22cb6d99ed6092e74245aa4fc36a0088afa293aaf701d",
+    "memorii/memorii/core/memory_evolution/graph_ingestion_time_contracts.py": "845a9fd1f7bf402c67200b90aae3d4c1cf17ded5c3915c8a6f4d57dd35a72b79",
+    "memorii/tests/unit/tools/test_semantic_ingestion_observation_source_draft.py": "18be31e7e5913c41d1be3f76f53bbe55292372e3434ec5e3aa203cb7d6dea8d9",
+    "memorii/tests/unit/core/memory_evolution/test_graph_ingestion_time_contracts.py": "8ce3329c7d746561a5560b41f7faaf37fd1e143a11ac8fe7754556f32ee3f7d5",
+    "memorii/tests/unit/core/memory_evolution/test_graph_observation_public_contracts.py": "f9c4e24e0cc8be1076043957de8ab5e36e46f8dd718137cbbd32da46ca819e00",
+    "docs/work/semantic_ingestion/registry-publication/source-draft/observation-profile3-authoring-draft.json": "314e65a9614cd0cd4df12189bc1977d3162e2b4feb14a65a6cb57edb0fc9f1dc"
+  },
+  "evidence_class": "local source-authoring and typed-public-contract conformance",
+  "limitations": [
+    "Draft remains untrusted and domains require source review",
+    "No production registry publication or authenticated runtime route",
+    "No acceptance signing or R14 completion"
+  ]
+}

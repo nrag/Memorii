@@ -1,0 +1,34 @@
+{
+  "base_revision": "b4f6c24b091a28bd3d1f65102c742478fc7276b3",
+  "tree_state": "tracked baseline unchanged; additive design/evidence only",
+  "scope": "additive scoped-context design and M5 scheduling; no product implementation",
+  "reviewed_files": {
+    "docs/design/scoped_memory_context.md": "9e6b888356531bd0ea8cd0735595ad90e89b03d237874aa1aa68fb009288bd9e",
+    "docs/work/semantic_context_activation/design.plan.md": "396fce1a7ca5625201d5a556a9c6fde04b7f9f22ebcbeeadb5c950e96cefe41d",
+    "docs/work/semantic_context_activation/production-entrypoint-preflight.md": "a4b8f40f1c40608896bf29edbd5f0346f9e8e25d41fba50c4380033c0067c9d4",
+    "docs/work/semantic_context_activation/research-notes.md": "edb4fbc371299d76c0aa5206e0dd24dc09d39733cfc2eae2acbdec3f8ad5aa1c",
+    "docs/work/semantic_context_activation/reviews.md": "47620247b602e2056aaeb70ae403a8fa653063978625ff79e96163bbc5076f66",
+    "docs/work/semantic_context_activation/scope_probe.py": "70290aec3eefeb349ecabc523372854590bf3bae037c616db5c18811b0f070db",
+    "docs/work/semantic_context_activation/snapshot_probe.py": "1fddcd692bfacec059524420eae21e094fac64da923cffb77c784960526f8b70",
+    "docs/work/semantic_context_activation/source-requirements-audit.md": "2b58f21c734c12fa1a9f5261679805f07c00d3cb3747ddd76f1f64e51c0d6740"
+  },
+  "governing_sources": {
+    "AGENTS.md": "e1b8daff6d38bc681db57950a01fac5177d1336a4bfd3866c089f7bf47b663a4",
+    ".agents/PLANS.md": "7d8fdbbf9e3881950f720b400adce39b2718abed5318800c2b9f506b3e54ff5a",
+    ".agents/skills/build-design/SKILL.md": "295b10a67dbc0da24e6191fbb683ed9b70db4e6408c7225c31af1178a999d699",
+    "docs/design/memorii_spec.md": "5d24a08e7ca048c85d75aef7eb8eb264e9a869cadcd0ebd5d07d7e368f1d6cc5",
+    "docs/design/memorii_storage_details.md": "9ce9b03722be2344d93847f425a04a9a147369c900a32b1ceed21bb34ffb1f37",
+    "docs/design/event_model.md": "9ce93e4a826f3e47b2e41fa06d2ec1e40bb0cad2475fa0527d9bb2c9ab3acdec",
+    "docs/IMPLEMENTATION_RULES.md": "c962791b8ba6e3dcf7f59778151299f74821a1a152bc387a2e78a6fad7e41dea",
+    "docs/design/semantic_temporal_retrieval.md": "f1be742a4c071f0edef5a050c01ca980563ac23645203c17531094cef37266b2",
+    "docs/design/semantic_ingestion_architecture.md": "b469653e3ef92e9cc1bf45e797a2c7dff8eac4d9ee792ad94ada3a54bfbe05da",
+    "docs/work/semantic_ingestion/milestones/m5-deployment-acceptance.plan.md": "6882283e9e6102f0a28d8d0d10f0ef2242bec18b6dbe10b3524a663825874e21",
+    ".github/workflows/pr-gates.yml": "92d982a45a7cf21eb5c3b6922fc4f69691b960665b288380d1248c42e2738429"
+  },
+  "checks": [
+    "all frozen source hashes unchanged",
+    "no tracked changes",
+    "all new authored files whitespace clean",
+    "Python contract blocks AST-parse"
+  ]
+}

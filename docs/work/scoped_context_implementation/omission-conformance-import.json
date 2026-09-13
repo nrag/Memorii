@@ -1,0 +1,15 @@
+{
+  "changes": {
+    "memorii/memorii/core/scoped_context/contracts.py": {
+      "before": "cf6502f7914f4aaaab1443fe9171734676aa833c463c9884fca955842965e889",
+      "after": "68afc4647872af7aecb10024cf9677d7cbb63d2c5cb6cde3a7d6e7aab7e5a202"
+    },
+    "memorii/tests/unit/core/test_scoped_context_activation.py": {
+      "before": "d1a187f46fd5a96d3062598e4a0c0dc61edafe11bac0d6a7a742ed820cfe4497",
+      "after": "c3605422960449ee38d1972eca6c1ab65a3ed95e9a8686f8a1aa41f6fe4f5029"
+    }
+  },
+  "scope": "closed omission schema only; no new test nodes, workflow or persistence change",
+  "scratch_result": "153 passed22.77seconds; Ruff passed; spec delta approved",
+  "next": "canonical affected checks and frozen final review"
+}

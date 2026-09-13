@@ -1,0 +1,4 @@
+/Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/graph_observation_ingestion_projection.py
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/graph_observation_ingestion_projection.py:203:37 - error: Cannot access attribute "record_mutations" for class "SourceFinalizationObservationDelta"
+    Attribute "record_mutations" is unknown (reportAttributeAccessIssue)
+1 error, 0 warnings, 0 informations

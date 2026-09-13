@@ -1,0 +1,17 @@
+{
+  "files": {
+    "memorii/memorii/core/memory_evolution/graph_effect_contracts.py": "2778e9d511f092f725f9a024ba9f2592771bde1ea78009a24769c2c3f26923c0",
+    "memorii/tests/unit/core/memory_evolution/test_graph_effect_contracts.py": "c09351c4c5c2774a9be66a1abd37c5d44ddd7dab9cb6895a48b772770f0482c1",
+    "memorii/tests/unit/core/memory_evolution/test_observation_record_contracts.py": "098360ad25f2e15a7781959e69cb7acfbe867e4edddb4ba4db48bac52256caaf"
+  },
+  "pyright": "0 errors,0 warnings",
+  "remaining": [
+    "native record persistence",
+    "authenticated cohort and paging",
+    "independent structural comparison",
+    "full parent review"
+  ],
+  "ruff": "passed",
+  "scope": "observation record/model/codec prerequisite only; no runtime persistence or public observer completion",
+  "tests": "16 passed in6.25s; warnings as errors"
+}

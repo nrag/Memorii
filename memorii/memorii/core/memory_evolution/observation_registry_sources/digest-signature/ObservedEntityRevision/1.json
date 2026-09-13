@@ -1,0 +1,1 @@
+{"policy":{"digest_domain":"memorii.semantic_ingestion.observation.ObservedEntityRevision.v1","digest_field":"record_digest","kind":"self_digest"},"role":"digest-signature","schema_id":"ObservedEntityRevision","schema_version":"1"}

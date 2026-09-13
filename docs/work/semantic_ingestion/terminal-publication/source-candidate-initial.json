@@ -1,0 +1,101 @@
+{
+  "scope": "Native source-finalization codec, CAS and historical replay debugging slice only; group observations/query/comparator and parent M5 excluded",
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "tree": "authorized dirty integration",
+  "status": "frozen bounded debugging candidate; focused checks green after documented test-only corrections; independent review requested",
+  "files": [
+    {
+      "path": "memorii/memorii/core/memory_evolution/atomic_store.py",
+      "sha256": "6ec60c15f67406a9345dff2c6b91640c5a7d74d41d54113743ab166dbc23fcd3"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/writer_admission.py",
+      "sha256": "b8f5a04d8369dfb7fad16eacc0946cd483072d3293e1be015eb29286cdd1eda1"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/graph_effect_contracts.py",
+      "sha256": "2778e9d511f092f725f9a024ba9f2592771bde1ea78009a24769c2c3f26923c0"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/observation_persistence.py",
+      "sha256": "9e89f6e9b722f49d305b359e82d906cd4af19d0b99623535c8f22eb758afce92"
+    },
+    {
+      "path": "memorii/memorii/core/semantic_ingestion/contracts.py",
+      "sha256": "47f743d8571c74fa2301fcda6b9a3e0b3635c6e864d7b0da4a48e7abbedf3964"
+    },
+    {
+      "path": "memorii/memorii/core/semantic_ingestion/bootstrap_graph_terminal_preparation.py",
+      "sha256": "b3baea36f0f9d463dd6524ff66434c39e4c246f9a46da1046f09243186ef438a"
+    },
+    {
+      "path": "memorii/memorii/core/semantic_ingestion/bootstrap_graph_artifact_assembler.py",
+      "sha256": "e07dcc7039d47a25d14b1d79e25e09bc33599777b1b939df42fc324c40171a93"
+    },
+    {
+      "path": "memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_artifact_assembler.py",
+      "sha256": "8d1c3e8e73d9ba0c7732b6611c5b654b9fceaaafef5d4aa3b16d9bb39f8f0fe0"
+    },
+    {
+      "path": "memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_atomic_member_native_codec.py",
+      "sha256": "6dee9860f78381afbcdfc1043dd0b4dec9f7a7bbe987a69e7b2e3968c339ae45"
+    },
+    {
+      "path": "memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_post_effect_recovery.py",
+      "sha256": "5b37bda6b7410a3a5e24c05b8d952e722cda915bf2bd4b91dc4c82d61a480c84"
+    },
+    {
+      "path": "memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_root_composition.py",
+      "sha256": "b403d7aa8b714d475d6f176f05173cb636a1fc43aa741c288b153948b05efa9f"
+    },
+    {
+      "path": "memorii/tests/unit/core/semantic_ingestion/test_historical_terminal_compatibility.py",
+      "sha256": "9ed856cf0a306bf08241d4319fe7e5971fc7e73e7b9ebd52c5711bbb5e82d9d9"
+    },
+    {
+      "path": "memorii/tests/unit/core/semantic_ingestion/test_historical_terminal_persisted_reload.py",
+      "sha256": "87a5329b7fcb53fa60f10d9d659a1fe0d318cb0d54a73cab8dd3cb3a4a782346"
+    },
+    {
+      "path": "memorii/tests/unit/core/memory_evolution/test_observation_persistence.py",
+      "sha256": "80a815ebbacb5cf5c86be3ab17643cdf7170685c331b891f085ee29418e82675"
+    },
+    {
+      "path": "memorii/tests/unit/core/memory_evolution/test_observation_record_contracts.py",
+      "sha256": "098360ad25f2e15a7781959e69cb7acfbe867e4edddb4ba4db48bac52256caaf"
+    },
+    {
+      "path": "memorii/tests/fixtures/semantic_ingestion/historical_terminal/manifest.json",
+      "sha256": "e79395dd587e31241869db25e18d99bd4ad78ff12a46906791b9e99a9a67cbc5"
+    },
+    {
+      "path": "memorii/tests/fixtures/semantic_ingestion/historical_terminal/memory-records.json.gz",
+      "sha256": "264bcc88d4f8b81262c554bcf6ed471f30a1bd701318826c5796c032679b39d5"
+    },
+    {
+      "path": "memorii/tests/fixtures/semantic_ingestion/historical_terminal/publication-intent.ctv.gz",
+      "sha256": "a6aa2e8d9a6b3f5f23e79053c7dd16133f0f0c36ec16d489f8e7c0e3e045cc86"
+    },
+    {
+      "path": "memorii/tests/fixtures/semantic_ingestion/historical_terminal/publication-request.ctv.gz",
+      "sha256": "fb9d46d483a3f201de86ef596d8f422b9f4392fa5b61a1a950c74959cbe04cbe"
+    },
+    {
+      "path": "memorii/tests/fixtures/semantic_ingestion/historical_terminal/terminal-reload.ctv.gz",
+      "sha256": "a03b09b9d1ed9ccf08338398d716055067676c739bafe758a2a16643c2d771c0"
+    }
+  ],
+  "evidence": {
+    "recovery_roots": "22 passed in 309.88s",
+    "codec_arena_builders": "75 passed in 94.93s",
+    "assembly_record_contracts": "18 passed in 5.98s",
+    "zero_group_terminal": "1 passed in 91.52s",
+    "historical_and_tamper": "10 passed in initial parallel family; 4 helper-query failures documented and affected family rerun green",
+    "identity_hygiene": "exit 0",
+    "limitations": "No full observer/M5/branch/CI approval; current dirty source only"
+  },
+  "binding_map": {
+    "path": "docs/work/semantic_ingestion/engineering-closure/source-finalization-integration-map.md",
+    "sha256": "4cb64c661372e10b728ae40663ab4dac25cd5fc9002740b4850f5748622b0cb5"
+  }
+}

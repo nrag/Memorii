@@ -7,7 +7,10 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
+from secrets import token_urlsafe
 from typing import Any, Protocol, cast
+
+from pydantic import ValidationError
 
 from memorii.core.decision_state.service import DecisionStateService
 from memorii.core.decision_state.summary import DecisionStateSummary
@@ -83,6 +86,18 @@ from memorii.core.memory_evolution.conflict_integrity import (
     FileConflictIntegrityRepository,
     PrivilegedSemanticIntegrityLifecycle,
 )
+from memorii.core.memory_evolution.graph_observation_contracts import (
+    GraphObservationFailure,
+)
+from memorii.core.memory_evolution.graph_observation_paging import (
+    AuthenticatedGraphObservationPagingRuntime,
+)
+from memorii.core.memory_evolution.graph_observation_public_contracts import (
+    GraphObservationRequest,
+    GraphObservationResponse,
+    IngestionTimeAttestationRequest,
+    IngestionTimeAttestationResponse,
+)
 from memorii.core.memory_evolution.identity_lineage import (
     IdentityLineageAuditScopeSnapshot,
     IdentityLineageAuditView,
@@ -93,9 +108,20 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     AuthenticatedIngressContextResolver,
     AuthenticatedIngressResolutionError,
     DeliveryIdentity,
+    SemanticWriterCommitBinding,
+)
+from memorii.core.memory_evolution.ingestion_time_clock import (
+    PRODUCTION_INGESTION_TIME_CLOCK_IDENTITY,
+    IngestionTimeClock,
+)
+from memorii.core.memory_evolution.observation_activation_configuration import (
+    ObservationActivationTargetConfigurationError,
 )
 from memorii.core.memory_evolution.operation_store import (
     EvolutionOperationRepository,
+)
+from memorii.core.memory_evolution.typed_value_registry_configuration import (
+    TypedValueRegistryConfigurationError,
 )
 from memorii.core.memory_evolution.writer_admission import (
     SemanticWriterAdmissionStore,
@@ -103,6 +129,7 @@ from memorii.core.memory_evolution.writer_admission import (
     writer_admission_memory_id,
 )
 from memorii.core.memory_plane import MemoryPlaneService
+from memorii.core.memory_plane.store import MemoryPlaneCorruptionError
 from memorii.core.next_step import NextStepEngine
 from memorii.core.promotion.provider import PromotionAssessmentProvider
 from memorii.core.promotion.rule_provider import RuleBasedPromotionAssessmentProvider
@@ -135,6 +162,13 @@ from memorii.core.provider.tool_schemas import provider_tool_schemas, provider_t
 from memorii.core.provider.tools import ProviderToolCallResult
 from memorii.core.provider.work_state_projection import WorkStateMemoryProjector
 from memorii.core.recall import RecallStateBundle, WorkStateSummary, summarize_work_states
+from memorii.core.scoped_context.authority import ScopedHostReadAuthority
+from memorii.core.scoped_context.contracts import ScopedContextActivation, ScopedContextRequest, ScopedContextStatus
+from memorii.core.scoped_context.service import (
+    ScopedContextAssembler,
+    ScopedSnapshotBackendError,
+    ScopedSnapshotDecodeError,
+)
 from memorii.core.semantic_ingestion.bootstrap_graph_host import BootstrapGraphHostBundleBuilder
 from memorii.core.semantic_ingestion.canonical_evidence_arena import (
     CanonicalEvidenceArena,
@@ -158,6 +192,20 @@ from memorii.core.work_state.selector import WorkStateSelector
 from memorii.core.work_state.service import WorkStateService
 from memorii.domain.enums import SourceModality
 from memorii.stores.base.interfaces import OverlayStore, SolverGraphStore
+
+
+def _scoped_empty(status: ScopedContextStatus) -> ScopedContextActivation:
+    return ScopedContextActivation(
+        status=status,
+        request_task_id=None,
+        request_state_id=None,
+        authority_binding_receipt=None,
+        memory_snapshot_revision=None,
+        mandatory_items=(),
+        optional_items=(),
+        omissions=(),
+        structured_outcome=None,
+    )
 
 
 class ScopedIdentityLineageAuditReader(Protocol):
@@ -233,6 +281,8 @@ class ProviderMemoryService:
         memory_evolution_query_analyzer: QueryAnalyzer | None = None,
         memory_evolution_operation_repository: EvolutionOperationRepository | None = None,
         now_provider: Callable[[], datetime] | None = None,
+        clock: IngestionTimeClock | None = None,
+        scoped_read_authority: ScopedHostReadAuthority | None = None,
         conflict_attention_repository: ConflictClarificationRepository | None = None,
         conflict_attention_enabled: bool = False,
         conflict_attention_observability_sink: ConflictAttentionObservabilitySink
@@ -252,9 +302,12 @@ class ProviderMemoryService:
         source_normalization_host_bundle_builder: SourceNormalizationHostBundleBuilder | None = None,
         verified_production_host_authority: VerifiedProductionHostAuthority | None = None,
         canonical_evidence_enabled: bool | None = None,
+        graph_observation_runtime: AuthenticatedGraphObservationPagingRuntime
+        | None = None,
         _host_construction: object | None = None,
     ) -> None:
         self._memory_plane = memory_plane or MemoryPlaneService()
+        self._scoped_read_authority = scoped_read_authority
         self._canonical_evidence_requested = canonical_evidence_enabled
         verified_material = None
         verified_ingress_resolver = None
@@ -372,7 +425,16 @@ class ProviderMemoryService:
             except ValueError:
                 self._bootstrap_profile = None
                 self._bootstrap_unavailable_reason = "invalid_manifest"
-        self._now_provider = now_provider or (lambda: datetime.now(UTC))
+        # One protected clock instance is the single ingestion-time authority:
+        # the provider raw-source construction sites sample through it and the
+        # atomic store's now_provider is its own now_utc, so group-CAS instants
+        # and lease arithmetic share the same authority (never an ambient wall
+        # clock or a caller-supplied event timestamp).
+        self._clock = clock or IngestionTimeClock(
+            identity=PRODUCTION_INGESTION_TIME_CLOCK_IDENTITY,
+            now_provider=now_provider or (lambda: datetime.now(UTC)),
+        )
+        self._now_provider = self._clock.now_utc
         if conflict_attention_enabled and conflict_attention_repository is None:
             raise ValueError("conflict attention is enabled without a repository")
         self._conflict_attention_repository = conflict_attention_repository
@@ -459,11 +521,21 @@ class ProviderMemoryService:
                         now_provider=self._now_provider,
                         bootstrap_profile=self._bootstrap_profile,
                     )
-            except (ImportError, OSError, RuntimeError, TypeError, ValueError):
+            except (TypedValueRegistryConfigurationError, ObservationActivationTargetConfigurationError):
+                raise
+            except (ImportError, OSError, RuntimeError, TypeError, ValueError) as exc:
+                if isinstance(host_bootstrap_capability, BuiltInLocalHostSemanticIngestionCapability) and host_bootstrap_capability.observation_activation_target_configuration is not None:
+                    raise ObservationActivationTargetConfigurationError("configured activation target runtime construction failed") from exc
                 semantic_runtime = None
+        if isinstance(host_bootstrap_capability, BuiltInLocalHostSemanticIngestionCapability) and host_bootstrap_capability.observation_activation_target_configuration is not None and semantic_runtime is None:
+            raise ObservationActivationTargetConfigurationError("configured activation target requires an available semantic runtime")
         # Post-ingress runtime validation reads this stored composition
         # reference instead of reaching into the coordinator's privates.
         self._composed_semantic_runtime = semantic_runtime
+        # Structural observation is a host-held protected capability: without an
+        # explicitly composed paging runtime every public observation request
+        # fails closed without reading the memory plane.
+        self._graph_observation_runtime = graph_observation_runtime
         self._work_state_service = work_state_service
         self._work_state_selector = WorkStateSelector(work_state_service)
         self._solver_frontier_planner = solver_frontier_planner
@@ -521,6 +593,7 @@ class ProviderMemoryService:
             self._memory_plane,
             self._semantic_writer_admission,
             now_provider=self._now_provider,
+            ingestion_time_clock=self._clock,
             semantic_freeze_guard=(
                 semantic_integrity_lifecycle.freeze_guard
                 if semantic_integrity_lifecycle is not None
@@ -556,9 +629,9 @@ class ProviderMemoryService:
             bootstrap_unavailable_reason=self._bootstrap_unavailable_reason,
             atomic_store=self._semantic_atomic_store,
             writer_admission=self._semantic_writer_admission,
+            clock=self._clock,
             semantic_policy_provider=semantic_runtime.policy_provider if semantic_runtime is not None else None,
             semantic_runtime=semantic_runtime,
-            now_provider=self._now_provider,
             canonical_evidence_arena_factory=self._new_canonical_evidence_arena,
         )
         self._semantic_runtime_validated_after_ingress = False
@@ -589,6 +662,81 @@ class ProviderMemoryService:
         self._last_memory_evolution_result: MemoryEvolutionResult | None = None
         self._last_recall_bundle: RecallStateBundle | None = None
         self._last_prefetch_result: ProviderPrefetchResult[ProductionRetrievalDecision] | None = None
+
+    def activate_observation_ledger(self) -> SemanticWriterCommitBinding:
+        """Explicit trusted-host cutover; never exposed as a provider tool."""
+        if self._composed_semantic_runtime is None:
+            raise PreplanningStoreError("observation ledger activation target authority is not configured")
+        return self._composed_semantic_runtime.activate_observation_ledger()
+
+    def observe_graph(
+        self,
+        *,
+        host_ingress: AuthenticatedHostIngress,
+        request: GraphObservationRequest,
+    ) -> GraphObservationResponse:
+        """Return one registered graph-observation page or a non-disclosing failure."""
+        runtime = self._graph_observation_runtime
+        if runtime is None:
+            return self._observation_denial(cursor=request.cursor)
+        return runtime.observe_graph(host_ingress=host_ingress, request=request)
+
+    def observe_ingestion_time_attestations(
+        self,
+        *,
+        host_ingress: AuthenticatedHostIngress,
+        request: IngestionTimeAttestationRequest,
+    ) -> IngestionTimeAttestationResponse:
+        """Return one ingestion-time attestation page or a non-disclosing failure."""
+        runtime = self._graph_observation_runtime
+        if runtime is None:
+            return self._observation_denial(cursor=request.cursor)
+        return runtime.observe_ingestion_time_attestations(
+            host_ingress=host_ingress, request=request,
+        )
+
+    @staticmethod
+    def _observation_denial(*, cursor: str | None) -> GraphObservationFailure:
+        """Exact non-disclosing denial for an unavailable protected runtime."""
+        return GraphObservationFailure(
+            reason="denied" if cursor is None else "revoked_access",
+            request_correlation_token=token_urlsafe(24),
+        )
+
+    def retrieve_context(
+        self,
+        request: ScopedContextRequest,
+        *,
+        opaque_host_ingress: object,
+    ) -> ScopedContextActivation:
+        """Activate explicit host context from one authority-bound record snapshot."""
+
+        try:
+            request = ScopedContextRequest.model_validate(request.model_dump(mode="python"))
+        except (AttributeError, ValidationError):
+            return _scoped_empty(ScopedContextStatus.INVALID_REQUEST)
+        authority = self._scoped_read_authority
+        if authority is None:
+            return _scoped_empty(ScopedContextStatus.DENIED)
+        grant = authority.resolve(opaque_host_ingress, task_id=request.host_task_id, state_id=request.host_state_id)
+        if grant is None:
+            return _scoped_empty(ScopedContextStatus.DENIED)
+        try:
+            revision, records = self._memory_plane.read_snapshot()
+        except (ScopedSnapshotBackendError, ScopedSnapshotDecodeError, MemoryPlaneCorruptionError, OSError):
+            return _scoped_empty(ScopedContextStatus.UNAVAILABLE)
+        try:
+            activation = ScopedContextAssembler().assemble(request=request, revision=revision, records=records, grant=grant)
+        except ScopedSnapshotDecodeError:
+            return _scoped_empty(ScopedContextStatus.UNAVAILABLE)
+        receipt = authority.authorize_release(grant)
+        if receipt is None:
+            return _scoped_empty(ScopedContextStatus.DENIED)
+        if activation.status not in {ScopedContextStatus.COMPLETE, ScopedContextStatus.PARTIAL_OPTIONAL}:
+            return activation
+        return ScopedContextActivation.model_validate(
+            activation.model_dump(mode="python") | {"authority_binding_receipt": receipt}
+        )
 
     def _ensure_writer_admission_record(self) -> None:
         if not self._owns_writer_admission_record:

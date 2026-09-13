@@ -1,0 +1,14 @@
+{
+  "base_revision": "6029030d",
+  "scope": "proposed provenance proof and policy recipes only; not production/public runtime approval",
+  "files": {
+    "docs/work/semantic_ingestion/observed-provenance-materialization/proposal.md": "4f683e2cd523725ebaaee027703ea9ec7c3c39b2c4e1616d5d8d9288c6748ef9",
+    "docs/work/semantic_ingestion/observed-provenance-materialization/feasibility.py": "2b36911d3fa0655c47da4f4de071c004d4789040dae5b45333e6dd06dc144d0f",
+    "docs/work/semantic_ingestion/observed-provenance-materialization/test_feasibility.py": "7533bc7b4bd48007c0fb4f460bb1c5be1b2ce89491160a24f0482fd809378aa7",
+    "docs/design/semantic_ingestion_architecture.md": "a7770e627e2dc627c772b8c54dd5998ce83c1baf43079a210056826b5ebce626",
+    "docs/design/semantic_ingestion_observation.md": "e6d811b29f4f43fc9e51e3326e846a922de0333d645346c19a6ff2d4935e7643",
+    "memorii/memorii/core/semantic_ingestion/contracts.py": "56d2102eb610e8886b71d2d572a833e5e39fca6aa3e2dcbff88b80dd5470603d",
+    "memorii/memorii/core/memory_evolution/bootstrap_graph_planning.py": "61a5fad4e51992f3503150964f6805f13b3a0f123917e011c56aa647e4d892de"
+  },
+  "evidence": "1 real native-fact feasibility test passed in53.60s; all arm runtime coverage not claimed"
+}

@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "source_commit": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "review_manifest": "docs/work/scoped_context_implementation/final-review-candidate.json",
+  "review_manifest_sha256": "534c07a876f89b76e8c4740180bae0142dd436d414eaa3ad5f644d9f56c17163",
+  "source_manifest": "docs/work/scoped_context_implementation/final-source.json",
+  "source_manifest_sha256": "9ab323c49139b432cb4291020d0c0b92d76760cde1a45be0552239d4bf6fc7f6",
+  "archived_review_metadata": {
+    "docs/work/scoped_context_implementation/implementation.plan.md": "docs/work/scoped_context_implementation/history/7579eda01b5e554796dae813b62d648982d9d1637f017665f91929516a88eda4.md",
+    "docs/work/scoped_context_implementation/resume.md": "docs/work/scoped_context_implementation/history/12af0746befae66bc5927447562bf9e522d5b8ef0c471c15ceff9d402597f08c.md",
+    "docs/work/scoped_context_implementation/testing.plan.md": "docs/work/scoped_context_implementation/history/8884ac15608b7d8f0af3354b0ed2e462cd079aae6d08968d663fc33775823ede.md"
+  },
+  "note": "Original reviewed bytes remain immutable. Completion metadata uses content-addressed snapshots. The old resume snapshot was recovered from the original freeze generator and accepted only after exact reviewed SHA256 match. Retained logs are historical local runs, not new committed-SHA or hosted execution."
+}

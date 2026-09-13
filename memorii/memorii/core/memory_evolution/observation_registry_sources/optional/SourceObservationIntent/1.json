@@ -1,0 +1,1 @@
+{"fields":[{"field_name":"intent_digest","policy":"required"},{"field_name":"kind","policy":"required"},{"field_name":"observation_schema_fingerprint","policy":"required"},{"field_name":"source_outcome","policy":"required"}],"role":"optional","schema_id":"SourceObservationIntent","schema_version":"1"}

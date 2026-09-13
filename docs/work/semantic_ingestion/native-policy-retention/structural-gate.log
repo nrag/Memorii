@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/Users/nandaraghunathan/Code/Memorii/Memorii/docs/design/semantic_ingestion/traceability_golden_vectors/check_cgs_structural_contract_v1.py", line 922, in <module>
+    main()
+  File "/Users/nandaraghunathan/Code/Memorii/Memorii/docs/design/semantic_ingestion/traceability_golden_vectors/check_cgs_structural_contract_v1.py", line 907, in main
+    validate(
+  File "/Users/nandaraghunathan/Code/Memorii/Memorii/docs/design/semantic_ingestion/traceability_golden_vectors/check_cgs_structural_contract_v1.py", line 528, in validate
+    raise ValueError(f"{label} hash mismatch")
+ValueError: design hash mismatch

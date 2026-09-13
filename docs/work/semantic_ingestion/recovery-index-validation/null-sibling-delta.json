@@ -1,0 +1,10 @@
+{
+  "parent_candidate": "ab2efbd33fd25e6a83c36616dad4369b7f108e9803770dd9c69d08c2b885108b",
+  "scope": "test-only optional-null sibling delta; all production bytes unchanged",
+  "test_path": "memorii/tests/unit/core/memory_evolution/test_observation_ledger_contracts.py",
+  "result": "13 passed in5.24s",
+  "production_hashes_unchanged": true,
+  "memorii/tests/unit/core/memory_evolution/test_observation_ledger_contracts.py": "c4975f678fe3b44ee5c446b5399267487a08de3bbc77bdd69395c6a095c04e3f",
+  "docs/work/semantic_ingestion/recovery-index-validation/contract-delta.log": "c9ef6c5af2b1698934dff7168e795bf53a8ec01b2d4888c0e95d21ecd7362ca5",
+  "candidate_identity": "8b7d3768702e8ffd646284d1f327ef8bb6bbc4824485e3bdd5a0974d237d657a"
+}

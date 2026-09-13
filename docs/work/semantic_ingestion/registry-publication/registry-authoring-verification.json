@@ -1,0 +1,19 @@
+{
+  "evidence_class": "local_construction_only",
+  "result": "43 passed in 5.61s",
+  "exit_status": 0,
+  "cwd": "memorii",
+  "command": "../.venv/bin/python -W error -m pytest tests/unit/core/memory_evolution/test_typed_value_registry_compilation.py tests/unit/core/memory_evolution/test_typed_value_publication.py -q -p no:cacheprovider",
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "tree": "authorized dirty working tree",
+  "sha256": {
+    "memorii/memorii/core/memory_evolution/typed_value_registry_compilation.py": "7e819eff7595eecfba77391ff0016a1edae8ae827012eef18bb01469659a735f",
+    "memorii/tests/unit/core/memory_evolution/test_typed_value_registry_compilation.py": "7d35409502c80a6b4bb1aaee4aa630d9f33418fb13f02766f489d4814631640b",
+    "memorii/memorii/core/memory_evolution/typed_value_publication.py": "378e32110697d9052de0e8a06b6da5e1a808b5d36d3a7f8e5f586459c16f8e76",
+    "memorii/tests/unit/core/memory_evolution/test_typed_value_publication.py": "61f334106766fcce1e422124e0d48a193fcc5004c84970add8143dcc11beb555"
+  },
+  "limitations": [
+    "Offline role authoring and protected construction only",
+    "No runtime publication, independent compiler or CI evidence"
+  ]
+}

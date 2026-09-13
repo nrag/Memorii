@@ -1,0 +1,87 @@
+F.                                                                       [100%]
+=================================== FAILURES ===================================
+__ test_public_drain_preserves_live_operation_and_rejects_new_old_epoch_work ___
+
+tmp_path = PosixPath('/private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/pytest-of-nandaraghunathan/pytest-1077/test_public_drain_preserves_li0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a27e090>
+
+    def test_public_drain_preserves_live_operation_and_rejects_new_old_epoch_work(tmp_path, monkeypatch) -> None:
+        from memorii.core.provider.models import ProviderOperation
+        from tests.unit.core.semantic_ingestion.test_semantic_provider_composition import _host_ingress
+    
+        build, _, clock = _provider_factory(tmp_path, monkeypatch, normalization=True)
+        path = tmp_path / "draining-store"
+        plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path))
+        service = build(plane)
+        runtime = service._composed_semantic_runtime
+        assert runtime is not None and runtime.atomic_store is not None
+        atomic = runtime.atomic_store
+        acquire = atomic.acquire_lease
+    
+        class InterruptedWorker(BaseException):
+            pass
+    
+        held = []
+    
+        def interrupt_after_lease(**kwargs):
+            control = acquire(**kwargs)
+            held.append(control)
+            raise InterruptedWorker()
+    
+        def ingest(operation):
+            return service.sync_event(
+                operation=ProviderOperation.CHAT_USER_TURN, content="Atlas owner is Bob.",
+                operation_id=operation, task_id="task:one", user_id="user:alice",
+                authenticated_host_ingress=_host_ingress(),
+            )
+    
+        monkeypatch.setattr(atomic, "acquire_lease", interrupt_after_lease)
+        with pytest.raises(InterruptedWorker):
+            ingest("held-operation")
+        monkeypatch.setattr(atomic, "acquire_lease", acquire)
+        assert len(held) == 1 and held[0].lease is not None
+        with pytest.raises(PreplanningStoreError, match="not drained"):
+            service.activate_observation_ledger()
+        assert atomic.get_operation(held[0].operation_fence) == held[0]
+        before_controls = plane.list_records(source_kind="semantic_ingestion_preplanning_control")
+        with pytest.raises(SemanticWriterAdmissionError, match="frozen to new operations"):
+>           ingest("new-operation-during-drain")
+
+memorii/tests/integration/test_observation_ledger_activation.py:484: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+memorii/tests/integration/test_observation_ledger_activation.py:468: in ingest
+    return service.sync_event(
+memorii/memorii/core/provider/service.py:733: in sync_event
+    return self._ingest_event(
+memorii/memorii/core/provider/service.py:784: in _ingest_event
+    result, _, evolution_result = self._provider_ingestion.ingest(
+memorii/memorii/core/provider/ingestion.py:352: in ingest
+    return self._ingest_semantic_source(
+memorii/memorii/core/provider/ingestion.py:515: in _ingest_semantic_source
+    prepared_admission = self._admit_with_writer_retry(prepare)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+memorii/memorii/core/provider/ingestion.py:849: in _admit_with_writer_retry
+    prepared = prepare()
+               ^^^^^^^^^
+memorii/memorii/core/provider/ingestion.py:502: in prepare
+    return self._admission_service.prepare_atomic(
+memorii/memorii/core/memory_evolution/admission.py:242: in prepare_atomic
+    writer_coordinate = _source_admission_writer_coordinate(self._memory_plane)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+memory_plane = <memorii.core.memory_plane.service.MemoryPlaneService object at 0x10a2ad340>
+
+    def _source_admission_writer_coordinate(memory_plane: MemoryPlaneService) -> tuple[int, str] | None:
+        record = memory_plane.get_record("semantic_ingestion:writer_admission:current")
+        if record is None:
+            return None
+        try:
+            if record.content.get("draining", False):
+>               raise ValueError("semantic writer is draining and source admission is frozen")
+E               ValueError: semantic writer is draining and source admission is frozen
+
+memorii/memorii/core/memory_evolution/admission.py:589: ValueError
+=========================== short test summary info ============================
+FAILED memorii/tests/integration/test_observation_ledger_activation.py::test_public_drain_preserves_live_operation_and_rejects_new_old_epoch_work
+1 failed, 1 passed, 21 deselected in 32.72s

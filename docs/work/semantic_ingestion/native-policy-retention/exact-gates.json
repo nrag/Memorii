@@ -1,0 +1,84 @@
+{
+  "workflow_sha256": "49b09815dce26317b8f135900c5d2dc69f3f141401a916ed9d219ff338d896ce",
+  "design_sha256": "69140e58d650fbe9f59d69de2da06d846b6c4a9040256d82d29fced76e918e79",
+  "runtime": "Python 3.12.14 local macOS; workflow declares Python3.12 Ubuntu; local deterministic parity only",
+  "results": [
+    {
+      "name": "Verify pinned CTV binding authority",
+      "command": [
+        "/usr/local/Cellar/python@3.12/3.12.14/Frameworks/Python.framework/Versions/3.12/bin/python3.12",
+        "-I",
+        "docs/design/semantic_ingestion/traceability_golden_vectors/check_ctv_binding_authority_v2.py",
+        "--design",
+        "docs/design/semantic_ingestion_architecture.md",
+        "--registry",
+        "docs/design/semantic_ingestion/traceability_registry/registry-v1.json",
+        "--authority",
+        "docs/design/semantic_ingestion/traceability_golden_vectors/ctv-binding-authority-v2.json",
+        "--validator",
+        "docs/design/semantic_ingestion/traceability_golden_vectors/validate_ctv_binding_authority_v2.py",
+        "--expected-design-sha256",
+        "69140e58d650fbe9f59d69de2da06d846b6c4a9040256d82d29fced76e918e79",
+        "--expected-registry-sha256",
+        "70143b278e0fd72886362f4174c726c9ecf877b1e288d3dd2c196a78f385413e",
+        "--expected-authority-sha256",
+        "653119939fa33484e4f16da25d332590202408dc9ed1b75daf9954c45183dd43",
+        "--expected-validator-sha256",
+        "3066e6ffb015823283e57945863c22d4ecf32164c52ae8199eb1535c7798f145",
+        "--expected-checker-sha256",
+        "e2c35870a99e587f34cbffc701f42587520ee015009cd51647367da56716c732"
+      ],
+      "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii",
+      "exit_code": 0,
+      "log": "docs/work/semantic_ingestion/native-policy-retention/ctv-exact-final.log"
+    },
+    {
+      "name": "Verify lifecycle-root signer provenance semantics",
+      "command": [
+        "/usr/local/Cellar/python@3.12/3.12.14/Frameworks/Python.framework/Versions/3.12/bin/python3.12",
+        "-I",
+        "docs/design/semantic_ingestion/traceability_golden_vectors/check_lifecycle_root_signer_provenance_v1.py",
+        "--design",
+        "docs/design/semantic_ingestion_architecture.md",
+        "--matrix",
+        "docs/design/semantic_ingestion/traceability_golden_vectors/cgs_verification_attack_matrix-v1.json",
+        "--fixture",
+        "docs/design/semantic_ingestion/traceability_golden_vectors/lifecycle-root-signer-provenance-witness-v1.json",
+        "--validator",
+        "docs/design/semantic_ingestion/traceability_golden_vectors/validate_lifecycle_root_signer_provenance_v1.py",
+        "--expected-checker-sha256",
+        "58f81fe028a4a89cb30f43bc1a88779a5567652eb11075785e7fe7e232228938",
+        "--self-test"
+      ],
+      "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii",
+      "exit_code": 0,
+      "log": "docs/work/semantic_ingestion/native-policy-retention/lifecycle-exact-final.log"
+    },
+    {
+      "name": "Verify structural manifest contract",
+      "command": [
+        "/usr/local/Cellar/python@3.12/3.12.14/Frameworks/Python.framework/Versions/3.12/bin/python3.12",
+        "-I",
+        "docs/design/semantic_ingestion/traceability_golden_vectors/check_cgs_structural_contract_v1.py",
+        "--design",
+        "docs/design/semantic_ingestion_architecture.md",
+        "--registry",
+        "docs/design/semantic_ingestion/traceability_registry/registry-v1.json",
+        "--ledger",
+        "docs/design/semantic_ingestion/traceability_golden_vectors/structural_manifest_derivation_ledger-v1.json",
+        "--matrix",
+        "docs/design/semantic_ingestion/traceability_golden_vectors/cgs_verification_attack_matrix-v1.json",
+        "--prototype",
+        "docs/design/semantic_ingestion/traceability_golden_vectors/cgs_structural_manifest_prototype.py",
+        "--vector",
+        "docs/design/semantic_ingestion/traceability_golden_vectors/cgs-structural-manifest-prototype-v1.json",
+        "--expected-checker-sha256",
+        "f05835dcbf0dc319855e34f79b6b051371ced0ce40f6d345fd78a729d62e7825",
+        "--self-test"
+      ],
+      "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii",
+      "exit_code": 0,
+      "log": "docs/work/semantic_ingestion/native-policy-retention/structural-exact-final.log"
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "scope": "Design only: operational profile registry publication, shared ledger and separate temporal/trust observation; not implementation or M5 closure",
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "tree": "authorized dirty working tree; no writer on frozen design artifacts",
+  "files": {
+    "docs/design/semantic_ingestion_architecture.md": "69140e58d650fbe9f59d69de2da06d846b6c4a9040256d82d29fced76e918e79",
+    "docs/design/semantic_ingestion_observation.md": "7d790c9233b43eb78357cd6df1ed5547beb5e24ec8a2283e655216c90bcf3113",
+    "docs/work/semantic_ingestion/observation-ledger/readiness.md": "5c432bb89464b3dc41bf42e7c2b458cd1d9033cf56710a0121ff73096b5ded36",
+    "docs/work/semantic_ingestion/observation-ledger/registry-verification-matrix.md": "4e29152b0913b9f09408af089d30e48ac7640496e52f6a2cda0db02263aed350",
+    "docs/work/semantic_ingestion/observation-ledger/entrypoint-preflight.md": "9106ad8f31dfe599c8e8f5352024a21e9ee5a545fea76ea14530f0ad63e12e54",
+    "docs/work/semantic_ingestion/observation-ledger/native-projection-binding.md": "9c88b6db190dfa5810b494241a5ed0a76fa44c9514777e3c64e3bf65e4dd240b",
+    "docs/work/semantic_ingestion/observation-ledger/entrypoint-verification-matrix.md": "1e2ba1143d4101217ca5d7c129e0dac2cc602888c040c4cf7a6deba7a11fd2ed"
+  },
+  "candidate_digest": "215ab5f272d7b27589da04c9c1dd4a9fa0f1d8f01413d542ea72bffa4c924b9e",
+  "readiness": "Current trigger-to-owner plans and Spark preflight are retained; new runtime owners explicitly have zero callers until implementation. Design review uses build-design planned binding contract.",
+  "evidence": [
+    "feasibility.log",
+    "backend-evidence.json",
+    "profile-derivation.json",
+    "independent-profile-derivation.json",
+    "../native-policy-retention/tests-final.log",
+    "../native-policy-retention/compatibility.log"
+  ],
+  "known_gaps": [
+    "No runtime registry/ledger/retrieval implementation claim",
+    "Exact source gates running against derived refreshed artifacts",
+    "No operational signing or statistical acceptance"
+  ],
+  "review_status": "frozen final determinate conformance evidence",
+  "previous_candidate_digest": "9ea46903fd09c67f5bdf75bbcb2af77799f2e54011e858baf188a129114f88dd",
+  "corrections": [
+    "Immutable registry statuses and protected entry history",
+    "Whole-file decoder source manifest, LP snapshots and deployment pin closure",
+    "Immutable native publication receipt and evidence, legacy version omission, historical pointer snapshots",
+    "Public-entrypoint verification matrix with removed-caller counterfactuals",
+    "Exact source-manifest raw-byte digest",
+    "Historical prefix binding derivation and direct/core receipt equality",
+    "Public status admission/replay proof row"
+  ]
+}

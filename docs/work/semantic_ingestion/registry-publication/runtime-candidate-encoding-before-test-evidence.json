@@ -1,0 +1,37 @@
+{
+  "status": "FROZEN_BOUNDED_REVIEW_CANDIDATE",
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "tree": "authorized dirty tree",
+  "scope": "Registry configuration and host/writer/store identity composition; source-directed native candidate encoder only. No ledger activation, integrity verification, replay, retrieval or whole-registry completion.",
+  "files": {
+    "memorii/memorii/core/memory_evolution/typed_value_registry_configuration.py": "14df68e746e075e8d92bab90b7860d85ab45a960adbd414633d60691d2ab4e6d",
+    "memorii/memorii/core/memory_evolution/writer_admission.py": "cc77a3e4be4769dbca995495e3eb6c6f59b0fa0e4eae7f61c677df90404f0254",
+    "memorii/memorii/core/memory_evolution/atomic_store.py": "0f1971555752f656a6e658b4a21b951f2803bf907fa28db382afc05836b47b2b",
+    "memorii/memorii/core/semantic_ingestion/capability.py": "bbeeea57afd1922cd922cf157ccfb08bee59ed30d84d1df5a8304c94cdf87c31",
+    "memorii/memorii/core/provider/service.py": "18419d17f2be08bb6c26925661d42486caa12b8ad101fcc723004158d460222d",
+    "memorii/tests/unit/core/semantic_ingestion/test_semantic_provider_composition.py": "19a091bcefb01d4b382d0d815df789f48d86115deb92dca69bed584f82edf73d",
+    "memorii/memorii/core/memory_evolution/typed_value_model_codec.py": "f0a8515bd67d582a03dff866a1aca7e73e9786857a680b5f329d2c6ffb537d99",
+    "memorii/tests/unit/core/memory_evolution/test_typed_value_model_candidate_encoding.py": "67f41fa372df6d59eba382b5e1ba7ea27452728cb1f3d1d22fcdc9ca10b923e3"
+  },
+  "tests": [
+    {
+      "command": "../.venv/bin/python -W error -m pytest tests/unit/core/semantic_ingestion/test_semantic_provider_composition.py -k registry -p no:cacheprovider -q",
+      "result": "5 passed, 36 deselected in 20.20s"
+    },
+    {
+      "command": "../.venv/bin/python -W error -m pytest tests/unit/core/memory_evolution/test_typed_value_model_candidate_encoding.py -p no:cacheprovider -q",
+      "result": "3 passed in 4.65s"
+    }
+  ],
+  "regression": "Initial selected provider regression7passed; codec/reader103passed. New fixture/message assertion failures corrected and focused tests rerun; no production limits weakened.",
+  "ruff": "Scoped8files passed",
+  "pyright": "Configured production6files plus candidate encoding test:0errors0warnings. Entire provider testfile extra diagnostic had7remaining unclassified errors outside configured production scope; not claimed clean.",
+  "publication_candidate_sha256": "975a2c1eeadf0fdaca7dc742548258f969b5ee58b552ceee4790fa5f7abe28d9",
+  "vectors": "LOCAL_VECTOR_PARITY",
+  "remaining": [
+    "bounded independent review",
+    "registered integrity and native authority",
+    "ledger/retrieval runtime",
+    "package/CI/full review"
+  ]
+}

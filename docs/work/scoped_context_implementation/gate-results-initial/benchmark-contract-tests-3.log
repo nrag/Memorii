@@ -1,0 +1,31 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.12.14, pytest-9.0.3, pluggy-1.6.0
+rootdir: /Users/nandaraghunathan/Code/Memorii/Memorii/memorii
+configfile: pyproject.toml
+plugins: xdist-3.8.0, anyio-4.13.0
+collected 302 items
+
+tests/unit/core/benchmark/test_memory_evolution_public_contracts.py .... [  1%]
+.........................                                                [  9%]
+tests/unit/core/benchmark/test_memory_evolution_architecture.py ........ [ 12%]
+...........................                                              [ 21%]
+tests/unit/core/benchmark/test_memory_evolution_oracle.py .              [ 21%]
+tests/unit/core/benchmark/test_memory_evolution_runtime_alignment.py ... [ 22%]
+............                                                             [ 26%]
+tests/unit/core/benchmark/test_memory_evolution_runtime_execution_state.py . [ 26%]
+.........                                                                [ 29%]
+tests/unit/core/benchmark/test_memory_evolution_sim_leakage_contracts.py . [ 30%]
+...................                                                      [ 36%]
+tests/unit/core/benchmark/test_memory_evolution_sim_judge_contracts.py . [ 36%]
+...................                                                      [ 43%]
+tests/unit/core/test_memory_evolution_temporal.py ...................... [ 50%]
+.........................................                                [ 63%]
+tests/unit/core/test_memory_evolution_execution.py ......                [ 65%]
+tests/unit/core/test_memory_evolution_retrieval.py ..................... [ 72%]
+....................                                                     [ 79%]
+tests/unit/core/test_calibration_gates.py .............................. [ 89%]
+........                                                                 [ 92%]
+tests/unit/core/test_calibration.py ................                     [ 97%]
+tests/unit/tools/test_validate_benchmark_artifacts.py ........           [100%]
+
+======================= 302 passed in 111.69s (0:01:51) ========================

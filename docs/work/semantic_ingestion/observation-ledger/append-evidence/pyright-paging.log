@@ -1,0 +1,11 @@
+/Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/graph_observation_paging.py
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/graph_observation_paging.py:311:13 - error: Argument of type "object" cannot be assigned to parameter "value" of type "BaseModel" in function "emit_registered_observation_artifact"
+    "object" is not assignable to "BaseModel" (reportArgumentType)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/graph_observation_paging.py:318:47 - error: Argument of type "str" cannot be assigned to parameter "reason" of type "GraphObservationFailureReason" in function "__init__"
+    Type "str" is not assignable to type "GraphObservationFailureReason"
+      "str" is not assignable to type "Literal['denied']"
+      "str" is not assignable to type "Literal['invalid_cursor']"
+      "str" is not assignable to type "Literal['stale_cursor']"
+      "str" is not assignable to type "Literal['revoked_access']" (reportArgumentType)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/graph_observation_paging.py:322:79 - error: "total_seconds" is not a known attribute of "None" (reportOptionalMemberAccess)
+3 errors, 0 warnings, 0 informations

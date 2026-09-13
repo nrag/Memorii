@@ -1,0 +1,885 @@
+{
+  "status": "LOCAL_VECTOR_PARITY",
+  "vector_count": 58,
+  "full_publication_entries": 181,
+  "full_publication_role_count": 1269,
+  "manifest_sha256": "9e84965c8e7f69545234c9f6ce07953c35c6c978e2e7f917a625b03b80690632",
+  "results": [
+    {
+      "name": "valid_complete_package",
+      "boundary": "registry",
+      "expected_valid": true,
+      "primary": {
+        "accepted": true,
+        "matches": true,
+        "output_sha256": "2f61276a6f1e43be1b45d289902cff48a824835135d7f31cff38235496875134"
+      },
+      "independent": {
+        "accepted": true,
+        "matches": true,
+        "output_sha256": "2f61276a6f1e43be1b45d289902cff48a824835135d7f31cff38235496875134"
+      }
+    },
+    {
+      "name": "raw_terminal_lf",
+      "boundary": "declaration",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "declaration_terminal_lf_forbidden",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "schema/Leaf/1 has a terminal LF",
+        "matches": true
+      }
+    },
+    {
+      "name": "raw_invalid_utf8",
+      "boundary": "declaration",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "declaration_json_invalid",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "schema/Leaf/1 is not strict JSON",
+        "matches": true
+      }
+    },
+    {
+      "name": "raw_duplicate_object_key",
+      "boundary": "declaration",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "declaration_duplicate_key",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "duplicate object key 'fields'",
+        "matches": true
+      }
+    },
+    {
+      "name": "raw_json_number",
+      "boundary": "declaration",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "declaration_json_number_forbidden",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "JSON numbers are forbidden",
+        "matches": true
+      }
+    },
+    {
+      "name": "raw_non_ascii_key",
+      "boundary": "declaration",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "declaration_object_key_invalid",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "object key is not a nonempty ASCII string",
+        "matches": true
+      }
+    },
+    {
+      "name": "raw_empty_key",
+      "boundary": "declaration",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "declaration_object_key_invalid",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "object key is not a nonempty ASCII string",
+        "matches": true
+      }
+    },
+    {
+      "name": "raw_reordered_object_keys",
+      "boundary": "declaration",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "declaration_not_rfc8785_canonical",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "object keys are not in encoded JSON-string order",
+        "matches": true
+      }
+    },
+    {
+      "name": "missing_grammar_role",
+      "boundary": "declaration",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "grammar_role_count_invalid",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "grammar role is missing",
+        "matches": true
+      }
+    },
+    {
+      "name": "duplicate_source_role",
+      "boundary": "declaration",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "registry_role_coordinate_duplicate",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "duplicate source role decoder/Leaf/1",
+        "matches": true
+      }
+    },
+    {
+      "name": "fixed_grammar_mutation",
+      "boundary": "declaration",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "grammar_literal_mismatch",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "grammar does not equal the complete approved literal",
+        "matches": true
+      }
+    },
+    {
+      "name": "closed_schema_role_extra_field",
+      "boundary": "declaration",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "schema_keys_invalid",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "schema ('Leaf', '1') has an invalid field set",
+        "matches": true
+      }
+    },
+    {
+      "name": "unknown_type_kind",
+      "boundary": "declaration",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "type.kind_unknown",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "field type has unknown type kind",
+        "matches": true
+      }
+    },
+    {
+      "name": "duplicate_schema_field",
+      "boundary": "declaration",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "schema.fields_not_unique_sorted",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "schema ('Leaf', '1').fields is not sorted and unique",
+        "matches": true
+      }
+    },
+    {
+      "name": "unresolved_model_reference",
+      "boundary": "declaration",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "schema_dependency_unresolved",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "unresolved schema reference ('Absent', '1')",
+        "matches": true
+      }
+    },
+    {
+      "name": "nested_model_cycle",
+      "boundary": "declaration",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "schema_dependency_cycle",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "schema dependency graph contains a cycle",
+        "matches": true
+      }
+    },
+    {
+      "name": "direct_model_self_reference",
+      "boundary": "declaration",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "schema_dependency_cycle",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "self reference at ('Root', '1')",
+        "matches": true
+      }
+    },
+    {
+      "name": "unresolved_enum_reference",
+      "boundary": "declaration",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "enum_reference_unresolved",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "unresolved enum in closure ('Leaf', '1')",
+        "matches": true
+      }
+    },
+    {
+      "name": "duplicate_enum_identity",
+      "boundary": "declaration",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "enum.enums_not_unique_sorted",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "enums is not sorted and unique",
+        "matches": true
+      }
+    },
+    {
+      "name": "union_discriminator_not_declared",
+      "boundary": "declaration",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "union_discriminator_closure_invalid",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "union discriminator is absent from an alternative",
+        "matches": true
+      }
+    },
+    {
+      "name": "optional_field_set_not_exact",
+      "boundary": "declaration",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "optional_field_closure_invalid",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "optional fields do not exactly match schema",
+        "matches": true
+      }
+    },
+    {
+      "name": "numeric_wrapper_without_row",
+      "boundary": "declaration",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "numeric_field_closure_invalid",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "numeric fields do not match numeric wrappers",
+        "matches": true
+      }
+    },
+    {
+      "name": "decimal_numeric_encoding_id_missing",
+      "boundary": "declaration",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "numeric.decimal_policy_invalid",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "decimal encoding id is not an ASCII identifier",
+        "matches": true
+      }
+    },
+    {
+      "name": "decimal_numeric_wrong_owner",
+      "boundary": "declaration",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "numeric_field_closure_invalid",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "numeric wrapper must name its owning root-model field",
+        "matches": true
+      }
+    },
+    {
+      "name": "decimal_numeric_inverted_bounds",
+      "boundary": "registry",
+      "expected_valid": true,
+      "primary": {
+        "accepted": true,
+        "matches": true,
+        "output_sha256": "fcd53a3db3ec3acd75025f21261159732b4d518a087da0b57bebf6da469d0ede"
+      },
+      "independent": {
+        "accepted": true,
+        "matches": true,
+        "output_sha256": "fcd53a3db3ec3acd75025f21261159732b4d518a087da0b57bebf6da469d0ede"
+      }
+    },
+    {
+      "name": "decimal_numeric_missing_scale",
+      "boundary": "declaration",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "numeric.decimal_policy_invalid",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "decimal scale is not a positive canonical unsigned decimal",
+        "matches": true
+      }
+    },
+    {
+      "name": "decimal_numeric_wrong_scale_lower",
+      "boundary": "declaration",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "numeric_decimal_bound_lexical_invalid",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "decimal lower bound does not use the declared fixed scale",
+        "matches": true
+      }
+    },
+    {
+      "name": "decimal_numeric_wrong_scale_upper",
+      "boundary": "declaration",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "numeric_decimal_bound_lexical_invalid",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "decimal upper bound does not use the declared fixed scale",
+        "matches": true
+      }
+    },
+    {
+      "name": "binary64_forbidden_numeric_members",
+      "boundary": "declaration",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "numeric.binary64_policy_invalid",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "binary64 numeric row has forbidden values",
+        "matches": true
+      }
+    },
+    {
+      "name": "integrity_policy_unknown_member",
+      "boundary": "declaration",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "digest-signature.policy_keys_invalid",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "ordinary policy has an invalid field set",
+        "matches": true
+      }
+    },
+    {
+      "name": "decoder_wrong_root_kind",
+      "boundary": "declaration",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "decoder.typed_root_kind_literal_invalid",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "decoder root kind is invalid",
+        "matches": true
+      }
+    },
+    {
+      "name": "upcast_must_be_null_only",
+      "boundary": "declaration",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "upcast.upcaster_id_must_be_null",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "profile-3 upcast is not null-only",
+        "matches": true
+      }
+    },
+    {
+      "name": "registry_entry_substitution",
+      "boundary": "registry",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "registry_entry_digests_mismatch",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "registry entries do not match derived entries",
+        "matches": true
+      }
+    },
+    {
+      "name": "decoder_manifest_hash_substitution",
+      "boundary": "source",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "decoder_source_manifest.source_file_sha256_mismatch",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "decoder source file digest mismatch",
+        "matches": true
+      }
+    },
+    {
+      "name": "decoder_manifest_row_order",
+      "boundary": "source",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "decoder_source_manifest.files_not_sorted",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "decoder source rows is not sorted and unique",
+        "matches": true
+      }
+    },
+    {
+      "name": "decoder_manifest_path_escape",
+      "boundary": "source",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "decoder_source_manifest.relative_path_invalid",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "invalid decoder relative path",
+        "matches": true
+      }
+    },
+    {
+      "name": "publication_role_hash_substitution",
+      "boundary": "publication",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "typed_value_publication_source_role_files_mismatch",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "publication manifest members mismatch",
+        "matches": true
+      }
+    },
+    {
+      "name": "publication_role_order",
+      "boundary": "publication",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "typed_value_publication_manifest.files_not_unique_sorted",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "publication manifest members mismatch",
+        "matches": true
+      }
+    },
+    {
+      "name": "decoder_path_absolute",
+      "boundary": "source",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "decoder_source_manifest.relative_path_invalid",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "invalid decoder relative path",
+        "matches": true
+      }
+    },
+    {
+      "name": "decoder_path_backslash",
+      "boundary": "source",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "decoder_source_manifest.relative_path_invalid",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "invalid decoder relative path",
+        "matches": true
+      }
+    },
+    {
+      "name": "decoder_path_dot",
+      "boundary": "source",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "decoder_source_manifest.relative_path_invalid",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "invalid decoder relative path",
+        "matches": true
+      }
+    },
+    {
+      "name": "decoder_path_percent",
+      "boundary": "source",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "decoder_source_manifest.relative_path_invalid",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "invalid decoder relative path",
+        "matches": true
+      }
+    },
+    {
+      "name": "decoder_duplicate_source_id",
+      "boundary": "source",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "decoder_source_manifest.files_not_sorted",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "decoder source rows is not sorted and unique",
+        "matches": true
+      }
+    },
+    {
+      "name": "decoder_conflicting_shared_path",
+      "boundary": "source",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "decoder_source_manifest.shared_path_metadata_conflict",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "decoder source file digest mismatch",
+        "matches": true
+      }
+    },
+    {
+      "name": "decoder_unknown_extra_source_row",
+      "boundary": "source",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "decoder_source_manifest.files_not_sorted",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "decoder source rows is not sorted and unique",
+        "matches": true
+      }
+    },
+    {
+      "name": "decoder_source_file_missing",
+      "boundary": "source",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "decoder_source_manifest.source_file_open_failed",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "decoder source file cannot be read",
+        "matches": true
+      }
+    },
+    {
+      "name": "decoder_manifest_profile_change",
+      "boundary": "source",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "decoder_source_manifest.profile_version_literal_invalid",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "decoder source manifest identity is invalid",
+        "matches": true
+      }
+    },
+    {
+      "name": "decoder_manifest_terminal_lf",
+      "boundary": "source",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "decoder_source_manifest_terminal_lf_forbidden",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "decoder source manifest has a terminal LF",
+        "matches": true
+      }
+    },
+    {
+      "name": "publication_manifest_terminal_lf",
+      "boundary": "publication",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "typed_value_publication_manifest_raw_invalid",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "publication manifest has a terminal LF",
+        "matches": true
+      }
+    },
+    {
+      "name": "publication_decoder_manifest_digest_substitution",
+      "boundary": "publication",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "typed_value_publication_decoder_source_manifest_digest_mismatch",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "publication manifest identity mismatch",
+        "matches": true
+      }
+    },
+    {
+      "name": "valid_source_without_terminal_lf",
+      "boundary": "registry",
+      "expected_valid": true,
+      "primary": {
+        "accepted": true,
+        "matches": true,
+        "output_sha256": "d340e0d82e3d0d7e5e932ecb9e86dba8a8f49b731380533804ffeb9423539600"
+      },
+      "independent": {
+        "accepted": true,
+        "matches": true,
+        "output_sha256": "d340e0d82e3d0d7e5e932ecb9e86dba8a8f49b731380533804ffeb9423539600"
+      }
+    },
+    {
+      "name": "decoder_file_symlink",
+      "boundary": "source",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "decoder_source_manifest.source_file_open_failed",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "decoder source file cannot be read",
+        "matches": true
+      }
+    },
+    {
+      "name": "decoder_directory_symlink",
+      "boundary": "source",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "decoder_source_manifest.source_file_open_failed",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "decoder source file cannot be read",
+        "matches": true
+      }
+    },
+    {
+      "name": "generated_namespace_source",
+      "boundary": "source",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "decoder_source_manifest.generated_source_forbidden",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "generated decoder source namespace is forbidden",
+        "matches": true
+      }
+    },
+    {
+      "name": "generated_namespace_nested_source",
+      "boundary": "source",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "decoder_source_manifest.generated_source_forbidden",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "generated decoder source namespace is forbidden",
+        "matches": true
+      }
+    },
+    {
+      "name": "generated_namespace_source_root",
+      "boundary": "source",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "decoder_source_manifest.generated_source_forbidden",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "generated decoder source namespace is forbidden",
+        "matches": true
+      }
+    },
+    {
+      "name": "decoder_source_root_parent_alias",
+      "boundary": "source",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "decoder_source_manifest.source_root_not_canonical",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "decoder source root is not canonical",
+        "matches": true
+      }
+    },
+    {
+      "name": "decoder_source_root_symlink",
+      "boundary": "source",
+      "expected_valid": false,
+      "primary": {
+        "accepted": false,
+        "error": "decoder_source_manifest.source_root_not_canonical",
+        "matches": true
+      },
+      "independent": {
+        "accepted": false,
+        "error": "decoder source root is not canonical",
+        "matches": true
+      }
+    }
+  ],
+  "failures": [],
+  "limitations": [
+    "construction parity only",
+    "not CI or deployment authority",
+    "protected runtime composition and final review remain open"
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "reviewed_revision": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "current_branch": "semantic_ingestion_m5",
+  "current_branch_run_list": [],
+  "current_branch_pr_list": [],
+  "workflow_triggers": [
+    "pull_request targeting main",
+    "merge_group targeting main"
+  ],
+  "workflow_sha256": "57064a31bf413ef1a2fc8e6b35e2f20e0461d7ee4afe31d6bf42fed6de222a10",
+  "historical_run": "historical-hosted-run.json",
+  "limitation": "Historical success does not establish current full program closure or live activation."
+}

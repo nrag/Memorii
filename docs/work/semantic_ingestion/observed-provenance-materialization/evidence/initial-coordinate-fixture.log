@@ -1,0 +1,183 @@
+...........F.F                                                           [100%]
+=================================== FAILURES ===================================
+_ test_commit_authority_substitution_cannot_reinterpret_retained_inventory[commit_time] _
+
+captured_fact = (BootstrapNativeTargetPlanningRequestV3(schema_version=3, transaction_group_id='d21b4ffd1b7133d30624f5a739a950bc97f42e...229dc32abf11e3f672be01597c'),), request_ctv_digest='acfdc9532226874fd7e744684b24d80bdd03e121e7e2033b87d789e84ff4c608'))
+coordinate = 'commit_time'
+
+    @pytest.mark.parametrize("coordinate", ("authorizing_group", "commit_group", "commit_time"))
+    def test_commit_authority_substitution_cannot_reinterpret_retained_inventory(captured_fact, coordinate):
+        _, _, request = captured_fact
+        reduction = request.ordered_operation_inputs[0].reduction
+        effect = reduction.effect_materialization.accepted_effect
+        commit = _commit_values(request)
+        authorizing_group = request.transaction_group_id
+        if coordinate == "authorizing_group":
+            authorizing_group = "foreign-group"
+        elif coordinate == "commit_group":
+            commit = commit.model_copy(update={"transaction_group_id": "foreign-group"})
+        else:
+            commit = commit.model_copy(update={"committed_at": commit.committed_at + timedelta(seconds=1)})
+>       with pytest.raises(ValueError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+docs/work/semantic_ingestion/observed-provenance-materialization/test_feasibility.py:405: Failed
+_____ test_correction_and_retraction_resolve_their_single_owned_transition _____
+
+captured_fact = (BootstrapNativeTargetPlanningRequestV3(schema_version=3, transaction_group_id='d21b4ffd1b7133d30624f5a739a950bc97f42e...229dc32abf11e3f672be01597c'),), request_ctv_digest='acfdc9532226874fd7e744684b24d80bdd03e121e7e2033b87d789e84ff4c608'))
+
+    def test_correction_and_retraction_resolve_their_single_owned_transition(captured_fact):
+        _, _, request = captured_fact
+        reduction = request.ordered_operation_inputs[0].reduction
+        fact = reduction.effect_materialization.accepted_effect
+        compilation = reduction.native_compilation
+        carrier = next(item for item in accepted_terminal(
+            operation_id=compilation.operation_id, operation_kind="correction",
+        ).accepted_carriers if isinstance(item, TemporalTransitionRecord))
+        transition = BootstrapNativePlanningRecordV3.create(
+            operation_execution_id=compilation.operation_execution_id,
+            record_kind="temporal_transition", record_id=carrier.transition_id,
+            precondition=AbsentPlanningPrecondition(),
+            planning_payload=canonical_planning_payload_from_record(carrier,
+                transaction_group_id=request.transaction_group_id),
+            source_member_digest=fact.fact.fact_digest,
+        )
+        original = fact.evidence_projections[0]
+        payload = dict(original.citation_record.planning_payload.planning_record)
+        payload["cited_record_id"] = transition.record_id
+        citation = _recreate(original.citation_record, planning_payload=type(original.citation_record.planning_payload)(
+            planning_record=payload,
+        ))
+        projection = _recreate(original, citation_record=citation)
+        # The actual reducer stores transitions both in replacement.planning_records
+        # and as an exact subset view on the correction envelope.
+        replacement = _recreate(fact, planning_records=(transition,), evidence_projections=(projection,))
+        correction = BootstrapNativeCorrectionEffectV3.create(
+            kind="correction", correction=BootstrapProposalCorrectionV3.create(
+                corrected_fact=fact.fact, replacement_fact=fact.fact, assertion=fact.fact.assertion,
+                correction_anchor=fact.fact.predicate_anchor),
+            corrected_targets=(), replacement_effect=replacement, transition_records=(transition,),
+        )
+        retraction = BootstrapNativeRetractionEffectV3.create(
+            kind="retraction", retraction=BootstrapProposalRetractionV3.create(
+                retracted_fact=fact.fact, assertion=fact.fact.assertion, retraction_anchor=fact.fact.predicate_anchor),
+            retracted_targets=(), transition_records=(transition,), evidence_projections=(projection,),
+        )
+        for effect in (correction, retraction):
+            inventory = _retained_inventory(effect, request)
+>           context = _retained_context(compilation, effect, projection, request, retained_records=inventory)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+docs/work/semantic_ingestion/observed-provenance-materialization/test_feasibility.py:480: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+docs/work/semantic_ingestion/observed-provenance-materialization/test_feasibility.py:84: in _retained_context
+    return retained_context(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+compilation = BootstrapNativeOperationCompilationV3(schema_version=3, transaction_group_id='d21b4ffd1b7133d30624f5a739a950bc97f42e1b...tus='accepted', reason_codes=(), compilation_digest='0835a05fc44f9be656e99105845866b62a8c47584b6bedcdecad419731040782')
+effect = BootstrapNativeCorrectionEffectV3(schema_version=3, kind='correction', correction=BootstrapProposalCorrectionV3(schema...ccf7483f281e5553774ce41606a62865'),), effect_digest='2c1b00496cc8fba47810745a00c110789ec3c4acf9a641aaa0f1aa76ed1a5993')
+projection = BootstrapNativeEvidenceProjectionV3(schema_version=3, operation_execution_id='6836a48d4826ca8545e31f2ef3f4739b73d0271e...45ffbc43258ea7bc49b8c89805d856'), projection_digest='3abe085b7bd139c4eebc58257e66740760b1b808e3cffb3acca235a359c6bf8f')
+
+    def retained_context(
+        compilation: BootstrapNativeOperationCompilationV3,
+        effect: BootstrapNativeAcceptedOperationEffectV3,
+        projection: BootstrapNativeEvidenceProjectionV3,
+        *,
+        commit_values: PlanningCommitValues,
+        authorizing_transaction_group_id: str,
+        retained_records: Sequence[BaseModel],
+    ) -> RetainedProvenanceContext:
+        """Resolve one exact P/E/K/C retained-native provenance join."""
+        authority = compilation.operation_input.planning_construction_authority
+        if authority is None:
+            raise ValueError("missing retained planning authority")
+        if (
+            authority.source_id != compilation.operation_input.source_id
+            or authority.source_digest != compilation.operation_input.source_digest
+            or authority.operation_execution_id != compilation.operation_execution_id
+            or authority.operation_id != compilation.operation_id
+            or projection.operation_execution_id != compilation.operation_execution_id
+        ):
+            raise ValueError("foreign retained operation authority")
+    
+        projections, records, effect_digests = _effect_authority(effect)
+        if projection not in projections:
+            raise ValueError("projection is absent from accepted effect")
+        citation = projection.citation_record
+        provenance = projection.provenance_record
+        if (
+            citation.operation_execution_id != compilation.operation_execution_id
+            or provenance.operation_execution_id != compilation.operation_execution_id
+            or citation.record_kind != "citation"
+            or provenance.record_kind != "provenance"
+            or _exact_payload_value(citation, "citation_id") != citation.record_id
+            or _exact_payload_value(provenance, "provenance_id") != provenance.record_id
+        ):
+            raise ValueError("foreign or substituted paired evidence record")
+        same_provenance = tuple(
+            item for item in projections
+            if item.provenance_record.record_id == provenance.record_id
+        )
+        if len(same_provenance) != 1:
+            raise ValueError("nonunique retained provenance projection")
+    
+        constructions = tuple(
+            item for item in authority.evidence_constructions
+            if item.evidence_item_digest == projection.evidence_item_digest
+        )
+        if len(constructions) != 1:
+            raise ValueError("nonunique retained evidence construction")
+        construction = constructions[0]
+        if (
+            construction.citation_id != citation.record_id
+            or construction.provenance_id != provenance.record_id
+            or construction.source_span.source_id != authority.source_id
+            or construction.source_authority != authority.source_authority_evidence.authority
+        ):
+            raise ValueError("substituted retained evidence pair")
+    
+        cited_record_id = _exact_payload_value(citation, "cited_record_id")
+        targets = tuple(record for record in records if record.record_id == cited_record_id)
+        if len(targets) != 1:
+            raise ValueError("nonunique or missing cited native target")
+        target = targets[0]
+        if target.operation_execution_id != compilation.operation_execution_id:
+            raise ValueError("foreign cited native target")
+        # Reuse the canonical commit-time owner for P, its paired citation, and C.
+        # A planning payload alone does not license a hand-written graph payload or
+        # an invented digest; each result must match the retained graph inventory.
+        materialized_citation = _retained_materialization(
+            citation,
+            commit_values=commit_values,
+            authorizing_transaction_group_id=authorizing_transaction_group_id,
+            retained_records=retained_records,
+        )
+        materialized_provenance = _retained_materialization(
+            provenance,
+            commit_values=commit_values,
+            authorizing_transaction_group_id=authorizing_transaction_group_id,
+            retained_records=retained_records,
+        )
+        materialized = _retained_materialization(
+            target,
+            commit_values=commit_values,
+            authorizing_transaction_group_id=authorizing_transaction_group_id,
+            retained_records=retained_records,
+        )
+        if (
+            any(getattr(item, "operation_id", None) != compilation.operation_id for item in (
+                materialized_citation,
+                materialized_provenance,
+                materialized,
+            ))
+            or getattr(materialized_provenance, "source_id", None) != authority.source_id
+        ):
+>           raise ValueError("foreign retained graph materialization")
+E           ValueError: foreign retained graph materialization
+
+docs/work/semantic_ingestion/observed-provenance-materialization/feasibility.py:220: ValueError
+=========================== short test summary info ============================
+FAILED docs/work/semantic_ingestion/observed-provenance-materialization/test_feasibility.py::test_commit_authority_substitution_cannot_reinterpret_retained_inventory[commit_time]
+FAILED docs/work/semantic_ingestion/observed-provenance-materialization/test_feasibility.py::test_correction_and_retraction_resolve_their_single_owned_transition
+2 failed, 12 passed in 41.75s

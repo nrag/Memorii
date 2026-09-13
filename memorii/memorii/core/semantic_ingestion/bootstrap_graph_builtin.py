@@ -524,12 +524,27 @@ class _BuiltInBootstrapGraphExecutionBuilderV3:
         )
         source = request.prepared_source
         artifact = source.governance_carrier_artifact
+        # The terminal binds back to the admission seal through its registered
+        # digest only: an absent member keeps the legacy schema-1 outcome, and
+        # a substituted member fails closed inside the store accessor.
+        seal_digest_accessor = getattr(
+            atomic_store, "source_retention_attestation_digest", None
+        )
+        source_retention_attestation_digest = (
+            None
+            if seal_digest_accessor is None
+            else seal_digest_accessor(
+                delivery_key_digest=request.operation_fence_binding.delivery_key_digest,
+                operation_fence=request.operation_fence_binding,
+            )
+        )
         host = BootstrapGraphTerminalHostAuthorityV3.create(
             source_id=source.source_id, source_digest=source.source_digest,
             preparation_fingerprint=source.preparation_fingerprint,
             delivery_principal_binding_digest=request.operation_fence_binding.delivery_principal_binding_digest,
             delivery_key_digest=request.operation_fence_binding.delivery_key_digest,
             execution_graph_fingerprint=CANONICAL_INGESTION_EXECUTION_GRAPH.graph_fingerprint,
+            source_retention_attestation_digest=source_retention_attestation_digest,
             segment_language_routes=source.segment_language_routes,
             segment_governance_carriers=source.segment_governance_carriers,
             message_admission_carriers=source.message_admission_carriers,
@@ -537,12 +552,17 @@ class _BuiltInBootstrapGraphExecutionBuilderV3:
             required_outcome_scopes=artifact.required_outcome_scopes,
             operation_fence_binding=request.operation_fence_binding,
         )
+        source_intent_factory = atomic_store.source_observation_intent_factory()
         coordinator = BootstrapGraphDependentCoordinatorV3(
             epoch_repository=epochs, plan_repository=AtomicStoreBootstrapGraphPlanRepositoryV3(atomic_store=atomic_store),
             terminal_port=AtomicStoreBootstrapGraphTerminalPersistencePortV3(atomic_store=atomic_store),
             compiler=_Compiler(operation_inputs, sealed_snapshot, canonical_reload), authorizer=_Authorizer(compilation),
             group_commit_repository=AtomicStoreBootstrapGraphGroupCommitRepositoryV3(atomic_store=atomic_store),
-            terminal_preparer=DeterministicBootstrapGraphTerminalPreparationV3(), terminal_host_authority=host,
+            terminal_preparer=DeterministicBootstrapGraphTerminalPreparationV3(
+                source_observation_intent_factory=(
+                    source_intent_factory
+                ),
+            ), terminal_host_authority=host,
         )
         return BootstrapGraphExecutionV3(coordinator=coordinator, request=coordinator_request, transition=transition)
 

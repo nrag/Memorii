@@ -1,0 +1,1 @@
+{"fields":[{"field_name":"position_digest","policy":"required"},{"field_name":"repository_id","policy":"required"},{"field_name":"sequence","policy":"required"}],"role":"optional","schema_id":"EventBatchLogPosition","schema_version":"1"}

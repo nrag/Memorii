@@ -168,6 +168,7 @@ def _planning_construction_authority_for_operation(
             governance_carrier_artifact=prepared_source.governance_carrier_artifact), message_admission_identities=admissions,
         required_scope_set_digest=prepared_source.governance_carrier_artifact.required_outcome_scopes.required_scope_set_digest,
         predicate_registry_fingerprint=planning_policy_authority.predicate_registry_fingerprint, predicate_trust_rule=rule,
+        arbitration_policy_bundle=policy_bundle,
         predicate_state_rule=planning_policy_authority.predicate_state_rule,
         source_authority_evidence=source_authority_evidence,
         action_policy_fingerprint=planning_policy_authority.action_policy_fingerprint, action_transition=None,

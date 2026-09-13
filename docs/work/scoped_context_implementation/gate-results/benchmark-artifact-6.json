@@ -1,0 +1,18 @@
+{
+  "name": "benchmark-artifact-6",
+  "argv": [
+    "bash",
+    "-e",
+    "-o",
+    "pipefail",
+    "-c",
+    "if [ \"$BENCHMARK_SUITE\" = memory_evolution_runtime_v1 ]; then\n  runner=(python -m tests.support.run_memory_evolution_runtime_benchmark)\nelse\n  runner=(python -m memorii.tools.run_eval)\nfi\n\"${runner[@]}\" \\\n  --suite \"$BENCHMARK_SUITE\" \\\n  --mode \"$BENCHMARK_MODE\" \\\n  --dry-run \\\n  --fail-on-benchmark-failure \\\n  --storage-root /private/tmp/scoped-context-final-gates/artifact-6 \\\n  --sim-profile \"$BENCHMARK_PROFILE\" \\\n  --sim-scenario-count \"$BENCHMARK_COUNT\" \\\n  --sim-noise-rate 0.35 \\\n  --seed 7 \\\n  $BENCHMARK_EXTRA\npython -m memorii.tools.validate_benchmark_artifacts \\\n  --root /private/tmp/scoped-context-final-gates/artifact-6/benchmark_runs \\\n  --suite \"$BENCHMARK_SUITE\"\n"
+  ],
+  "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii",
+  "exit_status": 0,
+  "elapsed_seconds": 24.637,
+  "log_sha256": "072e09b28340f152159c12c0e8ce03a1418ef99645463a0ef9ba2e7342f41dbe",
+  "source_revision_label": "b4f6c24b091a28bd3d1f65102c742478fc7276b3",
+  "candidate_manifest_sha256": "5310e597dde8d610d8345f63d0f9839f94d062526f00bb4b3d1e6f29424817bb",
+  "evidence": "local working-tree execution only"
+}

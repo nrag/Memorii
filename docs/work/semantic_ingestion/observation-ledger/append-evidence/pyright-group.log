@@ -1,0 +1,8 @@
+/Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/atomic_store.py
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/atomic_store.py:12765:78 - error: Type "tuple[*tuple[CanonicalMemoryRecord, ...], CanonicalMemoryRecord, CanonicalMemoryRecord, CanonicalMemoryRecord, object, object, object]" is not assignable to declared type "tuple[CanonicalMemoryRecord, ...]"
+    "object" is not assignable to "CanonicalMemoryRecord" (reportAssignmentType)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/atomic_store.py:12768:69 - error: Cannot access attribute "memory_id" for class "object"
+    Attribute "memory_id" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/atomic_store.py:12955:40 - error: Index 0 is out of range for type tuple[()] (reportGeneralTypeIssues)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/atomic_store.py:14128:54 - error: "terminal" is not a known attribute of "None" (reportOptionalMemberAccess)
+4 errors, 0 warnings, 0 informations

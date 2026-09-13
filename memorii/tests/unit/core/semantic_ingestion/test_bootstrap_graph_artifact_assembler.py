@@ -57,6 +57,7 @@ def test_terminal_request_rejects_generation_mismatch_before_schema_construction
             final_plan=object(), complete_lineage=object(), execution_manifest=object(),
             ordered_group_result_constructions=(SimpleNamespace(attempt_digest="c" * 64),),
             canonical_source_result_input=object(), handoff_core=core, publication_intent=intent,
+            source_finalization_observation_delta=None,
             handoff=handoff,
             predecessor_generation=SimpleNamespace(
                 operation_generation=3, artifact_generation=3,

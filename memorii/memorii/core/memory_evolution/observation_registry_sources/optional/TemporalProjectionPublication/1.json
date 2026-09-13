@@ -1,0 +1,1 @@
+{"fields":[{"field_name":"active_pointer","policy":"required"},{"field_name":"certificate","policy":"required"},{"field_name":"generation","policy":"required"},{"field_name":"history_entry","policy":"required"}],"role":"optional","schema_id":"TemporalProjectionPublication","schema_version":"1"}

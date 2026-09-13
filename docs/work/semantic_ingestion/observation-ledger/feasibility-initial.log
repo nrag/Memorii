@@ -1,0 +1,100 @@
+F.F.F..                                                                  [100%]
+=================================== FAILURES ===================================
+_________ test_interleaved_group_and_source_entries_use_one_cas_chain __________
+
+    def test_interleaved_group_and_source_entries_use_one_cas_chain() -> None:
+        ledger = ObservationLedger()
+        a_group = ledger.append(expected_head=ledger.head, terminal_kind="group", stable_identity="group:a", payload=_payload("a", "fa", "ga", "ra"), result_locator="locator:a")
+        b_group = ledger.append(expected_head=ledger.head, terminal_kind="group", stable_identity="group:b", payload=_payload("b", "fb", "gb", "rb"), result_locator="locator:b")
+        a_final = ledger.append(expected_head=ledger.head, terminal_kind="source_finalization", stable_identity="final:a", payload=_payload("a", "fa", None, "rfa"), result_locator="terminal:a")
+        b_final = ledger.append(expected_head=ledger.head, terminal_kind="source_finalization", stable_identity="final:b", payload=_payload("b", "fb", None, "rfb"), result_locator="terminal:b")
+>       assert replay(ledger.entries) == ledger.head
+               ^^^^^^^^^^^^^^^^^^^^^^
+
+docs/work/semantic_ingestion/observation-ledger/test_ledger_feasibility.py:18: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+docs/work/semantic_ingestion/observation-ledger/ledger_feasibility.py:190: in replay
+    LedgerEntry(**asdict(entry))
+<string>:15: in __init__
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = LedgerEntry(generation=1, terminal_kind='group', stable_identity='group:a', payload={'source_id': 'a', 'operation_fenc..._digest='ra', prior_entry_digest=None, entry_digest='5d5b46faa65d88bc72f2ce9dee6bb49dcc90313ac60ca10444c8fca1bd507159')
+
+    def __post_init__(self) -> None:
+>       expected_payload = self.payload.commitment()
+                           ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'dict' object has no attribute 'commitment'
+
+docs/work/semantic_ingestion/observation-ledger/ledger_feasibility.py:71: AttributeError
+_ test_replay_rejects_missing_reordered_duplicate_or_corrupt_entries[<lambda>0] _
+
+mutator = <function <lambda> at 0x1082934c0>
+
+    @pytest.mark.parametrize("mutator", [
+        lambda entries: entries[:-1],
+        lambda entries: (entries[1], entries[0]),
+        lambda entries: (*entries, entries[0]),
+        lambda entries: (replace(entries[0], final_delta_digest="0" * 64), *entries[1:]),
+    ])
+    def test_replay_rejects_missing_reordered_duplicate_or_corrupt_entries(mutator) -> None:
+        ledger = ObservationLedger()
+        ledger.append(expected_head=ledger.head, terminal_kind="group", stable_identity="group:a", payload=_payload("a", "fa", "ga", "ra"), result_locator="locator:a")
+        ledger.append(expected_head=ledger.head, terminal_kind="source_finalization", stable_identity="final:a", payload=_payload("a", "fa", None, "rfa"), result_locator="terminal:a")
+        with pytest.raises(ValueError):
+>           replay(mutator(ledger.entries), expected_head=ledger.head)
+
+docs/work/semantic_ingestion/observation-ledger/test_ledger_feasibility.py:45: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+docs/work/semantic_ingestion/observation-ledger/ledger_feasibility.py:190: in replay
+    LedgerEntry(**asdict(entry))
+<string>:15: in __init__
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = LedgerEntry(generation=1, terminal_kind='group', stable_identity='group:a', payload={'source_id': 'a', 'operation_fenc..._digest='ra', prior_entry_digest=None, entry_digest='5d5b46faa65d88bc72f2ce9dee6bb49dcc90313ac60ca10444c8fca1bd507159')
+
+    def __post_init__(self) -> None:
+>       expected_payload = self.payload.commitment()
+                           ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'dict' object has no attribute 'commitment'
+
+docs/work/semantic_ingestion/observation-ledger/ledger_feasibility.py:71: AttributeError
+_ test_replay_rejects_missing_reordered_duplicate_or_corrupt_entries[<lambda>2] _
+
+mutator = <function <lambda> at 0x108293600>
+
+    @pytest.mark.parametrize("mutator", [
+        lambda entries: entries[:-1],
+        lambda entries: (entries[1], entries[0]),
+        lambda entries: (*entries, entries[0]),
+        lambda entries: (replace(entries[0], final_delta_digest="0" * 64), *entries[1:]),
+    ])
+    def test_replay_rejects_missing_reordered_duplicate_or_corrupt_entries(mutator) -> None:
+        ledger = ObservationLedger()
+        ledger.append(expected_head=ledger.head, terminal_kind="group", stable_identity="group:a", payload=_payload("a", "fa", "ga", "ra"), result_locator="locator:a")
+        ledger.append(expected_head=ledger.head, terminal_kind="source_finalization", stable_identity="final:a", payload=_payload("a", "fa", None, "rfa"), result_locator="terminal:a")
+        with pytest.raises(ValueError):
+>           replay(mutator(ledger.entries), expected_head=ledger.head)
+
+docs/work/semantic_ingestion/observation-ledger/test_ledger_feasibility.py:45: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+docs/work/semantic_ingestion/observation-ledger/ledger_feasibility.py:190: in replay
+    LedgerEntry(**asdict(entry))
+<string>:15: in __init__
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = LedgerEntry(generation=1, terminal_kind='group', stable_identity='group:a', payload={'source_id': 'a', 'operation_fenc..._digest='ra', prior_entry_digest=None, entry_digest='5d5b46faa65d88bc72f2ce9dee6bb49dcc90313ac60ca10444c8fca1bd507159')
+
+    def __post_init__(self) -> None:
+>       expected_payload = self.payload.commitment()
+                           ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'dict' object has no attribute 'commitment'
+
+docs/work/semantic_ingestion/observation-ledger/ledger_feasibility.py:71: AttributeError
+=========================== short test summary info ============================
+FAILED docs/work/semantic_ingestion/observation-ledger/test_ledger_feasibility.py::test_interleaved_group_and_source_entries_use_one_cas_chain
+FAILED docs/work/semantic_ingestion/observation-ledger/test_ledger_feasibility.py::test_replay_rejects_missing_reordered_duplicate_or_corrupt_entries[<lambda>0]
+FAILED docs/work/semantic_ingestion/observation-ledger/test_ledger_feasibility.py::test_replay_rejects_missing_reordered_duplicate_or_corrupt_entries[<lambda>2]
+3 failed, 4 passed in 0.16s

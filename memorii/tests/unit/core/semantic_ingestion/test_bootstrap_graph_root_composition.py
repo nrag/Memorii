@@ -16,6 +16,7 @@ from memorii.core.filesystem_storage.bundle import (
 from memorii.core.memory_evolution.ingestion_contracts import decode_typed_value
 from memorii.core.memory_plane import JsonlMemoryPlaneStore, MemoryPlaneService
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
+from memorii.core.memory_plane.store import _PersistedBatch
 from memorii.core.provider.factory import (
     build_provider_memory_service_from_env as _production_factory_provider,
 )
@@ -29,6 +30,7 @@ from memorii.core.semantic_ingestion.bootstrap_graph_host import (
 from memorii.core.semantic_ingestion.contracts import (
     BootstrapGraphGroupCommitReloadV3,
     BootstrapGraphPlanAtomicWriteRequestV3,
+    BootstrapGraphTerminalReloadV3,
     ProviderEntityObject,
     ProviderFact,
     ProviderMention,
@@ -542,9 +544,10 @@ def test_all_normal_roots_execute_graph_terminal_once(
     proposal = graph_fact_proposal()
     normalization, lane_calls = _v3_normalization_host_builder(proposal=proposal)
     graph_calls: list[str] = []
+    graph_errors: list[str] = []
     graph = BootstrapGraphHostBundleBuilder(
         authority_provider=DeterministicBootstrapGraphAuthorityProviderV3(
-            successful_calls=graph_calls
+            successful_calls=graph_calls, acquire_errors=graph_errors,
         )
     )
     common = {
@@ -569,9 +572,204 @@ def test_all_normal_roots_execute_graph_terminal_once(
         task_id="task:one", user_id="user:alice",
         authenticated_host_ingress=_host_ingress(),
     )
-    assert result.blocked_reasons["semantic_ingestion"] == "source_only"
+    assert result.blocked_reasons["semantic_ingestion"] == "source_only", graph_errors
     assert len(graph_calls) == 1
     assert all(count == 1 for count in lane_calls.values())
+    locator = next(
+        record for record in service._memory_plane.list_records(
+            source_kind="semantic_ingestion_bootstrap_graph_v3_terminal_locator"
+        ) if record.content.get("semantic_ingestion_kind")
+        == "bootstrap_graph_v3_terminal_locator"
+    )
+    terminal = BootstrapGraphTerminalReloadV3.model_validate(
+        locator.content["reload"], strict=False
+    )
+    assert terminal.terminal_member_schema_version == 2
+    assert terminal.source_finalization_observation_delta is not None
+    assert (
+        terminal.source_finalization_observation_delta.source_outcome
+        == terminal.canonical_source_result.canonical_source_result
+    )
+
+
+def test_public_root_publishes_source_finalization_in_one_terminal_cas(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The source observation is in the terminal CAS, never a later write."""
+    proposal = graph_fact_proposal()
+    normalization, _lane_calls = _v3_normalization_host_builder(proposal=proposal)
+    graph_calls: list[str] = []
+    service = provider_service(
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=_built_in_local_capability(),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        source_normalization_host_bundle_builder=normalization,
+        bootstrap_graph_host_bundle_builder=BootstrapGraphHostBundleBuilder(
+            authority_provider=DeterministicBootstrapGraphAuthorityProviderV3(
+                successful_calls=graph_calls,
+            )
+        ),
+    )
+    plane = service._memory_plane
+    calls: list[tuple[CanonicalMemoryRecord, ...]] = []
+    original = plane.conditionally_write_records
+
+    def capture_terminal_cas(records, *, preconditions, authorization, **kwargs):
+        captured = tuple(records)
+        calls.append(captured)
+        return original(
+            captured,
+            preconditions=preconditions,
+            authorization=authorization,
+            **kwargs,
+        )
+
+    monkeypatch.setattr(plane, "conditionally_write_records", capture_terminal_cas)
+    result = service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.", operation_id="source-finalization-terminal-cas",
+        task_id="task:one", user_id="user:alice",
+        authenticated_host_ingress=_host_ingress(),
+    )
+
+    assert result.blocked_reasons["semantic_ingestion"] == "source_only"
+    assert graph_calls
+    source_member_kind = "bootstrap_graph_source_finalization_observation_delta"
+    terminal_calls = [
+        call for call in calls
+        if any(
+            record.source_kind == "semantic_ingestion_bootstrap_graph_v3_member"
+            and record.content["member"]["kind"] == source_member_kind
+            for record in call
+        )
+    ]
+    assert len(terminal_calls) == 1
+    assert all(
+        not any(
+            record.source_kind == "semantic_ingestion_bootstrap_graph_v3_member"
+            and record.content["member"]["kind"] == source_member_kind
+            for record in call
+        )
+        for call in calls
+        if call is not terminal_calls[0]
+    )
+    terminal_kinds = {
+        record.source_kind for record in terminal_calls[0]
+    }
+    assert {
+        "semantic_ingestion_preplanning_control",
+        "semantic_ingestion_bootstrap_graph_v3_member",
+        "semantic_ingestion_bootstrap_graph_v3_manifest",
+        "semantic_ingestion_bootstrap_graph_v3_terminal_control",
+        "semantic_ingestion_bootstrap_graph_v3_terminal_identity",
+        "semantic_ingestion_bootstrap_graph_v3_terminal_locator",
+    } <= terminal_kinds
+    locator_records = [
+        record for record in terminal_calls[0]
+        if record.source_kind == "semantic_ingestion_bootstrap_graph_v3_terminal_locator"
+    ]
+    assert len(locator_records) == 3  # locator, request index, recovery index
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement"),
+    (
+        ("canonical_payload", b"corrupt-source-observation"),
+        ("member_digest", "0" * 64),
+    ),
+)
+def test_filesystem_root_rejects_persisted_source_observation_member_corruption(
+    tmp_path, field: str, replacement: object,
+) -> None:
+    """A reopened public root cannot replace a tampered V2 terminal."""
+    storage_root = tmp_path / f"source-observation-{field}"
+    proposal = graph_fact_proposal()
+    first_normalization, _first_lanes = _v3_normalization_host_builder(
+        proposal=proposal
+    )
+    first_calls: list[str] = []
+    first = build_filesystem_provider(
+        storage_root,
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=_built_in_local_capability(),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        source_normalization_host_bundle_builder=first_normalization,
+        bootstrap_graph_host_bundle_builder=BootstrapGraphHostBundleBuilder(
+            authority_provider=DeterministicBootstrapGraphAuthorityProviderV3(
+                successful_calls=first_calls,
+            )
+        ),
+    )
+    ingress = _host_ingress()
+    first_result = first.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.", operation_id=f"source-observation-{field}",
+        task_id="task:one", user_id="user:alice", authenticated_host_ingress=ingress,
+    )
+    assert first_result.blocked_reasons["semantic_ingestion"] == "source_only"
+    plane = first._memory_plane
+    # The public filesystem composition owns the durable backend in the
+    # plane's backing store; `_record_store()` is an active-UoW accessor.
+    backend = plane._records
+    assert isinstance(backend, JsonlMemoryPlaneStore)
+    source_member = next(
+        record for record in plane.list_records(
+            source_kind="semantic_ingestion_bootstrap_graph_v3_member"
+        )
+        if record.content["member"]["kind"]
+        == "bootstrap_graph_source_finalization_observation_delta"
+    )
+    mutated_member = source_member.content["member"] | {field: replacement}
+    corrupted = source_member.model_copy(update={
+        "content": source_member.content | {"member": mutated_member},
+    })
+    records = tuple(
+        corrupted if record.memory_id == source_member.memory_id else record
+        for record in plane.list_records()
+    )
+    backend._replace_batches([
+        _PersistedBatch.create(
+            revision=1,
+            data_revision=int(any(
+                record.visibility.value == "runtime_context" for record in records
+            )),
+            records=records,
+        ),
+    ])
+
+    second_normalization, second_lanes = _v3_normalization_host_builder(
+        proposal=proposal
+    )
+    second_calls: list[str] = []
+    reopened = build_filesystem_provider(
+        storage_root,
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=_built_in_local_capability(),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        source_normalization_host_bundle_builder=second_normalization,
+        bootstrap_graph_host_bundle_builder=BootstrapGraphHostBundleBuilder(
+            authority_provider=DeterministicBootstrapGraphAuthorityProviderV3(
+                successful_calls=second_calls,
+            )
+        ),
+    )
+    result = reopened.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.", operation_id=f"source-observation-{field}",
+        task_id="task:one", user_id="user:alice", authenticated_host_ingress=ingress,
+    )
+
+    assert result.blocked_reasons["semantic_ingestion"] != "source_only"
+    assert second_calls == []
+    assert sum(second_lanes.values()) == 0
+    reopened_members = reopened._memory_plane.list_records(
+        source_kind="semantic_ingestion_bootstrap_graph_v3_member"
+    )
+    assert sum(
+        record.content["member"]["kind"]
+        == "bootstrap_graph_source_finalization_observation_delta"
+        for record in reopened_members
+    ) == 1
 
 
 def test_partial_normal_composition_fails_closed_before_graph_effects() -> None:
@@ -993,6 +1191,34 @@ def test_filesystem_root_reloads_graph_successor_without_reexecuting(
     assert first_result.blocked_reasons["semantic_ingestion"] == "source_only"
     assert len(first_conflicts) == conflict_count
     assert len(first_effects) == effect_count
+    if scenario == "exhausted":
+        locator = next(
+            record for record in first._memory_plane.list_records(
+                source_kind="semantic_ingestion_bootstrap_graph_v3_terminal_locator"
+            ) if record.content.get("semantic_ingestion_kind")
+            == "bootstrap_graph_v3_terminal_locator"
+        )
+        terminal = BootstrapGraphTerminalReloadV3.model_validate(
+            locator.content["reload"], strict=False
+        )
+        observation = terminal.source_finalization_observation_delta
+        assert terminal.canonical_source_result.canonical_source_result.final_status == "failed"
+        assert terminal.canonical_source_result.ordered_group_result_digests == ()
+        assert observation is not None
+        assert observation.source_outcome == terminal.canonical_source_result.canonical_source_result
+        source_members = [
+            record for record in first._memory_plane.list_records(
+                source_kind="semantic_ingestion_bootstrap_graph_v3_member"
+            ) if record.content["member"]["kind"]
+            == "bootstrap_graph_source_finalization_observation_delta"
+        ]
+        assert len(source_members) == 1
+        assert not first._memory_plane.list_records(
+            source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+        )
+        assert not first._memory_plane.list_records(
+            source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_effect"
+        )
 
     second_normalization, second_lanes = _v3_normalization_host_builder(proposal=proposal)
     second_conflicts: list[str] = []

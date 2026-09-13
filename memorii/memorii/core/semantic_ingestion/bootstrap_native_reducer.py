@@ -17,6 +17,7 @@ from memorii.core.semantic_ingestion.contracts import (
     BootstrapNativeRecordMaterializationIntentV3,
     BootstrapNativeRetractionEffectV3,
     BootstrapNativeTargetPlanningRequestV3,
+    BootstrapProposalOperationMemberV3,
 )
 
 
@@ -229,12 +230,28 @@ def _reduce_accepted(
     )
 
 
-def _accepted_effect(*, member: object, plan: BootstrapGraphTargetMaterializationPlanV3):
+def _accepted_effect(
+    *,
+    member: BootstrapProposalOperationMemberV3,
+    plan: BootstrapGraphTargetMaterializationPlanV3,
+):
     if member.kind == "fact":
+        if member.object.kind != "entity":
+            raise ValueError("native fact observation authority is incomplete")
+        expected_mentions = {
+            member.subject_mention_digest,
+            member.object.mention_digest,
+        }
+        observed_mentions = {
+            item.mention_digest for item in plan.observation_mention_bindings
+        }
+        if observed_mentions != expected_mentions:
+            raise ValueError("native fact observation authority is incomplete")
         return BootstrapNativeFactEffectV3.create(
             kind="fact", fact=member, target_bindings=plan.target_bindings,
             planning_records=plan.planning_records, terminal_bindings=plan.terminal_bindings,
             evidence_projections=plan.evidence_projections,
+            observation_mention_bindings=plan.observation_mention_bindings,
         )
     if member.kind == "correction":
         replacement = BootstrapNativeFactEffectV3.create(

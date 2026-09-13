@@ -1,7 +1,7 @@
 # Deployment Validation And Independent Acceptance Milestone
 
 - Parent WorkPlan: `docs/work/semantic_ingestion/implementation.plan.md`
-- Status: pending
+- Status: active
 - Requirements: SIA-R03, SIA-R08, SIA-R13, SIA-R14, SIA-R15, SIA-R16, SIA-R17, SIA-R19
 - Historical authority: archive heading `M5 - Authorized deployment validation, monitoring and independent acceptance`
 
@@ -41,7 +41,24 @@ certification.
 
 ## Dependencies And Next Condition
 
-Begin after M4 closure and availability of the applicable external activation
-artifacts. Until then, preserve and test the fail-closed preapproval validators
-without claiming active deployment.
+M4 is complete. The linked WorkPlan
+`docs/work/semantic_ingestion/engineering-closure/implementation.plan.md`
+now owns the six implementation packages and detailed ledgers. Engineering work
+does not wait for real signatures: preserve and test fail-closed unsigned,
+untrusted, expired, and revoked activation. Actual trusted keys, signatures,
+real deployment configuration, and signed release issuance remain deferred
+release gates.
 
+## Current Boundary
+
+The July 31 corrected M0 replacement is complete; do not infer an M0 blocker
+from rejected C2 historical bytes. M5 is active but incomplete. No package may
+claim a runtime or persistence requirement complete until its
+`production_entrypoint_bindings` entry proves a non-test production caller
+reaches the canonical owner with required authority.
+
+## Next Action
+
+Complete engineering-closure package 1 readiness and test matrix, then begin
+the first production package only after its authority and production-caller map
+is recorded.

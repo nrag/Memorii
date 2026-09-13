@@ -1,0 +1,18 @@
+{
+  "base_revision": "43117817a0edb97111ff8ff7666eb9599dc996a3",
+  "scope": "Retained-context recipe design only; no runtime/public integration approval",
+  "owner_decision": "Complete retained policy context approved2026-09-08",
+  "files": {
+    "docs/work/semantic_ingestion/observed-provenance-materialization/proposal.md": "b62d34f1e0ed32418cbe8eb5756519034306a29a031430c3b8d067335a12ccfa",
+    "docs/work/semantic_ingestion/observed-provenance-materialization/feasibility.py": "cb0aedd72457ccbbf8d5a53fe5920fe4348f61d4cc6825c857bd55b6ec5478b4",
+    "docs/work/semantic_ingestion/observed-provenance-materialization/test_feasibility.py": "0eda7738abe43eabf880d0f10bd8586b8a65052adbb23345a3c0b127bef77898",
+    "docs/work/semantic_ingestion/observed-provenance-materialization/promotion-map.md": "f642a43f89824573a990b679fe8c2b744a58c90b15bb803c9e89fe90dbba5208",
+    "docs/work/semantic_ingestion/observed-provenance-materialization/review-packet.md": "10c05bf7a69a2d1ecbcda032c4557ec32811bedb9a4455288867de32ece47cbc",
+    "docs/design/semantic_ingestion_architecture.md": "a7770e627e2dc627c772b8c54dd5998ce83c1baf43079a210056826b5ebce626",
+    "docs/design/semantic_ingestion_observation.md": "e6d811b29f4f43fc9e51e3326e846a922de0333d645346c19a6ff2d4935e7643",
+    "memorii/memorii/core/semantic_ingestion/contracts.py": "56d2102eb610e8886b71d2d572a833e5e39fca6aa3e2dcbff88b80dd5470603d",
+    "memorii/memorii/core/memory_evolution/graph_planning.py": "38f29abf2c509c719b0b160013249f3d7b184c4064ffbee9b36c539ed336aec3",
+    "memorii/memorii/core/memory_evolution/graph_records.py": "9d5eae432053d126574f7d6f4abd88886adadd21dffa4ea5acf04c3bfb3ce4eb"
+  },
+  "evidence": "9 passed41.18s; final import sorting only afterward; py_compile passes; real fact join + validated correction/retraction/action envelopes + identity typed field-path and optional policy proof. No identity runtime envelope claimed."
+}

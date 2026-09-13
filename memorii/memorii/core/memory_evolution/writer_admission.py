@@ -8,7 +8,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from memorii.core.memory_evolution.delivery_coordinate_migration import (
     DeliveryCoordinateMigrationActivation,
@@ -27,6 +27,19 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     decode_typed_value,
     encode_typed_value,
 )
+from memorii.core.memory_evolution.observation_activation_configuration import (
+    ObservationActivationTargetConfigurationError,
+    VerifiedObservationActivationTarget,
+)
+from memorii.core.memory_evolution.typed_value_artifact_reader import (
+    ProtectedTypedValueArtifactReaderLimits,
+)
+from memorii.core.memory_evolution.typed_value_registry_configuration import (
+    TypedValueRegistryConfigurationError,
+)
+from memorii.core.memory_evolution.typed_value_registry_history import (
+    ProtectedTypedValueRegistryHistory,
+)
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.semantic_control import (
     SEMANTIC_PROJECTION_SOURCE_KINDS,
@@ -43,6 +56,12 @@ from memorii.core.memory_plane.store import (
     record_digest,
 )
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
+
+if TYPE_CHECKING:
+    from memorii.core.memory_evolution.observation_ledger_contracts import (
+        ObservationLedgerActivation,
+        ObservationLedgerHead,
+    )
 
 _SEMANTIC_PROJECTION_SOURCE_KINDS = SEMANTIC_PROJECTION_SOURCE_KINDS
 
@@ -143,8 +162,35 @@ def bounded_preplanning_ownership_manifest() -> SemanticRecordOwnershipManifest:
     )
 
 
+def observation_ledger_ownership_manifest() -> SemanticRecordOwnershipManifest:
+    """The one compiled successor manifest selected only by ledger activation."""
+    old = bounded_preplanning_ownership_manifest()
+    revision = "semantic-generation-v3-observation-ledger"
+    kinds = old.governed_record_kinds | frozenset({
+        "observation_ledger_activation",
+        "observation_ledger_head",
+        "observation_ledger_entry",
+    })
+    methods = old.semantic_store_methods | frozenset({"activate_observation_ledger"})
+    return SemanticRecordOwnershipManifest(
+        manifest_revision=revision,
+        governed_record_kinds=kinds,
+        semantic_store_methods=methods,
+        manifest_digest=sha256(encode_typed_value({"manifest_revision": revision, "governed_record_kinds": kinds, "semantic_store_methods": methods})).hexdigest(),
+    )
+
+
 def writer_admission_memory_id() -> str:
     return "semantic_ingestion:writer_admission:current"
+
+
+def observation_ledger_head_memory_id(repository_id: str) -> str:
+    """Address the mutable head by its CTV-framed repository identity."""
+    if not isinstance(repository_id, str) or not repository_id:
+        raise SemanticWriterAdmissionError("observation ledger repository identity is invalid")
+    return "semantic_ingestion:observation-ledger:head:" + sha256(
+        b"memorii.observation-ledger-head.v1\0" + encode_typed_value(repository_id)
+    ).hexdigest()
 
 
 class SemanticWriterAdmissionStore:
@@ -154,17 +200,50 @@ class SemanticWriterAdmissionStore:
         manifest: SemanticRecordOwnershipManifest,
         *,
         now_provider=lambda: datetime.now(UTC),
+        typed_value_registry_history: ProtectedTypedValueRegistryHistory | None = None,
+        observation_activation_target: VerifiedObservationActivationTarget | None = None,
     ) -> None:
         if manifest != bounded_preplanning_ownership_manifest():
             raise SemanticWriterAdmissionError("unsupported semantic ownership manifest")
         self._memory_plane, self._manifest, self._now = memory_plane, manifest, now_provider
+        if typed_value_registry_history is not None and type(typed_value_registry_history) is not ProtectedTypedValueRegistryHistory:
+            raise TypedValueRegistryConfigurationError("typed value registry history is invalid")
+        if observation_activation_target is not None and (
+            type(observation_activation_target) is not VerifiedObservationActivationTarget
+            or typed_value_registry_history is None
+            or not any(publication is observation_activation_target.publication for publication in typed_value_registry_history.publications)
+        ):
+            raise ObservationActivationTargetConfigurationError("writer activation target registry mismatch")
+        self._observation_activation_target = observation_activation_target
+        self._typed_value_registry_history = typed_value_registry_history
+        from memorii.core.memory_evolution.observation_activation_runtime import (
+            DEFAULT_OBSERVATION_ARTIFACT_LIMITS,
+        )
+
+        self._observation_artifact_limits = DEFAULT_OBSERVATION_ARTIFACT_LIMITS
+        self._observation_artifact_limits_configured = False
         self._atomic_owners: set[object] = set()
+        self._activated_observation_snapshot_validators: dict[object, Callable[[tuple[CanonicalMemoryRecord, ...], tuple[CanonicalMemoryRecord, ...]], bool]] = {}
         self._conflict_authority_administration_owner: object | None = None
         self._conflict_authority_administration_grant: (
             SemanticConflictAuthorityAdministrationGrant | None
         ) = None
         self._transition_owner = object()
         self._memory_plane.install_governed_write_policy(SemanticGovernedWritePolicy(self))
+
+    def _configure_observation_artifact_limits(
+        self, limits: ProtectedTypedValueArtifactReaderLimits,
+    ) -> None:
+        if type(limits) is not ProtectedTypedValueArtifactReaderLimits:
+            raise SemanticWriterAdmissionError("observation artifact limits are invalid")
+        if self._observation_artifact_limits_configured and self._observation_artifact_limits != limits:
+            raise SemanticWriterAdmissionError("observation artifact limits are already configured")
+        self._observation_artifact_limits = limits
+        self._observation_artifact_limits_configured = True
+
+    @staticmethod
+    def _is_supported_manifest(manifest: SemanticRecordOwnershipManifest) -> bool:
+        return manifest in (bounded_preplanning_ownership_manifest(), observation_ledger_ownership_manifest())
 
     def governed_write_policy(self) -> SemanticGovernedWritePolicy:
         return SemanticGovernedWritePolicy(self)
@@ -191,7 +270,7 @@ class SemanticWriterAdmissionStore:
     ) -> SemanticWriterAdmission:
         existing = self._memory_plane.get_record(writer_admission_memory_id())
         if existing is not None:
-            current, manifest = _from_record(existing)
+            current, manifest = writer_admission_from_record(existing)
             if not _matches_initial_evidence_only(
                 current,
                 manifest,
@@ -232,7 +311,7 @@ class SemanticWriterAdmissionStore:
             existing = self._memory_plane.get_record(record.memory_id)
             if existing is None:
                 raise
-            current, manifest = _from_record(existing)
+            current, manifest = writer_admission_from_record(existing)
             if not _matches_initial_evidence_only(
                 current,
                 manifest,
@@ -254,15 +333,16 @@ class SemanticWriterAdmissionStore:
             runtime_mode=admission.active_runtime_mode,
             writer_implementation_fingerprint=admission.active_writer_implementation_fingerprint,
             graph_schema_fingerprint=admission.accepted_graph_schema_fingerprint,
+            activation_digest=admission.activation_digest,
         )
 
     def require_current(self, binding: SemanticWriterCommitBinding) -> CanonicalMemoryRecord:
         record = self._memory_plane.get_record(writer_admission_memory_id())
         if record is None:
             raise SemanticWriterAdmissionError("semantic writer is unbound")
-        admission, manifest = _from_record(record)
+        admission, manifest = writer_admission_from_record(record)
         expected = self.commit_binding(admission)
-        if manifest != self._manifest or binding != expected:
+        if not self._is_supported_manifest(manifest) or binding != expected:
             raise SemanticWriterAdmissionError("semantic writer binding is stale or mismatched")
         return record
 
@@ -270,8 +350,8 @@ class SemanticWriterAdmissionStore:
         record = self._memory_plane.get_record(writer_admission_memory_id())
         if record is None:
             raise SemanticWriterAdmissionError("semantic writer is unbound")
-        admission, manifest = _from_record(record)
-        if manifest != self._manifest:
+        admission, manifest = writer_admission_from_record(record)
+        if not self._is_supported_manifest(manifest):
             raise SemanticWriterAdmissionError("semantic writer manifest is mismatched")
         return admission
 
@@ -369,7 +449,7 @@ class SemanticWriterAdmissionStore:
         current_record = self._memory_plane.get_record(writer_admission_memory_id())
         if current_record is None:
             raise SemanticWriterAdmissionError("semantic writer is unbound")
-        current, manifest = _from_record(current_record)
+        current, manifest = writer_admission_from_record(current_record)
         if manifest != self._manifest:
             raise SemanticWriterAdmissionError("semantic writer manifest is mismatched")
         if self.commit_binding(current) != expected:
@@ -490,7 +570,7 @@ class SemanticWriterAdmissionStore:
         current_record = self._memory_plane.get_record(writer_admission_memory_id())
         if current_record is None:
             raise SemanticWriterAdmissionError("semantic writer is unbound")
-        current, manifest = _from_record(current_record)
+        current, manifest = writer_admission_from_record(current_record)
         if manifest != self._manifest or self.commit_binding(current) != expected:
             if (
                 current.previous_admission_digest == expected.admission_digest
@@ -556,6 +636,18 @@ class SemanticWriterAdmissionStore:
         self._atomic_owners.add(capability)
         return capability
 
+    def _register_activated_observation_snapshot_validator(
+        self,
+        *,
+        capability: object,
+        validator: Callable[[tuple[CanonicalMemoryRecord, ...], tuple[CanonicalMemoryRecord, ...]], bool],
+    ) -> None:
+        if capability not in self._atomic_owners or not callable(validator):
+            raise SemanticWriterAdmissionError("activated observation validator is invalid")
+        if capability in self._activated_observation_snapshot_validators:
+            raise SemanticWriterAdmissionError("activated observation validator is already registered")
+        self._activated_observation_snapshot_validators[capability] = validator
+
     def _authorize_atomic(
         self,
         binding: SemanticWriterCommitBinding,
@@ -567,7 +659,7 @@ class SemanticWriterAdmissionStore:
         if capability not in self._atomic_owners:
             raise SemanticWriterAdmissionError("semantic atomic writer is not registered")
         record = self.require_current(binding)
-        admission, manifest = _from_record(record)
+        admission, manifest = writer_admission_from_record(record)
         return SemanticWriterWriteAuthorization(
             admission=admission,
             manifest=manifest,
@@ -575,6 +667,79 @@ class SemanticWriterAdmissionStore:
             lease_expires_at=lease_expires_at,
             server_now=server_now,
         )
+
+    def _activate_observation_ledger(
+        self,
+        *,
+        expected: SemanticWriterCommitBinding,
+        activation: ObservationLedgerActivation,
+        snapshot_revision: int,
+        snapshot: tuple[CanonicalMemoryRecord, ...],
+        max_rescans: int,
+    ) -> SemanticWriterAdmission:
+        if self._observation_activation_target is None or self._typed_value_registry_history is None:
+            raise SemanticWriterAdmissionError("observation ledger activation target authority is not configured")
+        if max_rescans <= 0:
+            raise SemanticWriterAdmissionError("observation ledger activation retry bound is invalid")
+        current_record = self.require_current(expected)
+        current, manifest = writer_admission_from_record(current_record)
+        if manifest != bounded_preplanning_ownership_manifest() or current != self.current() or not current_record.content.get("draining", False):
+            raise SemanticWriterAdmissionError("semantic writer binding is stale or mismatched")
+        if activation.previous_writer_admission_digest != current.admission_digest or activation.target_writer_epoch != current.writer_epoch + 1:
+            raise SemanticWriterAdmissionError("observation ledger activation predecessor is mismatched")
+        target = self._observation_activation_target.identity
+        if (
+            activation.writer_implementation_fingerprint != target.writer_fingerprint
+            or activation.observation_schema_fingerprint != target.observation_schema_fingerprint
+            or activation.ledger_codec_fingerprint != target.ledger_codec_fingerprint
+        ):
+            raise SemanticWriterAdmissionError("observation ledger activation target is mismatched")
+        from memorii.core.memory_evolution.observation_activation_runtime import (
+            legacy_terminal_inventory_digest,
+            registered_activation_artifact,
+            registered_genesis_head_artifact,
+        )
+        snapshot_writer = tuple(record for record in snapshot if record.memory_id == writer_admission_memory_id())
+        if snapshot_writer != (current_record,):
+            raise MemoryPlaneRevisionConflictError("observation ledger writer changed since snapshot")
+        if activation.legacy_terminal_inventory_digest != legacy_terminal_inventory_digest(snapshot):
+            raise SemanticWriterAdmissionError("observation ledger activation inventory is mismatched")
+        activation, activation_raw = registered_activation_artifact(activation, history=self._typed_value_registry_history, publication=self._observation_activation_target.publication)
+        head, head_raw = registered_genesis_head_artifact(activation, history=self._typed_value_registry_history, publication=self._observation_activation_target.publication)
+        at = self._now()
+        successor = SemanticWriterAdmission(
+            admission_id=current.admission_id, writer_namespace=current.writer_namespace,
+            active_runtime_mode=current.active_runtime_mode,
+            active_writer_implementation_fingerprint=activation.writer_implementation_fingerprint,
+            accepted_graph_schema_fingerprint=current.accepted_graph_schema_fingerprint,
+            writer_epoch=current.writer_epoch + 1, activated_at=at,
+            previous_admission_digest=current.admission_digest, activation_digest=activation.activation_digest,
+            admission_digest=_admission_digest(current.admission_id, current.active_runtime_mode, activation.writer_implementation_fingerprint, current.accepted_graph_schema_fingerprint, current.writer_epoch + 1, at, current.admission_digest, activation.activation_digest),
+        )
+        activation_record = _observation_activation_record(activation, activation_raw, at)
+        head_record = _observation_genesis_head(head, head_raw, at)
+        self._memory_plane.conditionally_write_records(
+            (_record(successor, observation_ledger_ownership_manifest(), at, activation_predecessor_binding=expected), activation_record, head_record),
+            preconditions=(RecordDigestPrecondition(memory_id=current_record.memory_id, expected_digest=record_digest(current_record)), RecordAbsentPrecondition(memory_id=activation_record.memory_id), RecordAbsentPrecondition(memory_id=head_record.memory_id)),
+            expected_write_revision=snapshot_revision,
+            authorization=SemanticWriterWriteAuthorization(admission=current, manifest=manifest, owner=self._transition_owner),
+        )
+        return successor
+
+    def _begin_observation_ledger_drain(self, expected: SemanticWriterCommitBinding) -> None:
+        if self._observation_activation_target is None:
+            raise SemanticWriterAdmissionError("observation ledger activation target authority is not configured")
+        current_record = self.require_current(expected)
+        current, manifest = writer_admission_from_record(current_record)
+        if manifest != bounded_preplanning_ownership_manifest():
+            raise SemanticWriterAdmissionError("semantic writer manifest is mismatched")
+        if not current_record.content.get("draining", False):
+            frozen = current_record.model_copy(update={"content": {**current_record.content, "draining": True}})
+            self._memory_plane.conditionally_write_records(
+                (frozen,),
+                preconditions=(RecordDigestPrecondition(memory_id=current_record.memory_id, expected_digest=record_digest(current_record)),),
+                authorization=SemanticWriterWriteAuthorization(admission=current, manifest=manifest, owner=self._transition_owner),
+            )
 
 
 class SemanticGovernedWritePolicy:
@@ -601,6 +766,14 @@ class SemanticGovernedWritePolicy:
             authorization,
             SemanticConflictAuthorityAdministrationAuthorization,
         ):
+            persisted_writer = next(
+                (record for record in current if record.memory_id == writer_admission_memory_id()),
+                None,
+            )
+            if persisted_writer is not None and writer_admission_from_record(persisted_writer)[0].activation_digest is not None:
+                raise SemanticWriterAdmissionError(
+                    "activated writer requires a complete observation ledger closure"
+                )
             if (
                 authorization.owner
                 is not self._admissions._conflict_authority_administration_grant
@@ -615,7 +788,7 @@ class SemanticGovernedWritePolicy:
             return
         if not isinstance(authorization, SemanticWriterWriteAuthorization):
             raise SemanticWriterAdmissionError("governed semantic write is not authorized")
-        if authorization.manifest != self._admissions._manifest:
+        if not self._admissions._is_supported_manifest(authorization.manifest):
             raise SemanticWriterAdmissionError("governed semantic manifest is mismatched")
         if authorization.lease_expires_at is not None and (
             authorization.server_now is None or authorization.lease_expires_at <= authorization.server_now()
@@ -650,21 +823,30 @@ class SemanticGovernedWritePolicy:
                 raise SemanticWriterAdmissionError("initial writer admission authorization is invalid")
             if len(governed) != 1 or governed[0].source_kind != "semantic_ingestion_writer_admission":
                 raise SemanticWriterAdmissionError("initial writer admission is not an isolated write")
-            proposed, manifest = _from_record(governed[0])
+            proposed, manifest = writer_admission_from_record(governed[0])
             if proposed != authorization.admission or manifest != authorization.manifest:
                 raise SemanticWriterAdmissionError("initial writer admission authorization is mismatched")
             return
-        current_admission, current_manifest = _from_record(current_record)
+        current_admission, current_manifest = writer_admission_from_record(current_record)
         if authorization.owner is self._admissions._transition_owner:
             writer_records = [record for record in governed if record.memory_id == writer_admission_memory_id()]
             if len(writer_records) != 1:
                 raise SemanticWriterAdmissionError("writer transition lacks one authority record")
             proposed_record = writer_records[0]
-            proposed, manifest = _from_record(proposed_record)
+            proposed, manifest = writer_admission_from_record(proposed_record)
             if proposed == current_admission:
                 if len(governed) != 1 or not proposed_record.content.get("draining", False):
                     raise SemanticWriterAdmissionError("writer drain freeze is invalid")
                 return
+            if _is_observation_activation_write(
+                tuple(records), current_admission, current_manifest, proposed, manifest,
+                self._admissions._typed_value_registry_history,
+                current_record=current_record,
+                target=self._admissions._observation_activation_target,
+            ):
+                return
+            if current_admission.activation_digest is not None:
+                raise SemanticWriterAdmissionError("legacy writer mutation grammar is retired after ledger activation")
             policy_records = tuple(record for record in records if record not in writer_records)
             policy_projection_records = [
                 record
@@ -724,6 +906,30 @@ class SemanticGovernedWritePolicy:
             raise SemanticWriterAdmissionError("governed semantic writer is not the atomic owner")
         if authorization.admission != current_admission or authorization.manifest != current_manifest:
             raise SemanticWriterAdmissionError("governed semantic authorization is stale")
+        if current_admission.activation_digest is not None:
+            registered_snapshot_validator = self._admissions._activated_observation_snapshot_validators.get(authorization.owner)
+            if _is_activated_observation_ledger_write(
+                governed,
+                current,
+                history=self._admissions._typed_value_registry_history,
+                target=self._admissions._observation_activation_target,
+                limits=self._admissions._observation_artifact_limits,
+                snapshot_validator=(
+                    registered_snapshot_validator
+                    if registered_snapshot_validator is not None else None
+                ),
+            ) or _is_activated_preterminal_write(
+                governed, current, admissions=self._admissions
+            ):
+                if authorization.lease_expires_at is not None and (
+                    authorization.server_now is None
+                    or authorization.lease_expires_at <= authorization.server_now()
+                ):
+                    raise SemanticWriterAdmissionError("governed semantic writer lease expired during validation")
+                return
+            raise SemanticWriterAdmissionError(
+                "activated writer requires a complete observation ledger closure"
+            )
         if any(record.source_kind == "semantic_ingestion_writer_admission" for record in governed):
             raise SemanticWriterAdmissionError("writer admission transition lacks transition authority")
         if any(semantic_control_class(record) == "unknown" for record in governed):
@@ -2752,10 +2958,33 @@ def _validate_atomic_admission_records(
         "semantic_ingestion_profile_outcome",
     }
     profiles = [record for record in records if record.source_kind in profile_kinds]
+    seals = [
+        record
+        for record in records
+        if record.source_kind == "semantic_ingestion_source_retention_attestation"
+    ]
     if len(sources) != 1 or len(indexes) != 1 or {record.source_kind for record in profiles} != profile_kinds:
         raise SemanticWriterAdmissionError("atomic admission generation membership is incomplete")
-    if len(records) != 5 or sources[0].memory_id != fence.source_id:
+    # The five retained Step-1 records, plus the optional seal member a
+    # seal-minting store writes in the same admission CAS. The member's
+    # registered artifact is verified by the atomic store; this authorization
+    # boundary pins only its identity, shape and fence binding.
+    if len(records) not in (5, 6) or len(seals) > 1 or sources[0].memory_id != fence.source_id:
         raise SemanticWriterAdmissionError("atomic admission source binding is mismatched")
+    if seals:
+        seal = seals[0]
+        if (
+            len(records) != 6
+            or seal.memory_id
+            != f"semantic_ingestion:admission:{fence.delivery_key_digest}:retention_attestation"
+            or seal.domain != MemoryDomain.EXECUTION
+            or seal.visibility != MemoryRecordVisibility.INTERNAL_CONTROL
+            or seal.status != CommitStatus.COMMITTED
+            or set(seal.content) != {"semantic_ingestion_kind", "artifact"}
+            or seal.content.get("semantic_ingestion_kind") != "source_retention_attestation"
+            or not isinstance(seal.content.get("artifact"), str)
+        ):
+            raise SemanticWriterAdmissionError("atomic admission seal member is malformed")
     index = indexes[0]
     if (
         index.content.get("operation_fence_binding") != fence.model_dump(mode="json")
@@ -2791,21 +3020,23 @@ def _is_atomic_admission_only_write(
 
 
 def _admission_digest(
-    admission_id: str, mode: str, writer: str, schema: str, epoch: int, activated_at: datetime, previous: str | None
+    admission_id: str, mode: str, writer: str, schema: str, epoch: int, activated_at: datetime,
+    previous: str | None, activation_digest: str | None = None,
 ) -> str:
+    values: dict[str, object] = {
+        "admission_id": admission_id,
+        "writer_namespace": "semantic_ingestion",
+        "active_runtime_mode": mode,
+        "active_writer_implementation_fingerprint": writer,
+        "accepted_graph_schema_fingerprint": schema,
+        "writer_epoch": epoch,
+        "activated_at": activated_at,
+        "previous_admission_digest": previous,
+    }
+    if activation_digest is not None:
+        values["activation_digest"] = activation_digest
     return sha256(
-        encode_typed_value(
-            {
-                "admission_id": admission_id,
-                "writer_namespace": "semantic_ingestion",
-                "active_runtime_mode": mode,
-                "active_writer_implementation_fingerprint": writer,
-                "accepted_graph_schema_fingerprint": schema,
-                "writer_epoch": epoch,
-                "activated_at": activated_at,
-                "previous_admission_digest": previous,
-            }
-        )
+        encode_typed_value(values)
     ).hexdigest()
 
 
@@ -2860,6 +3091,7 @@ def _record(
     *,
     migration_activation_digest: str | None = None,
     policy_activation_digest: str | None = None,
+    activation_predecessor_binding: SemanticWriterCommitBinding | None = None,
     draining: bool = False,
 ) -> CanonicalMemoryRecord:
     return CanonicalMemoryRecord(
@@ -2881,12 +3113,123 @@ def _record(
                 if policy_activation_digest is not None
                 else {}
             ),
+            **(
+                {"activation_predecessor_binding": activation_predecessor_binding.model_dump(mode="json")}
+                if activation_predecessor_binding is not None else {}
+            ),
             "draining": draining,
         },
         status=CommitStatus.COMMITTED,
         source_kind="semantic_ingestion_writer_admission",
         timestamp=timestamp,
         visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+
+
+def _observation_activation_record(
+    activation: ObservationLedgerActivation, artifact: bytes, timestamp: datetime
+) -> CanonicalMemoryRecord:
+    return CanonicalMemoryRecord(
+        memory_id="semantic_ingestion:observation-ledger:activation:" + activation.activation_digest,
+        domain=MemoryDomain.EXECUTION, text="",
+        content={"semantic_ingestion_kind": "observation_ledger_activation", "artifact": artifact.decode("utf-8")},
+        status=CommitStatus.COMMITTED, source_kind="semantic_ingestion_observation_ledger_activation",
+        timestamp=timestamp, visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+
+
+def _observation_genesis_head(
+    head: ObservationLedgerHead, artifact: bytes, timestamp: datetime
+) -> CanonicalMemoryRecord:
+    return CanonicalMemoryRecord(
+        memory_id=observation_ledger_head_memory_id(head.repository_id),
+        domain=MemoryDomain.EXECUTION, text="",
+        content={"semantic_ingestion_kind": "observation_ledger_head", "artifact": artifact.decode("utf-8")},
+        status=CommitStatus.COMMITTED, source_kind="semantic_ingestion_observation_ledger_head",
+        timestamp=timestamp, visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+
+
+def _is_observation_activation_write(
+    records: tuple[CanonicalMemoryRecord, ...],
+    current: SemanticWriterAdmission,
+    old_manifest: SemanticRecordOwnershipManifest,
+    successor: SemanticWriterAdmission,
+    successor_manifest: SemanticRecordOwnershipManifest,
+    history: ProtectedTypedValueRegistryHistory | None,
+    *, current_record: CanonicalMemoryRecord,
+    target: VerifiedObservationActivationTarget | None,
+) -> bool:
+    from memorii.core.memory_evolution.observation_ledger_contracts import (
+        ObservationLedgerActivation,
+        ObservationLedgerHead,
+    )
+    if history is None or target is None or current_record.content.get("draining") is not True or old_manifest != bounded_preplanning_ownership_manifest() or successor_manifest != observation_ledger_ownership_manifest():
+        return False
+    if len(records) != 3:
+        return False
+    try:
+        activation_record = next(item for item in records if item.source_kind == "semantic_ingestion_observation_ledger_activation")
+        head_record = next(item for item in records if item.source_kind == "semantic_ingestion_observation_ledger_head")
+        from memorii.core.memory_evolution.observation_activation_runtime import validate_registered_artifact
+        activation_raw = activation_record.content["artifact"]
+        head_raw = head_record.content["artifact"]
+        if type(activation_raw) is not str or type(head_raw) is not str:
+            return False
+        activation = validate_registered_artifact(activation_raw.encode("utf-8"), schema_id="ObservationLedgerActivation", history=history)
+        head = validate_registered_artifact(head_raw.encode("utf-8"), schema_id="ObservationLedgerHead", history=history)
+        admission_record = next(item for item in records if item.memory_id == writer_admission_memory_id())
+        predecessor = SemanticWriterCommitBinding.model_validate(
+            admission_record.content["activation_predecessor_binding"]
+        )
+        if not isinstance(activation, ObservationLedgerActivation) or not isinstance(head, ObservationLedgerHead):
+            return False
+    except (KeyError, StopIteration, ValueError):
+        return False
+    return (
+        activation_record.memory_id == "semantic_ingestion:observation-ledger:activation:" + activation.activation_digest
+        and activation_record.domain is MemoryDomain.EXECUTION
+        and activation_record.text == ""
+        and activation_record.status is CommitStatus.COMMITTED
+        and activation_record.visibility is MemoryRecordVisibility.INTERNAL_CONTROL
+        and head_record.memory_id == observation_ledger_head_memory_id(activation.repository_id)
+        and head_record.domain is MemoryDomain.EXECUTION
+        and head_record.text == ""
+        and head_record.status is CommitStatus.COMMITTED
+        and head_record.visibility is MemoryRecordVisibility.INTERNAL_CONTROL
+        and set(activation_record.content) == {"semantic_ingestion_kind", "artifact"}
+        and activation_record.content["semantic_ingestion_kind"] == "observation_ledger_activation"
+        and set(head_record.content) == {"semantic_ingestion_kind", "artifact"}
+        and head_record.content["semantic_ingestion_kind"] == "observation_ledger_head"
+        and admission_record.content.get("draining") is False
+        and activation.previous_writer_admission_digest == current.admission_digest
+        and activation.target_writer_epoch == current.writer_epoch + 1
+        and activation.writer_implementation_fingerprint == target.identity.writer_fingerprint
+        and activation.observation_schema_fingerprint == target.identity.observation_schema_fingerprint
+        and activation.ledger_codec_fingerprint == target.identity.ledger_codec_fingerprint
+        and successor.admission_id == current.admission_id
+        and successor.writer_namespace == current.writer_namespace
+        and successor.active_runtime_mode == current.active_runtime_mode
+        and successor.previous_admission_digest == current.admission_digest
+        and predecessor == SemanticWriterCommitBinding(
+            admission_id=current.admission_id,
+            admission_digest=current.admission_digest,
+            writer_namespace=current.writer_namespace,
+            expected_writer_epoch=current.writer_epoch,
+            runtime_mode=current.active_runtime_mode,
+            writer_implementation_fingerprint=current.active_writer_implementation_fingerprint,
+            graph_schema_fingerprint=current.accepted_graph_schema_fingerprint,
+            activation_digest=current.activation_digest,
+        )
+        and successor.writer_epoch == current.writer_epoch + 1
+        and successor.activation_digest == activation.activation_digest
+        and successor.active_writer_implementation_fingerprint == activation.writer_implementation_fingerprint
+        and successor.accepted_graph_schema_fingerprint == current.accepted_graph_schema_fingerprint
+        and head.repository_id == activation.repository_id
+        and head.activation_digest == activation.activation_digest
+        and head.sequence == 0
+        and head.observation_revision == "genesis"
+        and head.last_delta_id is None and head.last_delta_digest is None and head.last_entry_digest is None
     )
 
 
@@ -3187,6 +3530,7 @@ def _is_bootstrap_graph_v3_group_commit_write(
                 "semantic_event_batch",
                 "semantic_replay_state",
                 "reference_integrity_ledger",
+                "transaction_group_commit_attestation",
             }
             for kind in kinds
         )
@@ -3222,6 +3566,36 @@ def _is_bootstrap_graph_v3_group_commit_write(
             or reload.request_ctv_digest != request.request_ctv_digest
         ):
             return False
+
+        # The ingestion-time seal member appears exactly when the persisted
+        # core binds its digest (schema 3 committed); a noncommitting or
+        # pre-seal schema-1/2 group carries no member. Its registered
+        # artifact is verified by the store's mint and reload joins; this
+        # boundary pins identity, shape and presence.
+        seal_members = [
+            item
+            for item in governed
+            if item.content.get("semantic_ingestion_kind")
+            == "transaction_group_commit_attestation"
+        ]
+        attestation_digest = (
+            reload.persisted_result.core.transaction_group_commit_attestation_digest
+        )
+        if len(seal_members) != (1 if attestation_digest is not None else 0):
+            return False
+        if seal_members:
+            seal = seal_members[0]
+            if (
+                seal.memory_id != primary.memory_id + ":group_commit_attestation"
+                or seal.source_kind
+                != "semantic_ingestion_transaction_group_commit_attestation"
+                or seal.domain != MemoryDomain.EXECUTION
+                or seal.visibility != MemoryRecordVisibility.INTERNAL_CONTROL
+                or seal.status != CommitStatus.COMMITTED
+                or set(seal.content) != {"semantic_ingestion_kind", "artifact"}
+                or not isinstance(seal.content.get("artifact"), str)
+            ):
+                return False
 
         operation_ids = request.operation_ids
         fanouts = [
@@ -3523,6 +3897,16 @@ def _is_bootstrap_graph_v3_terminal_write(
             if item.content.get("semantic_ingestion_kind") == "bootstrap_graph_v3_member"
         )
         control = control_record.content["control"]
+        reload = locator.get("reload", {})
+        source_observation_members = tuple(
+            member for member in members
+            if member.get("kind")
+            == "bootstrap_graph_source_finalization_observation_delta"
+        )
+        source_observation = reload.get("source_finalization_observation_delta")
+        terminal_member_schema_version = reload.get(
+            "terminal_member_schema_version", 1
+        )
         prior = next(
             (item.content.get("control") for item in current if item.memory_id == control_record.memory_id),
             None,
@@ -3550,12 +3934,315 @@ def _is_bootstrap_graph_v3_terminal_write(
             and recovery_index.get("reload") == locator.get("reload")
             and recovery_index.get("normalization_replay_digest")
             == identity.get("normalization_replay_digest")
+            and terminal_member_schema_version in {1, 2, 3}
+            and (
+                terminal_member_schema_version == 1
+                or (
+                    len(source_observation_members) == 1
+                    and isinstance(source_observation, dict)
+                    and control.get("observation_revision")
+                    == source_observation.get("observation_revision_after")
+                )
+            )
+            and (
+                terminal_member_schema_version != 1
+                or (
+                    not source_observation_members
+                    and source_observation is None
+                )
+            )
+            and (
+                terminal_member_schema_version != 3
+                or (
+                    isinstance(reload.get("ledger_entry_id"), str)
+                    and isinstance(reload.get("ledger_entry_digest"), str)
+                )
+            )
         )
     except (KeyError, StopIteration, TypeError, ValueError):
         return False
 
 
-def _from_record(record: CanonicalMemoryRecord) -> tuple[SemanticWriterAdmission, SemanticRecordOwnershipManifest]:
+def _is_activated_observation_ledger_write(
+    governed: list[CanonicalMemoryRecord],
+    current: tuple[CanonicalMemoryRecord, ...],
+    *,
+    history: ProtectedTypedValueRegistryHistory | None,
+    target: VerifiedObservationActivationTarget | None,
+    limits: ProtectedTypedValueArtifactReaderLimits,
+    snapshot_validator: Callable[[tuple[CanonicalMemoryRecord, ...], tuple[CanonicalMemoryRecord, ...]], bool] | None,
+) -> bool:
+    """Accept one verified source/group closure and its single ledger transition."""
+    from memorii.core.memory_evolution.observation_activation_runtime import validate_registered_artifact
+    from memorii.core.memory_evolution.observation_ledger_contracts import (
+        ObservationGroupResultLocator,
+        ObservationLedgerEntry,
+        ObservationLedgerHead,
+        ObservationSourceResultLocator,
+    )
+    from memorii.core.semantic_ingestion.contracts import (
+        BootstrapGraphGroupCommitReloadV3,
+        BootstrapGraphGroupCommitRequestV3,
+        BootstrapGraphTerminalReloadV3,
+        decode_semantic_contract,
+    )
+
+    if history is None or target is None:
+        return False
+    entries = [record for record in governed if record.source_kind == "semantic_ingestion_observation_ledger_entry"]
+    heads = [record for record in governed if record.source_kind == "semantic_ingestion_observation_ledger_head"]
+    if len(entries) != 1 or len(heads) != 1:
+        return False
+    if snapshot_validator is None:
+        return False
+    entry_record, head_record = entries[0], heads[0]
+    base = [record for record in governed if record not in (entry_record, head_record)]
+    group_sidecars = [record for record in base if _is_native_group_projection_sidecar(record)]
+    group_base = [record for record in base if record not in group_sidecars]
+    is_group = _is_bootstrap_graph_v3_group_commit_write(group_base, current)
+    is_terminal = _is_bootstrap_graph_v3_terminal_write(base, current)
+    if is_group == is_terminal:
+        return False
+    try:
+        if (
+            entry_record.content.get("semantic_ingestion_kind") != "observation_ledger_entry"
+            or head_record.content.get("semantic_ingestion_kind") != "observation_ledger_head"
+            or set(entry_record.content) != {"semantic_ingestion_kind", "artifact"}
+            or set(head_record.content) != {"semantic_ingestion_kind", "artifact"}
+            or type(entry_record.content["artifact"]) is not str
+            or type(head_record.content["artifact"]) is not str
+        ):
+            return False
+        from memorii.core.memory_evolution.observation_activation_runtime import emit_registered_observation_artifact
+        entry_raw = entry_record.content["artifact"].encode("utf-8")
+        head_raw = head_record.content["artifact"].encode("utf-8")
+        entry = validate_registered_artifact(entry_raw, schema_id="ObservationLedgerEntry", history=history, limits=limits)
+        next_head = validate_registered_artifact(head_raw, schema_id="ObservationLedgerHead", history=history, limits=limits)
+        current_head_record = next(record for record in current if record.source_kind == "semantic_ingestion_observation_ledger_head")
+        current_head = validate_registered_artifact(current_head_record.content["artifact"].encode("utf-8"), schema_id="ObservationLedgerHead", history=history, limits=limits)
+        writer_record = next(record for record in current if record.memory_id == writer_admission_memory_id())
+        admission, manifest = writer_admission_from_record(writer_record)
+        if (
+            type(entry) is not ObservationLedgerEntry
+            or type(next_head) is not ObservationLedgerHead
+            or type(current_head) is not ObservationLedgerHead
+            or admission.activation_digest is None
+            or manifest != observation_ledger_ownership_manifest()
+            or entry.activation_digest != admission.activation_digest
+            or entry.repository_id != current_head.repository_id
+            or next_head.repository_id != current_head.repository_id
+            or next_head.activation_digest != admission.activation_digest
+            or entry.sequence != current_head.sequence + 1
+            or entry.previous_entry_digest != current_head.last_entry_digest
+            or entry.delta.observation_revision_before != current_head.observation_revision
+            or next_head.sequence != entry.sequence
+            or next_head.observation_revision != entry.delta.observation_revision_after
+            or next_head.last_delta_id != entry.delta.observation_delta_id
+            or next_head.last_delta_digest != entry.delta.delta_digest
+            or next_head.last_entry_digest != entry.entry_digest
+            or head_record.memory_id != observation_ledger_head_memory_id(entry.repository_id)
+            or entry_record.memory_id != "semantic_ingestion:observation-ledger:entry:" + sha256(
+                b"memorii.observation-ledger-entry.v1\0"
+                + encode_typed_value((entry.repository_id, entry.delta.observation_delta_id))
+            ).hexdigest()
+        ):
+            return False
+        if (
+            emit_registered_observation_artifact(entry, schema_id="ObservationLedgerEntry", history=history, publication=target.publication, limits=limits).raw != entry_raw
+            or emit_registered_observation_artifact(next_head, schema_id="ObservationLedgerHead", history=history, publication=target.publication, limits=limits).raw != head_raw
+        ):
+            return False
+        if is_group:
+            primary = next(record for record in group_base if record.content.get("semantic_ingestion_kind") == "bootstrap_graph_v3_group_commit_primary")
+            request = decode_semantic_contract(bytes.fromhex(primary.content["request_hex"]), BootstrapGraphGroupCommitRequestV3)
+            reload = decode_semantic_contract(bytes.fromhex(primary.content["reload_hex"]), BootstrapGraphGroupCommitReloadV3)
+            locator = entry.result_locator
+            return (
+                _has_complete_native_group_projection_sidecars(
+                    group_sidecars,
+                    committed=reload.persisted_result.core.disposition == "committed",
+                )
+                and isinstance(locator, ObservationGroupResultLocator)
+                and locator.immutable_record_id == primary.memory_id
+                and entry.result_digest == reload.persisted_result.result_digest
+                and entry.delta == reload.observation_delta
+                and reload.ledger_entry_id == entry_record.memory_id
+                and reload.ledger_entry_digest == entry.entry_digest
+                and entry.activation_digest == request.writer_commit_binding.activation_digest
+                and locator.source_operation_id == request.source_operation_id
+                and locator.operation_fence_id == request.operation_fence_binding.operation_fence_id
+                and locator.transaction_group_id == request.transaction_group_id
+                and locator.operation_ids == request.operation_ids
+                and locator.request_ctv_digest == request.request_ctv_digest
+                and snapshot_validator(tuple(governed), current)
+            )
+        locator_record = next(record for record in base if record.content.get("semantic_ingestion_kind") == "bootstrap_graph_v3_terminal_locator" and "handoff_digest" in record.content)
+        reload = BootstrapGraphTerminalReloadV3.model_validate_json(json.dumps(locator_record.content["reload"]), strict=True)
+        locator = entry.result_locator
+        if not isinstance(locator, ObservationSourceResultLocator):
+            return False
+        terminal_control_record = next(
+            record for record in base
+            if record.content.get("semantic_ingestion_kind") == "preplanning_operation_control"
+        )
+        terminal_members = [
+            record for record in base
+            if record.memory_id == locator.immutable_record_id
+            and record.content.get("semantic_ingestion_kind") == "bootstrap_graph_v3_member"
+            and record.content.get("member", {}).get("kind") == "bootstrap_graph_canonical_source_result"
+        ]
+        return (
+            len(terminal_members) == 1
+            and entry.result_digest == reload.canonical_source_result.result_digest
+            and entry.delta == reload.source_finalization_observation_delta
+            and reload.ledger_entry_id == entry_record.memory_id
+            and reload.ledger_entry_digest == entry.entry_digest
+            and locator.source_operation_id == reload.final_write_identity.operation_id
+            and locator.namespace_id == (
+                terminal_control_record.content["control"].get("persistence_namespace_id")
+                or reload.final_write_identity.operation_id
+            )
+            and locator.artifact_generation == reload.final_write_identity.publication_artifact_generation
+            and locator.member_id == "canonical-source-result"
+            and locator.publication_request_digest == reload.final_write_identity.atomic_write_digest
+            and snapshot_validator(tuple(governed), current)
+        )
+    except (KeyError, StopIteration, TypeError, ValueError):
+        return False
+
+
+def _is_native_group_projection_sidecar(record: CanonicalMemoryRecord) -> bool:
+    return (
+        record.source_kind.startswith("semantic_projection_")
+        or record.source_kind in {
+            "semantic_ingestion_replay_authority",
+            "semantic_ingestion_checkpoint_lifecycle",
+            "semantic_ingestion_event_schema_registry_history",
+            "semantic_ingestion_bootstrap_graph_v3_native_projection_receipt",
+            "semantic_ingestion_bootstrap_graph_v3_native_replay_authority_evidence",
+            "semantic_ingestion_bootstrap_graph_v3_native_replay_checkpoint_evidence",
+            "semantic_ingestion_bootstrap_graph_v3_graph_revision_delta",
+        }
+    )
+
+
+def _has_complete_native_group_projection_sidecars(
+    records: list[CanonicalMemoryRecord], *, committed: bool,
+) -> bool:
+    """Require the sidecar member grammar; detached replay proves its contents."""
+    kinds = [record.source_kind for record in records]
+    required = {
+        "semantic_ingestion_replay_authority",
+        "semantic_ingestion_checkpoint_lifecycle",
+        "semantic_ingestion_event_schema_registry_history",
+        "semantic_ingestion_bootstrap_graph_v3_native_projection_receipt",
+        "semantic_ingestion_bootstrap_graph_v3_native_replay_authority_evidence",
+        "semantic_ingestion_bootstrap_graph_v3_native_replay_checkpoint_evidence",
+        "semantic_ingestion_bootstrap_graph_v3_graph_revision_delta",
+    }
+    if not committed:
+        return not records
+    singleton_projection_kinds = {
+        "semantic_projection_temporal_certificate", "semantic_projection_temporal_generation",
+        "semantic_projection_temporal_history_entry", "semantic_projection_temporal_active_pointer",
+        "semantic_projection_trust_certificate", "semantic_projection_trust_generation",
+        "semantic_projection_trust_history_entry", "semantic_projection_trust_active_pointer",
+    }
+    return required.issubset(kinds) and all(
+        kinds.count(kind) == 1 for kind in required | singleton_projection_kinds
+    ) and set(kinds).issubset(required | singleton_projection_kinds | {
+        "semantic_projection_temporal_projection", "semantic_projection_trust_projection",
+    })
+
+
+def _is_activated_preterminal_write(
+    governed: list[CanonicalMemoryRecord],
+    current: tuple[CanonicalMemoryRecord, ...],
+    *,
+    admissions: SemanticWriterAdmissionStore,
+) -> bool:
+    """Reuse only the sealed admission/planning/lease bridge recognizers.
+
+    These records establish the authority required to reach an activated
+    source/group terminal.  They cannot carry a ledger mutation and terminal
+    writes remain exclusively owned by the coupled-ledger recognizer above.
+    """
+    if any(record.source_kind.startswith("semantic_ingestion_observation_ledger_") for record in governed):
+        return False
+    if _is_reference_integrity_bootstrap_write(governed):
+        return True
+    controls = [
+        record for record in governed
+        if record.content.get("semantic_ingestion_kind") == "preplanning_operation_control"
+    ]
+    if len(controls) != 1:
+        try:
+            current_admission, _ = writer_admission_from_record(next(
+                record for record in current if record.memory_id == writer_admission_memory_id()
+            ))
+        except (StopIteration, SemanticWriterAdmissionError):
+            return False
+        return any((
+            _is_atomic_admission_only_write(governed, admissions.commit_binding(current_admission)),
+            _is_accepted_identity_operation_write(governed),
+            _is_prepared_source_publication_write(governed),
+            _is_bootstrap_authority_terminal_write(governed),
+            _is_bootstrap_v3_recovery_claim_write(governed, current),
+            _is_bootstrap_graph_v3_authority_write(governed, current),
+            _is_bootstrap_graph_v3_epoch_transition_write(governed, current),
+        ))
+    try:
+        current_admission, _ = writer_admission_from_record(next(
+            record for record in current if record.memory_id == writer_admission_memory_id()
+        ))
+        binding = SemanticWriterCommitBinding.model_validate(
+            controls[0].content["control"]["writer_binding"]
+        )
+        if binding != admissions.commit_binding(current_admission):
+            return False
+        operation_fence = OperationFenceBinding.model_validate(
+            controls[0].content["control"]["operation_fence"]
+        )
+        visible = {record.memory_id: record for record in (*current, *governed)}
+        source_admissions = [
+            record for record in visible.values()
+            if record.source_kind == "semantic_ingestion_admission_index"
+            and record.content.get("operation_fence_binding") == operation_fence.model_dump(mode="json")
+        ]
+        if (
+            len(source_admissions) != 1
+            or source_admissions[0].content.get("admitted_writer_epoch") != binding.expected_writer_epoch
+            or source_admissions[0].content.get("writer_admission_digest") != binding.admission_digest
+        ):
+            return False
+        if _is_bootstrap_handoff_write(governed, controls[0], binding):
+            return True
+        namespace = controls[0].content["control"].get("persistence_namespace_id") or operation_fence.operation_id
+        control_id = f"semantic_ingestion:operation:{namespace}"
+        prior_control = next((record for record in current if record.memory_id == control_id), None)
+        if prior_control is None:
+            preplanning = [record for record in governed if record.source_kind.startswith("semantic_ingestion_preplanning")]
+            _validate_initial_preplanning_generation(preplanning, controls[0], operation_fence, namespace)
+            admission_records = [record for record in governed if record not in preplanning]
+            if admission_records:
+                _validate_atomic_admission_records(admission_records, operation_fence, binding)
+            return True
+        generation = [
+            record for record in current
+            if record.memory_id == control_id or record.memory_id.startswith(f"semantic_ingestion:artifact:{namespace}:")
+        ]
+        _validate_initial_preplanning_generation(generation, prior_control, operation_fence, namespace)
+        return (
+            (len(governed) == 1 and controls[0].memory_id == control_id)
+            or _is_bootstrap_v3_ready_claim_write(governed, current)
+            or _is_bootstrap_v3_publish_consume_write(governed, current)
+            or _is_bootstrap_graph_v3_checkpoint_write(governed, current)
+        )
+    except (KeyError, StopIteration, TypeError, ValueError, SemanticWriterAdmissionError):
+        return False
+
+
+def writer_admission_from_record(record: CanonicalMemoryRecord) -> tuple[SemanticWriterAdmission, SemanticRecordOwnershipManifest]:
     if (
         record.source_kind != "semantic_ingestion_writer_admission"
         or record.content.get("semantic_ingestion_kind") != "writer_admission"
@@ -3572,6 +4259,7 @@ def _from_record(record: CanonicalMemoryRecord) -> tuple[SemanticWriterAdmission
             admission.writer_epoch,
             admission.activated_at,
             admission.previous_admission_digest,
+            admission.activation_digest,
         ):
             raise SemanticWriterAdmissionError("stored writer admission digest is corrupt")
         if (

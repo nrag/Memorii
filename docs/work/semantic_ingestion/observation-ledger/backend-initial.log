@@ -1,0 +1,74 @@
+F.                                                                       [100%]
+=================================== FAILURES ===================================
+___ test_stale_head_batch_writes_no_head_entry_or_result_and_retry_succeeds ____
+
+tmp_path = PosixPath('/private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/pytest-of-nandaraghunathan/pytest-1002/test_stale_head_batch_writes_n0')
+
+    def test_stale_head_batch_writes_no_head_entry_or_result_and_retry_succeeds(tmp_path) -> None:
+        plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "mechanics"))
+        probe = NeutralConditionalBatchProbe(plane)
+        source_a = _request("source-a", "request-a", "a")
+        source_b = _request("source-b", "request-b", "b")
+        stale_b = probe.prepare(source_b)
+    
+        committed_a = probe.append(probe.prepare(source_a))
+        before_failed_batch = plane.read_snapshot()
+        with pytest.raises(MemoryPlaneRevisionConflictError, match="record_digest"):
+>           probe.append(stale_b)
+
+docs/work/semantic_ingestion/observation-ledger/test_backend_feasibility.py:36: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+docs/work/semantic_ingestion/observation-ledger/backend_feasibility.py:100: in append
+    self._plane.conditionally_write_records(
+memorii/memorii/core/memory_plane/service.py:193: in conditionally_write_records
+    return self._records.apply_batch(
+memorii/memorii/core/memory_plane/store.py:520: in apply_batch
+    _validate_preconditions(current_records, preconditions)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+records = {'backend-feasibility:entry:source-a:request-a': CanonicalMemoryRecord(memory_id='backend-feasibility:entry:source-a:r...ds=[], episode_id=None, visibility=<MemoryRecordVisibility.INTERNAL_CONTROL: 'internal_control'>, mutation_fence=None)}
+preconditions = (RecordAbsentPrecondition(kind='record_absent', memory_id='backend-feasibility:neutral-head'), RecordAbsentPreconditio...request-b'), RecordAbsentPrecondition(kind='record_absent', memory_id='backend-feasibility:result:source-b:request-b'))
+
+    def _validate_preconditions(
+        records: dict[str, CanonicalMemoryRecord],
+        preconditions: tuple[MemoryPlanePrecondition, ...],
+    ) -> None:
+        for precondition in preconditions:
+            current = records.get(precondition.memory_id)
+            if isinstance(precondition, RecordAbsentPrecondition):
+                satisfied = current is None
+            elif isinstance(precondition, RecordDigestPrecondition):
+                satisfied = current is not None and record_digest(current) == precondition.expected_digest
+            else:
+                satisfied = current is not None and current.mutation_fence == precondition.expected_fence
+            if not satisfied:
+>               raise MemoryPlaneRevisionConflictError(
+                    f"memory-plane precondition failed: {precondition.kind}:{precondition.memory_id}"
+                )
+E               memorii.core.memory_plane.store.MemoryPlaneRevisionConflictError: memory-plane precondition failed: record_absent:backend-feasibility:neutral-head
+
+memorii/memorii/core/memory_plane/store.py:754: MemoryPlaneRevisionConflictError
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/pytest-of-nandaraghunathan/pytest-1002/test_stale_head_batch_writes_n0')
+
+    def test_stale_head_batch_writes_no_head_entry_or_result_and_retry_succeeds(tmp_path) -> None:
+        plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "mechanics"))
+        probe = NeutralConditionalBatchProbe(plane)
+        source_a = _request("source-a", "request-a", "a")
+        source_b = _request("source-b", "request-b", "b")
+        stale_b = probe.prepare(source_b)
+    
+        committed_a = probe.append(probe.prepare(source_a))
+        before_failed_batch = plane.read_snapshot()
+>       with pytest.raises(MemoryPlaneRevisionConflictError, match="record_digest"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'record_digest'
+E         Actual message: 'memory-plane precondition failed: record_absent:backend-feasibility:neutral-head'
+
+docs/work/semantic_ingestion/observation-ledger/test_backend_feasibility.py:35: AssertionError
+=========================== short test summary info ============================
+FAILED docs/work/semantic_ingestion/observation-ledger/test_backend_feasibility.py::test_stale_head_batch_writes_no_head_entry_or_result_and_retry_succeeds
+1 failed, 1 passed in 2.25s

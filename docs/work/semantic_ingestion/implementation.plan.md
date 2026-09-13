@@ -86,9 +86,12 @@ The index and milestone packets own current navigation and status.
 ## Current State
 
 - Layer1: bounded independent compiler and hermetic gate complete.
-- M0: historical proof/compatibility foundation remains mixed; completed
-  compatibility and traceability slices are preserved, while the rejected C2
-  authority is not approved for consumption.
+- M0: complete for the corrected canonical-genesis engineering boundary. The
+  July 31 replacement records composition-owned authority, independent
+  derivation, atomic publication/rollback, final reviews, and 183 passing
+  acceptance regressions. Rejected C2 bytes remain non-consumable historical
+  evidence; missing real release signatures are an M5 release gate, not absent
+  M0 engineering.
 - M1: complete.
 - M2: complete.
 - M3: complete at shared candidate `58ec5cc`. Its four-root/two-backend matrix,
@@ -104,7 +107,10 @@ The index and milestone packets own current navigation and status.
   shared M3.1 regression, then one dual closure revision). Exact-SHA hosted run
   `34042442561` passed all 47 jobs, and final specification, correctness, and
   test reviews returned empty approval arrays.
-- M5: pending.
+- M5: active through the linked engineering-closure WorkPlan. It implements
+  the remaining six bounded packages while keeping unsigned and untrusted
+  activation fail closed. Actual production signatures and real trust
+  deployment remain deferred release gates.
 
 The earlier M3.1 empty final approval arrays remain historical evidence. Both
 milestones now contain new revision-bound closure records for shared candidate
@@ -128,12 +134,12 @@ activation artifacts remain governed by their registered SIA-ED gates.
 | Milestone | Requirements | Status | Detailed packet | Dependency |
 | --- | --- | --- | --- | --- |
 | Layer1 | SIA-R03, L1-008, L1-009 | complete | `docs/work/semantic_ingestion/milestones/layer1-independent-authority.plan.md` | frozen design and registry |
-| M0 | SIA-R03, SIA-R13, SIA-R22 | blocked | `docs/work/semantic_ingestion/milestones/m0-proof-compatibility.plan.md` | Layer1 and external trust authority |
+| M0 | SIA-R03, SIA-R13, SIA-R22 | complete (corrected replacement) | `docs/work/semantic_ingestion/milestones/m0-proof-compatibility.plan.md` | completed July 31 replacement; release signatures remain M5-only |
 | M1 | SIA-R01, SIA-R04, SIA-R08, SIA-R12, SIA-R19, SIA-R22, SIA-R23 | complete | `docs/work/semantic_ingestion/milestones/m1-source-admission.plan.md` | M0 compatibility foundation |
 | M2 | SIA-R10, SIA-R11, SIA-R20, SIA-R21 | complete | `docs/work/semantic_ingestion/milestones/m2-writer-atomicity.plan.md` | M1 admitted source |
 | M3 | SIA-R02, SIA-R04 through SIA-R07, SIA-R09, SIA-R12 | complete | `docs/work/semantic_ingestion/milestones/m3-semantic-pipeline.plan.md` | closed with M4 at `58ec5cc` |
 | M4 | SIA-R10, SIA-R18 | complete | `docs/work/semantic_ingestion/milestones/m4-event-history.plan.md` | closed with M3.1 at `58ec5cc` |
-| M5 | SIA-R03, SIA-R08, SIA-R13 through SIA-R17, SIA-R19 | pending | `docs/work/semantic_ingestion/milestones/m5-deployment-acceptance.plan.md` | M4 and external activation authority |
+| M5 | SIA-R03, SIA-R08, SIA-R13 through SIA-R17, SIA-R19 | active | `docs/work/semantic_ingestion/milestones/m5-deployment-acceptance.plan.md` | `docs/work/semantic_ingestion/engineering-closure/implementation.plan.md` owns six remaining packages |
 
 ## Requirement Coverage Ledger
 
@@ -179,6 +185,11 @@ bounded completion.
   correctness, and test reviews returned empty P1/P2, approval-blocker, and
   changes-required arrays. The detailed revision-bound records live in the
   completed closure and milestone packets.
+- 2026-09-06: Reconciled the stale M0 parent status against the completed
+  July 31 canonical-genesis replacement. The rejected C2 authority stays
+  rejected; release signatures are not an M0 engineering dependency. Activated
+  the linked six-package engineering-closure implementation WorkPlan for all
+  remaining SIA-R01..R23 retention and M5 work.
 
 ## Evidence Log
 
@@ -216,14 +227,21 @@ branch review results are summarized here.
 
 There is no remaining known local product-semantic blocker for M3.1/M4. Full
 closure is recorded at `58ec5cc`; exact-SHA hosted execution and all three
-final reviews are green. M5 activation claims remain limited by externally
-owned authority. M0's rejected historical C2 baselines must not be consumed.
+final reviews are green. M5 engineering implementation is active. Activation
+claims remain limited by externally owned authority, and M0's rejected
+historical C2 baselines must not be consumed.
 
 ## Next Action
 
-No M3.1/M4 action remains. Keep M5 pending until the user explicitly authorizes
-that separate scope; do not infer M5 activation or agent-system certification
-from the M3.1/M4 closure.
+No M3.1/M4 action remains.
+
+M0's rejected historical C2 baselines remain non-consumable.
+M5 activation claims remain limited by externally owned release authority.
+
+Execute the active linked engineering-closure package 1 readiness and test
+matrix: map current production owners, decimal/policy authority, M0 crosswalk,
+and public production callers before product implementation. Do not claim M5
+completion, signing, activation, or agent-system certification.
 
 ## 2026-08-10 Bootstrap V3 Atomic Slice
 

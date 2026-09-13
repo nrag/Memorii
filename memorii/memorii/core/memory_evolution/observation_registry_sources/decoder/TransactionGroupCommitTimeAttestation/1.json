@@ -1,0 +1,1 @@
+{"decoder_id":"memorii.semantic_ingestion.observation.TransactionGroupCommitTimeAttestation.v1","implementation_source_digest":"4560c4c284c0f4ad12ac12665d464be708bf95958050523d94a02f84b09df8b0","role":"decoder","schema_id":"TransactionGroupCommitTimeAttestation","schema_version":"1","typed_root_kind":"model"}

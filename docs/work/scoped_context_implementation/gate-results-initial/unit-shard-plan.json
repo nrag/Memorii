@@ -1,0 +1,17 @@
+{
+  "name": "unit-shard-plan",
+  "argv": [
+    "/Users/nandaraghunathan/Code/Memorii/Memorii/.venv/bin/python",
+    "-m",
+    "memorii.tools.test_shards",
+    "verify",
+    "--config",
+    "tests/ci/unit-shards.json"
+  ],
+  "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii",
+  "exit_status": 0,
+  "elapsed_seconds": 13.09,
+  "log_sha256": "b85d130f214895585b3cd5b76ca5d6c6aa9201b312e83ca8a1aa873c6320c7c3",
+  "source_revision_label": "b4f6c24b091a28bd3d1f65102c742478fc7276b3",
+  "evidence": "local working-tree execution only"
+}

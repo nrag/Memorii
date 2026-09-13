@@ -1,0 +1,1 @@
+{"fields":[{"field_name":"primary_key","policy":"required"},{"field_name":"record_kind","policy":"required"}],"role":"optional","schema_id":"GraphObservationRecordKey","schema_version":"1"}

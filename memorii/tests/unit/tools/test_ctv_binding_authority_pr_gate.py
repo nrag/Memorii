@@ -30,13 +30,13 @@ STRUCTURAL_CHECKER = VECTORS / "check_cgs_structural_contract_v1.py"
 SEMANTIC_EXPECTED = {
     "fixture": "d3c1dce10624365647cbb00926f63b6deabe681e51a138bc3de88d7c60faef69",
     "validator": "46bbda1afb6ccbec5a49ea668752c19a7b1354b94515a33365191cee01745edb",
-    "checker": "59bebd19ab0040bf538697e45e0e5a77ae03eb5ce675160d22b813be575cbadf",
+    "checker": "d5036cf9426886cd47665c29b77de14a2acbcc7649d2fb8bb0c0e0d78aada8f0",
 }
-STRUCTURAL_CHECKER_SHA256 = "d670812cd8ca60b5c8e652730692b5970494d0205540f2d353eefe7b832ddfae"
+STRUCTURAL_CHECKER_SHA256 = "f5c5ecafc804a96c7bd3e5c3717a87e8386e4cbc78334cede097b37caeebaaf7"
 EXPECTED = {
-    "design": "b469653e3ef92e9cc1bf45e797a2c7dff8eac4d9ee792ad94ada3a54bfbe05da",
+    "design": "a7770e627e2dc627c772b8c54dd5998ce83c1baf43079a210056826b5ebce626",
     "registry": "70143b278e0fd72886362f4174c726c9ecf877b1e288d3dd2c196a78f385413e",
-    "authority": "272617544ee6531f995f797f323b576bc4070282ff1dd2cd12e49cfb0c492f3b",
+    "authority": "f0b03bbe49fc2ca905ccc029ff04bd2ae6c2f3156c49e34382f8387b4ca4eff5",
     "validator": "3066e6ffb015823283e57945863c22d4ecf32164c52ae8199eb1535c7798f145",
     "checker": "e2c35870a99e587f34cbffc701f42587520ee015009cd51647367da56716c732",
 }
@@ -288,17 +288,29 @@ def test_pr_workflow_structurally_runs_complete_matrix_and_exact_pinned_checker(
         "static-analysis",
         "package-smoke",
         "provider-compatibility",
+        "scoped-context-integration",
+        "observation-ledger-activation",
         "unit-test-shards",
         "unit-timing-inventory",
         "semantic-terminal-persistence",
         "semantic-terminal-persistence-timing-inventory",
     ]
     unit_result_env = unit_job["steps"][0]["env"]
+    assert unit_result_env["OBSERVATION_ACTIVATION_RESULT"] == "${{ needs.observation-ledger-activation.result }}"
+    assert 'test "$OBSERVATION_ACTIVATION_RESULT" = success' in unit_job["steps"][0]["run"]
+    activation_command = jobs["observation-ledger-activation"]["steps"][3]["run"]
+    assert "tests/integration/test_ingestion_time_paging.py" in shlex.split(activation_command)
+    assert "tests/unit/core/memory_evolution/test_graph_observation_cohort.py" in shlex.split(activation_command)
+    assert "tests/unit/core/memory_evolution/test_graph_observation_ingestion_projection.py" in shlex.split(activation_command)
+    assert "tests/integration/test_graph_observation_access.py" in shlex.split(activation_command)
+    assert "tests/integration/test_graph_observation_paging.py" in shlex.split(activation_command)
+    assert unit_result_env["SCOPED_CONTEXT_RESULT"] == "${{ needs.scoped-context-integration.result }}"
     assert unit_result_env["TERMINAL_RESULT"] == "${{ needs.semantic-terminal-persistence.result }}"
     assert unit_result_env["TERMINAL_TIMING_RESULT"] == (
         "${{ needs.semantic-terminal-persistence-timing-inventory.result }}"
     )
     assert 'test "$TERMINAL_RESULT" = success' in unit_job["steps"][0]["run"]
+    assert 'test "$SCOPED_CONTEXT_RESULT" = success' in unit_job["steps"][0]["run"]
     assert 'test "$TERMINAL_TIMING_RESULT" = success' in unit_job["steps"][0]["run"]
     for job in (compiler_job, gate_job, exact_job):
         assert job["runs-on"] == "ubuntu-latest"

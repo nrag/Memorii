@@ -1,0 +1,28 @@
+{
+  "base_revision": "b4f6c24b091a28bd3d1f65102c742478fc7276b3",
+  "tree_state": "uncommitted final source including bounded omission-schema conformance correction",
+  "files": {
+    ".github/workflows/pr-gates.yml": "57064a31bf413ef1a2fc8e6b35e2f20e0461d7ee4afe31d6bf42fed6de222a10",
+    "docs/design/scoped_memory_context.md": "f43d2cca76a57776cc2223ec1e9d413cb0deb6e94a5981263b0b43deae04386e",
+    "docs/development/scoped_memory_context.md": "a010531d0bad7eba47fb7f84ec8cd5fc294e9219ba1b1f370b873221aa69790f",
+    "memorii/memorii/core/filesystem_storage/bundle.py": "31044210a6c43bc8cde652122697cb67d871f5d141b4116f73534d79fe292388",
+    "memorii/memorii/core/memory_evolution/state_repository.py": "be0d070c71355de3629ad596e7916199d2f0acb78cdd81ccd48e7c0e731e74c4",
+    "memorii/memorii/core/memory_plane/service.py": "c9250fa905d84f67d90e87c8b40e280ad7519080f293434a0757969f0b342b8f",
+    "memorii/memorii/core/provider/factory.py": "452a9ea96c45ac57dd188791855fcfaf9ae16b50c2c1a2070f55be1adfac655f",
+    "memorii/memorii/core/provider/service.py": "858a1a1866f680ba619e864e7160fc93b46499208e331febdadae4dcc5786c7d",
+    "memorii/memorii/core/scoped_context/__init__.py": "75870561ea8e4f1cb79e93487326a25434dc468592fcd1dcc16e14c6a986cfa3",
+    "memorii/memorii/core/scoped_context/authority.py": "be77b0a40334f026c735ad5f4a51329495e5f0cbc6b9e6642c15eed05269fa50",
+    "memorii/memorii/core/scoped_context/contracts.py": "68afc4647872af7aecb10024cf9677d7cbb63d2c5cb6cde3a7d6e7aab7e5a202",
+    "memorii/memorii/core/scoped_context/index.py": "2724cfb20c0efd1456fe7774f64a9b25ee358b9eb4872dff35d94e05e440802f",
+    "memorii/memorii/core/scoped_context/service.py": "a193da33e4e021f446082ad368727a24531d76837849ff1b3f62e492f3860aed",
+    "memorii/memorii/integrations/hermes_provider.py": "53c1cf4d547457cbbe80cb860d1f609db8e3d0a2ef65af1eb4e7aa44852deb97",
+    "memorii/pyproject.toml": "5f4a059a82bc36d6fdc4a2a021b3e5abb749ccef1032a1e216f0e92b4faa4ffb",
+    "memorii/tests/ci/deterministic-job-owners.json": "9cd873cc46569f30c554358f5273aef5af03afdf4c5c4d271fe13771444f854d",
+    "memorii/tests/ci/unit-test-durations.json": "27d54232262a1c1082fafd04fa49781b72fe658d9910edf17d92cb111288e1a2",
+    "memorii/tests/integration/test_scoped_context_production_binding.py": "c2eafec852711f02a560485c033b01beb451d6d184a8fe0b2a0c80cc09f8fce9",
+    "memorii/tests/unit/core/test_scoped_context_activation.py": "c3605422960449ee38d1972eca6c1ab65a3ed95e9a8686f8a1aa41f6fe4f5029",
+    "memorii/tests/unit/tools/test_ctv_binding_authority_pr_gate.py": "ecae0990e894f8cc01d6df9e9eaa199a8cd8e4fc7948d0ea2b66245309a04da9",
+    "memorii/tests/unit/tools/test_static_tooling_config.py": "9338a0512872f089447f907d4e3bd1014e4885ec6fa20361203c03ab7710d5f3"
+  },
+  "previous_source_manifest": "candidate-source.json"
+}

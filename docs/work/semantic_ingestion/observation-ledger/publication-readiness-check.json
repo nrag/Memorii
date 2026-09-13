@@ -1,0 +1,19 @@
+{
+  "checks": [
+    "nine design documents have no trailing whitespace",
+    "literal grammar bytes and complete profile LP digest unchanged"
+  ],
+  "files": {
+    "closed-contracts.md": "8db3e60c44307e43d982bed5d044cf846aff9f32f207229f8c6f07bd9c44f51a",
+    "design.plan.md": "21a7d70c71d8d4cecb130c9dc542bfedf7ee6860099048aa541d707fc09faba9",
+    "operational-profile.md": "08ac2687df78623b8384cf6f1171082b6f48cd6573e7883e862b97cd1706bdd8",
+    "projection-observation-decision.md": "15a162f28095ed811f5f82d7eb6a233282cc05739c556c132ff12e66793c7025",
+    "proposal.md": "ab810d6c66a0b80b654efc9ca9bfe5672a38c969e38e1f36e3300860541520c3",
+    "readiness.md": "a1d4ed418113505818cf0b3d366fc9f41f7941538f8df938165f2fc1681a1212",
+    "replay-snapshot-contract.md": "e9eb7e4deb4759402242570ac930320f1ac12ba2114f612e044e3ec17f64ad8c",
+    "retrieval-authority.md": "20667065430a2ad64bb241d9766f23c38c590d28168ce7e231ba848bd310a43f",
+    "schema-publication.md": "9e5caa0e4c9782826ff81a3db4996020bf033f2e172e69106d83c93ad0533e83"
+  },
+  "scope": "documentation construction only; not registry publication or runtime verification",
+  "status": "construction_blocked_public_projection_decision"
+}

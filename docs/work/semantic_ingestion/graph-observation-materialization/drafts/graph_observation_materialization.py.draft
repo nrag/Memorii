@@ -1,0 +1,151 @@
+"""Detached cohort materialization for the public graph-observation runtime.
+
+The provider deliberately obtains all semantic authority from the exact record
+tuple supplied by paging.  It has no memory-plane read path of its own.
+"""
+
+from __future__ import annotations
+
+from memorii.core.memory_evolution.atomic_store import SemanticIngestionAtomicStore
+from memorii.core.memory_evolution.graph_observation_cohort import (
+    ResolvedObservationMembership,
+    resolve_observation_membership,
+)
+from memorii.core.memory_evolution.graph_observation_ingestion_projection import (
+    materialize_ingestion_observation_stream,
+)
+from memorii.core.memory_evolution.graph_observation_paging import (
+    DetachedGraphObservationRecords,
+    GraphObservationCohortInput,
+    IngestionTimeObservationCohortInput,
+    ObservationCohortUnavailableError,
+)
+from memorii.core.memory_evolution.graph_observation_public_contracts import (
+    AuthenticatedGraphObservationContext,
+    GraphObservationAuthorizationDecision,
+    GraphObservationRequestCoordinates,
+    IngestionTimeAttestationRequestCoordinates,
+)
+from memorii.core.memory_evolution.graph_observation_snapshot_contracts import (
+    GraphObservationCohortPreimage,
+    GraphObservationRecordKey,
+)
+from memorii.core.memory_evolution.graph_observation_streams import GraphObservationStreamRecord
+from memorii.core.memory_evolution.models import MemoryScope
+from memorii.core.memory_evolution.typed_value_artifact_reader import ProtectedTypedValueArtifactReaderLimits
+from memorii.core.memory_evolution.typed_value_publication import VerifiedTypedValuePublication
+from memorii.core.memory_evolution.typed_value_registry_history import ProtectedTypedValueRegistryHistory
+
+
+class AtomicStoreGraphObservationCohortProvider:
+    """Build a cohort from one replay-verified detached atomic-store image.
+
+    Graph record projection is intentionally rejected until every selected graph
+    mutation has a total native-to-observed conversion.  Returning a subset is
+    forbidden: the paging runtime turns this typed failure into its non-
+    disclosing denial response.
+    """
+
+    def __init__(
+        self, *, atomic_store: SemanticIngestionAtomicStore, registry_history: ProtectedTypedValueRegistryHistory,
+        registry_publication: VerifiedTypedValuePublication,
+        limits: ProtectedTypedValueArtifactReaderLimits,
+    ) -> None:
+        self._atomic_store = atomic_store
+        self._history = registry_history
+        self._publication = registry_publication
+        self._limits = limits
+
+    def graph_observation_input(
+        self, *, snapshot: DetachedGraphObservationRecords,
+        context: AuthenticatedGraphObservationContext,
+        decision: GraphObservationAuthorizationDecision, authorized_scope: MemoryScope,
+        request: GraphObservationRequestCoordinates, maximum_stream_records: int,
+        maximum_snapshot_bytes: int,
+    ) -> GraphObservationCohortInput:
+        authority, membership = self._membership(snapshot, context, authorized_scope, request)
+        if membership.graph_deltas:
+            raise ObservationCohortUnavailableError(
+                "selected graph mutations lack a complete observed-record projection"
+            )
+        stream = materialize_ingestion_observation_stream(
+            membership=membership,
+            records=self._ingestion_records(membership), history=self._history,
+            publication=self._publication, limits=self._limits,
+        )
+        if len(stream) > maximum_stream_records:
+            raise ObservationCohortUnavailableError("observation stream record ceiling exceeded")
+        preimage = self._preimage(authority, membership, decision, request, tuple(stream))
+        return GraphObservationCohortInput(cohort_preimage=preimage, stream=tuple(stream))
+
+    def ingestion_time_input(
+        self, *, snapshot: DetachedGraphObservationRecords,
+        context: AuthenticatedGraphObservationContext,
+        decision: GraphObservationAuthorizationDecision, authorized_scope: MemoryScope,
+        request: IngestionTimeAttestationRequestCoordinates, maximum_stream_records: int,
+        maximum_snapshot_bytes: int,
+    ) -> IngestionTimeObservationCohortInput:
+        # Persisted attestation authority is not present in the detached image's
+        # public contract yet.  Do not synthesize a time witness from timestamps.
+        raise ObservationCohortUnavailableError("persisted ingestion-time attestations are unavailable")
+
+    def _membership(self, snapshot, context, authorized_scope, request):
+        authority = self._atomic_store.read_detached_observation_authority(
+            write_revision=snapshot.memory_plane_write_revision, records=snapshot.records,
+            snapshot_created_at=snapshot.created_at,
+        )
+        if authority.graph.graph_revision != request.expected_graph_revision:
+            raise ObservationCohortUnavailableError("graph revision differs from request")
+        if authority.observation.observation_revision != request.expected_observation_revision:
+            raise ObservationCohortUnavailableError("observation revision differs from request")
+        return authority, resolve_observation_membership(
+            authority, context, authorized_scope, request.cohort_selector,
+        )
+
+    @staticmethod
+    def _ingestion_records(membership):
+        return tuple(
+            [mutation.record for entry in membership.group_entries for mutation in entry.delta.record_mutations]
+            + [delta.source_outcome for delta in membership.source_finalizations]
+        )
+
+    @staticmethod
+    def _preimage(authority, membership, decision, request, stream: tuple[GraphObservationStreamRecord, ...]):
+        reference = authority.references
+        certificate = reference.audit_certificate
+        if certificate is None:
+            raise ObservationCohortUnavailableError("reference audit certificate is unavailable")
+        keys = tuple(GraphObservationRecordKey(record_kind=item.record_kind, primary_key=item.primary_key) for item in stream)
+        return GraphObservationCohortPreimage(
+            seed_source_ids=membership.seed_source_ids, seed_operation_ids=membership.seed_operation_ids,
+            source_ids=membership.source_ids, operation_ids=membership.operation_ids,
+            operation_fence_ids=membership.operation_fence_ids, include_referenced_boundary_entities=True,
+            authorized_scope_identity=decision.authorized_scope_identity,
+            authorization_policy_revision=decision.policy_revision,
+            authorization_decision_digest=decision.decision_digest,
+            graph_revision_delta_ids=tuple(delta.graph_revision_delta_id for delta in membership.graph_deltas),
+            graph_revision_delta_digests=tuple(delta.delta_digest for delta in membership.graph_deltas),
+            ingestion_observation_delta_ids=tuple(entry.delta.observation_delta_id for entry in membership.group_entries) + tuple(delta.observation_delta_id for delta in membership.source_finalizations),
+            ingestion_observation_delta_digests=tuple(entry.delta.delta_digest for entry in membership.group_entries) + tuple(delta.delta_digest for delta in membership.source_finalizations),
+            reference_schema_manifest_fingerprint=reference.manifest_fingerprint,
+            reference_ledger_high_watermark=reference.high_watermark, reference_ledger_digest=reference.ledger_digest,
+            reference_audit_certificate_digest=certificate.certificate_digest, complete=True,
+            graph_revision=authority.graph.graph_revision, observation_revision=authority.observation.observation_revision,
+            memory_plane_write_revision=authority.write_revision,
+            temporal_projection_generation_digest=None, temporal_projection_pointer_digest=None,
+            trust_projection_generation_digest=None, trust_projection_pointer_digest=None,
+            observation_schema_fingerprint=_observation_schema_fingerprint(membership),
+            changed_record_keys=keys, boundary_record_keys=(),
+        )
+
+
+__all__ = ["AtomicStoreGraphObservationCohortProvider"]
+
+
+def _observation_schema_fingerprint(membership: ResolvedObservationMembership) -> str:
+    """Require one exact schema binding across the selected ledger closure."""
+    values = {entry.delta.observation_schema_fingerprint for entry in membership.group_entries}
+    values.update(delta.observation_schema_fingerprint for delta in membership.source_finalizations)
+    if len(values) != 1:
+        raise ObservationCohortUnavailableError("selected observation deltas lack one schema fingerprint")
+    return next(iter(values))

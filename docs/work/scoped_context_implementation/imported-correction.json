@@ -1,0 +1,11 @@
+{
+  "source": "/private/tmp/scoped-context-remediation",
+  "files": {
+    "memorii/memorii/core/scoped_context/authority.py": "be77b0a40334f026c735ad5f4a51329495e5f0cbc6b9e6642c15eed05269fa50",
+    "memorii/memorii/core/scoped_context/contracts.py": "cf6502f7914f4aaaab1443fe9171734676aa833c463c9884fca955842965e889",
+    "memorii/memorii/core/scoped_context/index.py": "2724cfb20c0efd1456fe7774f64a9b25ee358b9eb4872dff35d94e05e440802f",
+    "memorii/memorii/core/scoped_context/service.py": "a193da33e4e021f446082ad368727a24531d76837849ff1b3f62e492f3860aed",
+    "memorii/tests/integration/test_scoped_context_production_binding.py": "c2eafec852711f02a560485c033b01beb451d6d184a8fe0b2a0c80cc09f8fce9",
+    "memorii/tests/unit/tools/test_ctv_binding_authority_pr_gate.py": "ecae0990e894f8cc01d6df9e9eaa199a8cd8e4fc7948d0ea2b66245309a04da9"
+  }
+}

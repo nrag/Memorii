@@ -1,0 +1,36 @@
+{
+  "checks": {
+    "counterfactual": "all3publicprecisioncasesrejectfullrangeinversion",
+    "independent_checker": "33vectors8rejectedmutations normal/-O",
+    "pyright": "0 errors,0 warnings; exact command inreview.md",
+    "pytest": "76 passed in5.20s",
+    "ruff": "passed"
+  },
+  "dirty": true,
+  "files": {
+    ".agents/PLANS.md": "7d8fdbbf9e3881950f720b400adce39b2718abed5318800c2b9f506b3e54ff5a",
+    ".agents/skills/build-design/SKILL.md": "295b10a67dbc0da24e6191fbb683ed9b70db4e6408c7225c31af1178a999d699",
+    "docs/IMPLEMENTATION_RULES.md": "c962791b8ba6e3dcf7f59778151299f74821a1a152bc387a2e78a6fad7e41dea",
+    "docs/design/event_model.md": "9ce93e4a826f3e47b2e41fa06d2ec1e40bb0cad2475fa0527d9bb2c9ab3acdec",
+    "docs/design/memorii_spec.md": "5d24a08e7ca048c85d75aef7eb8eb264e9a869cadcd0ebd5d07d7e368f1d6cc5",
+    "docs/design/memorii_storage_details.md": "9ce9b03722be2344d93847f425a04a9a147369c900a32b1ceed21bb34ffb1f37",
+    "docs/design/semantic_ingestion_architecture.md": "b469653e3ef92e9cc1bf45e797a2c7dff8eac4d9ee792ad94ada3a54bfbe05da",
+    "docs/work/semantic_ingestion/statistical-acceptance/bounded_math.py": "416ffdf01f182afa693f302d34d9085b6048a18948c961c299b3869a8639ae83",
+    "docs/work/semantic_ingestion/statistical-acceptance/field-inventory.md": "26811adcf439b0275a249d642f715ed402f247c4fd83515a324238653c07f858",
+    "docs/work/semantic_ingestion/statistical-acceptance/independent_math_check.py": "215c7c6d7906044cb6b7acf3d1ca748e6acb1f539b703f308697837a326f95ae",
+    "docs/work/semantic_ingestion/statistical-acceptance/promotion-map.md": "932286cc9279cb254ac142634acbd072e46ec1e506f1024f85cdba5a7d24f649",
+    "docs/work/semantic_ingestion/statistical-acceptance/proposal.md": "5c404fcffd045693fa87579532aa1bf9dfff9995d24b43a013d874522c3d384e",
+    "docs/work/semantic_ingestion/statistical-acceptance/pyrightconfig.json": "8d6d36e2ab27b672a0f01f5c86e535d5a0387a2d272021eeecf20f2cf1f416e1",
+    "docs/work/semantic_ingestion/statistical-acceptance/review-scope.md": "3dc7823c2c093d01ca7fdc79d0966a4f84271ef310606789ae48a78973f9ccb8",
+    "docs/work/semantic_ingestion/statistical-acceptance/review.md": "eb7ee06ddecfb1470e783be280049bf12a58aff3ebc047e7b93f0c655e7b3b2b",
+    "docs/work/semantic_ingestion/statistical-acceptance/run_boundary_evidence.py": "57013d68fb2e10c1a29a9acc771b959cea1323133d4a56ed6028d2d7655fbf22",
+    "docs/work/semantic_ingestion/statistical-acceptance/test_bounded_math.py": "3ea2b5bb3f0d61445481b19938ab99b1b39f4d2af5de931f710f8ebba62ca33f",
+    "docs/work/semantic_ingestion/statistical-acceptance/test_precision_contract.py": "2ede12693bdf29c657c3e1a790a6c340ba56203a25ae812e00070030ee9b3e9d",
+    "docs/work/semantic_ingestion/statistical-acceptance/test_wire_contract.py": "385b41fa09dfe6c512f66ff63b70654145261e21ee0611e5f10894dd01086ccf",
+    "docs/work/semantic_ingestion/statistical-acceptance/wire_contract.py": "821108e32718e254a105487041cecfceb7b8ad970c4d07bfbe75dbb4aa1f475c",
+    "memorii/memorii/core/memory_evolution/ingestion_contracts.py": "45395ffce7b6def7be5e2be302256544e384f41fdda4c1de29dd9e948da1ad27"
+  },
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "scope": "numeric component design and nonproduction feasibility only; live WorkPlan status excluded; frozen review-scope.md retained",
+  "supersedes_candidate_sha256": "d4e49ab48ca0eee266ee7157088e71b4edfc66bf942493c7cab30b2f6de9ec4f"
+}

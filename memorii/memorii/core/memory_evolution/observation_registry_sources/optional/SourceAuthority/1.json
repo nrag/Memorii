@@ -1,0 +1,1 @@
+{"fields":[{"field_name":"authenticated_provenance_class","policy":"required"},{"field_name":"authority_class","policy":"required"},{"field_name":"governing_principal_id","policy":"required_nullable"},{"field_name":"policy_revision","policy":"required"}],"role":"optional","schema_id":"SourceAuthority","schema_version":"1"}

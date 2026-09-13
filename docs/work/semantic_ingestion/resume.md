@@ -1,12 +1,9 @@
-# Semantic Ingestion M3.1 And M4 Resume Packet
+# Semantic Ingestion M5 Engineering-Closure Resume Packet
 
 - Active parent WorkPlan: `docs/work/semantic_ingestion/implementation.plan.md`
-- Active completion WorkPlan: `docs/work/semantic_ingestion/m4-closure-2026-09-04/implementation.plan.md`
-- Active milestone packets: `docs/work/semantic_ingestion/milestones/m3-semantic-pipeline.plan.md`; `docs/work/semantic_ingestion/milestones/m4-event-history.plan.md`
-- Active linked debugging WorkPlan: `docs/work/semantic_ingestion/conflict-authority-proof-failures-2026-08-04/debug.plan.md` (sole detailed owner of the two replan defects)
-- Approved bridge design WorkPlan: `docs/work/semantic_ingestion/bootstrap-v3-source-progress-bridge-2026-09-04/design.plan.md`
-- Active bridge implementation WorkPlan: `docs/work/semantic_ingestion/bootstrap-v3-source-progress-bridge-2026-09-04/implementation.plan.md`
-- Status: M3.1 and M4 complete at candidate
+- Active implementation WorkPlan: `docs/work/semantic_ingestion/engineering-closure/implementation.plan.md`
+- Active milestone packet: `docs/work/semantic_ingestion/engineering-closure/milestones/05-authenticated-observer-comparator.plan.md`
+- Status: M5 engineering closure active under approved profile direction; M3.1/M4 remain complete at candidate
   `58ec5cc5a1e463a934681facc81630c956c2197b`
 - Coordinator: Codex main thread
 - Last updated: 2026-09-06
@@ -21,19 +18,45 @@
 - Current candidate: `58ec5cc5a1e463a934681facc81630c956c2197b`
 - Current candidate tree: `f66c7abf1f391b59fd8ea28f52576f301e3261f6`
 - Current hosted run: `https://github.com/nrag/Memorii/actions/runs/34042442561`
-- Current tree state: candidate commit was clean and pushed; later
-  coordination-record-only edits record closure state without changing the
-  tested candidate
+- Current tree state: authorized M5 code, tests and evidence changes are uncommitted.
+  The candidate and hosted run above describe prior M3.1/M4 closure, not current
+  M5 certification. Current M5 base HEAD is `191826cd3afb38bf605a337a71d576063b3bae5e`.
 
 ## Objective
 
-Complete M3.1 and M4 at one immutable revision after correcting replan lineage
-and error classification, finishing replay/history proof, revalidating the
-shared M3.1 transaction path, and obtaining revision-bound local, hosted, and
-independent review evidence.
+Complete remaining SIA-R01..R23 engineering packages while retaining completed
+evidence and keeping release activation fail closed until real authority is
+supplied.
+
+M3.1 and M4 are complete at the recorded candidate. The completed linked
+debugging WorkPlan remained the sole detailed owner of its two replan defects;
+its historical status does not constrain the active M5 package.
 
 ## Current State
 
+Current engineering checkpoint: bounded native source-finalization debugging is
+closed; planner binding retention passes its real public-flow check; authenticated
+cursor/authorization foundation passes seven focused checks and Pyright. Shared
+group/source ledger design is active in `observation-ledger/design.plan.md` because
+source-local revisions cannot serve the complete cross-source API. Its ordering
+model passes 19 checks and the real backend passes four transaction probes.
+The codec and test fixture share a profile digest but disagree on byte rules;
+`observation-ledger/profile-decision.md` contains the recommended compatibility
+decision. Production persistence/query/comparison remain unfinished.
+Acceptance-authority design remains blocked at its declared review limit.
+Detailed current state: `engineering-closure/resume.md`. No M5 completion claim.
+
+
+- The repaired numerical component design is approved by all three reviewers
+  at candidate `502306dc39b966bf13ec261f1f81a6fb59e867816f2f889f491c0ac0037eb9da`.
+  Local proof: 76 tests, 33 independent mathematical vectors, eight rejected
+  mutations, and passing type/lint checks. Canonical promotion and the R14
+  acceptance owner remain pending; see `statistical-acceptance/closure.md`.
+- Observer closure requires native introduction/terminal record persistence in
+  addition to the authenticated query API. Record contracts now pass 16 focused
+  tests and type/lint checks; persistence/query/comparison remain pending.
+- Release signing/trust code is locally verified with test keys. Real release
+  signatures remain deferred as authorized; the full M5 closure is not complete.
 - M3.1's historical v82 identity remains non-reproducible and superseded. Its
   replacement closure is reproducible at clean candidate `58ec5cc`.
 - M4 conflict-attention composition and replay/history passed 414 of 415 tests

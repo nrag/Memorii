@@ -1,0 +1,16 @@
+........................................................................ [ 25%]
+........................................................................ [ 51%]
+........................................................................ [ 76%]
+.................................................................        [100%]
+============================= slowest 10 durations =============================
+204.07s call     tests/integration/test_observation_ledger_activation.py::test_public_drain_preserves_live_operation_and_rejects_new_old_epoch_work
+150.24s call     tests/unit/core/semantic_ingestion/test_semantic_provider_composition.py::test_real_filesystem_hermes_corruption_recovery_restart_and_racing_write
+51.41s call     tests/unit/core/semantic_ingestion/test_semantic_provider_composition.py::test_public_flow_prepared_source_contract_is_frozen_across_runs
+46.17s call     tests/integration/test_bootstrap_group_observation.py::test_audit_binds_actual_native_graph_and_retained_mentions
+41.61s call     tests/integration/test_observation_ledger_activation.py::test_public_activation_recovers_jsonl_failure_before_or_after_commit[True]
+34.02s call     tests/unit/core/semantic_ingestion/test_semantic_provider_composition.py::test_public_jsonl_lost_ack_reopens_without_duplicate_effects[commit_or_reload_bootstrap_graph_group_v3]
+31.87s call     tests/unit/core/semantic_ingestion/test_semantic_provider_composition.py::test_direct_provider_root_publishes_and_reloads_bootstrap_v3_normalization
+30.31s call     tests/unit/core/semantic_ingestion/test_semantic_provider_composition.py::test_public_jsonl_lost_ack_reopens_without_duplicate_effects[checkpoint_source_progress]
+27.40s call     tests/unit/core/semantic_ingestion/test_semantic_provider_composition.py::test_public_jsonl_lost_ack_reopens_without_duplicate_effects[persist_bootstrap_graph_terminal_v3]
+27.40s call     tests/integration/test_observation_ledger_activation.py::test_public_activation_preserves_captured_jsonl_history_bytes
+281 passed in 1108.52s (0:18:28)

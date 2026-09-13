@@ -1,0 +1,1 @@
+{"fields":[{"field_name":"entity","policy":"required"},{"field_name":"logical_entity_id_at_assertion","policy":"required"}],"role":"optional","schema_id":"ObservedAssertionEntityReference","schema_version":"1"}

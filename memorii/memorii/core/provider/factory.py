@@ -21,6 +21,9 @@ from memorii.core.memory_evolution.conflict_attention_repository import (
 from memorii.core.memory_evolution.conflict_integrity import (
     PrivilegedSemanticIntegrityLifecycle,
 )
+from memorii.core.memory_evolution.graph_observation_paging import (
+    AuthenticatedGraphObservationPagingRuntime,
+)
 from memorii.core.memory_evolution.identity_lineage import (
     AtomicStoreScopedIdentityLineageAuditReader,
     GrantBackedIdentityLineageAuditAuthorizer,
@@ -29,8 +32,10 @@ from memorii.core.memory_evolution.identity_lineage import (
 from memorii.core.memory_evolution.ingestion_contracts import (
     AuthenticatedIngressContextResolver,
 )
+from memorii.core.memory_evolution.ingestion_time_clock import IngestionTimeClock
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.provider.service import ProviderMemoryService
+from memorii.core.scoped_context.authority import ScopedHostReadAuthority
 from memorii.core.semantic_ingestion.production_authority import (
     VerifiedProductionHostAuthority,
 )
@@ -64,6 +69,10 @@ def build_provider_memory_service_from_env(
     | None = None,
     conflict_attention_composite: bool = False,
     now_provider: Callable[[], datetime] | None = None,
+    clock: IngestionTimeClock | None = None,
+    scoped_read_authority: ScopedHostReadAuthority | None = None,
+    graph_observation_runtime: AuthenticatedGraphObservationPagingRuntime
+    | None = None,
 ) -> ProviderMemoryService:
     """Build the source-only governed-source admission provider composition without ambient model dependencies."""
 
@@ -123,6 +132,9 @@ def build_provider_memory_service_from_env(
         identity_lineage_audit_reader=audit_reader,
         identity_lineage_audit_authorizer=audit_authorizer,
         now_provider=now_provider,
+        clock=clock,
+        scoped_read_authority=scoped_read_authority,
+        graph_observation_runtime=graph_observation_runtime,
     )
 
 

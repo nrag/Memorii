@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 EXPECTED = {
-    "design": "b469653e3ef92e9cc1bf45e797a2c7dff8eac4d9ee792ad94ada3a54bfbe05da",
+    "design": "a7770e627e2dc627c772b8c54dd5998ce83c1baf43079a210056826b5ebce626",
     "matrix": "a3375bd0d8d01cf7a7c9d7d16d90945d792d932eca7161097f6ee5ba44d3f604",
     "fixture": "d3c1dce10624365647cbb00926f63b6deabe681e51a138bc3de88d7c60faef69",
     "validator": "46bbda1afb6ccbec5a49ea668752c19a7b1354b94515a33365191cee01745edb",

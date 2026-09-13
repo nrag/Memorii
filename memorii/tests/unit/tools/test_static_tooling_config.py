@@ -203,6 +203,7 @@ def test_pr_unit_gate_is_complete_duration_balanced_and_timeout_bounded() -> Non
     jobs = config["jobs"]
     shards = jobs["unit-test-shards"]
     compatibility = jobs["provider-compatibility"]
+    scoped_context = jobs["scoped-context-integration"]
     umbrella = jobs["unit-tests"]
     timing = jobs["unit-timing-inventory"]
 
@@ -230,6 +231,8 @@ def test_pr_unit_gate_is_complete_duration_balanced_and_timeout_bounded() -> Non
         "static-analysis",
         "package-smoke",
         "provider-compatibility",
+        "scoped-context-integration",
+        "observation-ledger-activation",
         "unit-test-shards",
         "unit-timing-inventory",
         "semantic-terminal-persistence",
@@ -241,6 +244,8 @@ def test_pr_unit_gate_is_complete_duration_balanced_and_timeout_bounded() -> Non
         "STATIC_RESULT": "static-analysis",
         "PACKAGE_RESULT": "package-smoke",
         "COMPATIBILITY_RESULT": "provider-compatibility",
+        "SCOPED_CONTEXT_RESULT": "scoped-context-integration",
+        "OBSERVATION_ACTIVATION_RESULT": "observation-ledger-activation",
         "SHARD_RESULT": "unit-test-shards",
         "TIMING_RESULT": "unit-timing-inventory",
         "TERMINAL_RESULT": "semantic-terminal-persistence",
@@ -317,10 +322,16 @@ def test_pr_unit_gate_is_complete_duration_balanced_and_timeout_bounded() -> Non
         "benchmark-contract-tests",
         "benchmark-artifacts",
         "benchmark-contracts",
+        "scoped-context-integration",
     ]
     assert all(int(jobs[name]["timeout-minutes"]) <= 15 for name in bounded_jobs)
     assert jobs["benchmark-contracts"]["name"] == "Benchmark Contracts"
     assert jobs["benchmark-contracts"]["needs"] == ["benchmark-contract-tests", "benchmark-artifacts"]
+    assert scoped_context["name"] == "Scoped Context Integration"
+    assert scoped_context["timeout-minutes"] == "10"
+    scoped_run = next(step for step in scoped_context["steps"] if step["name"] == "Run scoped-context composition roots")
+    assert "tests/integration/test_scoped_context_production_binding.py" in scoped_run["run"]
+    assert "-W error" in scoped_run["run"]
 
 
 def test_terminal_persistence_job_is_exact_node_balanced_and_disjoint() -> None:
@@ -415,6 +426,12 @@ def test_unit_pytest_owners_partition_the_live_unit_corpus_exactly_once() -> Non
         # full-path delivery and cannot fit the unit shard budget.
         "canonical-evidence-production-limits": (
             "tests/unit/core/semantic_ingestion/test_canonical_evidence_production_limits.py",
+        ),
+        # Owned by the observation-ledger activation job: graph-observation
+        # materialization exercises durable activation-backed paging and
+        # snapshot authority whose runtime exceeds the unit shard budget.
+        "observation-ledger-activation": (
+            "tests/unit/core/memory_evolution/test_graph_observation_materialization.py",
         ),
     }
     owners = {"broad": broad}
@@ -568,7 +585,7 @@ def test_projection_history_job_is_exact_and_disjoint_from_broad_unit_shards() -
     count_command = next(
         step["run"] for step in steps if step["name"] == "Verify exact projection-history collection count"
     )
-    assert '"87 tests collected in "*' in count_command
+    assert '"88 tests collected in "*' in count_command
     assert all(count_command.count(path) == 1 for path in expected_files)
 
     shard_config = json.loads((PROJECT_ROOT / "tests" / "ci" / "unit-shards.json").read_text())

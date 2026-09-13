@@ -1,0 +1,18 @@
+{
+  "base": "d17466d529500f7a0a5a789e97b4b175602dda90",
+  "scope": "design-only distinct ingestion-time cursor; no full retrieval/runtime or parent closure",
+  "files": {
+    "docs/work/semantic_ingestion/ingestion-time-continuation/design.plan.md": "4466763d7d01d5efbbffb1f8a547f4ef578824e58ebd61effedc7b8017881212",
+    "docs/work/semantic_ingestion/ingestion-time-continuation/proposal.md": "10936d0229921c9a12ec5d6df82ea9df37962dcc52f6f29573b065ec98156b23",
+    "docs/work/semantic_ingestion/ingestion-time-continuation/cursor_feasibility.py": "6700b7c618b7e1e192705e7e871dcf152268581a7449ee3022b64e98f3ba3ab6",
+    "docs/work/semantic_ingestion/ingestion-time-continuation/test_cursor_feasibility.py": "2ca5fdd023010423f65bd0815ffa9acd343461119b6c1360500740993f8fd4b5",
+    "docs/work/semantic_ingestion/ingestion-time-continuation/feasibility.log": "282ef2c5a859f8214d4dc1fd177fae648896c15613d58fbf4f559e7891ae16a3",
+    "docs/design/semantic_ingestion_observation.md": "a032bbcb5a105f5a32a1bfad6d8345da7003fd718e6011d88743078c9a184bd0",
+    "memorii/memorii/core/memory_evolution/graph_observation_snapshot_contracts.py": "5c57bdd70f789ccaf20d775200e9a10032295b778dbafd06b6c644bc886af2fe",
+    "memorii/memorii/core/memory_evolution/graph_observation_public_contracts.py": "46552653e26339b5020da1eeda9fa335f93ac84023befd9ab66a8d4e58d88b4a",
+    "memorii/memorii/core/memory_evolution/graph_ingestion_time_contracts.py": "845a9fd1f7bf402c67200b90aae3d4c1cf17ded5c3915c8a6f4d57dd35a72b79",
+    "memorii/memorii/core/memory_evolution/observation_activation_runtime.py": "016548d7bf3b431dbf2f325353ac8ddbe2f393838ffa5955445c363f8de33d8c",
+    "memorii/memorii/core/memory_evolution/graph_observation_paging.py": "26e2c75c64066333cd980981681a0cee5226479bd3d2546332f6991886f50243",
+    "docs/design/semantic_ingestion_architecture.md": "69140e58d650fbe9f59d69de2da06d846b6c4a9040256d82d29fced76e918e79"
+  }
+}

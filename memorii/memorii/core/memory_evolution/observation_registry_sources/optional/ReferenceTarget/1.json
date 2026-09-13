@@ -1,0 +1,1 @@
+{"fields":[{"field_name":"kind","policy":"required"},{"field_name":"target_id","policy":"required"}],"role":"optional","schema_id":"ReferenceTarget","schema_version":"1"}

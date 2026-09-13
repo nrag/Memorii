@@ -1,0 +1,13 @@
+........................                                                 [100%]
+============================= slowest 10 durations =============================
+90.77s call     tests/integration/test_observation_ledger_activation.py::test_public_drain_preserves_live_operation_and_rejects_new_old_epoch_work
+23.44s call     tests/integration/test_observation_ledger_activation.py::test_public_concurrent_activation_recovers_winning_jsonl_cutover[_begin_observation_ledger_drain]
+17.97s call     tests/integration/test_observation_ledger_activation.py::test_public_activation_recovers_jsonl_failure_before_or_after_commit[True]
+17.72s call     tests/integration/test_observation_ledger_activation.py::test_public_activation_preserves_captured_jsonl_history_bytes
+17.12s call     tests/integration/test_observation_ledger_activation.py::test_public_activation_recovers_jsonl_failure_before_or_after_commit[False]
+16.80s call     tests/integration/test_observation_ledger_activation.py::test_public_concurrent_activation_recovers_winning_jsonl_cutover[_activate_observation_ledger]
+8.92s call     tests/integration/test_observation_ledger_activation.py::test_provider_activation_is_explicit_and_revalidates_configured_authority
+8.70s call     tests/integration/test_observation_ledger_activation.py::test_public_activation_retries_competing_jsonl_drain_fence
+8.40s call     tests/integration/test_observation_ledger_activation.py::test_activation_validates_retained_native_terminal_closure[False]
+0.62s call     tests/integration/test_observation_ledger_activation.py::test_activation_validates_retained_native_terminal_closure[True]
+24 passed in 218.82s (0:03:38)

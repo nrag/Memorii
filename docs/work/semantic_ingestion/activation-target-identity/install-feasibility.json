@@ -1,0 +1,10 @@
+{
+  "installed_rows": 1774,
+  "unhashed_rows": [
+    "memorii-0.1.0.dist-info/RECORD"
+  ],
+  "compiled_files": 0,
+  "record_sha256": "a5fca8eb2106e8afd1895190b356010d5f55620dbfb60190a63ac6bbcbe83f36",
+  "installation_policy": "pip --no-deps --no-compile --no-index --target",
+  "historical_wheel_only": true
+}

@@ -1,0 +1,97 @@
+"""Protected host composition for the registered structural observation route."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import datetime
+from secrets import token_urlsafe
+
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+from memorii.core.memory_evolution.atomic_store import SemanticIngestionAtomicStore
+from memorii.core.memory_evolution.graph_observation_paging import (
+    AuthenticatedGraphObservationPagingRuntime,
+    GrantBackedGraphObservationAuthorizer,
+    GraphObservationContextResolver,
+    ObservationRetentionBudget,
+)
+from memorii.core.memory_evolution.observation_activation_configuration import VerifiedObservationActivationTarget
+from memorii.core.memory_evolution.typed_value_artifact_integrity import TrustedTypedValueArtifactVerificationKey
+from memorii.core.memory_evolution.typed_value_artifact_reader import ProtectedTypedValueArtifactReaderLimits
+from memorii.core.memory_evolution.typed_value_registry_history import ProtectedTypedValueRegistryHistory
+from memorii.core.memory_plane.service import MemoryPlaneService
+
+
+@dataclass(frozen=True)
+class ProtectedGraphObservationConfiguration:
+    """Host-held authorities; never accepted as public request arguments.
+
+    The host resolves identity and current access policy. The built-in runtime
+    owns the store, selected publication, concrete cohort provider and retention.
+    """
+
+    context_resolver: GraphObservationContextResolver
+    authorizer: GrantBackedGraphObservationAuthorizer
+    cursor_signing_key: Ed25519PrivateKey
+    cursor_verification_key: TrustedTypedValueArtifactVerificationKey
+    reader_limits: ProtectedTypedValueArtifactReaderLimits
+    retention_budget: ObservationRetentionBudget
+
+    def __post_init__(self) -> None:
+        public_key = self.cursor_signing_key.public_key().public_bytes(
+            serialization.Encoding.Raw, serialization.PublicFormat.Raw
+        )
+        if public_key != self.cursor_verification_key.public_key:
+            raise ValueError("observation cursor signing and verification keys differ")
+
+
+@dataclass(frozen=True)
+class _HostObservationClock:
+    now_provider: Callable[[], datetime]
+
+    def now(self) -> datetime:
+        return self.now_provider()
+
+
+def build_host_graph_observation_runtime(
+    *,
+    configuration: ProtectedGraphObservationConfiguration,
+    memory_plane: MemoryPlaneService,
+    atomic_store: SemanticIngestionAtomicStore,
+    registry_history: ProtectedTypedValueRegistryHistory,
+    activation_target: VerifiedObservationActivationTarget,
+    now_provider: Callable[[], datetime],
+) -> AuthenticatedGraphObservationPagingRuntime:
+    """Compose the concrete reader against the writer's exact authorities."""
+    from memorii.core.memory_evolution.graph_observation_materialization import (
+        AtomicStoreGraphObservationCohortProvider,
+    )
+
+    if (
+        atomic_store._memory_plane is not memory_plane
+        or atomic_store._typed_value_registry_history is not registry_history
+        or atomic_store._observation_activation_target is not activation_target
+    ):
+        raise ValueError("observation runtime differs from semantic writer authority")
+    cohort_provider = AtomicStoreGraphObservationCohortProvider(
+        atomic_store=atomic_store,
+        registry_history=registry_history,
+        registry_publication=activation_target.publication,
+        reader_limits=configuration.reader_limits,
+    )
+    return AuthenticatedGraphObservationPagingRuntime(
+        memory_plane=memory_plane,
+        context_resolver=configuration.context_resolver,
+        authorizer=configuration.authorizer,
+        cohort_provider=cohort_provider,
+        protected_clock=_HostObservationClock(now_provider),
+        registry_history=registry_history,
+        registry_publication=activation_target.publication,
+        cursor_signing_key=configuration.cursor_signing_key,
+        cursor_verification_key=configuration.cursor_verification_key,
+        reader_limits=configuration.reader_limits,
+        correlation_token_factory=lambda: token_urlsafe(24),
+        retention_budget=configuration.retention_budget,
+    )

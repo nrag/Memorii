@@ -8,12 +8,26 @@ version = "0.1.0"
 description = "Memorii framework-neutral memory plane"
 requires-python = ">=3.11"
 dependencies = [
+  "cryptography>=50.0.1,<51",
   "pydantic>=2.7,<3",
   "PyICU>=2.13",
   "scikit-learn>=1.5,<2",
   "PyYAML>=6.0,<7",
   "jsonschema>=4,<5",
 ]
+
+[project.scripts]
+memorii-acceptance-evaluate = "acceptance.cli:main"
+memorii-acceptance-authority-publish = "acceptance.authority_cli:main"
+
+[project.entry-points."memorii.acceptance_evaluator_runtime"]
+installed = "acceptance.host_runtime:InstalledAcceptanceRuntime"
+
+[project.entry-points."memorii.acceptance_deployment_publisher"]
+installed = "memorii.core.memory_evolution.deployment_authorization:InstalledDeploymentAuthorizationPublisher"
+
+[project.entry-points."memorii.acceptance_production_revocation_reader"]
+installed = "memorii.core.memory_evolution.deployment_authorization:InstalledProductionRevocationReader"
 
 [project.optional-dependencies]
 local = [
@@ -51,15 +65,17 @@ prod = [
 include-package-data = true
 
 [tool.setuptools.package-data]
-memorii = ["core/benchmark/fixture_sets/*.json", "core/semantic_ingestion/resources/*.json", "prompts/**/*.yaml"]
+memorii = ["core/benchmark/fixture_sets/*.json", "core/semantic_ingestion/resources/*.json", "core/memory_evolution/observation_registry_sources/*.json", "core/memory_evolution/observation_registry_sources/*/*/*.json", "prompts/**/*.yaml"]
+acceptance = ["resources/*.json", "generated/*.json"]
 
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["memorii*"]
+where = [".", ".."]
+include = ["memorii*", "acceptance*"]
+namespaces = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["."]
+pythonpath = [".", ".."]
 markers = [
   "integration: tests that cross component boundaries and may require an explicitly enabled external provider",
 ]
@@ -82,6 +98,10 @@ ignore = [
 [tool.pyright]
 pythonVersion = "3.11"
 typeCheckingMode = "basic"
+executionEnvironments = [
+  { root = "tests/unit/acceptance", extraPaths = [".."] },
+  { root = "." },
+]
 include = [
   "memorii/core/belief",
   "memorii/core/benchmark/artifact_rows",
@@ -90,6 +110,7 @@ include = [
   "memorii/core/memory_evolution",
   "memorii/core/memory_plane",
   "memorii/core/provider",
+  "memorii/core/scoped_context",
   "memorii/core/promotion",
   "memorii/core/benchmark/memory_evolution_sim",
   "memorii/core/benchmark/memory_evolution_runtime",

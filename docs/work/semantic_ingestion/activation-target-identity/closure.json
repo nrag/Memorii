@@ -1,0 +1,42 @@
+{
+  "status": "DESIGN_COMPLETE",
+  "candidate": "b778c74490515a5c336bcec8784857678245c0a6760406b4fc9e95196ba72e62",
+  "requirements": [
+    "T01",
+    "T02",
+    "T03",
+    "T04",
+    "T05",
+    "T06",
+    "T07",
+    "T08"
+  ],
+  "remaining_validated_p1_p2": [],
+  "remaining_changes_required": [],
+  "reviewers": {
+    "spec_auditor": "approved final lifecycle delta b778c744",
+    "correctness_reviewer": "approved final lifecycle delta b778c744",
+    "test_reviewer": "approved415648candidate; subsequent delta only clarifies already required read-only runtime phase and adds installer sentinel"
+  },
+  "evidence": {
+    "recipe_preimages": 5,
+    "field_mutations": 56,
+    "feasibility": [
+      "historical wheel inventory",
+      "no-compile installation",
+      "stale cache reproduction and fresh cache control"
+    ]
+  },
+  "promotion": {
+    "path": "docs/design/semantic_ingestion_activation_target.md",
+    "sha256": "ad69f8ed9f115a4493cce99614b77bac37e6eb10c246c0601c360750ef7f0912",
+    "transformation": "Title/status only changed from reviewed proposal; normative body preserved. Main observation design links additive contract."
+  },
+  "limitations": [
+    "Bounded design approval only",
+    "Production activation remains unavailable pending implementation",
+    "Production signing deferred",
+    "CI/package/full parent closure not established"
+  ],
+  "next_operation": "Resume observation-ledger implementation with target verification prerequisite and activation CAS."
+}

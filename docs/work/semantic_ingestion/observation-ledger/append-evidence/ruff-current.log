@@ -1,0 +1,192 @@
+I001 [*] Import block is un-sorted or un-formatted
+   --> memorii/core/memory_evolution/atomic_store.py:3:1
+    |
+  1 |   """Atomic, evidence-only writer-safe preplanning admission-to-preplanning persistence."""
+  2 |
+  3 | / from __future__ import annotations
+  4 | |
+  5 | | import base64
+  6 | | import json
+  7 | | from collections.abc import Callable
+  8 | | from dataclasses import dataclass
+  9 | | from datetime import UTC, datetime, timedelta
+ 10 | | from hashlib import sha256
+ 11 | | from secrets import token_hex
+ 12 | | from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol, TypedDict, Unpack, cast
+ 13 | |
+ 14 | | from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
+ 15 | |
+ 16 | | from memorii.core.memory_evolution.admission import (
+ 17 | |     PreparedSourceAdmission,
+ 18 | |     SourceAdmissionAccepted,
+ 19 | |     source_admission_source_bytes,
+ 20 | |     source_admission_source_digest,
+ 21 | | )
+ 22 | | from memorii.core.memory_evolution.bootstrap_profile import (
+ 23 | |     BootstrapAdmissionPin,
+ 24 | |     BootstrapAuthenticatedLanguageEvidence,
+ 25 | |     BootstrapSegmentGrammarProof,
+ 26 | |     CurrentBootstrapReleaseAssertion,
+ 27 | |     CurrentBootstrapReleaseVerifier,
+ 28 | |     HostVerifiedBootstrapReleaseEvidence,
+ 29 | | )
+ 30 | | from memorii.core.memory_evolution.conflict_attention import (
+ 31 | |     ActiveSemanticConflict,
+ 32 | |     ClarificationFailureClass,
+ 33 | |     ClarificationSubmissionOutcome,
+ 34 | |     ConflictAttention,
+ 35 | |     ConflictAudience,
+ 36 | |     ConflictClarificationAttempt,
+ 37 | |     ConflictClarificationClaim,
+ 38 | |     ConflictClarificationOperationReceipt,
+ 39 | |     ConflictClarificationProcessingReceipt,
+ 40 | |     ConflictClarificationSubmissionResult,
+ 41 | |     ConflictClarificationWork,
+ 42 | |     ConflictKind,
+ 43 | |     ConflictResolutionRequest,
+ 44 | |     ConflictStatus,
+ 45 | |     SemanticConflictAuthorityCommitInput,
+ 46 | |     SemanticConflictClarificationCasInput,
+ 47 | |     SemanticConflictClarificationSubmissionGeneration,
+ 48 | |     SemanticConflictClarificationTransition,
+ 49 | |     SemanticConflictClarificationTransitionReason,
+ 50 | |     SemanticConflictClarificationWorkGeneration,
+ 51 | |     SemanticConflictReplayBinding,
+ 52 | |     VerifiedUserConfirmation,
+ 53 | |     conflict_clarification_processing_operation_id,
+ 54 | |     decode_persisted_conflict_generation,
+ 55 | |     verified_user_confirmation_digest,
+ 56 | | )
+ 57 | | from memorii.core.memory_evolution.ingestion_contracts import (
+ 58 | |     AuthenticatedIngressContext,
+ 59 | |     DeliveryIdentity,
+ 60 | |     OperationFenceBinding,
+ 61 | |     SemanticWriterCommitBinding,
+ 62 | |     decode_typed_value,
+ 63 | |     encode_typed_value,
+ 64 | | )
+ 65 | | from memorii.core.memory_evolution.observation_activation_configuration import (
+ 66 | |     ObservationActivationTargetConfigurationError,
+ 67 | |     VerifiedObservationActivationTarget,
+ 68 | |     resolve_verified_observation_activation_target,
+ 69 | | )
+ 70 | | from memorii.core.memory_evolution.source_admission import DeliveryAuthorizationRequest
+ 71 | | from memorii.core.memory_evolution.source_governance import require_complete_scope_authorization
+ 72 | | from memorii.core.memory_evolution.typed_value_registry_configuration import (
+ 73 | |     TypedValueRegistryConfigurationError,
+ 74 | | )
+ 75 | | from memorii.core.memory_evolution.typed_value_registry_history import (
+ 76 | |     ProtectedTypedValueRegistryHistory,
+ 77 | | )
+ 78 | | from memorii.core.memory_evolution.typed_value_artifact_reader import (
+ 79 | |     ProtectedTypedValueArtifactReaderLimits,
+ 80 | | )
+ 81 | | from memorii.core.memory_evolution.typed_value_body_validation import (
+ 82 | |     ProtectedTypedValueBodyLimits,
+ 83 | | )
+ 84 | | from memorii.core.memory_evolution.writer_admission import (
+ 85 | |     SemanticWriterAdmissionError,
+ 86 | |     SemanticWriterAdmissionStore,
+ 87 | |     SemanticWriterWriteAuthorization,
+ 88 | |     bounded_preplanning_ownership_manifest,
+ 89 | |     writer_admission_memory_id,
+ 90 | | )
+ 91 | | from memorii.core.memory_plane.models import CanonicalMemoryRecord, MemoryRecordFence
+ 92 | | from memorii.core.memory_plane.service import MemoryPlaneService
+ 93 | | from memorii.core.memory_plane.store import (
+ 94 | |     CheckpointSignatureAuthority,
+ 95 | |     MemoryPlanePrecondition,
+ 96 | |     MemoryPlaneRevisionConflictError,
+ 97 | |     RecordAbsentPrecondition,
+ 98 | |     RecordDigestPrecondition,
+ 99 | |     RecordFencePrecondition,
+100 | |     record_digest,
+101 | | )
+102 | | from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility, TemporalValidityStatus
+    | |___________________________________________________________________________________________________________^
+103 |
+104 |   if TYPE_CHECKING:
+    |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+    --> memorii/core/memory_evolution/atomic_store.py:1261:9
+     |
+1259 |           independently re-emits the same value before using it.
+1260 |           """
+1261 | /         from memorii.core.memory_evolution.observation_activation_runtime import (
+1262 | |             emit_registered_observation_artifact,
+1263 | |         )
+1264 | |         from memorii.core.memory_evolution.observation_ledger_contracts import (
+1265 | |             SourceObservationIntent,
+1266 | |         )
+1267 | |         from memorii.core.memory_evolution.graph_effect_contracts import (
+1268 | |             CanonicalSourceTerminalOutcomeRecord,
+1269 | |         )
+     | |_________^
+1270 |
+1271 |           if type(source_outcome) is not CanonicalSourceTerminalOutcomeRecord:
+     |
+help: Organize imports
+
+SIM102 Use a single `if` statement instead of nested `if` statements
+     --> memorii/core/memory_evolution/atomic_store.py:14611:5
+      |
+14609 |               request.source_finalization_observation_delta,
+14610 |           )
+14611 | /     if request.publication_intent.terminal_member_schema_version == 3:
+14612 | |         if assigned_source_observation is not None:
+      | |___________________________________________________^
+14613 |               payloads["source_observation_intent"] = (assigned_source_observation,)
+14614 |       return payloads
+      |
+help: Combine `if` statements using `and`
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> memorii/core/semantic_ingestion/bootstrap_graph_terminal_preparation.py:50:5
+   |
+49 |   if TYPE_CHECKING:
+50 | /     from memorii.core.memory_evolution.observation_ledger_contracts import SourceObservationIntent
+51 | |     from memorii.core.memory_evolution.ingestion_contracts import SemanticWriterCommitBinding
+   | |_____________________________________________________________________________________________^
+   |
+help: Organize imports
+
+UP037 [*] Remove quotes from type annotation
+   --> memorii/core/semantic_ingestion/bootstrap_graph_terminal_preparation.py:278:52
+    |
+276 |         *,
+277 |         source_observation_intent_factory: Callable[
+278 |             [CanonicalSourceTerminalOutcomeRecord, "SemanticWriterCommitBinding"],
+    |                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+279 |             "SourceObservationIntent | None",
+280 |         ]
+    |
+help: Remove quotes
+
+UP037 [*] Remove quotes from type annotation
+   --> memorii/core/semantic_ingestion/bootstrap_graph_terminal_preparation.py:279:13
+    |
+277 |         source_observation_intent_factory: Callable[
+278 |             [CanonicalSourceTerminalOutcomeRecord, "SemanticWriterCommitBinding"],
+279 |             "SourceObservationIntent | None",
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+280 |         ]
+281 |         | None = None,
+    |
+help: Remove quotes
+
+UP037 [*] Remove quotes from type annotation
+   --> memorii/core/semantic_ingestion/bootstrap_graph_terminal_preparation.py:622:36
+    |
+620 |         canonical_result: BootstrapGraphCanonicalSourceResultV3,
+621 |         source_finalization_observation_delta: SourceFinalizationObservationDelta | None,
+622 |         source_observation_intent: "SourceObservationIntent | None",
+    |                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+623 |     ) -> tuple[BootstrapGraphTerminalMemberIntentV3, ...]:
+624 |         rows = [
+    |
+help: Remove quotes
+
+Found 7 errors.
+[*] 6 fixable with the `--fix` option (1 hidden fix can be enabled with the `--unsafe-fixes` option).

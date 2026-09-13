@@ -1,0 +1,39 @@
+{
+  "candidate": "graph-observation-field-identity-feasibility",
+  "date": "2026-09-09",
+  "base_revision": "a7c6a9edcf6bbee71735dfe287ee49a078cafc35",
+  "branch": "semantic_ingestion_m5",
+  "spec": "proposal.md (owner approved 2026-09-08)",
+  "files": {
+    "feasibility.py": "65f879192c58c156bf46010d04ff225602c5a8298ddade74e9b4669de73172da",
+    "test_feasibility.py": "2d64042a8c273fdc9361462f4d63b94897c0c611c47b3877cab5a0b6d87b6a8d",
+    "evidence-field-derivation.log": "1605290dca54cd383aa85f8a92598fc73cfb3e4ac49fc7c0a1333a4cf0fae0f4"
+  },
+  "commands": [
+    {
+      "cwd": "memorii/",
+      "argv": [".venv/bin/python", "-m", "pytest", "../docs/work/semantic_ingestion/graph-observation-materialization/test_feasibility.py", "-p", "no:cacheprovider", "-q"],
+      "interpreter": "CPython 3.14.7 (clang-2100.1.1.101)",
+      "result": "19 passed in 23.84s"
+    },
+    {
+      "cwd": "memorii/",
+      "argv": [".venv/bin/python", "-m", "ruff", "check", "feasibility.py", "test_feasibility.py"],
+      "result": "All checks passed"
+    }
+  ],
+  "coverage": [
+    "entity canonical_type unique/absent/competing TypeEvidence derivation on real retained EntityRevision",
+    "entity valid_interval=None and lifecycle copy",
+    "relation exact supporting-claim pairing; unrelated same-predicate claim excluded; interval agreement/disagreement",
+    "system interval from commit-event ownership with (timestamp, sequence) ordering; same-time successor retains lineage with unbounded end; ambiguity denies",
+    "complete retained SourceSpanReference unique copy; missing/ambiguous denies; LineageEvidenceReference cannot manufacture a span",
+    "ProjectionObservationIdentity.v1 self-digest round-trip; each preimage field flips the identity"
+  ],
+  "limitations": [
+    "nonproduction feasibility only; no runtime materializer, provider caller, registry promotion or public endpoint is claimed",
+    "identity binding uses feasibility placeholder profile coordinates; promotion must use authored publication coordinates",
+    "local CPython 3.14.7 run is not CI parity (CI uses 3.11/3.12); 3.12 interpreter has no pytest in this environment",
+    "real capture supplies the fact arm only; correction/retraction/action/identity arm derivations follow the provenance-design typed-envelope pattern and remain runtime-readiness obligations"
+  ]
+}

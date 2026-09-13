@@ -1,0 +1,25 @@
+{
+  "scope": "acceptance authority design prerequisite; no canonical promotion or runtime approval",
+  "governing_design": {
+    "path": "docs/design/semantic_ingestion_architecture.md",
+    "sha256": "b469653e3ef92e9cc1bf45e797a2c7dff8eac4d9ee792ad94ada3a54bfbe05da"
+  },
+  "files": [
+    {
+      "path": "docs/work/semantic_ingestion/acceptance-authority/design.plan.md",
+      "sha256": "e20efeba9d8cd0c65105646584dfc7b8b2cb19ad12a14fb05f0c689c5c79c181"
+    },
+    {
+      "path": "docs/work/semantic_ingestion/acceptance-authority/proposal.md",
+      "sha256": "f2f1fa4372efa33e6970bdc957f0fecf34329f3a0824535a26719219e93cb385"
+    },
+    {
+      "path": "docs/work/semantic_ingestion/acceptance-authority/authority_feasibility.py",
+      "sha256": "c65c1be5cafd6fb88ebb544e9608980620651ecfdc448fd0b30695b3a52dd47d"
+    },
+    {
+      "path": "docs/work/semantic_ingestion/acceptance-authority/test_authority_feasibility.py",
+      "sha256": "6a8b15e400c97ce5e05d66a9c6aebcea7061d9b7af8014ac26e01b81c473ffe7"
+    }
+  ]
+}
