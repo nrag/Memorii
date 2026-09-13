@@ -12,10 +12,6 @@ from memorii.core.memory_evolution.bootstrap_profile import (
     HostBootstrapCapability,
     HostBootstrapMaterialVerifier,
 )
-from memorii.core.memory_evolution.capability_monitoring import (
-    CapabilityEvidenceWindowProvider,
-    CapabilityMonitoringPolicy,
-)
 from memorii.core.memory_evolution.conflict_attention import (
     ConflictAttentionObservabilitySink,
 )
@@ -43,6 +39,7 @@ from memorii.core.scoped_context.authority import ScopedHostReadAuthority
 from memorii.core.semantic_ingestion.production_authority import (
     VerifiedCapabilityMonitoringAuthority,
     VerifiedProductionHostAuthority,
+    build_installed_capability_monitoring_authorities,
 )
 from memorii.core.semantic_ingestion.source_normalization_host import SourceNormalizationHostBundleBuilder
 from memorii.core.work_state.service import WorkStateService
@@ -78,12 +75,10 @@ def build_provider_memory_service_from_env(
     scoped_read_authority: ScopedHostReadAuthority | None = None,
     graph_observation_runtime: AuthenticatedGraphObservationPagingRuntime
     | None = None,
-    capability_monitoring_policies: tuple[CapabilityMonitoringPolicy, ...] = (),
-    capability_monitoring_evidence_provider: CapabilityEvidenceWindowProvider
-    | None = None,
     verified_capability_monitoring_authorities: tuple[
         VerifiedCapabilityMonitoringAuthority, ...
     ] = (),
+    installed_capability_monitoring_configuration: object | None = None,
 ) -> ProviderMemoryService:
     """Build the source-only governed-source admission provider composition without ambient model dependencies."""
 
@@ -107,6 +102,18 @@ def build_provider_memory_service_from_env(
         value is not None for value in audit_values
     ):
         raise ValueError("identity lineage audit composition is incomplete")
+    if (
+        installed_capability_monitoring_configuration is not None
+        and verified_capability_monitoring_authorities
+    ):
+        raise ValueError("installed monitoring rejects injected authorities")
+    if installed_capability_monitoring_configuration is not None:
+        verified_capability_monitoring_authorities = (
+            build_installed_capability_monitoring_authorities(
+                configuration=installed_capability_monitoring_configuration,
+                server_time=(now_provider or (lambda: datetime.now(UTC)))(),
+            )
+        )
     audit_reader = None
     audit_authorizer = None
     if identity_lineage_atomic_store is not None:
@@ -146,8 +153,6 @@ def build_provider_memory_service_from_env(
         clock=clock,
         scoped_read_authority=scoped_read_authority,
         graph_observation_runtime=graph_observation_runtime,
-        capability_monitoring_policies=capability_monitoring_policies,
-        capability_monitoring_evidence_provider=capability_monitoring_evidence_provider,
         verified_capability_monitoring_authorities=verified_capability_monitoring_authorities,
     )
 

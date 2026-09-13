@@ -20,6 +20,13 @@ from pathlib import Path
 from threading import RLock
 from typing import Literal, Protocol
 
+try:  # The installed authority runtime is POSIX file-store based.
+    import fcntl
+except ImportError:  # pragma: no cover - exercised only on unsupported hosts
+    fcntl = None  # type: ignore[assignment]
+
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
@@ -167,6 +174,39 @@ class DeploymentAuthorizationSigner(Protocol):
 
 class DeploymentAuthorizationSignatureVerifier(Protocol):
     def verify(self, *, signing_key_reference: str, preimage: bytes, signature: str) -> bool: ...
+
+
+class Ed25519DeploymentAuthorizationKeyring:
+    """Fixed public-key map for installed authorization verification.
+
+    This boundary deliberately owns verification keys only.  Deployment
+    signing remains an offline/release concern and cannot be selected by an
+    ingestion candidate or evidence payload.
+    """
+
+    def __init__(self, public_keys: dict[str, bytes]) -> None:
+        if not public_keys or any(
+            not isinstance(reference, str)
+            or not reference
+            or not isinstance(key, bytes)
+            or len(key) != 32
+            for reference, key in public_keys.items()
+        ):
+            raise DeploymentAuthorizationError("deployment_authorization_keyring")
+        self._keys = {
+            reference: Ed25519PublicKey.from_public_bytes(key)
+            for reference, key in public_keys.items()
+        }
+
+    def verify(self, *, signing_key_reference: str, preimage: bytes, signature: str) -> bool:
+        key = self._keys.get(signing_key_reference)
+        if key is None or not isinstance(preimage, bytes):
+            return False
+        try:
+            key.verify(bytes.fromhex(signature), preimage)
+        except (InvalidSignature, TypeError, ValueError):
+            return False
+        return True
 
 
 class DeploymentAuthorizationCurrentTrustCheck(Protocol):
@@ -505,6 +545,30 @@ class _FileProductionRevocationReader:
     def __init__(self, root: Path) -> None:
         _secure_path(root, "production_revocation_reader_path")
         self._root = root
+        # This coordinate is shared with the only installed mapping publisher.
+        # A shared lock is held through the group CAS; publication takes the
+        # exclusive lock before its atomic replacement.
+        self._lock_path = root / ".production-revocation.lock"
+
+    @contextmanager
+    def _locked(self, mode: int) -> Iterator[None]:
+        if fcntl is None:
+            raise DeploymentAuthorizationError("production_revocation_lock_unsupported")
+        try:
+            self._root.mkdir(parents=True, exist_ok=True)
+            descriptor = os.open(self._lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+        except OSError as exc:
+            raise DeploymentAuthorizationError("production_revocation_lock") from exc
+        try:
+            fcntl.flock(descriptor, mode)
+            yield
+        except OSError as exc:
+            raise DeploymentAuthorizationError("production_revocation_lock") from exc
+        finally:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+            finally:
+                os.close(descriptor)
 
     def _object(self, digest: str) -> bytes:
         if not _DIGEST.fullmatch(digest):
@@ -552,6 +616,92 @@ class _FileProductionRevocationReader:
             receipt=self._object(value["receipt_digest"]),
             checkpoint=self._object(value["checkpoint_digest"]),
         )
+
+    def is_current(
+        self, *, artifact: DeploymentAuthorizationArtifact, server_time: datetime
+    ) -> bool:
+        del server_time
+        release = artifact.verified_capability_baseline_approval_release_digest
+        if release is None:
+            return False
+        with self._locked(fcntl.LOCK_SH if fcntl is not None else 0):
+            return self._is_current_locked(release)
+
+    def _is_current_locked(self, release: str) -> bool:
+        mapping_path = self._root / "current" / f"{release}.json"
+        _secure_path(mapping_path, "production_revocation_reader_path")
+        # Absence is the normal state for an active release. A present mapping
+        # is a revocation coordinate; malformed evidence is never active.
+        if not mapping_path.exists():
+            return True
+        try:
+            self.read_for_prior_release(release)
+        except DeploymentAuthorizationError:
+            return False
+        return False
+
+    @contextmanager
+    def current_use(
+        self, *, artifact: DeploymentAuthorizationArtifact, server_time: datetime
+    ) -> Iterator[bool]:
+        release = artifact.verified_capability_baseline_approval_release_digest
+        if release is None:
+            yield False
+            return
+        with self._locked(fcntl.LOCK_SH if fcntl is not None else 0):
+            yield self._is_current_locked(release)
+
+    def publish_revocation_mapping(
+        self, *, prior_approval_release_digest: str, receipt_digest: str,
+        checkpoint_digest: str,
+    ) -> None:
+        """Publish one immutable revocation coordinate under the shared lock."""
+        if not all(_DIGEST.fullmatch(value) for value in (
+            prior_approval_release_digest, receipt_digest, checkpoint_digest,
+        )):
+            raise DeploymentAuthorizationError("production_revocation_coordinate")
+        payload = _canonical_bytes({
+            "prior_approval_release_digest": prior_approval_release_digest,
+            "receipt_digest": receipt_digest,
+            "checkpoint_digest": checkpoint_digest,
+        })
+        directory = self._root / "current"
+        path = directory / f"{prior_approval_release_digest}.json"
+        _secure_path(path, "production_revocation_reader_path")
+        with self._locked(fcntl.LOCK_EX if fcntl is not None else 0):
+            try:
+                directory.mkdir(parents=True, exist_ok=True)
+                if path.exists():
+                    if path.read_bytes() != payload:
+                        raise DeploymentAuthorizationError(
+                            "production_revocation_conflict"
+                        ) from None
+                    return
+                temporary = directory / f".{prior_approval_release_digest}.tmp"
+                descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                try:
+                    os.write(descriptor, payload)
+                    os.fsync(descriptor)
+                finally:
+                    os.close(descriptor)
+                try:
+                    # Hard-link creation is publish-if-absent at the
+                    # filesystem boundary too; it never replaces a competing
+                    # coordinate if an external publisher violated the lock
+                    # protocol.
+                    os.link(temporary, path)
+                except FileExistsError:
+                    if path.read_bytes() != payload:
+                        raise DeploymentAuthorizationError(
+                            "production_revocation_conflict"
+                        ) from None
+                finally:
+                    temporary.unlink(missing_ok=True)
+                _fsync_directory(directory)
+            except DeploymentAuthorizationError:
+                raise
+            except OSError as exc:
+                raise DeploymentAuthorizationError("production_revocation_publish") from exc
 
 
 class _SerializedDeploymentPublisher:
@@ -641,6 +791,7 @@ __all__ = [
     "DeploymentAuthorizationCurrentTrustCheck",
     "DeploymentAuthorizationCurrentTrustVerifier",
     "DeploymentAuthorizationError",
+    "Ed25519DeploymentAuthorizationKeyring",
     "DeploymentAuthorizationIssuanceRequest",
     "DeploymentAuthorizationIssuer",
     "DeploymentAuthorizationRepository",

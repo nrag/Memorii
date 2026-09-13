@@ -107,6 +107,35 @@ def _wire_datetime(value: object) -> object:
         return value
 
 
+def _classify_historical_wire(
+    value: object,
+    *,
+    pre_field_keys: frozenset[str],
+    extended_v1_keys: frozenset[str],
+    v2_keys: frozenset[str],
+) -> tuple[dict[str, object], Literal["pre_field_v1", "extended_v1", "v2"]]:
+    """Derive the authenticated wire generation from its exact persisted shape.
+
+    ``wire_generation`` is an in-memory decoding aid, never a persisted
+    authority coordinate.  In particular, an attacker cannot turn a historical
+    pre-field payload into an extended shape by supplying a helper field.
+    """
+    if not isinstance(value, dict):
+        raise ValueError("capability monitoring wire payload is invalid")
+    if "wire_generation" in value:
+        raise ValueError("capability monitoring wire generation is derived")
+    keys = frozenset(value)
+    if "schema_version" in value:
+        if value["schema_version"] != 2 or keys != v2_keys:
+            raise ValueError("capability monitoring v2 wire shape is invalid")
+        return dict(value), "v2"
+    if keys == pre_field_keys:
+        return {**value, "schema_version": 1}, "pre_field_v1"
+    if keys == extended_v1_keys:
+        return {**value, "schema_version": 1}, "extended_v1"
+    raise ValueError("capability monitoring historical wire shape is invalid")
+
+
 def _canonical_decimal(value: Decimal) -> str:
     rendered = format(value, "f")
     if "." in rendered:
@@ -341,46 +370,37 @@ class CapabilityEvidenceFreshness(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _upcast_legacy(cls, value: object) -> object:
-        if not isinstance(value, dict):
-            return value
-        value = {
-            **value,
+        pre_keys = frozenset({
+            "capability_fingerprint", "monitoring_policy_digest", "evaluated_at",
+            "latest_independent_label_at", "latest_canary_success_at",
+            "labeled_cluster_count_in_window", "traffic_state",
+            "label_pipeline_state", "freshness", "freshness_reason",
+            "status_revision", "evidence_digest",
+        })
+        extended_keys = pre_keys | frozenset({
+            "traffic_state_changed_at", "label_pipeline_state_changed_at",
+        })
+        v2_keys = extended_keys | frozenset({"schema_version"})
+        decoded, generation = _classify_historical_wire(
+            value, pre_field_keys=pre_keys, extended_v1_keys=extended_keys,
+            v2_keys=v2_keys,
+        )
+        if generation == "pre_field_v1":
+            # V1 did not persist the state-transition instants. Retain the
+            # original digest and fence deadline-derived uses below.
+            decoded["traffic_state_changed_at"] = decoded["evaluated_at"]
+            decoded["label_pipeline_state_changed_at"] = decoded["evaluated_at"]
+        decoded["wire_generation"] = generation
+        return {
+            **decoded,
             **{
-                field: _wire_datetime(value.get(field))
+                field: _wire_datetime(decoded.get(field))
                 for field in (
                     "evaluated_at", "latest_independent_label_at",
                     "latest_canary_success_at", "traffic_state_changed_at",
                     "label_pipeline_state_changed_at",
                 )
-                if field in value
             },
-        }
-        if "schema_version" in value:
-            if value["schema_version"] == 1 and "wire_generation" not in value:
-                return {
-                    "wire_generation": (
-                        "extended_v1"
-                        if "traffic_state_changed_at" in value
-                        and "label_pipeline_state_changed_at" in value
-                        else "pre_field_v1"
-                    ),
-                    **value,
-                }
-            return value
-        if (
-            "traffic_state_changed_at" in value
-            and "label_pipeline_state_changed_at" in value
-        ):
-            return {"schema_version": 1, "wire_generation": "extended_v1", **value}
-        # V1 did not persist the state-transition instants.  Retain the
-        # original bytes/digest and fence deadline-derived uses below.
-        evaluated_at = value.get("evaluated_at")
-        return {
-            **value,
-            "schema_version": 1,
-            "wire_generation": "pre_field_v1",
-            "traffic_state_changed_at": evaluated_at,
-            "label_pipeline_state_changed_at": evaluated_at,
         }
 
     @model_validator(mode="after")
@@ -444,31 +464,29 @@ class CapabilityMonitoringDecision(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _upcast_legacy(cls, value: object) -> object:
-        if not isinstance(value, dict):
-            return value
-        value = {
-            **value,
-            "evaluated_at": _wire_datetime(value.get("evaluated_at")),
-            "metric_decisions": tuple(value.get("metric_decisions", ())),
-            "reason_codes": tuple(value.get("reason_codes", ())),
-        }
-        if "schema_version" in value:
-            if value["schema_version"] == 1 and "wire_generation" not in value:
-                return {
-                    "wire_generation": (
-                        "extended_v1"
-                        if "evaluation_kind" in value else "pre_field_v1"
-                    ),
-                    **value,
-                }
-            return value
-        if "evaluation_kind" in value:
-            return {"schema_version": 1, "wire_generation": "extended_v1", **value}
+        pre_keys = frozenset({
+            "capability_fingerprint", "monitoring_policy_digest",
+            "evidence_window_digest", "evaluated_at", "metric_decisions",
+            "evidence_freshness", "action", "reason_codes", "decision_digest",
+        })
+        extended_keys = pre_keys | frozenset({"evaluation_kind"})
+        v2_keys = extended_keys | frozenset({"schema_version"})
+        decoded, generation = _classify_historical_wire(
+            value, pre_field_keys=pre_keys, extended_v1_keys=extended_keys,
+            v2_keys=v2_keys,
+        )
+        if generation == "pre_field_v1":
+            decoded["evaluation_kind"] = "evidence_window"
+        decoded["wire_generation"] = generation
+        metric_decisions = decoded.get("metric_decisions")
+        reason_codes = decoded.get("reason_codes")
+        if isinstance(metric_decisions, (list, tuple)):
+            decoded["metric_decisions"] = tuple(metric_decisions)
+        if isinstance(reason_codes, (list, tuple)):
+            decoded["reason_codes"] = tuple(reason_codes)
         return {
-            **value,
-            "schema_version": 1,
-            "wire_generation": "pre_field_v1",
-            "evaluation_kind": "evidence_window",
+            **decoded,
+            "evaluated_at": _wire_datetime(decoded.get("evaluated_at")),
         }
 
     @model_validator(mode="after")
@@ -512,27 +530,21 @@ class CapabilityStatus(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _upcast_legacy(cls, value: object) -> object:
-        if not isinstance(value, dict):
-            return value
-        if "schema_version" in value:
-            if value["schema_version"] == 1 and "wire_generation" not in value:
-                return {
-                    "wire_generation": (
-                        "extended_v1"
-                        if "authorization_checkpoint_digest" in value
-                        else "pre_field_v1"
-                    ),
-                    **value,
-                }
-            return value
-        if "authorization_checkpoint_digest" in value:
-            return {"schema_version": 1, "wire_generation": "extended_v1", **value}
-        return {
-            **value,
-            "schema_version": 1,
-            "wire_generation": "pre_field_v1",
-            "authorization_checkpoint_digest": None,
-        }
+        pre_keys = frozenset({
+            "capability_fingerprint", "status", "status_revision",
+            "monitoring_policy_digest", "evidence_freshness_digest",
+            "status_digest",
+        })
+        extended_keys = pre_keys | frozenset({"authorization_checkpoint_digest"})
+        v2_keys = extended_keys | frozenset({"schema_version"})
+        decoded, generation = _classify_historical_wire(
+            value, pre_field_keys=pre_keys, extended_v1_keys=extended_keys,
+            v2_keys=v2_keys,
+        )
+        if generation == "pre_field_v1":
+            decoded["authorization_checkpoint_digest"] = None
+        decoded["wire_generation"] = generation
+        return decoded
 
     @model_validator(mode="after")
     def _valid(self) -> CapabilityStatus:
@@ -778,25 +790,50 @@ class CapabilityMonitor:
                 loaded.status != "active"
                 or loaded.capability_fingerprint != status.capability_fingerprint
                 or loaded.monitoring_policy_digest != status.monitoring_policy_digest
-                or loaded.authorization_checkpoint_digest
-                != status.authorization_checkpoint_digest
             ):
                 raise ValueError("capability status is already bound differently")
-            persisted_freshness = self._writers._memory_plane.get_record(
-                freshness_record.memory_id
-            )
-            if (
-                persisted_freshness is None
-                or record_digest(persisted_freshness) != record_digest(freshness_record)
-            ):
-                raise ValueError("capability initial freshness authority is unavailable")
-            if checkpoint_record is not None:
+            if loaded.schema_version == 2:
+                if (
+                    loaded.authorization_checkpoint_digest
+                    != status.authorization_checkpoint_digest
+                ):
+                    raise ValueError("capability status is already bound differently")
+                persisted_freshness = self._writers._memory_plane.get_record(
+                    freshness_record.memory_id
+                )
+                if (
+                    persisted_freshness is None
+                    or record_digest(persisted_freshness)
+                    != record_digest(freshness_record)
+                ):
+                    raise ValueError("capability initial freshness authority is unavailable")
+            else:
+                # Historical V1 active records predate either the durable
+                # checkpoint or the V2 freshness preimage.  They remain
+                # readable so public ingress can fence them and the scheduler
+                # can make the monotonic successor without inventing a new
+                # baseline under the old record.
+                persisted_freshness = next(
+                    (
+                        candidate
+                        for candidate in self._writers._memory_plane.list_records(
+                            source_kind="semantic_ingestion_capability_initial_freshness"
+                        )
+                        if record_digest(candidate)
+                        == loaded.evidence_freshness_digest
+                    ),
+                    None,
+                )
+                if persisted_freshness is None:
+                    raise ValueError("capability initial freshness authority is unavailable")
+            if loaded.authorization_checkpoint_digest is not None:
                 persisted_checkpoint = self._writers._memory_plane.get_record(
-                    checkpoint_record.memory_id
+                    _authorization_checkpoint_id(capability_fingerprint)
                 )
                 if (
                     persisted_checkpoint is None
-                    or record_digest(persisted_checkpoint) != record_digest(checkpoint_record)
+                    or record_digest(persisted_checkpoint)
+                    != loaded.authorization_checkpoint_digest
                 ):
                     raise ValueError("capability authorization checkpoint is unavailable")
             return loaded

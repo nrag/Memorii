@@ -688,10 +688,24 @@ class ProviderMemoryService:
             )
         if monitoring_initializations:
             self._ensure_writer_admission_record()
+            authorities_by_fingerprint = {
+                authority._policy.capability_fingerprint: authority
+                for authority in verified_capability_monitoring_authorities
+            }
             for initial_evidence in monitoring_initializations:
-                self._capability_monitor.initialize_active_from_verified_evidence(
-                    evidence=initial_evidence,
-                )
+                authority = authorities_by_fingerprint[
+                    initial_evidence.capability_fingerprint
+                ]
+                # Active status/checkpoint creation is a durable authority
+                # write. Hold the same host revocation linearizer used by the
+                # group CAS across this initial write as well.
+                with capability_monitoring_authority_current_use(
+                    authority, server_time=self._clock.now_utc()
+                ) as current:
+                    if current:
+                        self._capability_monitor.initialize_active_from_verified_evidence(
+                            evidence=initial_evidence,
+                        )
         self._semantic_runtime_validated_after_ingress = False
         self._conflict_clarification_processor: ConflictClarificationProcessor | None = None
         if self._conflict_attention_enabled and conflict_clarification_pipeline is not None:

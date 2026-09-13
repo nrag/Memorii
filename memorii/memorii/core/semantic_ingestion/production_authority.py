@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from hashlib import sha256
+from pathlib import Path
 from typing import NoReturn, cast
 
 from memorii.core.memory_evolution.bootstrap_profile import (
@@ -21,10 +23,13 @@ from memorii.core.memory_evolution.capability_monitoring import (
     CapabilityMonitoringPolicy,
 )
 from memorii.core.memory_evolution.deployment_authorization import (
+    ArtifactDeploymentAuthorizationCurrentTrustVerifier,
     DeploymentAuthorizationArtifact,
     DeploymentAuthorizationArtifactVerifier,
     DeploymentAuthorizationCurrentTrustVerifier,
     DeploymentAuthorizationError,
+    Ed25519DeploymentAuthorizationKeyring,
+    InstalledProductionRevocationReader,
 )
 from memorii.core.memory_evolution.ingestion_contracts import (
     AuthenticatedIngressContextResolver,
@@ -42,6 +47,137 @@ _VERIFICATION_SYMBOL = (
 )
 _ISSUANCE_TOKEN = object()
 _MONITORING_ISSUANCE_TOKEN = object()
+
+
+def _installed_path(value: object, *, failure: str) -> Path:
+    if not isinstance(value, str):
+        raise ValueError(failure)
+    path = Path(value)
+    if not path.is_absolute():
+        raise ValueError(failure)
+    current = path
+    while current.parent != current:
+        if current.is_symlink():
+            raise ValueError(failure)
+        current = current.parent
+    return path
+
+
+def _installed_bytes(path: Path, *, failure: str) -> bytes:
+    try:
+        value = path.read_bytes()
+    except OSError as exc:
+        raise ValueError(failure) from exc
+    if not value:
+        raise ValueError(failure)
+    return value
+
+
+class _InstalledCapabilityEvidenceWindowProvider:
+    """Read bounded scheduler evidence from a fixed operator-owned file."""
+
+    def __init__(self, evidence_path: Path) -> None:
+        self._evidence_path = evidence_path
+
+    def load_evidence_windows(
+        self, *, max_items: int
+    ) -> tuple[CapabilityEvidenceWindow, ...]:
+        if not isinstance(max_items, int) or max_items < 1:
+            raise ValueError("installed monitoring evidence limit")
+        try:
+            raw = _installed_bytes(
+                self._evidence_path, failure="installed monitoring evidence"
+            )
+            decoded = json.loads(raw)
+        except (TypeError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+            raise ValueError("installed monitoring evidence") from exc
+        if not isinstance(decoded, list):
+            raise ValueError("installed monitoring evidence")
+        windows = tuple(CapabilityEvidenceWindow.model_validate(item) for item in decoded)
+        if len(windows) > max_items:
+            windows = windows[:max_items]
+        return windows
+
+
+def build_installed_capability_monitoring_authorities(
+    *, configuration: object, server_time: datetime
+) -> tuple[VerifiedCapabilityMonitoringAuthority, ...]:
+    """Build monitoring only from a closed, operator-installed authority set.
+
+    Configuration contains public verification material and absolute artifact
+    coordinates.  It contains no signer and is rejected as a unit on any
+    malformed, substituted, expired, unknown-key, or revoked authority.
+    """
+    required = {
+        "public_keys",
+        "deployment_authorization_path",
+        "monitoring_policy_path",
+        "initial_evidence_path",
+        "ongoing_evidence_path",
+        "revocation_reader_root",
+    }
+    if type(configuration) is not dict or set(configuration) != required:
+        raise ValueError("installed capability monitoring configuration")
+    keys_value = configuration["public_keys"]
+    if type(keys_value) is not dict:
+        raise ValueError("installed capability monitoring configuration")
+    try:
+        keys = {
+            str(reference): bytes.fromhex(str(encoded))
+            for reference, encoded in keys_value.items()
+        }
+        keyring = Ed25519DeploymentAuthorizationKeyring(keys)
+        artifact_path = _installed_path(
+            configuration["deployment_authorization_path"],
+            failure="installed capability monitoring configuration",
+        )
+        policy_path = _installed_path(
+            configuration["monitoring_policy_path"],
+            failure="installed capability monitoring configuration",
+        )
+        initial_path = _installed_path(
+            configuration["initial_evidence_path"],
+            failure="installed capability monitoring configuration",
+        )
+        ongoing_path = _installed_path(
+            configuration["ongoing_evidence_path"],
+            failure="installed capability monitoring configuration",
+        )
+        revocation_root = _installed_path(
+            configuration["revocation_reader_root"],
+            failure="installed capability monitoring configuration",
+        )
+        policy = CapabilityMonitoringPolicy.model_validate_json(
+            _installed_bytes(policy_path, failure="installed monitoring policy")
+        )
+        initial = CapabilityEvidenceWindow.model_validate_json(
+            _installed_bytes(initial_path, failure="installed monitoring baseline")
+        )
+        raw_authorization = _installed_bytes(
+            artifact_path, failure="installed deployment authorization"
+        )
+        reader = InstalledProductionRevocationReader().from_fixed_configuration(
+            {"reader_root": str(revocation_root)}
+        )
+        authority = build_verified_capability_monitoring_authority(
+            deployment_authorization_bytes=raw_authorization,
+            deployment_authorization_verifier=DeploymentAuthorizationArtifactVerifier(keyring),
+            deployment_authorization_current_trust_verifier=(
+                ArtifactDeploymentAuthorizationCurrentTrustVerifier(
+                    artifact_verifier=DeploymentAuthorizationArtifactVerifier(keyring),
+                    current_trust_check=reader,
+                )
+            ),
+            policy=policy,
+            initial_evidence=initial,
+            evidence_provider=_InstalledCapabilityEvidenceWindowProvider(ongoing_path),
+            server_time=server_time,
+        )
+    except (DeploymentAuthorizationError, TypeError, ValueError) as exc:
+        raise ValueError("installed capability monitoring authority") from exc
+    if authority is None:
+        raise ValueError("installed capability monitoring authority")
+    return (authority,)
 
 
 @dataclass(frozen=True)
@@ -352,6 +488,7 @@ __all__ = [
     "VerifiedProductionHostAuthority",
     "VerifiedCapabilityMonitoringAuthority",
     "build_verified_capability_monitoring_authority",
+    "build_installed_capability_monitoring_authorities",
     "capability_monitoring_authority_is_current",
     "capability_monitoring_authority_checkpoint",
     "build_verified_production_host_authority",

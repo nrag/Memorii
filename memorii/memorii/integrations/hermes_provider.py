@@ -37,6 +37,7 @@ from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.scoped_context.authority import ScopedHostReadAuthority
 from memorii.core.scoped_context.contracts import ScopedContextActivation, ScopedContextRequest
 from memorii.core.semantic_ingestion.production_authority import (
+    VerifiedCapabilityMonitoringAuthority,
     VerifiedProductionHostAuthority,
 )
 from memorii.core.semantic_ingestion.source_normalization_host import SourceNormalizationHostBundleBuilder
@@ -55,6 +56,10 @@ class HermesMemoryProvider(MemoryProviderInterface):
         memory_plane: MemoryPlaneService | None = None,
         storage_root: str | None = None,
         scoped_read_authority: ScopedHostReadAuthority | None = None,
+        verified_capability_monitoring_authorities: tuple[
+            VerifiedCapabilityMonitoringAuthority, ...
+        ] = (),
+        installed_capability_monitoring_configuration: object | None = None,
     ) -> None:
         if memory_plane is not None and storage_root is not None:
             raise ValueError("memory plane and filesystem storage root are mutually exclusive")
@@ -66,6 +71,8 @@ class HermesMemoryProvider(MemoryProviderInterface):
             or memory_plane is not None
             or storage_root is not None
             or scoped_read_authority is not None
+            or verified_capability_monitoring_authorities
+            or installed_capability_monitoring_configuration is not None
         ):
             raise ValueError("service and host bootstrap capability are mutually exclusive")
         if service is not None:
@@ -78,6 +85,8 @@ class HermesMemoryProvider(MemoryProviderInterface):
                 source_normalization_host_bundle_builder=source_normalization_host_bundle_builder,
                 verified_production_host_authority=verified_production_host_authority,
                 scoped_read_authority=scoped_read_authority,
+                verified_capability_monitoring_authorities=verified_capability_monitoring_authorities,
+                installed_capability_monitoring_configuration=installed_capability_monitoring_configuration,
             )
         else:
             self._service = build_provider_memory_service_from_env(
@@ -87,6 +96,8 @@ class HermesMemoryProvider(MemoryProviderInterface):
                 source_normalization_host_bundle_builder=source_normalization_host_bundle_builder,
                 verified_production_host_authority=verified_production_host_authority,
                 scoped_read_authority=scoped_read_authority,
+                verified_capability_monitoring_authorities=verified_capability_monitoring_authorities,
+                installed_capability_monitoring_configuration=installed_capability_monitoring_configuration,
             )
 
     def retrieve_context(

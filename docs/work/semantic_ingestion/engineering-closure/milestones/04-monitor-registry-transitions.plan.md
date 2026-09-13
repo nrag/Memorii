@@ -385,3 +385,77 @@ behaviors. Product policy approval, real evidence, and production signatures
 remain release inputs. R15 stays **candidate complete** until all three exact-
 revision reviews converge. R08, R16 and R19 remain partial because configured
 host activation and deployment-authority consumption are later packets.
+
+## Installed Monitoring Authority Remediation (2026-09-13)
+
+The public factory now has a strict installed monitoring configuration path.
+It accepts only operator-owned absolute paths for the signed deployment
+authorization, closed monitoring policy, baseline evidence, bounded ongoing
+evidence source and independent revocation-reader root, together with a fixed
+Ed25519 public-key map. No private key is accepted or retained. The builder
+verifies the exact signed artifact before it creates the opaque monitoring
+authority; an absent configuration leaves the service with no configured
+capability, while malformed configuration fails closed. Direct, factory,
+filesystem and Hermes production-capture composition roots propagate the same
+verified configuration into their canonical services.
+The installed revocation reader owns a shared POSIX `flock` at a fixed
+revocation-root coordinate through the durable group CAS and treats a present
+malformed revocation coordinate as non-current. Its canonical publisher takes
+the exclusive lock and uses durable publish-if-absent hard-link publication:
+byte-identical retries are idempotent and different coordinates are conflicts.
+
+Focused proof: the capability-monitor suite passes 59 cases under
+warnings-as-errors in 159.21 seconds. The new installed path proves valid
+activation and rejection of unknown-key, tampered, expired and revoked
+authorization material, path substitution, the no-configuration state, and
+direct/factory/filesystem/Hermes root propagation. A forked child proves an external
+publication blocks while a current-use lease is held, then completes after the
+lease; it also proves byte-identical retry and conflicting-coordinate rejection.
+Ruff, JSON and diff checks pass. Scoped first-party Pyright reports `0 errors, 0 warnings and 0
+informations` using the repository virtual environment. The next action is to
+run the provider/root composition suites, then freeze this candidate for
+exact-revision review.
+
+## R15 Historical Ingress Proof Correction (2026-09-13)
+
+The historical compatibility tests now exercise their stated public path rather
+than an internal precondition helper. Both write exact historical JSONL batch
+envelopes, reopen them, compose a signed monitoring authority and call
+`ProviderMemoryService.sync_event` through the built-in graph host and group
+CAS:
+
+- a pre-checkpoint V1 active status reaches the group boundary, is denied for
+  the unavailable checkpoint with no accepted operation, effect or group
+  primary, then the policy-owned scheduler atomically persists the V2
+  `evidence_only` successor;
+- an extended-V1 status with the exact retained typed checkpoint reaches a V2
+  monitor successor, then public ingress writes exactly one group. The final
+  group CAS captures both the exact V2 status-record and checkpoint-record
+  digests as preconditions, and a fresh JSONL reader validates the V2 status.
+
+The monitor module keeps a matching historical active status readable during
+signed service composition only when its persisted freshness (and, when
+present, checkpoint) record exactly matches the retained digest. It does not
+invent a new baseline. Public group admission still rejects missing or stale
+checkpoint authority, and the scheduler remains the only transition path.
+
+Focused proof from repository root:
+
+- `PYTHONPATH=memorii .venv/bin/pytest -q -W error
+  memorii/tests/unit/core/semantic_ingestion/test_capability_monitoring.py::test_pre_checkpoint_v1_jsonl_restart_upcasts_and_fences_legacy_active_state`:
+  1 passed in 26.33 seconds;
+- `PYTHONPATH=memorii .venv/bin/pytest -q -W error
+  memorii/tests/unit/core/semantic_ingestion/test_capability_monitoring.py::test_extended_v1_jsonl_restart_preserves_v1_preimages_and_group_authority`:
+  1 passed in 37.28 seconds;
+- from `memorii/`, `.venv/bin/pyright --pythonpath .venv/bin/python
+  memorii/core/memory_evolution/capability_monitoring.py
+  tests/unit/core/semantic_ingestion/test_capability_monitoring.py`: 0 errors,
+  0 warnings, 0 informations; `git diff --check` is clean.
+
+The full capability-monitor suite passes 59 cases under warnings-as-errors in
+159.21 seconds. The consolidated capability-monitor, provider-composition,
+writer-admission, writer-migration, policy-migration and bootstrap-graph
+atomic-store gate passes 302 cases under warnings-as-errors in 1096.26 seconds.
+
+The sole next action is to freeze and push this candidate, then obtain exact-
+revision specification, correctness and test reviews.
