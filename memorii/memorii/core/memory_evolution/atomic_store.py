@@ -1106,6 +1106,7 @@ class SemanticIngestionAtomicStore:
         if type(activation_max_rescans) is not int or activation_max_rescans <= 0:
             raise ValueError("activation max rescans must be a positive integer")
         self._memory_plane = memory_plane
+        self._capability_authorization_guard: Callable[[tuple[str, ...]], None] | None = None
         self._writers = writer_admission
         if typed_value_registry_history is not writer_admission._typed_value_registry_history:
             raise TypedValueRegistryConfigurationError("atomic store and writer typed value registry histories differ")
@@ -13830,6 +13831,11 @@ class SemanticIngestionAtomicStore:
                 *native_audit_records,
                 *ledger_records,
             )
+            if self._capability_authorization_guard is not None:
+                self._capability_authorization_guard(tuple(sorted({
+                    binding.capability_fingerprint
+                    for binding in request.pre_execution_manifest_identity.core.capability_bindings
+                })))
             writer_record = self._writers.require_current(request.writer_commit_binding)
             authorization = self._writers._authorize_atomic(
                 request.writer_commit_binding, capability=self._write_capability,
@@ -13868,6 +13874,16 @@ class SemanticIngestionAtomicStore:
             return write()
         with self._semantic_integrity_linearization.exclusive():
             return write()
+
+    def install_capability_authorization_guard(
+        self, guard: Callable[[tuple[str, ...]], None]
+    ) -> None:
+        """Install the provider-owned live-trust check before group storage CAS."""
+        if not callable(guard):
+            raise ValueError("capability authorization guard is invalid")
+        if self._capability_authorization_guard is not None:
+            raise ValueError("capability authorization guard is already installed")
+        self._capability_authorization_guard = guard
 
     def current_capability_status(
         self, capability_fingerprint: str,
@@ -13946,6 +13962,22 @@ class SemanticIngestionAtomicStore:
                 or status.evidence_freshness_digest != evidence_freshness_digest
             ):
                 raise PreplanningStoreError("capability status binding is stale")
+            checkpoint_digest = status.authorization_checkpoint_digest
+            if checkpoint_digest is not None:
+                checkpoint_record = self._memory_plane.get_record(
+                    "semantic_ingestion:capability-authorization-checkpoint:" + fingerprint
+                )
+                if (
+                    checkpoint_record is None
+                    or checkpoint_record.source_kind
+                    != "semantic_ingestion_capability_authorization_checkpoint"
+                    or record_digest(checkpoint_record) != checkpoint_digest
+                ):
+                    raise PreplanningStoreError("capability authorization checkpoint is stale")
+                preconditions.append(RecordDigestPrecondition(
+                    memory_id=checkpoint_record.memory_id,
+                    expected_digest=checkpoint_digest,
+                ))
             preconditions.append(
                 RecordDigestPrecondition(
                     memory_id=record.memory_id,

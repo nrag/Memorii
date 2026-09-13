@@ -189,6 +189,8 @@ from memorii.core.semantic_ingestion.capability import (
 from memorii.core.semantic_ingestion.production_authority import (
     VerifiedCapabilityMonitoringAuthority,
     VerifiedProductionHostAuthority,
+    capability_monitoring_authority_checkpoint,
+    capability_monitoring_authority_is_current,
     verified_capability_monitoring_authority_inputs,
     verified_production_authority_inputs,
 )
@@ -327,6 +329,7 @@ class ProviderMemoryService:
         verified_material = None
         verified_ingress_resolver = None
         monitoring_initializations: tuple[CapabilityEvidenceWindow, ...] = ()
+        self._verified_capability_monitoring_authorities = verified_capability_monitoring_authorities
         if verified_capability_monitoring_authorities:
             if (
                 capability_monitoring_policies
@@ -669,10 +672,18 @@ class ProviderMemoryService:
             writers=self._semantic_writer_admission,
             now=self._clock.now_utc,
             policies=capability_monitoring_policies,
+            authorization_checkpoints=tuple(
+                capability_monitoring_authority_checkpoint(item)
+                for item in verified_capability_monitoring_authorities
+            ),
         )
         self._capability_monitoring_evidence_provider = (
             capability_monitoring_evidence_provider
         )
+        if verified_capability_monitoring_authorities:
+            self._semantic_atomic_store.install_capability_authorization_guard(
+                self._require_current_capability_authorizations_for_group
+            )
         if monitoring_initializations:
             self._ensure_writer_admission_record()
             for initial_evidence in monitoring_initializations:
@@ -727,17 +738,42 @@ class ProviderMemoryService:
     ) -> tuple[CapabilityMonitorTickResult, ...]:
         """Run one bounded no-ingest scheduler pass over host evidence windows."""
 
-        if max_items < 1 or max_items > 256:
-            raise ValueError("max_items must be between 1 and 256")
+        if max_items < 1:
+            raise ValueError("max_items must be positive")
+        self._revalidate_capability_monitoring_authorities()
         provider = self._capability_monitoring_evidence_provider
-        if provider is None:
-            return ()
-        windows = provider.load_evidence_windows(max_items=max_items)
-        if len(windows) > max_items:
-            raise ValueError("capability monitoring evidence provider exceeded max_items")
-        return tuple(
-            self._capability_monitor.tick(evidence=window) for window in windows
-        )
+        fingerprints = self._capability_monitor.configured_capability_fingerprints
+        windows: tuple[CapabilityEvidenceWindow, ...] = ()
+        provider_failed = False
+        if provider is not None:
+            try:
+                # The scheduler inventory is policy-owned.  A host limit must
+                # never silently omit policy N+1 (the former 16-item ceiling).
+                windows = provider.load_evidence_windows(max_items=max(max_items, len(fingerprints)))
+            except (OSError, RuntimeError, TypeError, ValueError):
+                windows = ()
+                provider_failed = True
+        if len(windows) > max(max_items, len(fingerprints)):
+            raise ValueError("capability monitoring evidence provider exceeded scheduler inventory")
+        by_capability: dict[str, CapabilityEvidenceWindow] = {}
+        for window in windows:
+            if window.capability_fingerprint not in fingerprints:
+                raise ValueError("capability monitoring provider returned unknown capability window")
+            if window.capability_fingerprint in by_capability:
+                raise ValueError("capability monitoring provider returned duplicate capability windows")
+            by_capability[window.capability_fingerprint] = window
+        results: list[CapabilityMonitorTickResult] = []
+        for fingerprint in fingerprints:
+            window = by_capability.get(fingerprint)
+            if window is not None:
+                results.append(self._capability_monitor.tick(evidence=window))
+                continue
+            missing = self._capability_monitor.tick_missing_window(
+                capability_fingerprint=fingerprint, provider_failure=provider_failed
+            )
+            if missing is not None:
+                results.append(missing)
+        return tuple(results)
 
     def observe_graph(
         self,
@@ -945,8 +981,39 @@ class ProviderMemoryService:
         ingress = self._resolve_ingress(host_ingress)
         if ingress is not None:
             self._ensure_writer_admission_record()
+            self._revalidate_capability_monitoring_authorities()
             self._validate_semantic_runtime_after_ingress()
         return ingress
+
+    def _revalidate_capability_monitoring_authorities(self) -> None:
+        """Run retained live deployment-trust checks before monitor or learned use."""
+        now = self._clock.now_utc()
+        for authority in self._verified_capability_monitoring_authorities:
+            if not capability_monitoring_authority_is_current(authority, server_time=now):
+                self._capability_monitor.demote_untrusted_authority(
+                    capability_fingerprint=authority._policy.capability_fingerprint
+                )
+
+    def _require_current_capability_authorizations_for_group(
+        self, fingerprints: tuple[str, ...]
+    ) -> None:
+        """Linearize external trust with the group CAS by fencing first."""
+        now = self._clock.now_utc()
+        authorities = {
+            authority._policy.capability_fingerprint: authority
+            for authority in self._verified_capability_monitoring_authorities
+        }
+        if len(authorities) != len(self._verified_capability_monitoring_authorities) or any(
+            fingerprint not in authorities for fingerprint in fingerprints
+        ):
+            raise PreplanningStoreError("capability deployment authorization is unavailable")
+        for fingerprint in fingerprints:
+            authority = authorities[fingerprint]
+            if not capability_monitoring_authority_is_current(authority, server_time=now):
+                self._capability_monitor.demote_untrusted_authority(
+                    capability_fingerprint=authority._policy.capability_fingerprint
+                )
+                raise PreplanningStoreError("capability deployment authorization is not current")
 
     def _validate_semantic_runtime_after_ingress(self) -> None:
         if self._semantic_runtime_validated_after_ingress:

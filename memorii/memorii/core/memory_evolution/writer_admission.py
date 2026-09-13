@@ -101,6 +101,7 @@ _KINDS = (
             "bootstrap_graph_v3_terminal_identity",
             "capability_status",
             "capability_initial_freshness",
+            "capability_authorization_checkpoint",
             "capability_monitor_decision",
         }
     )
@@ -3200,7 +3201,7 @@ def _is_capability_monitor_demotion_write(
 def _is_capability_monitor_status_initialization_write(
     records: list[CanonicalMemoryRecord],
 ) -> bool:
-    if len(records) != 2:
+    if len(records) not in {2, 3}:
         return False
     status_records = [
         record
@@ -3212,11 +3213,16 @@ def _is_capability_monitor_status_initialization_write(
         for record in records
         if record.source_kind == "semantic_ingestion_capability_initial_freshness"
     ]
-    if len(status_records) != 1 or len(freshness_records) != 1:
+    checkpoint_records = [
+        record for record in records
+        if record.source_kind == "semantic_ingestion_capability_authorization_checkpoint"
+    ]
+    if len(status_records) != 1 or len(freshness_records) != 1 or len(checkpoint_records) > 1:
         return False
     record = status_records[0]
     try:
         from memorii.core.memory_evolution.capability_monitoring import (
+            CapabilityAuthorizationCheckpoint,
             CapabilityEvidenceFreshness,
             CapabilityStatus,
             MonitoringMetricDecision,
@@ -3240,6 +3246,20 @@ def _is_capability_monitor_status_initialization_write(
             MonitoringMetricDecision.model_validate_json(json.dumps(value))
             for value in freshness_record.content["metric_decisions"]
         )
+        checkpoint_valid = not checkpoint_records and status.authorization_checkpoint_digest is None
+        if checkpoint_records:
+            checkpoint_record = checkpoint_records[0]
+            checkpoint = CapabilityAuthorizationCheckpoint.model_validate_json(
+                json.dumps(checkpoint_record.content["checkpoint"])
+            )
+            checkpoint_valid = (
+                checkpoint_record.content.get("semantic_ingestion_kind")
+                == "capability_authorization_checkpoint"
+                and set(checkpoint_record.content) == {"semantic_ingestion_kind", "checkpoint"}
+                and status.authorization_checkpoint_digest == record_digest(checkpoint_record)
+                and checkpoint.capability_fingerprint == status.capability_fingerprint
+                and checkpoint.monitoring_policy_digest == status.monitoring_policy_digest
+            )
         return (
             set(freshness_record.content)
             == {
@@ -3256,6 +3276,7 @@ def _is_capability_monitor_status_initialization_write(
             and status.capability_fingerprint == freshness.capability_fingerprint
             and status.monitoring_policy_digest == freshness.monitoring_policy_digest
             and status.evidence_freshness_digest == record_digest(freshness_record)
+            and checkpoint_valid
         )
     except (KeyError, TypeError, ValueError):
         return False

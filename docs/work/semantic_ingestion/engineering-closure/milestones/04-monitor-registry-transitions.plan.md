@@ -162,6 +162,43 @@ freeze and push the revision, then obtain the required exact-revision
 specification, correctness and test reviews. R15 remains candidate complete
 until those reviews converge.
 
+## R15 Live-Trust Remediation Complete (2026-09-13)
+
+The current exact-revision review found that the bounded scheduler only
+evaluated windows returned by the host and that signed capability-baseline
+authority was checked only during composition. The active remediation now has
+the policy-owned scheduler inventory, durable-freshness deadline evaluation on
+missing windows/provider failures, rejection of unknown/duplicate/oversized
+provider output, and a distinct deployment-artifact live-current-trust port
+that combines canonical artifact verification with a host signer lifecycle,
+revocation and compromise decision. `VerifiedCapabilityMonitoringAuthority`
+retains the raw artifact and live verifier; `ProviderMemoryService` invokes it
+before monitor work and authenticated learned ingress, atomically demoting the
+capability through the existing writer fence when trust fails.
+
+The remediation durably binds a typed authorization checkpoint containing the
+artifact/raw digests, approval, expiry, signer/key, snapshot and epoch with
+the active status. Group commit retains that checkpoint as a CAS precondition
+and invokes the host-linearized current-trust guard before its storage write;
+a false result uses the normal atomic monitor demotion and writer fence. The
+real signed `sync_event` lifecycle proves one persisted group, exact retained
+normalization-authority V2 registry bytes through demotion and JSONL reopen,
+and guard-driven revocation without a deadlock. Scheduler proof covers missing
+windows (`missing_window`) and provider exceptions across 17 active policies
+(`provider_failure`).
+
+Final focused monitor validation reports 37 passed in 83.83 seconds under
+warnings-as-errors. It includes the 17-policy provider-failure inventory,
+typed missing-window outcome, duplicate-window rejection, pause/outage
+missing-window grace boundary, signed expiry with a provider that constructs a
+healthy current window, checkpoint reuse across JSONL reconstruction, and the
+real signed `sync_event` registry-byte lifecycle. The consolidated monitor,
+provider composition, writer admission and migration, policy migration, and
+bootstrap atomic-store gate reports 280 passed in 764.06 seconds. Ruff, scoped
+first-party Pyright, and `git diff --check` are clean. The next action is to
+freeze/push the exact revision and request exact-revision specification,
+correctness and test reviews.
+
 ## Exact-Revision Review Remediation Round 3 (2026-09-13)
 
 Review of `8f5a969c` produced one confirmed production bypass, two confirmed

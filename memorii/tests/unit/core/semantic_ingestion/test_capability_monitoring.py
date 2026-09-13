@@ -7,7 +7,11 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from memorii.core.memory_evolution.atomic_store import PreplanningStoreError, SemanticIngestionAtomicStore
+from memorii.core.memory_evolution.atomic_store import (
+    AtomicGenerationMember,
+    PreplanningStoreError,
+    SemanticIngestionAtomicStore,
+)
 from memorii.core.memory_evolution.capability_monitoring import (
     CAPABILITY_MONITOR_SEQUENTIAL_IMPLEMENTATION_FINGERPRINT,
     CapabilityEvidenceWindow,
@@ -19,6 +23,7 @@ from memorii.core.memory_evolution.capability_monitoring import (
     SequentialTestManifest,
 )
 from memorii.core.memory_evolution.deployment_authorization import (
+    ArtifactDeploymentAuthorizationCurrentTrustVerifier,
     DeploymentAuthorizationArtifactVerifier,
     DeploymentAuthorizationIssuer,
     InMemoryDeploymentAuthorizationRepository,
@@ -42,11 +47,14 @@ from memorii.core.provider.factory import build_provider_memory_service_from_env
 from memorii.core.provider.models import ProviderOperation
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.semantic_ingestion.contracts import (
+    BootstrapGraphNormalizationAuthorityMemberV3,
     ProviderEntityObject,
     ProviderFact,
     ProviderMention,
     ProviderSemanticProposal,
     contract_digest,
+    decode_semantic_contract,
+    decode_typed_value,
 )
 from memorii.core.semantic_ingestion.production_authority import (
     build_verified_capability_monitoring_authority,
@@ -81,6 +89,24 @@ class _TestDeploymentSigner:
         self, *, signing_key_reference: str, preimage: bytes, signature: str
     ) -> bool:
         return signing_key_reference == "monitor-key" and signature == self.sign(preimage)
+
+
+class _CurrentDeploymentTrust:
+    def __init__(self, *, current: bool = True, sequence: list[bool] | None = None) -> None:
+        self.current = current
+        self.sequence = sequence or []
+
+    def is_current(self, *, artifact, server_time: datetime) -> bool:
+        if self.sequence:
+            return self.sequence.pop(0) and artifact.expires_at > server_time
+        return self.current and artifact.expires_at > server_time
+
+
+def _current_trust_verifier(signer: _TestDeploymentSigner, trust: _CurrentDeploymentTrust | None = None):
+    return ArtifactDeploymentAuthorizationCurrentTrustVerifier(
+        artifact_verifier=DeploymentAuthorizationArtifactVerifier(signer),
+        current_trust_check=trust or _CurrentDeploymentTrust(),
+    )
 
 
 def _monitor(memory_plane: MemoryPlaneService | None = None, *, activate_writer: bool = False):
@@ -309,6 +335,37 @@ def test_pause_and_outage_deadline_boundaries(
     assert result.decision.action == expected
 
 
+@pytest.mark.parametrize("traffic,outage", [("paused", "healthy"), ("active", "outage")])
+def test_missing_window_preserves_pause_and_outage_grace_deadline(
+    traffic: str, outage: str
+) -> None:
+    """A missing provider window cannot restart the recorded grace clock."""
+    clock, _, monitor, policy, implementation = _monitor()
+    initial = monitor.tick(
+        evidence=_window(
+            clock,
+            policy,
+            implementation,
+            traffic=traffic,
+            outage=outage,
+            state_changed_at=clock.now,
+        )
+    )
+    assert initial.status.status == "active"
+    clock.now += timedelta(hours=1) - timedelta(microseconds=1)
+    before_deadline = monitor.tick_missing_window(
+        capability_fingerprint=policy.capability_fingerprint
+    )
+    assert before_deadline is None
+    clock.now += timedelta(microseconds=1)
+    at_deadline = monitor.tick_missing_window(
+        capability_fingerprint=policy.capability_fingerprint
+    )
+    assert at_deadline is not None
+    assert at_deadline.decision.evaluation_kind == "missing_window"
+    assert at_deadline.status.status == "evidence_only"
+
+
 @pytest.mark.parametrize("authority", ["label", "canary"])
 @pytest.mark.parametrize(
     "elapsed,expected",
@@ -505,7 +562,6 @@ def test_provider_monitor_tick_reaches_shared_writer_authority() -> None:
 def test_public_factory_schedules_windows_from_signed_baseline_authority(tmp_path: Path) -> None:
     clock, _, _, policy, implementation = _monitor()
     initial_evidence = _window(clock, policy, implementation, value="0.1")
-    evidence = _window(clock, policy, implementation, value="0.9")
     registry_values = {
         "registry_revision": "monitor-v1",
         "capabilities": (
@@ -525,9 +581,14 @@ def test_public_factory_schedules_windows_from_signed_baseline_authority(tmp_pat
     registry_bytes = registry.model_dump_json().encode("utf-8")
 
     class EvidenceProvider:
-        def load_evidence_windows(self, *, max_items: int):
-            return (evidence,)[:max_items]
+        def __init__(self) -> None:
+            self.calls = 0
 
+        def load_evidence_windows(self, *, max_items: int):
+            self.calls += 1
+            return (_window(clock, policy, implementation, value="0.1"),)[:max_items]
+
+    evidence_provider = EvidenceProvider()
     signer = _TestDeploymentSigner()
     artifact = DeploymentAuthorizationIssuer(
         authority=IssuerAuthority(
@@ -560,9 +621,10 @@ def test_public_factory_schedules_windows_from_signed_baseline_authority(tmp_pat
         deployment_authorization_verifier=DeploymentAuthorizationArtifactVerifier(
             signer
         ),
+        deployment_authorization_current_trust_verifier=_current_trust_verifier(signer),
         policy=policy,
         initial_evidence=initial_evidence,
-        evidence_provider=EvidenceProvider(),
+        evidence_provider=evidence_provider,
         server_time=clock.now,
     )
     assert authority is not None
@@ -576,8 +638,9 @@ def test_public_factory_schedules_windows_from_signed_baseline_authority(tmp_pat
     results = service.process_capability_monitoring(max_items=1)
 
     assert len(results) == 1
-    assert results[0].status.status == "evidence_only"
-    assert service._semantic_writer_admission.current().writer_epoch == 2
+    assert results[0].status.status == "active"
+    assert evidence_provider.calls == 1
+    assert service._semantic_writer_admission.current().writer_epoch == 1
     assert service._memory_plane.list_records(
         source_kind="semantic_ingestion_capability_initial_freshness"
     )
@@ -590,6 +653,27 @@ def test_public_factory_schedules_windows_from_signed_baseline_authority(tmp_pat
     )
     assert registry.model_dump_json().encode("utf-8") == registry_bytes
     assert CapabilityRegistrySnapshot.model_validate_json(registry_bytes) == registry
+    restarted_plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(store_path))
+    restarted = build_provider_memory_service_from_env(
+        memory_plane=restarted_plane, now_provider=lambda: clock.now,
+        verified_capability_monitoring_authorities=(authority,),
+    )
+    checkpoint = restarted_plane.list_records(
+        source_kind="semantic_ingestion_capability_authorization_checkpoint"
+    )
+    assert len(checkpoint) == 1
+    clock.now += timedelta(days=1)
+    expired_results = restarted.process_capability_monitoring(max_items=1)
+    assert expired_results[-1].status.status == "evidence_only"
+    # The second call produces current healthy evidence, but live expiry
+    # validation demotes it before monitoring can accept the window.
+    assert evidence_provider.calls == 2
+    assert any(
+        record.content["decision"]["evaluation_kind"] == "authorization_failure"
+        for record in restarted_plane.list_records(
+            source_kind="semantic_ingestion_capability_monitor_decision"
+        )
+    )
     reopened = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(store_path))
     reopened_status = reopened.list_records(
         source_kind="semantic_ingestion_capability_status"
@@ -639,6 +723,7 @@ def test_signed_monitoring_authority_rejects_substitution_and_unacceptable_basel
     verifier = DeploymentAuthorizationArtifactVerifier(signer)
     arguments = {
         "deployment_authorization_verifier": verifier,
+        "deployment_authorization_current_trust_verifier": _current_trust_verifier(signer),
         "policy": policy,
         "initial_evidence": initial_evidence,
         "evidence_provider": EvidenceProvider(),
@@ -723,6 +808,7 @@ def test_status_only_active_initialization_is_rejected_by_governed_store() -> No
         "status_revision": 1,
         "monitoring_policy_digest": policy.policy_digest,
         "evidence_freshness_digest": "c" * 64,
+        "authorization_checkpoint_digest": None,
     }
     status = CapabilityStatus(
         **status_base,
@@ -762,7 +848,7 @@ def test_normal_reconciliation_scheduler_expires_monitor_without_ingress() -> No
 
     class EvidenceProvider:
         def load_evidence_windows(self, *, max_items: int):
-            return (initial_evidence,)[:max_items]
+            return ()
 
     signer = _TestDeploymentSigner()
     artifact = DeploymentAuthorizationIssuer(
@@ -791,6 +877,7 @@ def test_normal_reconciliation_scheduler_expires_monitor_without_ingress() -> No
             ensure_ascii=True,
         ).encode("ascii"),
         deployment_authorization_verifier=DeploymentAuthorizationArtifactVerifier(signer),
+        deployment_authorization_current_trust_verifier=_current_trust_verifier(signer),
         policy=policy,
         initial_evidence=initial_evidence,
         evidence_provider=EvidenceProvider(),
@@ -806,6 +893,8 @@ def test_normal_reconciliation_scheduler_expires_monitor_without_ingress() -> No
     clock.now += timedelta(days=1)
 
     assert service.reconcile_memory_evolution() == []
+    decisions = plane.list_records(source_kind="semantic_ingestion_capability_monitor_decision")
+    assert decisions[-1].content["decision"]["evaluation_kind"] == "missing_window"
     status = plane.list_records(source_kind="semantic_ingestion_capability_status")
     assert status[-1].content["status"]["status"] == "evidence_only"
     assert not plane.list_records(source_kind="semantic_ingestion_source")
@@ -813,6 +902,61 @@ def test_normal_reconciliation_scheduler_expires_monitor_without_ingress() -> No
     assert not plane.list_records(
         source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
     )
+
+
+def test_scheduler_accounts_for_more_than_sixteen_active_policies_after_provider_failure() -> None:
+    """A provider failure cannot strand the seventeenth active capability."""
+    clock = _Clock()
+    implementation = CAPABILITY_MONITOR_SEQUENTIAL_IMPLEMENTATION_FINGERPRINT
+    manifest = SequentialTestManifest.create(
+        method="time_uniform_confidence_sequence",
+        bounded_value_lower="0",
+        bounded_value_upper="1",
+        spending_rule_id="inverse_quadratic_union_bound_v1",
+        implementation_fingerprint=implementation,
+    )
+    gate = MonitoringMetricGate.create(
+        metric_id="error", direction="upper", warning_threshold="0.4",
+        breach_threshold="0.8", minimum_independent_clusters=1,
+        maximum_label_delay=timedelta(days=1), alpha_budget="0.1",
+    )
+    policies = tuple(
+        CapabilityMonitoringPolicy.create(
+            capability_fingerprint=f"{index:064x}", monitoring_policy_revision="1",
+            maximum_independent_label_age=timedelta(hours=1),
+            maximum_canary_success_age=timedelta(hours=1),
+            minimum_labeled_clusters_per_window=1, label_window=timedelta(days=1),
+            paused_traffic_grace_period=timedelta(hours=1),
+            label_pipeline_outage_grace_period=timedelta(hours=1),
+            stale_evidence_action="evidence_only", metric_gates=(gate,),
+            family_wise_alpha_budget="0.1", sequential_test_manifest=manifest,
+            breach_action="evidence_only",
+        )
+        for index in range(1, 18)
+    )
+
+    class FailingProvider:
+        def load_evidence_windows(self, *, max_items: int):
+            raise RuntimeError("host evidence transport unavailable")
+
+    service = ProviderMemoryService(
+        now_provider=lambda: clock.now,
+        capability_monitoring_policies=policies,
+        capability_monitoring_evidence_provider=FailingProvider(),
+    )
+    service._ensure_writer_admission_record()
+    for policy in policies:
+        service._capability_monitor.initialize_active_from_verified_evidence(
+            evidence=_window(clock, policy, implementation, value="0.1")
+        )
+    clock.now += timedelta(hours=1)
+    results = service.process_capability_monitoring(max_items=1)
+    assert len(results) == 17
+    assert {result.status.capability_fingerprint for result in results} == {
+        policy.capability_fingerprint for policy in policies
+    }
+    assert all(result.status.status == "evidence_only" for result in results)
+    assert all(result.decision.evaluation_kind == "provider_failure" for result in results)
 
 
 def test_group_commit_status_read_set_is_exact_and_stale_after_demotion() -> None:
@@ -993,7 +1137,7 @@ def test_status_cas_loss_fails_without_partial_publication(monkeypatch) -> None:
 
 
 def test_real_group_commit_status_precondition_conflicts_with_monitor_demotion(
-    monkeypatch: pytest.MonkeyPatch, tmp_path
+    tmp_path
 ) -> None:
     fingerprint = "38a5be91af79d7e5ba9809bf383c699b6864ee50446239fe56a45e32b84638fe"
     implementation = CAPABILITY_MONITOR_SEQUENTIAL_IMPLEMENTATION_FINGERPRINT
@@ -1058,60 +1202,85 @@ def test_real_group_commit_status_precondition_conflicts_with_monitor_demotion(
     source_text = "Atlas owner is Bob."
     normalization, _ = _v3_normalization_host_builder(proposal=proposal)
     store_path = tmp_path / "monitor-group-race"
+    initial_evidence = _window(type("Clock", (), {"now": TEST_NOW})(), policy, implementation)
+
+    class EvidenceProvider:
+        def load_evidence_windows(self, *, max_items: int):
+            return ()
+
+    signer = _TestDeploymentSigner()
+    artifact = DeploymentAuthorizationIssuer(
+        authority=IssuerAuthority("monitor-release", "monitor-key", "8" * 64, signer),
+        repository=InMemoryDeploymentAuthorizationRepository(), now_provider=lambda: TEST_NOW,
+    ).prepare_verified(
+        target_artifact_digest=contract_digest(
+            b"memorii.semantic-ingestion.capability-monitoring-baseline.v1",
+            {"monitoring_policy_digest": policy.policy_digest,
+             "initial_evidence_window_digest": initial_evidence.evidence_window_digest},
+        ), deployment_manifest_digest="7" * 64,
+        capability_fingerprint=policy.capability_fingerprint,
+        verified_capability_baseline_approval_release_digest="6" * 64,
+        requested_active_epoch=1, expires_at=TEST_NOW + timedelta(days=1),
+    )
+    raw = json.dumps(artifact.model_dump(mode="json"), sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("ascii")
+    trust = _CurrentDeploymentTrust()
+    authority = build_verified_capability_monitoring_authority(
+        deployment_authorization_bytes=raw,
+        deployment_authorization_verifier=DeploymentAuthorizationArtifactVerifier(signer),
+        deployment_authorization_current_trust_verifier=_current_trust_verifier(signer, trust),
+        policy=policy, initial_evidence=initial_evidence,
+        evidence_provider=EvidenceProvider(), server_time=TEST_NOW,
+    )
+    assert authority is not None
     service = provider_service(
         memory_plane=MemoryPlaneService(record_store=JsonlMemoryPlaneStore(store_path)),
         now_provider=lambda: TEST_NOW,
         host_bootstrap_capability=_built_in_local_capability(),
         host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
         source_normalization_host_bundle_builder=normalization,
-        capability_monitoring_policies=(policy,),
+        verified_capability_monitoring_authorities=(authority,),
     )
-    service._ensure_writer_admission_record()
-    service._capability_monitor.initialize_active_from_verified_evidence(
-        evidence=_window(
-            type("Clock", (), {"now": TEST_NOW})(), policy, implementation
-        ),
+    successful = service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN, content=source_text,
+        operation_id="monitor-registry-byte-success", task_id="task:one",
+        user_id="user:alice", authenticated_host_ingress=_host_ingress(),
     )
+    assert successful.blocked_reasons["semantic_ingestion"] == "source_only"
+    initial_group_count = len(service._memory_plane.list_records(
+        source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+    ))
+    assert initial_group_count == 1
+
+    def registry_bytes(value):
+        if isinstance(value, bytes):
+            try:
+                return registry_bytes(decode_typed_value(value))
+            except (TypeError, ValueError):
+                return None
+        if isinstance(value, dict):
+            if "capability_registry_canonical_bytes" in value:
+                return value["capability_registry_canonical_bytes"]
+            return next((found for item in value.values() if (found := registry_bytes(item)) is not None), None)
+        if isinstance(value, (tuple, list)):
+            return next((found for item in value if (found := registry_bytes(item)) is not None), None)
+        return None
+
+    member_record = next(record for record in service._memory_plane.list_records(
+        source_kind="semantic_ingestion_generation_member"
+    ) if record.content["member"]["kind"] == "bootstrap_graph_normalization_authority")
+    member = AtomicGenerationMember.model_validate(member_record.content["member"])
+    normalization_authority = decode_semantic_contract(
+        member.canonical_payload, BootstrapGraphNormalizationAuthorityMemberV3
+    )
+    registry_before = normalization_authority.capability_registry_canonical_bytes
+    assert registry_before is not None
+    assert isinstance(registry_before, bytes)
+    assert CapabilityRegistrySnapshot.model_validate(decode_typed_value(registry_before)).snapshot_digest
     status_record = service._memory_plane.get_record("semantic_ingestion:capability-status:" + fingerprint)
     assert status_record is not None
-    observed_status_precondition = False
-    demoted = False
-    original = service._memory_plane.conditionally_write_records
-
-    def interleave_demotion(records, *, preconditions, authorization, **kwargs):
-        nonlocal observed_status_precondition, demoted
-        is_group_commit = any(
-            record.source_kind == "semantic_ingestion_bootstrap_graph_v3_group_commit_primary" for record in records
-        )
-        if is_group_commit and not demoted:
-            observed_status_precondition = (
-                RecordDigestPrecondition(
-                    memory_id=status_record.memory_id,
-                    expected_digest=record_digest(status_record),
-                )
-                in preconditions
-            )
-            demoted = True
-            service.run_capability_monitor_tick(
-                evidence=_window(
-                    type("Clock", (), {"now": TEST_NOW})(),
-                    policy,
-                    implementation,
-                    value="0.9",
-                )
-            )
-        return original(
-            records,
-            preconditions=preconditions,
-            authorization=authorization,
-            **kwargs,
-        )
-
-    monkeypatch.setattr(
-        service._memory_plane,
-        "conditionally_write_records",
-        interleave_demotion,
-    )
+    # The ingress check remains current; the immediately following guard,
+    # inside the group-write path, observes revocation and fences the writer.
+    trust.sequence = [True, False]
     result = service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content=source_text,
@@ -1121,13 +1290,11 @@ def test_real_group_commit_status_precondition_conflicts_with_monitor_demotion(
         authenticated_host_ingress=_host_ingress(),
     )
 
-    assert observed_status_precondition, result.blocked_reasons
-    assert demoted
     assert result.blocked_reasons["semantic_ingestion"] == "graph_transaction_authority_unavailable"
     assert service._semantic_writer_admission.current().active_runtime_mode == "evidence_only"
-    assert not service._memory_plane.list_records(
+    assert len(service._memory_plane.list_records(
         source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
-    )
+    )) == initial_group_count
     second = service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content=source_text,
@@ -1137,11 +1304,24 @@ def test_real_group_commit_status_precondition_conflicts_with_monitor_demotion(
         authenticated_host_ingress=_host_ingress(),
     )
     assert second.blocked_reasons["semantic_ingestion"] == "graph_transaction_authority_unavailable"
-    assert not service._memory_plane.list_records(
+    assert len(service._memory_plane.list_records(
         source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
-    )
+    )) == initial_group_count
     reopened = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(store_path))
     persisted_status = reopened.get_record(status_record.memory_id)
     assert persisted_status is not None
     assert persisted_status.content["status"]["status"] == "evidence_only"
-    assert not reopened.list_records(source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary")
+    reopened_member_record = next(record for record in reopened.list_records(
+        source_kind="semantic_ingestion_generation_member"
+    ) if record.memory_id == member_record.memory_id)
+    reopened_member = AtomicGenerationMember.model_validate(
+        reopened_member_record.content["member"]
+    )
+    registry_after = decode_semantic_contract(
+        reopened_member.canonical_payload, BootstrapGraphNormalizationAuthorityMemberV3
+    ).capability_registry_canonical_bytes
+    assert registry_after == registry_before
+    assert CapabilityRegistrySnapshot.model_validate(decode_typed_value(registry_after)).snapshot_digest
+    assert len(reopened.list_records(
+        source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+    )) == initial_group_count

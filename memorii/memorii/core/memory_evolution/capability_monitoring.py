@@ -57,6 +57,10 @@ def _status_id(capability_fingerprint: str) -> str:
     return "semantic_ingestion:capability-status:" + capability_fingerprint
 
 
+def _authorization_checkpoint_id(capability_fingerprint: str) -> str:
+    return "semantic_ingestion:capability-authorization-checkpoint:" + capability_fingerprint
+
+
 def _decision_outcome_id(
     decision: CapabilityMonitoringDecision,
     freshness: CapabilityEvidenceFreshness,
@@ -71,6 +75,7 @@ def _decision_outcome_id(
                 item.decision_digest for item in decision.metric_decisions
             ),
             "evidence_freshness": decision.evidence_freshness,
+            "evaluation_kind": decision.evaluation_kind,
             "freshness_reason": freshness.freshness_reason,
             "action": decision.action,
             "reason_codes": decision.reason_codes,
@@ -305,7 +310,9 @@ class CapabilityEvidenceFreshness(BaseModel):
     latest_canary_success_at: datetime | None
     labeled_cluster_count_in_window: int = Field(ge=0)
     traffic_state: Literal["active", "paused"]
+    traffic_state_changed_at: datetime
     label_pipeline_state: Literal["healthy", "outage"]
+    label_pipeline_state_changed_at: datetime
     freshness: Literal["fresh", "grace", "stale"]
     freshness_reason: str = Field(min_length=1)
     status_revision: str = Field(min_length=1)
@@ -315,7 +322,7 @@ class CapabilityEvidenceFreshness(BaseModel):
 
     @model_validator(mode="after")
     def _valid(self) -> CapabilityEvidenceFreshness:
-        if self.evaluated_at.utcoffset() is None or self.evidence_digest != _digest(
+        if any(value.utcoffset() is None for value in (self.evaluated_at, self.traffic_state_changed_at, self.label_pipeline_state_changed_at)) or self.evidence_digest != _digest(
             b"memorii.semantic-ingestion.capability-evidence-freshness.v1", self, "evidence_digest"
         ):
             raise ValueError("capability evidence freshness is invalid")
@@ -352,6 +359,7 @@ class CapabilityMonitoringDecision(BaseModel):
     evaluated_at: datetime
     metric_decisions: tuple[MonitoringMetricDecision, ...]
     evidence_freshness: Literal["fresh", "grace", "stale"]
+    evaluation_kind: Literal["evidence_window", "missing_window", "provider_failure", "authorization_failure"]
     action: Literal["remain_active", "evidence_only"]
     reason_codes: tuple[str, ...]
     decision_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -381,6 +389,7 @@ class CapabilityStatus(BaseModel):
     status_revision: int = Field(ge=1)
     monitoring_policy_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     evidence_freshness_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    authorization_checkpoint_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     status_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
@@ -389,6 +398,31 @@ class CapabilityStatus(BaseModel):
     def _valid(self) -> CapabilityStatus:
         if self.status_digest != _digest(b"memorii.semantic-ingestion.capability-status.v1", self, "status_digest"):
             raise ValueError("capability status digest mismatch")
+        return self
+
+
+class CapabilityAuthorizationCheckpoint(BaseModel):
+    capability_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    monitoring_policy_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    deployment_authorization_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    deployment_artifact_raw_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    target_artifact_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    approval_release_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expires_at: datetime
+    signer_subject_id: str = Field(min_length=1)
+    signing_key_reference: str = Field(min_length=1)
+    authority_snapshot_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    active_epoch: int = Field(ge=1)
+    checkpoint_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    @model_validator(mode="after")
+    def _valid(self) -> CapabilityAuthorizationCheckpoint:
+        if self.expires_at.utcoffset() is None or self.checkpoint_digest != _digest(
+            b"memorii.semantic-ingestion.capability-authorization-checkpoint.v1", self, "checkpoint_digest"
+        ):
+            raise ValueError("capability authorization checkpoint is invalid")
         return self
 
 
@@ -417,13 +451,116 @@ class CapabilityMonitor:
         writers: SemanticWriterAdmissionStore,
         now: Callable[[], datetime],
         policies: tuple[CapabilityMonitoringPolicy, ...],
+        authorization_checkpoints: tuple[CapabilityAuthorizationCheckpoint, ...] = (),
     ) -> None:
         if len({policy.capability_fingerprint for policy in policies}) != len(policies):
             raise ValueError("capability monitoring policies are duplicate")
         self._writers = writers
         self._now = now
         self._policies = {policy.capability_fingerprint: policy for policy in policies}
+        if len({item.capability_fingerprint for item in authorization_checkpoints}) != len(authorization_checkpoints):
+            raise ValueError("capability authorization checkpoints are duplicate")
+        self._authorization_checkpoints = {item.capability_fingerprint: item for item in authorization_checkpoints}
         self._write_capability = writers._register_atomic_owner()
+
+    @property
+    def configured_capability_fingerprints(self) -> tuple[str, ...]:
+        """Return the complete deterministic scheduler inventory."""
+        return tuple(sorted(self._policies))
+
+    def tick_missing_window(self, *, capability_fingerprint: str, provider_failure: bool = False) -> CapabilityMonitorTickResult | None:
+        """Fail closed once the last durable freshness coordinate reaches its deadline.
+
+        A scheduler outage must not leave an active capability indefinitely
+        admitted merely because no host window was returned.  The stored
+        freshness record is the only authority used to derive the deadline.
+        """
+        policy = self._policies.get(capability_fingerprint)
+        if policy is None:
+            raise ValueError("capability monitoring policy is unavailable")
+        current_record = self._writers._memory_plane.get_record(_status_id(capability_fingerprint))
+        if current_record is None:
+            raise ValueError("capability status authority is unavailable")
+        current = CapabilityStatus.model_validate(current_record.content["status"])
+        if current.status == "evidence_only":
+            return None
+        freshness = self._load_current_freshness(current.evidence_freshness_digest)
+        now = self._now()
+        if now.utcoffset() is None:
+            raise ValueError("capability monitor clock must be timezone-aware")
+        if freshness.latest_independent_label_at is None or freshness.latest_canary_success_at is None:
+            raise ValueError("capability monitor active freshness authority is incomplete")
+        deadlines = [
+            freshness.latest_independent_label_at + policy.maximum_independent_label_age,
+            freshness.latest_canary_success_at + policy.maximum_canary_success_age,
+        ]
+        if freshness.traffic_state == "paused":
+            deadlines.append(
+                freshness.traffic_state_changed_at + policy.paused_traffic_grace_period
+            )
+        if freshness.label_pipeline_state == "outage":
+            deadlines.append(
+                freshness.label_pipeline_state_changed_at
+                + policy.label_pipeline_outage_grace_period
+            )
+        if now < min(deadlines):
+            return None
+        missing = CapabilityEvidenceWindow.create(
+            capability_fingerprint=capability_fingerprint,
+            monitoring_policy_digest=policy.policy_digest,
+            sequential_implementation_fingerprint=policy.sequential_test_manifest.implementation_fingerprint,
+            observations=(),
+            latest_independent_label_at=freshness.latest_independent_label_at,
+            latest_canary_success_at=freshness.latest_canary_success_at,
+            traffic_state=freshness.traffic_state,
+            traffic_state_changed_at=freshness.traffic_state_changed_at,
+            label_pipeline_state=freshness.label_pipeline_state,
+            label_pipeline_state_changed_at=freshness.label_pipeline_state_changed_at,
+        )
+        return self.tick(evidence=missing, evaluation_kind=("provider_failure" if provider_failure else "missing_window"))
+
+    def demote_untrusted_authority(self, *, capability_fingerprint: str) -> CapabilityMonitorTickResult | None:
+        """Fence an active writer immediately when live deployment trust fails."""
+        policy = self._policies.get(capability_fingerprint)
+        if policy is None:
+            raise ValueError("capability monitoring policy is unavailable")
+        current_record = self._writers._memory_plane.get_record(_status_id(capability_fingerprint))
+        if current_record is None:
+            raise ValueError("capability status authority is unavailable")
+        current = CapabilityStatus.model_validate(current_record.content["status"])
+        if current.status == "evidence_only":
+            return None
+        now = self._now()
+        if now.utcoffset() is None:
+            raise ValueError("capability monitor clock must be timezone-aware")
+        # A future authority timestamp is a closed, typed invalid-evidence
+        # coordinate and forces the normal atomic demotion path.
+        invalid_at = now + timedelta(microseconds=1)
+        return self.tick(evidence=CapabilityEvidenceWindow.create(
+            capability_fingerprint=capability_fingerprint,
+            monitoring_policy_digest=policy.policy_digest,
+            sequential_implementation_fingerprint=policy.sequential_test_manifest.implementation_fingerprint,
+            observations=(), latest_independent_label_at=invalid_at,
+            latest_canary_success_at=invalid_at, traffic_state="active",
+            traffic_state_changed_at=now, label_pipeline_state="healthy",
+            label_pipeline_state_changed_at=now,
+        ), evaluation_kind="authorization_failure")
+
+    def _load_current_freshness(self, digest: str) -> CapabilityEvidenceFreshness:
+        records = (*self._writers._memory_plane.list_records(source_kind="semantic_ingestion_capability_initial_freshness"), *self._writers._memory_plane.list_records(source_kind="semantic_ingestion_capability_monitor_decision"))
+        for record in records:
+            value = record.content.get("freshness")
+            if value is None:
+                continue
+            try:
+                freshness = CapabilityEvidenceFreshness.model_validate_json(
+                    json.dumps(value)
+                )
+            except (TypeError, ValueError) as exc:
+                raise ValueError("capability monitor freshness authority is corrupt") from exc
+            if record_digest(record) == digest or freshness.evidence_digest == digest:
+                return freshness
+        raise ValueError("capability monitor freshness authority is unavailable")
 
     def _initialize_active_status(
         self,
@@ -436,12 +573,22 @@ class CapabilityMonitor:
         policy = self._policies.get(capability_fingerprint)
         if policy is None:
             raise ValueError("capability monitoring policy is unavailable")
+        checkpoint = self._authorization_checkpoints.get(capability_fingerprint)
+        checkpoint_record = None
+        if checkpoint is not None:
+            checkpoint_record = CanonicalMemoryRecord(
+                memory_id=_authorization_checkpoint_id(capability_fingerprint), domain=MemoryDomain.EXECUTION,
+                text="", content={"semantic_ingestion_kind": "capability_authorization_checkpoint", "checkpoint": checkpoint.model_dump(mode="json")},
+                status=CommitStatus.COMMITTED, source_kind="semantic_ingestion_capability_authorization_checkpoint",
+                timestamp=self._now(), visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+            )
         base = {
             "capability_fingerprint": capability_fingerprint,
             "status": "active",
             "status_revision": 1,
             "monitoring_policy_digest": policy.policy_digest,
             "evidence_freshness_digest": evidence_freshness_digest,
+            "authorization_checkpoint_digest": record_digest(checkpoint_record) if checkpoint_record is not None else None,
         }
         status = CapabilityStatus(
             **base, status_digest=contract_digest(b"memorii.semantic-ingestion.capability-status.v1", base)
@@ -459,12 +606,31 @@ class CapabilityMonitor:
         existing = self._writers._memory_plane.get_record(record.memory_id)
         if existing is not None:
             loaded = CapabilityStatus.model_validate(existing.content["status"])
-            if loaded != status:
+            if (
+                loaded.status != "active"
+                or loaded.capability_fingerprint != status.capability_fingerprint
+                or loaded.monitoring_policy_digest != status.monitoring_policy_digest
+                or loaded.authorization_checkpoint_digest
+                != status.authorization_checkpoint_digest
+            ):
                 raise ValueError("capability status is already bound differently")
-            if self._writers._memory_plane.get_record(
+            persisted_freshness = self._writers._memory_plane.get_record(
                 freshness_record.memory_id
-            ) != freshness_record:
+            )
+            if (
+                persisted_freshness is None
+                or record_digest(persisted_freshness) != record_digest(freshness_record)
+            ):
                 raise ValueError("capability initial freshness authority is unavailable")
+            if checkpoint_record is not None:
+                persisted_checkpoint = self._writers._memory_plane.get_record(
+                    checkpoint_record.memory_id
+                )
+                if (
+                    persisted_checkpoint is None
+                    or record_digest(persisted_checkpoint) != record_digest(checkpoint_record)
+                ):
+                    raise ValueError("capability authorization checkpoint is unavailable")
             return loaded
         authorization = self._writers._authorize_atomic(
             self._writers.commit_binding(self._writers.current()),
@@ -472,9 +638,10 @@ class CapabilityMonitor:
         )
         try:
             self._writers._memory_plane.conditionally_write_records(
-                (freshness_record, record),
+                (freshness_record, *( (checkpoint_record,) if checkpoint_record is not None else ()), record),
                 preconditions=(
                     RecordAbsentPrecondition(memory_id=freshness_record.memory_id),
+                    *( (RecordAbsentPrecondition(memory_id=checkpoint_record.memory_id),) if checkpoint_record is not None else ()),
                     RecordAbsentPrecondition(memory_id=record.memory_id),
                 ),
                 authorization=authorization,
@@ -486,9 +653,13 @@ class CapabilityMonitor:
             loaded = CapabilityStatus.model_validate(existing.content["status"])
             if loaded != status:
                 raise ValueError("capability status is already bound differently") from exc
-            if self._writers._memory_plane.get_record(
+            persisted_freshness = self._writers._memory_plane.get_record(
                 freshness_record.memory_id
-            ) != freshness_record:
+            )
+            if (
+                persisted_freshness is None
+                or record_digest(persisted_freshness) != record_digest(freshness_record)
+            ):
                 raise ValueError(
                     "capability initial freshness authority is unavailable"
                 ) from exc
@@ -546,7 +717,7 @@ class CapabilityMonitor:
             freshness_record=freshness_record,
         )
 
-    def tick(self, *, evidence: CapabilityEvidenceWindow) -> CapabilityMonitorTickResult:
+    def tick(self, *, evidence: CapabilityEvidenceWindow, evaluation_kind: Literal["evidence_window", "missing_window", "provider_failure", "authorization_failure"] = "evidence_window") -> CapabilityMonitorTickResult:
         evidence = CapabilityEvidenceWindow.model_validate_json(
             evidence.model_dump_json()
         )
@@ -588,6 +759,7 @@ class CapabilityMonitor:
             "evaluated_at": now,
             "metric_decisions": metrics,
             "evidence_freshness": freshness.freshness,
+            "evaluation_kind": evaluation_kind,
             "action": action,
             "reason_codes": reasons,
         }
@@ -629,6 +801,7 @@ class CapabilityMonitor:
             "status_revision": current.status_revision + 1,
             "monitoring_policy_digest": policy.policy_digest,
             "evidence_freshness_digest": freshness.evidence_digest,
+            "authorization_checkpoint_digest": current.authorization_checkpoint_digest,
         }
         successor = CapabilityStatus(
             **successor_base,
@@ -757,7 +930,9 @@ class CapabilityMonitor:
             "latest_canary_success_at": evidence.latest_canary_success_at,
             "labeled_cluster_count_in_window": len(eligible),
             "traffic_state": evidence.traffic_state,
+            "traffic_state_changed_at": evidence.traffic_state_changed_at,
             "label_pipeline_state": evidence.label_pipeline_state,
+            "label_pipeline_state_changed_at": evidence.label_pipeline_state_changed_at,
             "freshness": freshness,
             "freshness_reason": reason,
             "status_revision": status_revision,

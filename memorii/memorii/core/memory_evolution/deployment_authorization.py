@@ -168,6 +168,74 @@ class DeploymentAuthorizationSignatureVerifier(Protocol):
     def verify(self, *, signing_key_reference: str, preimage: bytes, signature: str) -> bool: ...
 
 
+class DeploymentAuthorizationCurrentTrustCheck(Protocol):
+    """Host-owned signer lifecycle, revocation, and compromise decision.
+
+    The host must linearize this read with its revocation publication. Callers
+    fence writes on a false result; they cannot make a later external
+    revocation atomic without that host-provided linearization.
+    """
+
+    def is_current(
+        self, *, artifact: DeploymentAuthorizationArtifact, server_time: datetime
+    ) -> bool: ...
+
+
+class DeploymentAuthorizationCurrentTrustVerifier(Protocol):
+    """Live deployment-authority port for every use, not only construction."""
+
+    def verify_current(
+        self,
+        *,
+        raw: bytes,
+        server_time: datetime,
+        purpose: _Purpose,
+        target_kind: _TargetKind,
+        target_artifact_digest: str,
+        capability_fingerprint: str,
+        authority_snapshot_digest: str,
+        active_epoch: int,
+    ) -> DeploymentAuthorizationArtifact | None: ...
+
+
+class ArtifactDeploymentAuthorizationCurrentTrustVerifier:
+    """Compose canonical artifact verification with a live host trust decision."""
+
+    def __init__(
+        self,
+        *,
+        artifact_verifier: DeploymentAuthorizationArtifactVerifier,
+        current_trust_check: DeploymentAuthorizationCurrentTrustCheck,
+    ) -> None:
+        self._artifact_verifier = artifact_verifier
+        self._current_trust_check = current_trust_check
+
+    def verify_current(
+        self,
+        *, raw: bytes, server_time: datetime, purpose: _Purpose,
+        target_kind: _TargetKind, target_artifact_digest: str,
+        capability_fingerprint: str, authority_snapshot_digest: str,
+        active_epoch: int,
+    ) -> DeploymentAuthorizationArtifact | None:
+        try:
+            artifact = self._artifact_verifier.verify(raw, server_time=server_time)
+        except DeploymentAuthorizationError:
+            return None
+        if (
+            artifact.purpose != purpose
+            or artifact.target_kind != target_kind
+            or artifact.target_artifact_digest != target_artifact_digest
+            or artifact.capability_fingerprint != capability_fingerprint
+            or artifact.authority_snapshot_digest != authority_snapshot_digest
+            or artifact.active_epoch != active_epoch
+            or not self._current_trust_check.is_current(
+                artifact=artifact, server_time=server_time
+            )
+        ):
+            return None
+        return artifact
+
+
 class DeploymentAuthorizationRepository(Protocol):
     def publish_if_absent(self, artifact: DeploymentAuthorizationArtifact) -> DeploymentAuthorizationArtifact: ...
 
@@ -520,14 +588,17 @@ class _RawEd25519Signer:
 
 
 __all__ = [
+    "ArtifactDeploymentAuthorizationCurrentTrustVerifier",
     "DeploymentAuthorizationArtifact",
+    "DeploymentAuthorizationArtifactVerifier",
+    "DeploymentAuthorizationCurrentTrustCheck",
+    "DeploymentAuthorizationCurrentTrustVerifier",
     "DeploymentAuthorizationError",
     "DeploymentAuthorizationIssuanceRequest",
     "DeploymentAuthorizationIssuer",
     "DeploymentAuthorizationRepository",
     "DeploymentAuthorizationSigner",
     "DeploymentAuthorizationSignatureVerifier",
-    "DeploymentAuthorizationArtifactVerifier",
     "InMemoryDeploymentAuthorizationRepository",
     "IssuerAuthority",
     "InstalledDeploymentAuthorizationPublisher",
