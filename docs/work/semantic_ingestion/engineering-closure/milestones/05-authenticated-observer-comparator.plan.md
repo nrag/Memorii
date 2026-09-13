@@ -39,11 +39,10 @@ inferred from an unobserved process completion.
 
 ## Next Action
 
-Correct the canonical and public source-introduction contracts to retain
-fixture-authorable type-proof coordinates alongside opaque evidence IDs. Derive
-them from commit-time planning authority, preserve authentic legacy decoding,
-regenerate registry artifacts and prove the public materialization. Then resume
-source/entity comparator alignment.
+Exercise the comparator through the real host-composed ProviderMemoryService.
+Bind the configured context resolver to the actual host ingress, then prove
+caller denial, scope isolation and revocation between continuation pages
+without protected-record disclosure.
 
 ## Public Comparator Foundation
 
@@ -78,9 +77,35 @@ before later type-evidence records may participate, and forbids production IDs
 in expected fixtures. A read-only mapper's suggestion to compare those IDs was
 rejected because it contradicts that contract. This is a determinate production
 schema and persistence gap, not a new policy decision. The sole writer
-`r17_source_type_proof_publication` owns the canonical/public contract,
+`r17_source_type_proof_publication` was assigned the canonical/public contract,
 commit-time derivation, registered artifacts and focused production tests; it
-does not own the acceptance comparator or planning files.
+stopped before editing when the required validated upstream authority proved
+absent.
+
+That production correction stopped before editing after tracing the sealed
+authority to its source. The current proposal contains only model-supplied
+`proposed_type` and no validated type assertion that binds an asserted type,
+exact evidence span and proof class. Canonical identity planning deliberately
+emits empty type-proof digests, records and candidate evidence IDs. Treating the
+model proposal as certified evidence would violate the repository's
+model-output validation invariant. Therefore R17 comparison supports the
+actual empty type-proof set and rejects nonempty opaque bindings as
+unverifiable; it does not create a hidden type-certification feature. This is a
+fail-closed implementation boundary. A future source-type capability must add
+its own validated evidence contract before producing such bindings.
+
+Commit `61f12cff` completes the next comparator layer. Source introductions
+align only after operation/fence alignment; repeated introductions may identify
+one logical entity only when they resolve to the same revision/logical-ID pair,
+and distinct logical entity keys cannot collapse many-to-one. Operation and
+source terminal outcomes join only through established operation mappings and
+compare exact status, effect shape, reason set and complete operation set. The
+logical observation membership and per-kind counts must equal the complete
+public cohort. Twenty focused warnings-as-errors cases plus Ruff and supported
+Pyright pass, including missing, substituted, ambiguous and many-to-one
+alignment; terminal mismatch; missing/extra outcomes; and membership/count
+mutations. This remains bounded evidence until the real configured public route
+and remaining schema-specific record comparators pass.
 
 The linked `../../terminal-publication/closure.md` records bounded source closure
 with all three independent approvals, public same-CAS/restart/tamper/authority

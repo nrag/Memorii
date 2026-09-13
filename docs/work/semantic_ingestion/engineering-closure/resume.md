@@ -2,7 +2,7 @@
 
 Work type: implementation. Coordinator: root. Status: active Stage 5, not
 closed.
-Current committed baseline: `eccb5bfcab7b6d7bc4184d17bded86c606e62a33`
+Current product baseline: `61f12cffde746be4bdfd3d6677aeda3046f59119`
 on `semantic_ingestion_m5`. Index: `implementation.plan.md`. Active packet:
 `milestones/05-authenticated-observer-comparator.plan.md`. Previous resume preserved at
 `archive/resume-ac8819eaa31c8adadc54db2ca8a7ae60376d5b9e90752e4c0106cae995302039.md`.
@@ -85,7 +85,19 @@ approved alignment order requires independently authored semantic proof
 coordinates before later type records may participate. Treating those IDs as
 fixture coordinates was rejected as contrary to the design.
 
-Next action: add commit-time-derived semantic type-proof coordinates to the
-canonical and public source-introduction contracts, preserve legacy decoding,
-regenerate registered artifacts and prove public materialization; then resume
-source/entity comparator alignment.
+The attempted production correction stopped before editing: upstream proposal
+authority contains only model-supplied `proposed_type`, not a validated
+type-assertion proof. Canonical planning intentionally emits an empty type-proof
+set. Promoting that model field would violate the model-output validation
+boundary. R17 will therefore compare the supported empty set and fail closed
+for any unverifiable opaque nonempty binding; certified source-type creation is
+a separate future capability.
+
+Comparator slice 2 is committed at `61f12cff`. Twenty focused
+warnings-as-errors cases plus Ruff and Pyright prove source/entity alignment,
+terminal joins, exact membership/count closure, and adversarial mismatch
+families under the fail-closed type-proof boundary.
+
+Next action: exercise the comparator through the real host-composed
+ProviderMemoryService and prove configured caller denial, scope isolation and
+revocation between continuation pages without protected-record disclosure.
