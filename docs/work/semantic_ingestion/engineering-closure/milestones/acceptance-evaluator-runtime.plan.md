@@ -87,9 +87,8 @@ approval, qualifying measurements and final signatures remain release conditions
 
 ## Next Action
 
-Commit the complete Stage 1 V2 remediation candidate, repeat all three
-independent reviews on that exact revision, and reconcile every finding before
-promoting R14.
+Commit the complete Stage 1 V2 remediation candidate and run the three targeted
+independent delta reviews on that exact revision.
 
 ## Signed Numeric-Context V2 Preparation (2026-09-12)
 
@@ -423,6 +422,45 @@ generation/checking and diff checks pass; and the isolated wheel proof publishes
 one signed receipt and deployment authorization while passing all 14 installed
 negative cases. This remains a review candidate; R14 is partial until fresh
 specification, correctness, and test reviews of the exact commit are reconciled.
+
+## Stage 1 V2 Review Round 2 Remediation (2026-09-12)
+
+Review of `35033508` confirmed that the evaluator could consume a successor but
+no installed production command could publish that successor through the
+fenced repository. It also found that the public installed proof did not cover
+real-file lost acknowledgement, production-revocation currentness, conflicting
+durable publication, the policy/evidence schema boundary, or the registered
+descriptor purpose/version/type boundary. The SQLite setup path closed normal
+connections but lacked direct proof for exceptions raised during setup.
+
+The remediation adds the fixed `memorii-acceptance-authority-publish` command.
+It discovers the same single installed runtime as evaluation and delegates a
+prepared, administrator-authored transaction to the repository's canonical
+`compare_and_publish` owner; it exposes no trust, key, policy, or verifier
+injection. The wheel proof publishes a signed successor through that command
+and the separately configured production-revocation reader, evaluates the
+successor without changing fixed numeric configuration, reconciles a deleted
+receipt after durable authorization publication, rejects corrupted revocation
+currentness, and rejects conflicting durable authorization bytes. It runs the
+frozen four-cell, five-gate, ten-membership corpus for every public evaluation
+case and now contains 23 fail-closed cases, including signer, trust-policy,
+policy/evidence version, and registered descriptor mutations.
+
+The independent registered-vector checker validates all 13 signed artifacts'
+purpose, schema version, complete descriptor types, digest, and signature, with
+a mutation for every boundary. Runtime construction prevalidates all three
+fixed numeric manifests and their signer/trust-policy joins before candidate
+files are read. The SQLite connection test directly observes closure on a
+registration-mismatch setup exception.
+
+Coordinator verification on the dirty review candidate: the installed-wheel
+proof passes one successor sequence plus all 23 negative cases; 182 acceptance
+tests, 76 statistical-contract tests, and 119 authority/design feasibility tests
+pass with warnings as errors; the 38 directly edited repository/CLI tests pass;
+Ruff and the supported first-party Pyright selection pass; regenerated vectors
+pass the independent checker; and `git diff --check` passes. The candidate is
+not promoted. It requires an exact committed revision and targeted spec,
+correctness, and test delta reviews with no unresolved approval findings.
 
 ## V2 Numeric Authority Cutover (in progress, 2026-09-12)
 

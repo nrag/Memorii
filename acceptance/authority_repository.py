@@ -210,6 +210,7 @@ class SqliteAcceptanceAuthorityFence:
         if self._path.is_symlink():
             raise AuthorityRepositoryUnavailable("acceptance_fence_symlink")
         self._path.parent.mkdir(parents=True, exist_ok=True)
+        db: sqlite3.Connection | None = None
         try:
             db = sqlite3.connect(self._path, isolation_level=None)
             db.execute("PRAGMA journal_mode=WAL")
@@ -235,8 +236,12 @@ class SqliteAcceptanceAuthorityFence:
                 )
             return db
         except AuthorityRepositoryUnavailable:
+            if db is not None:
+                db.close()
             raise
         except sqlite3.Error as exc:
+            if db is not None:
+                db.close()
             raise AuthorityRepositoryUnavailable("acceptance_fence") from exc
 
     def _rows(self, db: sqlite3.Connection) -> list[tuple[int, str, str]]:

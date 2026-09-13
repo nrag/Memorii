@@ -2,7 +2,7 @@
 
 Work type: implementation. Coordinator: root. Status: active Stage 1, not
 closed.
-Current committed baseline: `aa41b0d2cce5e4271e823c0950fa119c036bafc9`
+Current committed baseline: `35033508`
 on `semantic_ingestion_m5`. Index: `implementation.plan.md`. Active packet:
 `milestones/acceptance-evaluator-runtime.plan.md`. Previous resume preserved at
 `archive/resume-ac8819eaa31c8adadc54db2ca8a7ae60376d5b9e90752e4c0106cae995302039.md`.
@@ -32,13 +32,23 @@ complete multi-cell recomputation, immutable publish/retry/restart behavior, a
 digest-only activation bridge, lifecycle/history failures, and installed-package
 import isolation. Production may not import `acceptance`.
 
-Coordinator validation records 175 acceptance tests passing, plus Ruff,
-zero-error first-party Pyright, schema-complete vectors for all 13 registered
-artifacts, the signed numeric-context feasibility matrix, diff, and an isolated
-installed-wheel proof with one success and 14 fail-closed cases. CI now installs the wheel into a fresh environment,
-checks both fixed providers, invokes the installed command, and runs the real
-configured success/failure fixture. R14 remains partial only until independent
-candidate review and any confirmed remediation complete.
+The latest dirty remediation adds a fixed installed authority-publication command
+and proves a real signed successor through the fenced repository and independent
+production-revocation reader. The public installed evaluation path uses the
+successor without a numeric configuration change, reconciles a lost receipt
+after durable production publication, and rejects 23 lifecycle, schema,
+signer/policy, currentness, conflict, provider, path, history, and persistence
+cases over the frozen multi-cell corpus. The 13-artifact independent checker now
+mutates purpose, version, complete descriptor types, digest, and signature.
+
+Coordinator validation records 182 acceptance, 76 statistical-contract, and
+119 authority/design feasibility tests passing with warnings as errors, plus
+Ruff, zero-error supported first-party Pyright, regenerated signed vectors,
+the independent checker, diff validation, and the installed-wheel proof. CI is
+wired to install the wheel, inventory the fixed providers, regenerate the
+vectors, run the installed publication/evaluation proof, and execute the focused
+source suites. R14 remains partial until this candidate is committed and its
+targeted independent delta reviews are reconciled.
 
 ## Ownership And Next Action
 
@@ -49,4 +59,5 @@ evidence, nonmutating lease-held evaluation snapshot, standard installed
 runtime, noninjectable command, CI job, and complete failure matrix. Root owns
 the current dirty candidate until one implementation writer resumes it.
 
-Next action: commit and independently review the complete Stage 1 V2 candidate.
+Next action: commit the Stage 1 V2 round-2 remediation candidate and run targeted
+specification, correctness, and test delta reviews on that exact revision.

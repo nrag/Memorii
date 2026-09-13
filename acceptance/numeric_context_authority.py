@@ -204,6 +204,33 @@ class FixedNumericManifestAuthority:
     expected_signing_key_id: str
     expected_trust_policy_digest: str
 
+    def __post_init__(self) -> None:
+        coverage = _signed(
+            self.coverage_bytes, "CapabilityCoverageManifest", self.signing_keys
+        )
+        gates = _signed(
+            self.gate_bytes, "CapabilityStatisticalGateManifest", self.signing_keys
+        )
+        frame = _signed(
+            self.sampling_frame_bytes,
+            "CapabilitySamplingFrameManifest",
+            self.signing_keys,
+        )
+        if any(
+            value["signing_key_id"] != self.expected_signing_key_id
+            or value["trust_policy_digest"] != self.expected_trust_policy_digest
+            for value in (coverage, gates, frame)
+        ):
+            raise NumericContextAuthorityRejected("numeric_context_trust_policy")
+        if (
+            gates["capability_coverage_manifest_digest"] != coverage["manifest_digest"]
+            or gates["capability_coverage_release_id"] != coverage["release_id"]
+            or gates["sampling_frame_manifest_digest"] != frame["manifest_digest"]
+            or frame["coverage_manifest_digest"] != coverage["manifest_digest"]
+            or frame["coverage_release_id"] != coverage["release_id"]
+        ):
+            raise NumericContextAuthorityRejected("numeric_context_fixed_manifest_join")
+
     def resolve(
         self, *, baseline_bytes: bytes, release_bytes: bytes,
         policy_bytes: bytes, evidence_bytes: bytes,

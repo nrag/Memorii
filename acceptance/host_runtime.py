@@ -15,7 +15,7 @@ import stat
 import sysconfig
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
@@ -389,9 +389,28 @@ class InstalledAcceptanceRuntime:
             artifact_signer=lambda preimage: evaluator_key.sign(preimage).hex(),
             evaluator_signing_key_coordinate=coordinate,
         )
+        self._authority_repository = repository
 
     def evaluator(self) -> AcceptanceEvaluator:
         return self._evaluator
+
+    def publish_authority(
+        self,
+        *,
+        prepared_objects: Mapping[str, bytes],
+        expected_commit_digest: str | None,
+        expected_key_head: str | None,
+        expected_status_generation: int | None,
+        next_commit: bytes,
+    ) -> str:
+        """Publish one administrator-prepared CAS transaction under fixed trust."""
+        return self._authority_repository.compare_and_publish(
+            prepared_objects=prepared_objects,
+            expected_commit_digest=expected_commit_digest,
+            expected_key_head=expected_key_head,
+            expected_status_generation=expected_status_generation,
+            next_commit=next_commit,
+        )
 
 
 __all__ = ["AcceptanceRuntimeConfigurationError", "InstalledAcceptanceRuntime", "runtime_config_path"]

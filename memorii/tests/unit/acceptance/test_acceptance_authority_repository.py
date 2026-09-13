@@ -172,6 +172,52 @@ def test_registration_is_mandatory_and_persistent(tmp_path: Path) -> None:
         SqliteAcceptanceAuthorityFence(path, altered, lambda *_: True).current()
 
 
+def test_registration_mismatch_closes_setup_connection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "fence.sqlite"
+    registration = _registration(tmp_path)
+    SqliteAcceptanceAuthorityFence(path, registration, lambda *_: True).current()
+    altered = AcceptanceFenceRegistration(
+        "other",
+        "test-fence",
+        "sqlite",
+        "fence-domain",
+        "test-repository",
+        "test-credential",
+        "test-signer",
+        "test-signature",
+    )
+    real_connect = sqlite3.connect
+
+    class TrackedConnection:
+        def __init__(self) -> None:
+            self.connection = real_connect(path, isolation_level=None)
+            self.closed = False
+
+        def execute(
+            self, sql: str, parameters: tuple[object, ...] = ()
+        ) -> sqlite3.Cursor:
+            return self.connection.execute(sql, parameters)
+
+        def close(self) -> None:
+            self.closed = True
+            self.connection.close()
+
+    opened: list[TrackedConnection] = []
+
+    def tracked_connect(*_args: object, **_kwargs: object) -> TrackedConnection:
+        connection = TrackedConnection()
+        opened.append(connection)
+        return connection
+
+    monkeypatch.setattr(sqlite3, "connect", tracked_connect)
+    with pytest.raises(AuthorityRepositoryUnavailable, match="registration_mismatch"):
+        SqliteAcceptanceAuthorityFence(path, altered, lambda *_: True).current()
+    assert len(opened) == 1
+    assert opened[0].closed is True
+
+
 def test_fenced_full_commit_recovers_index_and_rejects_tampering(tmp_path: Path) -> None:
     repo = _repository(tmp_path)
     prepared, commit = _commit_bundle(1)

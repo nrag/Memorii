@@ -86,10 +86,10 @@ def _policy_and_evidence(frame: dict[str, object], gates: dict[str, object]) -> 
             })
     policy = {
         "schema": "statistical_acceptance_policy.v2",
-        "arithmetic_bits": 4096,
-        "arithmetic_operations": 200000,
-        "precision": 12,
-        "output_cap": 200000,
+        "arithmetic_bits": 1024,
+        "arithmetic_operations": 40000,
+        "precision": 8,
+        "output_cap": 40000,
         "family_alpha": frame["family_alpha"],
         "family_alpha_spec_id": frame["family_alpha_spec_id"],
         "specs": frame["encoding_specs"],
@@ -121,7 +121,9 @@ def main() -> int:
     frame_bytes = raw("capability_sampling_frame_manifest")
     frame = json.loads(frame_bytes)
     gates = json.loads(gate_bytes)
-    policy, evidence = _policy_and_evidence(frame, gates)
+    policy = base64.b64decode(value["policy_base64"])
+    evidence = base64.b64decode(value["evidence_base64"])
+    assert (policy, evidence) == _policy_and_evidence(frame, gates)
     authority = FixedNumericManifestAuthority(
         coverage_bytes=coverage,
         gate_bytes=gate_bytes,

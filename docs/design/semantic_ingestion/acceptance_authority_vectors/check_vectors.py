@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -65,6 +67,82 @@ def _preimage(value: dict[str, Any], schema: dict[str, Any], registry: dict[str,
     }))
 
 
+def _descriptor(value: object, descriptor: dict[str, Any], types: dict[str, Any]) -> None:
+    if value is None:
+        if descriptor.get("nullable"):
+            return
+        raise ValueError("null")
+    kind = descriptor["type"]
+    if kind == "integer":
+        if type(value) is not int or not descriptor.get("minimum", -(2**63)) <= value <= descriptor.get("maximum", 2**63 - 1):
+            raise ValueError("integer")
+    elif kind == "boolean":
+        if type(value) is not bool:
+            raise ValueError("boolean")
+    elif kind == "digest":
+        if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{64}", value) is None:
+            raise ValueError("digest")
+    elif kind == "hex":
+        if (
+            not isinstance(value, str)
+            or len(value) < descriptor.get("minimum_length", 0)
+            or len(value) > descriptor.get("maximum_length", 16384)
+            or re.fullmatch(r"[0-9a-f]*", value) is None
+        ):
+            raise ValueError("hex")
+    elif kind == "timestamp":
+        if not isinstance(value, str):
+            raise ValueError("timestamp")
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.utcoffset() is None:
+            raise ValueError("timestamp")
+    elif kind == "string":
+        if (
+            not isinstance(value, str)
+            or len(value) < descriptor.get("minimum_length", 1)
+            or len(value) > descriptor.get("maximum_length", 16384)
+            or ("enum" in descriptor and value not in descriptor["enum"])
+        ):
+            raise ValueError("string")
+    elif kind == "array":
+        if (
+            type(value) is not list
+            or len(value) < descriptor.get("minimum_items", 0)
+            or len(value) > descriptor.get("maximum_items", 1024)
+        ):
+            raise ValueError("array")
+        encoded = [_encode(item) for item in value]
+        if descriptor.get("unique") and len(set(encoded)) != len(encoded):
+            raise ValueError("array_unique")
+        if descriptor.get("sorted") and encoded != sorted(encoded):
+            raise ValueError("array_order")
+        for item in value:
+            _descriptor(item, descriptor["item"], types)
+    elif kind == "named":
+        named = types[descriptor.get("type_name", descriptor["name"])]
+        if named["type"] == "pair":
+            if type(value) is not list or len(value) != 2:
+                raise ValueError("pair")
+            for item, child in zip(value, named["items"], strict=True):
+                _descriptor(item, child, types)
+        else:
+            if type(value) is not dict or set(value) != {field["name"] for field in named["fields"]}:
+                raise ValueError("map")
+            for field in named["fields"]:
+                _descriptor(value[field["name"]], field, types)
+    else:
+        raise ValueError("descriptor")
+
+
+def _registered(value: dict[str, Any], schema: dict[str, Any], registry: dict[str, Any]) -> None:
+    if set(value) != {field["name"] for field in schema["fields"]}:
+        raise ValueError("shape")
+    if value["purpose"] != schema["purpose"] or value["schema_version"] != schema["schema_version"]:
+        raise ValueError("purpose_or_version")
+    for field in schema["fields"]:
+        _descriptor(value[field["name"]], field, registry["types"])
+
+
 def main() -> None:
     registry_raw = REGISTRY.read_bytes()
     registry = json.loads(registry_raw)
@@ -94,6 +172,18 @@ def main() -> None:
         if set(vector["value"]) != {field["name"] for field in schema["fields"]}:
             raise SystemExit(f"authority vector shape: {vector['name']}")
         value = vector["value"]
+        _registered(value, schema, registry)
+        for name, changed in (
+            ("purpose", {**value, "purpose": str(value["purpose"]) + ".tampered"}),
+            ("version", {**value, "schema_version": 0}),
+            ("type", {**value, schema["fields"][0]["name"]: object()}),
+        ):
+            try:
+                _registered(changed, schema, registry)
+            except ValueError:
+                pass
+            else:
+                raise SystemExit(f"authority vector {name} mutation admitted: {vector['name']}")
         digest = _digest(schema["digest_domain"], registry["profile"], _unsigned(value, schema))
         if value[schema["digest_field"]] != digest:
             raise SystemExit(f"authority vector digest: {vector['name']}")

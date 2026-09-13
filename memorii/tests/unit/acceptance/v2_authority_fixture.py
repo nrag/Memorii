@@ -48,6 +48,8 @@ def build_v2_authority(
     *, policy: bytes, evidence: bytes, key: Ed25519PrivateKey, coordinate: str,
     authority_snapshot_digest: str, now: datetime, issued_at: datetime | None = None,
     lifecycle_state: Literal["active", "retired", "revoked", "compromised"] = "active",
+    release_epoch: int = 1, release_sequence: int = 1,
+    supersedes_release_digest: str | None = None,
 ) -> V2AuthorityFixture:
     policy_value = json.loads(policy)
     policy_value["specs"] = _sorted(policy_value["specs"])
@@ -55,8 +57,10 @@ def build_v2_authority(
     policy_value["memberships"] = _sorted(policy_value["memberships"])
     policy = _raw(policy_value)
     capability = policy_value["gates"][0]["locator"]["capability_fingerprint"]
-    cell = policy_value["gates"][0]["locator"]["cell_id"]
-    metrics = sorted({gate["locator"]["metric_id"] for gate in policy_value["gates"]})
+    metrics_by_cell: dict[str, list[str]] = {}
+    for gate in policy_value["gates"]:
+        locator = gate["locator"]
+        metrics_by_cell.setdefault(locator["cell_id"], []).append(locator["metric_id"])
     contract_digest = "d" * 64
     trust_digest = "9" * 64
     release_id = "test-release"
@@ -70,12 +74,14 @@ def build_v2_authority(
     coverage_digest, coverage = _signed("CapabilityCoverageManifest", key, coordinate, {
         "schema_version": 2, "purpose": "capability_coverage_manifest",
         "capability_fingerprint": capability, "capability_contract_digest": contract_digest,
-        "cells": [{
-            "behavior_lane": "semantic_ingestion", "cell_digest": "5" * 64,
-            "construction": "test", "coverage_cell_id": cell, "disposition": "enabled",
-            "language": "und", "predicate_family": "test", "required_metric_ids": metrics,
-            "unsupported_abstention_metric_id": None,
-        }],
+        "cells": _sorted([{
+            "behavior_lane": "semantic_ingestion", "cell_digest": sha256(cell.encode("utf-8")).hexdigest(),
+            "construction": "test", "coverage_cell_id": cell,
+            "disposition": "explicitly_unsupported" if len(metrics) == 1 and metrics[0].startswith("abstain.") else "enabled",
+            "language": "und", "predicate_family": "test",
+            "required_metric_ids": [] if len(metrics) == 1 and metrics[0].startswith("abstain.") else sorted(metrics),
+            "unsupported_abstention_metric_id": metrics[0] if len(metrics) == 1 and metrics[0].startswith("abstain.") else None,
+        } for cell, metrics in sorted(metrics_by_cell.items())]),
         "release_id": release_id, "trust_policy_digest": trust_digest, "signing_key_id": coordinate,
     })
     memberships = _sorted([{**{k: value for k, value in member.items() if k != "locator"},
@@ -113,9 +119,17 @@ def build_v2_authority(
         "numeric_encoding_registry_digest": common_digests["numeric_encoding_registry_digest"],
         "metric_gates": metric_gates, "trust_policy_digest": trust_digest, "signing_key_id": coordinate,
     })
-    disposition_digest = unsupported_cells_digest(tuple(
-        CoverageDisposition(capability, cell, metric, "enabled") for metric in metrics
-    ))
+    dispositions = []
+    for cell, metrics in metrics_by_cell.items():
+        unsupported = len(metrics) == 1 and metrics[0].startswith("abstain.")
+        dispositions.extend(
+            CoverageDisposition(
+                capability, cell, metric,
+                "explicitly_unsupported" if unsupported else "enabled",
+            )
+            for metric in metrics
+        )
+    disposition_digest = unsupported_cells_digest(tuple(sorted(dispositions)))
     baseline_fields = {
         "schema_version": 2, "purpose": "capability_baseline", "capability_fingerprint": capability,
         "capability_contract_digest": contract_digest, "coverage_manifest_digest": coverage_digest,
@@ -135,8 +149,9 @@ def build_v2_authority(
             "independent_cluster_definition_digest", "strata_definition_digest", "cluster_weighting_digest",
             "numeric_encoding_registry_digest", "unsupported_cells_digest")},
         "acceptance_authority_snapshot_digest": authority_snapshot_digest,
-        "acceptance_release_epoch": 1, "acceptance_release_sequence": 1,
-        "supersedes_release_digest": None, "issued_at": (issued_at or now - timedelta(minutes=1)).isoformat(),
+        "acceptance_release_epoch": release_epoch, "acceptance_release_sequence": release_sequence,
+        "supersedes_release_digest": supersedes_release_digest,
+        "issued_at": (issued_at or now - timedelta(minutes=1)).isoformat(),
         "expires_at": ((now + timedelta(minutes=5)) if issued_at is None else issued_at + timedelta(days=2)).isoformat(),
         "lifecycle_state": lifecycle_state,
         "revoked_at": now.isoformat() if lifecycle_state == "revoked" else None,

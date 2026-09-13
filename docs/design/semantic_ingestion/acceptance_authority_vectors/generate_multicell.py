@@ -51,6 +51,60 @@ def _signed(schema_id: str, value: dict[str, object]) -> tuple[str, bytes]:
     return str(value[digest_field]), _json(value)
 
 
+def _candidate_inputs(frame: dict[str, object], gates: dict[str, object]) -> tuple[bytes, bytes]:
+    fingerprint = str(frame["capability_fingerprint"])
+    gate_values = gates["metric_gates"]
+    memberships = frame["memberships"]
+    assert isinstance(gate_values, list) and isinstance(memberships, list)
+
+    def locator(value: dict[str, object]) -> dict[str, str]:
+        return {
+            "capability_fingerprint": fingerprint,
+            "cell_id": str(value["coverage_cell_id"]),
+            "metric_id": str(value["metric_id"]),
+        }
+
+    policy_gates = []
+    gate_by_locator = {}
+    for value in gate_values:
+        assert isinstance(value, dict)
+        gate_by_locator[(value["coverage_cell_id"], value["metric_id"])] = value
+        policy_gates.append({
+            "locator": locator(value), "method": value["test_method"], "direction": value["bound"],
+            "estimand": value["estimand"], "threshold": value["threshold"],
+            "nominal_alpha": value["nominal_alpha"], "minimum_clusters": value["minimum_clusters"],
+            **{name: value[name] for name in (
+                "threshold_spec_id", "nominal_alpha_spec_id", "lower_spec_id", "upper_spec_id",
+                "weight_spec_id", "event_value_spec_id", "iid_declared",
+            )},
+        })
+    policy_memberships = []
+    events = []
+    for value in memberships:
+        assert isinstance(value, dict)
+        policy_memberships.append({
+            "cluster_id": value["cluster_id"], "locator": locator(value),
+            **{name: value[name] for name in (
+                "provenance_ids", "expected_event_ids", "weight", "lower", "upper",
+            )},
+        })
+        gate = gate_by_locator[(value["coverage_cell_id"], value["metric_id"])]
+        provenance, event_ids = value["provenance_ids"], value["expected_event_ids"]
+        assert isinstance(provenance, list) and provenance and isinstance(event_ids, list)
+        for event_id in event_ids:
+            events.append({
+                "event_id": event_id, "provenance_id": provenance[0], "locator": locator(value),
+                "value": value["upper"] if gate["bound"] == "lower" else value["lower"],
+            })
+    policy = {
+        "schema": "statistical_acceptance_policy.v2", "arithmetic_bits": 1024,
+        "arithmetic_operations": 40000, "precision": 8, "output_cap": 40000,
+        "family_alpha": frame["family_alpha"], "family_alpha_spec_id": frame["family_alpha_spec_id"],
+        "specs": frame["encoding_specs"], "gates": policy_gates, "memberships": policy_memberships,
+    }
+    return _json(policy), _json({"schema": "statistical_acceptance_evidence.v2", "events": events})
+
+
 def main() -> None:
     source = json.loads(SOURCE.read_bytes())
     coverage = _decode(source, "capability_coverage_manifest")
@@ -173,9 +227,12 @@ def main() -> None:
         "capability_statistical_gate_manifest": gate_raw,
         "capability_sampling_frame_manifest": frame_raw,
     }
+    policy, evidence = _candidate_inputs(frame, gates)
     result = {
         "format": "memorii.acceptance.installed-multicell-vector.v2",
         "public_key_base64": base64.b64encode(KEY.public_key().public_bytes_raw()).decode("ascii"),
+        "policy_base64": base64.b64encode(policy).decode("ascii"),
+        "evidence_base64": base64.b64encode(evidence).decode("ascii"),
         "artifacts": {
             name: {
                 "canonical_bytes_base64": base64.b64encode(raw).decode("ascii"),

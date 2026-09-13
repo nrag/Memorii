@@ -18,6 +18,7 @@ dependencies = [
 
 [project.scripts]
 memorii-acceptance-evaluate = "acceptance.cli:main"
+memorii-acceptance-authority-publish = "acceptance.authority_cli:main"
 
 [project.entry-points."memorii.acceptance_evaluator_runtime"]
 installed = "acceptance.host_runtime:InstalledAcceptanceRuntime"

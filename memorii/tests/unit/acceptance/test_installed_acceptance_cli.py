@@ -24,6 +24,7 @@ from acceptance.authority_repository import (
     SqliteAcceptanceAuthorityFence,
     repository_identity,
 )
+from acceptance.capability_baseline_approval import EvaluationReceipt
 from acceptance.cli import main as acceptance_cli
 from acceptance.evaluator import AcceptanceEvaluationError
 from acceptance.host_runtime import (
@@ -70,8 +71,11 @@ def _artifact(schema: str, signer: Ed25519PrivateKey | None, coordinate: str | N
         _domain(schema), "registered", unsigned_artifact(value, schema)
     )
     if signer is not None:
+        assert coordinate is not None
         value["signature"] = signer.sign(signing_preimage(schema, value, coordinate)).hex()
-    return value[digest_name], _json(value)
+    digest = value[digest_name]
+    assert isinstance(digest, str)
+    return digest, _json(value)
 
 
 def _domain(schema: str) -> str:
@@ -130,6 +134,7 @@ def _installed_fixture(
     checkpoint_offset: timedelta = timedelta(minutes=-1),
     release_issued_at: datetime | None = None,
     lifecycle_state: Literal["active", "retired", "revoked", "compromised"] = "active",
+    use_frozen_multicell: bool = False,
 ) -> tuple[list[str], Path, Path, Path]:
     """Write a real signed authority prefix and the closed installed config."""
     import acceptance.host_runtime as host_runtime
@@ -137,18 +142,41 @@ def _installed_fixture(
         InstalledProductionRevocationReader,
     )
 
+    tmp_path.mkdir(parents=True, exist_ok=True)
     now = datetime.now(tz=UTC)
     authority_key = Ed25519PrivateKey.generate()
     evaluator_key = Ed25519PrivateKey.generate()
     deployment_key = Ed25519PrivateKey.generate()
     production_revocation_key = Ed25519PrivateKey.generate()
     coordinate = "acceptance-root-1"
+    (tmp_path / "fixture-authoring.json").write_bytes(_json({
+        "authority_private_key": authority_key.private_bytes(
+            serialization.Encoding.Raw,
+            serialization.PrivateFormat.Raw,
+            serialization.NoEncryption(),
+        ).hex(),
+        "production_revocation_private_key": production_revocation_key.private_bytes(
+            serialization.Encoding.Raw,
+            serialization.PrivateFormat.Raw,
+            serialization.NoEncryption(),
+        ).hex(),
+        "coordinate": coordinate,
+    }))
     authority_root = tmp_path / "authority"
     fence_path = tmp_path / "fence" / "authority.sqlite"
     receipt_root = tmp_path / "receipts"
     deployment_root = tmp_path / "deployment-authorizations"
     production_revocation_root = tmp_path / "production-revocations"
     policy, evidence, _, limits = inputs("0.00")
+    if use_frozen_multicell:
+        frozen = json.loads(
+            (
+                Path(__file__).parents[4]
+                / "docs/design/semantic_ingestion/acceptance_authority_vectors/multicell-v2.json"
+            ).read_bytes()
+        )
+        policy = base64.b64decode(frozen["policy_base64"])
+        evidence = base64.b64decode(frozen["evidence_base64"])
     trust_digest, trust = _artifact(
         "AcceptanceTrustSnapshot", authority_key, coordinate,
         schema_version=1, purpose="acceptance_trust_snapshot", snapshot_sequence=1,
@@ -449,7 +477,9 @@ def _runtime_inputs(args: list[str]) -> dict[str, bytes]:
     return {args[index][2:]: Path(args[index + 1]).read_bytes() for index in range(0, 10, 2)}
 
 
-def _evaluate_runtime(runtime: InstalledAcceptanceRuntime, values: dict[str, bytes]) -> object:
+def _evaluate_runtime(
+    runtime: InstalledAcceptanceRuntime, values: dict[str, bytes]
+) -> EvaluationReceipt:
     return runtime.evaluator().evaluate_and_publish(
         release_bytes=values["release"], baseline_bytes=values["baseline"], policy_bytes=values["policy"],
         evidence_bytes=values["evidence"], certificate_bytes=values["certificate"],
