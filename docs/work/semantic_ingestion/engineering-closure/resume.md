@@ -1,17 +1,17 @@
 # Semantic Ingestion Closure Resume
 
-Work type: implementation. Coordinator: root. Status: active Stage 1, not
+Work type: implementation. Coordinator: root. Status: active Stage 2, not
 closed.
-Current committed baseline: `cde2708c`
+Current committed baseline: `1a60848c`
 on `semantic_ingestion_m5`. Index: `implementation.plan.md`. Active packet:
-`milestones/acceptance-evaluator-runtime.plan.md`. Previous resume preserved at
+`milestones/04-monitor-registry-transitions.plan.md`. Previous resume preserved at
 `archive/resume-ac8819eaa31c8adadc54db2ca8a7ae60376d5b9e90752e4c0106cae995302039.md`.
 
 ## Current State
 
-The 23-row table records 15 engineering-complete requirements and eight open:
-R03, R08, R13, R14, R15, R16, R17 and R19. The approved closure sequence is
-R14 evaluator/bridge, R15 monitor, R17 comparator/authentication, complete host
+The 23-row table records 16 engineering-complete requirements and seven open:
+R03, R08, R13, R15, R16, R17 and R19. The approved closure sequence is R15
+monitor, R17 comparator/authentication, complete host
 composition for R08/R16/R19, then frozen evidence/release preparation for
 R03/R13. Actual production keys, signatures and qualifying release measurements
 remain release conditions.
@@ -57,8 +57,10 @@ that provider discovery fails before candidate reads. The current bounded delta
 adds every declared map, pair, numeric, length and collection boundary and
 asserts the exact `acceptance_runtime_configuration` failure for all three
 provider-cardinality cases. The rebuilt installed-wheel proof passes with 24
-fail-closed cases. R14 remains partial until that exact proof delta is committed
-and independently verified.
+fail-closed cases. The delta was committed as `1a60848c`; exact-revision
+specification and test review approved it with no remaining findings. The
+earlier correctness review approved the production rollback correction. R14 is
+engineering complete.
 
 ## Ownership And Next Action
 
@@ -69,5 +71,6 @@ evidence, nonmutating lease-held evaluation snapshot, standard installed
 runtime, noninjectable command, CI job, and complete failure matrix. Root owns
 the current dirty candidate until one implementation writer resumes it.
 
-Next action: commit the final R14 proof delta and return that exact revision to
-the specification and test reviewers.
+Next action: implement R15's canonical capability-status record, fake-clock
+scheduled monitor trigger, and atomic demotion conflict through the normal
+ingestion commit path.

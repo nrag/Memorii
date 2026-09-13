@@ -2,7 +2,7 @@
 
 - Work ID: semantic-ingestion-engineering-closure
 - Work type: implementation
-- Status: active; Stage 1 final proof delta pending independent review
+- Status: active; Stage 2 capability monitoring implementation
 - Coordinator: Codex main thread
 - Created: 2026-09-06
 - Last updated: 2026-09-12
@@ -11,7 +11,7 @@
 - Canonical inputs: frozen SIA architecture and closure plan
 - Expected outputs: six bounded implementation packages and fail-closed activation
 - Current resume packet: `docs/work/semantic_ingestion/engineering-closure/resume.md`
-- Active milestone packet: `docs/work/semantic_ingestion/engineering-closure/milestones/acceptance-evaluator-runtime.plan.md`
+- Active milestone packet: `docs/work/semantic_ingestion/engineering-closure/milestones/04-monitor-registry-transitions.plan.md`
 
 ## Design Baseline, Scope And Constraints
 
@@ -44,8 +44,8 @@ canonical owner with required authority and observed outcome.
 | --- | --- | --- | --- |
 | 1 | evidence/M0 reconciliation | R01-R04, R07, R09-R13, R18, R20-R23 | partial; final candidate proof deferred |
 | 2 | release crypto/trust | R03, R08, R13, R16, R19 | partial; signing locally verified, host/review unfinished |
-| 3 | independent statistics | R05, R06, R14 | final installed proof delta locally verified; targeted review pending |
-| 4 | monitor/registry | R08, R15, R16, R19 | not implemented; queued after prerequisite contracts |
+| 3 | independent statistics | R05, R06, R14 | complete at `1a60848c`; independent spec/correctness/test approval |
+| 4 | monitor/registry | R08, R15, R16, R19 | active; production status/CAS and scheduler integration |
 | 5 | observer/comparator | R03, R13, R17 | bounded source-finalization approved; group carrier implementation active; authenticated query/comparison pending |
 | 6 | host closure | R01-R23 | blocked on incomplete packages |
 
@@ -125,8 +125,8 @@ facts in `monitor-binding-preflight.md` instead of treating it as a binding.
   serialization before its byte cap. Direct comparison also found an extra
   newline in purported canonical locator bytes. Independent read-only
   consultation confirmed the contract gaps; the linked design records its
-  exhausted reconstruction budget and exact obligations. No production numeric
-  contract was changed and R14 remains incomplete.
+  exhausted reconstruction budget and exact obligations. That rejected attempt
+  is historical; the successor installed runtime completed R14 at `1a60848c`.
 - `observer_storage_map`: code-mapper/Spark read-only exact current storage/auth
   trace; prior broad map did not establish a usable complete cohort reader.
 
@@ -168,8 +168,9 @@ writers finish; no current whole-candidate proof is claimed yet.
 
 ## Next Action
 
-Commit the final Stage 1 proof delta and return that exact revision to the
-specification and test reviewers.
+Implement R15's canonical capability-status record, fake-clock scheduled
+monitor trigger, and atomic active-to-evidence-only transaction through the
+normal ingestion commit path.
 
 2026-09-08: root owns all code, generation, tests and commits. Read-only
 component reviews cover frozen90c58da62428f3caeab8ee7bca03116a24009d35e97aa705e1d757987a61362c.

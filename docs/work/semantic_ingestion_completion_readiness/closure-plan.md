@@ -278,23 +278,23 @@ and exact remaining blockers. Do not count test totals or helper approvals as
 row closure. If a stage cannot promote its primary row, retain the prior count,
 record the failed exit criterion and remediate it before claiming the next count.
 
-Exactly one campaign next action: execute Stage 1 by promoting the approved
-acceptance-authority contract into an installed evaluator/CLI and verified-result
-deployment bridge, then run its focused independent acceptance gate.
+Exactly one campaign next action: execute Stage 2 by implementing the production
+capability monitor, shared status authority and atomic demotion conflict through
+the normal ingestion path.
 
 Updated 2026-09-12 against the implementation packets and recorded evidence at
 baseline `224b2c276fec0b61d4a901fcd1f19f4bc7e452e9`. These are engineering
 progress labels, not release or final-candidate approval:
 
-- **Engineering complete (15):** completed behavior is retained; no new
+- **Engineering complete (16):** completed behavior is retained; no new
   implementation gap is currently assigned to that row. Every row still needs
   its applicable final-candidate regression/authority gates and review.
-- **Partial (7):** some relevant implementation/evidence exists, but the full
+- **Partial (6):** some relevant implementation/evidence exists, but the full
   requirement is unfinished.
 - **Not implemented (1):** R15's production monitoring/transition work remains.
 
-**Eight requirements remain open: R03, R08, R13, R14, R15, R16, R17 and R19.**
-This is not a 15/23 final engineering-approval claim. Production signing alone
+**Seven requirements remain open: R03, R08, R13, R15, R16, R17 and R19.**
+This is not a 16/23 final engineering-approval claim. Production signing alone
 does not block any engineering status here. Quality measurement and final
 candidate proof remain separate obligations.
 
@@ -336,8 +336,8 @@ to complete by this production write/recovery checkpoint. Current details and ev
 | R02 | Engineering complete | Candidate, semantic validation and commit paths retain M3 proof; current scenario and transaction gates pass | Parent closure record only | Capability activation approval |
 | R03 | Partial | M0 crosswalk and historical evidence are retained; release preparation is restricted to tracked members; current provider observation supplies portable structural evidence | Freeze the eventual post-remediation candidate and publish the final owner/gate/evidence package | Signed real release/evidence approval |
 | R04 | Engineering complete | Typed evidence ownership and terminal-chain validation retain M1/M3 proof under current gates | Parent closure record only | None distinct |
-| R05 | Engineering complete | Semantic evidence validation and required metric inputs are retained | R14 must consume these metrics before release approval; no additional R05 production code identified | Approved capability quality evidence |
-| R06 | Engineering complete | Temporal construction/decision matrix and exact replay remain covered | R14 must consume these metrics before release approval; no additional R06 production code identified | Approved capability quality evidence |
+| R05 | Engineering complete | Semantic evidence validation and required metric inputs are retained and consumed by the installed R14 evaluator | Parent closure record only | Approved capability quality evidence |
+| R06 | Engineering complete | Temporal construction/decision matrix and exact replay remain covered and consumed by the installed R14 evaluator | Parent closure record only | Approved capability quality evidence |
 | R07 | Engineering complete | Registered prompt, redaction and fingerprint bindings pass the current authority/generation gates | Parent closure record only | Approval of changed fingerprints if applicable |
 | R08 | Partial | Built-in local/no-network profile, protected activation, configured trust, installed-wheel bootstrap and provider observation composition are implemented and CI exercised | Implement monitor/status integration and configured host-ingress rejection/revocation proof across supported roots | Real trusted deployment artifacts |
 | R09 | Engineering complete | Current-policy egress authorization and negative paths remain covered | Parent closure record only | Real remote policy only if enabled |
@@ -345,7 +345,7 @@ to complete by this production write/recovery checkpoint. Current details and ev
 | R11 | Engineering complete | Single-writer, cutover, retry, restart and rollback behavior remain covered | Parent closure record only | Activation/migration authorization if used |
 | R12 | Engineering complete | Temporal/lifecycle contracts and current projection-history gates pass | Parent closure record only | None distinct |
 | R13 | Partial | Ed25519 verification, configured resolver, PEM external signing, release/lifecycle assembly, installed preparation, protected target validation and test-key tamper matrix are implemented | Complete acceptance-authority/evaluator-to-deployment binding, final host/release evidence and cloud-KMS signer adapter selected for the release | Actual trusted keys, signatures and monotonic release publication |
-| R14 | Partial | Independent arithmetic/CTV evaluator passes 81 focused tests and 33 independent vectors; issuance-prefix design correction passes 103 checks | Promote the acceptance-authority contract; ship an installed evaluator/CLI with protected held context and verified-result publication; run the complete approved policy/data evaluation | Product policy approval/signature and qualifying measurements |
+| R14 | Engineering complete | Installed authority-publication and evaluation commands use protected signed authority, independently recompute the frozen four-cell corpus, publish immutable signed receipts and production authorizations, reject rollback, and pass 24 installed fail-closed cases; exact-revision spec, correctness and test reviews report no remaining finding | Parent closure record only; ordinary activation consumption remains allocated to R13/R15 host integration | Product policy approval/signature and qualifying measurements |
 | R15 | Not implemented | Readiness, authority preflight and deterministic validation matrix exist | Implement the scheduled production monitor, immutable evidence-window evaluation, atomic registry/status CAS demotion, zero-traffic freshness, outage/breach handling, restart and explicit reactivation | Approved monitoring policy and real evidence windows |
 | R16 | Partial | Bootstrap topology, 181-schema/1269-role registered publication, native policy retention, installed package preparation and protected target activation are implemented | Bind the monitor/status owner across activation and use; close the configured ingress/root matrix and final package evidence | Approve/sign final bundle fingerprints |
 | R17 | Partial | All 17 graph observation families, registered projection identity reconstruction, event-derived intervals, scoped pagination, durable ingestion-time seals and public ProviderMemoryService methods are implemented; real activated JSONL composition and CI exercise the path | Add an independently authored closed-world structural comparator through the paginated public API; prove missing/extra/time/provenance/fence mutations and configured host-ingress rejection plus between-page revocation | Real caller trust and acceptance witnesses |
@@ -402,14 +402,14 @@ identity, complete materializer, public provider methods and persisted
 ingestion-time attestations are implemented. R17 remains partial solely for the
 independent comparator and configured authorization/revocation proof described
 in the table. R19 remains partial for those host negatives and the missing
-monitor/status integration. The refreshed count remains 15 engineering-complete
-and 8 partial/unimplemented; the remaining engineering work is explicit and is
+monitor/status integration. After R14 completion, the refreshed count is 16
+engineering-complete and 7 partial/unimplemented; the remaining engineering work is explicit and is
 not collapsed into deferred production signing.
 
 ## Evidence Progress Record (2026-09-12, PR #120 green at 4e524f31)
 
-No open row is closed by this record; it captures evidence now held so the
-next campaign step plans from reality. The eight-open count is unchanged.
+This dated record originally closed no row; subsequent R14 completion is
+recorded in the current table and R14 bullet below.
 
 - R17 (observation/retrieval): the public construction is complete and
   CI-enforced — all 17 stream families produced through the registered
@@ -434,8 +434,10 @@ next campaign step plans from reality. The eight-open count is unchanged.
   REMAINING: configured release assembly, bundle/profile verification on
   publication/activation, real signatures (deferred, now scheduled via
   Tier-1).
-- R14 (statistical evaluator): unchanged — evaluator/CLI integration and the
-  acceptance-authority successor decision remain open.
+- R14 (statistical evaluator): engineering complete at `1a60848c`; installed
+  evaluator/authority publication, immutable result publication, rollback
+  rejection and complete independent proof are approved. Qualifying release
+  measurements and signatures remain release conditions.
 - R15 (monitor): unchanged — not implemented.
 - R08 (host behaviors): unchanged beyond the factory/service observation
   path; matrix breadth open.

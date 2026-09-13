@@ -1,7 +1,7 @@
 # Package 3: Independent Statistical Evaluator
 
 - Parent WorkPlan: `docs/work/semantic_ingestion/engineering-closure/implementation.plan.md`
-- Status: blocked on acceptance-authority design; numeric component approved
+- Status: complete through installed acceptance runtime at `1a60848c`
 - Requirements: R05, R06, R14
 
 Implement frozen coverage and independent recomputation without inventing
@@ -35,8 +35,8 @@ to reviewers. No canonical schema or generated authority has been promoted.
 
 ## Next Action
 
-Resolve the linked authority design's issue-time, bounded byte-entry and closed
-shape obligations before canonical promotion and full acceptance-owner assembly.
+None. The installed acceptance runtime packet records the completed authority,
+evaluation, publication and review evidence.
 
 The authority reconstruction's one conformance verification did not converge;
 its declared budget is exhausted. `../../acceptance-authority/review.md` records
