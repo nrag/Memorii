@@ -2866,13 +2866,18 @@ def test_installed_monitoring_configuration_reaches_all_capture_roots(
         installed_capability_monitoring_configuration=configuration,
         now_provider=lambda: clock.now,
     )
-    for service in (direct, factory, filesystem, hermes._service):
+    for service, process in (
+        (direct, direct.process_capability_monitoring),
+        (factory, factory.process_capability_monitoring),
+        (filesystem, filesystem.process_capability_monitoring),
+        (hermes._service, hermes.process_capability_monitoring),
+    ):
         assert service._capability_monitor.configured_capability_fingerprints == (
             policy.capability_fingerprint,
         )
         # Initial construction has durably activated the signed capability;
         # exercise the public scheduler rather than inspecting only wiring.
-        assert service.process_capability_monitoring(max_items=1) == ()
+        assert process(max_items=1) == ()
         statuses = service._memory_plane.list_records(
             source_kind="semantic_ingestion_capability_status"
         )

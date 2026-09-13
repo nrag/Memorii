@@ -583,6 +583,10 @@ def test_hermes_forwards_real_graph_observation_and_attestation_routes(backend):
             update={"scope_constraint": MemoryScope(user_id="other-user", task_id="task:one")}
         ),
     )
+    invalid_cursor = hermes.observe_graph(
+        host_ingress=_host_ingress(),
+        request=backend.graph_request.model_copy(update={"cursor": "malformed"}),
+    )
 
     assert isinstance(graph, GraphObservationPage)
     assert graph.kind == "page"
@@ -592,6 +596,57 @@ def test_hermes_forwards_real_graph_observation_and_attestation_routes(backend):
     assert isinstance(attestations, IngestionTimeAttestationPage)
     assert attestations.kind == "page"
     _assert_non_disclosing_failure(denied, "denied")
+    _assert_non_disclosing_failure(invalid_cursor, "invalid_cursor")
+
+
+def test_unconfigured_hermes_observation_routes_fail_closed() -> None:
+    """An unconfigured Hermes host exposes only the public denial contract."""
+
+    hermes = HermesMemoryProvider(service=build_provider_memory_service_from_env())
+    ingress = _host_ingress()
+    selector = GraphObservationCohortSelector(
+        seed_source_ids=("unknown",),
+        seed_operation_ids=(),
+        include_referenced_boundary_entities=True,
+    )
+    coordinates = dict(
+        scope_constraint=MemoryScope(user_id="alice"),
+        cohort_selector=selector,
+        expected_graph_revision="graph",
+        expected_observation_revision="observation",
+    )
+    graph_request = GraphObservationRequest(
+        **coordinates,
+        view="current",
+        valid_at=None,
+        system_as_of=_SNAPSHOT_TIME,
+        total_page_size=1,
+        cursor=None,
+    )
+    time_request = IngestionTimeAttestationRequest(
+        **coordinates, total_page_size=1, cursor=None,
+    )
+
+    responses = (
+        hermes.observe_graph(host_ingress=ingress, request=graph_request),
+        hermes.observe_graph(
+            host_ingress=ingress,
+            request=graph_request.model_copy(update={"cursor": "untrusted-token"}),
+        ),
+        hermes.observe_ingestion_time_attestations(
+            host_ingress=ingress, request=time_request,
+        ),
+        hermes.observe_ingestion_time_attestations(
+            host_ingress=ingress,
+            request=time_request.model_copy(update={"cursor": "untrusted-token"}),
+        ),
+    )
+    for response, reason in zip(
+        responses,
+        ("denied", "revoked_access", "denied", "revoked_access"),
+        strict=True,
+    ):
+        _assert_non_disclosing_failure(response, reason)
 
 
 def test_unconfigured_and_misconfigured_fail_closed(backend, monkeypatch):

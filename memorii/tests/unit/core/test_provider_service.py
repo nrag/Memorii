@@ -551,6 +551,12 @@ def test_hermes_forwards_semantic_ingestion_lifecycle_surface() -> None:
     reconcile.assert_called_once_with()
 
 
+def test_hermes_reconciles_no_pending_memory_evolution() -> None:
+    """The public Hermes recovery hook is safe when no durable work is pending."""
+
+    assert HermesMemoryProvider(ProviderMemoryService()).reconcile_memory_evolution() == []
+
+
 def test_memory_write_stages_user_candidate_and_blocks_commit() -> None:
     provider = HermesMemoryProvider(ProviderMemoryService())
     result = provider.on_memory_write(
