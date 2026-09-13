@@ -2,7 +2,7 @@
 
 Work type: implementation. Coordinator: root. Status: active Stage 1, not
 closed.
-Current committed baseline: `38167043`
+Current committed baseline: `cde2708c`
 on `semantic_ingestion_m5`. Index: `implementation.plan.md`. Active packet:
 `milestones/acceptance-evaluator-runtime.plan.md`. Previous resume preserved at
 `archive/resume-ac8819eaa31c8adadc54db2ca8a7ae60376d5b9e90752e4c0106cae995302039.md`.
@@ -41,7 +41,7 @@ signer/policy, currentness, conflict, provider, path, history, and persistence
 cases over the frozen multi-cell corpus. The 13-artifact independent checker now
 mutates purpose, version, complete descriptor types, digest, and signature.
 
-Round-2 review found one P2 rollback defect plus bounded evidence gaps. The dirty
+Round-2 review found one P2 rollback defect plus bounded evidence gaps. The
 correction enforces direct monotonic active-release succession and rejects a
 signed R2-to-R1 rollback through the installed publication command. It also
 recursively mutates every registered descriptor family, pins the frozen
@@ -50,9 +50,15 @@ runtime discovery before candidate reads. Coordinator validation records 182
 acceptance, 76 statistical-contract, and 119 authority/design feasibility tests
 passing with warnings as errors, plus Ruff, zero-error supported first-party
 Pyright, the independent checker, diff validation, and a rebuilt installed-wheel
-proof with 24 fail-closed cases. R14 remains partial until the correction is
-committed and the three targeted delta reviews report no unresolved approval
-finding.
+proof with 24 fail-closed cases. Correctness and test delta review approved the
+committed correction. Specification delta review found two final proof-only
+gaps: structural/cardinality descriptor mutations and an observable assertion
+that provider discovery fails before candidate reads. The current bounded delta
+adds every declared map, pair, numeric, length and collection boundary and
+asserts the exact `acceptance_runtime_configuration` failure for all three
+provider-cardinality cases. The rebuilt installed-wheel proof passes with 24
+fail-closed cases. R14 remains partial until that exact proof delta is committed
+and independently verified.
 
 ## Ownership And Next Action
 
@@ -63,5 +69,5 @@ evidence, nonmutating lease-held evaluation snapshot, standard installed
 runtime, noninjectable command, CI job, and complete failure matrix. Root owns
 the current dirty candidate until one implementation writer resumes it.
 
-Next action: commit the bounded round-2 review correction and return that exact
-revision to the specification, correctness, and test reviewers.
+Next action: commit the final R14 proof delta and return that exact revision to
+the specification and test reviewers.

@@ -155,18 +155,47 @@ def _descriptor_mutations(
     mutations: list[tuple[str, object]] = [(f"{path}.kind", object())]
     if kind == "integer":
         mutations.append((f"{path}.integer", True))
+        if "minimum" in descriptor:
+            mutations.append((f"{path}.minimum", descriptor["minimum"] - 1))
+        if "maximum" in descriptor:
+            mutations.append((f"{path}.maximum", descriptor["maximum"] + 1))
     elif kind == "boolean":
         mutations.append((f"{path}.boolean", 0))
     elif kind == "digest":
         mutations.append((f"{path}.digest", "g" * 64))
     elif kind == "hex":
         mutations.append((f"{path}.hex", "g" * descriptor.get("minimum_length", 1)))
+        if descriptor.get("minimum_length", 0) > 0:
+            mutations.append(
+                (f"{path}.minimum_length", "a" * (descriptor["minimum_length"] - 1))
+            )
+        if "maximum_length" in descriptor:
+            mutations.append(
+                (f"{path}.maximum_length", "a" * (descriptor["maximum_length"] + 1))
+            )
     elif kind == "timestamp":
         mutations.append((f"{path}.timestamp", "not-a-timestamp"))
     elif kind == "string":
-        replacement = "__unknown_enum__" if "enum" in descriptor else ""
-        mutations.append((f"{path}.string", replacement))
+        if "enum" in descriptor:
+            mutations.append((f"{path}.enum", "__unknown_enum__"))
+        if descriptor.get("minimum_length", 0) > 0:
+            mutations.append(
+                (f"{path}.minimum_length", "x" * (descriptor["minimum_length"] - 1))
+            )
+        if "maximum_length" in descriptor:
+            mutations.append(
+                (f"{path}.maximum_length", "x" * (descriptor["maximum_length"] + 1))
+            )
     elif kind == "array" and type(value) is list:
+        if descriptor.get("minimum_items", 0) > 0:
+            mutations.append(
+                (f"{path}.minimum_items", value[: descriptor["minimum_items"] - 1])
+            )
+        if "maximum_items" in descriptor:
+            item = value[0] if value else None
+            mutations.append(
+                (f"{path}.maximum_items", [item] * (descriptor["maximum_items"] + 1))
+            )
         if value and descriptor.get("unique") and len(value) < descriptor.get("maximum_items", 1024):
             mutations.append((f"{path}.unique", [*value, deepcopy(value[0])]))
         if descriptor.get("sorted") and len(value) > 1:
@@ -185,6 +214,7 @@ def _descriptor_mutations(
     elif kind == "named":
         named = types[descriptor.get("type_name", descriptor["name"])]
         if named["type"] == "pair" and type(value) is list:
+            mutations.append((f"{path}.pair_arity", value[:1]))
             for index, (item, child) in enumerate(
                 zip(value, named["items"], strict=True)
             ):
@@ -195,6 +225,10 @@ def _descriptor_mutations(
                     changed[index] = replacement
                     mutations.append((name, changed))
         elif named["type"] == "map" and type(value) is dict:
+            missing = dict(value)
+            missing.pop(next(iter(missing)))
+            mutations.append((f"{path}.map_missing", missing))
+            mutations.append((f"{path}.map_extra", {**value, "unexpected": None}))
             for child in named["fields"]:
                 child_name = child["name"]
                 for name, replacement in _descriptor_mutations(

@@ -2,7 +2,7 @@
 
 - Work ID: semantic-ingestion-engineering-closure
 - Work type: implementation
-- Status: active; Stage 1 V2 round-2 remediation pending independent review
+- Status: active; Stage 1 final proof delta pending independent review
 - Coordinator: Codex main thread
 - Created: 2026-09-06
 - Last updated: 2026-09-12
@@ -44,7 +44,7 @@ canonical owner with required authority and observed outcome.
 | --- | --- | --- | --- |
 | 1 | evidence/M0 reconciliation | R01-R04, R07, R09-R13, R18, R20-R23 | partial; final candidate proof deferred |
 | 2 | release crypto/trust | R03, R08, R13, R16, R19 | partial; signing locally verified, host/review unfinished |
-| 3 | independent statistics | R05, R06, R14 | installed authority publication/evaluator candidate locally verified; targeted review pending |
+| 3 | independent statistics | R05, R06, R14 | final installed proof delta locally verified; targeted review pending |
 | 4 | monitor/registry | R08, R15, R16, R19 | not implemented; queued after prerequisite contracts |
 | 5 | observer/comparator | R03, R13, R17 | bounded source-finalization approved; group carrier implementation active; authenticated query/comparison pending |
 | 6 | host closure | R01-R23 | blocked on incomplete packages |
@@ -168,8 +168,8 @@ writers finish; no current whole-candidate proof is claimed yet.
 
 ## Next Action
 
-Commit the bounded Stage 1 round-2 review correction and return that exact
-revision to the specification, correctness, and test reviewers.
+Commit the final Stage 1 proof delta and return that exact revision to the
+specification and test reviewers.
 
 2026-09-08: root owns all code, generation, tests and commits. Read-only
 component reviews cover frozen90c58da62428f3caeab8ee7bca03116a24009d35e97aa705e1d757987a61362c.

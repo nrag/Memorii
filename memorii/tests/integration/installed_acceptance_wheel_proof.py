@@ -601,11 +601,12 @@ def main() -> int:
             _assert_empty(receipts, authorizations)
             if group == "memorii.acceptance_evaluator_runtime":
                 authority_before = _authority_state(config_path)
-                _run(
+                authority_result = _run(
                     [str(authority_cli), "--commit", str(work / "must-not-read")],
                     work,
                     False,
                 )
+                assert "acceptance_runtime_configuration" in authority_result.stderr
                 assert _authority_state(config_path) == authority_before
         finally:
             entry_points.write_text(original_entry_points, encoding="utf-8")
@@ -623,11 +624,12 @@ def main() -> int:
         _run([cli] + args, work, False)
         _assert_empty(receipts, authorizations)
         authority_before = _authority_state(config_path)
-        _run(
+        authority_result = _run(
             [str(authority_cli), "--commit", str(work / "must-not-read")],
             work,
             False,
         )
+        assert "acceptance_runtime_configuration" in authority_result.stderr
         assert _authority_state(config_path) == authority_before
     finally:
         entry_points.write_text(original_entry_points, encoding="utf-8")
@@ -646,11 +648,12 @@ def main() -> int:
     )
     try:
         authority_before = _authority_state(config_path)
-        _run(
+        authority_result = _run(
             [str(authority_cli), "--commit", str(work / "must-not-read")],
             work,
             False,
         )
+        assert "acceptance_runtime_configuration" in authority_result.stderr
         _assert_empty(receipts, authorizations)
         assert _authority_state(config_path) == authority_before
     finally:

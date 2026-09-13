@@ -87,8 +87,8 @@ approval, qualifying measurements and final signatures remain release conditions
 
 ## Next Action
 
-Commit the bounded round-2 review remediation and return it to the specification,
-correctness, and test reviewers for exact-revision delta verification.
+Commit the final proof-only remediation and return it to the specification and
+test reviewers for exact-revision delta verification.
 
 ## Signed Numeric-Context V2 Preparation (2026-09-12)
 
@@ -496,6 +496,25 @@ independent vector checker and `git diff --check` pass. The milestone remains
 under review until the correction is committed and the three affected reviewers
 verify the exact delta with `remaining_validated_p1_p2: []` and no unresolved
 approval finding.
+
+## Final R14 Proof Delta (2026-09-12)
+
+Correctness and test review approved `cde2708c`; specification review retained
+two verification-only `changes_required` findings. The independent descriptor
+checker did not yet mutate closed-map membership, pair arity, integer ranges,
+string/hex lengths, or array cardinality. The installed provider-discovery cases
+used an unreadable candidate path but did not assert the discovery-specific
+failure, so an earlier file read could have produced the same nonzero result.
+
+The checker now creates a preserving negative for every declared structural and
+cardinality constraint. The installed zero, duplicate and nonconforming provider
+cases now require `acceptance_runtime_configuration` in stderr while retaining
+the unchanged repository inventory assertion. The independent checker, Ruff and
+diff checks pass. A newly built wheel ran the public successor/rollback flow and
+all 24 fail-closed cases successfully, producing receipt digest
+`9283011a09d5cfd3bb8df3721c92d4dc110a219716de659aed28b34a509a647c`.
+R14 remains partial until specification and test reviewers verify this exact
+committed delta with no unresolved approval finding.
 
 ## V2 Numeric Authority Cutover (in progress, 2026-09-12)
 
