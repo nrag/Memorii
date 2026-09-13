@@ -398,10 +398,53 @@ def test_deferred_monitor_restart_preserves_completed_baseline_after_status_tran
     assert first_current.content["status"]["status"] == expected_status
     # Discard the failed host: recovery must derive the completed prefix from JSONL.
     service = build(MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "failed-suffix")))
+    # Construction is the production trigger after the retained cutover has
+    # completed: it verifies the durable first baseline and initializes the
+    # remaining second authority before the idempotent public activation call.
     clock[0] += timedelta(minutes=1)
     assert service.activate_observation_ledger().activation_digest is not None
     assert service._pending_capability_monitoring_initializations == ()
     assert service._memory_plane.get_record(first_status.memory_id) == first_current
+    second_records = tuple(service._memory_plane.list_records())
+    second_status = tuple(
+        record
+        for record in second_records
+        if record.source_kind == "semantic_ingestion_capability_status"
+        and record.content["status"]["capability_fingerprint"]
+        == second._policy.capability_fingerprint
+    )
+    second_freshness = tuple(
+        record
+        for record in second_records
+        if record.source_kind == "semantic_ingestion_capability_initial_freshness"
+        and record.content["freshness"]["capability_fingerprint"]
+        == second._policy.capability_fingerprint
+    )
+    second_checkpoint = tuple(
+        record
+        for record in second_records
+        if record.source_kind
+        == "semantic_ingestion_capability_authorization_checkpoint"
+        and record.memory_id.endswith(second._policy.capability_fingerprint)
+    )
+    assert len(second_status) == len(second_freshness) == len(second_checkpoint) == 1
+    physical_second_batches = [
+        batch
+        for batch in JsonlMemoryPlaneStore(tmp_path / "failed-suffix")._read_batches_unlocked()
+        if any(record.memory_id == second_status[0].memory_id for record in batch.records)
+    ]
+    assert len(physical_second_batches) == 1
+    assert {record.memory_id for record in physical_second_batches[0].records} >= {
+        second_status[0].memory_id,
+        second_freshness[0].memory_id,
+        second_checkpoint[0].memory_id,
+    }
+    fresh_reopen = build(
+        MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "failed-suffix"))
+    )
+    assert fresh_reopen._capability_monitor.has_verified_initialization(
+        evidence=second._initial_evidence
+    )
 
 
 @pytest.mark.parametrize(
@@ -1084,6 +1127,118 @@ def test_public_drain_preserves_live_operation_and_rejects_new_old_epoch_work(tm
     assert decoded.legacy_terminal_inventory_digest == expected_inventory
     reopened = build(MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path)))
     assert reopened.activate_observation_ledger() == activated
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (None, "activation_digest", "writer_epoch"),
+    ids=("positive", "activation_digest", "writer_epoch"),
+)
+def test_demoted_activated_graph_lineage_reopens_and_rejects_tampered_controls(
+    tmp_path, monkeypatch, mutation: str | None,
+) -> None:
+    """Post-demotion reload admits only the exact activated graph-control lineage."""
+    from memorii.core.provider.models import ProviderOperation
+    from tests.unit.core.semantic_ingestion.test_semantic_provider_composition import (
+        _host_ingress,
+    )
+
+    authority = _signed_monitoring_authority()
+    unsigned_build, _, _ = _provider_factory(
+        tmp_path, monkeypatch, normalization=True, complete_registry=True,
+    )
+    path = tmp_path / "demoted-activated-graph"
+    backing = JsonlMemoryPlaneStore(path)
+    unsigned_service = unsigned_build(MemoryPlaneService(record_store=backing))
+    _seed_provider(unsigned_service)
+    _replace_jsonl_writer_manifest(
+        backing,
+        unsigned_service._memory_plane,
+        capability_monitoring_predecessor_ownership_manifest(),
+    )
+    config = tmp_path / "demoted-activated-graph-config"
+    config.mkdir()
+    build, _, clock = _provider_factory(
+        config,
+        monkeypatch,
+        normalization=True,
+        complete_registry=True,
+        verified_capability_monitoring_authorities=(authority,),
+    )
+    service = build(MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path)))
+    activated = service.activate_observation_ledger()
+    # The production activation above completes the one-time schema rebuild.
+    # Reopens exercise retained replay, so reuse the built exact grammar.
+    monkeypatch.setattr(
+        "memorii.core.semantic_ingestion.contracts.rebuild_bootstrap_graph_effect_contracts",
+        lambda: None,
+    )
+    committed = service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="demoted-activated-graph",
+        task_id="task:one",
+        user_id="user:alice",
+        authenticated_host_ingress=_host_ingress(),
+    )
+    assert committed.blocked_reasons["semantic_ingestion"] == "source_only"
+    controls = tuple(
+        record
+        for record in service._memory_plane.list_records(
+            source_kind="semantic_ingestion_preplanning_control"
+        )
+        if record.content["control"]["writer_binding"]["activation_digest"]
+        == activated.activation_digest
+    )
+    assert len(controls) == 1
+    control = controls[0]
+    activated_epoch = control.content["control"]["writer_binding"]["expected_writer_epoch"]
+    assert isinstance(activated_epoch, int)
+
+    clock[0] += timedelta(days=2)
+    demoted = service._capability_monitor.tick(evidence=authority._initial_evidence)
+    assert demoted.status.status == "evidence_only"
+    current = service._semantic_writer_admission.current()
+    assert current.writer_epoch == activated_epoch + 1
+    reopened = build(MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path)))
+    assert reopened.activate_observation_ledger().activation_digest == activated.activation_digest
+    if mutation is None:
+        return
+
+    rewritten = []
+    for batch in backing._read_batches_unlocked():
+        records = []
+        for record in batch.records:
+            if record.memory_id == control.memory_id:
+                binding = dict(record.content["control"]["writer_binding"])
+                binding["activation_digest" if mutation == "activation_digest" else "expected_writer_epoch"] = (
+                    "f" * 64 if mutation == "activation_digest" else activated_epoch + 2
+                )
+                record = record.model_copy(
+                    update={
+                        "content": {
+                            **record.content,
+                            "control": {
+                                **record.content["control"],
+                                "writer_binding": binding,
+                            },
+                        }
+                    }
+                )
+            records.append(record)
+        rewritten.append(
+            _PersistedBatch.create(
+                revision=batch.revision,
+                data_revision=batch.data_revision,
+                records=tuple(records),
+            )
+        )
+    backing._replace_batches(rewritten)
+    before = backing._records_path.read_bytes()
+    damaged = build(MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path)))
+    with pytest.raises(PreplanningStoreError, match="activation reload is partial or mismatched"):
+        damaged.activate_observation_ledger()
+    assert backing._records_path.read_bytes() == before
 
 
 def test_public_activation_preserves_captured_jsonl_history_bytes(tmp_path, monkeypatch) -> None:

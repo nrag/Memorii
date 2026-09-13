@@ -1395,9 +1395,11 @@ class SemanticIngestionAtomicStore:
 
     def _activation_inventory_digest(
         self, snapshot: tuple[CanonicalMemoryRecord, ...], predecessor: SemanticWriterCommitBinding,
-        *, active_binding: SemanticWriterCommitBinding | None = None,
+        *, activation_digest: str | None = None, activation_target_epoch: int | None = None,
+        current_binding: SemanticWriterCommitBinding | None = None,
+        current_previous_admission_digest: str | None = None,
     ) -> str:
-        """Validate native retired closures without performing another store read."""
+        """Validate retired closures and the closed post-activation lineage."""
         from memorii.core.memory_evolution.observation_activation_runtime import legacy_terminal_inventory_digest
         from memorii.core.semantic_ingestion.contracts import (
             BootstrapGraphTerminalReloadV3,
@@ -1408,15 +1410,50 @@ class SemanticIngestionAtomicStore:
         controls: dict[str, PreplanningOperationControl] = {}
         active_fences: set[str] = set()
         active_record_ids: set[str] = set()
+
+        def is_activation_lineage(binding: SemanticWriterCommitBinding) -> bool:
+            if activation_digest is None or activation_target_epoch is None or current_binding is None:
+                return False
+            target_epoch = activation_target_epoch
+            current = current_binding
+            if (
+                binding.admission_id != current_binding.admission_id
+                or binding.writer_namespace != current_binding.writer_namespace
+                or binding.writer_implementation_fingerprint
+                != current_binding.writer_implementation_fingerprint
+                or binding.graph_schema_fingerprint
+                != current_binding.graph_schema_fingerprint
+                or binding.activation_digest != activation_digest
+                or not activation_target_epoch
+                <= binding.expected_writer_epoch
+                <= current.expected_writer_epoch
+            ):
+                return False
+            if binding.expected_writer_epoch == target_epoch:
+                return binding.runtime_mode == predecessor.runtime_mode
+            return binding.runtime_mode == "evidence_only"
+
         for record in snapshot:
             if record.source_kind != "semantic_ingestion_preplanning_control":
                 continue
             control = _control_from_record(record)
             fence = control.operation_fence
-            if active_binding is not None and control.writer_binding == active_binding:
+            if is_activation_lineage(control.writer_binding):
                 if record.memory_id not in {_control_id(fence), _legacy_control_id(fence)} or fence.binding_digest in active_fences:
                     raise PreplanningStoreError("active observation control identity is mismatched")
+                if (
+                    activation_target_epoch is not None
+                    and current_binding is not None
+                    and
+                    control.writer_binding.expected_writer_epoch
+                    == activation_target_epoch
+                    and current_binding.expected_writer_epoch > activation_target_epoch
+                    and control.writer_binding.admission_digest
+                    != current_previous_admission_digest
+                ):
+                    raise PreplanningStoreError("activation lineage predecessor is mismatched")
                 active_fences.add(fence.binding_digest)
+                controls[fence.binding_digest] = control
                 active_record_ids.add(record.memory_id)
                 continue
             if (
@@ -1444,8 +1481,21 @@ class SemanticIngestionAtomicStore:
             control = controls.get(terminal.operation_fence_binding_digest)
             locator = terminal.atomic_write_locator_digest
             if terminal.operation_fence_binding_digest in active_fences:
-                if terminal.terminal_member_schema_version != 3:
+                if (
+                    control is None
+                    or terminal.terminal_member_schema_version != 3
+                    or terminal.terminal_control.writer_commit_binding_digest
+                    != control.writer_binding.binding_digest
+                ):
                     raise PreplanningStoreError("activated source has a historical terminal grammar")
+                self._reload_bootstrap_graph_terminal_exact_v3(
+                    locator_digest=locator, expected_reload=terminal,
+                    expected_delivery_principal_binding_digest=terminal.delivery_principal_binding_digest,
+                    expected_required_scope_set_digest=terminal.required_scope_set_digest,
+                    expected_operation_fence_binding=control.operation_fence,
+                    expected_operation_lease_binding_digest=control.last_completed_lease_binding_digest,
+                    snapshot_records=records,
+                )
                 active_record_ids.update((record.memory_id, _bootstrap_graph_v3_terminal_control_id(locator)))
                 continue
             if (
@@ -1542,7 +1592,13 @@ class SemanticIngestionAtomicStore:
                 or activation.observation_schema_fingerprint != target.identity.observation_schema_fingerprint
                 or activation.ledger_codec_fingerprint != target.identity.ledger_codec_fingerprint
                 or activation.legacy_terminal_inventory_digest != self._activation_inventory_digest(
-                    snapshot, predecessor, active_binding=self._writers.commit_binding(current))
+                    snapshot,
+                    predecessor,
+                    activation_digest=activation.activation_digest,
+                    activation_target_epoch=activation.target_writer_epoch,
+                    current_binding=self._writers.commit_binding(current),
+                    current_previous_admission_digest=current.previous_admission_digest,
+                )
             ):
                 raise ValueError("activation successor or inventory is mismatched")
             _, activation_raw = registered_activation_artifact(activation, history=history, publication=target.publication)
@@ -12493,7 +12549,11 @@ class SemanticIngestionAtomicStore:
                 activation_records[0].memory_id
                 != "semantic_ingestion:observation-ledger:activation:" + activation.activation_digest
                 or admission.activation_digest != activation.activation_digest
-                or admission.writer_epoch != activation.target_writer_epoch
+                or admission.writer_epoch < activation.target_writer_epoch
+                or (
+                    admission.writer_epoch > activation.target_writer_epoch
+                    and admission.active_runtime_mode != "evidence_only"
+                )
                 or admission.active_writer_implementation_fingerprint != target.identity.writer_fingerprint
                 or activation.writer_implementation_fingerprint != target.identity.writer_fingerprint
                 or activation.observation_schema_fingerprint != target.identity.observation_schema_fingerprint

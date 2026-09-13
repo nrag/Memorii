@@ -298,8 +298,9 @@ emission-scope thread isolation.
 
 ## Next Action
 
-Freeze the monitor-baseline recovery candidate and hand its exact revision,
-changed-surface ledger, and focused evidence to the independent reviewers.
+Freeze the closed post-activation lineage correction and hand its exact
+revision, changed-surface ledger, and focused evidence to the independent
+reviewers.
 
 ## Exact-Revision Review At `43281a9e`
 
@@ -492,3 +493,52 @@ changed-surface ledger, and focused evidence to the independent reviewers.
   passed `1` in 27.17 seconds; malformed-metric, missing-freshness, and
   substituted-checkpoint public activation regressions each passed `1` in
   26.81, 25.79, and 25.78 seconds. Ruff passed after the lifecycle matrix.
+
+## Exact-Revision Review At `6ed6f42b`
+
+- The specification auditor approved the shared grammar and durable lifecycle
+  slice with no P1/P2 finding.
+- Correctness confirmed a P2 demoted-ledger replay defect: inventory validation
+  recognizes only the current N+1 writer binding, so a valid graph control
+  committed at activated epoch N is misclassified as pre-activation legacy.
+  Recovery must recognize only the closed activation lineage from target epoch
+  through the current evidence-only epoch with exact activation and identity
+  coordinates, while retaining full schema-3 control/terminal validation.
+- The test reviewer also required direct proof that restart recovery persists
+  and revalidates the remaining authority's exact status/freshness/checkpoint
+  trio rather than merely observing an empty in-memory queue.
+
+## Demoted Ledger Inventory Replay Evidence
+
+- `_activation_inventory_digest` now classifies controls from the closed
+  activation lineage rather than only the current writer binding. The lineage
+  requires exact admission/namespace/implementation/schema coordinates and
+  activation digest, and admits epochs only from the activation target through
+  the current writer epoch. The target epoch retains the predecessor runtime;
+  later epochs must be `evidence_only` and retain the current predecessor
+  admission digest. Substituted digest, identity/fingerprint, or epoch values
+  therefore fall into the legacy grammar and fail closed.
+- Activated controls now retain their fence/control authority for schema-3
+  terminal replay. The reload runs `_reload_bootstrap_graph_terminal_exact_v3`
+  for those controls before omitting the activated lineage from the legacy
+  inventory digest. The ledger replay similarly accepts only the same or a
+  later `evidence_only` admission epoch, retaining activation and deployment
+  fingerprint checks.
+- The public JSONL scenario seeds the historical predecessor, performs signed
+  activation, commits a real `ProviderMemoryService.sync_event` graph
+  observation at the activation epoch, demotes to the next evidence-only
+  epoch, and reopens through `ProviderMemoryService.activate_observation_ledger`.
+  Its positive selector passed: `1 passed in 363.33 seconds`. The same fixture
+  contains recomputed-batch mutations for a substituted control activation
+  digest and an out-of-range writer epoch; those negatives are intentionally
+  retained for exact-review execution rather than claimed as locally passed.
+- The failed-suffix restart fixture now proves construction is the production
+  trigger that initializes the remaining authority after retained cutover, and
+  confirms one physical JSONL batch contains its exact status/freshness/
+  checkpoint trio. A fresh reopen calls `has_verified_initialization` on the
+  second authority's evidence.
+- Local static validation: scoped Ruff, first-party Pyright with the virtual
+  environment interpreter, `git diff --check`, and JSON parsing passed. An
+  initial direct Pyright invocation without that interpreter reported existing
+  import/type-environment errors; the repository-prescribed invocation passed
+  `0 errors, 0 warnings, 0 informations`.
