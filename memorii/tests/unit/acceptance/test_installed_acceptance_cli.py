@@ -8,11 +8,14 @@ candidate files.
 
 from __future__ import annotations
 
+import base64
 import json
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, replace
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
+from typing import Literal
 
 import pytest
 from acceptance.authority_repository import (
@@ -22,13 +25,20 @@ from acceptance.authority_repository import (
     repository_identity,
 )
 from acceptance.cli import main as acceptance_cli
-from acceptance.host_runtime import AcceptanceRuntimeConfigurationError, InstalledAcceptanceRuntime
+from acceptance.evaluator import AcceptanceEvaluationError
+from acceptance.host_runtime import (
+    AcceptanceRuntimeConfigurationError,
+    InstalledAcceptanceRuntime,
+    _distinct_domains,
+    _secure_path,
+)
 from acceptance.schema_registry import canonical_digest, signing_preimage, unsigned_artifact
 from acceptance.statistical_certification import NumericAuthority
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from test_statistical_certification import candidate, inputs
+from v2_authority_fixture import build_v2_authority
 
 
 def _json(value: object) -> bytes:
@@ -81,11 +91,13 @@ def _numeric_config(policy: bytes, evidence: bytes, release_digest: str) -> tupl
         held.expected_authority.coverage_manifest_digest,
         held.expected_authority.coverage_release_id,
         held.expected_authority.statistical_gate_manifest_digest,
+        held.expected_authority.sampling_frame_manifest_digest,
         held.expected_authority.sampling_frame_digest,
         held.expected_authority.independent_cluster_definition_digest,
         held.expected_authority.strata_definition_digest,
         held.expected_authority.cluster_weighting_digest,
         held.expected_authority.numeric_encoding_registry_digest,
+        held.expected_authority.unsupported_cells_digest,
     )
     binding = replace(
         held,
@@ -116,31 +128,27 @@ def _installed_fixture(
     monkeypatch: pytest.MonkeyPatch,
     *,
     checkpoint_offset: timedelta = timedelta(minutes=-1),
+    release_issued_at: datetime | None = None,
+    lifecycle_state: Literal["active", "retired", "revoked", "compromised"] = "active",
 ) -> tuple[list[str], Path, Path, Path]:
     """Write a real signed authority prefix and the closed installed config."""
     import acceptance.host_runtime as host_runtime
+    from memorii.core.memory_evolution.deployment_authorization import (
+        InstalledProductionRevocationReader,
+    )
 
     now = datetime.now(tz=UTC)
     authority_key = Ed25519PrivateKey.generate()
     evaluator_key = Ed25519PrivateKey.generate()
     deployment_key = Ed25519PrivateKey.generate()
+    production_revocation_key = Ed25519PrivateKey.generate()
     coordinate = "acceptance-root-1"
     authority_root = tmp_path / "authority"
     fence_path = tmp_path / "fence" / "authority.sqlite"
     receipt_root = tmp_path / "receipts"
     deployment_root = tmp_path / "deployment-authorizations"
+    production_revocation_root = tmp_path / "production-revocations"
     policy, evidence, _, limits = inputs("0.00")
-    baseline = {
-        "capability_fingerprint": "a" * 64,
-        "capability_contract_digest": "d" * 64,
-        "coverage_manifest_digest": "e" * 64,
-        "statistical_gate_manifest_digest": "f" * 64,
-        "monitoring_policy_digest": "1" * 64,
-        "unsupported_cells_digest": "2" * 64,
-        "dependency_bundle_digest": "3" * 64,
-        "canonical_content_digest": "4" * 64,
-        "artifact_digest": "b" * 64,
-    }
     trust_digest, trust = _artifact(
         "AcceptanceTrustSnapshot", authority_key, coordinate,
         schema_version=1, purpose="acceptance_trust_snapshot", snapshot_sequence=1,
@@ -148,7 +156,7 @@ def _installed_fixture(
         key_declarations=[{
             "key_reference": coordinate, "public_key": _public(authority_key),
             "valid_from": _time(now - timedelta(days=1)), "valid_until": _time(now + timedelta(days=1)),
-            "allowed_purposes": ["acceptance"],
+            "allowed_purposes": ["semantic_ingestion_capability_baseline_approval.v2"],
         }],
         trust_policy_digest="9" * 64, issued_at=_time(now - timedelta(minutes=2)),
     )
@@ -158,25 +166,12 @@ def _installed_fixture(
         state="active", effective_at=_time(now - timedelta(days=1)), global_sequence=1,
         predecessor_event_digest=None, issuance_trust_snapshot_digest=trust_digest,
     )
-    release_fields = {
-        "schema_version": 1,
-        "approval_purpose": "semantic_ingestion_capability_baseline_approval",
-        "approver_subject_id": "acceptance-approver",
-        "target_approved_capability_baseline_artifact_digest": baseline["artifact_digest"],
-        "capability_fingerprint": baseline["capability_fingerprint"],
-        "capability_contract_digest": baseline["capability_contract_digest"],
-        "dependency_bundle_digest": baseline["dependency_bundle_digest"],
-        "coverage_manifest_digest": baseline["coverage_manifest_digest"],
-        "statistical_gate_manifest_digest": baseline["statistical_gate_manifest_digest"],
-        "monitoring_policy_digest": baseline["monitoring_policy_digest"],
-        "unsupported_cells_digest": baseline["unsupported_cells_digest"],
-        "issued_at": _time(now - timedelta(minutes=2)), "expires_at": _time(now + timedelta(days=1)),
-        "acceptance_authority_snapshot_digest": trust_digest, "acceptance_release_epoch": 1,
-        "acceptance_release_sequence": 1, "acceptance_signing_key_reference": coordinate,
-        "lifecycle_state": "active", "supersedes_release_digest": None, "revoked_at": None,
-        "compromise_effective_at": None,
-    }
-    release_digest, release = _artifact("CapabilityBaselineApprovalRelease", authority_key, coordinate, **release_fields)
+    numeric = build_v2_authority(
+        policy=policy, evidence=evidence, key=authority_key, coordinate=coordinate,
+        authority_snapshot_digest=trust_digest, now=now, issued_at=release_issued_at,
+        lifecycle_state=lifecycle_state,
+    )
+    release_digest, release = numeric.release_digest, numeric.release
     issuance_digest, issuance = _artifact(
         "AcceptanceApprovalIssuanceSnapshot", authority_key, coordinate,
         schema_version=1, purpose="acceptance_approval_issuance_snapshot", trust_snapshot_digest=trust_digest,
@@ -231,15 +226,27 @@ def _installed_fixture(
         prepared_objects=prepared, expected_commit_digest=None, expected_key_head=None,
         expected_status_generation=None, next_commit=commit,
     )
-    numeric_binding, certificate = _numeric_config(policy, evidence, release_digest)
+    certificate = candidate(numeric.policy, evidence, numeric.binding, limits)
+    numeric_authority = {
+        "policy_sha256": sha256(numeric.policy).hexdigest(),
+        "evidence_sha256": sha256(evidence).hexdigest(),
+        "baseline": base64.b64encode(numeric.baseline).decode("ascii"),
+        "release": base64.b64encode(numeric.release).decode("ascii"),
+        "coverage": base64.b64encode(numeric.coverage).decode("ascii"),
+        "gates": base64.b64encode(numeric.gates).decode("ascii"),
+        "sampling_frame": base64.b64encode(numeric.sampling_frame).decode("ascii"),
+        "trust_keys": {coordinate: _public(authority_key)},
+    }
     config = {
-        "format": "memorii.acceptance.runtime.v1", "authority_repository_root": str(authority_root),
+        "format": "memorii.acceptance.runtime.v2", "authority_repository_root": str(authority_root),
         "fence_database_path": str(fence_path), "receipt_root": str(receipt_root),
         "fence_registration": {**registration_body, "signature": registration.signature},
         "trust_keys": {coordinate: _public(authority_key)},
+        "production_trust_keys": {"production-revocation-1": _public(production_revocation_key)},
+        "production_revocation_reader": {"reader_root": str(production_revocation_root)},
         "acceptance_keys": [{"key_reference": coordinate, "public_key": _public(authority_key),
                                "valid_from": _time(now - timedelta(days=1)), "valid_until": _time(now + timedelta(days=1)), "status": "active"}],
-        "numeric_binding": numeric_binding, "numeric_limits": asdict(limits),
+        "numeric_authority": numeric_authority, "numeric_limits": asdict(limits),
         "acceptance_limits": {"maximum_release_bytes": 131072, "maximum_baseline_bytes": 131072, "maximum_receipt_bytes": 131072},
         "deployment_issuer": {"subject_id": "production-issuer", "key_reference": "deployment-key",
                                 "authority_snapshot_digest": trust_digest, "private_key": deployment_key.private_bytes(serialization.Encoding.Raw, serialization.PrivateFormat.Raw, serialization.NoEncryption()).hex(),
@@ -247,12 +254,17 @@ def _installed_fixture(
         "evaluator_subject_id": "fixture-evaluator", "evaluator_signing_key_coordinate": "fixture-evaluator-key",
         "evaluator_private_key": evaluator_key.private_bytes(serialization.Encoding.Raw, serialization.PrivateFormat.Raw, serialization.NoEncryption()).hex(),
     }
-    config_path = tmp_path / "installed" / "runtime-v1.json"
+    config_path = tmp_path / "installed" / "runtime-v2.json"
     config_path.parent.mkdir(parents=True)
     config_path.write_bytes(_json(config))
     config_path.chmod(0o600)
     monkeypatch.setattr(host_runtime, "_CONFIG", config_path)
-    candidates = {"release": release, "baseline": _json(baseline), "policy": policy, "evidence": evidence, "certificate": certificate}
+    monkeypatch.setattr(
+        host_runtime,
+        "configured_revocation_reader",
+        lambda configuration: InstalledProductionRevocationReader().from_fixed_configuration(configuration),
+    )
+    candidates = {"release": release, "baseline": numeric.baseline, "policy": numeric.policy, "evidence": evidence, "certificate": certificate}
     args: list[str] = []
     for name, raw in candidates.items():
         path = tmp_path / f"{name}.bin"
@@ -291,6 +303,65 @@ def test_installed_runtime_rejects_writable_or_aliased_config(
         InstalledAcceptanceRuntime()
 
 
+def test_installed_runtime_rejects_insecure_or_overlapping_fixed_resources(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, _, _, config_path = _installed_fixture(tmp_path, monkeypatch)
+    config = json.loads(config_path.read_bytes())
+    authority = Path(config["authority_repository_root"])
+    authority.chmod(0o722)
+    with pytest.raises(AcceptanceRuntimeConfigurationError, match="authority_repository_root"):
+        InstalledAcceptanceRuntime()
+    authority.chmod(0o700)
+    config["receipt_root"] = str(authority / "receipts")
+    config_path.write_bytes(_json(config))
+    with pytest.raises(AcceptanceRuntimeConfigurationError, match="path_alias"):
+        InstalledAcceptanceRuntime()
+
+
+@pytest.mark.parametrize("target", ["authority", "fence.sqlite", "receipt", "publisher"])
+def test_fixed_path_admission_rejects_direct_and_parent_symlinks(tmp_path: Path, target: str) -> None:
+    secure = tmp_path / "secure"
+    secure.mkdir(mode=0o700)
+    leaf = secure / target
+    leaf.symlink_to(tmp_path / "elsewhere")
+    with pytest.raises(AcceptanceRuntimeConfigurationError):
+        _secure_path(leaf, "resource")
+    leaf.unlink()
+    parent = tmp_path / "parent-link"
+    parent.symlink_to(secure, target_is_directory=True)
+    with pytest.raises(AcceptanceRuntimeConfigurationError):
+        _secure_path(parent / target, "resource")
+
+
+@pytest.mark.parametrize("name", ["fence-parent", "fence.sqlite", "receipt", "publisher"])
+def test_fixed_path_admission_rejects_group_or_world_writable_coordinates(
+    tmp_path: Path, name: str
+) -> None:
+    path = tmp_path / name
+    if name.endswith("parent"):
+        path.mkdir(mode=0o700)
+        target = path / "fence.sqlite"
+    else:
+        path.mkdir(mode=0o700)
+        target = path
+    path.chmod(0o722)
+    with pytest.raises(AcceptanceRuntimeConfigurationError):
+        _secure_path(target, "resource")
+
+
+def test_fixed_path_domains_reject_equal_nested_and_allow_secure_missing_leaves(tmp_path: Path) -> None:
+    secure = tmp_path / "secure"
+    secure.mkdir(mode=0o700)
+    _secure_path(secure / "missing" / "leaf", "resource")
+    with pytest.raises(AcceptanceRuntimeConfigurationError, match="path_alias"):
+        _distinct_domains((secure / "authority", secure / "authority", secure / "publisher", secure / "fence"))
+    with pytest.raises(AcceptanceRuntimeConfigurationError, match="path_alias"):
+        _distinct_domains((secure / "authority", secure / "authority" / "receipt", secure / "publisher", secure / "fence"))
+    with pytest.raises(AcceptanceRuntimeConfigurationError, match="path_alias"):
+        _distinct_domains((secure / "authority", secure / "receipt", secure / "publisher", secure / "authority" / "fence"))
+
+
 def test_public_cli_rejects_bad_signature_missing_authority_and_future_checkpoint(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -301,6 +372,34 @@ def test_public_cli_rejects_bad_signature_missing_authority_and_future_checkpoin
     release_path.write_bytes(_json(release))
     with pytest.raises(SystemExit, match="2"):
         acceptance_cli(args)
+
+
+@pytest.mark.parametrize("lifecycle_state", ["retired", "revoked", "compromised"])
+def test_public_cli_rejects_terminal_release_lifecycle(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    lifecycle_state: Literal["retired", "revoked", "compromised"],
+) -> None:
+    args, receipts, authorizations, _ = _installed_fixture(
+        tmp_path / lifecycle_state, monkeypatch, lifecycle_state=lifecycle_state
+    )
+    with pytest.raises(SystemExit, match="2"):
+        acceptance_cli(args)
+    assert not receipts.exists()
+    assert not authorizations.exists()
+
+
+def test_public_cli_rejects_expired_release(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    args, receipts, authorizations, _ = _installed_fixture(
+        tmp_path / "expired", monkeypatch,
+        release_issued_at=datetime.now(tz=UTC) - timedelta(days=3),
+    )
+    with pytest.raises(SystemExit, match="2"):
+        acceptance_cli(args)
+    assert not receipts.exists()
+    assert not authorizations.exists()
 
     args, _, _, _ = _installed_fixture(tmp_path / "missing", monkeypatch)
     release = json.loads(Path(args[1]).read_bytes())
@@ -321,6 +420,87 @@ def test_cli_fails_closed_when_runtime_discovery_is_not_exactly_one(
     monkeypatch.setattr("acceptance.cli.entry_points", lambda **_: ())
     with pytest.raises(ValueError, match="configuration"):
         __import__("acceptance.cli", fromlist=["_configured_evaluator"])._configured_evaluator()
+
+
+class _PublicationPublisher:
+    """Minimal serialized publisher with controllable acknowledgement behavior."""
+
+    def __init__(self, *, persist_then_raise: bool = False, fail_without_persist: bool = False) -> None:
+        self.persist_then_raise = persist_then_raise
+        self.fail_without_persist = fail_without_persist
+        self.prepared = 0
+        self.published: list[bytes] = []
+
+    def prepare_verified(self, _: bytes) -> bytes:
+        self.prepared += 1
+        return _json({"authorization_digest": "a" * 64})
+
+    def publish_prepared(self, artifact: bytes) -> bytes:
+        if self.fail_without_persist:
+            raise ValueError("no_persist")
+        self.published.append(artifact)
+        if self.persist_then_raise:
+            raise ValueError("lost_ack")
+        return artifact
+
+    def visible_exact(self, artifact: bytes) -> bool:
+        return artifact in self.published
+
+
+def _runtime_inputs(args: list[str]) -> dict[str, bytes]:
+    return {args[index][2:]: Path(args[index + 1]).read_bytes() for index in range(0, 10, 2)}
+
+
+def _evaluate_runtime(runtime: InstalledAcceptanceRuntime, values: dict[str, bytes]) -> object:
+    return runtime.evaluator().evaluate_and_publish(
+        release_bytes=values["release"], baseline_bytes=values["baseline"], policy_bytes=values["policy"],
+        evidence_bytes=values["evidence"], certificate_bytes=values["certificate"],
+        deployment_manifest_digest="7" * 64,
+    )
+
+
+def test_registered_attempt_reconciles_lost_ack_and_reuses_no_persist_restart(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    args, receipt_root, _, _ = _installed_fixture(tmp_path / "lost-ack", monkeypatch)
+    values = _runtime_inputs(args)
+    lost_ack = _PublicationPublisher(persist_then_raise=True)
+    monkeypatch.setattr("acceptance.host_runtime.configured_publisher", lambda _: lost_ack)
+    first = _evaluate_runtime(InstalledAcceptanceRuntime(), values)
+    assert len(lost_ack.published) == 1
+    assert (receipt_root / first.receipt_digest).is_file()
+
+    args, receipt_root, _, _ = _installed_fixture(tmp_path / "no-persist", monkeypatch)
+    values = _runtime_inputs(args)
+    failing = _PublicationPublisher(fail_without_persist=True)
+    monkeypatch.setattr("acceptance.host_runtime.configured_publisher", lambda _: failing)
+    with pytest.raises(AcceptanceEvaluationError, match="deployment_issuer_outcome"):
+        _evaluate_runtime(InstalledAcceptanceRuntime(), values)
+    assert failing.prepared == 1
+    # The failed publisher did not create a second signed preparation: the
+    # prior attempt survives and is reused by a later runtime process.
+    retry = _PublicationPublisher()
+    monkeypatch.setattr("acceptance.host_runtime.configured_publisher", lambda _: retry)
+    _evaluate_runtime(InstalledAcceptanceRuntime(), values)
+    assert retry.prepared == 0
+    assert len(retry.published) == 1
+    assert len(list((receipt_root / "attempts").iterdir())) == 1
+
+
+def test_registered_attempt_concurrent_retries_converge_on_one_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    args, receipt_root, _, _ = _installed_fixture(tmp_path, monkeypatch)
+    values = _runtime_inputs(args)
+    publisher = _PublicationPublisher()
+    monkeypatch.setattr("acceptance.host_runtime.configured_publisher", lambda _: publisher)
+    runtime = InstalledAcceptanceRuntime()
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        receipts = list(pool.map(lambda _: _evaluate_runtime(runtime, values), range(2)))
+    assert receipts[0].receipt_digest == receipts[1].receipt_digest
+    assert publisher.prepared == 1
+    assert len(list((receipt_root / "attempts").iterdir())) == 1
+    assert (receipt_root / receipts[0].receipt_digest).is_file()
 
     class _EntryPoint:
         def load(self) -> object:

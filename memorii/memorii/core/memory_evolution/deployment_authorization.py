@@ -9,6 +9,7 @@ issuer.
 from __future__ import annotations
 
 import json
+import os
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -31,6 +32,25 @@ _TargetKind = Literal["capability_baseline", "local_resource_profile", "topology
 
 class DeploymentAuthorizationError(ValueError):
     """An issuance request cannot create a deployment authorization."""
+
+
+def _secure_path(path: Path, failure: str) -> None:
+    """Reject aliases at every existing coordinate before opening authority data."""
+    current = path
+    while True:
+        if current.is_symlink():
+            raise DeploymentAuthorizationError(failure)
+        if current.parent == current:
+            return
+        current = current.parent
+
+
+def _fsync_directory(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 def _canonical_bytes(value: object) -> bytes:
@@ -313,20 +333,110 @@ class _FileDeploymentAuthorizationRepository:
     """Durable production-side publication owner for the serialized bridge."""
 
     def __init__(self, root: Path) -> None:
+        _secure_path(root, "deployment_authorization_repository_path")
         self._root = root
+
+    def visible_exact(self, digest: str, raw: bytes) -> bool:
+        if not _DIGEST.fullmatch(digest) or not isinstance(raw, bytes):
+            raise DeploymentAuthorizationError("deployment_authorization_visibility")
+        path = self._root / digest
+        _secure_path(path, "deployment_authorization_repository_path")
+        try:
+            return path.read_bytes() == raw
+        except FileNotFoundError:
+            return False
+        except OSError as exc:
+            raise DeploymentAuthorizationError("deployment_authorization_visibility") from exc
 
     def publish_if_absent(self, artifact: DeploymentAuthorizationArtifact) -> DeploymentAuthorizationArtifact:
         raw = _canonical_bytes(artifact.model_dump(mode="json"))
+        _secure_path(self._root, "deployment_authorization_repository_path")
         self._root.mkdir(parents=True, exist_ok=True)
         path = self._root / artifact.authorization_digest
+        _secure_path(path, "deployment_authorization_repository_path")
+        temporary = self._root / f".{artifact.authorization_digest}.{os.getpid()}.{os.urandom(8).hex()}.tmp"
         try:
-            with path.open("xb") as out:
+            with temporary.open("xb") as out:
                 out.write(raw)
                 out.flush()
+                os.fsync(out.fileno())
+            try:
+                os.link(temporary, path)
+                _fsync_directory(self._root)
+            except FileExistsError as exc:
+                if not self.visible_exact(artifact.authorization_digest, raw):
+                    raise DeploymentAuthorizationError("deployment_authorization_digest_conflict") from exc
+                # The prior link might have reached storage before an interrupted
+                # directory fsync.  Re-fsync on the idempotent recovery path.
+                _fsync_directory(self._root)
         except FileExistsError as exc:
-            if path.read_bytes() != raw:
-                raise DeploymentAuthorizationError("deployment_authorization_digest_conflict") from exc
+            raise DeploymentAuthorizationError("deployment_authorization_digest_conflict") from exc
+        finally:
+            temporary.unlink(missing_ok=True)
         return artifact
+
+
+@dataclass(frozen=True)
+class _SerializedProductionRevocationEvidence:
+    """Opaque bytes crossing to acceptance's independently owned decoder."""
+
+    receipt: bytes
+    checkpoint: bytes
+
+
+class _FileProductionRevocationReader:
+    """Least-privilege read-only owner of production revocation evidence."""
+
+    def __init__(self, root: Path) -> None:
+        _secure_path(root, "production_revocation_reader_path")
+        self._root = root
+
+    def _object(self, digest: str) -> bytes:
+        if not _DIGEST.fullmatch(digest):
+            raise DeploymentAuthorizationError("production_revocation_coordinate")
+        path = self._root / "objects" / digest
+        _secure_path(path, "production_revocation_reader_path")
+        try:
+            value = path.read_bytes()
+        except OSError as exc:
+            raise DeploymentAuthorizationError("production_revocation_missing") from exc
+        if not value:
+            raise DeploymentAuthorizationError("production_revocation_missing")
+        return value
+
+    def load_checkpoint(self, checkpoint_digest: str) -> bytes:
+        return self._object(checkpoint_digest)
+
+    def read_for_prior_release(
+        self, prior_approval_release_digest: str
+    ) -> _SerializedProductionRevocationEvidence:
+        if not _DIGEST.fullmatch(prior_approval_release_digest):
+            raise DeploymentAuthorizationError("production_revocation_coordinate")
+        mapping_path = self._root / "current" / f"{prior_approval_release_digest}.json"
+        _secure_path(mapping_path, "production_revocation_reader_path")
+        try:
+            raw = mapping_path.read_bytes()
+            value = json.loads(raw)
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise DeploymentAuthorizationError("production_revocation_current") from exc
+        if (
+            type(value) is not dict
+            or set(value)
+            != {
+                "prior_approval_release_digest",
+                "receipt_digest",
+                "checkpoint_digest",
+            }
+            or _canonical_bytes(value) != raw
+            or value["prior_approval_release_digest"] != prior_approval_release_digest
+            or not isinstance(value["receipt_digest"], str)
+            or not isinstance(value["checkpoint_digest"], str)
+        ):
+            raise DeploymentAuthorizationError("production_revocation_current")
+        return _SerializedProductionRevocationEvidence(
+            receipt=self._object(value["receipt_digest"]),
+            checkpoint=self._object(value["checkpoint_digest"]),
+        )
 
 
 class _SerializedDeploymentPublisher:
@@ -353,6 +463,18 @@ class _SerializedDeploymentPublisher:
             raise DeploymentAuthorizationError("deployment_authorization_canonical_bytes")
         return _canonical_bytes(self._issuer.publish_prepared(parsed).model_dump(mode="json"))
 
+    def visible_exact(self, artifact: bytes) -> bool:
+        try:
+            parsed = DeploymentAuthorizationArtifact.model_validate_json(artifact)
+        except ValueError as exc:
+            raise DeploymentAuthorizationError("deployment_authorization_decode") from exc
+        if _canonical_bytes(parsed.model_dump(mode="json")) != artifact:
+            raise DeploymentAuthorizationError("deployment_authorization_canonical_bytes")
+        repository = self._issuer._repository
+        if not isinstance(repository, _FileDeploymentAuthorizationRepository):
+            raise DeploymentAuthorizationError("deployment_authorization_visibility")
+        return repository.visible_exact(parsed.authorization_digest, artifact)
+
 
 class InstalledDeploymentAuthorizationPublisher:
     """Fixed production provider selected by package metadata, never candidates."""
@@ -375,6 +497,20 @@ class InstalledDeploymentAuthorizationPublisher:
         return _SerializedDeploymentPublisher(DeploymentAuthorizationIssuer(authority=authority, repository=_FileDeploymentAuthorizationRepository(root), now_provider=lambda: datetime.now().astimezone()))
 
 
+class InstalledProductionRevocationReader:
+    """Fixed entry-point factory for the independent acceptance reader port."""
+
+    def from_fixed_configuration(
+        self, configuration: object
+    ) -> _FileProductionRevocationReader:
+        if type(configuration) is not dict or set(configuration) != {"reader_root"}:
+            raise DeploymentAuthorizationError("production_revocation_configuration")
+        root = Path(str(configuration["reader_root"]))
+        if not root.is_absolute() or root.is_symlink():
+            raise DeploymentAuthorizationError("production_revocation_configuration")
+        return _FileProductionRevocationReader(root)
+
+
 class _RawEd25519Signer:
     def __init__(self, key: object) -> None:
         self._key = key
@@ -395,4 +531,5 @@ __all__ = [
     "InMemoryDeploymentAuthorizationRepository",
     "IssuerAuthority",
     "InstalledDeploymentAuthorizationPublisher",
+    "InstalledProductionRevocationReader",
 ]

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from contextlib import nullcontext
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import datetime
 from hashlib import sha256
 from io import BytesIO
@@ -41,6 +41,17 @@ class RegisteredEvaluationReceiptStore(Protocol):
 
 
 @runtime_checkable
+class DurableEvaluationAttemptStore(RegisteredEvaluationReceiptStore, Protocol):
+    """Immutable pre-publication record for restart-safe authority runs."""
+
+    def load_attempt(self, attempt_digest: str) -> tuple[bytes, bytes] | None: ...
+
+    def prepare_attempt(
+        self, attempt_digest: str, authorization: bytes, receipt: bytes
+    ) -> tuple[bytes, bytes]: ...
+
+
+@runtime_checkable
 class LegacyEvaluationReceiptStore(Protocol):
     """Compatibility store for non-authoritative in-process evaluation."""
 
@@ -74,7 +85,13 @@ class SerializedDeploymentAuthorizationBridge:
         )
 
     def publish(self, artifact: bytes) -> None:
-        self._publisher.publish_prepared(artifact)
+        try:
+            self._publisher.publish_prepared(artifact)
+        except (OSError, ValueError):
+            # A transport acknowledgement can be lost after the file became
+            # durable.  Exact visibility is the reconciliation authority.
+            if not self._publisher.visible_exact(artifact):
+                raise
 
 
 class AcceptanceEvaluator:
@@ -158,8 +175,18 @@ class AcceptanceEvaluator:
             raise AcceptanceEvaluationError("acceptance_evaluation_rejected") from exc
         if not certificate.accepted:
             raise AcceptanceEvaluationError("acceptance_certificate_not_approved")
-        if certificate.authority.approved_baseline_artifact_digest != verified.target_approved_capability_baseline_artifact_digest:
-            raise AcceptanceEvaluationError("acceptance_numeric_baseline_binding")
+        expected_numeric_authority = {
+            "approved_baseline_artifact_digest": verified.target_approved_capability_baseline_artifact_digest,
+            "verified_baseline_approval_release_digest": verified.release_digest,
+            **{name: getattr(verified, name) for name in (
+                "capability_fingerprint", "capability_contract_digest", "coverage_manifest_digest",
+                "coverage_release_id", "statistical_gate_manifest_digest", "sampling_frame_manifest_digest",
+                "sampling_frame_digest", "independent_cluster_definition_digest", "strata_definition_digest",
+                "cluster_weighting_digest", "numeric_encoding_registry_digest", "unsupported_cells_digest",
+            )},
+        }
+        if asdict(certificate.authority) != expected_numeric_authority:
+            raise AcceptanceEvaluationError("acceptance_numeric_authority_binding")
         request_body: _DeploymentAuthorizationRequestBody = {
             "purpose": "semantic_ingestion_capability_baseline",
             "target_kind": "capability_baseline",
@@ -192,6 +219,11 @@ class AcceptanceEvaluator:
             "expires_at": request_body["expires_at"],
             "issuance_request_digest": issuance_request_digest,
         }
+        if snapshot is not None and isinstance(self._receipt_store, DurableEvaluationAttemptStore):
+            return self._publish_durable_attempt(
+                snapshot, request, now, verified.verification_digest, certificate_bytes,
+                policy_bytes, evidence_bytes,
+            )
         artifact = self._prepare_authorization(request)
         authorization_digest = self._authorization_digest(artifact)
         if not isinstance(authorization_digest, str) or len(authorization_digest) != 64:
@@ -218,6 +250,63 @@ class AcceptanceEvaluator:
         self._publish_authorization(artifact)
         return published
 
+    def _publish_durable_attempt(
+        self,
+        snapshot: "AcceptanceEvaluationSnapshot",
+        request: _DeploymentAuthorizationRequest,
+        now: datetime,
+        verified_approval_digest: str,
+        certificate_bytes: bytes,
+        policy_bytes: bytes,
+        evidence_bytes: bytes,
+    ) -> EvaluationReceipt:
+        store = self._receipt_store
+        assert isinstance(store, DurableEvaluationAttemptStore)
+        attempt_digest = sha256(
+            json.dumps(
+                {
+                    "authority_commit_digest": snapshot.commit_digest,
+                    "release_request": request,
+                    "certificate_sha256": sha256(certificate_bytes).hexdigest(),
+                    "policy_sha256": sha256(policy_bytes).hexdigest(),
+                    "evidence_sha256": sha256(evidence_bytes).hexdigest(),
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=True,
+            ).encode("ascii")
+        ).hexdigest()
+        prepared = store.load_attempt(attempt_digest)
+        if prepared is None:
+            authorization = self._prepare_authorization(request)
+            if not isinstance(authorization, bytes):
+                raise AcceptanceEvaluationError("deployment_issuer_outcome")
+            authorization_digest = self._authorization_digest(authorization)
+            if not isinstance(authorization_digest, str):
+                raise AcceptanceEvaluationError("deployment_issuer_outcome")
+            receipt = EvaluationReceipt(
+                receipt_digest="0" * 64,
+                verified_approval_digest=verified_approval_digest,
+                certificate_digest=sha256(certificate_bytes).hexdigest(),
+                policy_digest=sha256(policy_bytes).hexdigest(),
+                evidence_digest=sha256(evidence_bytes).hexdigest(),
+                deployment_authorization_digest=authorization_digest,
+                published_at=now,
+            )
+            _, receipt_raw = self._registered_receipt_bytes(receipt, snapshot, now)
+            prepared = store.prepare_attempt(attempt_digest, authorization, receipt_raw)
+        authorization, receipt_raw = prepared
+        # Reconcile an uncertain production acknowledgement before publishing
+        # the dependent receipt; both bytes came from the immutable attempt.
+        self._publish_authorization(authorization)
+        try:
+            receipt_value = json.loads(receipt_raw)
+            digest = receipt_value["receipt_digest"]
+        except (KeyError, TypeError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise AcceptanceEvaluationError("acceptance_attempt_receipt") from exc
+        store.publish(digest, receipt_raw)
+        return self._receipt_from_registered(receipt_raw)
+
     def _publish_receipt(
         self,
         receipt: EvaluationReceipt,
@@ -237,10 +326,26 @@ class AcceptanceEvaluator:
             or not isinstance(self._receipt_store, RegisteredEvaluationReceiptStore)
         ):
             raise AcceptanceEvaluationError("acceptance_receipt_authority")
+        digest, raw = self._registered_receipt_bytes(receipt, snapshot, now)
+        try:
+            self._receipt_store.publish(digest, raw)
+        except (TypeError, ValueError) as exc:
+            raise AcceptanceEvaluationError("acceptance_receipt_authority") from exc
+        return replace(receipt, receipt_digest=digest, published_at=now)
+
+    def _registered_receipt_bytes(
+        self, receipt: EvaluationReceipt, snapshot: "AcceptanceEvaluationSnapshot", now: datetime
+    ) -> tuple[str, bytes]:
+        if (
+            self._artifact_signer is None
+            or not self._evaluator_subject_id
+            or not self._evaluator_signing_key_coordinate
+        ):
+            raise AcceptanceEvaluationError("acceptance_receipt_authority")
         unsigned = {
             "schema_version": 1,
             "purpose": "acceptance_evaluation_receipt",
-            "authority_commit_digest": commit_digest,
+            "authority_commit_digest": snapshot.commit_digest,
             "verified_approval_digest": receipt.verified_approval_digest,
             "certificate_digest": receipt.certificate_digest,
             "policy_digest": receipt.policy_digest,
@@ -256,13 +361,21 @@ class AcceptanceEvaluator:
             value["signature"] = self._artifact_signer(
                 signing_preimage("AcceptanceEvaluationReceipt", value, self._evaluator_signing_key_coordinate)
             )
-            raw = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("ascii")
-            self._receipt_store.publish(digest, raw)
+            return digest, json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("ascii")
         except (TypeError, ValueError) as exc:
             raise AcceptanceEvaluationError("acceptance_receipt_authority") from exc
-        # The public result must name the immutable registered receipt, not
-        # the legacy in-memory receipt digest used while preparing it.
-        return replace(receipt, receipt_digest=digest, published_at=now)
+
+    @staticmethod
+    def _receipt_from_registered(raw: bytes) -> EvaluationReceipt:
+        try:
+            value = json.loads(raw)
+            evaluated = datetime.fromisoformat(value["evaluated_at"].replace("Z", "+00:00"))
+            return EvaluationReceipt(
+                value["receipt_digest"], value["verified_approval_digest"], value["certificate_digest"],
+                value["policy_digest"], value["evidence_digest"], value["deployment_authorization_digest"], evaluated,
+            )
+        except (KeyError, TypeError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise AcceptanceEvaluationError("acceptance_attempt_receipt") from exc
 
     def _prepare_authorization(self, request: _DeploymentAuthorizationRequest) -> object:
         bridge = self._deployment_issuer
@@ -326,6 +439,7 @@ class AcceptanceEvaluator:
 __all__ = [
     "AcceptanceEvaluationError",
     "AcceptanceEvaluator",
+    "DurableEvaluationAttemptStore",
     "LegacyEvaluationReceiptStore",
     "RegisteredEvaluationReceiptStore",
     "SerializedDeploymentAuthorizationBridge",

@@ -152,16 +152,18 @@ class NumericAuthority:
     coverage_manifest_digest: str
     coverage_release_id: str
     statistical_gate_manifest_digest: str
+    sampling_frame_manifest_digest: str
     sampling_frame_digest: str
     independent_cluster_definition_digest: str
     strata_definition_digest: str
     cluster_weighting_digest: str
     numeric_encoding_registry_digest: str
+    unsupported_cells_digest: str
 
     def __post_init__(self) -> None:
         for field in fields(self):
             value = getattr(self, field.name)
-            _id(value) if field.name == "coverage_release_id" else _digest(value)
+            _id(value) if field.name in {"coverage_release_id", "capability_fingerprint"} else _digest(value)
 
 
 @dataclass(frozen=True)
@@ -245,7 +247,7 @@ class GateResult:
 
 @dataclass(frozen=True)
 class Certificate:
-    schema: Literal["statistical_acceptance_certificate.v1"]
+    schema: Literal["statistical_acceptance_certificate.v2"]
     policy_sha256: str
     evidence_sha256: str
     authority: NumericAuthority
@@ -773,7 +775,7 @@ def _build(policy: Policy, evidence: Evidence, binding: HeldBinding, meter: Arit
             )
         )
     return Certificate(
-        "statistical_acceptance_certificate.v1",
+        "statistical_acceptance_certificate.v2",
         binding.policy_sha256,
         binding.evidence_sha256,
         binding.expected_authority,

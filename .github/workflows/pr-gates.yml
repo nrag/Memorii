@@ -779,8 +779,9 @@ jobs:
         working-directory: memorii
         run: >-
           cd "${RUNNER_TEMP}"
-          && env -u PYTHONPATH "${RUNNER_TEMP}/acceptance-venv/bin/python" -c "from importlib.metadata import entry_points; a=tuple(entry_points(group='memorii.acceptance_evaluator_runtime')); d=tuple(entry_points(group='memorii.acceptance_deployment_publisher')); assert len(a)==len(d)==1; assert a[0].load().__name__=='InstalledAcceptanceRuntime'; assert d[0].load().__name__=='InstalledDeploymentAuthorizationPublisher'"
+          && env -u PYTHONPATH "${RUNNER_TEMP}/acceptance-venv/bin/python" -c "from importlib.metadata import entry_points; a=tuple(entry_points(group='memorii.acceptance_evaluator_runtime')); d=tuple(entry_points(group='memorii.acceptance_deployment_publisher')); r=tuple(entry_points(group='memorii.acceptance_production_revocation_reader')); assert len(a)==len(d)==len(r)==1; assert a[0].load().__name__=='InstalledAcceptanceRuntime'; assert d[0].load().__name__=='InstalledDeploymentAuthorizationPublisher'; assert r[0].load().__name__=='InstalledProductionRevocationReader'"
           && env -u PYTHONPATH "${RUNNER_TEMP}/acceptance-venv/bin/memorii-acceptance-evaluate" --help
+          && env -u PYTHONPATH python "${GITHUB_WORKSPACE}/memorii/tests/integration/installed_acceptance_wheel_proof.py" --installed-python "${RUNNER_TEMP}/acceptance-venv/bin/python" --installed-cli "${RUNNER_TEMP}/acceptance-venv/bin/memorii-acceptance-evaluate" --work "${RUNNER_TEMP}/acceptance-wheel-proof"
           && cd "${GITHUB_WORKSPACE}/memorii"
           && pytest -W error tests/unit/acceptance/test_acceptance_evaluator_runtime.py tests/unit/acceptance/test_acceptance_host_runtime.py tests/unit/acceptance/test_acceptance_authority_repository.py tests/unit/acceptance/test_installed_acceptance_cli.py -p no:cacheprovider -q
 

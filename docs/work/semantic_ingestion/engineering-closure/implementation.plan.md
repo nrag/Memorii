@@ -2,7 +2,7 @@
 
 - Work ID: semantic-ingestion-engineering-closure
 - Work type: implementation
-- Status: active; Stage 1 acceptance persistence implementation
+- Status: active; Stage 1 V2 candidate pending independent review
 - Coordinator: Codex main thread
 - Created: 2026-09-06
 - Last updated: 2026-09-12
@@ -168,9 +168,9 @@ writers finish; no current whole-candidate proof is claimed yet.
 
 ## Next Action
 
-Implement the approved acceptance persistence and runtime-bootstrap contract at
-`../acceptance-authority-persistence/design.plan.md`, then run the complete
-Stage 1 focused matrix and independent implementation review.
+Freeze the complete Stage 1 V2 candidate, run independent specification,
+correctness, and test reviews, reconcile every finding, then promote R14 or
+record the exact remaining blocker.
 
 2026-09-08: root owns all code, generation, tests and commits. Read-only
 component reviews cover frozen90c58da62428f3caeab8ee7bca03116a24009d35e97aa705e1d757987a61362c.

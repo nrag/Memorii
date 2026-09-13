@@ -1,6 +1,6 @@
 {
   "format": "memorii.production-entrypoint-bindings.v1",
-  "updated": "2026-09-12",
+  "updated": "2026-09-13",
   "entries": [
     {
       "requirement": "R03",
@@ -49,13 +49,13 @@
       "requirement": "R14",
       "package": "03",
       "status": "partial_pending_independent_review",
-      "canonical_owner": "acceptance.cli.main -> acceptance.host_runtime.InstalledAcceptanceRuntime -> acceptance.evaluator.AcceptanceEvaluator -> memorii.core.memory_evolution.deployment_authorization.InstalledDeploymentAuthorizationPublisher",
+      "canonical_owner": "acceptance.cli.main -> acceptance.host_runtime.InstalledAcceptanceRuntime -> acceptance.authority_repository.AcceptanceAuthorityRepository.compare_and_publish -> memorii.core.memory_evolution.deployment_authorization.InstalledProductionRevocationReader; acceptance.evaluator.AcceptanceEvaluator -> memorii.core.memory_evolution.deployment_authorization.InstalledDeploymentAuthorizationPublisher",
       "production_caller": "memorii-acceptance-evaluate -> memorii.acceptance_evaluator_runtime:installed",
       "production_caller_count": 1,
       "target_binding": "memorii-acceptance-evaluate -> InstalledAcceptanceRuntime -> AcceptanceAuthorityRepository.begin_evaluation -> CapabilityBaselineApprovalVerifier.verify + verify_certificate -> registered signed AcceptanceEvaluationReceipt -> serialized InstalledDeploymentAuthorizationPublisher",
-      "authority": "Fixed platform-data configuration supplies signed fence registration, repository and receipt roots, trust anchors, parser/numeric limits, evaluator signer, and the separately discovered production publisher. Candidate arguments identify only release, baseline, policy, evidence, certificate, and deployment-manifest digest; they cannot replace authority, provider, key, history, clock, limit, or result.",
-      "outcome_proof": "The configured Ed25519 fixture invokes the public CLI discovery path over a real SQLite-fenced authority chain and proves the printed digest names the durable registered signed receipt and the exact serialized production authorization is visible. Acceptance/production import isolation, bad-signature/missing-object/future-checkpoint/config-permission/symlink/alias/provider-cardinality, crash/retry/history and concurrent-CAS families pass. Coordinator selections: 130 acceptance tests and 278 combined affected tests pass; installed wheel builds and exposes both fixed providers and the console script.",
-      "remaining": "Independent spec, correctness, and test review of the frozen Stage 1 candidate; then promote R14. Ordinary provider activation consumption remains the planned Stage 4 R13 integration and is not claimed here."
+      "authority": "Fixed platform-data runtime-v2 configuration supplies repository coordinates, constructor-held trust, parser limits, evaluator signing authority, five canonical-base64 signed numeric-authority artifacts, and separately discovered deployment and production-revocation providers. Candidate paths cannot replace authority. Complete V2 release, coverage, gate, sampling-frame, lifecycle, and production-revocation joins fail closed.",
+      "outcome_proof": "175 acceptance tests pass. A wheel-installed public command publishes the exact registered receipt and serialized production authorization and passes 14 authority, lifecycle, expiry, provider, path, history, and persistence negatives. Schema-complete independent vectors cover all 13 registered artifacts; the multi-cell V2 feasibility checker, Ruff, first-party Pyright, and diff checks pass.",
+      "remaining": "Independent spec, correctness, and test review of the frozen Stage 1 successor; then promote R14. Ordinary provider activation consumption remains Stage 4 R13 integration."
     },
     {
       "requirement": "R15",

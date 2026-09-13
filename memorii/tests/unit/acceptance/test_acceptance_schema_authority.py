@@ -10,7 +10,7 @@ from acceptance.schema_registry import canonical_digest, canonical_profile_bindi
 def test_registered_authority_manifest_matches_complete_registry() -> None:
     registry = load_registry()
     manifest = load_manifest()
-    assert len(registry["schemas"]) == 9
+    assert len(registry["schemas"]) == 13
     assert [row["id"] for row in manifest["schemas"]] == [row["id"] for row in registry["schemas"]]
 
 

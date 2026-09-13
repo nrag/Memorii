@@ -87,9 +87,45 @@ approval, qualifying measurements and final signatures remain release conditions
 
 ## Next Action
 
-Freeze the implemented Stage 1 candidate and run the required independent spec,
-correctness, and test reviews. Reconcile and remediate every confirmed finding
-before promoting R14.
+Remediate the confirmed `aa41b0d2` review findings, then freeze a successor
+candidate and repeat all three independent reviews before promoting R14.
+
+## Signed Numeric-Context V2 Preparation (2026-09-12)
+
+The frozen signed numeric-context feasibility chain now names the two missing
+registered authority artifacts: `ApprovedCapabilityBaselineV2` and
+`CapabilityBaselineApprovalReleaseV2`. The fenced authority commit's active
+release digest is the fixed selection coordinate for the latter; it binds the
+SHA-256 of the complete signed baseline bytes. Fixed V2 configuration carries
+neither artifact and cannot select either. The feasibility candidate was
+repinned after this clarification and its independent checker passes.
+
+This records only the design/evidence preparation. Registry descriptor grammar,
+V2 artifact schemas, the acceptance-owned manifest verifier, and evaluator
+integration remain unimplemented; R14 stays partial.
+
+## Independent Review Round 1 (aa41b0d2)
+
+The spec, correctness, and test reviewers rejected the first implementation
+candidate. The coordinator confirmed: omitted acceptance package resources;
+non-durable and unreconciled production publication; active-successor release
+rejection; missing production revocation reader/trust separation; unused trust
+snapshot key declarations; incorrect genesis index-ahead recovery and
+post-link retry acknowledgement; incomplete authority-path permission checks;
+and insufficient full-artifact vectors, installed subprocess, multi-cell,
+lifecycle, crash/retry, and recursive isolation evidence.
+
+The test review also identified a scope conflict in this packet's bridge row.
+Stage 1 proves production-owned publication of the exact serialized deployment
+authorization. Ordinary semantic-ingestion activation consumes that artifact in
+the already sequenced Stage 4 R13 integration; it is not part of bounded R14
+promotion. The validation matrix is interpreted accordingly and the parent R13
+row remains open.
+
+All findings are `changes_required`; the validated product findings are
+`DREV-001` through `DREV-006` and `R14-COR-01` through `R14-COR-03`. There is no
+`blocks_approval` finding and no external decision is needed. The next candidate
+must close every item with code and evidence before review repeats.
 
 ## Historical Paused Candidate (superseded)
 
@@ -149,6 +185,32 @@ R14 remains partial until the frozen candidate receives the three independent
 reviews required by this WorkPlan. Ordinary provider activation consumption is
 still Stage 4 and does not block the bounded R14 evaluator result.
 
+## Durable Attempt Integration (2026-09-13)
+
+Registered snapshot evaluations now derive an immutable attempt digest from the
+selected authority commit and the exact candidate/request bindings, excluding
+the local wall-clock sample. `AtomicEvaluationReceiptStore` persists the exact
+prepared production authorization bytes and signed registered receipt bytes in
+an fsync-backed absent-path attempt envelope before either downstream publish.
+On a later invocation for the same commit and inputs, the evaluator loads those
+bytes and skips both signer and deployment preparation; it publishes the
+authorization first through exact-visibility reconciliation, then the receipt,
+while the repository lease remains held. This is locally verified only: the
+focused evaluator/repository/installed-runtime selection passes 20 tests and
+Ruff/diff checks pass. Fault-injection restart and concurrent-retry proofs
+remain required before R14 can be promoted.
+
+## Signed Trust Declaration Binding (2026-09-13)
+
+The selected authority view now carries the exact signed trust snapshot into
+approval verification. Bootstrap `acceptance_keys` must byte-match exactly one
+declared key; the declaration must include the approval purpose and contain the
+release issue time in its half-open static interval. Issuance and current
+lifecycle checks remain independently required. Installed fixture and legacy
+evaluator fixtures now declare the exact approval purpose. Focused evaluator
+and installed-runtime tests pass (10) with Ruff; negative declaration matrix
+coverage and generic registered-artifact purpose enforcement remain pending.
+
 ## Historical Slice A Evidence (superseded 2026-09-12)
 
 The bounded schema/CTV/repository slice now provides the nine-artifact packaged
@@ -205,3 +267,137 @@ the complete acceptance directory passes (124); `git diff --check` passes.
 The wheel built with `--no-build-isolation`, but final target-install entrypoint
 proof and pyright closure are still pending. This checkpoint does not promote
 R14.
+
+## Fixed Resource Admission Matrix (2026-09-13)
+
+Installed runtime construction now admits configuration, authority, fence,
+receipt, and deployment-publisher coordinates only through secure existing
+ancestry. The matrix covers direct and parent symlinks, group/world writable
+fence/receipt/publisher coordinates, equal and nested failure domains including
+fence-under-authority, and secure missing leaves. The focused installed-runtime
+and authority repository selection passes 31 tests with Ruff and diff checks.
+
+## Production Revocation Reader Boundary (2026-09-13)
+
+Decision recorded: production-revocation evidence is cumulative ordered history.
+For a non-genesis authority commit, unchanged active release requires an exact
+unchanged evidence list. Changing predecessor active release `A` to successor
+`B` (or null) requires the existing list as an exact prefix plus exactly one
+new pair whose signed receipt names `A`; genesis cannot carry evidence.
+`AcceptanceAuthorityRepository.compare_and_publish` enforces that transition
+before advancing the fence. It requires the new receipt/checkpoint bytes in the
+prepared set and checks them against the separately discovered read-only
+production reader. Every recovery re-reads and independently validates the
+stored pair against the current production mapping.
+
+The fixed `memorii.acceptance_production_revocation_reader` provider is owned
+by `memorii.core.memory_evolution.deployment_authorization` and imports no
+acceptance module. Its least-privilege configuration contains only
+`reader_root`; it serves canonical content-addressed receipt/checkpoint bytes
+and a current mapping. Acceptance holds distinct production Ed25519 keys and
+verifies canonical registered decoding, purpose/signature/digest, exact prior
+release join, epoch advancement, time order, membership, checkpoint ancestry,
+and current mapping byte equality. The installed host validates the reader root
+with the other fixed paths and cannot share its failure domain.
+
+Focused proof: `test_production_revocation_boundary.py` has a signed
+generation-two success/restart read, wrong signer, stale mapping, membership,
+epoch, and malformed mapping rejections. The repository suite proves both
+replacement-before-revocation rejection and one-pair append/reopen
+revalidation through `compare_and_publish`, including extra, reordered, and
+prefix-substituted history rejection; installed CLI fixture remains on the
+actual fixed composition root. The independent verifier accepts a signed
+checkpoint whose current epoch is later than the receipt's advanced epoch and
+fails closed on reader outage after restart. The three focused suites pass 41
+tests;
+Ruff and diff checks pass. A source Pyright scan has no first-party finding;
+the six reported paths are existing environment-only unresolved `cryptography`
+and `pydantic` imports. A built wheel contains the distinct
+`memorii.acceptance_production_revocation_reader` provider. This is bounded
+R14 remediation evidence, not the complete R14 review slice.
+
+## Installed-Wheel Public Entry-Point Proof (2026-09-13)
+
+`memorii/tests/integration/installed_acceptance_wheel_proof.py` prepares the
+real signed authority/config/input fixture, writes it at the installed
+interpreter's `sysconfig` data coordinate, and invokes only the installed
+`memorii-acceptance-evaluate` executable from outside the checkout with
+`PYTHONPATH` removed. It asserts both `acceptance` and `memorii` originate
+under the fresh venv, then verifies the printed registered receipt, one durable
+attempt envelope, and the exact production authorization output. The same
+runner proves zero-output rejection for a bad candidate signature, missing
+authority object, future checkpoint, insecure or symlinked configuration,
+insecure authority root, and missing evaluator/publisher/revocation-reader or
+duplicate evaluator providers.
+
+The `acceptance-authority-runtime` CI job now builds a wheel, creates the
+fresh venv, inventories all three fixed providers, and runs that proof before
+the focused source suites. Local execution completed with a newly created venv
+and wheel-installed package from a secure temporary location; child execution
+had `PYTHONPATH` unset. The environment's ordinary fresh dependency install
+could not finish because its SciPy download repeatedly stalled, so the local
+proof used only a temporary dependency path to the existing local venv while
+still requiring both tested packages to resolve from the fresh wheel venv.
+Ruff, diff check, and the three focused acceptance suites pass (41 tests).
+
+## Recursive Import Isolation (2026-09-13)
+
+The fixed serialized boundary is now guarded by a recursive AST audit over all
+packaged `acceptance/**/*.py`, all `memorii.core.memory_evolution` and
+`memorii.core.semantic_ingestion` modules, semantic-ingestion production tools,
+and any production integration modules. Acceptance cannot statically import
+`memorii`; the production graph cannot statically import `acceptance`, for
+either `import` or absolute `from ... import ...` syntax. Nested mutation
+fixtures prove both directions are detected.
+
+The installed-wheel runner performs a second successful in-venv evaluation and
+writes `import-origins.json` for every loaded `acceptance.*` and `memorii.*`
+module. It rejects if any loaded module has no file origin or resolves outside
+that venv. Local wheel proof, including the imported-origin inventory, passes;
+the focused host/CLI suites pass 20 tests, Ruff and diff check pass.
+
+## Unsupported-Cell Binding Design (2026-09-12)
+
+The prior locator-tuple draft was superseded after design review because SIA
+section 5.6 makes the signed coverage and gate manifests, rather than caller
+locators, the complete coverage authority. The linked design
+`../../statistical-unsupported-cell-binding/design.plan.md` now defines the
+complete signed numeric-context authority chain: coverage, gate, and sampling
+frame manifests derive every held numeric field; unsupported abstention gates
+retain normal evidence and Holm participation; and V2 retains no V1 replay API.
+Its frozen-literal signed-manifest feasibility proof uses `.venv/bin/python`,
+validates all derived-authority coordinates before parser reachability, and
+passes locally. Its candidate records literal signed baseline/release/manifest
+fixtures, the separate CTV byte checksum, and a distinct sampling-frame digest;
+no production authority is claimed. No
+production schema, runtime, test, CI, or public CLI change is included here;
+R14 remains partial pending delta review and a separately owned implementation
+slice.
+
+## V2 Cutover Candidate (2026-09-12)
+
+The host, evaluator, installed CLI fixture, and wheel proof now consume the
+five-artifact V2 chain. The verifier reconstructs the complete numeric context
+from signed baseline, release, coverage, gate, and sampling-frame bytes. The
+evaluator compares every release authority coordinate with the certificate
+before publishing a receipt or deployment authorization. V1 runtime config and
+certificate markers have no authorizing path.
+
+Local evidence: 175 acceptance tests pass; the installed wheel passes one
+public success and 14 fail-closed cases; schema-complete independent vectors
+cover all 13 registered artifacts; the signed multi-cell feasibility matrix,
+Ruff, first-party Pyright, and diff checks pass. R14 remains partial until the
+frozen successor receives independent specification, correctness, and test
+review. Next action: commit the successor and run those three reviews.
+
+## V2 Numeric Authority Cutover (in progress, 2026-09-12)
+
+The authority registry now carries the five V2 artifacts and the V2 approval
+release retains the existing release digest, epoch, sequence, predecessor,
+issue/expiry, lifecycle, and signer fields. `acceptance.numeric_context_authority`
+strictly reconstructs signed coverage dispositions, the full numeric authority,
+and a preverified numeric certification context from the five manifest bytes.
+The frozen signed fixture was reissued with the V2 lifecycle release. Focused
+positive/tampered-signature proof passes. Host/evaluator/config and legacy
+fixture migration remain required before this becomes a production cutover;
+this evidence does not claim that the V2 runtime path is live.

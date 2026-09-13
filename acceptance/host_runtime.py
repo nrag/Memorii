@@ -9,6 +9,8 @@ data location; there are no environment or command-line fallbacks.
 from __future__ import annotations
 
 import json
+import base64
+import os
 import stat
 import sysconfig
 from datetime import UTC, datetime
@@ -37,6 +39,9 @@ from acceptance.capability_baseline_approval import (
 )
 from acceptance.evaluator import AcceptanceEvaluator, SerializedDeploymentAuthorizationBridge
 from acceptance.deployment_bridge import configured_publisher
+from acceptance.production_revocation import IndependentProductionRevocationEvidenceVerifier
+from acceptance.production_revocation_bridge import configured_revocation_reader
+from acceptance.numeric_context_authority import verify_numeric_context
 from acceptance.statistical_certification import (
     CanonicalDecimalQuantity,
     EncodingSpec,
@@ -50,8 +55,8 @@ from acceptance.statistical_certification import (
     TransportLimits,
 )
 
-_FORMAT = "memorii.acceptance.runtime.v1"
-_CONFIG = Path(sysconfig.get_path("data")) / "etc" / "memorii" / "acceptance" / "runtime-v1.json"
+_FORMAT = "memorii.acceptance.runtime.v2"
+_CONFIG = Path(sysconfig.get_path("data")) / "etc" / "memorii" / "acceptance" / "runtime-v2.json"
 _HEX = frozenset("0123456789abcdef")
 
 
@@ -75,12 +80,45 @@ def _absolute_path(value: object, name: str) -> Path:
 
 def _secure_file(path: Path, name: str) -> bytes:
     try:
-        # A symlink would make the installed path an attacker-controlled alias.
-        if path.is_symlink() or not path.is_file() or stat.S_IMODE(path.stat().st_mode) & 0o022:
+        _secure_path(path, name)
+        if not path.is_file():
             raise AcceptanceRuntimeConfigurationError(f"acceptance_runtime_{name}")
         return path.read_bytes()
     except OSError as exc:
         raise AcceptanceRuntimeConfigurationError(f"acceptance_runtime_{name}") from exc
+
+
+def _secure_path(path: Path, name: str) -> None:
+    """Admit an absolute fixed resource only through secure existing ancestry."""
+    if not path.is_absolute():
+        raise AcceptanceRuntimeConfigurationError(f"acceptance_runtime_{name}")
+    current = path
+    while True:
+        try:
+            metadata = os.lstat(current)
+        except FileNotFoundError:
+            if current.parent == current:
+                raise AcceptanceRuntimeConfigurationError(f"acceptance_runtime_{name}")
+            current = current.parent
+            continue
+        except OSError as exc:
+            raise AcceptanceRuntimeConfigurationError(f"acceptance_runtime_{name}") from exc
+        if (
+            stat.S_ISLNK(metadata.st_mode)
+            or metadata.st_uid not in {os.geteuid(), 0}
+            or stat.S_IMODE(metadata.st_mode) & 0o022
+        ):
+            raise AcceptanceRuntimeConfigurationError(f"acceptance_runtime_{name}")
+        if current.parent == current:
+            return
+        current = current.parent
+
+
+def _distinct_domains(paths: tuple[Path, ...]) -> None:
+    for index, left in enumerate(paths):
+        for right in paths[index + 1:]:
+            if left == right or left in right.parents or right in left.parents:
+                raise AcceptanceRuntimeConfigurationError("acceptance_runtime_path_alias")
 
 
 def _closed_config() -> dict[str, Any]:
@@ -91,18 +129,27 @@ def _closed_config() -> dict[str, Any]:
         raise AcceptanceRuntimeConfigurationError("acceptance_runtime_config") from exc
     required = {
         "format", "authority_repository_root", "fence_database_path", "receipt_root",
-        "fence_registration", "trust_keys", "acceptance_keys", "numeric_binding",
+        "fence_registration", "trust_keys", "acceptance_keys", "numeric_authority",
         "numeric_limits", "acceptance_limits", "deployment_issuer", "evaluator_subject_id",
         "evaluator_signing_key_coordinate", "evaluator_private_key",
+        "production_revocation_reader", "production_trust_keys",
     }
     if type(value) is not dict or set(value) != required or value["format"] != _FORMAT:
         raise AcceptanceRuntimeConfigurationError("acceptance_runtime_config")
-    paths = tuple(_absolute_path(value[name], name) for name in (
-        "authority_repository_root", "fence_database_path", "receipt_root"
-    ))
-    resolved = tuple(path.resolve(strict=False) for path in paths)
-    if len(set(resolved)) != len(resolved) or any(path.is_symlink() for path in paths):
-        raise AcceptanceRuntimeConfigurationError("acceptance_runtime_path_alias")
+    authority = _absolute_path(value["authority_repository_root"], "authority_repository_root")
+    fence = _absolute_path(value["fence_database_path"], "fence_database_path")
+    receipt = _absolute_path(value["receipt_root"], "receipt_root")
+    deployment = value["deployment_issuer"]
+    if type(deployment) is not dict:
+        raise AcceptanceRuntimeConfigurationError("acceptance_runtime_deployment_issuer")
+    publisher = _absolute_path(deployment.get("publisher_root"), "publisher_root")
+    revocation = value["production_revocation_reader"]
+    if type(revocation) is not dict:
+        raise AcceptanceRuntimeConfigurationError("acceptance_runtime_production_revocation_reader")
+    reader_root = _absolute_path(revocation.get("reader_root"), "production_revocation_reader_root")
+    for path, name in ((authority, "authority_repository_root"), (fence, "fence_database_path"), (receipt, "receipt_root"), (publisher, "publisher_root"), (reader_root, "production_revocation_reader_root")):
+        _secure_path(path, name)
+    _distinct_domains((authority, receipt, publisher, reader_root, fence.parent))
     return value
 
 
@@ -175,6 +222,9 @@ class _DurableApprovalView:
             for value in self._selected_or_raise()["keys"]
         )
 
+    def load_current_trust_snapshot(self) -> dict[str, Any]:
+        return dict(self._selected_or_raise()["trust"])
+
     def load_current_checkpoint(self) -> CurrentAcceptanceCheckpoint:
         value = self._selected_or_raise()["checkpoint"]
         return CurrentAcceptanceCheckpoint(
@@ -219,6 +269,23 @@ def _numeric_binding(value: object) -> HeldBinding:
         raise AcceptanceRuntimeConfigurationError("acceptance_runtime_numeric_binding") from exc
 
 
+def _v2_numeric_binding(value: object) -> HeldBinding:
+    """Only signed manifest bytes may define numeric certification semantics."""
+    required = {"policy_sha256", "evidence_sha256", "baseline", "release", "coverage", "gates", "sampling_frame", "trust_keys"}
+    if type(value) is not dict or set(value) != required or type(value["trust_keys"]) is not dict:
+        raise AcceptanceRuntimeConfigurationError("acceptance_runtime_numeric_authority")
+    try:
+        raw = {name: base64.b64decode(value[name], validate=True) for name in ("baseline", "release", "coverage", "gates", "sampling_frame")}
+        keys = {name: _hex(key, "numeric_authority_key", 32) for name, key in value["trust_keys"].items()}
+        verified = verify_numeric_context(
+            baseline_bytes=raw["baseline"], release_bytes=raw["release"], coverage_bytes=raw["coverage"],
+            gate_bytes=raw["gates"], sampling_frame_bytes=raw["sampling_frame"], signing_keys=keys,
+        )
+        return HeldBinding(value["policy_sha256"], value["evidence_sha256"], verified.certification_context.authority, verified.certification_context)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise AcceptanceRuntimeConfigurationError("acceptance_runtime_numeric_authority") from exc
+
+
 class InstalledAcceptanceRuntime:
     """The one registered runtime provider; it accepts no caller authority."""
 
@@ -239,6 +306,26 @@ class InstalledAcceptanceRuntime:
                 return False
             return True
 
+        production_trust = config["production_trust_keys"]
+        if (
+            type(production_trust) is not dict
+            or not production_trust
+            or any(not isinstance(coordinate, str) for coordinate in production_trust)
+        ):
+            raise AcceptanceRuntimeConfigurationError("acceptance_runtime_production_trust")
+        try:
+            production_verifier = IndependentProductionRevocationEvidenceVerifier(
+                reader=configured_revocation_reader(config["production_revocation_reader"]),
+                trust_keys={
+                    coordinate: _hex(key, "production_trust_key", 32)
+                    for coordinate, key in production_trust.items()
+                },
+            )
+        except (ValueError, TypeError) as exc:
+            raise AcceptanceRuntimeConfigurationError(
+                "acceptance_runtime_production_revocation_reader"
+            ) from exc
+
         registration_value = config["fence_registration"]
         if type(registration_value) is not dict or set(registration_value) != {
             "namespace", "backend_id", "backend_kind", "failure_domain", "repository_id", "credential_reference", "signer_coordinate", "signature"
@@ -252,6 +339,7 @@ class InstalledAcceptanceRuntime:
         repository = AcceptanceAuthorityRepository(
             _absolute_path(config["authority_repository_root"], "authority_repository_root"), fence,
             artifact_signature_verifier=verify_artifact,
+            production_revocation_verifier=production_verifier,
         )
         keys_value = config["acceptance_keys"]
         if type(keys_value) is not list or not keys_value:
@@ -279,7 +367,7 @@ class InstalledAcceptanceRuntime:
         )
         self._evaluator = AcceptanceEvaluator(
             approval_verifier=CapabilityBaselineApprovalVerifier(keys=keys, authority_repository=_DurableApprovalView(repository), limits=acceptance_limits),
-            numeric_binding=_numeric_binding(config["numeric_binding"]), numeric_limits=numeric_limits,
+            numeric_binding=_v2_numeric_binding(config["numeric_authority"]), numeric_limits=numeric_limits,
             receipt_store=AtomicEvaluationReceiptStore(_absolute_path(config["receipt_root"], "receipt_root")),
             deployment_issuer=SerializedDeploymentAuthorizationBridge(issuer),
             now_provider=lambda: datetime.now(tz=UTC), authority_repository=repository,

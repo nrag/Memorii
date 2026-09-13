@@ -55,7 +55,7 @@ def _artifact(schema_id: str, **overrides: object) -> bytes:
                 ]
             else:
                 value[name] = [["b" * 64, "c" * 64]]
-    value["approval_purpose" if schema_id == "CapabilityBaselineApprovalRelease" else "purpose"] = schema["purpose"]
+    value["purpose"] = schema["purpose"]
     value["schema_version"] = schema["schema_version"]
     value.update(overrides)
     digest_name = schema["digest_field"]
@@ -223,6 +223,174 @@ def test_unreachable_prepared_artifact_rejects_publish(tmp_path: Path) -> None:
         )
 
 
+def test_active_release_replacement_cannot_commit_before_revocation_evidence(
+    tmp_path: Path,
+) -> None:
+    repo = _repository(tmp_path)
+    prepared, first = _commit_bundle(1)
+    first_digest = repo.compare_and_publish(
+        prepared_objects=prepared,
+        expected_commit_digest=None,
+        expected_key_head=None,
+        expected_status_generation=None,
+        next_commit=first,
+    )
+    proposed = json.loads(first)
+    proposed.update(
+        transaction_sequence=2,
+        predecessor_commit_digest=first_digest,
+        active_release_digest="f" * 64,
+        active_release_epoch=2,
+        active_release_sequence=2,
+        production_revocation_evidence=[],
+    )
+    proposed.pop("commit_digest")
+    replacement = _artifact("AcceptanceAuthorityCommit", **proposed)
+    with pytest.raises(AuthorityRepositoryUnavailable, match="revocation_transition"):
+        repo.compare_and_publish(
+            prepared_objects={},
+            expected_commit_digest=first_digest,
+            expected_key_head=json.loads(first)["key_history_head_digest"],
+            expected_status_generation=1,
+            next_commit=replacement,
+        )
+
+
+def test_terminal_transition_appends_exactly_one_pair_and_revalidates_on_reopen(
+    tmp_path: Path,
+) -> None:
+    class _Verifier:
+        calls = 0
+
+        def verify(self, **_: object) -> tuple[dict[str, object], dict[str, object]]:
+            self.calls += 1
+            return {}, {}
+
+    verifier = _Verifier()
+    registration = _registration(tmp_path)
+    fence = SqliteAcceptanceAuthorityFence(
+        tmp_path / "fence" / "fence.sqlite", registration, lambda *_: True
+    )
+    repo = AcceptanceAuthorityRepository(
+        tmp_path / "authority", fence, production_revocation_verifier=verifier
+    )
+    prepared, first = _commit_bundle(1)
+    first_digest = repo.compare_and_publish(
+        prepared_objects=prepared,
+        expected_commit_digest=None,
+        expected_key_head=None,
+        expected_status_generation=None,
+        next_commit=first,
+    )
+    first_value = json.loads(first)
+    old_release = first_value["active_release_digest"]
+    release_value = json.loads(repo.get(old_release))
+    release_value.update(
+        acceptance_release_epoch=2,
+        acceptance_release_sequence=2,
+        supersedes_release_digest=old_release,
+    )
+    release_value.pop("release_digest")
+    release_value.pop("signature")
+    successor = _artifact("CapabilityBaselineApprovalRelease", **release_value)
+    successor_digest = json.loads(successor)["release_digest"]
+    receipt = _artifact(
+        "ProductionRevocationReceipt",
+        prior_approval_release_digest=old_release,
+        prior_production_epoch=1,
+        advanced_production_epoch=2,
+    )
+    receipt_digest = json.loads(receipt)["receipt_digest"]
+    production_checkpoint = _artifact(
+        "ProductionEpochCheckpoint",
+        checkpoint_generation=1,
+        predecessor_checkpoint_digest=None,
+        active_production_epoch=2,
+        revocation_receipt_digests=[receipt_digest],
+    )
+    production_checkpoint_digest = json.loads(production_checkpoint)["checkpoint_digest"]
+    checkpoint_value = json.loads(repo.get(first_value["current_checkpoint_digest"]))
+    checkpoint_value.update(
+        checkpoint_generation=2,
+        predecessor_checkpoint_digest=first_value["current_checkpoint_digest"],
+        release_history_head_digest=successor_digest,
+        release_history_head_sequence=2,
+        active_release_digest=successor_digest,
+        active_epoch=2,
+        active_sequence=2,
+        production_revocation_evidence=[[receipt_digest, production_checkpoint_digest]],
+    )
+    checkpoint_value.pop("checkpoint_digest")
+    checkpoint_value.pop("signature")
+    checkpoint = _artifact("AcceptanceCurrentCheckpoint", **checkpoint_value)
+    checkpoint_digest = json.loads(checkpoint)["checkpoint_digest"]
+    proposed = dict(first_value)
+    proposed.update(
+        transaction_sequence=2,
+        predecessor_commit_digest=first_digest,
+        release_history_head_digest=successor_digest,
+        release_history_head_sequence=2,
+        active_release_digest=successor_digest,
+        active_release_epoch=2,
+        active_release_sequence=2,
+        current_checkpoint_digest=checkpoint_digest,
+        approval_release_digest=successor_digest,
+        production_revocation_evidence=[[receipt_digest, production_checkpoint_digest]],
+    )
+    proposed.pop("commit_digest")
+    second = _artifact("AcceptanceAuthorityCommit", **proposed)
+    repo.compare_and_publish(
+        prepared_objects={
+            successor_digest: successor,
+            receipt_digest: receipt,
+            production_checkpoint_digest: production_checkpoint,
+            checkpoint_digest: checkpoint,
+        },
+        expected_commit_digest=first_digest,
+        expected_key_head=first_value["key_history_head_digest"],
+        expected_status_generation=1,
+        next_commit=second,
+    )
+    second_digest = json.loads(second)["commit_digest"]
+
+    def invalid_follow_up(pairs: list[list[str]]) -> bytes:
+        value = json.loads(second)
+        value.update(
+            transaction_sequence=3,
+            predecessor_commit_digest=second_digest,
+            active_release_digest="f" * 64,
+            active_release_epoch=3,
+            active_release_sequence=3,
+            production_revocation_evidence=pairs,
+        )
+        value.pop("commit_digest")
+        return _artifact("AcceptanceAuthorityCommit", **value)
+
+    original_pair = [receipt_digest, production_checkpoint_digest]
+    for invalid_pairs in (
+        [
+            original_pair,
+            ["e" * 64, "f" * 64],
+            ["1" * 64, "2" * 64],
+        ],  # more than one append
+        [["e" * 64, "f" * 64], original_pair],  # reordered history
+        [["e" * 64, "f" * 64]],  # substituted prefix
+    ):
+        with pytest.raises(AuthorityRepositoryUnavailable, match="revocation_transition"):
+            repo.compare_and_publish(
+                prepared_objects={},
+                expected_commit_digest=second_digest,
+                expected_key_head=first_value["key_history_head_digest"],
+                expected_status_generation=2,
+                next_commit=invalid_follow_up(invalid_pairs),
+            )
+    # One check binds the prepared bytes before the fence; one validates the
+    # staged commit. Reopen must independently invoke it again.
+    assert verifier.calls == 5
+    repo.load_current()
+    assert verifier.calls == 6
+
+
 def test_snapshot_is_opaque_and_enforces_observation_order(tmp_path: Path) -> None:
     repo = _repository(tmp_path)
     prepared, commit = _commit_bundle(1, observed_at="2026-09-13T00:00:00Z")
@@ -304,6 +472,38 @@ def test_receipt_truncated_final_and_index_recovery(tmp_path: Path) -> None:
     (tmp_path / "receipts" / receipt_digest).write_bytes(b"truncated")
     with pytest.raises(AuthorityRepositoryUnavailable, match="receipt_conflict"):
         store.publish(receipt_digest, raw)
+
+
+@pytest.mark.parametrize("corrupt", [b"{", b'{"authorization":"not-base64"}'])
+def test_truncated_or_malformed_attempt_envelope_fails_closed(
+    tmp_path: Path, corrupt: bytes
+) -> None:
+    store = AtomicEvaluationReceiptStore(tmp_path / "receipts")
+    attempt = "d" * 64
+    directory = tmp_path / "receipts" / "attempts"
+    directory.mkdir(parents=True)
+    (directory / attempt).write_bytes(corrupt)
+    with pytest.raises(AuthorityRepositoryUnavailable, match="attempt_schema"):
+        store.load_attempt(attempt)
+    # A corrupt durable attempt cannot be replaced to manufacture a second
+    # authorization/receipt identity.
+    raw = _artifact("AcceptanceEvaluationReceipt")
+    with pytest.raises(AuthorityRepositoryUnavailable, match="attempt_conflict"):
+        store.prepare_attempt(attempt, _json_authorization(), raw)
+
+
+def test_conflicting_attempt_envelope_rejects_second_authorization_bytes(tmp_path: Path) -> None:
+    store = AtomicEvaluationReceiptStore(tmp_path / "receipts")
+    raw = _artifact("AcceptanceEvaluationReceipt")
+    attempt = "e" * 64
+    first = _json_authorization()
+    assert store.prepare_attempt(attempt, first, raw) == (first, raw)
+    with pytest.raises(AuthorityRepositoryUnavailable, match="attempt_conflict"):
+        store.prepare_attempt(attempt, b'{"authorization_digest":"b"}', raw)
+
+
+def _json_authorization() -> bytes:
+    return b'{"authorization_digest":"' + (b"a" * 64) + b'"}'
 
 
 def test_concurrent_publish_has_one_winner(tmp_path: Path) -> None:

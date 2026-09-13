@@ -49,15 +49,18 @@ def main() -> None:
         "registry_sha256": hashlib.sha256(registry_raw).hexdigest(),
         "generated_manifest_sha256": hashlib.sha256(MANIFEST.read_bytes()).hexdigest(),
         "vectors_sha256": hashlib.sha256(VECTORS.read_bytes()).hexdigest(),
-        "schema_count": 9,
+        "schema_count": 13,
         "profile_count": 1,
-        "digest_domain_count": 9,
+        "digest_domain_count": 13,
     }:
         raise SystemExit("authority vector manifest")
-    if len(registry["schemas"]) != len(manifest["schemas"]) or len(registry["schemas"]) != 9:
+    if len(registry["schemas"]) != len(manifest["schemas"]) or len(registry["schemas"]) != 13:
         raise SystemExit("authority schema cardinality")
-    if [vector["name"] for vector in vectors["vectors"][:9]] != [row["id"] for row in registry["schemas"]]:
+    if [vector["name"] for vector in vectors["vectors"][:13]] != [row["id"] for row in registry["schemas"]]:
         raise SystemExit("authority vector inventory")
+    for vector, schema in zip(vectors["vectors"][:13], registry["schemas"], strict=True):
+        if set(vector["value"]) != {field["name"] for field in schema["fields"]}:
+            raise SystemExit(f"authority vector shape: {vector['name']}")
     for vector in vectors["vectors"]:
         if _encode(vector["value"]).decode("utf-8") != vector["expected_ctv"]:
             raise SystemExit(f"authority vector mismatch: {vector['name']}")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import fcntl
+import base64
 import json
 import os
 import sqlite3
@@ -14,6 +15,10 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
+from acceptance.production_revocation import (
+    ProductionRevocationEvidenceError,
+    ProductionRevocationEvidenceVerifier,
+)
 from acceptance.schema_registry import decode_artifact, schema_for, signing_preimage
 
 
@@ -331,6 +336,7 @@ class AcceptanceAuthorityRepository:
         *,
         maximum_object_bytes: int = 1_048_576,
         artifact_signature_verifier: Callable[[str, bytes, str, str], bool] | None = None,
+        production_revocation_verifier: ProductionRevocationEvidenceVerifier | None = None,
     ) -> None:
         if (
             maximum_object_bytes < 1
@@ -354,6 +360,7 @@ class AcceptanceAuthorityRepository:
         # Test-only repositories may omit this verifier while constructing their
         # synthetic unsigned fixtures. Installed composition always supplies it.
         self._artifact_signature_verifier = artifact_signature_verifier
+        self._production_revocation_verifier = production_revocation_verifier
 
     @contextmanager
     def _lease(self) -> Iterator[None]:
@@ -407,7 +414,14 @@ class AcceptanceAuthorityRepository:
             raise AuthorityRepositoryUnavailable("acceptance_artifact_digest")
         registered = schema_for(schema)
         verifier = self._artifact_signature_verifier
-        if registered["signature_field"] is not None and verifier is not None:
+        if (
+            registered["signature_field"] is not None
+            and verifier is not None
+            and not (
+                self._production_revocation_verifier is not None
+                and schema in {"ProductionRevocationReceipt", "ProductionEpochCheckpoint"}
+            )
+        ):
             signature = value[registered["signature_field"]]
             coordinate = value[registered["signer_coordinate_field"]]
             try:
@@ -544,13 +558,14 @@ class AcceptanceAuthorityRepository:
         if c["transaction_sequence"] != sequence:
             raise AuthorityRepositoryUnavailable("acceptance_commit_sequence")
         p = c["predecessor_commit_digest"]
+        predecessor_commit: dict[str, Any] | None = None
         if sequence == 1:
             if p is not None:
                 raise AuthorityRepositoryUnavailable("acceptance_genesis_predecessor")
         elif not _is_digest(p):
             raise AuthorityRepositoryUnavailable("acceptance_commit_predecessor")
         else:
-            self._validate_commit(p, sequence - 1, seen)
+            predecessor_commit = self._validate_commit(p, sequence - 1, seen)
         trust_seed = self._artifact(
             c["authority_snapshot_digest"], "AcceptanceTrustSnapshot"
         )
@@ -642,7 +657,44 @@ class AcceptanceAuthorityRepository:
                 or rec["advanced_production_epoch"] > epoch["active_production_epoch"]
             ):
                 raise AuthorityRepositoryUnavailable("acceptance_revocation_join")
+            if self._production_revocation_verifier is not None:
+                try:
+                    self._production_revocation_verifier.verify(
+                        prior_approval_release_digest=rec["prior_approval_release_digest"],
+                        receipt=self.get(pair[0]),
+                        checkpoint=self.get(pair[1]),
+                        require_current_reader_bytes=True,
+                    )
+                except ProductionRevocationEvidenceError as exc:
+                    raise AuthorityRepositoryUnavailable(
+                        "acceptance_production_revocation_evidence"
+                    ) from exc
+        self._validate_revocation_transition(predecessor_commit, c)
         return c
+
+    def _validate_revocation_transition(
+        self, predecessor: dict[str, Any] | None, proposed: dict[str, Any]
+    ) -> None:
+        """Bind append-only evidence to exactly one active-release terminal transition."""
+        pairs = proposed["production_revocation_evidence"]
+        if predecessor is None:
+            if pairs:
+                raise AuthorityRepositoryUnavailable("acceptance_revocation_genesis")
+            return
+        prior_pairs = predecessor["production_revocation_evidence"]
+        old_active = predecessor["active_release_digest"]
+        new_active = proposed["active_release_digest"]
+        if new_active == old_active:
+            if pairs != prior_pairs:
+                raise AuthorityRepositoryUnavailable("acceptance_revocation_unexpected")
+            return
+        if old_active is None:
+            raise AuthorityRepositoryUnavailable("acceptance_revocation_transition")
+        if pairs[: len(prior_pairs)] != prior_pairs or len(pairs) != len(prior_pairs) + 1:
+            raise AuthorityRepositoryUnavailable("acceptance_revocation_transition")
+        receipt = self._artifact(pairs[-1][0], "ProductionRevocationReceipt")
+        if receipt["prior_approval_release_digest"] != old_active:
+            raise AuthorityRepositoryUnavailable("acceptance_revocation_prior_release")
 
     def _walk_release(self, digest: str, expected: int, seen: set[str]) -> dict[str, Any]:
         """Verify the complete release predecessor chain selected by the commit."""
@@ -685,6 +737,10 @@ class AcceptanceAuthorityRepository:
                 out.flush()
                 os.fsync(out.fileno())
             os.replace(tmp, self._index)
+            _fsync_dir(self._index.parent)
+        else:
+            # A previous successful replace can have lost its acknowledgement
+            # before the directory entry reached durable storage.
             _fsync_dir(self._index.parent)
 
     def _current(self) -> tuple[int, str, dict[str, Any]] | None:
@@ -737,6 +793,7 @@ class AcceptanceAuthorityRepository:
             raise AuthorityRepositoryUnavailable("acceptance_snapshot_issuance")
         return {
             "commit": dict(commit),
+            "trust": self._artifact(commit["authority_snapshot_digest"], "AcceptanceTrustSnapshot"),
             "checkpoint": checkpoint,
             "issuance": self._artifact(issuance, "AcceptanceApprovalIssuanceSnapshot"),
             "keys": prefix(commit["key_history_head_digest"], "KeyLifecycleEvent", "predecessor_event_digest"),
@@ -780,6 +837,9 @@ class AcceptanceAuthorityRepository:
                 or commit["predecessor_commit_digest"] != current_digest
             ):
                 raise AuthorityRepositoryUnavailable("acceptance_next_commit")
+            self._validate_prepared_revocation_transition(
+                None if current is None else current[2], commit, prepared_objects
+            )
             reachable = {
                 commit["authority_snapshot_digest"],
                 commit["key_history_head_digest"],
@@ -806,13 +866,65 @@ class AcceptanceAuthorityRepository:
                     raise AuthorityRepositoryUnavailable("acceptance_prepared_digest")
             self.put_typed(next_commit, "AcceptanceAuthorityCommit")
             self._validate_commit(digest, expected)
-            self._repair(expected, digest, commit["current_checkpoint_digest"])
             self._fence.compare_and_advance(
                 sequence=expected,
                 digest=digest,
                 expected=None if current is None else (current[0], current[1]),
             )
+            # The fence is the commit point.  Repairing the advisory index only
+            # after it advances prevents a genesis crash from advertising an
+            # unfenced head.
+            self._repair(expected, digest, commit["current_checkpoint_digest"])
             return digest
+
+    def _validate_prepared_revocation_transition(
+        self,
+        predecessor: dict[str, Any] | None,
+        proposed: dict[str, Any],
+        prepared_objects: Mapping[str, bytes],
+    ) -> None:
+        """Require the just-appended pair to be the reader's exact current bytes."""
+        pairs = proposed["production_revocation_evidence"]
+        if predecessor is None:
+            if pairs:
+                raise AuthorityRepositoryUnavailable("acceptance_revocation_genesis")
+            return
+        prior_pairs = predecessor["production_revocation_evidence"]
+        old_active = predecessor["active_release_digest"]
+        if proposed["active_release_digest"] == old_active:
+            if pairs != prior_pairs:
+                raise AuthorityRepositoryUnavailable("acceptance_revocation_unexpected")
+            return
+        if (
+            old_active is None
+            or pairs[: len(prior_pairs)] != prior_pairs
+            or len(pairs) != len(prior_pairs) + 1
+        ):
+            raise AuthorityRepositoryUnavailable("acceptance_revocation_transition")
+        receipt_digest, checkpoint_digest = pairs[-1]
+        receipt = prepared_objects.get(receipt_digest)
+        checkpoint = prepared_objects.get(checkpoint_digest)
+        if receipt is None or checkpoint is None:
+            raise AuthorityRepositoryUnavailable("acceptance_revocation_prepared")
+        try:
+            decoded = decode_artifact(receipt, "ProductionRevocationReceipt")
+        except ValueError as exc:
+            raise AuthorityRepositoryUnavailable("acceptance_revocation_prepared") from exc
+        if decoded["prior_approval_release_digest"] != old_active:
+            raise AuthorityRepositoryUnavailable("acceptance_revocation_prior_release")
+        verifier = self._production_revocation_verifier
+        if verifier is not None:
+            try:
+                verifier.verify(
+                    prior_approval_release_digest=old_active,
+                    receipt=receipt,
+                    checkpoint=checkpoint,
+                    require_current_reader_bytes=True,
+                )
+            except ProductionRevocationEvidenceError as exc:
+                raise AuthorityRepositoryUnavailable(
+                    "acceptance_production_revocation_evidence"
+                ) from exc
 
     @staticmethod
     def _schema_from_raw(raw: bytes) -> str:
@@ -896,3 +1008,53 @@ class AtomicEvaluationReceiptStore:
         if receipt["receipt_digest"] != digest:
             raise AuthorityRepositoryUnavailable("acceptance_receipt_digest")
         _publish_absent(self._root / digest, raw, "acceptance_receipt_conflict")
+
+    def load_attempt(self, attempt_digest: str) -> tuple[bytes, bytes] | None:
+        """Load one immutable prepared publication attempt, if any."""
+        if not _is_digest(attempt_digest):
+            raise AuthorityRepositoryUnavailable("acceptance_attempt_coordinate")
+        path = self._root / "attempts" / attempt_digest
+        try:
+            _not_link(path, "acceptance_attempt_conflict")
+            raw = path.read_bytes()
+        except FileNotFoundError:
+            return None
+        except OSError as exc:
+            raise AuthorityRepositoryUnavailable("acceptance_attempt_read") from exc
+        try:
+            value = json.loads(raw)
+            if type(value) is not dict or set(value) != {"authorization", "receipt"}:
+                raise ValueError
+            authorization = base64.b64decode(value["authorization"], validate=True)
+            receipt = base64.b64decode(value["receipt"], validate=True)
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            raise AuthorityRepositoryUnavailable("acceptance_attempt_schema") from exc
+        try:
+            decode_artifact(receipt, "AcceptanceEvaluationReceipt")
+        except ValueError as exc:
+            raise AuthorityRepositoryUnavailable("acceptance_attempt_receipt") from exc
+        return authorization, receipt
+
+    def prepare_attempt(
+        self, attempt_digest: str, authorization: bytes, receipt: bytes
+    ) -> tuple[bytes, bytes]:
+        """Persist exact publication bytes before either downstream publish."""
+        if not _is_digest(attempt_digest) or not isinstance(authorization, bytes):
+            raise AuthorityRepositoryUnavailable("acceptance_attempt_coordinate")
+        try:
+            decoded = decode_artifact(receipt, "AcceptanceEvaluationReceipt")
+        except ValueError as exc:
+            raise AuthorityRepositoryUnavailable("acceptance_attempt_receipt") from exc
+        if not authorization or decoded["deployment_authorization_digest"] not in receipt.decode("ascii"):
+            raise AuthorityRepositoryUnavailable("acceptance_attempt_binding")
+        value = _json(
+            {
+                "authorization": base64.b64encode(authorization).decode("ascii"),
+                "receipt": base64.b64encode(receipt).decode("ascii"),
+            }
+        )
+        _publish_absent(self._root / "attempts" / attempt_digest, value, "acceptance_attempt_conflict")
+        loaded = self.load_attempt(attempt_digest)
+        if loaded is None:
+            raise AuthorityRepositoryUnavailable("acceptance_attempt_missing")
+        return loaded

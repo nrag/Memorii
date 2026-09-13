@@ -23,25 +23,6 @@ from acceptance.ctv import encode_typed_value
 from acceptance.schema_registry import decode_artifact, signing_preimage
 
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
-_RELEASE_FIELDS = frozenset(
-    {
-        "schema_version", "approval_purpose", "approver_subject_id",
-        "target_approved_capability_baseline_artifact_digest", "capability_fingerprint",
-        "capability_contract_digest", "dependency_bundle_digest", "coverage_manifest_digest",
-        "statistical_gate_manifest_digest", "monitoring_policy_digest", "unsupported_cells_digest",
-        "issued_at", "expires_at", "acceptance_authority_snapshot_digest",
-        "acceptance_release_epoch", "acceptance_release_sequence", "acceptance_signing_key_reference",
-        "lifecycle_state", "supersedes_release_digest", "revoked_at", "compromise_effective_at",
-        "release_digest", "signature",
-    }
-)
-_BASELINE_FIELDS = frozenset(
-    {
-        "capability_fingerprint", "capability_contract_digest", "coverage_manifest_digest",
-        "statistical_gate_manifest_digest", "monitoring_policy_digest", "unsupported_cells_digest",
-        "dependency_bundle_digest", "canonical_content_digest", "artifact_digest",
-    }
-)
 
 
 class ApprovalRejected(ValueError):
@@ -55,25 +36,6 @@ def _canonical(value: object) -> bytes:
 def _digest_for(domain: bytes, value: object) -> str:
     """Digest canonical acceptance CTV, never an advisory JSON reserialization."""
     return sha256(domain + b"\0" + encode_typed_value(value)).hexdigest()
-
-
-def _strict_json(raw: bytes, fields: frozenset[str], label: str, maximum_bytes: int) -> dict[str, Any]:
-    if not isinstance(raw, bytes) or not raw or len(raw) > maximum_bytes:
-        raise ApprovalRejected(f"{label}_bytes")
-    def no_duplicates(items: list[tuple[str, Any]]) -> dict[str, Any]:
-        result: dict[str, Any] = {}
-        for key, value in items:
-            if key in result:
-                raise ApprovalRejected(f"{label}_duplicate")
-            result[key] = value
-        return result
-    try:
-        value = json.loads(raw, object_pairs_hook=no_duplicates)
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ApprovalRejected(f"{label}_json") from exc
-    if type(value) is not dict or frozenset(value) != fields:
-        raise ApprovalRejected(f"{label}_shape")
-    return value
 
 
 def _text(value: object, label: str) -> str:
@@ -249,6 +211,8 @@ class AcceptanceAuthorityRepository(CurrentAcceptanceStatusProvider, Protocol):
 
     def load_current_key_history(self) -> tuple[KeyLifecycleEvent, ...]: ...
 
+    def load_current_trust_snapshot(self) -> dict[str, Any]: ...
+
 
 @dataclass(frozen=True)
 class VerifiedCapabilityBaselineApproval:
@@ -256,6 +220,18 @@ class VerifiedCapabilityBaselineApproval:
     target_approved_capability_baseline_artifact_digest: str
     acceptance_authority_snapshot_digest: str
     acceptance_release_epoch: int
+    capability_fingerprint: str
+    capability_contract_digest: str
+    coverage_manifest_digest: str
+    coverage_release_id: str
+    statistical_gate_manifest_digest: str
+    sampling_frame_manifest_digest: str
+    sampling_frame_digest: str
+    independent_cluster_definition_digest: str
+    strata_definition_digest: str
+    cluster_weighting_digest: str
+    numeric_encoding_registry_digest: str
+    unsupported_cells_digest: str
     verified_at: datetime
     verification_digest: str
 
@@ -296,36 +272,69 @@ class CapabilityBaselineApprovalVerifier:
             release = decode_artifact(release_bytes, "CapabilityBaselineApprovalRelease")
         except ValueError as exc:
             raise ApprovalRejected("approval_release_schema") from exc
-        baseline = _strict_json(baseline_artifact_bytes, _BASELINE_FIELDS, "baseline", self._limits.maximum_baseline_bytes)
-        if release["schema_version"] != 1 or release["approval_purpose"] != "semantic_ingestion_capability_baseline_approval":
+        try:
+            baseline = decode_artifact(baseline_artifact_bytes, "ApprovedCapabilityBaseline")
+        except ValueError as exc:
+            raise ApprovalRejected("approval_baseline_schema") from exc
+        if release["schema_version"] != 2 or release["purpose"] != "semantic_ingestion_capability_baseline_approval.v2":
             raise ApprovalRejected("approval_release_purpose")
         lifecycle = release["lifecycle_state"]
-        if lifecycle != "active" or release["supersedes_release_digest"] is not None or release["revoked_at"] is not None or release["compromise_effective_at"] is not None:
+        if (
+            lifecycle != "active"
+            or release["revoked_at"] is not None
+            or release["compromise_effective_at"] is not None
+        ):
             raise ApprovalRejected("approval_release_lifecycle")
         issued_at, expires_at = _time(release["issued_at"], "approval_release_issued"), _time(release["expires_at"], "approval_release_expires")
         if expires_at <= issued_at or evaluation_time < issued_at or evaluation_time >= expires_at:
             raise ApprovalRejected("approval_release_interval")
         for name in (
-            "target_approved_capability_baseline_artifact_digest", "capability_fingerprint", "capability_contract_digest",
-            "dependency_bundle_digest", "coverage_manifest_digest", "statistical_gate_manifest_digest",
-            "monitoring_policy_digest", "unsupported_cells_digest", "acceptance_authority_snapshot_digest", "release_digest",
+            "approved_baseline_artifact_digest", "capability_contract_digest", "coverage_manifest_digest", "statistical_gate_manifest_digest",
+            "sampling_frame_manifest_digest", "sampling_frame_digest", "independent_cluster_definition_digest", "strata_definition_digest",
+            "cluster_weighting_digest", "numeric_encoding_registry_digest", "unsupported_cells_digest", "acceptance_authority_snapshot_digest", "release_digest",
         ):
             _digest_text(release[name], name)
-        for name in _BASELINE_FIELDS:
-            _digest_text(baseline[name], name)
-        if release["target_approved_capability_baseline_artifact_digest"] != baseline["artifact_digest"]:
+        baseline_digest = sha256(baseline_artifact_bytes).hexdigest()
+        if release["approved_baseline_artifact_digest"] != baseline_digest:
             raise ApprovalRejected("approval_release_baseline")
         for name in (
-            "capability_fingerprint", "capability_contract_digest", "dependency_bundle_digest", "coverage_manifest_digest",
-            "statistical_gate_manifest_digest", "monitoring_policy_digest", "unsupported_cells_digest",
+            "capability_fingerprint", "capability_contract_digest", "coverage_manifest_digest", "statistical_gate_manifest_digest",
+            "sampling_frame_manifest_digest", "sampling_frame_digest", "independent_cluster_definition_digest", "strata_definition_digest",
+            "cluster_weighting_digest", "numeric_encoding_registry_digest", "unsupported_cells_digest",
         ):
             if release[name] != baseline[name]:
                 raise ApprovalRejected("approval_release_coordinate")
         release_digest = release["release_digest"]
         key_reference = _text(release["acceptance_signing_key_reference"], "approval_release_key")
         key = self._keys.get(key_reference)
-        if key is None or key.status != "active" or issued_at < key.valid_from or (key.valid_until is not None and issued_at >= key.valid_until):
+        if key is None:
             raise ApprovalRejected("approval_release_key")
+        trust = self._authority_repository.load_current_trust_snapshot()
+        declarations = trust.get("key_declarations") if type(trust) is dict else None
+        if type(declarations) is not list:
+            raise ApprovalRejected("acceptance_trust_declarations")
+        declared = [item for item in declarations if type(item) is dict and item.get("key_reference") == key_reference]
+        if len(declared) != 1:
+            raise ApprovalRejected("acceptance_trust_declaration")
+        declaration = declared[0]
+        try:
+            declared_key = bytes.fromhex(str(declaration["public_key"]))
+            valid_from = _time(declaration["valid_from"], "acceptance_trust_valid_from")
+            valid_until = None if declaration["valid_until"] is None else _time(declaration["valid_until"], "acceptance_trust_valid_until")
+            purposes = declaration["allowed_purposes"]
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ApprovalRejected("acceptance_trust_declaration") from exc
+        if (
+            declared_key != key.public_key
+            or len(declared_key) != 32
+            or type(purposes) is not list
+            or purposes != sorted(purposes)
+            or len(set(purposes)) != len(purposes)
+            or "semantic_ingestion_capability_baseline_approval.v2" not in purposes
+            or issued_at < valid_from
+            or (valid_until is not None and issued_at >= valid_until)
+        ):
+            raise ApprovalRejected("acceptance_trust_declaration")
         try:
             signature = bytes.fromhex(_text(release["signature"], "approval_release_signature"))
             Ed25519PublicKey.from_public_bytes(key.public_key).verify(
@@ -375,9 +384,15 @@ class CapabilityBaselineApprovalVerifier:
             raise ApprovalRejected("approval_release_checkpoint")
         body = {
             "release_digest": release_digest,
-            "target_approved_capability_baseline_artifact_digest": baseline["artifact_digest"],
+            "target_approved_capability_baseline_artifact_digest": baseline_digest,
             "acceptance_authority_snapshot_digest": status.authority_snapshot_digest,
             "acceptance_release_epoch": status.active_epoch,
+            **{name: release[name] for name in (
+                "capability_fingerprint", "capability_contract_digest", "coverage_manifest_digest",
+                "coverage_release_id", "statistical_gate_manifest_digest", "sampling_frame_manifest_digest",
+                "sampling_frame_digest", "independent_cluster_definition_digest", "strata_definition_digest",
+                "cluster_weighting_digest", "numeric_encoding_registry_digest", "unsupported_cells_digest",
+            )},
             "verified_at": evaluation_time.isoformat(),
         }
         return VerifiedCapabilityBaselineApproval(**body, verification_digest=_digest_for(b"memorii.acceptance.verified-approval.v1", body))

@@ -25,6 +25,9 @@ installed = "acceptance.host_runtime:InstalledAcceptanceRuntime"
 [project.entry-points."memorii.acceptance_deployment_publisher"]
 installed = "memorii.core.memory_evolution.deployment_authorization:InstalledDeploymentAuthorizationPublisher"
 
+[project.entry-points."memorii.acceptance_production_revocation_reader"]
+installed = "memorii.core.memory_evolution.deployment_authorization:InstalledProductionRevocationReader"
+
 [project.optional-dependencies]
 local = [
   "openai>=1.0",
@@ -62,6 +65,7 @@ include-package-data = true
 
 [tool.setuptools.package-data]
 memorii = ["core/benchmark/fixture_sets/*.json", "core/semantic_ingestion/resources/*.json", "core/memory_evolution/observation_registry_sources/*.json", "core/memory_evolution/observation_registry_sources/*/*/*.json", "prompts/**/*.yaml"]
+acceptance = ["resources/*.json", "generated/*.json"]
 
 [tool.setuptools.packages.find]
 where = [".", ".."]

@@ -62,11 +62,13 @@ def synthetic_authority() -> NumericAuthority:
         "e" * 64,
         "synthetic-release",
         "f" * 64,
+        "5" * 64,
         "0" * 64,
         "1" * 64,
         "2" * 64,
         "3" * 64,
         "4" * 64,
+        "6" * 64,
     )
 
 

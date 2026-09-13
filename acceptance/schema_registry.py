@@ -13,8 +13,8 @@ from acceptance.ctv import encode_typed_value
 _REGISTRY_FORMAT = "memorii.acceptance.authority-schema-registry.v1"
 _MANIFEST_FORMAT = "memorii.acceptance.authority-schema-manifest.v1"
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
-_EXPECTED_REGISTRY_SHA256 = "11b23375581852ed5df51deb3c3d104c12e1d1f48bb845423264aabdef45b2ff"
-_EXPECTED_IDS = ("AcceptanceTrustSnapshot", "KeyLifecycleEvent", "AcceptanceApprovalIssuanceSnapshot", "CapabilityBaselineApprovalRelease", "AcceptanceCurrentCheckpoint", "ProductionRevocationReceipt", "ProductionEpochCheckpoint", "AcceptanceEvaluationReceipt", "AcceptanceAuthorityCommit")
+_EXPECTED_REGISTRY_SHA256 = "c47f20f3e9f3cb478bd0694a507140047707785b19561d0f8a8fc06d586649fe"
+_EXPECTED_IDS = ("AcceptanceTrustSnapshot", "KeyLifecycleEvent", "AcceptanceApprovalIssuanceSnapshot", "CapabilityBaselineApprovalRelease", "AcceptanceCurrentCheckpoint", "ProductionRevocationReceipt", "ProductionEpochCheckpoint", "AcceptanceEvaluationReceipt", "AcceptanceAuthorityCommit", "ApprovedCapabilityBaseline", "CapabilityCoverageManifest", "CapabilityStatisticalGateManifest", "CapabilitySamplingFrameManifest")
 
 def registry_bytes() -> bytes:
     return files("acceptance").joinpath("resources/authority-schema-registry-v1.json").read_bytes()
@@ -27,7 +27,7 @@ def load_registry() -> dict[str, Any]:
     if sha256(raw).hexdigest() != _EXPECTED_REGISTRY_SHA256:
         raise ValueError("acceptance_authority_schema_registry_pin")
     schemas = value["schemas"]
-    if type(schemas) is not list or len(schemas) != 9:
+    if type(schemas) is not list or len(schemas) != len(_EXPECTED_IDS):
         raise ValueError("acceptance_authority_schema_registry")
     identifiers: set[str] = set()
     domains: set[str] = set()
@@ -45,7 +45,7 @@ def load_registry() -> dict[str, Any]:
         if type(fields) is not list or not fields or any(type(field) is not dict for field in fields):
             raise ValueError("acceptance_authority_schema_registry")
         names = [field.get("name") for field in fields]
-        if any(type(name) is not str or not name or field.get("type") not in {"string", "integer", "timestamp", "digest", "hex", "array"} for name, field in zip(names, fields, strict=True)):
+        if any(type(name) is not str or not name or field.get("type") not in {"string", "integer", "timestamp", "digest", "hex", "array", "named", "boolean"} for name, field in zip(names, fields, strict=True)):
             raise ValueError("acceptance_authority_schema_registry")
         if len(set(names)) != len(names) or row["id"] in identifiers or row["digest_domain"] in domains:
             raise ValueError("acceptance_authority_schema_registry")
@@ -54,7 +54,7 @@ def load_registry() -> dict[str, Any]:
     if tuple(row["id"] for row in schemas) != _EXPECTED_IDS:
         raise ValueError("acceptance_authority_schema_registry_ids")
     types = value["types"]
-    if type(types) is not dict or set(types) != {"AcceptanceStaticKeyDeclaration", "ProductionRevocationEvidencePair"}:
+    if type(types) is not dict or not {"AcceptanceStaticKeyDeclaration", "ProductionRevocationEvidencePair", "CanonicalQuantity", "CoverageCell", "MetricGate", "EncodingSpec", "GateIidProof", "SamplingMembership"}.issubset(types):
         raise ValueError("acceptance_authority_schema_registry_types")
     return value
 
@@ -113,7 +113,7 @@ def validate_artifact(value: object, schema_id: str) -> dict[str, Any]:
     names = [field["name"] for field in fields]
     if set(value) != set(names):
         raise ValueError("acceptance_schema_fields")
-    purpose_name = "approval_purpose" if schema_id == "CapabilityBaselineApprovalRelease" else "purpose"
+    purpose_name = "purpose"
     if value.get(purpose_name) != schema["purpose"]:
         raise ValueError("acceptance_schema_purpose")
     if value.get("schema_version") != schema["schema_version"]:
@@ -143,6 +143,8 @@ def _validate_descriptor(value: object, descriptor: dict[str, Any]) -> None:
         or value > descriptor.get("maximum", 2**63 - 1)
     ):
         raise ValueError("acceptance_schema_integer")
+    if kind == "boolean" and type(value) is not bool:
+        raise ValueError("acceptance_schema_boolean")
     if kind == "digest" and (not isinstance(value, str) or not _DIGEST.fullmatch(value)):
         raise ValueError("acceptance_schema_nested_digest")
     if kind == "string" and (
@@ -181,7 +183,7 @@ def _validate_descriptor(value: object, descriptor: dict[str, Any]) -> None:
         for item in value:
             _validate_descriptor(item, descriptor["item"])
     if kind == "named":
-        named = load_registry()["types"][descriptor["name"]]
+        named = load_registry()["types"][descriptor.get("type_name", descriptor["name"])]
         if named["type"] == "pair":
             if type(value) is not list or len(value) != 2:
                 raise ValueError("acceptance_schema_pair")

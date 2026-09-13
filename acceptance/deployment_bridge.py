@@ -16,6 +16,8 @@ class SerializedDeploymentPublisher(Protocol):
 
     def publish_prepared(self, artifact: bytes) -> bytes: ...
 
+    def visible_exact(self, artifact: bytes) -> bool: ...
+
 
 @runtime_checkable
 class DeploymentPublisherFactory(Protocol):
