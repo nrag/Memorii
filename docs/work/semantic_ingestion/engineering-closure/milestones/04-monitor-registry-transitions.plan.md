@@ -148,6 +148,13 @@ warnings-as-errors. Ruff and first-party Pyright are clean. R15 remains
 candidate complete pending fresh three-role review of the eventual exact
 revision.
 
+The first review of `046fb232` confirmed the runtime corrections and found one
+governance-only stale binding: the production-entrypoint ledger still named the
+removed reader mutation method. The ledger now records the registered publisher
+factory, its authenticated `publish_verified` boundary, and the separate
+publisher-only storage owner. The next action remains to freeze this
+documentation correction and complete fresh exact-revision reviews.
+
 ## R15 Compatibility And Trust-Linearization Remediation (2026-09-13)
 
 The candidate now closes the final confirmed review gaps without changing
