@@ -15,20 +15,34 @@ from memorii.core.memory_evolution.bootstrap_profile import (
     HostBootstrapCapability,
     HostBootstrapMaterialVerifier,
 )
+from memorii.core.memory_evolution.capability_monitoring import (
+    CapabilityEvidenceWindow,
+    CapabilityMonitorTickResult,
+)
 from memorii.core.memory_evolution.conflict_attention import (
     EMBEDDED_PAGE_SIZE,
     ConflictAttention,
     ConflictAttentionPage,
     ConflictKind,
 )
+from memorii.core.memory_evolution.graph_observation_public_contracts import (
+    GraphObservationRequest,
+    GraphObservationResponse,
+    IngestionTimeAttestationRequest,
+    IngestionTimeAttestationResponse,
+)
 from memorii.core.memory_evolution.identity_lineage import IdentityLineageAuditView
-from memorii.core.memory_evolution.ingestion_contracts import AuthenticatedHostIngress
+from memorii.core.memory_evolution.ingestion_contracts import (
+    AuthenticatedHostIngress,
+    SemanticWriterCommitBinding,
+)
 from memorii.core.memory_evolution.retrieval_contracts import GraphAuditRequest
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.provider.attention_models import ProviderToolAttentionEnvelope
 from memorii.core.provider.classifier import classify_memory_target
 from memorii.core.provider.factory import build_provider_memory_service_from_env
 from memorii.core.provider.models import (
+    ProviderEvolutionOutcome,
     ProviderOperation,
     ProviderSyncResult,
     ProviderWriteDecision,
@@ -238,6 +252,54 @@ class HermesMemoryProvider(MemoryProviderInterface):
         return self._service.lookup_semantic_ingestion_outcome(
             request, authenticated_host_ingress=authenticated_host_ingress
         )
+
+    def activate_observation_ledger(self) -> SemanticWriterCommitBinding:
+        """Activate the configured observation ledger through the trusted host."""
+
+        return self._service.activate_observation_ledger()
+
+    def run_capability_monitor_tick(
+        self,
+        *,
+        evidence: CapabilityEvidenceWindow,
+    ) -> CapabilityMonitorTickResult:
+        """Run one host-scheduled capability-monitoring evaluation."""
+
+        return self._service.run_capability_monitor_tick(evidence=evidence)
+
+    def process_capability_monitoring(
+        self, *, max_items: int = 1
+    ) -> tuple[CapabilityMonitorTickResult, ...]:
+        """Run one bounded host-scheduled capability-monitoring pass."""
+
+        return self._service.process_capability_monitoring(max_items=max_items)
+
+    def observe_graph(
+        self,
+        *,
+        host_ingress: AuthenticatedHostIngress,
+        request: GraphObservationRequest,
+    ) -> GraphObservationResponse:
+        """Return one protected graph-observation page or denial."""
+
+        return self._service.observe_graph(host_ingress=host_ingress, request=request)
+
+    def observe_ingestion_time_attestations(
+        self,
+        *,
+        host_ingress: AuthenticatedHostIngress,
+        request: IngestionTimeAttestationRequest,
+    ) -> IngestionTimeAttestationResponse:
+        """Return one protected ingestion-time-attestation page or denial."""
+
+        return self._service.observe_ingestion_time_attestations(
+            host_ingress=host_ingress, request=request
+        )
+
+    def reconcile_memory_evolution(self) -> list[ProviderEvolutionOutcome]:
+        """Retry the provider's pending memory-evolution work."""
+
+        return self._service.reconcile_memory_evolution()
 
     def sync_turn(
         self,

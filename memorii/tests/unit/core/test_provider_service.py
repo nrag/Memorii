@@ -2,6 +2,7 @@ import re
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from typing import cast
 from unittest.mock import patch
 
 import pytest
@@ -14,6 +15,18 @@ from memorii.core.memory_evolution import (
     MemoryQueryRequest,
     RetrievalPurpose,
     StructuredQueryAnalyzer,
+)
+from memorii.core.memory_evolution.capability_monitoring import (
+    CapabilityEvidenceWindow,
+    CapabilityMonitorTickResult,
+)
+from memorii.core.memory_evolution.graph_observation_public_contracts import (
+    GraphObservationRequest,
+    IngestionTimeAttestationRequest,
+)
+from memorii.core.memory_evolution.ingestion_contracts import (
+    AuthenticatedHostIngress,
+    SemanticWriterCommitBinding,
 )
 from memorii.core.memory_evolution.models import SourceObservation
 from memorii.core.memory_plane import MemoryPlaneService
@@ -486,6 +499,56 @@ def test_memory_write_stages_semantic_candidate_and_blocks_commit() -> None:
     )
     assert result.candidate_ids == []
     assert result.evolution_outcomes == []
+
+
+def test_hermes_forwards_semantic_ingestion_lifecycle_surface() -> None:
+    """Hermes exposes the service lifecycle without changing trusted arguments."""
+
+    service = ProviderMemoryService()
+    provider = HermesMemoryProvider(service)
+    activation = cast(SemanticWriterCommitBinding, object())
+    evidence = cast(CapabilityEvidenceWindow, object())
+    tick = cast(CapabilityMonitorTickResult, object())
+    processed = (tick,)
+    ingress = cast(AuthenticatedHostIngress, object())
+    graph_request = cast(GraphObservationRequest, object())
+    attestation_request = cast(IngestionTimeAttestationRequest, object())
+    graph_response = object()
+    attestation_response = object()
+    reconciled = []
+
+    with (
+        patch.object(service, "activate_observation_ledger", return_value=activation) as activate,
+        patch.object(service, "run_capability_monitor_tick", return_value=tick) as run_tick,
+        patch.object(service, "process_capability_monitoring", return_value=processed) as process,
+        patch.object(service, "observe_graph", return_value=graph_response) as observe_graph,
+        patch.object(
+            service,
+            "observe_ingestion_time_attestations",
+            return_value=attestation_response,
+        ) as observe_attestations,
+        patch.object(service, "reconcile_memory_evolution", return_value=reconciled) as reconcile,
+    ):
+        assert provider.activate_observation_ledger() is activation
+        assert provider.run_capability_monitor_tick(evidence=evidence) is tick
+        assert provider.process_capability_monitoring(max_items=7) is processed
+        assert provider.observe_graph(host_ingress=ingress, request=graph_request) is graph_response
+        assert (
+            provider.observe_ingestion_time_attestations(
+                host_ingress=ingress, request=attestation_request
+            )
+            is attestation_response
+        )
+        assert provider.reconcile_memory_evolution() is reconciled
+
+    activate.assert_called_once_with()
+    run_tick.assert_called_once_with(evidence=evidence)
+    process.assert_called_once_with(max_items=7)
+    observe_graph.assert_called_once_with(host_ingress=ingress, request=graph_request)
+    observe_attestations.assert_called_once_with(
+        host_ingress=ingress, request=attestation_request
+    )
+    reconcile.assert_called_once_with()
 
 
 def test_memory_write_stages_user_candidate_and_blocks_commit() -> None:

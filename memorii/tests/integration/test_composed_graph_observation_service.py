@@ -54,6 +54,7 @@ from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.memory_plane.store import JsonlMemoryPlaneStore
 from memorii.core.provider.factory import build_provider_memory_service_from_env
 from memorii.core.provider.models import ProviderOperation
+from memorii.integrations.hermes_provider import HermesMemoryProvider
 from tests.integration.test_observation_ledger_activation import (
     _provider_factory,
     _seed_provider,
@@ -556,6 +557,31 @@ def test_configured_service_observe_ingestion_time_attestations_returns_real_pag
             request=paged.model_copy(update={"cursor": first.next_cursor}),
         )
         _assert_non_disclosing_failure(exhausted, "stale_cursor")
+
+
+def test_hermes_forwards_real_graph_observation_and_attestation_routes(backend):
+    """The public Hermes route preserves the composed protected read contract."""
+
+    hermes = HermesMemoryProvider(service=backend.service)
+
+    graph = hermes.observe_graph(
+        host_ingress=_host_ingress(), request=backend.graph_request,
+    )
+    attestations = hermes.observe_ingestion_time_attestations(
+        host_ingress=_host_ingress(), request=backend.time_request,
+    )
+    denied = hermes.observe_graph(
+        host_ingress=_host_ingress(),
+        request=backend.graph_request.model_copy(
+            update={"scope_constraint": MemoryScope(user_id="other-user", task_id="task:one")}
+        ),
+    )
+
+    assert isinstance(graph, GraphObservationPage)
+    assert graph.kind == "page"
+    assert isinstance(attestations, IngestionTimeAttestationPage)
+    assert attestations.kind == "page"
+    _assert_non_disclosing_failure(denied, "denied")
 
 
 def test_unconfigured_and_misconfigured_fail_closed(backend, monkeypatch):
