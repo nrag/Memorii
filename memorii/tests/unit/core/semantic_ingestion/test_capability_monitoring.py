@@ -27,6 +27,7 @@ from memorii.core.memory_evolution.atomic_store import (
 )
 from memorii.core.memory_evolution.capability_monitoring import (
     CAPABILITY_MONITOR_SEQUENTIAL_IMPLEMENTATION_FINGERPRINT,
+    CapabilityAuthorizationCheckpoint,
     CapabilityEvidenceFreshness,
     CapabilityEvidenceWindow,
     CapabilityEvidenceWindowProvider,
@@ -1268,6 +1269,159 @@ def test_status_only_active_initialization_is_rejected_by_governed_store() -> No
         )
     assert not hasattr(monitor, "initialize_active_status")
     assert writers._memory_plane.get_record(record.memory_id) is None
+
+
+def test_durable_baseline_recognition_accepts_later_active_and_demoted_status() -> None:
+    """Recovery recognizes immutable initialization provenance, never status clock bytes."""
+    clock, _, monitor, policy, implementation = _monitor()
+    baseline = _window(clock, policy, implementation)
+
+    clock.now += timedelta(minutes=1)
+    monitor.tick(evidence=_window(clock, policy, implementation))
+    assert monitor.has_verified_initialization(evidence=baseline)
+    assert monitor.initialize_active_from_verified_evidence(evidence=baseline).status == "active"
+
+    clock.now += timedelta(days=2)
+    monitor.tick(
+        evidence=_window(
+            clock,
+            policy,
+            implementation,
+            labels_at=TEST_NOW,
+            canary_at=TEST_NOW,
+        )
+    )
+    assert monitor.has_verified_initialization(evidence=baseline)
+    assert (
+        monitor.initialize_active_from_verified_evidence(evidence=baseline).status
+        == "evidence_only"
+    )
+    current = monitor._writers._memory_plane.get_record(
+        "semantic_ingestion:capability-status:" + policy.capability_fingerprint
+    )
+    assert current is not None
+    assert current.content["status"]["status"] == "evidence_only"
+
+
+def test_durable_baseline_recognition_rejects_malformed_initial_metric_authority(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock, writers, monitor, policy, implementation = _monitor()
+    baseline = _window(clock, policy, implementation)
+    original = writers._memory_plane.list_records
+    freshness = next(
+        record
+        for record in original(
+            source_kind="semantic_ingestion_capability_initial_freshness"
+        )
+        if record.content["evidence_window_digest"] == baseline.evidence_window_digest
+    )
+    malformed = freshness.model_copy(
+        update={
+            "content": {
+                **freshness.content,
+                "metric_decisions": ({"malformed": "metric"},),
+            }
+        }
+    )
+
+    def list_records(*args, **kwargs):
+        records = original(*args, **kwargs)
+        if kwargs.get("source_kind") == "semantic_ingestion_capability_initial_freshness":
+            return [malformed if record.memory_id == freshness.memory_id else record for record in records]
+        return records
+
+    monkeypatch.setattr(writers._memory_plane, "list_records", list_records)
+    with pytest.raises(ValueError, match="baseline authority is invalid"):
+        monitor.has_verified_initialization(evidence=baseline)
+
+
+def test_initialization_grammar_rejects_substituted_checkpoint_envelope() -> None:
+    clock, writers, monitor, policy, implementation = _monitor()
+    baseline = _window(clock, policy, implementation)
+    freshness = next(
+        record
+        for record in writers._memory_plane.list_records(
+            source_kind="semantic_ingestion_capability_initial_freshness"
+        )
+        if record.content["evidence_window_digest"] == baseline.evidence_window_digest
+    )
+    checkpoint_body = {
+        "capability_fingerprint": policy.capability_fingerprint,
+        "monitoring_policy_digest": policy.policy_digest,
+        "deployment_authorization_digest": "1" * 64,
+        "deployment_artifact_raw_digest": "2" * 64,
+        "target_artifact_digest": "3" * 64,
+        "approval_release_digest": "4" * 64,
+        "expires_at": clock.now + timedelta(days=1),
+        "signer_subject_id": "test-signer",
+        "signing_key_reference": "test-key",
+        "authority_snapshot_digest": "5" * 64,
+        "active_epoch": 1,
+    }
+    checkpoint = CapabilityAuthorizationCheckpoint(
+        **checkpoint_body,
+        checkpoint_digest=contract_digest(
+            b"memorii.semantic-ingestion.capability-authorization-checkpoint.v1",
+            checkpoint_body,
+        ),
+    )
+    checkpoint_record = CanonicalMemoryRecord(
+        memory_id="semantic_ingestion:capability-authorization-checkpoint:"
+        + policy.capability_fingerprint,
+        domain=MemoryDomain.EXECUTION,
+        text="",
+        content={
+            "semantic_ingestion_kind": "capability_authorization_checkpoint",
+            "checkpoint": checkpoint.model_dump(mode="json"),
+        },
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_capability_authorization_checkpoint",
+        timestamp=clock.now,
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+    status_body = {
+        "capability_fingerprint": policy.capability_fingerprint,
+        "status": "active",
+        "status_revision": 1,
+        "monitoring_policy_digest": policy.policy_digest,
+        "evidence_freshness_digest": record_digest(freshness),
+        "authorization_checkpoint_digest": record_digest(checkpoint_record),
+    }
+    status = CapabilityStatus(
+        **status_body,
+        schema_version=2,
+        status_digest=contract_digest(
+            b"memorii.semantic-ingestion.capability-status.v2",
+            {"schema_version": 2, **status_body},
+        ),
+    )
+    status_record = CanonicalMemoryRecord(
+        memory_id="semantic_ingestion:capability-status:" + policy.capability_fingerprint,
+        domain=MemoryDomain.EXECUTION,
+        text="",
+        content={"semantic_ingestion_kind": "capability_status", "status": status.model_dump(mode="json")},
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_capability_status",
+        timestamp=clock.now,
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+    from memorii.core.memory_evolution.writer_admission import (
+        is_capability_monitor_status_initialization_write,
+    )
+
+    assert is_capability_monitor_status_initialization_write(
+        (freshness, checkpoint_record, status_record)
+    )
+    assert not is_capability_monitor_status_initialization_write(
+        (
+            freshness,
+            checkpoint_record.model_copy(
+                update={"source_kind": "semantic_ingestion_capability_monitor_decision"}
+            ),
+            status_record,
+        )
+    )
 
 
 def test_historical_monitor_wires_reject_injected_generation_fields() -> None:

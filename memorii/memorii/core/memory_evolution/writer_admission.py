@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
@@ -756,6 +756,16 @@ class SemanticWriterAdmissionStore:
         prior_status = self._memory_plane.get_record(status_id)
         if prior_status is None or record_digest(prior_status) != expected_status_digest:
             raise SemanticWriterAdmissionError("capability monitor status is stale")
+        activation_predecessor_binding = None
+        if current.activation_digest is not None:
+            try:
+                activation_predecessor_binding = SemanticWriterCommitBinding.model_validate(
+                    current_record.content["activation_predecessor_binding"]
+                )
+            except (KeyError, TypeError, ValueError) as exc:
+                raise SemanticWriterAdmissionError(
+                    "activated writer predecessor binding is invalid"
+                ) from exc
         at = self._now()
         successor = SemanticWriterAdmission(
             admission_id=current.admission_id,
@@ -789,6 +799,7 @@ class SemanticWriterAdmissionStore:
                     manifest,
                     at,
                     policy_activation_digest=monitor_transition_digest,
+                    activation_predecessor_binding=activation_predecessor_binding,
                 ),
                 status_record,
                 decision_record,
@@ -1107,7 +1118,7 @@ class SemanticGovernedWritePolicy:
             raise SemanticWriterAdmissionError("governed semantic authorization is stale")
         if (
             _is_capability_monitor_observation_write(governed)
-            or _is_capability_monitor_status_initialization_write(governed)
+            or is_capability_monitor_status_initialization_write(governed)
         ):
             return
         if current_admission.activation_digest is not None:
@@ -1137,7 +1148,7 @@ class SemanticGovernedWritePolicy:
         if any(record.source_kind == "semantic_ingestion_writer_admission" for record in governed):
             raise SemanticWriterAdmissionError("writer admission transition lacks transition authority")
         if (
-            not _is_capability_monitor_status_initialization_write(governed)
+            not is_capability_monitor_status_initialization_write(governed)
             and any(semantic_control_class(record) == "unknown" for record in governed)
         ):
             raise SemanticWriterAdmissionError("unknown semantic control namespace is forbidden")
@@ -1158,7 +1169,7 @@ class SemanticGovernedWritePolicy:
             if record.content.get("semantic_ingestion_kind") == "preplanning_operation_control"
         ]
         if len(controls) != 1:
-            if _is_capability_monitor_status_initialization_write(governed):
+            if is_capability_monitor_status_initialization_write(governed):
                 return
             if _is_capability_monitor_observation_write(governed):
                 return
@@ -3302,9 +3313,15 @@ def _is_capability_monitor_demotion_write(
         return False
 
 
-def _is_capability_monitor_status_initialization_write(
-    records: list[CanonicalMemoryRecord],
+def is_capability_monitor_status_initialization_write(
+    records: Sequence[CanonicalMemoryRecord],
 ) -> bool:
+    """Validate the complete durable monitor-baseline initialization grammar.
+
+    This owner is shared by governed admission and durable recovery.  Keeping
+    the proof here prevents recovery from recognizing a weaker, digest-only
+    approximation of a baseline that admission would never have accepted.
+    """
     if len(records) not in {2, 3}:
         return False
     status_records = [
@@ -3335,8 +3352,15 @@ def _is_capability_monitor_status_initialization_write(
         status = CapabilityStatus.model_validate(record.content["status"])
         valid_status = (
             record.source_kind == "semantic_ingestion_capability_status"
+            and record.memory_id
+            == "semantic_ingestion:capability-status:" + status.capability_fingerprint
+            and record.domain == MemoryDomain.EXECUTION
+            and record.status == CommitStatus.COMMITTED
+            and record.visibility == MemoryRecordVisibility.INTERNAL_CONTROL
+            and record.text == ""
             and record.content.get("semantic_ingestion_kind") == "capability_status"
             and set(record.content) == {"semantic_ingestion_kind", "status"}
+            and status.schema_version == 2
             and status.status == "active"
             and status.status_revision == 1
         )
@@ -3357,7 +3381,14 @@ def _is_capability_monitor_status_initialization_write(
                 json.dumps(checkpoint_record.content["checkpoint"])
             )
             checkpoint_valid = (
-                checkpoint_record.content.get("semantic_ingestion_kind")
+                checkpoint_record.memory_id
+                == "semantic_ingestion:capability-authorization-checkpoint:"
+                + checkpoint.capability_fingerprint
+                and checkpoint_record.domain == MemoryDomain.EXECUTION
+                and checkpoint_record.status == CommitStatus.COMMITTED
+                and checkpoint_record.visibility == MemoryRecordVisibility.INTERNAL_CONTROL
+                and checkpoint_record.text == ""
+                and checkpoint_record.content.get("semantic_ingestion_kind")
                 == "capability_authorization_checkpoint"
                 and set(checkpoint_record.content) == {"semantic_ingestion_kind", "checkpoint"}
                 and status.authorization_checkpoint_digest == record_digest(checkpoint_record)
@@ -3365,7 +3396,13 @@ def _is_capability_monitor_status_initialization_write(
                 and checkpoint.monitoring_policy_digest == status.monitoring_policy_digest
             )
         return (
-            set(freshness_record.content)
+            freshness_record.memory_id
+            == "semantic_ingestion:capability-initial-freshness:" + freshness.evidence_digest
+            and freshness_record.domain == MemoryDomain.EXECUTION
+            and freshness_record.status == CommitStatus.COMMITTED
+            and freshness_record.visibility == MemoryRecordVisibility.INTERNAL_CONTROL
+            and freshness_record.text == ""
+            and set(freshness_record.content)
             == {
                 "semantic_ingestion_kind",
                 "evidence_window_digest",
@@ -3384,6 +3421,11 @@ def _is_capability_monitor_status_initialization_write(
         )
     except (KeyError, TypeError, ValueError):
         return False
+
+
+_is_capability_monitor_status_initialization_write = (
+    is_capability_monitor_status_initialization_write
+)
 
 
 def _is_capability_monitor_observation_write(

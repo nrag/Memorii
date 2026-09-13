@@ -752,6 +752,7 @@ class CapabilityMonitor:
         capability_fingerprint: str,
         evidence_freshness_digest: str,
         freshness_record: CanonicalMemoryRecord,
+        evidence: CapabilityEvidenceWindow,
     ) -> CapabilityStatus:
         """Persist one validated baseline freshness/status pair atomically."""
         policy = self._policies.get(capability_fingerprint)
@@ -795,57 +796,9 @@ class CapabilityMonitor:
         existing = self._writers._memory_plane.get_record(record.memory_id)
         if existing is not None:
             loaded = CapabilityStatus.model_validate(existing.content["status"])
-            if (
-                loaded.status != "active"
-                or loaded.capability_fingerprint != status.capability_fingerprint
-                or loaded.monitoring_policy_digest != status.monitoring_policy_digest
-            ):
-                raise ValueError("capability status is already bound differently")
-            if loaded.schema_version == 2:
-                if (
-                    loaded.authorization_checkpoint_digest
-                    != status.authorization_checkpoint_digest
-                ):
-                    raise ValueError("capability status is already bound differently")
-                persisted_freshness = self._writers._memory_plane.get_record(
-                    freshness_record.memory_id
-                )
-                if (
-                    persisted_freshness is None
-                    or record_digest(persisted_freshness)
-                    != record_digest(freshness_record)
-                ):
-                    raise ValueError("capability initial freshness authority is unavailable")
-            else:
-                # Historical V1 active records predate either the durable
-                # checkpoint or the V2 freshness preimage.  They remain
-                # readable so public ingress can fence them and the scheduler
-                # can make the monotonic successor without inventing a new
-                # baseline under the old record.
-                persisted_freshness = next(
-                    (
-                        candidate
-                        for candidate in self._writers._memory_plane.list_records(
-                            source_kind="semantic_ingestion_capability_initial_freshness"
-                        )
-                        if record_digest(candidate)
-                        == loaded.evidence_freshness_digest
-                    ),
-                    None,
-                )
-                if persisted_freshness is None:
-                    raise ValueError("capability initial freshness authority is unavailable")
-            if loaded.authorization_checkpoint_digest is not None:
-                persisted_checkpoint = self._writers._memory_plane.get_record(
-                    _authorization_checkpoint_id(capability_fingerprint)
-                )
-                if (
-                    persisted_checkpoint is None
-                    or record_digest(persisted_checkpoint)
-                    != loaded.authorization_checkpoint_digest
-                ):
-                    raise ValueError("capability authorization checkpoint is unavailable")
-            return loaded
+            if self.has_verified_initialization(evidence=evidence):
+                return loaded
+            raise ValueError("capability status is already bound differently")
         authorization = self._writers._authorize_atomic(
             self._writers.commit_binding(self._writers.current()),
             capability=self._write_capability,
@@ -865,23 +818,20 @@ class CapabilityMonitor:
             if existing is None:
                 raise ValueError("capability status initialization conflicted") from exc
             loaded = CapabilityStatus.model_validate(existing.content["status"])
-            if loaded != status:
-                raise ValueError("capability status is already bound differently") from exc
-            persisted_freshness = self._writers._memory_plane.get_record(
-                freshness_record.memory_id
-            )
-            if (
-                persisted_freshness is None
-                or record_digest(persisted_freshness) != record_digest(freshness_record)
-            ):
-                raise ValueError(
-                    "capability initial freshness authority is unavailable"
-                ) from exc
-            return loaded
+            if self.has_verified_initialization(evidence=evidence):
+                return loaded
+            raise ValueError("capability status initialization conflicted") from exc
         return status
 
     def has_verified_initialization(self, *, evidence: CapabilityEvidenceWindow) -> bool:
-        """Recognize only a complete persisted baseline for this exact evidence."""
+        """Recognize immutable baseline provenance without reactivating status.
+
+        The retained initialization trio is validated through the exact
+        governed-write grammar.  A later monitor tick may legitimately replace
+        the current status with a newer active or evidence-only status, so that
+        mutable record is checked separately for its current envelope and
+        authority coordinates.
+        """
         evidence = CapabilityEvidenceWindow.model_validate_json(evidence.model_dump_json())
         policy = self._policies.get(evidence.capability_fingerprint)
         if policy is None or evidence.monitoring_policy_digest != policy.policy_digest:
@@ -893,17 +843,12 @@ class CapabilityMonitor:
             status = CapabilityStatus.model_validate(status_record.content["status"])
         except (KeyError, TypeError, ValueError) as exc:
             raise ValueError("capability status authority is corrupt") from exc
-        if (
-            status.schema_version != 2 or status.status != "active" or status.status_revision != 1
-            or status.capability_fingerprint != evidence.capability_fingerprint
-            or status.monitoring_policy_digest != policy.policy_digest
-        ):
-            raise ValueError("capability status is not the verified initial baseline")
-        freshness_record = next((record for record in self._writers._memory_plane.list_records(
+        freshness_records = tuple(record for record in self._writers._memory_plane.list_records(
             source_kind="semantic_ingestion_capability_initial_freshness"
-        ) if record_digest(record) == status.evidence_freshness_digest), None)
-        if freshness_record is None:
+        ) if record.content.get("evidence_window_digest") == evidence.evidence_window_digest)
+        if len(freshness_records) != 1:
             raise ValueError("capability initial freshness authority is unavailable")
+        freshness_record = freshness_records[0]
         try:
             freshness = CapabilityEvidenceFreshness.model_validate(freshness_record.content["freshness"])
         except (KeyError, TypeError, ValueError) as exc:
@@ -916,21 +861,97 @@ class CapabilityMonitor:
         ):
             raise ValueError("capability initial freshness is not bound to verified evidence")
         checkpoint = self._authorization_checkpoints.get(evidence.capability_fingerprint)
+        checkpoint_record: CanonicalMemoryRecord | None = None
         if checkpoint is None:
             if status.authorization_checkpoint_digest is not None:
                 raise ValueError("capability authorization checkpoint is mismatched")
         else:
-            record = self._writers._memory_plane.get_record(_authorization_checkpoint_id(evidence.capability_fingerprint))
-            if record is None or record_digest(record) != status.authorization_checkpoint_digest:
+            checkpoint_record = self._writers._memory_plane.get_record(
+                _authorization_checkpoint_id(evidence.capability_fingerprint)
+            )
+            if checkpoint_record is None:
                 raise ValueError("capability authorization checkpoint is unavailable")
             try:
                 persisted = CapabilityAuthorizationCheckpoint.model_validate_json(
-                    json.dumps(record.content["checkpoint"])
+                    json.dumps(checkpoint_record.content["checkpoint"])
                 )
             except (KeyError, TypeError, ValueError) as exc:
                 raise ValueError("capability authorization checkpoint is corrupt") from exc
             if persisted != checkpoint:
                 raise ValueError("capability authorization checkpoint is mismatched")
+        baseline_checkpoint_digest = (
+            record_digest(checkpoint_record) if checkpoint_record is not None else None
+        )
+        baseline_body = {
+            "capability_fingerprint": evidence.capability_fingerprint,
+            "status": "active",
+            "status_revision": 1,
+            "monitoring_policy_digest": policy.policy_digest,
+            "evidence_freshness_digest": record_digest(freshness_record),
+            "authorization_checkpoint_digest": baseline_checkpoint_digest,
+        }
+        baseline_status = CapabilityStatus(
+            **baseline_body,
+            schema_version=2,
+            status_digest=contract_digest(
+                b"memorii.semantic-ingestion.capability-status.v2",
+                {"schema_version": 2, **baseline_body},
+            ),
+        )
+        baseline_status_record = CanonicalMemoryRecord(
+            memory_id=_status_id(evidence.capability_fingerprint),
+            domain=MemoryDomain.EXECUTION,
+            text="",
+            content={
+                "semantic_ingestion_kind": "capability_status",
+                "status": baseline_status.model_dump(mode="json"),
+            },
+            status=CommitStatus.COMMITTED,
+            source_kind="semantic_ingestion_capability_status",
+            timestamp=freshness_record.timestamp,
+            visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+        )
+        # Import lazily: writer admission imports monitor models while checking
+        # governed writes, so importing it at module load would create a cycle.
+        from memorii.core.memory_evolution.writer_admission import (
+            is_capability_monitor_status_initialization_write,
+        )
+
+        if not is_capability_monitor_status_initialization_write(
+            (freshness_record, *( (checkpoint_record,) if checkpoint_record else ()), baseline_status_record)
+        ):
+            raise ValueError("capability initial baseline authority is invalid")
+        if (
+            status_record.memory_id != _status_id(evidence.capability_fingerprint)
+            or status_record.domain != MemoryDomain.EXECUTION
+            or status_record.text != ""
+            or status_record.status != CommitStatus.COMMITTED
+            or status_record.source_kind != "semantic_ingestion_capability_status"
+            or status_record.visibility != MemoryRecordVisibility.INTERNAL_CONTROL
+            or set(status_record.content)
+            != (
+                {"semantic_ingestion_kind", "status"}
+                if status.status_revision == 1
+                else {
+                    "semantic_ingestion_kind",
+                    "status",
+                    "previous_status_record_digest",
+                }
+            )
+            or status_record.content.get("semantic_ingestion_kind") != "capability_status"
+            or (
+                status.status_revision > 1
+                and not isinstance(
+                    status_record.content.get("previous_status_record_digest"), str
+                )
+            )
+            or status.schema_version != 2
+            or status.status not in {"active", "evidence_only"}
+            or status.capability_fingerprint != evidence.capability_fingerprint
+            or status.monitoring_policy_digest != policy.policy_digest
+            or status.authorization_checkpoint_digest != baseline_checkpoint_digest
+        ):
+            raise ValueError("capability current status authority is invalid")
         return True
 
     def initialize_active_from_verified_evidence(
@@ -947,6 +968,14 @@ class CapabilityMonitor:
         policy = self._policies.get(evidence.capability_fingerprint)
         if policy is None or evidence.monitoring_policy_digest != policy.policy_digest:
             raise ValueError("capability monitor policy/evidence mismatch")
+        existing = self._writers._memory_plane.get_record(
+            _status_id(policy.capability_fingerprint)
+        )
+        if existing is not None:
+            loaded = CapabilityStatus.model_validate(existing.content["status"])
+            if self.has_verified_initialization(evidence=evidence):
+                return loaded
+            raise ValueError("capability status is already bound differently")
         freshness = self._freshness(policy, evidence, now, status_revision="1")
         metrics = tuple(self._metric(policy, gate, evidence) for gate in policy.metric_gates)
         declared_metrics = {gate.metric_id for gate in policy.metric_gates}
@@ -982,6 +1011,7 @@ class CapabilityMonitor:
             capability_fingerprint=policy.capability_fingerprint,
             evidence_freshness_digest=record_digest(freshness_record),
             freshness_record=freshness_record,
+            evidence=evidence,
         )
 
     def tick(

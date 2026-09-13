@@ -1518,11 +1518,22 @@ class SemanticIngestionAtomicStore:
                 or predecessor.activation_digest is not None
                 or predecessor.admission_digest != activation.previous_writer_admission_digest
                 or predecessor.expected_writer_epoch + 1 != activation.target_writer_epoch
-                or current.writer_epoch != activation.target_writer_epoch
-                or current.previous_admission_digest != predecessor.admission_digest
+                or current.writer_epoch < activation.target_writer_epoch
+                or (
+                    current.writer_epoch == activation.target_writer_epoch
+                    and current.previous_admission_digest
+                    != predecessor.admission_digest
+                )
+                or (
+                    current.writer_epoch > activation.target_writer_epoch
+                    and current.active_runtime_mode != "evidence_only"
+                )
                 or current.admission_id != predecessor.admission_id
                 or current.writer_namespace != predecessor.writer_namespace
-                or current.active_runtime_mode != predecessor.runtime_mode
+                or (
+                    current.writer_epoch == activation.target_writer_epoch
+                    and current.active_runtime_mode != predecessor.runtime_mode
+                )
                 or current.accepted_graph_schema_fingerprint != predecessor.graph_schema_fingerprint
                 or current.active_writer_implementation_fingerprint != target.identity.writer_fingerprint
                 or current.activation_digest != activation.activation_digest

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
@@ -13,6 +14,7 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     SemanticRecordOwnershipManifest,
     encode_typed_value,
 )
+from memorii.core.memory_evolution.ingestion_time_clock import IngestionTimeClock
 from memorii.core.memory_evolution.observation_activation_configuration import (
     resolve_verified_observation_activation_target,
 )
@@ -340,8 +342,14 @@ def test_jsonl_cutover_writes_successor_activation_and_head_in_one_batch(tmp_pat
     )
 
 
-def test_deferred_monitor_retry_keeps_only_the_failed_suffix(tmp_path, monkeypatch) -> None:
-    """A changing clock cannot replay a completed monitor baseline after a later failure."""
+@pytest.mark.parametrize(
+    ("transition", "expected_status"),
+    (("later_active", "active"), ("demoted", "evidence_only")),
+)
+def test_deferred_monitor_restart_preserves_completed_baseline_after_status_transition(
+    tmp_path, monkeypatch, transition: str, expected_status: str,
+) -> None:
+    """A restarted public activation skips a completed active or demoted baseline."""
     first = _signed_monitoring_authority(fingerprint="1" * 64)
     second = replace(
         _signed_monitoring_authority(fingerprint="2" * 64),
@@ -378,12 +386,148 @@ def test_deferred_monitor_retry_keeps_only_the_failed_suffix(tmp_path, monkeypat
     first_status = next(record for record in service._memory_plane.list_records(
         source_kind="semantic_ingestion_capability_status",
     ) if record.content["status"]["capability_fingerprint"] == first._policy.capability_fingerprint)
+    clock[0] += timedelta(minutes=1)
+    if transition == "demoted":
+        clock[0] += timedelta(days=2)
+    transitioned = service._capability_monitor.tick(
+        evidence=first._initial_evidence,
+    )
+    assert transitioned.status.status == expected_status
+    first_current = service._memory_plane.get_record(first_status.memory_id)
+    assert first_current is not None
+    assert first_current.content["status"]["status"] == expected_status
     # Discard the failed host: recovery must derive the completed prefix from JSONL.
     service = build(MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "failed-suffix")))
     clock[0] += timedelta(minutes=1)
     assert service.activate_observation_ledger().activation_digest is not None
     assert service._pending_capability_monitoring_initializations == ()
-    assert service._memory_plane.get_record(first_status.memory_id) == first_status
+    assert service._memory_plane.get_record(first_status.memory_id) == first_current
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ("malformed_metric", "missing_freshness", "substituted_checkpoint"),
+)
+def test_public_activation_rejects_tampered_completed_baseline_without_consuming_suffix(
+    tmp_path, monkeypatch, mutation: str,
+) -> None:
+    """A restart cannot turn damaged retained baseline authority into suffix progress."""
+    first = _signed_monitoring_authority(fingerprint="1" * 64)
+    second = replace(
+        _signed_monitoring_authority(fingerprint="2" * 64),
+        _evidence_provider=first._evidence_provider,
+    )
+    unsigned_build, _, _ = _provider_factory(tmp_path, monkeypatch)
+    backing = JsonlMemoryPlaneStore(tmp_path / "tampered-suffix")
+    plane = MemoryPlaneService(record_store=backing)
+    _seed_provider(unsigned_build(plane))
+    _replace_jsonl_writer_manifest(
+        backing, plane, capability_monitoring_predecessor_ownership_manifest()
+    )
+    config = tmp_path / "tampered-config"
+    config.mkdir()
+    build, _, _ = _provider_factory(
+        config,
+        monkeypatch,
+        complete_registry=True,
+        verified_capability_monitoring_authorities=(first, second),
+    )
+    service = build(
+        MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "tampered-suffix"))
+    )
+    original_initialize = service._capability_monitor.initialize_active_from_verified_evidence
+
+    def fail_second(*, evidence):
+        if evidence.capability_fingerprint == second._policy.capability_fingerprint:
+            raise RuntimeError("second baseline failed")
+        return original_initialize(evidence=evidence)
+
+    monkeypatch.setattr(
+        service._capability_monitor,
+        "initialize_active_from_verified_evidence",
+        fail_second,
+    )
+    with pytest.raises(RuntimeError, match="second baseline failed"):
+        service.activate_observation_ledger()
+    assert tuple(item.capability_fingerprint for item in service._pending_capability_monitoring_initializations) == (
+        second._policy.capability_fingerprint,
+    )
+
+    rewritten_batches = []
+    for batch in backing._read_batches_unlocked():
+        records = []
+        for record in batch.records:
+            if (
+                record.source_kind
+                == "semantic_ingestion_capability_initial_freshness"
+                and record.content.get("evidence_window_digest")
+                == first._initial_evidence.evidence_window_digest
+            ):
+                if mutation == "missing_freshness":
+                    continue
+                if mutation == "malformed_metric":
+                    record = record.model_copy(
+                        update={
+                            "content": {
+                                **record.content,
+                                "metric_decisions": ({"malformed": "metric"},),
+                            }
+                        }
+                    )
+            if (
+                mutation == "substituted_checkpoint"
+                and record.source_kind
+                == "semantic_ingestion_capability_authorization_checkpoint"
+                and record.memory_id.endswith(first._policy.capability_fingerprint)
+            ):
+                record = record.model_copy(
+                    update={
+                        "source_kind": "semantic_ingestion_capability_monitor_decision"
+                    }
+                )
+            records.append(record)
+        rewritten_batches.append(
+            _PersistedBatch.create(
+                revision=batch.revision,
+                data_revision=batch.data_revision,
+                records=tuple(records),
+            )
+        )
+    backing._replace_batches(rewritten_batches)
+    before = backing._records_path.read_bytes()
+
+    # Construction normally consumes pending monitor baselines immediately once
+    # cutover is complete. Defer only that constructor hook so the public
+    # activation method proves its own restart failure and queue preservation.
+    original_pending_initializer = ProviderMemoryService._initialize_pending_capability_monitoring
+
+    def defer_pending_initialization(self) -> None:
+        return None
+
+    monkeypatch.setattr(
+        ProviderMemoryService,
+        "_initialize_pending_capability_monitoring",
+        defer_pending_initialization,
+    )
+    reopened = build(
+        MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "tampered-suffix"))
+    )
+    monkeypatch.setattr(
+        ProviderMemoryService,
+        "_initialize_pending_capability_monitoring",
+        original_pending_initializer,
+    )
+    pending = tuple(
+        item.capability_fingerprint
+        for item in reopened._pending_capability_monitoring_initializations
+    )
+    with pytest.raises(ValueError, match="baseline authority|freshness authority"):
+        reopened.activate_observation_ledger()
+    assert backing._records_path.read_bytes() == before
+    assert tuple(
+        item.capability_fingerprint
+        for item in reopened._pending_capability_monitoring_initializations
+    ) == pending
 
 
 def test_independent_hosts_converge_on_one_durable_deferred_baseline(tmp_path, monkeypatch) -> None:
@@ -400,7 +544,7 @@ def test_independent_hosts_converge_on_one_durable_deferred_baseline(tmp_path, m
     _replace_jsonl_writer_manifest(backing, plane, capability_monitoring_predecessor_ownership_manifest())
     config = tmp_path / "concurrent-config"
     config.mkdir()
-    build, _, _ = _provider_factory(
+    build, _, clock = _provider_factory(
         config, monkeypatch, complete_registry=True,
         verified_capability_monitoring_authorities=(authority,),
     )
@@ -409,6 +553,14 @@ def test_independent_hosts_converge_on_one_durable_deferred_baseline(tmp_path, m
     store_b = JsonlMemoryPlaneStore(path)
     service_a = build(MemoryPlaneService(record_store=store_a))
     service_b = build(MemoryPlaneService(record_store=store_b))
+    def skewed_now() -> datetime:
+        return clock[0] + timedelta(microseconds=1)
+
+    service_b._clock = IngestionTimeClock(
+        identity=service_b._clock.identity,
+        now_provider=skewed_now,
+    )
+    service_b._capability_monitor._now = service_b._clock.now_utc
     @contextmanager
     def independent_current_use(*args, **kwargs):
         yield True
@@ -420,8 +572,16 @@ def test_independent_hosts_converge_on_one_durable_deferred_baseline(tmp_path, m
     attempts = []
     apply = store_a.apply_batch
 
+    def is_baseline_batch(records):
+        return {
+            record.source_kind for record in records
+        } >= {
+            "semantic_ingestion_capability_status",
+            "semantic_ingestion_capability_initial_freshness",
+        }
+
     def hold_first_baseline(records, **kwargs):
-        if any(record.source_kind == "semantic_ingestion_capability_status" for record in records):
+        if is_baseline_batch(records):
             attempts.append("a")
             entered.set()
             assert release.wait(timeout=30), "baseline race was not released"
@@ -431,7 +591,7 @@ def test_independent_hosts_converge_on_one_durable_deferred_baseline(tmp_path, m
 
     def commit_second_baseline(records, **kwargs):
         result = apply_b(records, **kwargs)
-        if any(record.source_kind == "semantic_ingestion_capability_status" for record in records):
+        if is_baseline_batch(records):
             attempts.append("b")
             second_committed.set()
         return result
@@ -443,6 +603,10 @@ def test_independent_hosts_converge_on_one_durable_deferred_baseline(tmp_path, m
         assert entered.wait(timeout=30), "host A did not reach the baseline CAS"
         second_future = executor.submit(service_b.activate_observation_ledger)
         assert second_committed.wait(timeout=30), "host B did not commit the winning baseline"
+        winner_tick = service_b.run_capability_monitor_tick(
+            evidence=authority._initial_evidence,
+        )
+        assert winner_tick.status.status == "active"
         release.set()
         first, second = first_future.result(timeout=60), second_future.result(timeout=60)
     assert first == second
@@ -450,6 +614,31 @@ def test_independent_hosts_converge_on_one_durable_deferred_baseline(tmp_path, m
         source_kind="semantic_ingestion_capability_status",
     ) if record.content["status"]["capability_fingerprint"] == authority._policy.capability_fingerprint]
     assert attempts == ["a", "b"] and len(status) == 1
+    batches = [
+        json.loads(line)
+        for line in (path / "memory_records.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    baseline_batches = [
+        batch
+        for batch in batches
+        if {
+            record["source_kind"] for record in batch["records"]
+        } >= {
+            "semantic_ingestion_capability_status",
+            "semantic_ingestion_capability_initial_freshness",
+        }
+    ]
+    assert len(baseline_batches) == 1
+    assert {
+        record["source_kind"] for record in baseline_batches[0]["records"]
+    } == {
+        "semantic_ingestion_capability_status",
+        "semantic_ingestion_capability_initial_freshness",
+        "semantic_ingestion_capability_authorization_checkpoint",
+    }
+    current = service_a._memory_plane.get_record(status[0].memory_id)
+    assert current is not None
+    assert current.content["status"]["status_revision"] == 2
     assert service_a.activate_observation_ledger() == service_b.activate_observation_ledger() == first
 
 

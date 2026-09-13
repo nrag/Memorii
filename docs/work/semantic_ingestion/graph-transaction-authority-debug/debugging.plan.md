@@ -298,8 +298,8 @@ emission-scope thread isolation.
 
 ## Next Action
 
-Hand the durable monitor-baseline recovery remediation and focused evidence to
-fresh independent reviewers before refreezing the debug candidate.
+Freeze the monitor-baseline recovery candidate and hand its exact revision,
+changed-surface ledger, and focused evidence to the independent reviewers.
 
 ## Exact-Revision Review At `43281a9e`
 
@@ -415,3 +415,80 @@ fresh independent reviewers before refreezing the debug candidate.
   18.65 seconds. The test removes only the host trust linearizer so both
   independently composed hosts reach the real JSONL conditional-write race;
   durable store CAS and loser reload remain under test.
+
+## Exact-Revision Review At `e20e6a49`
+
+- The specification and correctness reviews confirmed P2 recovery defects:
+  durable recognition is tied to mutable status revision 1/active, so a normal
+  later tick or demotion strands a restart suffix; CAS-loss reconciliation still
+  compares clock-derived bytes, so independently clocked hosts can fail.
+- Correctness also confirmed that the recognizer validates fewer structural and
+  metric invariants than the governed status/freshness/checkpoint initialization
+  grammar. A digest-consistent but structurally invalid retained baseline can
+  suppress recovery.
+- The test review confirmed the forced JSONL race but required physical batch
+  assertions so append-only duplicate status/trio writes cannot collapse into a
+  single latest materialized record.
+- The correction must recognize immutable initialization provenance regardless
+  of later valid status revision or evidence-only demotion, never reactivate a
+  demoted capability, reuse the same predicate after CAS conflict, and reject
+  partial or substituted baseline authority.
+
+## Shared Initialization Grammar Remediation Evidence
+
+- `is_capability_monitor_status_initialization_write` is now the sole
+  initialization-trio validator. Governed admission calls it directly, and
+  `CapabilityMonitor.has_verified_initialization` imports it lazily to avoid a
+  module cycle. The recovery path reconstructs only a synthetic schema-2,
+  revision-1 active status from the retained freshness record digest and exact
+  configured checkpoint, then validates that synthetic trio through the same
+  grammar used at write admission.
+- Recovery separately validates the current persisted status envelope,
+  lifecycle record kind, execution/control fields, typed status body, and the
+  same capability/policy/checkpoint authority. It accepts later active and
+  evidence-only statuses without reactivation. Both an existing-status retry
+  and CAS-loss reconciliation invoke that semantic predicate instead of
+  comparing clock-derived status bytes.
+- Focused behavior tests prove a later active status and a later demotion reuse
+  the immutable baseline, malformed initial metric bodies and substituted
+  checkpoint envelopes fail closed, and the two-host JSONL race leaves exactly
+  one physical baseline batch containing only status, freshness, and
+  checkpoint records for the capability.
+- Local verification on the dirty candidate: `PYTHONPATH=memorii .venv/bin/python
+  -W error -m pytest -q memorii/tests/unit/core/semantic_ingestion/test_capability_monitoring.py
+  -k 'durable_baseline_recognition or initialization_grammar_rejects'` passed
+  `3`; `PYTHONPATH=memorii .venv/bin/python -W error -m pytest -q
+  memorii/tests/unit/core/semantic_ingestion/test_capability_monitoring.py -k
+  'status_only_active_initialization or signed_monitor_initialization_requires_current_use_lease
+  or durable_baseline_recognition or initialization_grammar_rejects'` passed
+  `6`; and the JSONL independent-host selector passed `1` in 25.62 seconds.
+  Ruff, scoped Pyright, and `git diff --check` passed cleanly.
+
+## Lifecycle JSONL Matrix Evidence
+
+- The two-authority public activation fixture now parameterizes the retained
+  first baseline through a later active tick and a later evidence-only demotion
+  before discarding the host and advancing the clock. In both cases reopen
+  skips the completed first authority, initializes only the failed suffix, and
+  preserves the first current status record byte-for-byte. The demotion case
+  exposed that `demote_capability_monitor` discarded the activated writer's
+  `activation_predecessor_binding`; it now preserves and validates that binding
+  in the same status/decision/writer CAS.
+- Activation reload now recognizes a post-activation evidence-only writer
+  epoch while preserving the original activation identity and retired-inventory
+  checks. It still rejects an epoch below the activation target, a target-epoch
+  predecessor mismatch, or a later non-evidence-only writer.
+- The independent-host JSONL race gives host B a protected clock skew of one
+  microsecond, lets B win the baseline batch and write a later active tick
+  before A resumes, then proves A reloads through semantic provenance rather
+  than clock bytes. Exactly one physical initialization batch contains status,
+  freshness, and checkpoint records; replay adds no second trio batch.
+- After a failed suffix, a reopened public activation rejects each recomputed
+  JSONL mutation of the completed baseline: malformed metric body, removed
+  freshness record, and substituted checkpoint source kind. Each failure keeps
+  JSONL bytes unchanged and leaves the pending queue intact.
+- Focused commands on the dirty candidate: later-active restart passed `1` in
+  25.21 seconds; demoted restart passed `1` in 25.79 seconds; skewed host race
+  passed `1` in 27.17 seconds; malformed-metric, missing-freshness, and
+  substituted-checkpoint public activation regressions each passed `1` in
+  26.81, 25.79, and 25.78 seconds. Ruff passed after the lifecycle matrix.
