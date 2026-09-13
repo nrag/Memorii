@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
 from secrets import token_urlsafe
+from threading import RLock
 from typing import Any, Protocol, cast
 
 from pydantic import ValidationError
@@ -683,6 +684,7 @@ class ProviderMemoryService:
             capability_monitoring_evidence_provider
         )
         self._pending_capability_monitoring_initializations = monitoring_initializations
+        self._capability_monitoring_initialization_lock = RLock()
         if verified_capability_monitoring_authorities:
             self._semantic_atomic_store.install_capability_authorization_guard(
                 self._require_current_capability_authorizations_for_group
@@ -733,25 +735,29 @@ class ProviderMemoryService:
 
     def _initialize_pending_capability_monitoring(self) -> None:
         """Persist signed monitor status only after any retained cutover succeeds."""
-        initializations = self._pending_capability_monitoring_initializations
-        if not initializations:
-            return
-        authorities_by_fingerprint = {
-            authority._policy.capability_fingerprint: authority
-            for authority in self._verified_capability_monitoring_authorities
-        }
-        for initial_evidence in initializations:
-            authority = authorities_by_fingerprint[initial_evidence.capability_fingerprint]
-            # Active status/checkpoint creation is a durable authority write.
-            # Hold the same host revocation linearizer used by the group CAS.
-            with capability_monitoring_authority_current_use(
-                authority, server_time=self._clock.now_utc()
-            ) as current:
-                if current:
-                    self._capability_monitor.initialize_active_from_verified_evidence(
-                        evidence=initial_evidence,
-                    )
-        self._pending_capability_monitoring_initializations = ()
+        with self._capability_monitoring_initialization_lock:
+            authorities_by_fingerprint = {
+                authority._policy.capability_fingerprint: authority
+                for authority in self._verified_capability_monitoring_authorities
+            }
+            while self._pending_capability_monitoring_initializations:
+                initial_evidence = self._pending_capability_monitoring_initializations[0]
+                authority = authorities_by_fingerprint[initial_evidence.capability_fingerprint]
+                # Active status/checkpoint creation is a durable authority write.
+                # Hold the same host revocation linearizer used by the group CAS.
+                with capability_monitoring_authority_current_use(
+                    authority, server_time=self._clock.now_utc()
+                ) as current:
+                    if current:
+                        # An exception leaves this item and its suffix pending;
+                        # completed prefixes have already been consumed.
+                        self._capability_monitor.initialize_active_from_verified_evidence(
+                            evidence=initial_evidence,
+                        )
+                # Consume after success or the intentional non-current skip.
+                self._pending_capability_monitoring_initializations = (
+                    self._pending_capability_monitoring_initializations[1:]
+                )
 
     def run_capability_monitor_tick(
         self,

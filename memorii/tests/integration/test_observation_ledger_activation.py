@@ -59,7 +59,7 @@ from tests.unit.core.semantic_ingestion.test_semantic_atomic_store import _hando
 from tests.unit.core.semantic_ingestion.test_semantic_provider_composition import TEST_NOW, _built_in_local_capability
 
 
-def _signed_monitoring_authority():
+def _signed_monitoring_authority(*, fingerprint: str = "38a5be91af79d7e5ba9809bf383c699b6864ee50446239fe56a45e32b84638fe"):
     """Issue the monitor authority that a production graph host receives."""
     from tests.unit.core.semantic_ingestion.test_capability_monitoring import (
         _monitor,
@@ -68,7 +68,6 @@ def _signed_monitoring_authority():
         _window,
     )
 
-    fingerprint = "38a5be91af79d7e5ba9809bf383c699b6864ee50446239fe56a45e32b84638fe"
     clock, _, _, policy, implementation = _monitor(fingerprint=fingerprint)
     clock.now = TEST_NOW
 
@@ -273,10 +272,11 @@ def test_signed_monitor_construction_defers_retained_predecessor_writes_until_cu
     before = backing._records_path.read_bytes()
     signed_config = tmp_path / "signed-config"
     signed_config.mkdir()
+    authority = _signed_monitoring_authority()
     signed_build, _, _ = _provider_factory(
         signed_config, monkeypatch,
         complete_registry=True,
-        verified_capability_monitoring_authorities=(_signed_monitoring_authority(),),
+        verified_capability_monitoring_authorities=(authority,),
     )
     reopened = signed_build(MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "deferred-monitor")))
     assert backing._records_path.read_bytes() == before
@@ -284,6 +284,9 @@ def test_signed_monitor_construction_defers_retained_predecessor_writes_until_cu
         record.source_kind.startswith("semantic_ingestion_capability")
         for record in reopened._memory_plane.list_records()
     )
+    with pytest.raises(ValueError, match="capability status authority is unavailable"):
+        reopened.run_capability_monitor_tick(evidence=authority._initial_evidence)
+    assert backing._records_path.read_bytes() == before
     activated = reopened.activate_observation_ledger()
     batches = JsonlMemoryPlaneStore(tmp_path / "deferred-monitor")._read_batches_unlocked()
     cutovers = [
@@ -295,7 +298,12 @@ def test_signed_monitor_construction_defers_retained_predecessor_writes_until_cu
         )
     ]
     assert len(cutovers) == 1
+    assert all(
+        not any(record.source_kind.startswith("semantic_ingestion_capability") for record in batch.records)
+        for batch in batches[:batches.index(cutovers[0]) + 1]
+    )
     assert any(record.source_kind.startswith("semantic_ingestion_capability") for record in reopened._memory_plane.list_records())
+    assert reopened.run_capability_monitor_tick(evidence=authority._initial_evidence).status.status == "active"
 
 
 def test_jsonl_cutover_writes_successor_activation_and_head_in_one_batch(tmp_path, monkeypatch) -> None:
@@ -330,6 +338,76 @@ def test_jsonl_cutover_writes_successor_activation_and_head_in_one_batch(tmp_pat
         for record in batch.records
         if record.memory_id == writer_admission_memory_id()
     )
+
+
+def test_deferred_monitor_retry_keeps_only_the_failed_suffix(tmp_path, monkeypatch) -> None:
+    """A changing clock cannot replay a completed monitor baseline after a later failure."""
+    first = _signed_monitoring_authority(fingerprint="1" * 64)
+    second = replace(
+        _signed_monitoring_authority(fingerprint="2" * 64),
+        _evidence_provider=first._evidence_provider,
+    )
+    unsigned_build, _, _ = _provider_factory(tmp_path, monkeypatch)
+    backing = JsonlMemoryPlaneStore(tmp_path / "failed-suffix")
+    plane = MemoryPlaneService(record_store=backing)
+    _seed_provider(unsigned_build(plane))
+    _replace_jsonl_writer_manifest(backing, plane, capability_monitoring_predecessor_ownership_manifest())
+    config = tmp_path / "retry-config"
+    config.mkdir()
+    build, _, clock = _provider_factory(
+        config, monkeypatch, complete_registry=True,
+        verified_capability_monitoring_authorities=(first, second),
+    )
+    service = build(MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "failed-suffix")))
+    original = service._capability_monitor.initialize_active_from_verified_evidence
+    failed = False
+
+    def fail_second(*, evidence):
+        nonlocal failed
+        if evidence.capability_fingerprint == second._policy.capability_fingerprint and not failed:
+            failed = True
+            raise RuntimeError("second baseline failed")
+        return original(evidence=evidence)
+
+    monkeypatch.setattr(service._capability_monitor, "initialize_active_from_verified_evidence", fail_second)
+    with pytest.raises(RuntimeError, match="second baseline failed"):
+        service.activate_observation_ledger()
+    assert tuple(item.capability_fingerprint for item in service._pending_capability_monitoring_initializations) == (
+        second._policy.capability_fingerprint,
+    )
+    first_status = next(record for record in service._memory_plane.list_records(
+        source_kind="semantic_ingestion_capability_status",
+    ) if record.content["status"]["capability_fingerprint"] == first._policy.capability_fingerprint)
+    clock[0] += timedelta(minutes=1)
+    assert service.activate_observation_ledger().activation_digest is not None
+    assert service._pending_capability_monitoring_initializations == ()
+    assert service._memory_plane.get_record(first_status.memory_id) == first_status
+
+
+def test_concurrent_activation_initializes_each_deferred_monitor_once(tmp_path, monkeypatch) -> None:
+    """Concurrent public cutovers serialize deferred monitor initialization."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    authority = _signed_monitoring_authority()
+    unsigned_build, _, _ = _provider_factory(tmp_path, monkeypatch)
+    backing = JsonlMemoryPlaneStore(tmp_path / "concurrent-monitor")
+    plane = MemoryPlaneService(record_store=backing)
+    _seed_provider(unsigned_build(plane))
+    _replace_jsonl_writer_manifest(backing, plane, capability_monitoring_predecessor_ownership_manifest())
+    config = tmp_path / "concurrent-config"
+    config.mkdir()
+    build, _, _ = _provider_factory(
+        config, monkeypatch, complete_registry=True,
+        verified_capability_monitoring_authorities=(authority,),
+    )
+    service = build(MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "concurrent-monitor")))
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first, second = tuple(executor.map(lambda _: service.activate_observation_ledger(), range(2)))
+    assert first == second
+    status = [record for record in service._memory_plane.list_records(
+        source_kind="semantic_ingestion_capability_status",
+    ) if record.content["status"]["capability_fingerprint"] == authority._policy.capability_fingerprint]
+    assert len(status) == 1
 
 
 def _runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, max_rescans: int = 3):

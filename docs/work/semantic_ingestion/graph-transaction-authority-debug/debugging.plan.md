@@ -298,8 +298,8 @@ emission-scope thread isolation.
 
 ## Next Action
 
-Hand this bounded exact-review remediation, its focused test evidence, and the
-current dirty diff to fresh independent reviewers before any closure claim.
+Hand the serialized deferred-initialization remediation and focused evidence to
+fresh independent reviewers before refreezing the debug candidate.
 
 ## Exact-Revision Review At `43281a9e`
 
@@ -346,3 +346,38 @@ current dirty diff to fresh independent reviewers before any closure claim.
   scoped Pyright for `writer_admission.py`, `provider/service.py`, and
   `semantic_ingestion/capability.py` passed cleanly (`0 errors, 0 warnings,
   0 informations`).
+
+## Exact-Revision Review At `70e94615`
+
+- The specification auditor approved the bounded contract and reported no
+  remaining P1/P2 in its scope.
+- The correctness reviewer confirmed a P2 recovery/concurrency defect in
+  deferred multi-capability initialization: the complete tuple remains pending
+  until every sequential baseline succeeds and initialization is not
+  serialized. A later failure or concurrent activation can replay an already
+  persisted baseline at a new clock sample and strand the failed suffix.
+- The test reviewer required a normal production monitor trigger while the
+  retained predecessor is installed, with unchanged storage and no capability
+  records, plus explicit proof that all capability initialization batches occur
+  strictly after the atomic successor/activation/head cutover batch.
+- Because this exposes a second failure mode at deferred initialization, the
+  root-cause model now includes per-item progress and concurrency, not only the
+  predecessor authorization boundary.
+
+## Deferred Initialization Remediation Evidence
+
+- `ProviderMemoryService` now holds an instance-local reentrant lock through
+  deferred monitor initialization. It consumes each front item only after its
+  baseline succeeds or its authority is intentionally non-current; an exception
+  retains that item and the unattempted suffix, while completed prefixes cannot
+  replay on a later clock sample.
+- The retained-predecessor JSONL proof now invokes the normal monitor tick
+  before activation, verifies its unavailable-status failure and byte-identical
+  storage, then proves the same tick works after cutover. It also proves every
+  batch through the successor/activation/head cutover has no capability record,
+  and initialization appears strictly later.
+- New public integration regressions cover two signed authorities with a
+  second-baseline failure, advancing the service clock before retry, and two
+  concurrent public activation calls. The failed-suffix retry passed in 26.30
+  seconds; the signed pre-cutover and concurrent initialization selectors passed
+  in the preceding focused run. No capability baseline is duplicated.
