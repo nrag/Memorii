@@ -162,6 +162,49 @@ freeze and push the revision, then obtain the required exact-revision
 specification, correctness and test reviews. R15 remains candidate complete
 until those reviews converge.
 
+## Exact-Revision Review Remediation Round 3 (2026-09-13)
+
+Review of `8f5a969c` produced one confirmed production bypass, two confirmed
+test-depth gaps, one unsupported timing claim and one disputed integration
+request:
+
+- **Confirmed P2 / architecture:** status-only active initialization remained
+  possible below the signed composition. The coordinator removed the public
+  initializer, made the internal persistence helper require a freshness record,
+  and changed writer admission to accept exactly one validated initial
+  freshness record plus one digest-bound active status in the same CAS. A
+  direct governed status-only write now proves rejection and no publication.
+- **Confirmed P2 / compatibility:** the signed lifecycle test now freezes a
+  `CapabilityRegistrySnapshot` canonical byte representation and digest before
+  activation, then proves exact equality after monitoring, demotion and JSONL
+  reopen. Mutable monitoring state remains outside the immutable registry.
+- **Confirmed P2 / independent verification:** the standalone standard-library
+  oracle and frozen raw fixture now reconstruct eligible events, unique cluster
+  membership, label-window selection, freshness, implementation binding,
+  metric count, estimate/bounds, alpha, warning/breach disposition, action and
+  reasons from event-level inputs. It still imports no Memorii code.
+- **Unsupported / operability:** the reviewer combined multiple expensive
+  families and interrupted them after five minutes. The CI-owned CTV PR-gate
+  family run in isolation exits normally with 20 passed in 224.18 seconds,
+  inside its five-minute workflow budget; no leaked subprocess or product
+  correction was reproduced.
+- **Disputed P2 / multi-operation public fixture:** the ordinary supported
+  source fixture produces one default graph operation, and the real public race
+  proves the status precondition on that normal group plus later ingress. The
+  store-level shared-capability test supplies two operation bindings and proves
+  one deduplicated status precondition. Attempts to manufacture a second fact
+  changed source-normalization authority rather than exercising an ordinary
+  supported root. The coordinator did not weaken source validation to satisfy
+  a test shape. Fresh review must decide whether the existing public-path plus
+  typed-store boundary is family-complete for R15 or identify a valid canonical
+  multi-operation fixture owned by the graph contract.
+
+Focused remediation verification passes: 34 monitor cases under
+warnings-as-errors, 20 isolated CTV PR-gate cases in 224.18 seconds, Ruff,
+diff-check and scoped first-party Pyright with zero diagnostics. The next action
+is to freeze and push this remediation, then rerun all three exact-revision
+reviews. R15 is not promoted before review convergence.
+
 ## Exact-Revision Review Remediation (2026-09-13)
 
 The first review of `a8ed3fa1` found four production-composition defects and

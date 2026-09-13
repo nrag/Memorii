@@ -13,6 +13,7 @@ from memorii.core.memory_evolution.capability_monitoring import (
     CapabilityEvidenceWindow,
     CapabilityMonitor,
     CapabilityMonitoringPolicy,
+    CapabilityStatus,
     MonitoringMetricGate,
     MonitoringObservation,
     SequentialTestManifest,
@@ -24,13 +25,16 @@ from memorii.core.memory_evolution.deployment_authorization import (
     IssuerAuthority,
 )
 from memorii.core.memory_evolution.writer_admission import (
+    SemanticWriterAdmissionError,
     SemanticWriterAdmissionStore,
     bounded_preplanning_ownership_manifest,
 )
+from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.memory_plane.store import (
     JsonlMemoryPlaneStore,
     MemoryPlaneRevisionConflictError,
+    RecordAbsentPrecondition,
     RecordDigestPrecondition,
     record_digest,
 )
@@ -47,6 +51,11 @@ from memorii.core.semantic_ingestion.contracts import (
 from memorii.core.semantic_ingestion.production_authority import (
     build_verified_capability_monitoring_authority,
 )
+from memorii.core.semantic_ingestion.source_normalization_authority import (
+    CapabilityRegistryEntry,
+    CapabilityRegistrySnapshot,
+)
+from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
 from tests.unit.core.semantic_ingestion.bootstrap_graph_production_roots_support import (
     provider_service,
 )
@@ -140,7 +149,9 @@ def _monitor(memory_plane: MemoryPlaneService | None = None, *, activate_writer:
         breach_action="evidence_only",
     )
     monitor = CapabilityMonitor(writers=writers, now=lambda: clock.now, policies=(policy,))
-    monitor.initialize_active_status(capability_fingerprint=fingerprint, evidence_freshness_digest="c" * 64)
+    monitor.initialize_active_from_verified_evidence(
+        evidence=_window(clock, policy, implementation)
+    )
     return clock, writers, monitor, policy, implementation
 
 
@@ -474,8 +485,10 @@ def test_provider_monitor_tick_reaches_shared_writer_authority() -> None:
     service = ProviderMemoryService(capability_monitoring_policies=(policy,))
     now = service._clock.now_utc()
     service._ensure_writer_admission_record()
-    service._capability_monitor.initialize_active_status(
-        capability_fingerprint=fingerprint, evidence_freshness_digest="f" * 64
+    service._capability_monitor.initialize_active_from_verified_evidence(
+        evidence=_window(
+            type("Clock", (), {"now": now})(), policy, implementation
+        )
     )
     result = service.run_capability_monitor_tick(
         evidence=_window(
@@ -489,10 +502,27 @@ def test_provider_monitor_tick_reaches_shared_writer_authority() -> None:
     assert service._semantic_writer_admission.current().writer_epoch == 2
 
 
-def test_public_factory_schedules_windows_from_signed_baseline_authority() -> None:
+def test_public_factory_schedules_windows_from_signed_baseline_authority(tmp_path: Path) -> None:
     clock, _, _, policy, implementation = _monitor()
     initial_evidence = _window(clock, policy, implementation, value="0.1")
     evidence = _window(clock, policy, implementation, value="0.9")
+    registry_values = {
+        "registry_revision": "monitor-v1",
+        "capabilities": (
+            CapabilityRegistryEntry(
+                capability_id="built-in-local",
+                capability_fingerprint=policy.capability_fingerprint,
+            ),
+        ),
+    }
+    registry = CapabilityRegistrySnapshot(
+        **registry_values,
+        snapshot_digest=contract_digest(
+            b"memorii.semantic-ingestion.capability-registry-snapshot.v2",
+            registry_values,
+        ),
+    )
+    registry_bytes = registry.model_dump_json().encode("utf-8")
 
     class EvidenceProvider:
         def load_evidence_windows(self, *, max_items: int):
@@ -536,8 +566,9 @@ def test_public_factory_schedules_windows_from_signed_baseline_authority() -> No
         server_time=clock.now,
     )
     assert authority is not None
+    store_path = tmp_path / "signed-monitor"
     service = build_provider_memory_service_from_env(
-        memory_plane=MemoryPlaneService(),
+        memory_plane=MemoryPlaneService(record_store=JsonlMemoryPlaneStore(store_path)),
         now_provider=lambda: clock.now,
         verified_capability_monitoring_authorities=(authority,),
     )
@@ -557,6 +588,14 @@ def test_public_factory_schedules_windows_from_signed_baseline_authority() -> No
     assert not service._memory_plane.list_records(
         source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
     )
+    assert registry.model_dump_json().encode("utf-8") == registry_bytes
+    assert CapabilityRegistrySnapshot.model_validate_json(registry_bytes) == registry
+    reopened = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(store_path))
+    reopened_status = reopened.list_records(
+        source_kind="semantic_ingestion_capability_status"
+    )
+    assert reopened_status[-1].content["status"]["status"] == "evidence_only"
+    assert CapabilityRegistrySnapshot.model_validate_json(registry_bytes) == registry
 
 
 def test_signed_monitoring_authority_rejects_substitution_and_unacceptable_baseline() -> None:
@@ -675,6 +714,48 @@ def test_signed_monitoring_authority_rejects_substitution_and_unacceptable_basel
     )
 
 
+def test_status_only_active_initialization_is_rejected_by_governed_store() -> None:
+    clock, writers, monitor, policy, _ = _monitor()
+    fingerprint = "b" * 64
+    status_base = {
+        "capability_fingerprint": fingerprint,
+        "status": "active",
+        "status_revision": 1,
+        "monitoring_policy_digest": policy.policy_digest,
+        "evidence_freshness_digest": "c" * 64,
+    }
+    status = CapabilityStatus(
+        **status_base,
+        status_digest=contract_digest(
+            b"memorii.semantic-ingestion.capability-status.v1", status_base
+        ),
+    )
+    record = CanonicalMemoryRecord(
+        memory_id="semantic_ingestion:capability-status:" + fingerprint,
+        domain=MemoryDomain.EXECUTION,
+        text="",
+        content={
+            "semantic_ingestion_kind": "capability_status",
+            "status": status.model_dump(mode="json"),
+        },
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_capability_status",
+        timestamp=clock.now,
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+    authorization = writers._authorize_atomic(
+        writers.commit_binding(writers.current()), capability=monitor._write_capability
+    )
+    with pytest.raises(SemanticWriterAdmissionError):
+        writers._memory_plane.conditionally_write_records(
+            (record,),
+            preconditions=(RecordAbsentPrecondition(memory_id=record.memory_id),),
+            authorization=authorization,
+        )
+    assert not hasattr(monitor, "initialize_active_status")
+    assert writers._memory_plane.get_record(record.memory_id) is None
+
+
 def test_normal_reconciliation_scheduler_expires_monitor_without_ingress() -> None:
     clock, _, _, policy, implementation = _monitor()
     initial_evidence = _window(clock, policy, implementation, value="0.1")
@@ -741,13 +822,14 @@ def test_group_commit_status_read_set_is_exact_and_stale_after_demotion() -> Non
         "semantic_ingestion:capability-status:" + policy.capability_fingerprint
     )
     assert status_record is not None
+    status = CapabilityStatus.model_validate(status_record.content["status"])
     binding = SimpleNamespace(
         operation_id="operation",
         capability_fingerprint=policy.capability_fingerprint,
         capability_status_revision="1",
         capability_status_record_digest=record_digest(status_record),
         monitoring_policy_digest=policy.policy_digest,
-        evidence_freshness_digest="c" * 64,
+        evidence_freshness_digest=status.evidence_freshness_digest,
     )
     request = SimpleNamespace(
         operation_ids=("operation",),
@@ -782,12 +864,13 @@ def test_group_commit_deduplicates_shared_capability_status_coordinates() -> Non
         "semantic_ingestion:capability-status:" + policy.capability_fingerprint
     )
     assert status_record is not None
+    status = CapabilityStatus.model_validate(status_record.content["status"])
     coordinate = {
         "capability_fingerprint": policy.capability_fingerprint,
         "capability_status_revision": "1",
         "capability_status_record_digest": record_digest(status_record),
         "monitoring_policy_digest": policy.policy_digest,
-        "evidence_freshness_digest": "c" * 64,
+        "evidence_freshness_digest": status.evidence_freshness_digest,
     }
     bindings = tuple(
         SimpleNamespace(operation_id=operation_id, **coordinate)
@@ -835,10 +918,10 @@ def test_time_uniform_bounds_match_independent_formula() -> None:
 
 
 def test_time_uniform_bounds_match_external_frozen_oracle() -> None:
-    _, _, monitor, policy, implementation = _monitor()
-    metric = monitor.tick(
-        evidence=_window(_Clock(), policy, implementation, value="0.1")
-    ).decision.metric_decisions[0]
+    clock, _, monitor, policy, implementation = _monitor()
+    evidence = _window(clock, policy, implementation, value="0.1")
+    result = monitor.tick(evidence=evidence)
+    metric = result.decision.metric_decisions[0]
     fixture_root = Path(__file__).parents[3] / "fixtures" / "semantic_ingestion"
     completed = subprocess.run(
         [
@@ -852,9 +935,19 @@ def test_time_uniform_bounds_match_external_frozen_oracle() -> None:
     )
     independent = json.loads(completed.stdout)
     assert independent == {
+        "eligible_event_ids": [item.event_id for item in evidence.observations],
+        "freshness": result.freshness.freshness,
+        "freshness_reason": result.freshness.freshness_reason,
+        "labeled_cluster_count": result.freshness.labeled_cluster_count_in_window,
+        "metric_id": metric.metric_id,
+        "independent_cluster_count": metric.independent_cluster_count,
         "estimate": metric.estimate,
         "lower_bound": metric.lower_bound,
         "upper_bound": metric.upper_bound,
+        "alpha_spent": metric.alpha_spent,
+        "metric_status": metric.status,
+        "action": result.decision.action,
+        "reason_codes": list(result.decision.reason_codes),
     }
 
 
@@ -962,6 +1055,7 @@ def test_real_group_commit_status_precondition_conflicts_with_monitor_demotion(
         ),
         abstained=False,
     )
+    source_text = "Atlas owner is Bob."
     normalization, _ = _v3_normalization_host_builder(proposal=proposal)
     store_path = tmp_path / "monitor-group-race"
     service = provider_service(
@@ -973,9 +1067,10 @@ def test_real_group_commit_status_precondition_conflicts_with_monitor_demotion(
         capability_monitoring_policies=(policy,),
     )
     service._ensure_writer_admission_record()
-    service._capability_monitor.initialize_active_status(
-        capability_fingerprint=fingerprint,
-        evidence_freshness_digest="f" * 64,
+    service._capability_monitor.initialize_active_from_verified_evidence(
+        evidence=_window(
+            type("Clock", (), {"now": TEST_NOW})(), policy, implementation
+        ),
     )
     status_record = service._memory_plane.get_record("semantic_ingestion:capability-status:" + fingerprint)
     assert status_record is not None
@@ -1019,7 +1114,7 @@ def test_real_group_commit_status_precondition_conflicts_with_monitor_demotion(
     )
     result = service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
-        content="Atlas owner is Bob.",
+        content=source_text,
         operation_id="monitor-group-cas-race",
         task_id="task:monitor",
         user_id="user:alice",
@@ -1035,7 +1130,7 @@ def test_real_group_commit_status_precondition_conflicts_with_monitor_demotion(
     )
     second = service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
-        content="Atlas owner is Bob.",
+        content=source_text,
         operation_id="monitor-after-demotion",
         task_id="task:monitor",
         user_id="user:alice",

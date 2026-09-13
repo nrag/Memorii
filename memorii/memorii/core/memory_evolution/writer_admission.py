@@ -3200,7 +3200,7 @@ def _is_capability_monitor_demotion_write(
 def _is_capability_monitor_status_initialization_write(
     records: list[CanonicalMemoryRecord],
 ) -> bool:
-    if len(records) not in {1, 2}:
+    if len(records) != 2:
         return False
     status_records = [
         record
@@ -3212,7 +3212,7 @@ def _is_capability_monitor_status_initialization_write(
         for record in records
         if record.source_kind == "semantic_ingestion_capability_initial_freshness"
     ]
-    if len(status_records) != 1 or len(freshness_records) != len(records) - 1:
+    if len(status_records) != 1 or len(freshness_records) != 1:
         return False
     record = status_records[0]
     try:
@@ -3230,8 +3230,8 @@ def _is_capability_monitor_status_initialization_write(
             and status.status == "active"
             and status.status_revision == 1
         )
-        if not valid_status or not freshness_records:
-            return valid_status
+        if not valid_status:
+            return False
         freshness_record = freshness_records[0]
         freshness = CapabilityEvidenceFreshness.model_validate_json(
             json.dumps(freshness_record.content["freshness"])

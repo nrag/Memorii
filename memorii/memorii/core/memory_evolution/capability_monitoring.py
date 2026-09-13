@@ -425,14 +425,14 @@ class CapabilityMonitor:
         self._policies = {policy.capability_fingerprint: policy for policy in policies}
         self._write_capability = writers._register_atomic_owner()
 
-    def initialize_active_status(
+    def _initialize_active_status(
         self,
         *,
         capability_fingerprint: str,
         evidence_freshness_digest: str,
-        freshness_record: CanonicalMemoryRecord | None = None,
+        freshness_record: CanonicalMemoryRecord,
     ) -> CapabilityStatus:
-        """Provision the one explicit active status; duplicates reload exactly."""
+        """Persist one validated baseline freshness/status pair atomically."""
         policy = self._policies.get(capability_fingerprint)
         if policy is None:
             raise ValueError("capability monitoring policy is unavailable")
@@ -461,7 +461,7 @@ class CapabilityMonitor:
             loaded = CapabilityStatus.model_validate(existing.content["status"])
             if loaded != status:
                 raise ValueError("capability status is already bound differently")
-            if freshness_record is not None and self._writers._memory_plane.get_record(
+            if self._writers._memory_plane.get_record(
                 freshness_record.memory_id
             ) != freshness_record:
                 raise ValueError("capability initial freshness authority is unavailable")
@@ -472,11 +472,9 @@ class CapabilityMonitor:
         )
         try:
             self._writers._memory_plane.conditionally_write_records(
-                (*((freshness_record,) if freshness_record is not None else ()), record),
+                (freshness_record, record),
                 preconditions=(
-                    *((
-                        RecordAbsentPrecondition(memory_id=freshness_record.memory_id),
-                    ) if freshness_record is not None else ()),
+                    RecordAbsentPrecondition(memory_id=freshness_record.memory_id),
                     RecordAbsentPrecondition(memory_id=record.memory_id),
                 ),
                 authorization=authorization,
@@ -488,7 +486,7 @@ class CapabilityMonitor:
             loaded = CapabilityStatus.model_validate(existing.content["status"])
             if loaded != status:
                 raise ValueError("capability status is already bound differently") from exc
-            if freshness_record is not None and self._writers._memory_plane.get_record(
+            if self._writers._memory_plane.get_record(
                 freshness_record.memory_id
             ) != freshness_record:
                 raise ValueError(
@@ -542,7 +540,7 @@ class CapabilityMonitor:
             timestamp=now,
             visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
         )
-        return self.initialize_active_status(
+        return self._initialize_active_status(
             capability_fingerprint=policy.capability_fingerprint,
             evidence_freshness_digest=record_digest(freshness_record),
             freshness_record=freshness_record,
