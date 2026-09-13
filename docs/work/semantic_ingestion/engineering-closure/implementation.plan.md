@@ -2,16 +2,16 @@
 
 - Work ID: semantic-ingestion-engineering-closure
 - Work type: implementation
-- Status: active; approved structural-field/identity design undergoing feasibility review
+- Status: active; Stage 1 acceptance persistence implementation
 - Coordinator: Codex main thread
 - Created: 2026-09-06
-- Last updated: 2026-09-08
+- Last updated: 2026-09-12
 - Parent WorkPlan: `docs/work/semantic_ingestion/implementation.plan.md`
-- Related WorkPlans: `docs/work/semantic_ingestion_completion_readiness/closure-plan.md`
+- Related WorkPlans: `docs/work/semantic_ingestion_completion_readiness/closure-plan.md`, `docs/work/semantic_ingestion/acceptance-authority-persistence/design.plan.md`
 - Canonical inputs: frozen SIA architecture and closure plan
 - Expected outputs: six bounded implementation packages and fail-closed activation
 - Current resume packet: `docs/work/semantic_ingestion/engineering-closure/resume.md`
-- Active milestone packet: `docs/work/semantic_ingestion/observation-ledger/milestones/continuation-runtime.plan.md`
+- Active milestone packet: `docs/work/semantic_ingestion/engineering-closure/milestones/acceptance-evaluator-runtime.plan.md`
 
 ## Design Baseline, Scope And Constraints
 
@@ -44,7 +44,7 @@ canonical owner with required authority and observed outcome.
 | --- | --- | --- | --- |
 | 1 | evidence/M0 reconciliation | R01-R04, R07, R09-R13, R18, R20-R23 | partial; final candidate proof deferred |
 | 2 | release crypto/trust | R03, R08, R13, R16, R19 | partial; signing locally verified, host/review unfinished |
-| 3 | independent statistics | R05, R06, R14 | numeric component approved; authority prerequisite blocked at review limit; canonical promotion/runtime owner pending |
+| 3 | independent statistics | R05, R06, R14 | numeric and issuance-prefix designs approved; installed authority/evaluator runtime active |
 | 4 | monitor/registry | R08, R15, R16, R19 | not implemented; queued after prerequisite contracts |
 | 5 | observer/comparator | R03, R13, R17 | bounded source-finalization approved; group carrier implementation active; authenticated query/comparison pending |
 | 6 | host closure | R01-R23 | blocked on incomplete packages |
@@ -168,8 +168,9 @@ writers finish; no current whole-candidate proof is claimed yet.
 
 ## Next Action
 
-Complete feasibility and independent review of the owner-approved ../graph-observation-materialization/proposal.md,
-then finish that linked design's feasibility/review before public integration.
+Implement the approved acceptance persistence and runtime-bootstrap contract at
+`../acceptance-authority-persistence/design.plan.md`, then run the complete
+Stage 1 focused matrix and independent implementation review.
 
 2026-09-08: root owns all code, generation, tests and commits. Read-only
 component reviews cover frozen90c58da62428f3caeab8ee7bca03116a24009d35e97aa705e1d757987a61362c.

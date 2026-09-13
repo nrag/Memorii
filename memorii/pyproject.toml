@@ -16,6 +16,15 @@ dependencies = [
   "jsonschema>=4,<5",
 ]
 
+[project.scripts]
+memorii-acceptance-evaluate = "acceptance.cli:main"
+
+[project.entry-points."memorii.acceptance_evaluator_runtime"]
+installed = "acceptance.host_runtime:InstalledAcceptanceRuntime"
+
+[project.entry-points."memorii.acceptance_deployment_publisher"]
+installed = "memorii.core.memory_evolution.deployment_authorization:InstalledDeploymentAuthorizationPublisher"
+
 [project.optional-dependencies]
 local = [
   "openai>=1.0",
@@ -55,8 +64,9 @@ include-package-data = true
 memorii = ["core/benchmark/fixture_sets/*.json", "core/semantic_ingestion/resources/*.json", "core/memory_evolution/observation_registry_sources/*.json", "core/memory_evolution/observation_registry_sources/*/*/*.json", "prompts/**/*.yaml"]
 
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["memorii*"]
+where = [".", ".."]
+include = ["memorii*", "acceptance*"]
+namespaces = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

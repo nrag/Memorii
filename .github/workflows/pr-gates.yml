@@ -755,12 +755,41 @@ jobs:
           tests/ci/bootstrap-graph-transaction-boundary.json
           --validate-receipts bootstrap-graph-receipts
 
+  acceptance-authority-runtime:
+    name: Acceptance Authority Runtime
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: memorii/pyproject.toml
+      - name: Build and install isolated wheel
+        working-directory: memorii
+        run: >-
+          python -m pip install '.[dev]'
+          && python -m pip wheel . --no-deps --wheel-dir "${RUNNER_TEMP}/acceptance-wheel"
+          && python -m venv "${RUNNER_TEMP}/acceptance-venv"
+          && "${RUNNER_TEMP}/acceptance-venv/bin/python" -m pip install "${RUNNER_TEMP}"/acceptance-wheel/*.whl
+      - name: Prove installed provider and rejection boundaries
+        working-directory: memorii
+        run: >-
+          cd "${RUNNER_TEMP}"
+          && env -u PYTHONPATH "${RUNNER_TEMP}/acceptance-venv/bin/python" -c "from importlib.metadata import entry_points; a=tuple(entry_points(group='memorii.acceptance_evaluator_runtime')); d=tuple(entry_points(group='memorii.acceptance_deployment_publisher')); assert len(a)==len(d)==1; assert a[0].load().__name__=='InstalledAcceptanceRuntime'; assert d[0].load().__name__=='InstalledDeploymentAuthorizationPublisher'"
+          && env -u PYTHONPATH "${RUNNER_TEMP}/acceptance-venv/bin/memorii-acceptance-evaluate" --help
+          && cd "${GITHUB_WORKSPACE}/memorii"
+          && pytest -W error tests/unit/acceptance/test_acceptance_evaluator_runtime.py tests/unit/acceptance/test_acceptance_host_runtime.py tests/unit/acceptance/test_acceptance_authority_repository.py tests/unit/acceptance/test_installed_acceptance_cli.py -p no:cacheprovider -q
+
   semantic-ingestion:
     name: Semantic Ingestion
     runs-on: ubuntu-latest
     timeout-minutes: 5
     if: always()
-    needs: [semantic-ingestion-generation, semantic-ingestion-scenario, semantic-ingestion-acceptance, semantic-projection-history, bootstrap-graph-transaction-boundary-aggregate]
+    needs: [semantic-ingestion-generation, semantic-ingestion-scenario, semantic-ingestion-acceptance, semantic-projection-history, bootstrap-graph-transaction-boundary-aggregate, acceptance-authority-runtime]
 
     steps:
       - name: Require every semantic-ingestion dependency
@@ -770,12 +799,14 @@ jobs:
           ACCEPTANCE_RESULT: ${{ needs.semantic-ingestion-acceptance.result }}
           PROJECTION_HISTORY_RESULT: ${{ needs.semantic-projection-history.result }}
           BOOTSTRAP_GRAPH_RESULT: ${{ needs.bootstrap-graph-transaction-boundary-aggregate.result }}
+          ACCEPTANCE_RUNTIME_RESULT: ${{ needs.acceptance-authority-runtime.result }}
         run: >-
           test "$GENERATION_RESULT" = success
           && test "$SCENARIO_RESULT" = success
           && test "$ACCEPTANCE_RESULT" = success
           && test "$PROJECTION_HISTORY_RESULT" = success
           && test "$BOOTSTRAP_GRAPH_RESULT" = success
+          && test "$ACCEPTANCE_RUNTIME_RESULT" = success
 
   benchmark-contract-tests:
     name: Benchmark Contract Tests

@@ -15,6 +15,17 @@ from acceptance.statistical_certification import (
     evaluate_certificate,
     verify_certificate,
 )
+from acceptance.capability_baseline_approval import (
+    AcceptanceSigningKey,
+    AcceptanceStatus,
+    AcceptanceVerifierLimits,
+    ApprovalRejected,
+    CapabilityBaselineApprovalVerifier,
+    EvaluationReceipt,
+    FileEvaluationReceiptStore,
+    VerifiedCapabilityBaselineApproval,
+)
+from acceptance.evaluator import AcceptanceEvaluator, AcceptanceEvaluationError
 
 __all__ = [
     "Certificate",
@@ -23,6 +34,16 @@ __all__ = [
     "PreverifiedNumericGate",
     "TransportLimits",
     "WireRejected",
+    "AcceptanceEvaluationError",
+    "AcceptanceEvaluator",
+    "AcceptanceSigningKey",
+    "AcceptanceStatus",
+    "AcceptanceVerifierLimits",
+    "ApprovalRejected",
+    "CapabilityBaselineApprovalVerifier",
+    "EvaluationReceipt",
+    "FileEvaluationReceiptStore",
+    "VerifiedCapabilityBaselineApproval",
     "evaluate_certificate",
     "verify_certificate",
 ]
