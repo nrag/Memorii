@@ -1,5 +1,5 @@
+import fcntl
 import json
-import os
 import subprocess
 import sys
 from collections.abc import Iterator
@@ -7,9 +7,9 @@ from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, localcontext
 from hashlib import sha256
+from importlib import import_module
 from multiprocessing import get_context
 from pathlib import Path
-from queue import Empty
 from threading import Event, RLock, Thread
 from types import SimpleNamespace
 from typing import cast
@@ -82,6 +82,7 @@ from memorii.core.semantic_ingestion.source_normalization_authority import (
 )
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
 from memorii.integrations.hermes_provider import HermesMemoryProvider
+from memorii.tools import semantic_ingestion_revocation_publish as revocation_publish
 from tests.unit.core.semantic_ingestion.bootstrap_graph_production_roots_support import (
     provider_service,
 )
@@ -132,12 +133,81 @@ def _publish_revocation_in_child(
     reader = InstalledProductionRevocationReader().from_fixed_configuration(
         {"reader_root": root}
     )
+    queue.put("attempted")  # type: ignore[union-attr]
     reader.publish_revocation_mapping(
         prior_approval_release_digest=release,
         receipt_digest=receipt,
         checkpoint_digest=checkpoint,
     )
     queue.put("published")  # type: ignore[union-attr]
+
+
+def _signed_production_revocation_evidence(
+    key: Ed25519PrivateKey, *, release: str = "6" * 64,
+) -> tuple[bytes, bytes]:
+    """Produce independently registered, signed artifacts for installed CLI proof."""
+    registry = import_module("acceptance.schema_registry")
+    coordinate = "acceptance-key"
+    receipt = {
+        "schema_version": 1,
+        "purpose": "production_revocation_receipt",
+        "prior_approval_release_digest": release,
+        "withdrawal_requested_at": "2026-01-01T00:00:00+00:00",
+        "prior_production_epoch": 1,
+        "advanced_production_epoch": 2,
+        "completed_at": "2026-01-01T00:01:00+00:00",
+        "signing_key_coordinate": coordinate,
+        "signature": "0" * 128,
+    }
+    receipt["receipt_digest"] = registry.canonical_digest(
+        "memorii.acceptance.production-revocation-receipt.v1",
+        "registered",
+        {key: value for key, value in receipt.items() if key not in {"receipt_digest", "signature"}},
+    )
+    receipt["signature"] = key.sign(
+        registry.signing_preimage("ProductionRevocationReceipt", receipt, coordinate)
+    ).hex()
+    checkpoint = {
+        "schema_version": 1,
+        "purpose": "production_epoch_checkpoint",
+        "production_authority_snapshot_digest": "7" * 64,
+        "checkpoint_generation": 1,
+        "predecessor_checkpoint_digest": None,
+        "active_production_epoch": 2,
+        "active_authorization_digests": ["8" * 64],
+        "revocation_receipt_digests": [receipt["receipt_digest"]],
+        "observed_at": "2026-01-01T00:02:00+00:00",
+        "signing_key_coordinate": coordinate,
+        "signature": "0" * 128,
+    }
+    checkpoint["checkpoint_digest"] = registry.canonical_digest(
+        "memorii.acceptance.production-epoch-checkpoint.v1",
+        "registered",
+        {key: value for key, value in checkpoint.items() if key not in {"checkpoint_digest", "signature"}},
+    )
+    checkpoint["signature"] = key.sign(
+        registry.signing_preimage("ProductionEpochCheckpoint", checkpoint, coordinate)
+    ).hex()
+    return (
+        json.dumps(receipt, sort_keys=True, separators=(",", ":")).encode("ascii"),
+        json.dumps(checkpoint, sort_keys=True, separators=(",", ":")).encode("ascii"),
+    )
+
+
+def _installed_revocation_publisher_config(
+    tmp_path: Path, key: Ed25519PrivateKey,
+) -> tuple[Path, Path]:
+    root = tmp_path / "revocations"
+    config = tmp_path / "revocation-publisher-v1.json"
+    public = key.public_key().public_bytes(
+        serialization.Encoding.Raw, serialization.PublicFormat.Raw
+    )
+    config.write_bytes(json.dumps({
+        "format": "memorii.semantic-ingestion.revocation-publisher.v1",
+        "reader_root": str(root),
+        "trust_keys": {"acceptance-key": public.hex()},
+    }, sort_keys=True, separators=(",", ":")).encode("ascii"))
+    return config, root
 
 
 class _CurrentDeploymentTrust:
@@ -1117,12 +1187,22 @@ def test_forged_v2_monitor_wire_fields_fail_before_signed_ingress_publication(
     is insufficient: contract verification must reject the forged value before
     a real signed service can publish operation, effect, or group records.
     """
-    clock, _, monitor, policy, implementation = _monitor(
-        MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "records")),
-        fingerprint="38a5be91af79d7e5ba9809bf383c699b6864ee50446239fe56a45e32b84638fe",
+    clock, _, _, policy, implementation = _monitor(
+        fingerprint="38a5be91af79d7e5ba9809bf383c699b6864ee50446239fe56a45e32b84638fe"
     )
     clock.now = TEST_NOW
-    monitor.tick(evidence=_window(clock, policy, implementation, value="0.1"))
+    # Bind the otherwise-valid persisted monitor state to a signed production
+    # authority before mutating exactly one authenticated wire record.
+    authority = _signed_monitoring_authority(
+        clock=clock, policy=policy, implementation=implementation,
+        evidence_provider=_NoEvidenceProvider(), signer=_TestDeploymentSigner(),
+    )
+    service = _service_for_joined_monitoring_ingress(
+        plane=MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "records")),
+        clock=clock, authority=authority,
+    )
+    assert service._capability_monitor is not None
+    service._capability_monitor.tick(evidence=_window(clock, policy, implementation, value="0.1"))
     journal = tmp_path / "records" / "memory_records.jsonl"
     batches = [json.loads(line) for line in journal.read_text(encoding="utf-8").splitlines()]
     changed = False
@@ -1141,15 +1221,21 @@ def test_forged_v2_monitor_wire_fields_fail_before_signed_ingress_publication(
         encoding="utf-8",
     )
     reopened = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "records"))
-    authority = _signed_monitoring_authority(
-        clock=clock, policy=policy, implementation=implementation,
-        evidence_provider=_NoEvidenceProvider(),
-        signer=_TestDeploymentSigner(),
-    )
-    with pytest.raises(ValueError):
-        _service_for_joined_monitoring_ingress(
+    if content_key == "decision":
+        reopened_service = _service_for_joined_monitoring_ingress(
             plane=reopened, clock=clock, authority=authority
         )
+        decision_record = next(record for record in reopened.list_records(
+            source_kind="semantic_ingestion_capability_monitor_decision"
+        ))
+        with pytest.raises(ValueError):
+            CapabilityMonitoringDecision.model_validate(decision_record.content["decision"])
+        assert reopened_service.process_capability_monitoring(max_items=1) == ()
+    else:
+        with pytest.raises(ValueError):
+            _service_for_joined_monitoring_ingress(
+                plane=reopened, clock=clock, authority=authority
+            )
     assert not reopened.list_records(
         source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
     )
@@ -1172,12 +1258,22 @@ def test_forged_legacy_monitor_wire_fields_fail_before_signed_ingress_publicatio
     tmp_path: Path, wire: str, source_kind: str, content_key: str, forged_field: str,
 ) -> None:
     """Legacy V1 preimages reject later fields even with a valid JSONL checksum."""
-    clock, _, monitor, policy, implementation = _monitor(
-        MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "records")),
-        fingerprint="38a5be91af79d7e5ba9809bf383c699b6864ee50446239fe56a45e32b84638fe",
+    clock, _, _, policy, implementation = _monitor(
+        fingerprint="38a5be91af79d7e5ba9809bf383c699b6864ee50446239fe56a45e32b84638fe"
     )
     clock.now = TEST_NOW
-    monitor.tick(evidence=_window(clock, policy, implementation, value="0.1"))
+    # The checkpoint-bound composed state is valid before the one-record
+    # mutation below; failure therefore identifies that exact persisted field.
+    authority = _signed_monitoring_authority(
+        clock=clock, policy=policy, implementation=implementation,
+        evidence_provider=_NoEvidenceProvider(), signer=_TestDeploymentSigner(),
+    )
+    service = _service_for_joined_monitoring_ingress(
+        plane=MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "records")),
+        clock=clock, authority=authority,
+    )
+    assert service._capability_monitor is not None
+    service._capability_monitor.tick(evidence=_window(clock, policy, implementation, value="0.1"))
     journal = tmp_path / "records" / "memory_records.jsonl"
     batches = [json.loads(line) for line in journal.read_text(encoding="utf-8").splitlines()]
     changed = False
@@ -1216,15 +1312,21 @@ def test_forged_legacy_monitor_wire_fields_fail_before_signed_ingress_publicatio
         encoding="utf-8",
     )
     reopened = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "records"))
-    authority = _signed_monitoring_authority(
-        clock=clock, policy=policy, implementation=implementation,
-        evidence_provider=_NoEvidenceProvider(),
-        signer=_TestDeploymentSigner(),
-    )
-    with pytest.raises(ValueError):
-        _service_for_joined_monitoring_ingress(
+    if content_key == "decision":
+        reopened_service = _service_for_joined_monitoring_ingress(
             plane=reopened, clock=clock, authority=authority
         )
+        decision_record = next(record for record in reopened.list_records(
+            source_kind="semantic_ingestion_capability_monitor_decision"
+        ))
+        with pytest.raises(ValueError):
+            CapabilityMonitoringDecision.model_validate(decision_record.content["decision"])
+        assert reopened_service.process_capability_monitoring(max_items=1) == ()
+    else:
+        with pytest.raises(ValueError):
+            _service_for_joined_monitoring_ingress(
+                plane=reopened, clock=clock, authority=authority
+            )
     assert not reopened.list_records(
         source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
     )
@@ -2502,6 +2604,17 @@ def test_installed_initial_activation_holds_revocation_lease_through_status_cas(
         {"reader_root": configuration["revocation_reader_root"]}, now_provider=lambda: clock.now
     )
     published = Event()
+    publication_attempted = Event()
+    original_locked = reader._locked
+
+    @contextmanager
+    def observed_locked(mode):
+        if mode == fcntl.LOCK_EX:
+            publication_attempted.set()
+        with original_locked(mode):
+            yield
+
+    monkeypatch.setattr(reader, "_locked", observed_locked)
 
     def revoke() -> None:
         reader.publish_revocation_mapping(
@@ -2513,7 +2626,8 @@ def test_installed_initial_activation_holds_revocation_lease_through_status_cas(
 
     revoker = Thread(target=revoke)
     revoker.start()
-    assert not published.wait(timeout=0.2)
+    assert publication_attempted.wait(timeout=5)
+    assert not published.is_set()
     release_cas.set()
     activation.join(timeout=10)
     revoker.join(timeout=10)
@@ -2557,10 +2671,8 @@ def test_installed_revocation_publication_is_interprocess_linearized_and_monoton
             args=(root, release, receipt, checkpoint, queue),
         )
         child.start()
-        child.join(timeout=0.2)
-        assert child.is_alive()
-        with pytest.raises(Empty):
-            queue.get_nowait()
+        assert queue.get(timeout=5) == "attempted"
+        assert not (Path(root) / "current" / f"{release}.json").exists()
     child.join(timeout=5)
     assert child.exitcode == 0
     assert queue.get(timeout=1) == "published"
@@ -2585,95 +2697,85 @@ def test_installed_revocation_publication_is_interprocess_linearized_and_monoton
 
 
 def test_installed_revocation_publish_cli_persists_opaque_evidence_before_mapping(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    root = tmp_path / "revocations"
     release = "6" * 64
-    receipt_digest = "a" * 64
-    checkpoint_digest = "b" * 64
-    receipt = {
-        "schema_version": 1, "purpose": "production_revocation_receipt",
-        "prior_approval_release_digest": release, "receipt_digest": receipt_digest,
-        "signing_key_coordinate": "acceptance-key", "signature": "00",
-    }
-    checkpoint = {
-        "schema_version": 1, "purpose": "production_epoch_checkpoint",
-        "checkpoint_digest": checkpoint_digest,
-        "revocation_receipt_digests": [receipt_digest],
-        "signing_key_coordinate": "acceptance-key", "signature": "00",
-    }
+    key = Ed25519PrivateKey.generate()
+    config, root = _installed_revocation_publisher_config(tmp_path, key)
+    monkeypatch.setattr(revocation_publish, "revocation_publisher_config_path", lambda: config)
+    receipt, checkpoint = _signed_production_revocation_evidence(key, release=release)
     receipt_path = tmp_path / "receipt.json"
     checkpoint_path = tmp_path / "checkpoint.json"
-    for path, value in ((receipt_path, receipt), (checkpoint_path, checkpoint)):
-        path.write_bytes(json.dumps(value, sort_keys=True, separators=(",", ":")).encode("ascii"))
-    result = subprocess.run(
-        [sys.executable, "-m", "memorii.tools.semantic_ingestion_revocation_publish",
-         "--root", str(root), "--prior-approval-release-digest", release,
-         "--receipt", str(receipt_path), "--checkpoint", str(checkpoint_path)],
-        cwd=Path(__file__).parents[4],
-        env={**os.environ, "PYTHONPATH": str(Path(__file__).parents[4] / "memorii")},
-        capture_output=True, text=True, check=False,
-    )
-    assert result.returncode == 0, result.stderr
-    assert (root / "objects" / receipt_digest).read_bytes() == receipt_path.read_bytes()
-    assert (root / "objects" / checkpoint_digest).read_bytes() == checkpoint_path.read_bytes()
+    receipt_path.write_bytes(receipt)
+    checkpoint_path.write_bytes(checkpoint)
+    assert revocation_publish.main([
+        "--prior-approval-release-digest", release,
+        "--receipt", str(receipt_path), "--checkpoint", str(checkpoint_path),
+    ]) == 0
+    receipt_value = json.loads(receipt)
+    checkpoint_value = json.loads(checkpoint)
+    assert (root / "objects" / receipt_value["receipt_digest"]).read_bytes() == receipt
+    assert (root / "objects" / checkpoint_value["checkpoint_digest"]).read_bytes() == checkpoint
     assert json.loads((root / "current" / f"{release}.json").read_text()) == {
         "prior_approval_release_digest": release,
-        "receipt_digest": receipt_digest,
-        "checkpoint_digest": checkpoint_digest,
+        "receipt_digest": receipt_value["receipt_digest"],
+        "checkpoint_digest": checkpoint_value["checkpoint_digest"],
     }
+    with pytest.raises(SystemExit):
+        revocation_publish.main([
+            "--root", str(tmp_path / "caller-selected-root"),
+            "--prior-approval-release-digest", release,
+            "--receipt", str(receipt_path), "--checkpoint", str(checkpoint_path),
+        ])
+    assert not (tmp_path / "caller-selected-root" / "current" / f"{release}.json").exists()
 
 
-@pytest.mark.parametrize("mutation", ("missing", "tampered", "conflicting"))
+@pytest.mark.parametrize("mutation", ("missing", "tampered", "forged_signature", "unknown_key", "extra_field", "conflicting"))
 def test_installed_revocation_publish_cli_never_exposes_mapping_on_invalid_objects(
-    tmp_path: Path, mutation: str,
+    tmp_path: Path, mutation: str, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    root = tmp_path / "revocations"
     release = "6" * 64
-    receipt_digest = "a" * 64
-    checkpoint_digest = "b" * 64
-    receipt = {
-        "schema_version": 1, "purpose": "production_revocation_receipt",
-        "prior_approval_release_digest": release, "receipt_digest": receipt_digest,
-        "signing_key_coordinate": "acceptance-key", "signature": "00",
-    }
-    checkpoint = {
-        "schema_version": 1, "purpose": "production_epoch_checkpoint",
-        "checkpoint_digest": checkpoint_digest,
-        "revocation_receipt_digests": [receipt_digest],
-        "signing_key_coordinate": "acceptance-key", "signature": "00",
-    }
+    key = Ed25519PrivateKey.generate()
+    config, root = _installed_revocation_publisher_config(tmp_path, key)
+    monkeypatch.setattr(revocation_publish, "revocation_publisher_config_path", lambda: config)
+    receipt, checkpoint = _signed_production_revocation_evidence(key, release=release)
     receipt_path = tmp_path / "receipt.json"
     checkpoint_path = tmp_path / "checkpoint.json"
-    receipt_path.write_bytes(json.dumps(receipt, sort_keys=True, separators=(",", ":")).encode("ascii"))
-    checkpoint_path.write_bytes(json.dumps(checkpoint, sort_keys=True, separators=(",", ":")).encode("ascii"))
+    receipt_path.write_bytes(receipt)
+    checkpoint_path.write_bytes(checkpoint)
     if mutation == "missing":
         receipt_path.unlink()
     elif mutation == "tampered":
         receipt_path.write_bytes(receipt_path.read_bytes() + b" ")
+    elif mutation == "forged_signature":
+        value = json.loads(receipt)
+        value["signature"] = "0" * 128
+        receipt_path.write_bytes(json.dumps(value, sort_keys=True, separators=(",", ":")).encode("ascii"))
+    elif mutation == "unknown_key":
+        other = Ed25519PrivateKey.generate()
+        receipt, checkpoint = _signed_production_revocation_evidence(other, release=release)
+        receipt_path.write_bytes(receipt)
+        checkpoint_path.write_bytes(checkpoint)
+    elif mutation == "extra_field":
+        value = json.loads(receipt)
+        value["unexpected"] = "rejected"
+        receipt_path.write_bytes(json.dumps(value, sort_keys=True, separators=(",", ":")).encode("ascii"))
     else:
-        checkpoint["revocation_receipt_digests"] = ["c" * 64]
-        checkpoint_path.write_bytes(json.dumps(checkpoint, sort_keys=True, separators=(",", ":")).encode("ascii"))
-    command = [
-        sys.executable, "-m", "memorii.tools.semantic_ingestion_revocation_publish",
-        "--root", str(root), "--prior-approval-release-digest", release,
-        "--receipt", str(receipt_path), "--checkpoint", str(checkpoint_path),
-    ]
-    result = subprocess.run(
-        command, cwd=Path(__file__).parents[4],
-        env={**os.environ, "PYTHONPATH": str(Path(__file__).parents[4] / "memorii")},
-        capture_output=True, text=True, check=False,
-    )
-    assert result.returncode != 0
+        value = json.loads(checkpoint)
+        value["revocation_receipt_digests"] = ["c" * 64]
+        checkpoint_path.write_bytes(json.dumps(value, sort_keys=True, separators=(",", ":")).encode("ascii"))
+    with pytest.raises(SystemExit):
+        revocation_publish.main([
+            "--prior-approval-release-digest", release,
+            "--receipt", str(receipt_path), "--checkpoint", str(checkpoint_path),
+        ])
     assert not (root / "current" / f"{release}.json").exists()
-    # An exact retry after correcting the original bytes remains possible.
-    receipt_path.write_bytes(json.dumps(receipt, sort_keys=True, separators=(",", ":")).encode("ascii"))
-    checkpoint["revocation_receipt_digests"] = [receipt_digest]
-    checkpoint_path.write_bytes(json.dumps(checkpoint, sort_keys=True, separators=(",", ":")).encode("ascii"))
-    repaired = subprocess.run(
-        command, cwd=Path(__file__).parents[4],
-        env={**os.environ, "PYTHONPATH": str(Path(__file__).parents[4] / "memorii")},
-        capture_output=True, text=True, check=False,
-    )
-    assert repaired.returncode == 0, repaired.stderr
+    # A corrected exact retry remains possible after every rejected candidate.
+    receipt, checkpoint = _signed_production_revocation_evidence(key, release=release)
+    receipt_path.write_bytes(receipt)
+    checkpoint_path.write_bytes(checkpoint)
+    assert revocation_publish.main([
+        "--prior-approval-release-digest", release,
+        "--receipt", str(receipt_path), "--checkpoint", str(checkpoint_path),
+    ]) == 0
     assert (root / "current" / f"{release}.json").exists()

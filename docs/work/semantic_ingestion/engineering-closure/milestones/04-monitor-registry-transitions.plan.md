@@ -113,9 +113,8 @@ records, commits and pushes.
 
 ## Next Action
 
-Freeze the R15 candidate revision and run independent specification,
-correctness, and test reviews against that exact revision. Reconcile every
-finding before deciding whether R15 is engineering complete.
+Freeze and push the final R15 candidate, then obtain independent specification,
+correctness, and test reviews against that exact revision.
 
 ## R15 Compatibility And Trust-Linearization Remediation (2026-09-13)
 
@@ -512,3 +511,63 @@ writer-migration, policy-migration and bootstrap-graph atomic-store gate passes
 
 The sole next action is to freeze and push this candidate, then obtain fresh
 exact-revision specification, correctness and test reviews.
+
+## R15 Fixed Revocation Publisher Remediation (2026-09-13)
+
+The installed `memorii-semantic-ingestion-revocation-publish` command no
+longer accepts a caller-selected storage root. It reads one fixed
+platform-data configuration file containing only the absolute reader root and
+an Ed25519 public-key map. The configuration rejects symlink or writable
+ancestry and contains no private key.
+
+Before the production reader creates either immutable object or the current
+mapping, the command invokes acceptance's independently owned production
+revocation verifier with its current-reader check disabled. That verifier
+checks the pinned registered schemas, canonical bytes, exact digest and
+signature preimages, fixed signer coordinate, Ed25519 signature, receipt and
+checkpoint join, monotonic epoch and time rules, and any retained checkpoint
+history. The same verified byte strings are then handed to the core reader,
+eliminating file replacement between verification and publication.
+
+Focused proof now creates real Ed25519 signed registered receipt/checkpoint
+artifacts and proves successful publication plus failed missing, noncanonical
+tamper, forged signature, unknown-key, extra-field and conflicting-join
+inputs with no mapping; `--root` is rejected by the public CLI parser. The
+activation race now signals exclusive-publication attempt before lock
+acquisition and waits for the status-CAS release. The forked interprocess test
+signals attempted publication before entering the shared-lock contention and
+proves that no mapping appears until the lease releases, without timing-based
+negative waits.
+
+Focused validation on the dirty candidate:
+
+- `PYTHONPATH=memorii .venv/bin/pytest -q -W error
+  memorii/tests/unit/core/semantic_ingestion/test_capability_monitoring.py -k
+  'revocation_publish_cli or interprocess_linearized or initial_activation_holds
+  or forged_v2_monitor_wire_fields or forged_legacy_monitor_wire_fields'`:
+  18 passed in 57.78 seconds;
+- targeted Ruff and scoped Pyright for the publisher and monitor suite: clean,
+  0 errors and 0 warnings.
+
+The forged V1/V2 proof now begins from a checkpoint-bound signed composed
+service, emits the genuine decision and freshness state, mutates only the
+selected persisted record, recomputes only the JSONL checksum, and exercises
+the public construction or scheduler path. Status and freshness fail during
+composition; the scheduler deliberately does not reload historical decisions,
+so that target is rejected by its canonical persisted-contract decoder while
+the scheduler is also exercised. All paths assert zero accepted operations,
+effects and group publications. The nine target/wire cases pass in 100.45
+seconds.
+
+Final candidate validation after the discriminating forged-wire rewrite:
+
+- `PYTHONPATH=memorii .venv/bin/pytest -q -W error
+  memorii/tests/unit/core/semantic_ingestion/test_capability_monitoring.py`:
+  77 passed in 261.08 seconds;
+- targeted Ruff is clean and scoped Pyright from `memorii/` reports 0 errors
+  and 0 warnings;
+- CLI `--help`, `git diff --check`, and binding-ledger JSON parsing pass.
+
+The sole next action is to freeze and push this candidate, then obtain
+independent specification, correctness, and test reviews against that exact
+revision.
