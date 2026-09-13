@@ -1,8 +1,8 @@
 # Semantic Ingestion Engineering Closure Plan
 
 Baseline: `191826cd3afb38bf605a337a71d576063b3bae5e`, PR #120.
-Current status (2026-09-13): implementation active; 16 requirements retain
-completed engineering behavior and 7 remain partial or awaiting closure review. This
+Current status (2026-09-13): implementation active; 17 requirements retain
+completed engineering behavior and 6 remain partial. This
 table was rebuilt from production paths and the three-role closure review at
 `4ff7f53c10092f423494fff55fbc055d2f3fdf4c`. That revision is clean, pushed,
 and has no failed PR checks; its long-running Observation Ledger Activation
@@ -346,7 +346,7 @@ to complete by this production write/recovery checkpoint. Current details and ev
 | R12 | Engineering complete | Temporal/lifecycle contracts and current projection-history gates pass | Parent closure record only | None distinct |
 | R13 | Partial | Ed25519 verification, configured resolver, PEM external signing, release/lifecycle assembly, installed preparation, protected target validation and test-key tamper matrix are implemented | Complete acceptance-authority/evaluator-to-deployment binding, final host/release evidence and cloud-KMS signer adapter selected for the release | Actual trusted keys, signatures and monotonic release publication |
 | R14 | Engineering complete | Installed authority-publication and evaluation commands use protected signed authority, independently recompute the frozen four-cell corpus, publish immutable signed receipts and production authorizations, reject rollback, and pass 24 installed fail-closed cases; exact-revision spec, correctness and test reviews report no remaining finding | Parent closure record only; ordinary activation consumption remains allocated to R13/R15 host integration | Product policy approval/signature and qualifying measurements |
-| R15 | Candidate complete; exact-revision review pending | A signed capability-baseline authorization binds the closed policy and exact initial evidence window; construction independently requires fresh, sufficient and acceptable baseline evidence before atomically publishing freshness plus active status; normal reconciliation schedules no-ingest expiry; the default built-in graph path seals active status coordinates and group CAS rejects in-flight or later ingestion after demotion; boundary, restart, fail-closed, durable retry, shared-capability and independent-oracle tests pass | Complete the three-role review of the frozen remediation revision and reconcile any confirmed finding before promotion | Approved monitoring policy, qualifying evidence windows and real production signatures |
+| R15 | Engineering complete | A signed capability-baseline authorization binds the closed policy and exact initial evidence window; construction independently requires fresh, sufficient and acceptable baseline evidence before atomically publishing freshness plus active status; normal reconciliation schedules no-ingest expiry; the default built-in graph path seals active status coordinates and group CAS rejects in-flight or later ingestion after demotion; authenticated revocation publication uses a read-only reader and separately verified publisher-only storage; the 111-test consolidated gate passes and exact-revision spec, correctness and test reviews approve `6224935e` with no remaining finding | Parent closure record only; ordinary host-matrix completion remains allocated to R08, R16 and R19 | Approved monitoring policy, qualifying evidence windows and real production signatures |
 | R16 | Partial | Bootstrap topology, 181-schema/1269-role registered publication, native policy retention, installed package preparation and protected target activation are implemented | Bind the monitor/status owner across activation and use; close the configured ingress/root matrix and final package evidence | Approve/sign final bundle fingerprints |
 | R17 | Partial | All 17 graph observation families, registered projection identity reconstruction, event-derived intervals, scoped pagination, durable ingestion-time seals and public ProviderMemoryService methods are implemented; real activated JSONL composition and CI exercise the path | Add an independently authored closed-world structural comparator through the paginated public API; prove missing/extra/time/provenance/fence mutations and configured host-ingress rejection plus between-page revocation | Real caller trust and acceptance witnesses |
 | R18 | Engineering complete | Historical/conflict/lineage replay retains M4 proof and current projection-history gates pass | Parent closure record only | None distinct |
@@ -366,7 +366,7 @@ Evidence and live work owners:
 - [Observer/comparator work](../semantic_ingestion/engineering-closure/milestones/05-authenticated-observer-comparator.plan.md) and [final host/whole-program closure](../semantic_ingestion/engineering-closure/milestones/06-host-composition-closure.plan.md).
 
 Registry history and native decoders now have completed service integration.
-That does not supply R15's capability monitor or R17's independent comparator.
+R15's capability monitor is engineering complete; R17's independent comparator remains open.
 The parent closure package remains open until the remaining product work lands
 and its exact candidate completes CI and independent review.
 

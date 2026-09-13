@@ -1,7 +1,7 @@
 # Package 5: Authenticated Observer And Comparator
 
 - Parent WorkPlan: `docs/work/semantic_ingestion/engineering-closure/implementation.plan.md`
-- Status: active separate projection observation integration; bounded source-finalization debugging complete
+- Status: active; authenticated public observation and independent comparator closure
 - Requirements: R03, R13, R17
 
 Implement scoped observer and independent comparator with pagination and revocation failure proof.
@@ -39,11 +39,12 @@ inferred from an unobserved process completion.
 
 ## Next Action
 
-Implement operational registry publication under
-../registry-publication/implementation.plan.md, starting with the closed
-raw-declaration parser and then complete source/decoder publication. Design
-candidate215ab5f272d7b27589da04c9c1dd4a9fa0f1d8f01413d542ea72bffa4c924b9e
-is approved; native ledger/projection/retrieval runtime remains partial.
+Implement the acceptance-owned closed-world structural comparator against the
+paginated public ProviderMemoryService observation methods. Prove complete page
+consumption and first-divergence detection for missing, extra, temporal,
+provenance, projection-identity and fence mutations, then add configured caller
+denial, scope isolation and revocation between pages through an ordinary host
+root. Do not read stores directly or import production projection helpers.
 
 The linked `../../terminal-publication/closure.md` records bounded source closure
 with all three independent approvals, public same-CAS/restart/tamper/authority

@@ -1,7 +1,7 @@
 # Capability Monitor And Atomic Status Transitions
 
 - Parent WorkPlan: `docs/work/semantic_ingestion/engineering-closure/implementation.plan.md`
-- Status: active
+- Status: complete at `6224935e989f5880aba8afb1aa69d48d25e549a1`
 - Base revision: `4c838477`
 - Requirements: R15 primary; R08, R16 and R19 related
 - Design baseline: `docs/design/semantic_ingestion_architecture.md` Section 5.6.1
@@ -113,9 +113,8 @@ records, commits and pushes.
 
 ## Next Action
 
-Complete the consolidated R15 validation on the current remediation, freeze and
-push the candidate, then obtain independent specification, correctness, and test
-reviews against that exact revision.
+R15 is complete. Continue the parent campaign through the authenticated
+observer/comparator packet; R08, R16 and R19 remain assigned to host closure.
 
 ## Exact-Revision Review Remediation Round 5 (2026-09-13)
 

@@ -1,17 +1,19 @@
 # Semantic Ingestion Closure Resume
 
-Work type: implementation. Coordinator: root. Status: active Stage 2, not
+Work type: implementation. Coordinator: root. Status: active Stage 5, not
 closed.
-Current committed baseline: `1a60848c`
+Current committed baseline: `6224935e989f5880aba8afb1aa69d48d25e549a1`
 on `semantic_ingestion_m5`. Index: `implementation.plan.md`. Active packet:
-`milestones/04-monitor-registry-transitions.plan.md`. Previous resume preserved at
+`milestones/05-authenticated-observer-comparator.plan.md`. Previous resume preserved at
 `archive/resume-ac8819eaa31c8adadc54db2ca8a7ae60376d5b9e90752e4c0106cae995302039.md`.
 
 ## Current State
 
-The 23-row table records 16 engineering-complete requirements and seven open:
-R03, R08, R13, R15, R16, R17 and R19. The approved closure sequence is R15
-monitor, R17 comparator/authentication, complete host
+The 23-row table records 17 engineering-complete requirements and six open:
+R03, R08, R13, R16, R17 and R19. R15 monitoring and authenticated revocation
+publication are engineering complete at `6224935e` after a 111-test consolidated
+gate and exact-revision specification, correctness and test approval. The
+remaining closure sequence is R17 comparator/authentication, complete host
 composition for R08/R16/R19, then frozen evidence/release preparation for
 R03/R13. Actual production keys, signatures and qualifying release measurements
 remain release conditions.
@@ -71,6 +73,6 @@ evidence, nonmutating lease-held evaluation snapshot, standard installed
 runtime, noninjectable command, CI job, and complete failure matrix. Root owns
 the current dirty candidate until one implementation writer resumes it.
 
-Next action: implement R15's canonical capability-status record, fake-clock
-scheduled monitor trigger, and atomic demotion conflict through the normal
-ingestion commit path.
+Next action: implement R17's acceptance-owned closed-world comparator through
+the paginated public observation API, including structural mutation detection,
+configured authorization denial, scope isolation, and between-page revocation.
