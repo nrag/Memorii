@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from hashlib import sha256
@@ -237,14 +237,17 @@ def capability_monitoring_authority_is_current(
 ) -> bool:
     """Revalidate the retained signed deployment coordinates at each use."""
     artifact = authority._deployment_artifact
-    return authority._current_trust_verifier.verify_current(
-        raw=authority._deployment_authorization_bytes, server_time=server_time,
-        purpose="semantic_ingestion_capability_baseline", target_kind="capability_baseline",
-        target_artifact_digest=artifact.target_artifact_digest,
-        capability_fingerprint=authority._policy.capability_fingerprint,
-        authority_snapshot_digest=artifact.authority_snapshot_digest,
-        active_epoch=artifact.active_epoch,
-    ) == artifact
+    try:
+        return authority._current_trust_verifier.verify_current(
+            raw=authority._deployment_authorization_bytes, server_time=server_time,
+            purpose="semantic_ingestion_capability_baseline", target_kind="capability_baseline",
+            target_artifact_digest=artifact.target_artifact_digest,
+            capability_fingerprint=authority._policy.capability_fingerprint,
+            authority_snapshot_digest=artifact.authority_snapshot_digest,
+            active_epoch=artifact.active_epoch,
+        ) == artifact
+    except DeploymentAuthorizationError:
+        return False
 
 
 @contextmanager
@@ -253,7 +256,7 @@ def capability_monitoring_authority_current_use(
 ) -> Iterator[bool]:
     """Hold the host-owned revocation linearizer for one group CAS."""
     artifact = authority._deployment_artifact
-    with authority._current_trust_verifier.verify_current_use(
+    manager = authority._current_trust_verifier.verify_current_use(
         raw=authority._deployment_authorization_bytes,
         server_time=server_time,
         purpose="semantic_ingestion_capability_baseline",
@@ -262,7 +265,13 @@ def capability_monitoring_authority_current_use(
         capability_fingerprint=authority._policy.capability_fingerprint,
         authority_snapshot_digest=artifact.authority_snapshot_digest,
         active_epoch=artifact.active_epoch,
-    ) as current:
+    )
+    with ExitStack() as stack:
+        try:
+            current = stack.enter_context(manager)
+        except DeploymentAuthorizationError:
+            yield False
+            return
         yield current == artifact
 
 

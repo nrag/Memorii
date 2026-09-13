@@ -16,7 +16,10 @@ from acceptance.production_revocation_bridge import SerializedProductionRevocati
 from acceptance.schema_registry import canonical_digest, schema_for, signing_preimage, unsigned_artifact
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from memorii.core.memory_evolution.deployment_authorization import InstalledProductionRevocationReader
+from memorii.core.memory_evolution.deployment_authorization import (
+    InstalledProductionRevocationPublisher,
+    InstalledProductionRevocationReader,
+)
 
 
 def _json(value: object) -> bytes:
@@ -251,3 +254,36 @@ def test_production_file_reader_requires_preprovisioned_secure_root(tmp_path: Pa
             {"reader_root": str(root)}
         )
     assert not root.exists()
+
+
+@pytest.mark.parametrize("mutation", ("signature", "unknown_key", "digest", "join"))
+def test_registered_production_publisher_rejects_forged_evidence_before_write(
+    tmp_path: Path, mutation: str,
+) -> None:
+    prior, receipt, checkpoint, _, key, coordinate = _evidence()
+    root = tmp_path / "production"
+    root.mkdir(mode=0o700)
+    public = key.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+    publisher = InstalledProductionRevocationPublisher().from_fixed_configuration({
+        "reader_root": str(root), "trust_keys": {coordinate: public.hex()},
+    })
+    if mutation == "signature":
+        receipt = receipt[:-1] + (b"0" if receipt[-1:] != b"0" else b"1")
+    elif mutation == "unknown_key":
+        publisher = InstalledProductionRevocationPublisher().from_fixed_configuration({
+            "reader_root": str(root), "trust_keys": {"unknown": public.hex()},
+        })
+    elif mutation == "digest":
+        value = json.loads(receipt)
+        value["receipt_digest"] = "0" * 64
+        receipt = _json(value)
+    else:
+        value = json.loads(checkpoint)
+        value["revocation_receipt_digests"] = ["0" * 64]
+        checkpoint = _json(value)
+    with pytest.raises(ValueError):
+        publisher.publish_verified(
+            prior_approval_release_digest=prior, receipt=receipt, checkpoint=checkpoint,
+        )
+    assert not (root / "objects").exists()
+    assert not (root / "current").exists()

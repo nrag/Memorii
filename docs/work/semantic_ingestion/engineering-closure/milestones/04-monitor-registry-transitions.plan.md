@@ -679,10 +679,25 @@ Final candidate validation after this exact-review remediation:
 - `PYTHONPATH=memorii .venv/bin/pytest -q -W error
   memorii/tests/unit/core/semantic_ingestion/test_capability_monitoring.py
   memorii/tests/unit/acceptance/test_production_revocation_boundary.py
-  memorii/tests/unit/acceptance/test_acceptance_host_runtime.py`: 100 passed
-  in 478.28 seconds;
+  memorii/tests/unit/acceptance/test_acceptance_host_runtime.py`: 104 passed
+  in 496.00 seconds;
 - focused static validation remains clean: Ruff, scoped first-party Pyright,
   acceptance module compilation, binding-ledger JSON and diff checks.
+
+The sole next action is for the coordinator to freeze this candidate and
+obtain exact-revision specification, correctness and test reviews.
+
+## R15 Final Publisher And Trust-Outage Delta (2026-09-13)
+
+The registered production publisher now independently decodes both exact
+canonical revocation artifact shapes, recomputes their registered CTV digests,
+and verifies their Ed25519 preimages against fixed production public keys before
+any object or mapping write. The reader exposes only current-read and lease
+operations. Production trust-port failures are unavailable authority outcomes,
+so the existing service path atomically demotes the capability before later
+group admission. Durability proof records each child mkdir, root fsync, and
+link visibility boundary: root fsync follows each child creation and precedes
+the first link under that child.
 
 The sole next action is for the coordinator to freeze this candidate and
 obtain exact-revision specification, correctness and test reviews.

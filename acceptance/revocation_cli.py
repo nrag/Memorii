@@ -57,11 +57,11 @@ def _secure_file(path: Path) -> bytes:
 def _configured() -> tuple[SerializedProductionRevocationPublisher, IndependentProductionRevocationEvidenceVerifier]:
     try:
         value = json.loads(_secure_file(revocation_publisher_config_path()))
-        if type(value) is not dict or set(value) != {"format", "storage", "trust_keys"}:
+        if type(value) is not dict or set(value) != {"format", "storage"}:
             raise ValueError
-        if value["format"] != _FORMAT or type(value["trust_keys"]) is not dict:
+        if value["format"] != _FORMAT or type(value["storage"]) is not dict:
             raise ValueError
-        keys = {name: bytes.fromhex(key) for name, key in value["trust_keys"].items()}
+        keys = {name: bytes.fromhex(key) for name, key in value["storage"].get("trust_keys", {}).items()}
         if not keys or any(type(name) is not str or not name or len(key) != 32 for name, key in keys.items()):
             raise ValueError
         reader = configured_revocation_reader(value["storage"])

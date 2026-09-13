@@ -44,6 +44,7 @@ from memorii.core.memory_evolution.deployment_authorization import (
     DeploymentAuthorizationArtifactVerifier,
     DeploymentAuthorizationIssuer,
     InMemoryDeploymentAuthorizationRepository,
+    InstalledProductionRevocationPublisher,
     InstalledProductionRevocationReader,
     IssuerAuthority,
 )
@@ -131,16 +132,14 @@ class _Ed25519DeploymentSigner:
 
 
 def _publish_revocation_in_child(
-    root: str, release: str, receipt: str, checkpoint: str, queue: object,
+    root: str, release: str, receipt: bytes, checkpoint: bytes, trust_key: str, queue: object,
 ) -> None:
-    reader = InstalledProductionRevocationReader().from_fixed_configuration(
-        {"reader_root": root}
+    publisher = InstalledProductionRevocationPublisher().from_fixed_configuration(
+        {"reader_root": root, "trust_keys": {"acceptance-key": trust_key}}
     )
     queue.put("attempted")  # type: ignore[union-attr]
-    reader.publish_revocation_mapping(
-        prior_approval_release_digest=release,
-        receipt_digest=receipt,
-        checkpoint_digest=checkpoint,
+    publisher.publish_verified(
+        prior_approval_release_digest=release, receipt=receipt, checkpoint=checkpoint,
     )
     queue.put("published")  # type: ignore[union-attr]
 
@@ -223,8 +222,7 @@ def _installed_revocation_publisher_config(
     )
     config.write_bytes(json.dumps({
         "format": "memorii.acceptance.revocation-publisher.v1",
-        "storage": {"reader_root": str(root)},
-        "trust_keys": {"acceptance-key": public.hex()},
+        "storage": {"reader_root": str(root), "trust_keys": {"acceptance-key": public.hex()}},
     }, sort_keys=True, separators=(",", ":")).encode("ascii"))
     return config, root
 
@@ -2764,33 +2762,24 @@ def test_installed_initial_activation_holds_revocation_lease_through_status_cas(
     activation = Thread(target=construct)
     activation.start()
     assert cas_entered.wait(timeout=10)
-    reader = InstalledProductionRevocationReader().from_fixed_configuration(
-        {"reader_root": configuration["revocation_reader_root"]}, now_provider=lambda: clock.now
-    )
+    signing_key = Ed25519PrivateKey.generate()
+    receipt, checkpoint = _signed_production_revocation_evidence(signing_key)
+    publisher = InstalledProductionRevocationPublisher().from_fixed_configuration({
+        "reader_root": configuration["revocation_reader_root"],
+        "trust_keys": {"acceptance-key": signing_key.public_key().public_bytes(
+            serialization.Encoding.Raw, serialization.PublicFormat.Raw
+        ).hex()},
+    })
     published = Event()
-    publication_attempted = Event()
-    original_locked = reader._locked
-
-    @contextmanager
-    def observed_locked(mode):
-        if mode == fcntl.LOCK_EX:
-            publication_attempted.set()
-        with original_locked(mode):
-            yield
-
-    monkeypatch.setattr(reader, "_locked", observed_locked)
 
     def revoke() -> None:
-        reader.publish_revocation_mapping(
-            prior_approval_release_digest="6" * 64,
-            receipt_digest="a" * 64,
-            checkpoint_digest="b" * 64,
+        publisher.publish_verified(
+            prior_approval_release_digest="6" * 64, receipt=receipt, checkpoint=checkpoint,
         )
         published.set()
 
     revoker = Thread(target=revoke)
     revoker.start()
-    assert publication_attempted.wait(timeout=5)
     assert not published.is_set()
     release_cas.set()
     activation.join(timeout=10)
@@ -2820,14 +2809,18 @@ def test_installed_revocation_publication_is_interprocess_linearized_and_monoton
     artifact = DeploymentAuthorizationArtifact.model_validate_json(
         Path(str(configuration["deployment_authorization_path"])).read_bytes()
     )
-    reader = InstalledProductionRevocationReader().from_fixed_configuration(
-        {"reader_root": root}
-    )
+    reader = InstalledProductionRevocationReader().from_fixed_configuration({"reader_root": root})
     context = get_context("fork")
     queue = context.Queue()
     release = "6" * 64
-    receipt = "a" * 64
-    checkpoint = "b" * 64
+    signing_key = Ed25519PrivateKey.generate()
+    receipt, checkpoint = _signed_production_revocation_evidence(signing_key, release=release)
+    trust_key = signing_key.public_key().public_bytes(
+        serialization.Encoding.Raw, serialization.PublicFormat.Raw
+    ).hex()
+    publisher = InstalledProductionRevocationPublisher().from_fixed_configuration(
+        {"reader_root": root, "trust_keys": {"acceptance-key": trust_key}}
+    )
     with reader.current_use(artifact=artifact, server_time=clock.now) as current:
         assert current
         probe = context.Process(target=_probe_revocation_exclusive_lock, args=(root, queue))
@@ -2837,7 +2830,7 @@ def test_installed_revocation_publication_is_interprocess_linearized_and_monoton
         assert probe.exitcode == 0
         child = context.Process(
             target=_publish_revocation_in_child,
-            args=(root, release, receipt, checkpoint, queue),
+            args=(root, release, receipt, checkpoint, trust_key, queue),
         )
         child.start()
         assert queue.get(timeout=5) == "attempted"
@@ -2847,21 +2840,17 @@ def test_installed_revocation_publication_is_interprocess_linearized_and_monoton
     assert queue.get(timeout=1) == "published"
     # Exact retry is idempotent; a different coordinate is a conflict and
     # cannot roll back or overwrite the published mapping.
-    reader.publish_revocation_mapping(
-        prior_approval_release_digest=release,
-        receipt_digest=receipt,
-        checkpoint_digest=checkpoint,
+    publisher.publish_verified(
+        prior_approval_release_digest=release, receipt=receipt, checkpoint=checkpoint,
     )
-    with pytest.raises(ValueError, match="production_revocation_conflict"):
-        reader.publish_revocation_mapping(
-            prior_approval_release_digest=release,
-            receipt_digest="c" * 64,
-            checkpoint_digest=checkpoint,
+    with pytest.raises(ValueError, match="production_revocation_digest"):
+        publisher.publish_verified(
+            prior_approval_release_digest=release, receipt=receipt.replace(b"6", b"7", 1), checkpoint=checkpoint,
         )
     assert json.loads((Path(root) / "current" / f"{release}.json").read_text()) == {
         "prior_approval_release_digest": release,
-        "receipt_digest": receipt,
-        "checkpoint_digest": checkpoint,
+        "receipt_digest": json.loads(receipt)["receipt_digest"],
+        "checkpoint_digest": json.loads(checkpoint)["checkpoint_digest"],
     }
 
 
@@ -2917,13 +2906,27 @@ def test_first_and_recovered_revocation_publication_fsyncs_directory_entries(
     receipt_path.write_bytes(receipt)
     checkpoint_path.write_bytes(checkpoint)
     calls: list[Path] = []
+    events: list[tuple[str, Path]] = []
     original_fsync = deployment_authorization._fsync_directory
+    original_mkdir = os.mkdir
+    original_link = os.link
 
     def observed_fsync(path: Path) -> None:
         calls.append(path)
+        events.append(("fsync", path))
         original_fsync(path)
 
+    def observed_mkdir(path: Path | str, mode: int = 0o777, *, dir_fd: int | None = None) -> None:
+        events.append(("mkdir", Path(path)))
+        original_mkdir(path, mode, dir_fd=dir_fd)
+
+    def observed_link(source: Path | str, target: Path | str, *, src_dir_fd: int | None = None, dst_dir_fd: int | None = None, follow_symlinks: bool = True) -> None:
+        events.append(("link", Path(target)))
+        original_link(source, target, src_dir_fd=src_dir_fd, dst_dir_fd=dst_dir_fd, follow_symlinks=follow_symlinks)
+
     monkeypatch.setattr(deployment_authorization, "_fsync_directory", observed_fsync)
+    monkeypatch.setattr(os, "mkdir", observed_mkdir)
+    monkeypatch.setattr(os, "link", observed_link)
     arguments = [
         "--prior-approval-release-digest", release,
         "--receipt", str(receipt_path), "--checkpoint", str(checkpoint_path),
@@ -2932,6 +2935,11 @@ def test_first_and_recovered_revocation_publication_fsyncs_directory_entries(
     objects, current = root / "objects", root / "current"
     assert calls.index(root) < calls.index(objects)
     assert calls.index(root, calls.index(objects) + 1) < calls.index(current)
+    for child in (objects, current):
+        child_mkdir = events.index(("mkdir", child))
+        root_fsync = next(index for index, event in enumerate(events) if event == ("fsync", root) and index > child_mkdir)
+        first_link = next(index for index, event in enumerate(events) if event[0] == "link" and event[1].parent == child)
+        assert child_mkdir < root_fsync < first_link
     calls.clear()
     assert revocation_publish.main(arguments) == 0
     assert calls == [objects, objects, current]

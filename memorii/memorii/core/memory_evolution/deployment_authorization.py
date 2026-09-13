@@ -15,7 +15,7 @@ import stat
 from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
 from threading import RLock
@@ -30,6 +30,8 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from memorii.core.memory_evolution.ingestion_contracts import encode_typed_value
+
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 _Purpose = Literal[
     "semantic_ingestion_capability_baseline",
@@ -37,6 +39,18 @@ _Purpose = Literal[
     "semantic_ingestion_topology",
 ]
 _TargetKind = Literal["capability_baseline", "local_resource_profile", "topology"]
+_PRODUCTION_REVOCATION_PROFILE = {
+    "id": "memorii.acceptance.canonical-map.v1",
+    "decimal_encoding_policy_id": "memorii.decimal.fixed-scale.v1",
+    "parser_ceilings": {
+        "maximum_bytes": 131072, "maximum_depth": 32, "maximum_nodes": 4096,
+        "maximum_string_bytes": 16384, "maximum_integer_digits": 128,
+    },
+}
+
+
+def _lp(value: bytes) -> bytes:
+    return len(value).to_bytes(8, "big") + value
 
 
 class DeploymentAuthorizationError(ValueError):
@@ -823,7 +837,7 @@ class _FileProductionRevocationReader:
         finally:
             temporary.unlink(missing_ok=True)
 
-    def publish_revocation_evidence(
+    def _publish_revocation_evidence(
         self, *, prior_approval_release_digest: str, receipt: bytes, checkpoint: bytes
     ) -> None:
         """Durably publish opaque signed evidence before exposing its mapping."""
@@ -843,21 +857,6 @@ class _FileProductionRevocationReader:
         with self._locked(fcntl.LOCK_EX if fcntl is not None else 0):
             self._publish_object_locked(digest=receipt_digest, raw=receipt)
             self._publish_object_locked(digest=checkpoint_digest, raw=checkpoint)
-            self._publish_revocation_mapping_locked(
-                prior_approval_release_digest=prior_approval_release_digest,
-                receipt_digest=receipt_digest, checkpoint_digest=checkpoint_digest,
-            )
-
-    def publish_revocation_mapping(
-        self, *, prior_approval_release_digest: str, receipt_digest: str,
-        checkpoint_digest: str,
-    ) -> None:
-        """Publish one immutable revocation coordinate under the shared lock."""
-        if not all(_DIGEST.fullmatch(value) for value in (
-            prior_approval_release_digest, receipt_digest, checkpoint_digest,
-        )):
-            raise DeploymentAuthorizationError("production_revocation_coordinate")
-        with self._locked(fcntl.LOCK_EX if fcntl is not None else 0):
             self._publish_revocation_mapping_locked(
                 prior_approval_release_digest=prior_approval_release_digest,
                 receipt_digest=receipt_digest, checkpoint_digest=checkpoint_digest,
@@ -974,26 +973,171 @@ class InstalledProductionRevocationReader:
     def from_fixed_configuration(
         self, configuration: object, *, now_provider: Callable[[], datetime] | None = None
     ) -> _FileProductionRevocationReader:
-        if type(configuration) is not dict or set(configuration) != {"reader_root"}:
+        if type(configuration) is not dict or set(configuration) not in ({"reader_root"}, {"reader_root", "trust_keys"}):
             raise DeploymentAuthorizationError("production_revocation_configuration")
-        root = Path(str(configuration["reader_root"]))
+        if not isinstance(configuration["reader_root"], str):
+            raise DeploymentAuthorizationError("production_revocation_configuration")
+        root = Path(configuration["reader_root"])
         if not root.is_absolute() or root.is_symlink():
             raise DeploymentAuthorizationError("production_revocation_configuration")
         return _FileProductionRevocationReader(root, now_provider=now_provider)
 
 
+class _ProductionRevocationEvidenceVerifier:
+    """Production-owned exact decoder for the two persisted revocation artifacts."""
+
+    _receipt_fields = frozenset({
+        "schema_version", "purpose", "prior_approval_release_digest", "withdrawal_requested_at",
+        "prior_production_epoch", "advanced_production_epoch", "completed_at", "receipt_digest",
+        "signing_key_coordinate", "signature",
+    })
+    _checkpoint_fields = frozenset({
+        "schema_version", "purpose", "production_authority_snapshot_digest", "checkpoint_generation",
+        "predecessor_checkpoint_digest", "active_production_epoch", "active_authorization_digests",
+        "revocation_receipt_digests", "observed_at", "checkpoint_digest", "signing_key_coordinate", "signature",
+    })
+
+    def __init__(self, *, trust_keys: dict[str, bytes], reader: _FileProductionRevocationReader) -> None:
+        if not trust_keys or any(not key or len(value) != 32 for key, value in trust_keys.items()):
+            raise DeploymentAuthorizationError("production_revocation_configuration")
+        self._trust_keys = trust_keys
+        self._reader = reader
+
+    @staticmethod
+    def _time(value: object) -> datetime:
+        if not isinstance(value, str):
+            raise DeploymentAuthorizationError("production_revocation_object")
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise DeploymentAuthorizationError("production_revocation_object") from exc
+        if parsed.utcoffset() is None:
+            raise DeploymentAuthorizationError("production_revocation_object")
+        return parsed.astimezone(UTC)
+
+    def _decode(self, raw: bytes, *, checkpoint: bool) -> dict[str, object]:
+        if not raw or len(raw) > 131072:
+            raise DeploymentAuthorizationError("production_revocation_object")
+        try:
+            value = json.loads(raw, object_pairs_hook=_unique_json_object)
+        except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+            raise DeploymentAuthorizationError("production_revocation_object") from exc
+        fields = self._checkpoint_fields if checkpoint else self._receipt_fields
+        digest_field = "checkpoint_digest" if checkpoint else "receipt_digest"
+        purpose = "production_epoch_checkpoint" if checkpoint else "production_revocation_receipt"
+        domain = (
+            "memorii.acceptance.production-epoch-checkpoint.v1"
+            if checkpoint else "memorii.acceptance.production-revocation-receipt.v1"
+        )
+        signature_domain = (
+            "memorii.acceptance.production-epoch-checkpoint.signature.v1"
+            if checkpoint else "memorii.acceptance.production-revocation-receipt.signature.v1"
+        )
+        if type(value) is not dict or set(value) != fields or _canonical_bytes(value) != raw:
+            raise DeploymentAuthorizationError("production_revocation_object")
+        if (
+            type(value["schema_version"]) is not int or value["schema_version"] != 1
+            or value["purpose"] != purpose or not isinstance(value[digest_field], str)
+            or not _DIGEST.fullmatch(value[digest_field]) or not isinstance(value["signing_key_coordinate"], str)
+            or not value["signing_key_coordinate"] or not isinstance(value["signature"], str)
+        ):
+            raise DeploymentAuthorizationError("production_revocation_object")
+        try:
+            signature = bytes.fromhex(value["signature"])
+        except ValueError as exc:
+            raise DeploymentAuthorizationError("production_revocation_signature") from exc
+        if len(signature) != 64:
+            raise DeploymentAuthorizationError("production_revocation_signature")
+        unsigned = {key: item for key, item in value.items() if key not in {digest_field, "signature"}}
+        digest = sha256(_lp(domain.encode("ascii")) + _lp(encode_typed_value(_PRODUCTION_REVOCATION_PROFILE)) + _lp(encode_typed_value(unsigned))).hexdigest()
+        if digest != value[digest_field]:
+            raise DeploymentAuthorizationError("production_revocation_digest")
+        signer = self._trust_keys.get(value["signing_key_coordinate"])
+        if signer is None:
+            raise DeploymentAuthorizationError("production_revocation_signer")
+        preimage = _lp(signature_domain.encode("ascii")) + _lp(encode_typed_value({
+            "purpose": purpose, "profile_binding": _PRODUCTION_REVOCATION_PROFILE,
+            "signer_coordinate": value["signing_key_coordinate"], "body_digest": digest,
+            "unsigned_content": unsigned,
+        }))
+        try:
+            Ed25519PublicKey.from_public_bytes(signer).verify(signature, preimage)
+        except InvalidSignature as exc:
+            raise DeploymentAuthorizationError("production_revocation_signature") from exc
+        return value
+
+    def _walk_checkpoint(self, value: dict[str, object], seen: set[str]) -> None:
+        digest = value["checkpoint_digest"]
+        generation = value["checkpoint_generation"]
+        predecessor = value["predecessor_checkpoint_digest"]
+        if (
+            not isinstance(digest, str) or digest in seen or type(generation) is not int or generation < 1
+            or type(value["active_production_epoch"]) is not int or value["active_production_epoch"] < 1
+            or not isinstance(value["production_authority_snapshot_digest"], str)
+            or not _DIGEST.fullmatch(value["production_authority_snapshot_digest"])
+            or not isinstance(value["active_authorization_digests"], list) or not value["active_authorization_digests"]
+            or not isinstance(value["revocation_receipt_digests"], list) or not value["revocation_receipt_digests"]
+            or len(value["active_authorization_digests"]) > 1024 or len(value["revocation_receipt_digests"]) > 1024
+            or any(not isinstance(item, str) or not _DIGEST.fullmatch(item) for item in value["active_authorization_digests"] + value["revocation_receipt_digests"])
+            or len(set(value["active_authorization_digests"])) != len(value["active_authorization_digests"])
+            or len(set(value["revocation_receipt_digests"])) != len(value["revocation_receipt_digests"])
+        ):
+            raise DeploymentAuthorizationError("production_revocation_checkpoint_history")
+        seen.add(digest)
+        if generation == 1:
+            if predecessor is not None:
+                raise DeploymentAuthorizationError("production_revocation_checkpoint_history")
+            return
+        if not isinstance(predecessor, str) or not _DIGEST.fullmatch(predecessor):
+            raise DeploymentAuthorizationError("production_revocation_checkpoint_history")
+        prior = self._decode(self._reader.load_checkpoint(predecessor), checkpoint=True)
+        prior_epoch = prior["active_production_epoch"]
+        active_epoch = value["active_production_epoch"]
+        if (
+            prior["checkpoint_digest"] != predecessor or prior["checkpoint_generation"] != generation - 1
+            or type(prior_epoch) is not int or type(active_epoch) is not int or prior_epoch > active_epoch
+            or self._time(prior["observed_at"]) > self._time(value["observed_at"])
+        ):
+            raise DeploymentAuthorizationError("production_revocation_checkpoint_history")
+        self._walk_checkpoint(prior, seen)
+
+    def verify(self, *, prior_approval_release_digest: str, receipt: bytes, checkpoint: bytes) -> None:
+        receipt_value = self._decode(receipt, checkpoint=False)
+        checkpoint_value = self._decode(checkpoint, checkpoint=True)
+        receipt_digest = receipt_value["receipt_digest"]
+        if (
+            not _DIGEST.fullmatch(prior_approval_release_digest)
+            or receipt_value["prior_approval_release_digest"] != prior_approval_release_digest
+            or type(receipt_value["prior_production_epoch"]) is not int or receipt_value["prior_production_epoch"] < 1
+            or type(receipt_value["advanced_production_epoch"]) is not int or receipt_value["advanced_production_epoch"] < 1
+            or receipt_value["advanced_production_epoch"] <= receipt_value["prior_production_epoch"]
+            or type(checkpoint_value["active_production_epoch"]) is not int
+            or checkpoint_value["active_production_epoch"] < receipt_value["advanced_production_epoch"]
+            or not isinstance(checkpoint_value["revocation_receipt_digests"], list)
+            or receipt_digest not in checkpoint_value["revocation_receipt_digests"]
+            or self._time(receipt_value["withdrawal_requested_at"]) > self._time(receipt_value["completed_at"])
+            or self._time(receipt_value["completed_at"]) > self._time(checkpoint_value["observed_at"])
+        ):
+            raise DeploymentAuthorizationError("production_revocation_join")
+        self._walk_checkpoint(checkpoint_value, set())
+
+
 class _SerializedProductionRevocationPublisher:
-    """Opaque write endpoint; acceptance alone establishes evidence validity."""
+    """Registered production endpoint authenticating bytes before persistence."""
 
     _acceptance_serialized_bridge = True
 
-    def __init__(self, reader: _FileProductionRevocationReader) -> None:
+    def __init__(self, reader: _FileProductionRevocationReader, trust_keys: dict[str, bytes]) -> None:
         self._reader = reader
+        self._verifier = _ProductionRevocationEvidenceVerifier(trust_keys=trust_keys, reader=reader)
 
     def publish_verified(
         self, *, prior_approval_release_digest: str, receipt: bytes, checkpoint: bytes
     ) -> None:
-        self._reader.publish_revocation_evidence(
+        self._verifier.verify(
+            prior_approval_release_digest=prior_approval_release_digest, receipt=receipt, checkpoint=checkpoint,
+        )
+        self._reader._publish_revocation_evidence(
             prior_approval_release_digest=prior_approval_release_digest,
             receipt=receipt,
             checkpoint=checkpoint,
@@ -1001,12 +1145,19 @@ class _SerializedProductionRevocationPublisher:
 
 
 class InstalledProductionRevocationPublisher:
-    """Fixed production publisher for already acceptance-verified bytes."""
+    """Fixed production publisher with independently held public trust."""
 
     def from_fixed_configuration(self, configuration: object) -> _SerializedProductionRevocationPublisher:
-        return _SerializedProductionRevocationPublisher(
-            InstalledProductionRevocationReader().from_fixed_configuration(configuration)
-        )
+        reader = InstalledProductionRevocationReader().from_fixed_configuration(configuration)
+        if type(configuration) is not dict or set(configuration) != {"reader_root", "trust_keys"}:
+            raise DeploymentAuthorizationError("production_revocation_configuration")
+        try:
+            if type(configuration["trust_keys"]) is not dict or any(type(name) is not str or type(value) is not str for name, value in configuration["trust_keys"].items()):
+                raise ValueError
+            keys = {name: bytes.fromhex(value) for name, value in configuration["trust_keys"].items()}
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise DeploymentAuthorizationError("production_revocation_configuration") from exc
+        return _SerializedProductionRevocationPublisher(reader, keys)
 
 
 class _RawEd25519Signer:
