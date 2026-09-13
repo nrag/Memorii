@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from threading import Barrier, Thread
 
 import pytest
 from memorii.core.memory_evolution import ingestion_contracts
@@ -101,3 +102,25 @@ def test_detached_read_uses_lexical_digest_scope_without_constructing_an_arena(m
     assert pushes == pops
     assert len(pushes) == 1
     assert canonical_evidence_arena.current_digest_verification_scope() is None
+
+
+def test_canonical_emission_scopes_do_not_cross_threads() -> None:
+    """A simultaneous detached-read scope never reuses another thread's memo."""
+    barrier = Barrier(2)
+    observed: list[object] = []
+
+    def enter_scope() -> None:
+        with ingestion_contracts.canonical_emission_scope() as scope:
+            barrier.wait()
+            assert ingestion_contracts.current_emission_scope() is scope
+            observed.append(scope)
+        assert ingestion_contracts.current_emission_scope() is None
+
+    workers = [Thread(target=enter_scope), Thread(target=enter_scope)]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join()
+
+    assert len(observed) == 2
+    assert observed[0] is not observed[1]

@@ -14,6 +14,7 @@ seals.
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 from datetime import timedelta
 from types import SimpleNamespace
 
@@ -170,6 +171,20 @@ def backend(tmp_path_factory, request):
     )
     plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "ledger-store"))
     writer = build(plane)
+    semantic = writer._composed_semantic_runtime
+    assert semantic is not None and semantic.atomic_store is not None and semantic.writer_admission is not None
+    proof_contexts: list[object] = []
+    original_snapshot_validator = semantic.writer_admission._activated_observation_snapshot_validators[
+        semantic.atomic_store._write_capability
+    ]
+
+    def record_snapshot_context(proposed, current, proofs):
+        proof_contexts.append(proofs)
+        return original_snapshot_validator(proposed, current, proofs)
+
+    semantic.writer_admission._activated_observation_snapshot_validators[
+        semantic.atomic_store._write_capability
+    ] = record_snapshot_context
     writer.activate_observation_ledger()
     result = writer.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN, content="Atlas owner is Bob.",
@@ -276,6 +291,7 @@ def backend(tmp_path_factory, request):
         write_revision=write_revision,
         graph_revision=authority.graph.graph_revision,
         observation_revision=authority.observation.head.observation_revision,
+        proof_contexts=tuple(proof_contexts),
     )
 
 
@@ -305,6 +321,97 @@ def test_unsigned_monitoring_authority_fails_closed_before_graph_commit(
     assert not plane.list_records(
         source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary",
     )
+
+
+def test_callback_rejection_leaves_real_provider_snapshot_unchanged(tmp_path, monkeypatch):
+    """The atomic callback can reject a real provider write without partial graph state."""
+    authority = _signed_graph_monitoring_authority()
+    build, _, _ = _provider_factory(
+        tmp_path, monkeypatch, normalization=True, complete_registry=True,
+        verified_capability_monitoring_authorities=(authority,),
+    )
+    plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "callback-rejection"))
+    provider = build(plane)
+    provider.activate_observation_ledger()
+    runtime = provider._composed_semantic_runtime
+    assert runtime is not None and runtime.atomic_store is not None and runtime.writer_admission is not None
+    runtime.writer_admission._activated_observation_snapshot_validators[
+        runtime.atomic_store._write_capability
+    ] = lambda _proposed, _current, _proofs: False
+    before = tuple(record for record in plane.list_records() if (
+        record.source_kind.startswith("semantic_ingestion_observation_ledger_")
+        or record.source_kind == "semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+    ))
+
+    result = provider.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN, content="Atlas owner is Bob.",
+        operation_id="callback-rejected-source", task_id="task:one", user_id="user:alice",
+        authenticated_host_ingress=_host_ingress(),
+    )
+
+    assert result is not None
+    assert result.blocked_reasons["semantic_ingestion"] == "graph_transaction_authority_unavailable"
+    assert not plane.list_records(
+        source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary",
+    )
+    assert tuple(record for record in plane.list_records() if (
+        record.source_kind.startswith("semantic_ingestion_observation_ledger_")
+        or record.source_kind == "semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+    )) == before
+
+
+def test_configured_service_uses_fresh_callback_contexts_for_real_writes(backend):
+    """The fixture's real group and terminal CAS calls each receive a fresh context."""
+    assert len(backend.proof_contexts) >= 2
+    assert len({id(proofs) for proofs in backend.proof_contexts}) == len(backend.proof_contexts)
+
+
+def test_configured_authorizer_denies_before_graph_or_attestation_snapshot_read(backend, monkeypatch):
+    """A configured scope denial remains non-disclosing and does not read the store."""
+    denied_scope = MemoryScope(user_id="other-user", task_id="task:one")
+    graph_request = backend.graph_request.model_copy(update={"scope_constraint": denied_scope})
+    time_request = backend.time_request.model_copy(update={"scope_constraint": denied_scope})
+    monkeypatch.setattr(backend.plane, "read_write_snapshot", _unexpected_plane_read)
+    monkeypatch.setattr(backend.plane, "read_timed_write_snapshot", _unexpected_plane_read)
+
+    graph = backend.service.observe_graph(host_ingress=_host_ingress(), request=graph_request)
+    attestations = backend.service.observe_ingestion_time_attestations(
+        host_ingress=_host_ingress(), request=time_request,
+    )
+
+    _assert_non_disclosing_failure(graph, "denied")
+    _assert_non_disclosing_failure(attestations, "denied")
+
+
+def test_tampered_immutable_group_record_is_non_disclosing(backend, monkeypatch):
+    """A detached public read rejects a changed retained group record without disclosure."""
+    original = backend.plane.read_timed_write_snapshot
+    snapshots = 0
+
+    def tampered_snapshot(*, now):
+        nonlocal snapshots
+        timed = original(now=now)
+        snapshots += 1
+        if snapshots > 1:
+            return timed
+        changed = False
+        altered = []
+        for record in timed.records:
+            if record.source_kind == "semantic_ingestion_bootstrap_graph_v3_group_commit_primary":
+                altered.append(record.model_copy(
+                    update={"content": {**record.content, "reload_hex": "00"}}
+                ))
+                changed = True
+            else:
+                altered.append(record)
+        assert changed
+        return replace(timed, records=tuple(altered))
+
+    monkeypatch.setattr(backend.plane, "read_timed_write_snapshot", tampered_snapshot)
+    response = backend.service.observe_graph(
+        host_ingress=_host_ingress(), request=backend.graph_request,
+    )
+    _assert_non_disclosing_failure(response, "denied")
 
 
 def test_configured_service_observe_graph_returns_real_page(backend):

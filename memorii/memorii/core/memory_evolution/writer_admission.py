@@ -182,6 +182,44 @@ def bounded_preplanning_ownership_manifest() -> SemanticRecordOwnershipManifest:
     )
 
 
+def capability_monitoring_predecessor_ownership_manifest() -> SemanticRecordOwnershipManifest:
+    """The one retained V2 manifest eligible for read and ledger cutover.
+
+    Capability monitoring added four record kinds without changing the V2
+    revision label.  Compatibility therefore binds the whole committed
+    predecessor body and digest, never the revision label by itself.
+    """
+    predecessor_kinds = _KINDS - frozenset({
+        "capability_status",
+        "capability_initial_freshness",
+        "capability_authorization_checkpoint",
+        "capability_monitor_decision",
+    })
+    revision = "semantic-generation-v2"
+    manifest = SemanticRecordOwnershipManifest(
+        manifest_revision=revision,
+        governed_record_kinds=predecessor_kinds,
+        semantic_store_methods=_METHODS,
+        manifest_digest=sha256(encode_typed_value({
+            "manifest_revision": revision,
+            "governed_record_kinds": predecessor_kinds,
+            "semantic_store_methods": _METHODS,
+        })).hexdigest(),
+    )
+    if manifest.manifest_digest != "88acb5940fb93c7807a17ef6af0765df019c6b1f384be2d362b80a15b9f5a104":
+        raise AssertionError("capability monitoring predecessor manifest drifted")
+    return manifest
+
+
+def _is_ledger_activation_predecessor_manifest(
+    manifest: SemanticRecordOwnershipManifest,
+) -> bool:
+    return manifest in (
+        bounded_preplanning_ownership_manifest(),
+        capability_monitoring_predecessor_ownership_manifest(),
+    )
+
+
 def observation_ledger_ownership_manifest() -> SemanticRecordOwnershipManifest:
     """The one compiled successor manifest selected only by ledger activation."""
     old = bounded_preplanning_ownership_manifest()
@@ -223,7 +261,7 @@ class SemanticWriterAdmissionStore:
         typed_value_registry_history: ProtectedTypedValueRegistryHistory | None = None,
         observation_activation_target: VerifiedObservationActivationTarget | None = None,
     ) -> None:
-        if manifest != bounded_preplanning_ownership_manifest():
+        if not _is_ledger_activation_predecessor_manifest(manifest):
             raise SemanticWriterAdmissionError("unsupported semantic ownership manifest")
         self._memory_plane, self._manifest, self._now = memory_plane, manifest, now_provider
         if typed_value_registry_history is not None and type(typed_value_registry_history) is not ProtectedTypedValueRegistryHistory:
@@ -265,7 +303,11 @@ class SemanticWriterAdmissionStore:
 
     @staticmethod
     def _is_supported_manifest(manifest: SemanticRecordOwnershipManifest) -> bool:
-        return manifest in (bounded_preplanning_ownership_manifest(), observation_ledger_ownership_manifest())
+        return manifest in (
+            bounded_preplanning_ownership_manifest(),
+            capability_monitoring_predecessor_ownership_manifest(),
+            observation_ledger_ownership_manifest(),
+        )
 
     def governed_write_policy(self) -> SemanticGovernedWritePolicy:
         return SemanticGovernedWritePolicy(self)
@@ -788,7 +830,11 @@ class SemanticWriterAdmissionStore:
             raise SemanticWriterAdmissionError("observation ledger activation retry bound is invalid")
         current_record = self.require_current(expected)
         current, manifest = writer_admission_from_record(current_record)
-        if manifest != bounded_preplanning_ownership_manifest() or current != self.current() or not current_record.content.get("draining", False):
+        if (
+            not _is_ledger_activation_predecessor_manifest(manifest)
+            or current != self.current()
+            or not current_record.content.get("draining", False)
+        ):
             raise SemanticWriterAdmissionError("semantic writer binding is stale or mismatched")
         if activation.previous_writer_admission_digest != current.admission_digest or activation.target_writer_epoch != current.writer_epoch + 1:
             raise SemanticWriterAdmissionError("observation ledger activation predecessor is mismatched")
@@ -836,7 +882,7 @@ class SemanticWriterAdmissionStore:
             raise SemanticWriterAdmissionError("observation ledger activation target authority is not configured")
         current_record = self.require_current(expected)
         current, manifest = writer_admission_from_record(current_record)
-        if manifest != bounded_preplanning_ownership_manifest():
+        if not _is_ledger_activation_predecessor_manifest(manifest):
             raise SemanticWriterAdmissionError("semantic writer manifest is mismatched")
         if not current_record.content.get("draining", False):
             frozen = current_record.model_copy(update={"content": {**current_record.content, "draining": True}})
@@ -3496,7 +3542,13 @@ def _is_observation_activation_write(
         ObservationLedgerActivation,
         ObservationLedgerHead,
     )
-    if history is None or target is None or current_record.content.get("draining") is not True or old_manifest != bounded_preplanning_ownership_manifest() or successor_manifest != observation_ledger_ownership_manifest():
+    if (
+        history is None
+        or target is None
+        or current_record.content.get("draining") is not True
+        or not _is_ledger_activation_predecessor_manifest(old_manifest)
+        or successor_manifest != observation_ledger_ownership_manifest()
+    ):
         return False
     if len(records) != 3:
         return False

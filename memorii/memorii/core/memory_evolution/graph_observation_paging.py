@@ -282,7 +282,11 @@ class AuthenticatedGraphObservationPagingRuntime:
                 )
                 completed = True
                 return page
-            except (ObservationCohortUnavailableError, TypedValueModelCodecCapacityError):
+            except (
+                ObservationCohortUnavailableError,
+                TypedValueModelCodecCapacityError,
+                ValueError,
+            ):
                 return self._failure("denied")
             finally:
                 if not completed:
@@ -349,7 +353,11 @@ class AuthenticatedGraphObservationPagingRuntime:
                 page = self._ingestion_page(retained.snapshot, 0, policy, context, decision)
                 completed = True
                 return page
-            except (ObservationCohortUnavailableError, TypedValueModelCodecCapacityError):
+            except (
+                ObservationCohortUnavailableError,
+                TypedValueModelCodecCapacityError,
+                ValueError,
+            ):
                 return self._failure("denied")
             finally:
                 if not completed:

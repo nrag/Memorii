@@ -223,5 +223,79 @@ Focused proof for that boundary:
 
 ## Next Action
 
-Commit the verified debug slice, push the exact revision, and submit that
-frozen revision to independent spec, correctness, and test review.
+Remediate the exact-revision review findings in one bounded writer round:
+support only the identified historical V2 manifest as an activation-migration
+predecessor, supply signed monitor authority to the live-drain success fixture,
+and add real composed-service proofs for callback rejection, immutable-ledger
+tampering, fresh call-local proof contexts, configured scope denial, and
+emission-scope thread isolation.
+
+## Exact-Revision Review At `57669a0a`
+
+- The specification auditor approved the bounded debug mechanisms and found no
+  wire-format, authority, replay, index, or lexical-scope regression.
+- The correctness reviewer confirmed a P2 compatibility defect: the exact
+  retained V2 manifest digest `88ac...` predates the four capability-monitor
+  record kinds and is rejected before activation. The correction must recognize
+  only that exact predecessor and atomically rotate it to the current manifest.
+- The correctness reviewer also confirmed a verification-fixture defect: the
+  live-drain success route omits the signed capability-monitor authority that
+  the production graph transaction now correctly requires.
+- The test reviewer required end-to-end R17 proof through real `sync_event`,
+  atomic snapshot validation, immutable ledger joins, detached observation,
+  callback rejection with unchanged state, fresh call-local proof contexts,
+  configured authorization denial before snapshot reads, and emission-scope
+  thread isolation.
+- The test review's parent-scope observation that R03, R08, R16, and R19 remain
+  unmapped is confirmed but belongs to the parent engineering-closure WorkPlan;
+  it does not expand this debug remediation slice.
+
+## Remediation Progress
+
+- The writer now recognizes exactly one retained pre-monitor V2 manifest:
+  `88acb5940fb93c7807a17ef6af0765df019c6b1f384be2d362b80a15b9f5a104`.
+  Its complete kinds/methods body is reconstructed and digest-pinned; no
+  arbitrary `semantic-generation-v2` manifest is accepted. Activation accepts
+  that predecessor only during the normal draining CAS and writes the current
+  observation-ledger manifest in the same cutover transaction.
+- The live-drain success fixture now supplies the matching signed
+  capability-monitor authority and complete registry. Its real held-operation
+  drain/activation regression passed in 83.93 seconds, proving both terminal
+  operations reach the activated graph path while the unsigned sibling remains
+  a denial proof.
+- A JSONL reopen regression replaces only the fixture's persisted writer
+  manifest with that retained predecessor, then proves public activation rotates
+  it to the current manifest. The focused predecessor plus detached-scope suite
+  passed: 4 tests in 9.59 seconds under the package virtual environment.
+- The composed public-observation fixture now supplies the signed
+  capability-monitor authority for its successful live drain and records the
+  real group and source-terminal callback proof-context identities. It also
+  exercises callback rejection and configured pre-read scope denial. Callback
+  rejection leaves the activated ledger plus group-primary CAS set unchanged
+  and emits no group primary. Source-normalization controls may already be
+  committed before that callback, so they are intentionally outside this
+  atomic-boundary assertion.
+- A detached immutable-group substitution initially propagated a
+  `PreplanningStoreError` through the public graph read. The paging runtime now
+  maps deterministic `ValueError` validation failures from both initial public
+  page routes to the existing non-disclosing `denied` response. The real
+  timed-snapshot tamper proof passed in 159.72 seconds; it changes the retained
+  group primary's reload bytes, proves no payload leaks, and preserves the
+  normal fencing read.
+- The earlier broad composed module was capped after 332.64 seconds as
+  required; before interruption it had 7 passes and one test-only
+  `dataclasses.replace` error on a Pydantic record. The focused corrected
+  replacement proof above supersedes that test-only failure.
+- Canonical emission scopes now have an explicit two-thread regression: each
+  thread receives a separate lexical scope and exits without a retained scope.
+- Ruff, `git diff --check`, and scoped Pyright for `writer_admission.py` pass
+  cleanly. Full-file Pyright for `atomic_store.py` remains outside the clean
+  leaf scope because of pre-existing diagnostics.
+- Ruff and `git diff --check` pass after the live-drain fixture correction.
+  Scoped Pyright on the complete activation integration module reports five
+  existing optional-digest and decoded-BaseModel narrowing diagnostics; none
+  are on the new signed-authority setup.
+
+## Next Action
+
+Submit the resulting exact revision for the required independent review rerun.

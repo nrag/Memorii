@@ -28,12 +28,17 @@ from memorii.core.memory_evolution.writer_admission import (
     SemanticWriterAdmissionError,
     SemanticWriterAdmissionStore,
     bounded_preplanning_ownership_manifest,
+    capability_monitoring_predecessor_ownership_manifest,
     observation_ledger_head_memory_id,
     writer_admission_memory_id,
 )
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
-from memorii.core.memory_plane.store import InMemoryMemoryPlaneStore, JsonlMemoryPlaneStore
+from memorii.core.memory_plane.store import (
+    InMemoryMemoryPlaneStore,
+    JsonlMemoryPlaneStore,
+    _PersistedBatch,
+)
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.semantic_ingestion.production_authority import (
     VerifiedCapabilityMonitoringAuthority,
@@ -146,6 +151,41 @@ def test_provider_activation_is_explicit_and_revalidates_configured_authority(tm
     with pytest.raises(ObservationActivationTargetConfigurationError):
         service.activate_observation_ledger()
     assert plane.read_write_snapshot() == before
+
+
+def test_activation_rotates_only_the_retained_capability_monitor_predecessor(
+    tmp_path, monkeypatch,
+) -> None:
+    """A persisted pre-monitor V2 admission cuts over atomically to the ledger manifest."""
+    build, _, _ = _provider_factory(tmp_path, monkeypatch)
+    backing = JsonlMemoryPlaneStore(tmp_path / "retained-predecessor")
+    plane = MemoryPlaneService(record_store=backing)
+    service = build(plane)
+    initial = _seed_provider(service)
+    revision, records = plane.read_write_snapshot()
+    persisted_batch = backing._read_batches_unlocked()[-1]
+    predecessor = capability_monitoring_predecessor_ownership_manifest()
+    writer = next(record for record in records if record.memory_id == writer_admission_memory_id())
+    historical_writer = writer.model_copy(update={"content": {
+        **writer.content,
+        "manifest": {
+            "manifest_revision": predecessor.manifest_revision,
+            "governed_record_kinds": sorted(predecessor.governed_record_kinds),
+            "semantic_store_methods": sorted(predecessor.semantic_store_methods),
+            "manifest_digest": predecessor.manifest_digest,
+        },
+    }})
+    backing._replace_batches([_PersistedBatch.create(
+        revision=revision,
+        data_revision=persisted_batch.data_revision,
+        records=tuple(historical_writer if record is writer else record for record in records),
+    )])
+
+    reopened = build(MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "retained-predecessor")))
+    assert reopened.activate_observation_ledger().expected_writer_epoch == initial.expected_writer_epoch + 1
+    persisted = reopened._memory_plane.get_record(writer_admission_memory_id())
+    assert persisted is not None
+    assert persisted.content["manifest"]["manifest_digest"] != predecessor.manifest_digest
 
 
 def _runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, max_rescans: int = 3):
@@ -496,9 +536,37 @@ def test_public_drain_preserves_live_operation_and_rejects_new_old_epoch_work(tm
     from memorii.core.memory_evolution.observation_activation_runtime import validate_registered_artifact
     from memorii.core.memory_plane.store import record_digest
     from memorii.core.provider.models import ProviderOperation
+    from tests.unit.core.semantic_ingestion.test_capability_monitoring import (
+        _monitor,
+        _signed_monitoring_authority,
+        _TestDeploymentSigner,
+        _window,
+    )
     from tests.unit.core.semantic_ingestion.test_semantic_provider_composition import _host_ingress
 
-    build, _, _ = _provider_factory(tmp_path, monkeypatch, normalization=True)
+    clock, _, _, policy, implementation = _monitor(
+        fingerprint="38a5be91af79d7e5ba9809bf383c699b6864ee50446239fe56a45e32b84638fe",
+    )
+    clock.now = TEST_NOW
+
+    class EvidenceProvider:
+        def load_evidence_windows(self, *, max_items: int):
+            return (_window(clock, policy, implementation, value="0.1"),)[:max_items]
+
+    authority = _signed_monitoring_authority(
+        clock=clock,
+        policy=policy,
+        implementation=implementation,
+        evidence_provider=EvidenceProvider(),
+        signer=_TestDeploymentSigner(),
+    )
+    build, _, _ = _provider_factory(
+        tmp_path,
+        monkeypatch,
+        normalization=True,
+        complete_registry=True,
+        verified_capability_monitoring_authorities=(authority,),
+    )
     path = tmp_path / "draining-store"
     plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path))
     service = build(plane)

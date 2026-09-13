@@ -88,6 +88,7 @@ from memorii.core.memory_evolution.writer_admission import (
     SemanticWriterAdmissionStore,
     SemanticWriterWriteAuthorization,
     bounded_preplanning_ownership_manifest,
+    capability_monitoring_predecessor_ownership_manifest,
     writer_admission_memory_id,
 )
 from memorii.core.memory_plane.models import CanonicalMemoryRecord, MemoryRecordFence
@@ -1294,7 +1295,10 @@ class SemanticIngestionAtomicStore:
                 return recovered
             current, manifest, record = self._activation_snapshot_admission(snapshot)
             if (
-                manifest != bounded_preplanning_ownership_manifest()
+                manifest not in (
+                    bounded_preplanning_ownership_manifest(),
+                    capability_monitoring_predecessor_ownership_manifest(),
+                )
                 or self._writers.commit_binding(current) != writer_binding
                 or record.content.get("draining") is not True
             ):
