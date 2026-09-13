@@ -497,16 +497,21 @@ atomic-store gate passes 302 cases under warnings-as-errors in 1096.26 seconds.
 
 ## R15 Revocation Publisher And Lease-Expiry Remediation (2026-09-13)
 
-The installed production path now binds
-`memorii-semantic-ingestion-revocation-publish` to the canonical
-`InstalledProductionRevocationReader.publish_revocation_evidence` owner. It
-accepts separately signed opaque receipt and epoch-checkpoint bytes, validates
-bounded canonical JSON and the stable identity/digest coordinates without
-importing acceptance schemas, fsyncs immutable content-addressed objects under
-the same exclusive revocation lock, then publishes the mapping. A failed object
-write cannot expose a mapping; identical retries are idempotent and conflicts
-fail closed. Current-use samples the protected host clock after acquiring its
-shared lease, making expiry while waiting unavailable before group CAS.
+At this historical remediation revision, the installed production command
+temporarily reached a mutation method on the revocation reader. Round 5
+supersedes that ownership: `memorii-semantic-ingestion-revocation-publish` now
+reaches `InstalledProductionRevocationPublisher.from_fixed_configuration`, then
+the authenticated `_SerializedProductionRevocationPublisher.publish_verified`
+boundary, and finally the separate publisher-only
+`_FileProductionRevocationPublisherStorage.publish_revocation_evidence` owner.
+The fixed reader exposes only current-read and shared-lease behavior. Both the
+acceptance verifier and the independent production verifier validate exact
+schema, parser, digest, signature, join, and history constraints before the
+publisher fsyncs immutable content-addressed objects and publishes the mapping
+under the exclusive lock. Failed or partial publication cannot expose a
+mapping; identical retries are idempotent and conflicts fail closed. Current-use
+samples the protected host clock after acquiring its shared lease, making expiry
+while waiting unavailable before group CAS.
 
 The sole next action is to run the focused installed publisher and monitoring
 proof, then freeze and push the candidate for exact-revision reviews.
