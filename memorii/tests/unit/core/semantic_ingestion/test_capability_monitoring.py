@@ -226,6 +226,57 @@ def _window(
     )
 
 
+
+def _signed_monitoring_authority(
+    *,
+    clock: _Clock,
+    policy: CapabilityMonitoringPolicy,
+    implementation: str,
+    evidence_provider: object,
+    signer: _TestDeploymentSigner,
+    trust: _CurrentDeploymentTrust | None = None,
+    expires_at: datetime | None = None,
+):
+    initial_evidence = _window(clock, policy, implementation, value="0.1")
+    artifact = DeploymentAuthorizationIssuer(
+        authority=IssuerAuthority("monitor-release", "monitor-key", "8" * 64, signer),
+        repository=InMemoryDeploymentAuthorizationRepository(),
+        now_provider=lambda: clock.now,
+    ).prepare_verified(
+        target_artifact_digest=contract_digest(
+            b"memorii.semantic-ingestion.capability-monitoring-baseline.v1",
+            {
+                "monitoring_policy_digest": policy.policy_digest,
+                "initial_evidence_window_digest": initial_evidence.evidence_window_digest,
+            },
+        ),
+        deployment_manifest_digest="7" * 64,
+        capability_fingerprint=policy.capability_fingerprint,
+        verified_capability_baseline_approval_release_digest="6" * 64,
+        requested_active_epoch=1,
+        expires_at=expires_at or clock.now + timedelta(days=1),
+    )
+    raw = json.dumps(
+        artifact.model_dump(mode="json"),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    ).encode("ascii")
+    authority = build_verified_capability_monitoring_authority(
+        deployment_authorization_bytes=raw,
+        deployment_authorization_verifier=DeploymentAuthorizationArtifactVerifier(signer),
+        deployment_authorization_current_trust_verifier=_current_trust_verifier(
+            signer, trust
+        ),
+        policy=policy,
+        initial_evidence=initial_evidence,
+        evidence_provider=evidence_provider,
+        server_time=clock.now,
+    )
+    assert authority is not None
+    return authority
+
+
 def test_warning_retains_status_but_breach_atomically_fences_writer() -> None:
     clock, writers, monitor, policy, implementation = _monitor()
     warning = monitor.tick(evidence=_window(clock, policy, implementation, value="0.5"))
@@ -904,6 +955,112 @@ def test_normal_reconciliation_scheduler_expires_monitor_without_ingress() -> No
     )
 
 
+@pytest.mark.parametrize(
+    ("payload_factory", "diagnostic"),
+    [
+        (lambda clock, policy, implementation: [], "provider_failure_non_tuple"),
+        (lambda clock, policy, implementation: (object(),), "provider_failure_non_window"),
+        (
+            lambda clock, policy, implementation: (
+                _window(clock, policy, implementation).model_copy(
+                    update={"capability_fingerprint": "b" * 64}
+                ),
+            ),
+            "provider_failure_unknown_capability",
+        ),
+        (
+            lambda clock, policy, implementation: (
+                _window(clock, policy, implementation),
+                _window(clock, policy, implementation),
+            ),
+            "provider_failure_duplicate_capability",
+        ),
+        (
+            lambda clock, policy, implementation: (
+                _window(clock, policy, implementation),
+                _window(clock, policy, implementation),
+                _window(clock, policy, implementation),
+            ),
+            "provider_failure_oversized_result",
+        ),
+    ],
+)
+def test_signed_factory_malformed_provider_poll_fails_closed_at_deadline(
+    payload_factory, diagnostic: str
+) -> None:
+    clock, _, _, policy, implementation = _monitor()
+
+    class Provider:
+        payload: object
+
+        def load_evidence_windows(self, *, max_items: int):
+            return self.payload
+
+    provider = Provider()
+    provider.payload = payload_factory(clock, policy, implementation)
+    authority = _signed_monitoring_authority(
+        clock=clock,
+        policy=policy,
+        implementation=implementation,
+        evidence_provider=provider,
+        signer=_TestDeploymentSigner(),
+        expires_at=clock.now + timedelta(days=2),
+    )
+    plane = MemoryPlaneService()
+    service = build_provider_memory_service_from_env(
+        memory_plane=plane,
+        now_provider=lambda: clock.now,
+        verified_capability_monitoring_authorities=(authority,),
+    )
+    max_items = 2 if diagnostic == "provider_failure_duplicate_capability" else 1
+    assert service.process_capability_monitoring(max_items=max_items) == ()
+    clock.now += timedelta(days=1)
+    results = service.process_capability_monitoring(max_items=max_items)
+    assert len(results) == 1
+    assert results[0].status.status == "evidence_only"
+    assert results[0].decision.evaluation_kind == "provider_failure"
+    assert diagnostic in results[0].decision.reason_codes
+    assert not plane.list_records(source_kind="semantic_ingestion_source")
+    assert not plane.list_records(
+        source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+    )
+
+
+def test_signed_factory_direct_tick_revalidates_revoked_authority() -> None:
+    clock, _, _, policy, implementation = _monitor()
+
+    class Provider:
+        def load_evidence_windows(self, *, max_items: int):
+            return (_window(clock, policy, implementation, value="0.1"),)
+
+    trust = _CurrentDeploymentTrust()
+    authority = _signed_monitoring_authority(
+        clock=clock,
+        policy=policy,
+        implementation=implementation,
+        evidence_provider=Provider(),
+        signer=_TestDeploymentSigner(),
+        trust=trust,
+    )
+    plane = MemoryPlaneService()
+    service = build_provider_memory_service_from_env(
+        memory_plane=plane,
+        now_provider=lambda: clock.now,
+        verified_capability_monitoring_authorities=(authority,),
+    )
+    trust.current = False
+    result = service.run_capability_monitor_tick(
+        evidence=_window(clock, policy, implementation, value="0.1")
+    )
+    assert result.status.status == "evidence_only"
+    assert result.decision.evaluation_kind == "authorization_failure"
+    assert service._semantic_writer_admission.current().writer_epoch == 2
+    assert not plane.list_records(source_kind="semantic_ingestion_source")
+    assert not plane.list_records(
+        source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+    )
+
+
 def test_scheduler_accounts_for_more_than_sixteen_active_policies_after_provider_failure() -> None:
     """A provider failure cannot strand the seventeenth active capability."""
     clock = _Clock()
@@ -939,16 +1096,24 @@ def test_scheduler_accounts_for_more_than_sixteen_active_policies_after_provider
         def load_evidence_windows(self, *, max_items: int):
             raise RuntimeError("host evidence transport unavailable")
 
-    service = ProviderMemoryService(
-        now_provider=lambda: clock.now,
-        capability_monitoring_policies=policies,
-        capability_monitoring_evidence_provider=FailingProvider(),
-    )
-    service._ensure_writer_admission_record()
-    for policy in policies:
-        service._capability_monitor.initialize_active_from_verified_evidence(
-            evidence=_window(clock, policy, implementation, value="0.1")
+    provider = FailingProvider()
+    signer = _TestDeploymentSigner()
+    authorities = tuple(
+        _signed_monitoring_authority(
+            clock=clock,
+            policy=policy,
+            implementation=implementation,
+            evidence_provider=provider,
+            signer=signer,
+            expires_at=clock.now + timedelta(days=2),
         )
+        for policy in policies
+    )
+    service = build_provider_memory_service_from_env(
+        memory_plane=MemoryPlaneService(),
+        now_provider=lambda: clock.now,
+        verified_capability_monitoring_authorities=authorities,
+    )
     clock.now += timedelta(hours=1)
     results = service.process_capability_monitoring(max_items=1)
     assert len(results) == 17

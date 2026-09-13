@@ -731,6 +731,10 @@ class ProviderMemoryService:
         evidence: CapabilityEvidenceWindow,
     ) -> CapabilityMonitorTickResult:
         """Run one bounded host-scheduled monitor evaluation without ingest traffic."""
+        demotions = self._revalidate_capability_monitoring_authorities()
+        for demotion in demotions:
+            if demotion.status.capability_fingerprint == evidence.capability_fingerprint:
+                return demotion
         return self._capability_monitor.tick(evidence=evidence)
 
     def process_capability_monitoring(
@@ -740,40 +744,66 @@ class ProviderMemoryService:
 
         if max_items < 1:
             raise ValueError("max_items must be positive")
-        self._revalidate_capability_monitoring_authorities()
+        initial_demotions = self._revalidate_capability_monitoring_authorities()
+        results_by_capability = {
+            result.status.capability_fingerprint: result for result in initial_demotions
+        }
         provider = self._capability_monitoring_evidence_provider
         fingerprints = self._capability_monitor.configured_capability_fingerprints
+        limit = max(max_items, len(fingerprints))
         windows: tuple[CapabilityEvidenceWindow, ...] = ()
-        provider_failed = False
+        provider_failure_reason: str | None = None
         if provider is not None:
             try:
-                # The scheduler inventory is policy-owned.  A host limit must
-                # never silently omit policy N+1 (the former 16-item ceiling).
-                windows = provider.load_evidence_windows(max_items=max(max_items, len(fingerprints)))
+                candidate = provider.load_evidence_windows(max_items=limit)
             except (OSError, RuntimeError, TypeError, ValueError):
-                windows = ()
-                provider_failed = True
-        if len(windows) > max(max_items, len(fingerprints)):
-            raise ValueError("capability monitoring evidence provider exceeded scheduler inventory")
-        by_capability: dict[str, CapabilityEvidenceWindow] = {}
-        for window in windows:
-            if window.capability_fingerprint not in fingerprints:
-                raise ValueError("capability monitoring provider returned unknown capability window")
-            if window.capability_fingerprint in by_capability:
-                raise ValueError("capability monitoring provider returned duplicate capability windows")
-            by_capability[window.capability_fingerprint] = window
-        results: list[CapabilityMonitorTickResult] = []
+                provider_failure_reason = "provider_failure_exception"
+            else:
+                if not isinstance(candidate, tuple):
+                    provider_failure_reason = "provider_failure_non_tuple"
+                elif len(candidate) > limit:
+                    provider_failure_reason = "provider_failure_oversized_result"
+                else:
+                    by_capability: dict[str, CapabilityEvidenceWindow] = {}
+                    for window in candidate:
+                        if not isinstance(window, CapabilityEvidenceWindow):
+                            provider_failure_reason = "provider_failure_non_window"
+                            break
+                        if window.capability_fingerprint not in fingerprints:
+                            provider_failure_reason = "provider_failure_unknown_capability"
+                            break
+                        if window.capability_fingerprint in by_capability:
+                            provider_failure_reason = "provider_failure_duplicate_capability"
+                            break
+                        by_capability[window.capability_fingerprint] = window
+                    if provider_failure_reason is None:
+                        windows = candidate
+        by_capability = (
+            {window.capability_fingerprint: window for window in windows}
+            if provider_failure_reason is None
+            else {}
+        )
         for fingerprint in fingerprints:
+            if fingerprint in results_by_capability:
+                continue
             window = by_capability.get(fingerprint)
             if window is not None:
-                results.append(self._capability_monitor.tick(evidence=window))
+                results_by_capability[fingerprint] = self._capability_monitor.tick(
+                    evidence=window
+                )
                 continue
             missing = self._capability_monitor.tick_missing_window(
-                capability_fingerprint=fingerprint, provider_failure=provider_failed
+                capability_fingerprint=fingerprint,
+                provider_failure=provider_failure_reason is not None,
+                provider_failure_reason=provider_failure_reason,
             )
             if missing is not None:
-                results.append(missing)
-        return tuple(results)
+                results_by_capability[fingerprint] = missing
+        return tuple(
+            results_by_capability[fingerprint]
+            for fingerprint in fingerprints
+            if fingerprint in results_by_capability
+        )
 
     def observe_graph(
         self,
@@ -985,14 +1015,20 @@ class ProviderMemoryService:
             self._validate_semantic_runtime_after_ingress()
         return ingress
 
-    def _revalidate_capability_monitoring_authorities(self) -> None:
+    def _revalidate_capability_monitoring_authorities(
+        self,
+    ) -> tuple[CapabilityMonitorTickResult, ...]:
         """Run retained live deployment-trust checks before monitor or learned use."""
         now = self._clock.now_utc()
+        demotions: list[CapabilityMonitorTickResult] = []
         for authority in self._verified_capability_monitoring_authorities:
             if not capability_monitoring_authority_is_current(authority, server_time=now):
-                self._capability_monitor.demote_untrusted_authority(
+                result = self._capability_monitor.demote_untrusted_authority(
                     capability_fingerprint=authority._policy.capability_fingerprint
                 )
+                if result is not None:
+                    demotions.append(result)
+        return tuple(demotions)
 
     def _require_current_capability_authorizations_for_group(
         self, fingerprints: tuple[str, ...]

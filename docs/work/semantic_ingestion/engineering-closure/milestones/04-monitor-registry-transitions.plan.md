@@ -187,17 +187,19 @@ and guard-driven revocation without a deadlock. Scheduler proof covers missing
 windows (`missing_window`) and provider exceptions across 17 active policies
 (`provider_failure`).
 
-Final focused monitor validation reports 37 passed in 83.83 seconds under
-warnings-as-errors. It includes the 17-policy provider-failure inventory,
-typed missing-window outcome, duplicate-window rejection, pause/outage
-missing-window grace boundary, signed expiry with a provider that constructs a
-healthy current window, checkpoint reuse across JSONL reconstruction, and the
-real signed `sync_event` registry-byte lifecycle. The consolidated monitor,
-provider composition, writer admission and migration, policy migration, and
-bootstrap atomic-store gate reports 280 passed in 764.06 seconds. Ruff, scoped
-first-party Pyright, and `git diff --check` are clean. The next action is to
-freeze/push the exact revision and request exact-revision specification,
-correctness and test reviews.
+Exact-review remediation validation reports 43 passed in 86.80 seconds under
+warnings-as-errors. It adds signed public-factory coverage for direct supplied
+healthy evidence after revocation and malformed provider shapes (non-tuple,
+non-window, unknown, identical duplicate and oversized); each malformed poll
+is retained as a diagnostic `provider_failure` and evaluates the full policy
+inventory at its deadline. The >16 inventory proof now composes 17 signed
+capability authorities with one failing provider. The provider-composition
+suite reports 45 passed in 302.40 seconds, and the preceding consolidated
+monitor, provider composition, writer admission and migration, policy
+migration, and bootstrap atomic-store gate remains 280 passed in 764.06
+seconds. Ruff, scoped first-party Pyright, and `git diff --check` are clean.
+The next action is to freeze/push the exact revision and request exact-revision
+specification, correctness and test reviews.
 
 ## Exact-Revision Review Remediation Round 3 (2026-09-13)
 

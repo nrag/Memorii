@@ -468,7 +468,13 @@ class CapabilityMonitor:
         """Return the complete deterministic scheduler inventory."""
         return tuple(sorted(self._policies))
 
-    def tick_missing_window(self, *, capability_fingerprint: str, provider_failure: bool = False) -> CapabilityMonitorTickResult | None:
+    def tick_missing_window(
+        self,
+        *,
+        capability_fingerprint: str,
+        provider_failure: bool = False,
+        provider_failure_reason: str | None = None,
+    ) -> CapabilityMonitorTickResult | None:
         """Fail closed once the last durable freshness coordinate reaches its deadline.
 
         A scheduler outage must not leave an active capability indefinitely
@@ -517,7 +523,11 @@ class CapabilityMonitor:
             label_pipeline_state=freshness.label_pipeline_state,
             label_pipeline_state_changed_at=freshness.label_pipeline_state_changed_at,
         )
-        return self.tick(evidence=missing, evaluation_kind=("provider_failure" if provider_failure else "missing_window"))
+        return self.tick(
+            evidence=missing,
+            evaluation_kind=("provider_failure" if provider_failure else "missing_window"),
+            provider_failure_reason=provider_failure_reason,
+        )
 
     def demote_untrusted_authority(self, *, capability_fingerprint: str) -> CapabilityMonitorTickResult | None:
         """Fence an active writer immediately when live deployment trust fails."""
@@ -717,7 +727,15 @@ class CapabilityMonitor:
             freshness_record=freshness_record,
         )
 
-    def tick(self, *, evidence: CapabilityEvidenceWindow, evaluation_kind: Literal["evidence_window", "missing_window", "provider_failure", "authorization_failure"] = "evidence_window") -> CapabilityMonitorTickResult:
+    def tick(
+        self,
+        *,
+        evidence: CapabilityEvidenceWindow,
+        evaluation_kind: Literal[
+            "evidence_window", "missing_window", "provider_failure", "authorization_failure"
+        ] = "evidence_window",
+        provider_failure_reason: str | None = None,
+    ) -> CapabilityMonitorTickResult:
         evidence = CapabilityEvidenceWindow.model_validate_json(
             evidence.model_dump_json()
         )
@@ -739,6 +757,17 @@ class CapabilityMonitor:
         freshness = self._freshness(policy, evidence, now, status_revision=str(current.status_revision))
         metrics = tuple(self._metric(policy, gate, evidence) for gate in policy.metric_gates)
         reasons_list: list[str] = []
+        if provider_failure_reason is not None:
+            if evaluation_kind != "provider_failure" or provider_failure_reason not in {
+                "provider_failure_exception",
+                "provider_failure_non_tuple",
+                "provider_failure_non_window",
+                "provider_failure_unknown_capability",
+                "provider_failure_duplicate_capability",
+                "provider_failure_oversized_result",
+            }:
+                raise ValueError("capability monitor provider failure diagnostic is invalid")
+            reasons_list.append(provider_failure_reason)
         if freshness.freshness == "stale":
             reasons_list.append("stale_evidence")
         if any(item.status == "insufficient_data" for item in metrics):
