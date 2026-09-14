@@ -32,6 +32,9 @@ from memorii.integrations.hermes_provider import HermesMemoryProvider
 from tests.fixtures.semantic_ingestion.bootstrap_graph_v3_fixture import (
     DeterministicBootstrapGraphAuthorityProviderV3,
 )
+from tests.unit.core.semantic_ingestion.bootstrap_graph_production_roots_support import (
+    initialize_graph_fixture_capability_monitor,
+)
 from tests.unit.core.semantic_ingestion.test_semantic_provider_composition import (
     TEST_NOW,
     DeterministicTestHostBootstrapMaterialVerifier,
@@ -91,17 +94,19 @@ def _graph_service(
         **kwargs,
     )
     if not built_in:
-        return ProviderMemoryService._from_scenario_test_host(**common), plane
-    if root == "factory":
-        return build_provider_memory_service_from_env(**common), plane
-    if root == "filesystem":
+        service = ProviderMemoryService._from_scenario_test_host(**common)
+    elif root == "factory":
+        service = build_provider_memory_service_from_env(**common)
+    elif root == "filesystem":
         assert filesystem_root is not None
-        return build_filesystem_provider(
-            filesystem_root, **common
-        ), plane
-    if root == "hermes":
-        return HermesMemoryProvider(service=ProviderMemoryService(**common))._service, plane
-    return ProviderMemoryService(**common), plane
+        service = build_filesystem_provider(filesystem_root, **common)
+    elif root == "hermes":
+        service = HermesMemoryProvider(service=ProviderMemoryService(**common))._service
+    else:
+        service = ProviderMemoryService(**common)
+    if built_in:
+        initialize_graph_fixture_capability_monitor(service)
+    return service, plane
 
 
 def _sync(service: ProviderMemoryService, *, operation_id: str):
@@ -708,6 +713,7 @@ def test_builtin_recovery_preserves_group_identity_after_lease_reclaim(
         )._service
     else:
         service = ProviderMemoryService(**common)
+    initialize_graph_fixture_capability_monitor(service)
     monkeypatch.setattr(
         service._provider_ingestion,
         "_persist_semantic_terminal",
@@ -792,6 +798,7 @@ def test_builtin_recovery_preserves_group_identity_after_lease_reclaim(
             )._service
         else:
             repeated_service = ProviderMemoryService(**reopened_common)
+        initialize_graph_fixture_capability_monitor(repeated_service)
         monkeypatch.setattr(
             repeated_service._provider_ingestion,
             "_persist_semantic_terminal",

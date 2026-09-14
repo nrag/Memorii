@@ -68,6 +68,12 @@ Observed on run `34795511535`: Acceptance Authority Runtime, Package Smoke, Benc
 - Independent-process conflict first/reopen proofs pass for direct, factory, filesystem, and Hermes JSONL roots. Each first phase reaches three CAS attempts and two graph effects; each reopen reaches zero CAS attempts and reloads the same source-progress evidence without reinitializing capability authority.
 - Replacement run `34811310162` passed 40 jobs and exposed one later batch element after the conflict repair: the deterministic `reused_committed` arm requested accepted materialization but still emitted an empty capability-binding set. It now uses the production selector over the same active fixture status/checkpoint.
 - The focused `reused_committed` factory JSONL first/reopen pair passes with three initial graph effects and zero replay effects. The complete factory JSONL independent-process gate then passes all 29 scenarios.
+- PR run `34813313355` passed 46 jobs, including every transaction-boundary job and both CodeQL jobs. Unit Shard 3 then exposed 18 accepted-effect recovery fixtures that lacked the production capability-status/checkpoint authority; GitHub cancelled the shard at its 15-minute job limit before pytest could print the assertions.
+- The shared active-authority initializer now reaches the intended post-effect failure seams for every built-in recovery root. All 31 recovery cases pass, including persistent reopen and lease-reclaim variants, in 828.51 seconds locally.
+- The observation-ledger gate reached 154 passes and two failures. Its unsigned-authority case had accidentally requested the fixture factory's signed default, and the public cohort boundary leaked a typed internal store error for a corrupt detached group record. The fixture now explicitly requests no verified authority, and detached-authority corruption is translated into the public non-disclosing cohort denial; both exact cases pass.
+- Unit shard setup plus the corrected 13-minute recovery family cannot fit the former 15-minute whole-job limit. The gate retains the complete shard and raises only its execution ceiling to 45 minutes.
+- Exact Shard 3 then exposed the same missing active-authority setup in the two accepted clarification-race fixtures. Installing the shared monitor/checkpoint fixture lets both the in-memory stale-plan race and fresh-process JSONL reopen reach their intended group CAS and pass in 242.30 seconds.
+- The corrected full shard reached 874 passes and one expected skip in 1,601.17 seconds. Its only two failures were caused by the coordinator supplying an abbreviated local `MEMORII_SOURCE_REVISION`; rerunning those exact benchmark tests with the repository's full HEAD produced two passes. The GitHub workflow already supplies `${{ github.sha }}`. The shard ceiling is therefore 45 minutes, preserving every test while allowing package setup and runner variance around the measured 26-minute test body.
 
 ## Changed Surfaces
 
@@ -114,7 +120,14 @@ Observed on run `34795511535`: Acceptance Authority Runtime, Package Smoke, Benc
 | Bootstrap Graph Transaction Boundary (jsonl, factory) | passed, all 29 scenarios |
 | Unit Test Shard 2 after final fixture repair | passed, 1,044 tests |
 | Final fixture static checks | Ruff and exact CI-form Pyright passed |
+| PR 120 run `34813313355` | 46 jobs passed; Unit Shard 3 was cancelled at its 15-minute ceiling and Observation Ledger Activation reported two mapped failures |
+| Post-effect recovery family | passed, all 31 cases in 828.51 seconds |
+| Observation ledger reported failures | passed, two exact cases / nine unrelated cases deselected |
+| Final observation/recovery static checks | Ruff and exact CI-form Pyright passed |
+| Clarification accepted-race family | passed, memory and independent JSONL reopen, 2 tests |
+| Unit Test Shard 3 corrected run | 874 passed / 1 expected skip; two local invocation identity errors pass with full HEAD |
+| PR workflow static contract | passed, 18 tests with the explicit 45-minute complete-shard bound |
 
 ## Next Action
 
-Commit and push the shared capability-authority fixture repair, then verify every PR 120 check on the replacement GitHub revision.
+Commit and push the production/fixture/workflow repair, refresh the release-preparation candidate against that clean code commit, then verify every PR 120 check on the replacement revision.

@@ -885,6 +885,7 @@ def _exercise_public_accepted_clarification_race(
         decode_bootstrap_graph_atomic_member_payload_v3,
     )
     from tests.unit.core.semantic_ingestion.bootstrap_graph_production_roots_support import (
+        initialize_graph_fixture_capability_monitor,
         provider_service,
     )
     from tests.unit.core.semantic_ingestion.test_semantic_provider_composition import (
@@ -1006,6 +1007,7 @@ def _exercise_public_accepted_clarification_race(
         ),
         source_normalization_host_bundle_builder=normalization,
     )
+    initialize_graph_fixture_capability_monitor(service)
     host = _host_ingress()
     bootstrap_source = service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,

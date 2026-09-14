@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Literal, TypeAlias, TypeVar
 
 from memorii.core.memory_evolution.atomic_store import (
     DetachedSemanticObservationAuthority,
+    PreplanningStoreError,
     SemanticIngestionAtomicStore,
     group_commit_seal_member_id,
     source_retention_seal_member_id,
@@ -248,10 +249,16 @@ class AtomicStoreGraphObservationCohortProvider:
         context: AuthenticatedGraphObservationContext, authorized_scope: MemoryScope,
         request: GraphObservationRequestCoordinates | IngestionTimeAttestationRequestCoordinates,
     ) -> tuple[DetachedSemanticObservationAuthority, ResolvedObservationMembership]:
-        authority = self._atomic_store.read_detached_observation_authority(
-            write_revision=snapshot.memory_plane_write_revision, records=snapshot.records,
-            snapshot_created_at=snapshot.created_at,
-        )
+        try:
+            authority = self._atomic_store.read_detached_observation_authority(
+                write_revision=snapshot.memory_plane_write_revision,
+                records=snapshot.records,
+                snapshot_created_at=snapshot.created_at,
+            )
+        except PreplanningStoreError as exc:
+            raise ObservationCohortUnavailableError(
+                "detached observation authority is unavailable"
+            ) from exc
         if authority.graph.graph_revision != request.expected_graph_revision:
             raise ObservationCohortUnavailableError("graph revision differs from request")
         if authority.observation.head.observation_revision != request.expected_observation_revision:

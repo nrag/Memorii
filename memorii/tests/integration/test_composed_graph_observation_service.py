@@ -306,6 +306,7 @@ def test_unsigned_monitoring_authority_fails_closed_before_graph_commit(
     """An active ledger cannot make an unsigned capability eligible to commit."""
     build, _, _ = _provider_factory(
         tmp_path, monkeypatch, normalization=True, complete_registry=True,
+        verified_capability_monitoring_authorities=(),
     )
     plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "unsigned-ledger"))
     writer = build(plane)
