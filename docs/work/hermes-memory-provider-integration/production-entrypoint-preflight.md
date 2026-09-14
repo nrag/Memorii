@@ -1,6 +1,8 @@
 # Hermes Memory Provider Production Entrypoint Preflight
 
-- Base revision: `93788d9208a992337ebedc67ff954a606132fdef`
+- Historical base revision: `93788d9208a992337ebedc67ff954a606132fdef`
+- Mapped implementation revision: `c372e66e4d0cd42db6775b08961a8135e16a7c76`
+- Evidence-only WorkPlan revision: `71ac1b0ed1552b0e56972ba260fa1485ede38822`
 - Delivery fidelity: Level 2 early real-world testing
 - Mapper: `/root/hermes_plugin_preflight`
 - Mapping date: 2026-09-13
@@ -11,7 +13,11 @@ The mapping traced `hermes_agent.memory_providers`,
 `memorii.hermes.provider_service`, `MemoriiHermesMemoryProvider`,
 `build_started_hermes_memory_provider`, `ProviderMemoryService`,
 `InstalledHostBootstrapCapabilityProvider`, activation tooling, and every
-in-repository service-factory implementation or caller.
+in-repository service-factory implementation or caller. The candidate query
+found one external Hermes discovery root and zero in-repository production
+implementations of the deployment service-factory entry point.
+
+Mapping query: `rg -n "hermes_agent.memory_providers|memorii.hermes.provider_service|MemoriiHermesMemoryProvider|build_started_hermes_memory_provider|ProviderMemoryService" memorii README.md docs/work/hermes-memory-provider-integration`.
 
 ## Production Entrypoint Bindings
 
