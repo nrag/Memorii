@@ -27,6 +27,7 @@ from tests.unit.core.semantic_ingestion.test_semantic_provider_composition impor
     TEST_NOW,
     DeterministicTestHostBootstrapMaterialVerifier,
     _built_in_local_capability,
+    _deterministic_graph_bundle_builder,
     _host_ingress,
     _v3_normalization_host_builder,
 )
@@ -64,12 +65,13 @@ def _atlas_owner_proposal() -> ProviderSemanticProposal:
 
 
 def _service(*, storage, builder) -> ProviderMemoryService:
-    return ProviderMemoryService(
+    return ProviderMemoryService._from_scenario_test_host(
         memory_plane=MemoryPlaneService(record_store=JsonlMemoryPlaneStore(storage)),
         now_provider=lambda: TEST_NOW,
-        host_bootstrap_capability=_built_in_local_capability(),
+        host_bootstrap_capability=_built_in_local_capability(scenario_test=True),
         host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
         source_normalization_host_bundle_builder=builder,
+        bootstrap_graph_host_bundle_builder=_deterministic_graph_bundle_builder(),
     )
 
 

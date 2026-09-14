@@ -157,8 +157,14 @@ def _provider_factory(
     complete_registry=False,
     verified_capability_monitoring_authorities: tuple[
         VerifiedCapabilityMonitoringAuthority, ...
-    ] = (),
+    ] | None = None,
 ):
+    if normalization and verified_capability_monitoring_authorities is None:
+        verified_capability_monitoring_authorities = (
+            _signed_monitoring_authority(),
+        )
+    elif verified_capability_monitoring_authorities is None:
+        verified_capability_monitoring_authorities = ()
     registry = _registry_configuration(tmp_path, complete=complete_registry)
     target, _, _ = _signed_package(tmp_path, monkeypatch, verify_configured_typed_value_registry_history(registry))
     clock = [TEST_NOW]
@@ -170,23 +176,29 @@ def _provider_factory(
                 _v3_normalization_host_builder,
             )
             normalization_builder, _ = _v3_normalization_host_builder(proposal=graph_fact_proposal())
-        return ProviderMemoryService(
+        capability = replace(
+            _built_in_local_capability(),
+            typed_value_registry_configuration=registry,
+            observation_activation_target_configuration=target,
+        )
+        common = dict(
             memory_plane=plane, now_provider=lambda: clock[0],
             source_normalization_host_bundle_builder=normalization_builder,
-            host_bootstrap_capability=replace(_built_in_local_capability(),
-                typed_value_registry_configuration=registry,
-                observation_activation_target_configuration=target),
+            host_bootstrap_capability=capability,
             host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
             verified_capability_monitoring_authorities=(
                 verified_capability_monitoring_authorities
             ),
         )
+        return ProviderMemoryService(**common)
     return build, target, clock
 
 
 def _seed_provider(service):
     runtime = service._composed_semantic_runtime
     assert runtime is not None and runtime.writer_admission is not None
+    if service._memory_plane.get_record(writer_admission_memory_id()) is not None:
+        return runtime.writer_admission.observation_ledger_activation_binding()
     return runtime.writer_admission.commit_binding(runtime.writer_admission.create_initial_evidence_only(
         admission_id="provider-activation", writer_implementation_fingerprint="legacy",
         graph_schema_fingerprint="graph",
@@ -432,6 +444,18 @@ def test_deferred_monitor_restart_preserves_completed_baseline_after_status_tran
         == "semantic_ingestion_capability_authorization_checkpoint"
         and record.memory_id.endswith(second._policy.capability_fingerprint)
     )
+    if transition == "demoted":
+        # The same elapsed window that demotes the first authority also expires
+        # the unopened successor. Recovery consumes that stale pending item
+        # without creating an active status from expired deployment authority.
+        assert second_status == second_freshness == second_checkpoint == ()
+        fresh_reopen = build(
+            MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "failed-suffix"))
+        )
+        assert not fresh_reopen._capability_monitor.has_verified_initialization(
+            evidence=second._initial_evidence
+        )
+        return
     assert len(second_status) == len(second_freshness) == len(second_checkpoint) == 1
     physical_second_batches = [
         batch
@@ -916,7 +940,7 @@ def test_activation_validates_retained_native_terminal_closure(tmp_path, monkeyp
     atomic = SemanticIngestionAtomicStore(
         plane, writers, typed_value_registry_history=history, observation_activation_target=target,
     )
-    binding = writers.commit_binding(writers.current())
+    binding = writers.observation_ledger_activation_binding()
     if remove_member:
         member = next(record for record in records if record.source_kind == "semantic_ingestion_bootstrap_graph_v3_member"
                       and record.content.get("member", {}).get("kind") == "bootstrap_graph_canonical_source_result")
@@ -1037,6 +1061,7 @@ def _assert_fresh_process_public_activation(root: Path, path: Path, activation_d
     code = """
 import sys
 from pathlib import Path
+sys.path.insert(0, str(Path.cwd().parent))
 from _pytest.monkeypatch import MonkeyPatch
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.memory_plane.store import JsonlMemoryPlaneStore
@@ -1180,6 +1205,7 @@ def demoted_activated_graph_jsonl_fixture(tmp_path_factory):
     authority = _signed_monitoring_authority()
     unsigned_build, _, _ = _provider_factory(
         root, monkeypatch, normalization=True, complete_registry=True,
+        verified_capability_monitoring_authorities=(),
     )
     path = root / "retained"
     backing = JsonlMemoryPlaneStore(path)
@@ -1302,7 +1328,12 @@ def test_demoted_activated_graph_lineage_reopens_and_rejects_tampered_controls(
     backing._replace_batches(rewritten)
     before = backing._records_path.read_bytes()
     damaged = build(MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path)))
-    with pytest.raises(PreplanningStoreError, match="activation reload is partial or mismatched"):
+    expected_error = (
+        "activated observation control is not drained"
+        if mutation == "nonterminal"
+        else "observation ledger legacy control identity is mismatched"
+    )
+    with pytest.raises(PreplanningStoreError, match=expected_error):
         damaged.activate_observation_ledger()
     assert backing._records_path.read_bytes() == before
 

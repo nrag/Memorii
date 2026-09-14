@@ -32,7 +32,9 @@ def test_audit_binds_actual_native_graph_and_retained_mentions(monkeypatch):
                 graph_revision_after=result.persisted_result.core.graph_revision_after, committed_at=TEST_NOW)))
         return result
     monkeypatch.setattr(SemanticIngestionAtomicStore, "commit_or_reload_bootstrap_graph_group_v3", capture)
-    _, _, request = _capture_builtin_fact_planning(monkeypatch)
+    _, _, request = _capture_builtin_fact_planning(
+        monkeypatch, fail_group_commit=False
+    )
     assert len(captured) == 1
     inputs = captured[0]
     audit = build_bootstrap_group_observation_audit(**inputs)

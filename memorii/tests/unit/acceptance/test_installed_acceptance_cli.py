@@ -167,6 +167,7 @@ def _installed_fixture(
     receipt_root = tmp_path / "receipts"
     deployment_root = tmp_path / "deployment-authorizations"
     production_revocation_root = tmp_path / "production-revocations"
+    production_revocation_root.mkdir(mode=0o700)
     policy, evidence, _, limits = inputs("0.00")
     if use_frozen_multicell:
         frozen = json.loads(
@@ -386,6 +387,18 @@ def test_fixed_path_domains_reject_equal_nested_and_allow_secure_missing_leaves(
         _distinct_domains((secure / "authority", secure / "authority" / "receipt", secure / "publisher", secure / "fence"))
     with pytest.raises(AcceptanceRuntimeConfigurationError, match="path_alias"):
         _distinct_domains((secure / "authority", secure / "receipt", secure / "publisher", secure / "authority" / "fence"))
+
+
+def test_fixed_path_admits_private_coordinate_below_sticky_ancestor(tmp_path: Path) -> None:
+    sticky = tmp_path / "sticky"
+    sticky.mkdir(mode=0o700)
+    sticky.chmod(0o1777)
+    private = sticky / "private"
+    private.mkdir(mode=0o700)
+
+    _secure_path(private / "missing", "resource")
+    with pytest.raises(AcceptanceRuntimeConfigurationError, match="resource"):
+        _secure_path(sticky / "missing", "resource")
 
 
 def test_public_cli_rejects_bad_signature_missing_authority_and_future_checkpoint(

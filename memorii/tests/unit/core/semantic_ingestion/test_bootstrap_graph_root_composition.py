@@ -1282,7 +1282,6 @@ def test_direct_root_replans_once_after_related_conflict() -> None:
         bootstrap_graph_host_bundle_builder=BootstrapGraphHostBundleBuilder(
             authority_provider=DeterministicBootstrapGraphAuthorityProviderV3(
                 successful_calls=successful_calls,
-                accepted_materialization=True,
                 related_conflict_calls=conflict_calls,
             )
         ),

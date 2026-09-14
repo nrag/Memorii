@@ -48,6 +48,10 @@ DYNAMIC_IMPORT_OWNERS = {
         frozenset({"importlib"}),
         "host-supplied module:callable activation preparation factory loading in the release CLI",
     ),
+    SOURCE_ROOT / "integrations" / "hermes_memory_provider.py": (
+        frozenset({"importlib.metadata"}),
+        "deployment-owned Hermes provider-service entry-point discovery",
+    ),
 }
 
 

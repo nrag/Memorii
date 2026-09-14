@@ -77,6 +77,7 @@ def _secure_storage_directory(
         raise DeploymentAuthorizationError(failure)
     missing: list[Path] = []
     current = path
+    validated_private_coordinate = False
     while True:
         try:
             metadata = os.lstat(current)
@@ -91,13 +92,22 @@ def _secure_storage_directory(
         except OSError as exc:
             raise DeploymentAuthorizationError(failure) from exc
     while True:
+        mode = stat.S_IMODE(metadata.st_mode)
+        trusted_sticky_ancestor = (
+            stat.S_ISDIR(metadata.st_mode)
+            and metadata.st_uid in {os.geteuid(), 0}
+            and bool(mode & stat.S_ISVTX)
+            and validated_private_coordinate
+        )
         if (
             stat.S_ISLNK(metadata.st_mode)
             or not stat.S_ISDIR(metadata.st_mode)
             or metadata.st_uid not in {os.geteuid(), 0}
-            or stat.S_IMODE(metadata.st_mode) & 0o022
+            or (mode & 0o022 and not trusted_sticky_ancestor)
         ):
             raise DeploymentAuthorizationError(failure)
+        if not mode & 0o022:
+            validated_private_coordinate = True
         if current.parent == current:
             break
         current = current.parent

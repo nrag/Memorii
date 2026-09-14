@@ -8,14 +8,15 @@ data location; there are no environment or command-line fallbacks.
 
 from __future__ import annotations
 
-import json
 import base64
+import json
 import os
 import stat
 import sysconfig
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
@@ -31,17 +32,17 @@ from acceptance.authority_repository import (
 from acceptance.capability_baseline_approval import (
     AcceptanceApprovalIssuanceSnapshotV1,
     AcceptanceSigningKey,
+    AcceptanceStatus,
     AcceptanceVerifierLimits,
     CapabilityBaselineApprovalVerifier,
-    AcceptanceStatus,
     CurrentAcceptanceCheckpoint,
     KeyLifecycleEvent,
 )
-from acceptance.evaluator import AcceptanceEvaluator, SerializedDeploymentAuthorizationBridge
 from acceptance.deployment_bridge import configured_publisher
+from acceptance.evaluator import AcceptanceEvaluator, SerializedDeploymentAuthorizationBridge
+from acceptance.numeric_context_authority import FixedNumericManifestAuthority
 from acceptance.production_revocation import IndependentProductionRevocationEvidenceVerifier
 from acceptance.production_revocation_bridge import configured_revocation_reader
-from acceptance.numeric_context_authority import FixedNumericManifestAuthority
 from acceptance.statistical_certification import (
     CanonicalDecimalQuantity,
     EncodingSpec,
@@ -93,22 +94,34 @@ def _secure_path(path: Path, name: str) -> None:
     if not path.is_absolute():
         raise AcceptanceRuntimeConfigurationError(f"acceptance_runtime_{name}")
     current = path
+    validated_private_coordinate = False
     while True:
         try:
             metadata = os.lstat(current)
         except FileNotFoundError:
             if current.parent == current:
-                raise AcceptanceRuntimeConfigurationError(f"acceptance_runtime_{name}")
+                raise AcceptanceRuntimeConfigurationError(
+                    f"acceptance_runtime_{name}"
+                ) from None
             current = current.parent
             continue
         except OSError as exc:
             raise AcceptanceRuntimeConfigurationError(f"acceptance_runtime_{name}") from exc
+        mode = stat.S_IMODE(metadata.st_mode)
+        trusted_sticky_ancestor = (
+            stat.S_ISDIR(metadata.st_mode)
+            and metadata.st_uid in {os.geteuid(), 0}
+            and bool(mode & stat.S_ISVTX)
+            and validated_private_coordinate
+        )
         if (
             stat.S_ISLNK(metadata.st_mode)
             or metadata.st_uid not in {os.geteuid(), 0}
-            or stat.S_IMODE(metadata.st_mode) & 0o022
+            or (mode & 0o022 and not trusted_sticky_ancestor)
         ):
             raise AcceptanceRuntimeConfigurationError(f"acceptance_runtime_{name}")
+        if not mode & 0o022:
+            validated_private_coordinate = True
         if current.parent == current:
             return
         current = current.parent

@@ -743,6 +743,19 @@ class ProviderMemoryService:
             while self._pending_capability_monitoring_initializations:
                 initial_evidence = self._pending_capability_monitoring_initializations[0]
                 authority = authorities_by_fingerprint[initial_evidence.capability_fingerprint]
+                retained_status = self._semantic_atomic_store.current_capability_status(
+                    initial_evidence.capability_fingerprint
+                )
+                if (
+                    retained_status is not None
+                    and retained_status[0].schema_version == 1
+                ):
+                    # Historical monitor state remains fenced until the normal
+                    # monitor tick deterministically promotes or demotes it.
+                    self._pending_capability_monitoring_initializations = (
+                        self._pending_capability_monitoring_initializations[1:]
+                    )
+                    continue
                 if self._capability_monitor.has_verified_initialization(evidence=initial_evidence):
                     self._pending_capability_monitoring_initializations = (
                         self._pending_capability_monitoring_initializations[1:]

@@ -294,6 +294,22 @@ def test_production_file_reader_requires_preprovisioned_secure_root(tmp_path: Pa
     assert not root.exists()
 
 
+def test_production_file_reader_admits_private_root_below_sticky_ancestor(tmp_path: Path) -> None:
+    sticky = tmp_path / "sticky"
+    sticky.mkdir(mode=0o700)
+    sticky.chmod(0o1777)
+    root = sticky / "operator-root"
+    root.mkdir(mode=0o700)
+
+    InstalledProductionRevocationReader().from_fixed_configuration(
+        {"reader_root": str(root)}
+    )
+    with pytest.raises(ValueError, match="production_revocation_reader_path"):
+        InstalledProductionRevocationReader().from_fixed_configuration(
+            {"reader_root": str(sticky)}
+        )
+
+
 def test_production_file_reader_exposes_no_mutation_capability(tmp_path: Path) -> None:
     root = tmp_path / "read-only-production"
     root.mkdir(mode=0o700)

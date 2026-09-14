@@ -7,6 +7,12 @@
       "timeout_minutes": 90,
       "timing_exemption_reason": "Exact public-root and independent-process JSONL graph transaction shards own 29 manifest selectors each."
     },
+    "acceptance-authority-runtime": {
+      "runtime_budget_seconds": 900,
+      "timeout_headroom_seconds": 300,
+      "timeout_minutes": 20,
+      "timing_exemption_reason": "Installed-wheel acceptance authority, revocation, and publication proofs run in an isolated environment with their own bounded timeout."
+    },
     "equal-version-replay-decision": {
       "runtime_budget_seconds": 60,
       "timeout_headroom_seconds": 240,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from memorii.core.memory_evolution.atomic_store import PreplanningStoreError
 from memorii.core.memory_evolution.bootstrap_graph_planning import (
     BuiltInBootstrapGraphTargetMaterializationPlannerV3,
 )
@@ -34,6 +35,8 @@ from tests.unit.core.semantic_ingestion.test_semantic_provider_composition impor
 def _capture_builtin_fact_planning(
     monkeypatch: pytest.MonkeyPatch,
     memory_plane: MemoryPlaneService | None = None,
+    *,
+    fail_group_commit: bool = True,
 ):
     planning_calls = []
     group_requests = []
@@ -45,17 +48,24 @@ def _capture_builtin_fact_planning(
         return planned
 
     normalization, _calls = _v3_normalization_host_builder(proposal=graph_fact_proposal())
+    from tests.integration.test_observation_ledger_activation import (
+        _signed_monitoring_authority,
+    )
+
     service = ProviderMemoryService(
         memory_plane=memory_plane,
         now_provider=lambda: TEST_NOW,
         host_bootstrap_capability=_built_in_local_capability(),
         host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
         source_normalization_host_bundle_builder=normalization,
+        verified_capability_monitoring_authorities=(_signed_monitoring_authority(),),
     )
     commit = service._semantic_atomic_store.commit_or_reload_bootstrap_graph_group_v3
 
     def capture_group_request(*, request):
         group_requests.append(request)
+        if fail_group_commit:
+            raise PreplanningStoreError("captured graph transaction authority")
         return commit(request=request)
 
     monkeypatch.setattr(BuiltInBootstrapGraphTargetMaterializationPlannerV3, "plan", capture_plan)
@@ -68,7 +78,8 @@ def _capture_builtin_fact_planning(
         user_id="user:alice",
         authenticated_host_ingress=_host_ingress(),
     )
-    assert result.blocked_reasons["semantic_ingestion"] == "source_only"
+    expected_reason = "graph_transaction_authority_unavailable" if fail_group_commit else "source_only"
+    assert result.blocked_reasons["semantic_ingestion"] == expected_reason
     assert len(group_requests) == 1
     effect = group_requests[0].ordered_operation_inputs[0].reduction.effect_materialization.accepted_effect
     assert isinstance(effect, BootstrapNativeFactEffectV3)

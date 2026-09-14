@@ -11,20 +11,8 @@ import json
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
-from memorii.core.memory_evolution.graph_observation_public_contracts import (
-    GraphObservationPage,
-    GraphObservationRequest,
-    GraphObservationResponse,
-)
-from memorii.core.memory_evolution.graph_observation_streams import (
-    GraphObservationStreamRecord,
-    OperationIntroductionStreamRecord,
-    OperationTerminalOutcomeStreamRecord,
-    SourceIntroductionStreamRecord,
-    SourceTerminalOutcomeStreamRecord,
-)
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
@@ -34,8 +22,8 @@ class StructuralComparisonError(ValueError):
 
 class PublicGraphObservationPort(Protocol):
     def observe_graph(
-        self, *, host_ingress: object, request: GraphObservationRequest
-    ) -> GraphObservationResponse: ...
+        self, *, host_ingress: object, request: object
+    ) -> object: ...
 
 
 class _ClosedExpectedModel(BaseModel):
@@ -161,8 +149,8 @@ class ExpectedObservationMembership(_ClosedExpectedModel):
 
 @dataclass(frozen=True)
 class CollectedGraphObservation:
-    first_page: GraphObservationPage
-    records: tuple[GraphObservationStreamRecord, ...]
+    first_page: Any
+    records: tuple[Any, ...]
     page_digests: tuple[str, ...]
 
 
@@ -195,7 +183,7 @@ def collect_graph_observation(
     *,
     observer: PublicGraphObservationPort,
     host_ingress: object,
-    request: GraphObservationRequest,
+    request: Any,
     maximum_pages: int,
     before_continuation: Callable[[int, str], None] | None = None,
 ) -> CollectedGraphObservation:
@@ -203,10 +191,10 @@ def collect_graph_observation(
     if request.cursor is not None or type(maximum_pages) is not int or maximum_pages < 1:
         raise StructuralComparisonError("invalid initial observation collection request")
     response = observer.observe_graph(host_ingress=host_ingress, request=request)
-    if not isinstance(response, GraphObservationPage):
+    if getattr(response, "kind", None) != "page":
         raise StructuralComparisonError(f"observation failed:{response.reason}")
     first = response
-    records: list[GraphObservationStreamRecord] = []
+    records: list[Any] = []
     page_digests: list[str] = []
     expected_start = 0
     page_number = 0
@@ -235,7 +223,7 @@ def collect_graph_observation(
             host_ingress=host_ingress,
             request=request.model_copy(update={"cursor": cursor}),
         )
-        if not isinstance(response, GraphObservationPage):
+        if getattr(response, "kind", None) != "page":
             raise StructuralComparisonError(f"observation failed:{response.reason}")
         page = response
     keys = tuple((record.record_kind, record.primary_key) for record in records)
@@ -251,7 +239,7 @@ def collect_graph_observation(
 
 
 def align_operations(
-    *, expected: Sequence[ExpectedOperation], records: Sequence[GraphObservationStreamRecord]
+    *, expected: Sequence[ExpectedOperation], records: Sequence[Any]
 ) -> OperationAlignment:
     """Require one unique global fence partition and operation bijection."""
     expected_values = tuple(expected)
@@ -261,13 +249,13 @@ def align_operations(
     if len(set(expected_keys)) != len(expected_keys):
         raise StructuralComparisonError("expected operation keys are duplicated")
     introductions = tuple(
-        item for item in records if isinstance(item, OperationIntroductionStreamRecord)
+        item for item in records if getattr(item, "record_kind", None) == "operation_introduction"
     )
     if len(introductions) != len(expected_values):
         raise StructuralComparisonError("operation introduction count differs")
 
     expected_partitions: dict[str, list[ExpectedOperation]] = defaultdict(list)
-    observed_partitions: dict[str, list[OperationIntroductionStreamRecord]] = defaultdict(list)
+    observed_partitions: dict[str, list[Any]] = defaultdict(list)
     for item in expected_values:
         expected_partitions[item.operation_fence_key].append(item)
     for item in introductions:
@@ -316,7 +304,7 @@ def align_source_introductions(
     *,
     expected: Sequence[ExpectedSourceIntroduction],
     operation_alignment: OperationAlignment,
-    records: Sequence[GraphObservationStreamRecord],
+    records: Sequence[Any],
 ) -> SourceEntityAlignment:
     """Align source introductions only through published fields and operation IDs."""
     expected_values = tuple(expected)
@@ -324,7 +312,7 @@ def align_source_introductions(
         (item.record_key for item in expected_values), "expected source introduction keys"
     )
     introductions = tuple(
-        item for item in records if isinstance(item, SourceIntroductionStreamRecord)
+        item for item in records if getattr(item, "record_kind", None) == "source_introduction"
     )
     if len(introductions) != len(expected_values):
         raise StructuralComparisonError("source introduction count differs")
@@ -376,7 +364,7 @@ def align_terminal_outcomes(
     expected_operations: Sequence[ExpectedOperationTerminalOutcome],
     expected_sources: Sequence[ExpectedSourceTerminalOutcome],
     operation_alignment: OperationAlignment,
-    records: Sequence[GraphObservationStreamRecord],
+    records: Sequence[Any],
 ) -> TerminalOutcomeAlignment:
     """Require exact terminal semantics using only established operation mappings."""
     operation_values = tuple(expected_operations)
@@ -391,10 +379,10 @@ def align_terminal_outcomes(
         (item.record_key for item in source_values), "expected source terminal keys"
     )
     operation_outcomes = tuple(
-        item for item in records if isinstance(item, OperationTerminalOutcomeStreamRecord)
+        item for item in records if getattr(item, "record_kind", None) == "operation_terminal_outcome"
     )
     source_outcomes = tuple(
-        item for item in records if isinstance(item, SourceTerminalOutcomeStreamRecord)
+        item for item in records if getattr(item, "record_kind", None) == "source_terminal_outcome"
     )
     if len(operation_outcomes) != len(operation_values):
         raise StructuralComparisonError("operation terminal outcome count differs")
@@ -431,7 +419,7 @@ def validate_observation_membership(
     *,
     expected: ExpectedObservationMembership,
     resolved_record_keys: Mapping[str, tuple[str, str]],
-    records: Sequence[GraphObservationStreamRecord],
+    records: Sequence[Any],
 ) -> None:
     """Prove exact logical membership and counts against the observed cohort."""
     expected_keys = set(expected.expected_record_keys)
@@ -464,7 +452,7 @@ def _require_unique_expected_keys(values: Iterable[str], label: str) -> None:
 
 def _source_introduction_matches(
     expected: ExpectedSourceIntroduction,
-    observed: SourceIntroductionStreamRecord,
+    observed: Any,
     operation_alignment: OperationAlignment,
 ) -> bool:
     operation_id = operation_alignment.operation_ids.get(expected.operation_key)
@@ -481,7 +469,7 @@ def _source_introduction_matches(
 
 def _operation_terminal_matches(
     expected: ExpectedOperationTerminalOutcome,
-    observed: OperationTerminalOutcomeStreamRecord,
+    observed: Any,
     operation_alignment: OperationAlignment,
 ) -> bool:
     operation_id = operation_alignment.operation_ids.get(expected.operation_key)
@@ -501,7 +489,7 @@ def _operation_terminal_matches(
 
 def _source_terminal_matches(
     expected: ExpectedSourceTerminalOutcome,
-    observed: SourceTerminalOutcomeStreamRecord,
+    observed: Any,
     operation_alignment: OperationAlignment,
 ) -> bool:
     try:
@@ -557,7 +545,7 @@ def _perfect_matching(candidates: Mapping[str, set[str]]) -> dict[str, str] | No
 
 
 def _operation_matches(
-    expected: ExpectedOperation, observed: OperationIntroductionStreamRecord
+    expected: ExpectedOperation, observed: Any
 ) -> bool:
     payload = observed.payload
     return (
@@ -570,7 +558,7 @@ def _operation_matches(
     )
 
 
-def _page_invariant(page: GraphObservationPage) -> tuple[object, ...]:
+def _page_invariant(page: Any) -> tuple[object, ...]:
     return (
         page.graph_revision,
         page.observation_revision,
