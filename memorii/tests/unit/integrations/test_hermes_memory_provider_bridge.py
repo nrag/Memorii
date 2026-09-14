@@ -13,7 +13,6 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
-from memorii.core.memory_evolution.writer_admission import writer_admission_memory_id
 from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.memory_plane.store import JsonlMemoryPlaneStore
 from memorii.core.provider.models import ProviderStoredRecord
@@ -198,8 +197,8 @@ def test_configured_factory_starts_the_canonical_adapter_and_reopens_recall(
         service = build_service(
             MemoryPlaneService(record_store=JsonlMemoryPlaneStore(context.storage_root / "memory-plane"))
         )
-        if service._memory_plane.get_record(writer_admission_memory_id()) is None:
-            _seed_provider(service)
+        _seed_provider(service)
+        if service._memory_plane.get_record("semantic:atlas-owner") is None:
             service.seed_committed_record(
                 ProviderStoredRecord(
                     memory_id="semantic:atlas-owner",

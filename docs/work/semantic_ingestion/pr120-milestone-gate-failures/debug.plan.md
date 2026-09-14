@@ -57,6 +57,7 @@ Observed on run `34795511535`: Acceptance Authority Runtime, Package Smoke, Benc
 - Refreshing the package candidate exposed seven stale decoder-source identities left by the earlier public-helper rename. Regenerating the canonical decoder/publication package changed no declarations, restored primary/independent compiler parity across 181 entries and 1,269 roles, and passed all 58 positive/rejection vectors.
 - The final Python 3.11 installed-wheel proof passes for candidate source `25b1d22b`: 23 distributions, 6,036 installed files, 1,800 package files, valid preparation accepted, and all five configured mutation families rejected.
 - Targeted correctness and test reviewers found no confirmed P1/P2 issue in the production repair slice at `3684a9e3`.
+- GitHub run `34805514963` advanced to one Unit Test Shard 2 failure after 23 jobs passed. The Hermes reopen fixture coupled Atlas seeding to writer-admission absence; current production graph composition already installs that writer record, so the retrieval fixture was never created. Seeding writer authority idempotently and guarding the Atlas record by its own identity restores the intended persistent reopen proof (9 Hermes bridge tests pass under the CI source-revision environment).
 
 ## Changed Surfaces
 
@@ -84,8 +85,8 @@ Observed on run `34795511535`: Acceptance Authority Runtime, Package Smoke, Benc
 | Package smoke bootstrap tests | passed on Python 3.11, 19 tests |
 | Registry publication parity and rejection vectors | passed, 181 entries / 1,269 roles / 58 vectors |
 | Package smoke installed proof | passed for source `25b1d22b`; five mutation families rejected |
-| PR 120 required checks | pending correction push |
+| PR 120 run `34805514963` | Unit Shard 2 fixture defect corrected after 23 jobs passed; replacement run pending |
 
 ## Next Action
 
-Commit and push the refreshed candidate manifest, then verify every PR 120 check on the executed GitHub revision.
+Commit and push the isolated Hermes fixture correction, then verify every PR 120 check on the replacement GitHub revision.
