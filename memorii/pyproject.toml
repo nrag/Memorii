@@ -33,6 +33,9 @@ installed = "memorii.core.memory_evolution.deployment_authorization:InstalledPro
 [project.entry-points."memorii.acceptance_production_revocation_publisher"]
 installed = "memorii.core.memory_evolution.deployment_authorization:InstalledProductionRevocationPublisher"
 
+[project.entry-points."hermes_agent.memory_providers"]
+memorii = "memorii.integrations.hermes_memory_provider:MemoriiHermesMemoryProvider"
+
 [project.optional-dependencies]
 local = [
   "openai>=1.0",
