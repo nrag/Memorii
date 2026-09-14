@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "memorii-hermes-development-connector"
+version = "0.1.0"
+description = "Development-only Hermes service factory for Memorii"
+requires-python = ">=3.11"
+dependencies = ["memorii", "pytest>=8"]
+
+[project.entry-points."memorii.hermes.provider_service"]
+development = "memorii_hermes_development:build_runtime_binding"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+

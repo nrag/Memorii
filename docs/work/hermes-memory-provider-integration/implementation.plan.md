@@ -3,10 +3,10 @@
 - Work ID: hermes-memory-provider-integration
 - Work type: implementation
 - Delivery fidelity: Level 2 early real-world testing
-- Status: blocked on external deployment authority
+- Status: Level 2 integration runnable; production authority deferred to Level 3
 - Coordinator: `/root`
 - Created: 2026-09-13
-- Last updated: 2026-09-13
+- Last updated: 2026-09-14
 - Parent WorkPlan: `docs/work/semantic_ingestion/implementation.plan.md`
 - Related WorkPlans: `docs/work/semantic_ingestion_completion_readiness/closure-plan.md`
 - Canonical inputs: `docs/design/semantic_ingestion_architecture.md`, `docs/design/memory_evolution_runtime.md`, `docs/design/scoped_memory_context.md`, current Hermes `MemoryProvider` ABC
@@ -51,7 +51,7 @@ Deferred to Level 3: signed release artifacts, immutable version pinning guidanc
 | Requirement | Implementation | Tests | Other evidence | Status |
 | --- | --- | --- | --- | --- |
 | Installed Hermes discovery | Python entry point returns a concrete Hermes `MemoryProvider` | entry-point/ABC contract test | built wheel metadata inspection; real Hermes loader at `ee445299` | implemented, locally verified |
-| Persistent startup and restart | One deployment-owned factory returns a configured runtime binding; bridge starts canonical ingestion once | configured initialization/reopen test | operator setup command | bridge implemented; production factory absent |
+| Persistent startup and restart | One selected factory returns a configured runtime binding; bridge starts canonical ingestion once | configured initialization/reopen test | development connector setup command | Level 2 development factory implemented; production factory deferred |
 | Recall and completed-turn capture | Forward `prefetch` and `sync_turn` with scope, host-issued ingress, and stable delivery identity | configured committed-recall and source-capture/replay test | production binding ledger | implemented, locally verified |
 | Common lifecycle hooks | Forward turn-author binding, session end, pre-compress, memory write, delegation, and session switch where Hermes exposes them | hook dispatch, durable memory-write/session-switch, and shared-participant isolation test | compatibility notes | implemented, locally verified |
 | Common failure behavior | Explicit unavailable/pre-init/invalid-root and invalid factory/binding behavior | negative tests | setup diagnostics | implemented, locally verified |
@@ -60,7 +60,7 @@ Deferred to Level 3: signed release artifacts, immutable version pinning guidanc
 
 - Provider boundary: optional `memorii/memorii/integrations/hermes_memory_provider.py`; no core semantic changes. It imports the external Hermes ABC only when Hermes loads its entry point.
 - Packaging: add `hermes_agent.memory_providers` entry point to `memorii/pyproject.toml`.
-- Configuration: storage root resolves to `<hermes_home>/memorii`. Exactly one deployment-owned `memorii.hermes.provider_service` factory returns a typed runtime binding containing the configured service and authenticated-ingress issuer.
+- Configuration: storage root resolves to `<hermes_home>/memorii`. Exactly one `memorii.hermes.provider_service` factory returns a typed runtime binding containing the configured service and authenticated-ingress issuer. The repository development connector supplies deterministic ephemeral scenario authority only for Level 2 trials.
 - Tests: focused fake-Hermes contract, persistent restart, replay, and failure coverage.
 - Documentation: README installation, activation, validation, and process model.
 - Non-applicable: schemas, persisted format, transactions, prompts, registries, generated artifacts, migrations, and CI workflow shape.
@@ -87,8 +87,8 @@ Deferred to Level 3: signed release artifacts, immutable version pinning guidanc
 
 | Requirement | Canonical trigger and composition root | Exact callsite and arguments/authority | Owner chain: validation -> write/read -> outcome | Proof and caller count | Status or blocker |
 | --- | --- | --- | --- | --- | --- |
-| Installed Hermes discovery/startup | Hermes selects `memory.provider: memorii`; package entry point constructs provider; Hermes calls `initialize(session_id, hermes_home=...)` | `MemoriiHermesMemoryProvider.initialize` resolves root, calls exactly one `memorii.hermes.provider_service` factory with `HermesProviderServiceContext`, validates `HermesProviderRuntimeBinding`, then calls `build_started_hermes_memory_provider(service=binding.service)` | deployment factory validates authority -> canonical started adapter activates/reconciles -> durable profile store | real Hermes loader proves discovery; configured-service test proves the downstream path; production service-factory caller count is zero | blocked on deployment-owned signed factory |
-| Turn persistence and recall | Hermes calls `on_turn_start(...)`, `sync_turn(...)`, and `prefetch(...)` | bridge binds the current participant, derives transcript-hash delivery identity, and gets `AuthenticatedHostIngress` only from `binding.issue_ingress(HermesIngressRequest)` before passing it to canonical `HermesMemoryProvider` | Hermes evidence -> deployment-owned ingress issuance -> provider validation -> durable write/read -> rendered context | configured lifecycle/replay/reopen/shared-participant test; external Hermes manager is reachable only after factory initialization | bridge locally verified; operational proof blocked with startup |
+| Installed Hermes discovery/startup | Hermes selects `memory.provider: memorii`; package entry point constructs provider; Hermes calls `initialize(session_id, hermes_home=...)` | `MemoriiHermesMemoryProvider.initialize` resolves root, calls exactly one `memorii.hermes.provider_service` factory with `HermesProviderServiceContext`, validates `HermesProviderRuntimeBinding`, then calls `build_started_hermes_memory_provider(service=binding.service)` | selected factory validates authority -> canonical started adapter activates/reconciles -> durable profile store | real Hermes loader and development connector prove discovery, initialization, capture, and reopen | Level 2 runnable; signed production factory remains Level 3 work |
+| Turn persistence and recall | Hermes calls `on_turn_start(...)`, `sync_turn(...)`, and `prefetch(...)` | bridge binds the current participant, derives transcript-hash delivery identity, and gets `AuthenticatedHostIngress` only from `binding.issue_ingress(HermesIngressRequest)` before passing it to canonical `HermesMemoryProvider` | Hermes evidence -> selected ingress issuance -> provider validation -> durable write/read -> rendered context | configured lifecycle/replay/reopen/shared-participant test; real loader captured and reopened two source records | Level 2 connected; derived-memory promotion remains policy-owned |
 
 ## Validation Matrix
 
@@ -126,9 +126,11 @@ No persisted-data migration is introduced. Rollout is opt-in by installing the d
 | Identity hygiene | yes | exited 0 with no diagnostics |
 | Wheel metadata/build | yes | root environment built `memorii-0.1.0-py3-none-any.whl`; archive contains the bridge and the expected `hermes_agent.memory_providers` entry point |
 | Current Hermes contract | yes | current `NousResearch/hermes-agent` revision `ee445299` loaded the entry point through `plugins.memory.load_memory_provider`; concrete class satisfies the real ABC and returns the explicit missing-factory diagnostic |
+| Development connector package and setup | yes | both wheels built; exact provider/factory entry points inspected; setup unit tests passed |
+| Real Hermes development initialize/capture/reopen | yes | current loader reported available; two completed-turn source records persisted and reopened |
 | Current PR CI | external evidence | pending candidate push |
 
-Known candidate limitation: without an installed deployment-owned service factory, current Hermes discovers the provider but reports it unavailable. This is the deliberate fail-closed boundary for unsigned host authority and remains the operational blocker to an interactive semantic-memory run.
+Known candidate limitation: the development connector imports repository test authority and must be installed editable from this checkout. It proves the real Hermes/plugin/storage path before release signing, but it is not production authority or release evidence.
 
 Candidate freeze: implementation commit `a862b361`; clean tree before this evidence-only WorkPlan update; preflight artifact `docs/work/hermes-memory-provider-integration/production-entrypoint-preflight.md`.
 
@@ -156,7 +158,8 @@ Candidate freeze: implementation commit `a862b361`; clean tree before this evide
 - 2026-09-13: The JSONL test now distinguishes two equal-content turns by completed-transcript position, deduplicates each replay, verifies explicit-memory-write persistence across session switch, rejects invalid ingress without a write, and confirms the retained IDs reopen unchanged.
 - 2026-09-13: Session-end, pre-compress, and delegation remain forwarding compatibility hooks. Their structured semantic promotion depends on canonical host envelope authority and is not claimed as bridge-owned durable capture; completed turns already provide the Level 2 transcript capture path.
 - 2026-09-13: Independent reviews confirmed the bridge cannot honestly close interactive validation while the production service-factory caller count is zero. This is an external deployment/signing blocker, not a reason to add a test-authority fallback.
+- 2026-09-14: Added an explicit, separately installed development connector. The real Hermes loader discovered it, initialized the canonical provider, captured a completed turn into durable semantic-ingestion source records, and reopened those records on a second start. The connector uses deterministic ephemeral scenario authority and does not alter the production provider package or signing contract.
 
 ## Next Action
 
-Install one signed deployment-owned `memorii.hermes.provider_service` factory and rerun the real Hermes initialize -> turn -> recall -> restart path.
+Run an interactive Hermes turn with the development connector and inspect the profile-local source ledger; production signing and the deployment-owned factory remain the Level 3 next action.
