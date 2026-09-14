@@ -1,8 +1,8 @@
 # Hermes Memory Provider Production Entrypoint Preflight
 
 - Historical base revision: `93788d9208a992337ebedc67ff954a606132fdef`
-- Mapped implementation revision: `c372e66e4d0cd42db6775b08961a8135e16a7c76`
-- Evidence-only WorkPlan revision: `71ac1b0ed1552b0e56972ba260fa1485ede38822`
+- Mapped implementation revision: `a862b361`
+- Prior evidence revision: `229a3b80`
 - Delivery fidelity: Level 2 early real-world testing
 - Mapper: `/root/hermes_plugin_preflight`
 - Mapping date: 2026-09-13

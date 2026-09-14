@@ -120,9 +120,9 @@ No persisted-data migration is introduced. Rollout is opt-in by installing the d
 
 | Gate | Required | Result and revision |
 | --- | --- | --- |
-| Focused Hermes bridge tests | yes | 9 passed within the combined 22-test run at `c372e66e4d0cd42db6775b08961a8135e16a7c76` |
-| Existing provider compatibility tests | yes | 13 passed within the combined 22-test run at `c372e66e4d0cd42db6775b08961a8135e16a7c76` |
-| Ruff and pyright | yes | ruff changed paths passed; complete configured pyright exited 0 with no diagnostics at `c372e66e4d0cd42db6775b08961a8135e16a7c76` |
+| Focused Hermes bridge tests | yes | 9 passed within the combined 22-test run at `a862b361` |
+| Existing provider compatibility tests | yes | 13 passed within the combined 22-test run at `a862b361` |
+| Ruff and pyright | yes | ruff changed paths passed; complete configured pyright exited 0 with no diagnostics at `a862b361` |
 | Identity hygiene | yes | exited 0 with no diagnostics |
 | Wheel metadata/build | yes | root environment built `memorii-0.1.0-py3-none-any.whl`; archive contains the bridge and the expected `hermes_agent.memory_providers` entry point |
 | Current Hermes contract | yes | current `NousResearch/hermes-agent` revision `ee445299` loaded the entry point through `plugins.memory.load_memory_provider`; concrete class satisfies the real ABC and returns the explicit missing-factory diagnostic |
@@ -130,7 +130,7 @@ No persisted-data migration is introduced. Rollout is opt-in by installing the d
 
 Known candidate limitation: without an installed deployment-owned service factory, current Hermes discovers the provider but reports it unavailable. This is the deliberate fail-closed boundary for unsigned host authority and remains the operational blocker to an interactive semantic-memory run.
 
-Candidate freeze: implementation commit `c372e66e4d0cd42db6775b08961a8135e16a7c76`; clean tree before this evidence-only WorkPlan update; preflight artifact `docs/work/hermes-memory-provider-integration/production-entrypoint-preflight.md`.
+Candidate freeze: implementation commit `a862b361`; clean tree before this evidence-only WorkPlan update; preflight artifact `docs/work/hermes-memory-provider-integration/production-entrypoint-preflight.md`.
 
 ## Delegation And Cost Ledger
 
