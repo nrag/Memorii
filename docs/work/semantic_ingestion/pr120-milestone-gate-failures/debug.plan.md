@@ -97,7 +97,10 @@ Observed on run `34795511535`: Acceptance Authority Runtime, Package Smoke, Benc
 | Unit Test Shard 1 | passed, 723 tests |
 | Unit Test Shard 4 | passed, 957 tests / 1 expected skip |
 | Static Analysis | Ruff, Pyright, and identity hygiene passed |
+| Package Smoke bootstrap tests | passed, 19 tests on Python 3.11 |
+| Installed package preparation | passed for source `e9263d33`; 23 distributions / 6,036 files / 1,800 package files |
+| Installed package rejection family | passed; all five mutations rejected before host execution |
 
 ## Next Action
 
-Complete exact Unit Shards 1 and 4, refresh the release candidate against the corrected source revision, then push and verify every PR 120 check on the replacement GitHub revision.
+Push source `e9263d33` plus its refreshed candidate, then verify every PR 120 check on the replacement GitHub revision.
