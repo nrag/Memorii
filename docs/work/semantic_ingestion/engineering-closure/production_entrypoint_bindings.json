@@ -14,11 +14,12 @@
     {
       "requirement": "R08",
       "package": "02",
-      "status": "unmapped",
-      "canonical_owner": null,
-      "production_caller": null,
-      "authority": null,
-      "outcome_proof": null
+      "status": "partial",
+      "canonical_owner": "HermesMemoryProvider -> ProviderMemoryService -> verified production authority, monitoring, observation and scoped-context owners",
+      "production_caller": "HermesMemoryProvider.sync_event/retrieve_context/activate_observation_ledger/run_capability_monitor_tick/process_capability_monitoring/observe_graph/observe_ingestion_time_attestations/reconcile_memory_evolution -> ProviderMemoryService; build_started_hermes_memory_provider(configured ProviderMemoryService) -> HermesMemoryProvider.start_semantic_ingestion -> activate_observation_ledger -> reconcile_memory_evolution -> process_capability_monitoring",
+      "authority": "The Hermes adapter forwards opaque host ingress and composition-held verified authorities unchanged. Missing configuration and wrong scope fail through the service typed denial contracts.",
+      "outcome_proof": "Level 2 Hermes forwarding and composed integration tests; consolidated 36-scenario pass covers intended flows and common configuration, scope, provider, retry, restart and stale-state failures. Exhaustive supported-root authorization and revocation permutations remain Level 3. The real configured Hermes observation/comparator case passes through the startup hook in 329.64s; four fast lifecycle cases pass in 8.37s. Production revision 4497325b; bounded Level 2 correctness review reports no remaining finding.",
+      "remaining": "Level 2 complete. Level 3 retains exhaustive supported-root authorization/revocation permutations, final candidate evidence and real deployment artifacts."
     },
     {
       "requirement": "R13",
@@ -71,21 +72,22 @@
     {
       "requirement": "R16",
       "package": "02",
-      "status": "unmapped",
-      "canonical_owner": null,
-      "production_caller": null,
-      "authority": null,
-      "outcome_proof": null
+      "status": "partial",
+      "canonical_owner": "build_provider_memory_service_from_env/build_filesystem_provider -> verified registry, activation target, monitoring and observation authorities -> HermesMemoryProvider",
+      "production_caller": "HermesMemoryProvider construction and public lifecycle/read/write methods -> ProviderMemoryService composition; build_started_hermes_memory_provider(configured ProviderMemoryService) -> HermesMemoryProvider.start_semantic_ingestion -> activate_observation_ledger -> reconcile_memory_evolution -> process_capability_monitoring",
+      "authority": "Composition-owned registered bundle/profile and monitoring authorities are verified before use; request data cannot replace them.",
+      "outcome_proof": "Level 2 Hermes happy/common-failure pass plus installed registry and activation evidence. Final package/profile evidence and exhaustive configured-root matrix remain Level 3. The real configured Hermes observation/comparator case passes through the startup hook in 329.64s; four fast lifecycle cases pass in 8.37s. Production revision 4497325b; bounded Level 2 correctness review reports no remaining finding.",
+      "remaining": "Level 2 complete. Level 3 retains final package/profile evidence, exhaustive configured-root verification and approval of release fingerprints."
     },
     {
       "requirement": "R17",
       "package": "05",
       "status": "partial",
-      "canonical_owner": "SemanticIngestionAtomicStore.persist_bootstrap_graph_terminal_v3 / _reload_bootstrap_graph_terminal_exact_v3",
-      "production_caller": "ProviderIngestionCoordinator -> BootstrapGraphHostBundle -> BootstrapGraphTransactionCoordinatorV3 -> DeterministicBootstrapGraphTerminalPreparationV3.prepare -> BootstrapGraphArtifactAssemblerV3.build_terminal_publication_request -> AtomicStoreBootstrapGraphTerminalRepositoryV3.persist_and_reload",
-      "authority": "Retained admitted source, canonical terminal outcome, complete fence/scopes/delivery/lease/writer bindings and current epoch/generation. Server derives observation ID, successor and schema fingerprint; atomic store independently validates coordinates against current control and canonical result before one CAS.",
-      "outcome_proof": "Native source finalization: exact before/after public reproducer; 22 lost-ack/restart/normal-root cases pass; historical captured V1 bytes and persisted reload, stale/substituted/missing member cases pass; zero-group failed terminal passes. Evidence in terminal-publication/source-candidate.json and debug-001.plan.md. Independent closure review pending.",
-      "remaining": "Activated failure-family proofs, checkpoint external authority, authenticated scoped retrieval, independent comparator, final packaging and CI gates remain unfinished.",
+      "canonical_owner": "HermesMemoryProvider.observe_graph/observe_ingestion_time_attestations -> ProviderMemoryService -> GraphObservationPagingRuntime; acceptance.structural_comparator.collect_graph_observation",
+      "production_caller": "Hermes host -> HermesMemoryProvider public observation methods -> composed ProviderMemoryService; acceptance comparator consumes only the public Hermes observer protocol",
+      "authority": "Opaque host ingress is reauthorized by the service on every page; server-owned snapshot, cohort, scope, cursor and registered projection identities remain authoritative. The adapter does not reinterpret them.",
+      "outcome_proof": "Level 2 real activated JSONL Hermes observation/comparator test passes with a complete nonempty page chain, page digests, ingestion-time attestations, wrong-scope denial and invalid-cursor rejection. Consolidated observation/common-failure lane passes 2 cases; comparator unit coverage proves operation/fence/source/entity/terminal alignment and exact membership. Production revision 4497325b; bounded Level 2 correctness review reports no remaining finding.",
+      "remaining": "Level 2 complete. Level 3 retains exhaustive record-family mutations, forged topology, between-page revocation permutations, complete host matrix, final packaging and release CI.",
       "binding_map": "source-finalization-integration-map.md",
       "bounded_source_closure": "docs/work/semantic_ingestion/terminal-publication/closure.md; source candidate89907b04b2a9888ad6b708c859c3db1bde359dfb029dc24eed03a7780b80c9a5 independently approved. This historical bounded proof does not certify later group edits.",
       "shared_observation_ledger": {
@@ -192,11 +194,12 @@
     {
       "requirement": "R19",
       "package": "06",
-      "status": "unmapped",
-      "canonical_owner": null,
-      "production_caller": null,
-      "authority": null,
-      "outcome_proof": null
+      "status": "partial",
+      "canonical_owner": "HermesMemoryProvider -> ProviderMemoryService and build_provider_memory_service_from_env/build_filesystem_provider composition roots",
+      "production_caller": "Hermes public ingestion, retrieval, activation, monitoring, graph observation, ingestion-time attestation and reconciliation methods -> canonical ProviderMemoryService owners; build_started_hermes_memory_provider(configured ProviderMemoryService) -> HermesMemoryProvider.start_semantic_ingestion -> activate_observation_ledger -> reconcile_memory_evolution -> process_capability_monitoring",
+      "authority": "Hermes forwards trusted arguments and opaque authority handles unchanged; service and storage owners retain validation and transactional responsibility.",
+      "outcome_proof": "Level 2 consolidated 36-scenario pass: 20 retrieval, 1 all-root monitor, 2 observation/common-failure and 13 ingestion/recovery cases. Real composed Hermes observation/comparator passes separately. Broader platform/root permutations remain Level 3. The real configured Hermes observation/comparator case passes through the startup hook in 329.64s; four fast lifecycle cases pass in 8.37s. Production revision 4497325b; bounded Level 2 correctness review reports no remaining finding.",
+      "remaining": "Level 2 complete. Level 3 retains broader platform/root permutations, final evidence assembly and installed production configuration."
     },
     {
       "requirement": "R17",

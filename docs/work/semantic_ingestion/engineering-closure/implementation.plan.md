@@ -3,7 +3,7 @@
 - Work ID: semantic-ingestion-engineering-closure
 - Work type: implementation
 - Delivery fidelity: Level 2 - early real-world testing
-- Status: active; shortest-path Hermes integration readiness
+- Status: complete at Level 2; Level 3 release work deferred
 - Coordinator: Codex main thread
 - Created: 2026-09-06
 - Last updated: 2026-09-13
@@ -12,7 +12,7 @@
 - Canonical inputs: frozen SIA architecture and closure plan
 - Expected outputs: production-shaped Hermes semantic-ingestion, retrieval, and observation happy paths with common-failure proof
 - Current resume packet: `docs/work/semantic_ingestion/engineering-closure/resume.md`
-- Active milestone packet: `docs/work/semantic_ingestion/engineering-closure/milestones/05-authenticated-observer-comparator.plan.md`
+- Final milestone packet: `docs/work/semantic_ingestion/engineering-closure/milestones/06-host-composition-closure.plan.md`
 
 ## Design Baseline, Scope And Constraints
 
@@ -61,8 +61,8 @@ recorded follow-up and do not block this learning milestone.
 | 2 | release crypto/trust | R03, R08, R13, R16, R19 | partial; signing locally verified, host/review unfinished |
 | 3 | independent statistics | R05, R06, R14 | complete at `1a60848c`; independent spec/correctness/test approval |
 | 4 | monitor/registry | R08, R15, R16, R19 | R15 engineering complete at `6224935e`; related host rows remain partial |
-| 5 | observer/comparator | R03, R13, R17 | public paging and unique operation/fence comparator foundation committed at `eccb5bfc`; complete record comparison and real authorization matrix pending |
-| 6 | host closure | R01-R23 | blocked on incomplete packages |
+| 5 | observer/comparator | R03, R13, R17 | Level 2 complete through real Hermes observation, page-chain collection, scoped denial and invalid-cursor proof; exhaustive mutation families remain Level 3 |
+| 6 | host closure | R01-R23 | complete at Level 2 at production revision `4497325b`; Level 3 release work deferred |
 
 ## Initial Ledgers
 
@@ -181,10 +181,45 @@ public-path tamper tests. Fidelity verification and self-tests pass. Final
 closure must capture and verify a separate v2 identity after all candidate
 writers finish; no current whole-candidate proof is claimed yet.
 
-## Next Action
+## Completion State
 
-Resolve the linked graph-transaction authority rejection debugging WorkPlan,
-then resume the real host-composed comparator authorization/revocation proof.
+No Level 2 work remains. Resume under a Level 3 WorkPlan when production release
+preparation is requested.
+
+## Level 2 Candidate Evidence (2026-09-13)
+
+Commits `c2f331fd`, `76389ffb`, and `7b705077` expose activation, monitoring,
+observation, ingestion-time attestation, reconciliation, and retrieval through
+the ordinary Hermes adapter. The real composed observation test passes a
+Hermes provider directly to the acceptance page-chain collector and verifies
+nonempty records and digests, ingestion-time attestations, scope denial, and an
+invalid cursor. Unconfigured observation routes return typed non-disclosing
+failures.
+
+The consolidated Level 2 pass covers 36 scenarios: 20 retrieval/current and
+historical context cases, one all-root monitoring case, two observation/common
+failure cases, and 13 ingestion/recovery cases. It covers provider/extractor
+failure, empty input, configured activation, public reconciliation, durable
+restart, lost acknowledgement without duplication, and no-ingress behavior.
+All four lanes passed. The earlier real Hermes observation/comparator run also
+passed against the composed activated JSONL service.
+
+The targeted review found one P2 usability/reliability gap: the Hermes methods
+had no production lifecycle caller. The correction adds
+`HermesMemoryProvider.start_semantic_ingestion`, which activates the configured
+ledger and then invokes the existing reconciliation path that also processes
+bounded monitoring work. `build_started_hermes_memory_provider` is the explicit
+configured construction root and cannot return before that sequence succeeds.
+Four fast lifecycle cases pass in 8.37s, production-module Ruff and
+Pyright are clean, and the real configured Hermes observation/comparator case
+passes with the started construction root in 329.64s. The bounded correction
+review approves the original P2 lifecycle-trigger finding with no remaining
+Level 2 finding. Production code revision: `4497325b`.
+
+This evidence establishes the requested early real-world testing bar. It does
+not establish Level 3 production release approval, exhaustive host or record
+family matrices, adversarial memory-spoof resistance, final evidence packaging,
+qualifying policy measurements, or production signatures.
 
 2026-09-08: root owns all code, generation, tests and commits. Read-only
 component reviews cover frozen90c58da62428f3caeab8ee7bca03116a24009d35e97aa705e1d757987a61362c.

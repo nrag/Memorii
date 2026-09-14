@@ -2,14 +2,20 @@
 
 ## Current Answer
 
-Memorii is not yet ready for agent-system integration, including a controlled
-pilot. Current work validates memory components and benchmark integrity only.
+The semantic-ingestion component is ready for Level 2 early real-world Hermes
+integration testing. The host has explicit startup, ingestion, retrieval,
+monitoring, reconciliation, graph-observation, and ingestion-time-attestation
+calls with happy-path and common-failure evidence. A full controlled
+agent-system pilot still requires harness wiring and agent-level evaluation;
+this status is not production release approval.
 
 ## Validated Component Surface
 
 The codebase now has the main integration primitives:
 
 - provider-facing hooks through `HermesMemoryProvider`
+- explicit configured startup through
+  `build_started_hermes_memory_provider(service=...)`
 - `ProviderMemoryService` for sync, write, prefetch, and tool calls
 - work-state detection and storage
 - decision-state tools

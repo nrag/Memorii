@@ -2,7 +2,7 @@
 
 - Parent WorkPlan: `docs/work/semantic_ingestion/engineering-closure/implementation.plan.md`
 - Delivery fidelity: Level 2 - early real-world testing
-- Status: active; authenticated public observation and independent comparator closure
+- Status: complete at Level 2; Level 3 hardening explicitly deferred
 - Requirements: R03, R13, R17
 
 Enable production-shaped Hermes observation/comparison happy scenarios with
@@ -42,12 +42,27 @@ The coordinator now owns all pytest execution after recovering and stopping two
 duplicate runs whose handles were lost by the delegate. No pass result is
 inferred from an unobserved process completion.
 
-## Next Action
+## Completion State
 
-Resolve the linked graph-transaction authority rejection at
-`../../graph-transaction-authority-debug/debugging.plan.md`, then exercise the
-comparator through the real host-composed ProviderMemoryService with configured
-caller denial, scope isolation and revocation between continuation pages.
+No Level 2 work remains. Resume this packet only for the deferred Level 3
+record-family and adversarial observation matrix.
+
+## Level 2 Completion Evidence
+
+The graph-transaction authority rejection is resolved at `92b33d37`. Commit
+`c2f331fd` exposes the service observation and ingestion-time attestation routes
+through `HermesMemoryProvider`; `76389ffb` preserves coordinator-reported
+substitution failures; and `7b705077` covers unconfigured denial and malformed
+cursor behavior. A real activated JSONL composition passes Hermes directly to
+`collect_graph_observation`, verifies a complete nonempty public page chain and
+attestations, and proves scope denial. The targeted observation lane passes two
+common-failure cases, and the earlier full real-root case passed in 412.92s.
+
+The acceptance comparator already proves complete public page collection,
+unique operation/fence alignment, source/entity and terminal joins, exact
+membership, and mismatch detection. Level 3 retains exhaustive record-family
+mutation, forged-topology, between-page revocation permutations, and the full
+host matrix.
 
 ## Public Comparator Foundation
 

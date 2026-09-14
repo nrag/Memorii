@@ -150,8 +150,15 @@ pre-compression, explicit memory-write, and delegation hooks. Every mutating
 hook requires a stable caller-supplied `operation_id`; retries must reuse that
 ID so replay remains idempotent.
 
-This is a component integration surface, not a declaration that agent-level
-integration is ready. See the
+A configured Hermes host uses `build_started_hermes_memory_provider(service=...)`.
+The builder activates or reloads the observation ledger, then runs pending-work
+recovery and one bounded monitoring pass before returning the provider. Plain
+`HermesMemoryProvider(...)` construction does not activate storage. Graph
+observation and ingestion-time attestations remain on-demand authenticated
+calls.
+
+The semantic-ingestion component is ready for early real-world Hermes testing.
+This does not certify full agent behavior or a production release. See the
 [Agent Integration Readiness Plan](docs/plans/agent_integration_readiness.md)
 for the remaining evaluation and operational requirements.
 

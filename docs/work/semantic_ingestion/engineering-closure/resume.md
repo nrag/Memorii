@@ -1,117 +1,82 @@
 # Semantic Ingestion Closure Resume
 
 Work type: implementation. Delivery fidelity: Level 2 early real-world testing.
-Coordinator: root. Status: active Hermes integration readiness, not closed.
-Current product baseline: `ebea5618`
-on `semantic_ingestion_m5`. Index: `implementation.plan.md`. Active packet:
-`milestones/05-authenticated-observer-comparator.plan.md`. Previous resume preserved at
+Coordinator: root. Status: complete at Level 2; Level 3 release work deferred.
+Current product baseline: `4497325b` on `semantic_ingestion_m5`. Index:
+`implementation.plan.md`. Final packet:
+`milestones/06-host-composition-closure.plan.md`. Previous detailed resume:
 `archive/resume-ac8819eaa31c8adadc54db2ca8a7ae60376d5b9e90752e4c0106cae995302039.md`.
 
-## Current State
+## Current Objective And Priority
 
-The 23-row Level 3 closure table records 17 engineering-complete requirements and six open:
-R03, R08, R13, R16, R17 and R19. R15 monitoring and authenticated revocation
-publication are engineering complete at `6224935e` after a 111-test consolidated
-gate and exact-revision specification, correctness and test approval. The
-remaining closure sequence is R17 comparator/authentication, complete host
-composition for R08/R16/R19, then frozen evidence/release preparation for
-R03/R13. Actual production keys, signatures and qualifying release measurements
-remain release conditions. For the active Level 2 milestone, those six rows are
-not six separate blockers: completion requires the production-shaped Hermes
-ingestion/monitor/observation/retrieval happy scenarios plus common
-configuration, caller/scope, provider/model, partial/retry, stale-state,
-persistence/reopen, duplicate/data-loss, denial, and revocation checks.
-Adversarial memory spoofing, forged internal topology, exhaustive tamper,
-record-family, and host matrices, final evidence packaging, and exact-release
-review are deferred to Level 3.
+Enable useful early real-world Hermes testing. Priority is fixed: make the
+intended product workflow usable end to end; cover expected security,
+reliability, quality, and common failures; then defer rare/adversarial hardening
+to production preparation.
 
-Stage 1 has a complete V2 remediation candidate: an installed evaluator,
-registered schema and profile authority, signed immutable object repository,
-registration-bound independent fence, snapshot-scoped approval verifier,
-signed result publisher, and serialized production deployment publisher. The
-public installed path succeeds from real Ed25519 authority state and fails
-closed for authority, configuration, provider, history, persistence, terminal
-lifecycle, and expiry faults. The installed runtime reconstructs its complete
-numeric context from five signed V2 artifacts; configuration cannot inject
-specs, alpha, gates, IID assertions, memberships, or coverage dispositions.
+Level 2 requires Hermes ingestion, retrieval, ledger activation and monitoring,
+public graph observation and ingestion-time attestations, and reconciliation.
+It includes missing configuration, caller/scope denial, provider/extractor
+failure, empty or partial work, retry, stale state, persistence/reopen,
+duplicate/lost acknowledgement, and no-work behavior.
 
-The read-only preflight at `stage1_preflight_r13_r14_map.md` confirms zero
-production callers. The pre-coding test review requires protected construction,
-complete multi-cell recomputation, immutable publish/retry/restart behavior, a
-digest-only activation bridge, lifecycle/history failures, and installed-package
-import isolation. Production may not import `acceptance`.
+## Implemented Candidate
 
-The latest dirty remediation adds a fixed installed authority-publication command
-and proves a real signed successor through the fenced repository and independent
-production-revocation reader. The public installed evaluation path uses the
-successor without a numeric configuration change, reconciles a lost receipt
-after durable production publication, and rejects 23 lifecycle, schema,
-signer/policy, currentness, conflict, provider, path, history, and persistence
-cases over the frozen multi-cell corpus. The 13-artifact independent checker now
-mutates purpose, version, complete descriptor types, digest, and signature.
+- `92b33d37` closes activated graph-control recovery and exhausted-control
+  reconstruction with exact terminal lineage.
+- `c2f331fd` exposes activation, monitor tick/scheduling, graph observation,
+  ingestion-time attestation, and reconciliation through `HermesMemoryProvider`.
+- `76389ffb` preserves coordinator-reported graph-observation substitution
+  failures and sends the real Hermes provider through the public acceptance
+  page-chain collector.
+- `7b705077` covers unconfigured Hermes denials, malformed cursors, public
+  all-root monitoring, and no-pending reconciliation.
+- The current correction adds `HermesMemoryProvider.start_semantic_ingestion`
+  and `build_started_hermes_memory_provider` so activation, recovery, and
+  bounded monitoring have one host-owned configured construction sequence.
+- `0dce4f5e`, `11954845`, and `393d6be3` align repository workflows with the
+  selected delivery fidelity and usability-first priority.
 
-Round-2 review found one P2 rollback defect plus bounded evidence gaps. The
-correction enforces direct monotonic active-release succession and rejects a
-signed R2-to-R1 rollback through the installed publication command. It also
-recursively mutates every registered descriptor family, pins the frozen
-multi-cell topology, and rejects zero, duplicate, and nonconforming publication
-runtime discovery before candidate reads. Coordinator validation records 182
-acceptance, 76 statistical-contract, and 119 authority/design feasibility tests
-passing with warnings as errors, plus Ruff, zero-error supported first-party
-Pyright, the independent checker, diff validation, and a rebuilt installed-wheel
-proof with 24 fail-closed cases. Correctness and test delta review approved the
-committed correction. Specification delta review found two final proof-only
-gaps: structural/cardinality descriptor mutations and an observable assertion
-that provider discovery fails before candidate reads. The current bounded delta
-adds every declared map, pair, numeric, length and collection boundary and
-asserts the exact `acceptance_runtime_configuration` failure for all three
-provider-cardinality cases. The rebuilt installed-wheel proof passes with 24
-fail-closed cases. The delta was committed as `1a60848c`; exact-revision
-specification and test review approved it with no remaining findings. The
-earlier correctness review approved the production rollback correction. R14 is
-engineering complete.
+The persistent graph changes only through ingestion, explicit reconciliation,
+and monitor/conflict scheduler calls. Process start or stop and observation
+reads do not rebuild it. Hosts should reconcile on startup/recovery and may run
+a periodic monitoring tick. Pydantic forward-reference closure is process-local
+schema preparation; its measured repeat cost is negligible and it is not a
+persistent graph rebuild.
 
-## Ownership And Next Action
+## Current Evidence
 
-The linked acceptance persistence/runtime-bootstrap design is approved at
-`../acceptance-authority-persistence/design.plan.md`. It specifies the registered
-artifact family, fenced durable repository, production revocation checkpoint
-evidence, nonmutating lease-held evaluation snapshot, standard installed
-runtime, noninjectable command, CI job, and complete failure matrix. Root owns
-the current dirty candidate until one implementation writer resumes it.
+The consolidated Level 2 pass is green for 36 selected scenarios:
 
-The first R17 comparator slice is committed at `eccb5bfc`: public page-chain
-collection and globally unique operation/fence alignment pass six focused
-warnings-as-errors cases plus Ruff and Pyright. R17 remains partial because the
-complete record-family comparator and real configured authorization matrix are
-not yet implemented.
+- retrieval and scoped context: 20 passed in 9.00s;
+- all-root monitor integration: 1 passed in 10.32s;
+- observation/common failures: 2 passed in 10.06s;
+- ingestion and recovery: 13 passed in 215.73s.
 
-Comparator slice 2 found a production contract gap before editing:
-source-introduction pages expose only opaque type-evidence IDs, while the
-approved alignment order requires independently authored semantic proof
-coordinates before later type records may participate. Treating those IDs as
-fixture coordinates was rejected as contrary to the design.
+The real composed Hermes observation/comparator test passed separately in
+329.64s after the startup correction. It validates configured startup, a
+nonempty complete public page chain, page digests,
+ingestion-time attestations, scope denial, and the adapter path. Focused Ruff
+and production-module Pyright checks are clean. Four fast lifecycle cases pass
+in 8.37s. The bounded correction review approves the lifecycle-trigger fix with
+no remaining Level 2 finding.
 
-The attempted production correction stopped before editing: upstream proposal
-authority contains only model-supplied `proposed_type`, not a validated
-type-assertion proof. Canonical planning intentionally emits an empty type-proof
-set. Promoting that model field would violate the model-output validation
-boundary. R17 will therefore compare the supported empty set and fail closed
-for any unverifiable opaque nonempty binding; certified source-type creation is
-a separate future capability.
+## Requirement State And Deferrals
 
-Comparator slice 2 is committed at `61f12cff`. Twenty focused
-warnings-as-errors cases plus Ruff and Pyright prove source/entity alignment,
-terminal joins, exact membership/count closure, and adversarial mismatch
-families under the fail-closed type-proof boundary.
+The production-oriented 23-row closure table remains 17 engineering-complete
+and six partial: R03, R08, R13, R16, R17, and R19. That Level 3 status does not
+mean six blockers to early Hermes testing. R08, R16, R17, and R19 now have the
+needed Level 2 public composition and common-failure evidence. R03 and R13 are
+release evidence and authorization rows.
 
-The graph-transaction authority rejection is resolved. Exact revision
-`92b33d37979c428921659fa2540e3848c798739b` preserves exact activated terminal
-lineage, accepts lease-free exhausted controls without false terminal
-attachments, and passes independent specification, correctness, and test
-review. Its review record is in
-`../graph-transaction-authority-debug/debugging.plan.md`.
+Deferred Level 3 work includes adversarial memory spoofing and forged topology,
+exhaustive record-family/tamper/host matrices, final evidence packaging,
+qualifying policy measurements, production key provisioning and signatures,
+and exact-release CI/review. Existing fail-closed trust and integrity checks
+remain in force.
 
-Next action: add the smallest missing Hermes public forwards and exercise one
-real host-composed comparator authorization/revocation flow; do not expand into
-the Level 3 family or host matrix.
+## Completion State
+
+No Level 2 action remains. Resume with a Level 3 production-release WorkPlan for
+final evidence packaging, operational signing, qualifying measurements, and
+production hardening.

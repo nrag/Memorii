@@ -1,12 +1,11 @@
 # Semantic Ingestion Engineering Closure Plan
 
 Baseline: `191826cd3afb38bf605a337a71d576063b3bae5e`, PR #120.
-Current status (2026-09-13): implementation active; 17 requirements retain
-completed engineering behavior and 6 remain partial. This
-table was rebuilt from production paths and the three-role closure review at
-`4ff7f53c10092f423494fff55fbc055d2f3fdf4c`. That revision is clean, pushed,
-and has no failed PR checks; its long-running Observation Ledger Activation
-check is still pending. Release signing is not the only remaining work.
+Current status (2026-09-13): semantic ingestion is complete at Level 2 for
+early real-world Hermes testing at production revision `4497325b`. The bounded
+review has no remaining Level 2 finding. The production-oriented table
+retains 17 engineering-complete requirements and 6 partial requirements.
+Release signing is not the only remaining Level 3 work.
 User-directed completion boundary: engineering
 readiness must not wait for actual production signing. Runtime still rejects
 unsigned, untrusted, expired or revoked activation material.
@@ -225,6 +224,31 @@ production signatures, real trust deployment and signed release authorization
 are deferred by user direction. Required predeclared quality evaluation remains
 visible and must precede any actual capability acceptance claim.
 
+## Level 2 Early-Integration Readiness (2026-09-13)
+
+The product-first readiness question is separate from the production-oriented
+23-row closure contract. At Level 2, semantic ingestion is ready for real Hermes
+testing: the adapter reaches ingestion, retrieval, activation, monitoring,
+public graph observation, ingestion-time attestations, and reconciliation. The
+consolidated targeted pass covers 36 happy and common-failure scenarios, and a
+real activated JSONL Hermes observation/comparator flow passed separately.
+The concrete Hermes root also has an explicit startup sequence for configured
+activation, recovery, and bounded monitoring; the real composed flow passes
+through that sequence. A bounded correctness review approves the startup
+correction and reports no remaining Level 2 finding.
+
+| Priority | Level 2 state | Evidence | Deferred to Level 3 |
+| --- | --- | --- | --- |
+| 1. Usable product | Ready for testing | Hermes reaches every required public service; real composed observation returns a complete nonempty page chain and attestations; retrieval returns current and historical scoped context | Broader host/platform matrix and release packaging |
+| 2. Secure, reliable, high quality | Ready for testing | Scope/caller/configuration denial, provider/extractor failure, empty/partial work, retry/lost acknowledgement, restart, stale/invalid cursor, duplicate prevention, monitoring and no-work reconciliation pass | Operational key provisioning, qualifying measurements, exact-release CI and review |
+| 3. Rare/adversarial hardening | Deferred by fidelity decision | Existing fail-closed integrity and trust checks remain enabled | Memory spoofing, forged topology, hostile-storage cases, exhaustive record-family/tamper permutations |
+
+The Level 3 table below remains 17 engineering-complete and six partial. R08,
+R16, R17, and R19 no longer block Level 2 Hermes testing; their remaining cells
+describe broader production proof. R03 and R13 concern frozen release evidence,
+authorization, and signing. No production-complete or release-authorized claim
+is made here.
+
 ## All 23 Requirement Allocation
 
 ### Consolidated Completion Campaign (2026-09-08)
@@ -239,7 +263,7 @@ not a status change or permission to weaken any row's existing acceptance
 contract. Actual production signatures remain deferred.
 
 The earlier contract and public-construction prerequisites are now complete.
-The remaining work therefore follows the production dependency order below.
+The table below retains the original Level 3 production dependency order.
 Each stage has one primary closure owner, may advance related rows, and ends in
 a reviewable commit. A row changes status only after all of its exit evidence is
 present; the projected counts are targets rather than premature promotions.
@@ -278,20 +302,19 @@ and exact remaining blockers. Do not count test totals or helper approvals as
 row closure. If a stage cannot promote its primary row, retain the prior count,
 record the failed exit criterion and remediate it before claiming the next count.
 
-Exactly one campaign next action: execute Stage 2 by implementing the production
-capability monitor, shared status authority and atomic demotion conflict through
-the normal ingestion path.
+The Level 2 campaign is complete. When production release preparation begins,
+Level 3 resumes with final candidate evidence, operational signing, qualifying
+measurements, and the deferred hardening matrix.
 
-Updated 2026-09-12 against the implementation packets and recorded evidence at
-baseline `224b2c276fec0b61d4a901fcd1f19f4bc7e452e9`. These are engineering
+Updated 2026-09-13 against the implementation packets and recorded evidence at
+production revision `4497325bee2f2f1d21aee6d2965686d88007d99c`. These are engineering
 progress labels, not release or final-candidate approval:
 
-- **Engineering complete (16):** completed behavior is retained; no new
+- **Engineering complete (17):** completed behavior is retained; no new
   implementation gap is currently assigned to that row. Every row still needs
   its applicable final-candidate regression/authority gates and review.
 - **Partial (6):** some relevant implementation/evidence exists, but the full
   requirement is unfinished.
-- **Not implemented (1):** R15's production monitoring/transition work remains.
 
 **Six requirements remain open: R03, R08, R13, R16, R17 and R19.**
 This is not a 17/23 final engineering-approval claim. Production signing alone
@@ -339,7 +362,7 @@ to complete by this production write/recovery checkpoint. Current details and ev
 | R05 | Engineering complete | Semantic evidence validation and required metric inputs are retained and consumed by the installed R14 evaluator | Parent closure record only | Approved capability quality evidence |
 | R06 | Engineering complete | Temporal construction/decision matrix and exact replay remain covered and consumed by the installed R14 evaluator | Parent closure record only | Approved capability quality evidence |
 | R07 | Engineering complete | Registered prompt, redaction and fingerprint bindings pass the current authority/generation gates | Parent closure record only | Approval of changed fingerprints if applicable |
-| R08 | Partial | Built-in local/no-network profile, protected activation, configured trust, installed-wheel bootstrap and provider observation composition are implemented and CI exercised | Implement monitor/status integration and configured host-ingress rejection/revocation proof across supported roots | Real trusted deployment artifacts |
+| R08 | Partial | Built-in local/no-network profile, protected activation, configured trust, installed-wheel bootstrap, monitor/status integration, and Hermes observation composition are implemented; configured and unconfigured common failures pass at Level 2 | Complete the exhaustive supported-root authorization/revocation matrix and final candidate proof | Real trusted deployment artifacts |
 | R09 | Engineering complete | Current-policy egress authorization and negative paths remain covered | Parent closure record only | Real remote policy only if enabled |
 | R10 | Engineering complete | Exact event, graph and replay authority retain M2/M4 proof; current persistence shards pass | Parent closure record only | None distinct |
 | R11 | Engineering complete | Single-writer, cutover, retry, restart and rollback behavior remain covered | Parent closure record only | Activation/migration authorization if used |
@@ -347,10 +370,10 @@ to complete by this production write/recovery checkpoint. Current details and ev
 | R13 | Partial | Ed25519 verification, configured resolver, PEM external signing, release/lifecycle assembly, installed preparation, protected target validation and test-key tamper matrix are implemented | Complete acceptance-authority/evaluator-to-deployment binding, final host/release evidence and cloud-KMS signer adapter selected for the release | Actual trusted keys, signatures and monotonic release publication |
 | R14 | Engineering complete | Installed authority-publication and evaluation commands use protected signed authority, independently recompute the frozen four-cell corpus, publish immutable signed receipts and production authorizations, reject rollback, and pass 24 installed fail-closed cases; exact-revision spec, correctness and test reviews report no remaining finding | Parent closure record only; ordinary activation consumption remains allocated to R13/R15 host integration | Product policy approval/signature and qualifying measurements |
 | R15 | Engineering complete | A signed capability-baseline authorization binds the closed policy and exact initial evidence window; construction independently requires fresh, sufficient and acceptable baseline evidence before atomically publishing freshness plus active status; normal reconciliation schedules no-ingest expiry; the default built-in graph path seals active status coordinates and group CAS rejects in-flight or later ingestion after demotion; authenticated revocation publication uses a read-only reader and separately verified publisher-only storage; the 111-test consolidated gate passes and exact-revision spec, correctness and test reviews approve `6224935e` with no remaining finding | Parent closure record only; ordinary host-matrix completion remains allocated to R08, R16 and R19 | Approved monitoring policy, qualifying evidence windows and real production signatures |
-| R16 | Partial | Bootstrap topology, 181-schema/1269-role registered publication, native policy retention, installed package preparation and protected target activation are implemented | Bind the monitor/status owner across activation and use; close the configured ingress/root matrix and final package evidence | Approve/sign final bundle fingerprints |
-| R17 | Partial | All 17 graph observation families, registered projection identity reconstruction, event-derived intervals, scoped pagination, durable ingestion-time seals and public ProviderMemoryService methods are implemented; real activated JSONL composition and CI exercise the path; acceptance-owned public page-chain collection and globally unique operation/fence alignment are committed at `eccb5bfc` with six focused warnings-as-errors cases plus Ruff/Pyright | Extend the comparator through source/entity/terminal alignment and every schema-specific record family; prove missing/extra/time/provenance/projection-identity mutations and configured host-ingress rejection plus between-page revocation through a real root | Real caller trust and acceptance witnesses |
+| R16 | Partial | Bootstrap topology, 181-schema/1269-role registered publication, native policy retention, installed package preparation, protected target activation, and monitor/status use through Hermes are implemented | Complete final package/profile evidence and the exhaustive configured-root matrix | Approve/sign final bundle fingerprints |
+| R17 | Partial | All 17 graph observation families, scoped pagination, durable ingestion-time seals, public service methods, independent page-chain collection, operation/fence/source/entity/terminal alignment, and exact membership checks are implemented; a real activated JSONL Hermes flow returns nonempty records, digests and attestations and rejects wrong scope and invalid cursors | Complete production-level record-family mutation, forged-topology, between-page revocation, and full host permutations | Real caller trust and acceptance witnesses |
 | R18 | Engineering complete | Historical/conflict/lineage replay retains M4 proof and current projection-history gates pass | Parent closure record only | None distinct |
-| R19 | Partial | Normal provider roots reach protected registry/target activation, atomic ledger writes/recovery, all 17 observations and ingestion-time attestations; installed package and host composition are CI exercised | Integrate monitor/status checks into every normal root and add meaningful configured ingress/revocation negatives; then refresh the caller ledger | Install approved real host configuration |
+| R19 | Partial | Normal provider roots reach protected registry/target activation, atomic ledger writes/recovery, all 17 observations and ingestion-time attestations; Hermes exposes activation, monitoring, observation, attestation, reconciliation and retrieval, with common failures covered | Complete the broader production host/platform matrix and final release evidence | Install approved real host configuration |
 | R20 | Engineering complete | Lease, retry, recovery and exhaustion behavior remain covered by current persistence/transaction gates | Parent closure record only | None distinct |
 | R21 | Engineering complete | Crash-atomic generation and backend behavior remain covered | Parent closure record only | None distinct |
 | R22 | Engineering complete | Provider compatibility and protected-result behavior pass current recapture/scenario gates; stale M0 inference is reconciled | Parent closure record only | None distinct |
