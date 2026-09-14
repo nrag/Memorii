@@ -37,6 +37,7 @@ from tests.fixtures.semantic_ingestion.bootstrap_graph_v3_fixture import (
     DeterministicBootstrapGraphAuthorityProviderV3,
 )
 from tests.fixtures.semantic_ingestion.scenario_fixture_authority import (
+    _scenario_capability_bindings,
     _scenario_capability_monitoring,
 )
 from tests.unit.core.semantic_ingestion.test_semantic_provider_composition import (
@@ -210,4 +211,17 @@ def initialize_graph_fixture_capability_monitor(
     )
     service._capability_monitor.initialize_active_from_verified_evidence(
         evidence=evidence
+    )
+
+
+def graph_fixture_capability_bindings(
+    source: object,
+    operation_inputs: tuple[object, ...],
+    compilation: object,
+    registry: object,
+    atomic_store: object,
+) -> tuple[object, ...]:
+    """Derive fixture bindings through the production capability selector."""
+    return _scenario_capability_bindings(
+        source, operation_inputs, compilation, registry, atomic_store
     )

@@ -43,6 +43,7 @@ from tests.unit.core.semantic_ingestion.bootstrap_graph_production_roots_support
     build_filesystem_provider,
     build_provider_memory_service_from_env,
     graph_fact_proposal,
+    graph_fixture_capability_bindings,
     hermes_provider,
     initialize_graph_fixture_capability_monitor,
     provider_service,
@@ -398,6 +399,11 @@ def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str
         # reductions (native terminal status), not the executor's outcome:
         # committed retained arms need accepted materialization.
         accepted_materialization=(behavior == "reused_committed"),
+        capability_bindings_factory=(
+            graph_fixture_capability_bindings
+            if behavior == "reused_committed"
+            else None
+        ),
         unavailable_calls=unavailable_calls if behavior == "durable_retry" else None,
         conflict_calls=(
             conflict_calls
@@ -511,6 +517,8 @@ def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str
             raise AssertionError("proof did not compose the production graph host")
         if hasattr(graph_bundle, "authority_provider"):
             raise AssertionError("proof composed fixture graph authority")
+    elif behavior == "reused_committed" and phase == "first":
+        initialize_graph_fixture_capability_monitor(service)
     prior_graph_effects = len(service._memory_plane.list_records(
         source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
     ))

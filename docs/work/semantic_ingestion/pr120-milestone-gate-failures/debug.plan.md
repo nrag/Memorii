@@ -66,6 +66,8 @@ Observed on run `34795511535`: Acceptance Authority Runtime, Package Smoke, Benc
 - One shared production-root fixture initializer now creates the writer epoch, installs the existing signed test monitoring authority, and initializes fresh active evidence. Production execution still fails closed when this authority is absent.
 - The four focused conflict proofs pass across direct, factory, filesystem, and Hermes roots; the complete factory transaction-boundary shard passes all 29 scenarios; and exact Unit Test Shard 2 passes all 1,044 tests.
 - Independent-process conflict first/reopen proofs pass for direct, factory, filesystem, and Hermes JSONL roots. Each first phase reaches three CAS attempts and two graph effects; each reopen reaches zero CAS attempts and reloads the same source-progress evidence without reinitializing capability authority.
+- Replacement run `34811310162` passed 40 jobs and exposed one later batch element after the conflict repair: the deterministic `reused_committed` arm requested accepted materialization but still emitted an empty capability-binding set. It now uses the production selector over the same active fixture status/checkpoint.
+- The focused `reused_committed` factory JSONL first/reopen pair passes with three initial graph effects and zero replay effects. The complete factory JSONL independent-process gate then passes all 29 scenarios.
 
 ## Changed Surfaces
 
@@ -108,6 +110,8 @@ Observed on run `34795511535`: Acceptance Authority Runtime, Package Smoke, Benc
 | Production-root conflict proof | passed across direct, factory, filesystem, and Hermes, 4 tests |
 | Bootstrap Graph Transaction Boundary (memory, factory) | passed, all 29 scenarios |
 | Independent JSONL conflict/reopen proof | passed for direct, factory, filesystem, and Hermes; persisted authority reloaded with zero replay CAS attempts |
+| PR 120 run `34811310162` | 40 jobs passed; four JSONL matrix failures plus the umbrella failure mapped to the stale `reused_committed` binding fixture |
+| Bootstrap Graph Transaction Boundary (jsonl, factory) | passed, all 29 scenarios |
 | Unit Test Shard 2 after final fixture repair | passed, 1,044 tests |
 | Final fixture static checks | Ruff and exact CI-form Pyright passed |
 
