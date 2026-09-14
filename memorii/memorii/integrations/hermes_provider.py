@@ -258,6 +258,13 @@ class HermesMemoryProvider(MemoryProviderInterface):
 
         return self._service.activate_observation_ledger()
 
+    def start_semantic_ingestion(self) -> SemanticWriterCommitBinding:
+        """Activate durable ingestion and recover pending work at host startup."""
+
+        activated = self._service.activate_observation_ledger()
+        self._service.reconcile_memory_evolution()
+        return activated
+
     def run_capability_monitor_tick(
         self,
         *,
@@ -444,6 +451,16 @@ class HermesMemoryProvider(MemoryProviderInterface):
             operation_id=operation_id,
             authenticated_host_ingress=authenticated_host_ingress,
         )
+
+
+def build_started_hermes_memory_provider(
+    *, service: ProviderMemoryService,
+) -> HermesMemoryProvider:
+    """Build the explicit configured Hermes startup root."""
+
+    provider = HermesMemoryProvider(service=service)
+    provider.start_semantic_ingestion()
+    return provider
 
 
 def _messages_to_snapshot_text(messages: list[dict[str, object]] | list[str]) -> str:

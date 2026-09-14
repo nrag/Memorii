@@ -46,7 +46,10 @@ from memorii.domain.enums import (
     ProviderAttemptStatus,
     SourceModality,
 )
-from memorii.integrations.hermes_provider import HermesMemoryProvider
+from memorii.integrations.hermes_provider import (
+    HermesMemoryProvider,
+    build_started_hermes_memory_provider,
+)
 from pydantic import ValidationError
 from tests.fixtures.semantic_ingestion.host_bootstrap_authority import (
     DeterministicTestHostBootstrapMaterialVerifier,
@@ -555,6 +558,47 @@ def test_hermes_reconciles_no_pending_memory_evolution() -> None:
     """The public Hermes recovery hook is safe when no durable work is pending."""
 
     assert HermesMemoryProvider(ProviderMemoryService()).reconcile_memory_evolution() == []
+
+
+def test_hermes_startup_activates_before_recovering_pending_work() -> None:
+    """The host startup hook owns the required activation/recovery sequence."""
+
+    service = ProviderMemoryService()
+    provider = HermesMemoryProvider(service)
+    activation = cast(SemanticWriterCommitBinding, object())
+    calls: list[str] = []
+
+    with (
+        patch.object(
+            service,
+            "activate_observation_ledger",
+            side_effect=lambda: calls.append("activate") or activation,
+        ),
+        patch.object(
+            service,
+            "reconcile_memory_evolution",
+            side_effect=lambda: calls.append("reconcile") or [],
+        ),
+    ):
+        assert provider.start_semantic_ingestion() is activation
+
+    assert calls == ["activate", "reconcile"]
+
+
+def test_started_hermes_root_runs_lifecycle_before_returning_provider() -> None:
+    """The production builder cannot return a configured but unstarted host."""
+
+    service = ProviderMemoryService()
+    activation = cast(SemanticWriterCommitBinding, object())
+    with (
+        patch.object(service, "activate_observation_ledger", return_value=activation) as activate,
+        patch.object(service, "reconcile_memory_evolution", return_value=[]) as reconcile,
+    ):
+        provider = build_started_hermes_memory_provider(service=service)
+
+    assert isinstance(provider, HermesMemoryProvider)
+    activate.assert_called_once_with()
+    reconcile.assert_called_once_with()
 
 
 def test_memory_write_stages_user_candidate_and_blocks_commit() -> None:

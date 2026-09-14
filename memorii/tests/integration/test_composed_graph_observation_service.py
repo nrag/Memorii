@@ -55,7 +55,10 @@ from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.memory_plane.store import JsonlMemoryPlaneStore
 from memorii.core.provider.factory import build_provider_memory_service_from_env
 from memorii.core.provider.models import ProviderOperation
-from memorii.integrations.hermes_provider import HermesMemoryProvider
+from memorii.integrations.hermes_provider import (
+    HermesMemoryProvider,
+    build_started_hermes_memory_provider,
+)
 from tests.integration.test_observation_ledger_activation import (
     _provider_factory,
     _seed_provider,
@@ -187,8 +190,8 @@ def backend(tmp_path_factory, request):
     semantic.writer_admission._activated_observation_snapshot_validators[
         semantic.atomic_store._write_capability
     ] = record_snapshot_context
-    writer.activate_observation_ledger()
-    result = writer.sync_event(
+    hermes_writer = build_started_hermes_memory_provider(service=writer)
+    result = hermes_writer.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN, content="Atlas owner is Bob.",
         operation_id="composed-source", task_id="task:one", user_id="user:alice",
         authenticated_host_ingress=_host_ingress(),
