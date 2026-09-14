@@ -62,6 +62,10 @@ Observed on run `34795511535`: Acceptance Authority Runtime, Package Smoke, Benc
 - Accepted graph fixtures had not adopted the capability authorization checkpoint now required by the production group CAS. The scenario host now initializes a complete current status/checkpoint pair and derives its operation bindings through the production binding constructor; accepted and protected-unresolved public ingress both pass.
 - The coordinator lifecycle fixture now uses an unresolved completed group for its generic success arm. Accepted effect persistence remains covered by production-shaped graph tests and no longer depends on an incomplete empty capability registry.
 - A captured capability-monitor predecessor is a cutover-only manifest under the current contract. Its immutable terminal still reloads without writes through the atomic read API, while the public ingestion root now has an explicit regression proof that it fails closed before activation and invokes neither normalization nor graph execution.
+- GitHub run `34808452965` reduced the remaining failures to one shared fixture defect: the production-root transaction matrices and the native group-result codec expected accepted graph effects without installing the capability status and authorization checkpoint now required by group CAS.
+- One shared production-root fixture initializer now creates the writer epoch, installs the existing signed test monitoring authority, and initializes fresh active evidence. Production execution still fails closed when this authority is absent.
+- The four focused conflict proofs pass across direct, factory, filesystem, and Hermes roots; the complete factory transaction-boundary shard passes all 29 scenarios; and exact Unit Test Shard 2 passes all 1,044 tests.
+- Independent-process conflict first/reopen proofs pass for direct, factory, filesystem, and Hermes JSONL roots. Each first phase reaches three CAS attempts and two graph effects; each reopen reaches zero CAS attempts and reloads the same source-progress evidence without reinitializing capability authority.
 
 ## Changed Surfaces
 
@@ -100,7 +104,13 @@ Observed on run `34795511535`: Acceptance Authority Runtime, Package Smoke, Benc
 | Package Smoke bootstrap tests | passed, 19 tests on Python 3.11 |
 | Installed package preparation | passed for source `e9263d33`; 23 distributions / 6,036 files / 1,800 package files |
 | Installed package rejection family | passed; all five mutations rejected before host execution |
+| PR 120 run `34808452965` | 35 jobs passed; nine underlying failures plus one umbrella failure mapped to the missing active-capability fixture setup |
+| Production-root conflict proof | passed across direct, factory, filesystem, and Hermes, 4 tests |
+| Bootstrap Graph Transaction Boundary (memory, factory) | passed, all 29 scenarios |
+| Independent JSONL conflict/reopen proof | passed for direct, factory, filesystem, and Hermes; persisted authority reloaded with zero replay CAS attempts |
+| Unit Test Shard 2 after final fixture repair | passed, 1,044 tests |
+| Final fixture static checks | Ruff and exact CI-form Pyright passed |
 
 ## Next Action
 
-Push source `e9263d33` plus its refreshed candidate, then verify every PR 120 check on the replacement GitHub revision.
+Commit and push the shared capability-authority fixture repair, then verify every PR 120 check on the replacement GitHub revision.

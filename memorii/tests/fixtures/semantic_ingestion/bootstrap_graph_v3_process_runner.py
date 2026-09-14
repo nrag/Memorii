@@ -44,6 +44,7 @@ from tests.unit.core.semantic_ingestion.bootstrap_graph_production_roots_support
     build_provider_memory_service_from_env,
     graph_fact_proposal,
     hermes_provider,
+    initialize_graph_fixture_capability_monitor,
     provider_service,
 )
 from tests.unit.core.semantic_ingestion.test_semantic_provider_composition import (
@@ -492,6 +493,10 @@ def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str
         competing_service = service
     service_holder.append(service)
     if behavior == "real_related_conflict":
+        if phase == "first":
+            initialize_graph_fixture_capability_monitor(service)
+            if competing_service is not service:
+                initialize_graph_fixture_capability_monitor(competing_service)
         # Independent stores/processes do not share this process-local guard.
         # Disable it so the JSONL store CAS, rather than the harness mutex,
         # orders the two writers at the physical boundary under proof.

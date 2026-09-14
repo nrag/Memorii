@@ -32,6 +32,7 @@ from tests.fixtures.semantic_ingestion.clean_room_request_fixture import (
 )
 from tests.unit.core.semantic_ingestion.bootstrap_graph_production_roots_support import (
     graph_fact_proposal,
+    initialize_graph_fixture_capability_monitor,
     provider_service,
 )
 from tests.unit.core.semantic_ingestion.test_semantic_provider_composition import (
@@ -244,6 +245,7 @@ def test_transaction_group_result_json_round_trip_is_typed_and_fail_closed() -> 
         ),
         source_normalization_host_bundle_builder=normalization,
     )
+    initialize_graph_fixture_capability_monitor(service)
     service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="Atlas owner is Bob.",

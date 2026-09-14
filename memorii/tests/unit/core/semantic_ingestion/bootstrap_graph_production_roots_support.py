@@ -14,6 +14,7 @@ from pathlib import Path
 from memorii.core.filesystem_storage.bundle import (
     build_filesystem_provider as _production_filesystem_provider,
 )
+from memorii.core.memory_evolution.capability_monitoring import CapabilityMonitor
 from memorii.core.memory_plane import JsonlMemoryPlaneStore, MemoryPlaneService
 from memorii.core.provider.factory import (
     build_provider_memory_service_from_env as _production_factory_provider,
@@ -34,6 +35,9 @@ from memorii.integrations.hermes_provider import (
 )
 from tests.fixtures.semantic_ingestion.bootstrap_graph_v3_fixture import (
     DeterministicBootstrapGraphAuthorityProviderV3,
+)
+from tests.fixtures.semantic_ingestion.scenario_fixture_authority import (
+    _scenario_capability_monitoring,
 )
 from tests.unit.core.semantic_ingestion.test_semantic_provider_composition import (
     _built_in_local_capability,
@@ -187,4 +191,23 @@ def graph_fact_proposal(group_count: int = 1) -> ProviderSemanticProposal:
         ),
         facts=facts[:group_count],
         abstained=False,
+    )
+
+
+def initialize_graph_fixture_capability_monitor(
+    service: ProviderMemoryService,
+) -> None:
+    """Give production graph fixtures the active capability evidence they require."""
+    service._ensure_writer_admission_record()
+    policy, evidence, checkpoint = _scenario_capability_monitoring(
+        service._clock.now_utc()
+    )
+    service._capability_monitor = CapabilityMonitor(
+        writers=service._semantic_writer_admission,
+        now=service._clock.now_utc,
+        policies=(policy,),
+        authorization_checkpoints=(checkpoint,),
+    )
+    service._capability_monitor.initialize_active_from_verified_evidence(
+        evidence=evidence
     )

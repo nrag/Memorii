@@ -34,6 +34,7 @@ from tests.unit.core.semantic_ingestion.bootstrap_graph_production_roots_support
     build_provider_memory_service_from_env,
     graph_fact_proposal,
     hermes_provider,
+    initialize_graph_fixture_capability_monitor,
     provider_service,
 )
 from tests.unit.core.semantic_ingestion.test_semantic_provider_composition import (
@@ -227,6 +228,7 @@ def test_graph_scenario_replays_without_effects_in_memory(
         service = provider_service(memory_plane=memory_plane, **common)
 
     if behavior == "real_related_conflict":
+        initialize_graph_fixture_capability_monitor(service)
         graph_bundle = (
             service._provider_ingestion._semantic_runtime.bootstrap_graph_host_bundle
         )
