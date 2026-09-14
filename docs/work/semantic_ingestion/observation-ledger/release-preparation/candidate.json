@@ -1,6 +1,6 @@
 {
   "files": {
-    ".github/workflows/pr-gates.yml": "16db760a930d418ce8e4fe2f561c831439110ecc59369713280def507888b712",
+    ".github/workflows/pr-gates.yml": "b77ac53eda3a88b77d91ca707ca2a8ba2a97ce8a168afc2b9e3727d4446c7310",
     "acceptance/__init__.py": "adbb769f003c08d46e26ff769de38c76f15e3e09b1bee8cb53e3c3886f8aa91d",
     "acceptance/arithmetic.py": "0958fd3aff008ba15b309bd7f4e037bb4e139672f85b51807bfacc562a0528cd",
     "acceptance/authority_cli.py": "4132ae05df5601c4f0a0098b177291c3dc9b722d9250620de4247bbb763eb135",
@@ -302,7 +302,7 @@
     "memorii/memorii/core/memory_evolution/graph_observation_cursor.py": "be0b09d45b4fe26143ae22a54b9371308924a8f3558adfd261b2f04617b130f5",
     "memorii/memorii/core/memory_evolution/graph_observation_host.py": "ab01c3c48aa349d886716c67b1ae62602ecb632eb74d37bc755339f13243b45a",
     "memorii/memorii/core/memory_evolution/graph_observation_ingestion_projection.py": "0d5b52cd6d21f97eece0bf400572f443c0b145957f33fc040c76abb1e82bf700",
-    "memorii/memorii/core/memory_evolution/graph_observation_materialization.py": "6b8a7944c071be792742f7b2d1f6ad977ec0480c24b99c4db987ec6be3d5e276",
+    "memorii/memorii/core/memory_evolution/graph_observation_materialization.py": "5c3b38f32834b3991bbff9a8b29de2d9ad7ae2415b19e535d18657a6870fde2d",
     "memorii/memorii/core/memory_evolution/graph_observation_native_projection.py": "d2f337472f6ed001fc7ba5ae96fc05e181b3375e54a3d27006a61890a24b9bb0",
     "memorii/memorii/core/memory_evolution/graph_observation_paging.py": "882c9e89f3e97460e3ccabcbf7426e8dce451bc8f0804bde07ffd901abfa6f04",
     "memorii/memorii/core/memory_evolution/graph_observation_public_contracts.py": "0b86d24a2ed6df816e2eab9523d5c225475a512b3100d5e80ff4e458c5de3964",
@@ -1890,6 +1890,6 @@
     "tools/observation_activation_launch.py": "00015559da84ec93316d345e055dd00cc066f17ae3221c978c1240a5b828cac5",
     "tools/observation_activation_prepare.py": "333070a6e3fa8280254cfd3c9f48e05593df1463a5202fa3b947ce290187ecaf"
   },
-  "head": "e9263d33895f91ed280c0ab50258f6ccfbe967a6",
+  "head": "6069f73ca28890634c184c210b19c52e841b10f3",
   "scope": "offline deployment and target preparation only; no CAS, M5 or whole branch approval"
 }
