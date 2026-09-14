@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.PredicateStateRule.v1","implementation_source_digest":"5cb032a63a8b46ccceaa18e008b1b8cd905ddb33aad39f80d04d773ba5fce18c","role":"decoder","schema_id":"PredicateStateRule","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.PredicateStateRule.v1","implementation_source_digest":"b09fa58af2d08789ea3bb0e0fc8dee07cb8a370d09ebbbcb7f72e28976fe9194","role":"decoder","schema_id":"PredicateStateRule","schema_version":"1","typed_root_kind":"model"}

@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.SemanticClaimSlotKey.v1","implementation_source_digest":"0e94bec445fa47ae74c5c933cbcdcde4bf2e5d73f3b3fb5020ca2a661232b12e","role":"decoder","schema_id":"SemanticClaimSlotKey","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.SemanticClaimSlotKey.v1","implementation_source_digest":"2a5bd55a94381a65d15530ba054740a5a07b779df2aa97b35220125c815d93f7","role":"decoder","schema_id":"SemanticClaimSlotKey","schema_version":"1","typed_root_kind":"model"}

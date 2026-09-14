@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.GraphRevisionDelta.v1","implementation_source_digest":"0f3e2226e586880efb50c287a8dae01e081014882a34485e1c663f8a8a0660b5","role":"decoder","schema_id":"GraphRevisionDelta","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.GraphRevisionDelta.v1","implementation_source_digest":"9c9d656aad072cc88a54ad954f058754e4ec7a0fc02ce6fbe5e45a4ef99f0fde","role":"decoder","schema_id":"GraphRevisionDelta","schema_version":"1","typed_root_kind":"model"}
