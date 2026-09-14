@@ -11,6 +11,7 @@ import hashlib
 import importlib.metadata
 import json
 from collections.abc import Callable
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -65,7 +66,9 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         self._provider: HermesMemoryProvider | None = None
         self._session_id = ""
         self._default_user_id: str | None = None
-        self._turn_user_id: str | None = None
+        self._turn_user_id: ContextVar[str | None] = ContextVar(
+            "memorii_hermes_turn_user_id", default=None
+        )
         self._agent_identity: object | None = None
         self._issue_ingress: Callable[[HermesIngressRequest], AuthenticatedHostIngress] | None = None
 
@@ -109,7 +112,7 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         self._provider = provider
         self._session_id = resolved_session_id
         self._default_user_id = user_id
-        self._turn_user_id = user_id
+        self._turn_user_id.set(user_id)
         self._agent_identity = kwargs.get("agent_identity")
         self._issue_ingress = binding.issue_ingress
 
@@ -121,10 +124,11 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         raise ValueError(f"Memorii does not provide Hermes tool {tool_name!r}")
 
     def prefetch(self, query: str, *, session_id: str = "") -> str:
+        user_id = self._current_user_id()
         return self._require_provider().prefetch(
             query,
             session_id=self._effective_session_id(session_id),
-            user_id=self._turn_user_id,
+            user_id=user_id,
         )
 
     def on_turn_start(
@@ -135,7 +139,9 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
     ) -> None:
         del turn_number, message
         self._require_provider()
-        self._turn_user_id = _optional_text(kwargs.get("author_id")) or self._default_user_id
+        self._turn_user_id.set(
+            _optional_text(kwargs.get("author_id")) or self._default_user_id
+        )
 
     def sync_turn(
         self,
@@ -149,7 +155,7 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         effective_session_id = self._effective_session_id(session_id)
         effective_user_id = (
             _optional_text(turn_author.get("id")) if turn_author is not None else None
-        ) or self._turn_user_id
+        ) or self._current_user_id()
         self._require_provider().sync_turn(
             user_content,
             assistant_content,
@@ -173,7 +179,7 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
             messages,
             operation_id=_operation_id("session_end", self._session_id, messages),
             session_id=self._session_id,
-            user_id=self._turn_user_id,
+            user_id=self._current_user_id(),
             authenticated_host_ingress=self._require_ingress(hook="session_end"),
         )
 
@@ -182,7 +188,7 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
             messages,
             operation_id=_operation_id("pre_compress", self._session_id, messages),
             session_id=self._session_id,
-            user_id=self._turn_user_id,
+            user_id=self._current_user_id(),
             authenticated_host_ingress=self._require_ingress(hook="pre_compress"),
         )
         return ""
@@ -202,7 +208,7 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
                 "memory_write", self._session_id, [action, target, content, metadata]
             ),
             session_id=self._session_id,
-            user_id=self._turn_user_id,
+            user_id=self._current_user_id(),
             authenticated_host_ingress=self._require_ingress(hook="memory_write"),
         )
 
@@ -223,7 +229,7 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
                 "delegation", effective_session_id, [task, result]
             ),
             session_id=effective_session_id,
-            user_id=self._turn_user_id,
+            user_id=self._current_user_id(),
             authenticated_host_ingress=self._require_ingress(
                 hook="delegation", session_id=effective_session_id
             ),
@@ -244,7 +250,7 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         self._default_user_id = _optional_text(kwargs.get("user_id")) or _optional_text(
             kwargs.get("user_id_alt")
         ) or self._default_user_id
-        self._turn_user_id = self._default_user_id
+        self._turn_user_id.set(self._default_user_id)
 
     def shutdown(self) -> None:
         self._provider = None
@@ -257,6 +263,9 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
 
     def _effective_session_id(self, supplied_session_id: str) -> str:
         return _optional_text(supplied_session_id) or self._session_id
+
+    def _current_user_id(self) -> str | None:
+        return self._turn_user_id.get() or self._default_user_id
 
     def _require_ingress(
         self,
@@ -273,7 +282,7 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
             HermesIngressRequest(
                 hook=hook,
                 session_id=session_id or self._session_id,
-                user_id=user_id or self._turn_user_id,
+                user_id=user_id or self._current_user_id(),
                 agent_identity=self._agent_identity,
                 turn_author=turn_author,
                 received_at=datetime.now(UTC),

@@ -53,7 +53,7 @@ Deferred to Level 3: signed release artifacts, immutable version pinning guidanc
 | Installed Hermes discovery | Python entry point returns a concrete Hermes `MemoryProvider` | entry-point/ABC contract test | built wheel metadata inspection; real Hermes loader at `ee445299` | implemented, locally verified |
 | Persistent startup and restart | One deployment-owned factory returns a configured runtime binding; bridge starts canonical ingestion once | configured initialization/reopen test | operator setup command | bridge implemented; production factory absent |
 | Recall and completed-turn capture | Forward `prefetch` and `sync_turn` with scope, host-issued ingress, and stable delivery identity | configured committed-recall and source-capture/replay test | production binding ledger | implemented, locally verified |
-| Common lifecycle hooks | Forward turn-author binding, session end, pre-compress, memory write, delegation, and session switch where Hermes exposes them | lifecycle and shared-participant isolation test | compatibility notes | implemented, locally verified |
+| Common lifecycle hooks | Forward turn-author binding, session end, pre-compress, memory write, delegation, and session switch where Hermes exposes them | hook dispatch, durable memory-write/session-switch, and shared-participant isolation test | compatibility notes | implemented, locally verified |
 | Common failure behavior | Explicit unavailable/pre-init/invalid-root and invalid factory/binding behavior | negative tests | setup diagnostics | implemented, locally verified |
 
 ## Change Map
@@ -98,7 +98,7 @@ Deferred to Level 3: signed release artifacts, immutable version pinning guidanc
 | Initialization opens durable profile-local storage once | temporary profile startup and reopen | ephemeral state or repeated activation | missing recall/state mismatch |
 | Completed turn is durably captured and committed memory is recallable | configured factory sync plus prefetch/reopen | host calls do not reach Memorii or durable state is not reopened | durable semantic-source cardinality and rendered committed context |
 | Same delivery retries idempotently | repeated identical completed message evidence | duplicate ledger/memory writes | two user/assistant semantic-source records after retry |
-| Lifecycle hooks forward | fixture issuer records typed hook requests | dropped session/compression/write/delegation events | exact hook/session assertions |
+| Lifecycle hooks forward | fixture issuer records typed hook requests; JSONL assertions cover explicit memory writes before and after a session switch | dropped hooks, missing explicit writes, or stale switched scope | exact hook/session assertions plus durable source records |
 | Misuse fails clearly | pre-init, unavailable factory, unusable root, and invalid ingress cases | silent no-op or hidden fallback | typed exception/unavailable reason with unchanged source count |
 
 ## Migration, Rollout, And Rollback
@@ -152,6 +152,9 @@ Candidate freeze: implementation commit `c372e66e4d0cd42db6775b08961a8135e16a7c7
 - 2026-09-13: A stronger assertion that a captured turn was immediately recallable failed: capture produced durable source records, while committed retrieval continued to return only the seeded committed record. The Level 2 bridge contract therefore claims durable turn capture and committed-memory recall separately; semantic evolution remains owned by the configured runtime policy.
 - 2026-09-13: Built and inspected the wheel, then checked the entry point against current Hermes revision `ee4452991d17534aa561f31ee55596d082aa94e7`. Hermes loaded the concrete provider through its actual plugin loader and real ABC. Availability correctly remained false because no deployment service factory is installed.
 - 2026-09-13: Correctness review identified stale startup-user recall in shared sessions. The bridge now consumes Hermes `on_turn_start(author_id=...)`, uses that participant for recall and lifecycle ingress, and has a two-participant isolation regression.
+- 2026-09-13: The participant scope is stored in a `ContextVar`, matching Hermes's copied-context prefetch worker. A controlled interleaving proves Alice's suspended prefetch cannot observe Bob's later turn identity.
+- 2026-09-13: The JSONL test now distinguishes two equal-content turns by completed-transcript position, deduplicates each replay, verifies explicit-memory-write persistence across session switch, rejects invalid ingress without a write, and confirms the retained IDs reopen unchanged.
+- 2026-09-13: Session-end, pre-compress, and delegation remain forwarding compatibility hooks. Their structured semantic promotion depends on canonical host envelope authority and is not claimed as bridge-owned durable capture; completed turns already provide the Level 2 transcript capture path.
 - 2026-09-13: Independent reviews confirmed the bridge cannot honestly close interactive validation while the production service-factory caller count is zero. This is an external deployment/signing blocker, not a reason to add a test-authority fallback.
 
 ## Next Action

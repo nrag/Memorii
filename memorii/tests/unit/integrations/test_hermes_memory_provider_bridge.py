@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import contextvars
 import importlib
 import sys
+import threading
 import tomllib
 from abc import ABC, abstractmethod
 from importlib.metadata import EntryPoint
@@ -241,14 +243,58 @@ def test_configured_factory_starts_the_canonical_adapter_and_reopens_recall(
         turn_author={"id": "user:alice"},
     )
 
-    assert len(services[0]._memory_plane.list_records(source_kind="semantic_ingestion_source")) == 2
-    assert [request.hook for request in issued_requests] == ["sync_turn", "sync_turn"]
+    later_messages = [*completed_messages, *completed_messages]
+    first.sync_turn(
+        "The Zephyr deployment owner is Bob.",
+        "I will remember that Bob owns Zephyr deployment.",
+        messages=later_messages,
+        turn_author={"id": "user:alice"},
+    )
+    first.sync_turn(
+        "The Zephyr deployment owner is Bob.",
+        "I will remember that Bob owns Zephyr deployment.",
+        messages=later_messages,
+        turn_author={"id": "user:alice"},
+    )
+
+    assert len(services[0]._memory_plane.list_records(source_kind="semantic_ingestion_source")) == 4
+    assert [request.hook for request in issued_requests] == [
+        "sync_turn",
+        "sync_turn",
+        "sync_turn",
+        "sync_turn",
+    ]
     assert issued_requests[0].session_id == "session:one"
     assert issued_requests[0].user_id == "user:alice"
     assert issued_requests[0].turn_author == {"id": "user:alice"}
 
     first.on_turn_start(2, "Who owns Atlas?", author_id="user:bob")
     assert "Atlas migration owner is Alice." not in first.prefetch("Who owns Atlas?")
+
+    captured_user_ids = []
+    prefetch_started = threading.Event()
+    release_prefetch = threading.Event()
+
+    def blocking_prefetch(query, *, session_id, user_id):
+        del query, session_id
+        prefetch_started.set()
+        assert release_prefetch.wait(timeout=5)
+        captured_user_ids.append(user_id)
+        return ""
+
+    monkeypatch.setattr(first._provider, "prefetch", blocking_prefetch)
+    first.on_turn_start(3, "Alice turn", author_id="user:alice")
+    alice_context = contextvars.copy_context()
+    worker = threading.Thread(
+        target=lambda: alice_context.run(first.prefetch, "Alice query")
+    )
+    worker.start()
+    assert prefetch_started.wait(timeout=5)
+    first.on_turn_start(4, "Bob turn", author_id="user:bob")
+    release_prefetch.set()
+    worker.join(timeout=5)
+    assert not worker.is_alive()
+    assert captured_user_ids == ["user:alice"]
 
     assert first.on_pre_compress(completed_messages) == ""
     first.on_memory_write("upsert", "memory", "Atlas is active.")
@@ -261,26 +307,62 @@ def test_configured_factory_starts_the_canonical_adapter_and_reopens_recall(
         rewound=False,
         user_id="user:bob",
     )
+    first.on_memory_write("upsert", "memory", "Zephyr is active for Bob.")
 
     assert [request.hook for request in issued_requests] == [
+        "sync_turn",
+        "sync_turn",
         "sync_turn",
         "sync_turn",
         "pre_compress",
         "memory_write",
         "delegation",
         "session_end",
+        "memory_write",
     ]
-    assert issued_requests[4].session_id == "session:child"
-    assert all(request.user_id == "user:bob" for request in issued_requests[2:])
+    assert issued_requests[6].session_id == "session:child"
+    assert all(request.user_id == "user:bob" for request in issued_requests[4:])
+
+    durable_records = services[0]._memory_plane.list_records(
+        source_kind="semantic_ingestion_source"
+    )
+    records_by_text = {record.text: record for record in durable_records}
+    assert records_by_text["Atlas is active."].content["source_admission"]["source_kind"] == (
+        "explicit_memory_write"
+    )
+    switched = records_by_text["Zephyr is active for Bob."]
+    assert switched.session_id == "session:two"
+    assert switched.user_id == "user:bob"
+    assert switched.content["source_admission"]["source_kind"] == "explicit_memory_write"
+    assert {
+        record.content["source_admission"]["source_kind"]
+        for record in durable_records
+    } >= {
+        "conversation_turn",
+        "explicit_memory_write",
+    }
 
     source_count = len(services[0]._memory_plane.list_records(source_kind="semantic_ingestion_source"))
     reject_ingress[0] = True
     with pytest.raises(TypeError, match="must return AuthenticatedHostIngress"):
         first.on_memory_write("upsert", "memory", "must not persist")
     assert len(services[0]._memory_plane.list_records(source_kind="semantic_ingestion_source")) == source_count
+    assert all(
+        record.text != "must not persist"
+        for record in services[0]._memory_plane.list_records(
+            source_kind="semantic_ingestion_source"
+        )
+    )
 
     first.shutdown()
     reopened = bridge_module.MemoriiHermesMemoryProvider()
     reopened.initialize("session:one", hermes_home=tmp_path / "profile", user_id="user:alice")
 
     assert "Atlas migration owner is Alice." in reopened.prefetch("Who owns Atlas?")
+    reopened_records = services[-1]._memory_plane.list_records(
+        source_kind="semantic_ingestion_source"
+    )
+    assert len(reopened_records) == len(durable_records)
+    assert {record.memory_id for record in reopened_records} == {
+        record.memory_id for record in durable_records
+    }
