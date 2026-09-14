@@ -53,6 +53,10 @@ Observed on run `34795511535`: Acceptance Authority Runtime, Package Smoke, Benc
 - Unit shard 2 passes after the retained version-1 monitoring correction (998 tests).
 - The six observation-gate failures from the interrupted aggregate run now pass in their focused families: the five-case retained-control tamper family, fresh-process public reopen, and the native graph audit.
 - Exact CI static commands pass: Ruff reports no findings, Pyright reports zero errors, and the static-tooling contract family passes (18 tests).
+- Python 3.11 package bootstrap smoke passes (19 tests), matching the CI interpreter.
+- Refreshing the package candidate exposed seven stale decoder-source identities left by the earlier public-helper rename. Regenerating the canonical decoder/publication package changed no declarations, restored primary/independent compiler parity across 181 entries and 1,269 roles, and passed all 58 positive/rejection vectors.
+- The final Python 3.11 installed-wheel proof passes for candidate source `25b1d22b`: 23 distributions, 6,036 installed files, 1,800 package files, valid preparation accepted, and all five configured mutation families rejected.
+- Targeted correctness and test reviewers found no confirmed P1/P2 issue in the production repair slice at `3684a9e3`.
 
 ## Changed Surfaces
 
@@ -77,9 +81,11 @@ Observed on run `34795511535`: Acceptance Authority Runtime, Package Smoke, Benc
 | Unit Test Shard 2 | passed, 998 tests |
 | Activated provider ledger proof | passed against production graph path |
 | Graph observation/activation gate | 114 aggregate tests passed before interruption; all six reported failures pass in focused reruns |
-| Package smoke installed proof | pending candidate refresh |
+| Package smoke bootstrap tests | passed on Python 3.11, 19 tests |
+| Registry publication parity and rejection vectors | passed, 181 entries / 1,269 roles / 58 vectors |
+| Package smoke installed proof | passed for source `25b1d22b`; five mutation families rejected |
 | PR 120 required checks | pending correction push |
 
 ## Next Action
 
-Commit the source corrections, then freeze that revision in the release-preparation candidate and run the installed-package proof.
+Commit and push the refreshed candidate manifest, then verify every PR 120 check on the executed GitHub revision.
