@@ -128,11 +128,11 @@ No persisted-data migration is introduced. Rollout is opt-in by installing the d
 | Current Hermes contract | yes | current `NousResearch/hermes-agent` revision `ee445299` loaded the entry point through `plugins.memory.load_memory_provider`; concrete class satisfies the real ABC and returns the explicit missing-factory diagnostic |
 | Development connector package and setup | yes | both wheels built; exact provider/factory entry points inspected; setup unit tests passed |
 | Real Hermes development initialize/capture/reopen | yes | current loader reported available; two completed-turn source records persisted and reopened |
-| Current PR CI | external evidence | pending candidate push |
+| Current PR CI | external evidence | PR #120 merged green at `410ce4a8`; connector commits require a successor PR for hosted gates |
 
 Known candidate limitation: the development connector imports repository test authority and must be installed editable from this checkout. It proves the real Hermes/plugin/storage path before release signing, but it is not production authority or release evidence.
 
-Candidate freeze: implementation commit `a862b361`; clean tree before this evidence-only WorkPlan update; preflight artifact `docs/work/hermes-memory-provider-integration/production-entrypoint-preflight.md`.
+Candidate freeze: development connector implementation commit `3dd29f4e`; revision-bound candidate refresh `424e27df`; preflight artifact `docs/work/hermes-memory-provider-integration/production-entrypoint-preflight.md`.
 
 ## Delegation And Cost Ledger
 
@@ -159,6 +159,7 @@ Candidate freeze: implementation commit `a862b361`; clean tree before this evide
 - 2026-09-13: Session-end, pre-compress, and delegation remain forwarding compatibility hooks. Their structured semantic promotion depends on canonical host envelope authority and is not claimed as bridge-owned durable capture; completed turns already provide the Level 2 transcript capture path.
 - 2026-09-13: Independent reviews confirmed the bridge cannot honestly close interactive validation while the production service-factory caller count is zero. This is an external deployment/signing blocker, not a reason to add a test-authority fallback.
 - 2026-09-14: Added an explicit, separately installed development connector. The real Hermes loader discovered it, initialized the canonical provider, captured a completed turn into durable semantic-ingestion source records, and reopened those records on a second start. The connector uses deterministic ephemeral scenario authority and does not alter the production provider package or signing contract.
+- 2026-09-14: PR #120 had already merged at `410ce4a8` before the connector commits were pushed. Local focused, package, and real-loader checks pass; hosted gates for `3dd29f4e` require a successor PR.
 
 ## Next Action
 
