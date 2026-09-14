@@ -101,6 +101,27 @@ def test_preplanning_publication_is_atomic_idempotent_and_has_empty_future_effec
     assert len([r for r in plane.list_records() if r.source_kind == "semantic_ingestion_preplanning_artifact"]) == 3
 
 
+def test_unconfigured_observation_ledger_activation_never_mutates_the_actual_store() -> None:
+    plane = MemoryPlaneService(record_store=InMemoryMemoryPlaneStore())
+    writers = SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest())
+    binding = writers.commit_binding(writers.create_initial_evidence_only(
+        admission_id="writer-admission", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
+    ))
+    store = SemanticIngestionAtomicStore(plane, writers)
+    before = plane.read_write_snapshot()
+
+    with pytest.raises(PreplanningStoreError, match="target authority"):
+        store.activate_observation_ledger(writer_binding=binding)
+    with pytest.raises(SemanticWriterAdmissionError, match="target authority"):
+        writers._begin_observation_ledger_drain(binding)
+    with pytest.raises(SemanticWriterAdmissionError, match="target authority"):
+        writers._activate_observation_ledger(
+            expected=binding, activation=None, snapshot_revision=before[0], snapshot=before[1], max_rescans=1
+        )
+
+    assert plane.read_write_snapshot() == before
+
+
 def test_same_public_operation_id_has_distinct_fence_derived_writer_namespaces() -> None:
     plane = MemoryPlaneService()
     writers = SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest())

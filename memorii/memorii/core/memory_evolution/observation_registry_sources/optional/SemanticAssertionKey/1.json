@@ -1,0 +1,1 @@
+{"fields":[{"field_name":"slot","policy":"required"},{"field_name":"value","policy":"required"}],"role":"optional","schema_id":"SemanticAssertionKey","schema_version":"1"}

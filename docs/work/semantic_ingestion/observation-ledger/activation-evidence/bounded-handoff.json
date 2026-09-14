@@ -1,0 +1,34 @@
+{
+  "scope": "bounded activation local implementation and independent review only",
+  "candidate": "final-candidate.json",
+  "candidate_sha256": "41f423726e74930827a1b927e62b0e5ba093f6aeaa0fa018196c8ea9e67077b7",
+  "remaining_validated_p1_p2": [],
+  "remaining_bounded_changes_required": [],
+  "reviews": {
+    "spec_auditor": "approved final evidence delta; code compliant",
+    "correctness_reviewer": "approved; ACT-COR-001 and ACT-GOV-001 resolved; correctness-review.md",
+    "test_reviewer": "approved 24-case coverage and required CI topology; evidence-only successor retains identical code/tests/workflow/logs"
+  },
+  "evidence": {
+    "integration_passed": 24,
+    "integration_seconds": 218.82,
+    "initial_compatibility_passed": 241,
+    "initial_compatibility_seconds": 541.44,
+    "ruff": "passed",
+    "pyright": "passed",
+    "identity": "passed",
+    "ci": "wired but unobserved",
+    "runtime": "local Python3.12.14; CI3.11 parity not claimed"
+  },
+  "parent_requirements": {
+    "R17": "partial",
+    "R19": "partial"
+  },
+  "remaining": [
+    "native group/source append and replay",
+    "authenticated retrieval and independent comparator",
+    "checkpoint authority",
+    "current release package and CI evidence"
+  ],
+  "next_action": "Implement native group/source append and detached replay through canonical atomic owners."
+}

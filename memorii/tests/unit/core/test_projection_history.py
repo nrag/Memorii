@@ -38,6 +38,7 @@ from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.memory_plane.store import (
     JsonlMemoryPlaneStore,
+    ReadOnlyMemoryPlaneSnapshotStore,
     _PersistedBatch,
 )
 from memorii.core.semantic_ingestion.contracts import TimeInterval
@@ -225,6 +226,31 @@ def _repository(
         authorization=authorization,
         authority=authority,
     )
+
+
+def test_retained_checkpoint_validates_exact_historical_prefix_on_detached_inventory(tmp_path: Path) -> None:
+    harness = _repository(tmp_path / "retained-projections", _Clock(T0, T0 + timedelta(hours=1)))
+    first = harness.install(_request(1, outcome="contested"))
+    revision, records = harness.plane.read_write_snapshot()
+    detached = ProjectionHistoryRepository(
+        MemoryPlaneService(record_store=ReadOnlyMemoryPlaneSnapshotStore(write_revision=revision, records=records)),
+        repository_id=REPOSITORY_ID,
+    )
+    second = harness.install(_request(2, outcome="pass"))
+    first_revision = first.temporal.generation.base_graph_revision
+    for repository in (harness.repository, detached):
+        repository.validate_retained_checkpoint_bindings(first.replay_bindings, graph_revision=first_revision)
+        with pytest.raises(ProjectionHistoryError):
+            repository.validate_retained_checkpoint_bindings(first.replay_bindings, graph_revision="foreign")
+        with pytest.raises(ProjectionHistoryError):
+            repository.validate_retained_checkpoint_bindings(tuple(reversed(first.replay_bindings)), graph_revision=first_revision)
+    with pytest.raises(ProjectionHistoryError):
+        detached.validate_retained_checkpoint_bindings(second.replay_bindings, graph_revision=second.temporal.generation.base_graph_revision)
+    with pytest.raises(ProjectionHistoryError):
+        harness.repository.validate_retained_checkpoint_bindings(
+            (first.replay_bindings[0].model_copy(update={"history_prefix_digest": "0" * 64}), first.replay_bindings[1]),
+            graph_revision=first_revision,
+        )
 
 
 def test_jsonl_generations_are_immutable_and_queries_keep_contested_history(

@@ -1,0 +1,22 @@
+{
+  "scope": "Read-only codec/fixture identity discrimination, not certification",
+  "runtime_profile_digest": "9dc8b3d01e3f78ed6a11c7668cbb576b09f48ddf107c5efe441bb8bad234fd7f",
+  "fixture_profile_digest": "9dc8b3d01e3f78ed6a11c7668cbb576b09f48ddf107c5efe441bb8bad234fd7f",
+  "same_profile_digest": true,
+  "runtime_bytes_hex": "7b222474797065223a226d6170222c22656e7472696573223a5b5b2241222c226c6574746572225d2c5b225c6e222c22636f6e74726f6c225d5d7d",
+  "fixture_v2_rule_bytes_hex": "7b222474797065223a226d6170222c22656e7472696573223a5b5b225c6e222c22636f6e74726f6c225d2c5b2241222c226c6574746572225d5d7d0a",
+  "byte_equal": false,
+  "runtime_has_terminal_lf": false,
+  "runtime_map_key_order": [
+    "A",
+    "\n"
+  ],
+  "fixture_map_key_order": [
+    "\n",
+    "A"
+  ],
+  "source_sha256": {
+    "docs/design/semantic_ingestion/traceability_golden_vectors/ctv-binding-authority-v2.json": "272617544ee6531f995f797f323b576bc4070282ff1dd2cd12e49cfb0c492f3b",
+    "memorii/memorii/core/memory_evolution/ingestion_contracts.py": "45395ffce7b6def7be5e2be302256544e384f41fdda4c1de29dd9e948da1ad27"
+  }
+}

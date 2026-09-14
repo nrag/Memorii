@@ -1,0 +1,1 @@
+{"fields":[{"field_name":"entry_digest","policy":"required"},{"field_name":"pointer","policy":"required"},{"field_name":"projection_kind","policy":"required"},{"field_name":"repository_id","policy":"required"}],"role":"optional","schema_id":"TrustProjectionHistoryEntry","schema_version":"1"}

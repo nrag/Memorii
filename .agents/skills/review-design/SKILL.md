@@ -5,6 +5,23 @@ description: Independently review a Memorii technical design for requirements, c
 
 # Review A Memorii Design
 
+## Select Delivery Fidelity
+
+Read the design or WorkPlan's delivery fidelity and review against that bar.
+For Level 2, require production-shaped happy scenarios, common operational
+failures, basic caller/scope isolation, persistence, retry, recovery, data
+integrity, and universal invariants. Treat adversarial memory spoofing and
+tamper matrices, hostile-storage hardening, exhaustive families, release
+packaging, platform breadth, and shipped-product compatibility as later-level
+follow-up unless the design claims production readiness. Do not convert a
+Level 3 or 4 improvement into `Changes required` for a Level 1 or 2 learning
+objective.
+
+Label each finding as serving usability, security/reliability/quality, or
+corner/adversarial hardening. Review and recommend work in that order. A third-
+tier observation is follow-up while first- or second-tier behavior remains,
+unless it demonstrates an immediate risk to the selected path.
+
 Perform a read-only, evidence-backed review. Do not edit the canonical design,
 governing specifications, production code, or tests.
 

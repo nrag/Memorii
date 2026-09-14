@@ -1,0 +1,164 @@
+bringing up nodes...
+bringing up nodes...
+
+......FF                                                                 [100%]
+=================================== FAILURES ===================================
+________ test_builtin_group_request_retains_selected_mention_authority _________
+[gw0] darwin -- Python 3.12.14 /Users/nandaraghunathan/Code/Memorii/Memorii/.venv/bin/python
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1023d4cb0>
+
+    def test_builtin_group_request_retains_selected_mention_authority(
+        monkeypatch,
+    ) -> None:
+        """The production builtin planner carries its exact selected candidates."""
+        normalization, _calls = _v3_normalization_host_builder(
+            proposal=graph_fact_proposal()
+        )
+        service = ProviderMemoryService(
+            now_provider=lambda: TEST_NOW,
+            host_bootstrap_capability=_built_in_local_capability(),
+            host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+            source_normalization_host_bundle_builder=normalization,
+        )
+        captured_requests = []
+        commit = service._semantic_atomic_store.commit_or_reload_bootstrap_graph_group_v3
+    
+        def capture_group_request(*, request):
+            captured_requests.append(request)
+            return commit(request=request)
+    
+        monkeypatch.setattr(
+            service._semantic_atomic_store,
+            "commit_or_reload_bootstrap_graph_group_v3",
+            capture_group_request,
+        )
+        service.sync_event(
+            operation=ProviderOperation.CHAT_USER_TURN,
+            content="Atlas owner is Bob.",
+            operation_id="retained-observation-mention-authority",
+            task_id="task:retention",
+            user_id="user:alice",
+            authenticated_host_ingress=_host_ingress(),
+        )
+    
+        request = captured_requests[0]
+        reduction = request.ordered_operation_inputs[0].reduction
+        effect = reduction.effect_materialization.accepted_effect
+        assert isinstance(effect, BootstrapNativeFactEffectV3)
+        input_authority = reduction.native_compilation.operation_input
+        candidates = {
+            item.mention_digest: item
+>           for item in input_authority.target_resolution_authority.mention_candidates
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        }
+
+memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_observation_retention.py:65: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = BootstrapNativeOperationReductionInputV3(schema_version=3, source_id='semantic_ingestion:source:929d57665fefc8ca13eb1d...d7a5f1409bbfc37821b02913e638f077a83'), input_digest='5cbb07e10824ca938c1dd10415c0e0ddb34b10cd0c92464d38028da75016fca9')
+item = 'target_resolution_authority'
+
+    def __getattr__(self, item: str) -> Any:
+        private_attributes = object.__getattribute__(self, '__private_attributes__')
+        if item in private_attributes:
+            attribute = private_attributes[item]
+            if hasattr(attribute, '__get__'):
+                return attribute.__get__(self, type(self))  # type: ignore
+    
+            try:
+                # Note: self.__pydantic_private__ cannot be None if self.__private_attributes__ has items
+                return self.__pydantic_private__[item]  # type: ignore
+            except KeyError as exc:
+                raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}') from exc
+        else:
+            # `__pydantic_extra__` can fail to be set if the model is not yet fully initialized.
+            # See `BaseModel.__repr_args__` for more details
+            try:
+                pydantic_extra = object.__getattribute__(self, '__pydantic_extra__')
+            except AttributeError:
+                pydantic_extra = None
+    
+            if pydantic_extra and item in pydantic_extra:
+                return pydantic_extra[item]
+            else:
+                if hasattr(self.__class__, item):
+                    return super().__getattribute__(item)  # Raises AttributeError if appropriate
+                else:
+                    # this is the current error
+>                   raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E                   AttributeError: 'BootstrapNativeOperationReductionInputV3' object has no attribute 'target_resolution_authority'
+
+.venv/lib/python3.12/site-packages/pydantic/main.py:1042: AttributeError
+______ test_empty_observation_bindings_preserve_legacy_fact_effect_bytes _______
+[gw0] darwin -- Python 3.12.14 /Users/nandaraghunathan/Code/Memorii/Memorii/.venv/bin/python
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x108104200>
+
+    def test_empty_observation_bindings_preserve_legacy_fact_effect_bytes(
+        monkeypatch,
+    ) -> None:
+        """A retained-field absence retains the prior fact-effect wire shape."""
+        normalization, _calls = _v3_normalization_host_builder(
+            proposal=graph_fact_proposal()
+        )
+        service = ProviderMemoryService(
+            now_provider=lambda: TEST_NOW,
+            host_bootstrap_capability=_built_in_local_capability(),
+            host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+            source_normalization_host_bundle_builder=normalization,
+        )
+        captured_requests = []
+        commit = service._semantic_atomic_store.commit_or_reload_bootstrap_graph_group_v3
+    
+        def capture_group_request(*, request):
+            captured_requests.append(request)
+            return commit(request=request)
+    
+        monkeypatch.setattr(
+            service._semantic_atomic_store,
+            "commit_or_reload_bootstrap_graph_group_v3",
+            capture_group_request,
+        )
+        service.sync_event(
+            operation=ProviderOperation.CHAT_USER_TURN,
+            content="Atlas owner is Bob.",
+            operation_id="legacy-observation-mention-authority",
+            task_id="task:retention",
+            user_id="user:alice",
+            authenticated_host_ingress=_host_ingress(),
+        )
+    
+        effect = captured_requests[0].ordered_operation_inputs[0].reduction.effect_materialization.accepted_effect
+        assert isinstance(effect, BootstrapNativeFactEffectV3)
+        body = effect.model_dump(mode="python")
+        body.pop("effect_digest")
+        body["observation_mention_bindings"] = ()
+>       empty_field = BootstrapNativeFactEffectV3.create(**body)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_observation_retention.py:118: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+cls = <class 'memorii.core.semantic_ingestion.contracts.BootstrapNativeFactEffectV3'>
+values = {'evidence_projections': ({'citation_record': {'operation_execution_id': '5e72c3a0a67c5e7d0c907bffdcab0bd0e8341b687fbc...9937faf7f59321cb0056618af71bdaa539177f01188a6335f59d62', ...}, 'kind': 'fact', 'observation_mention_bindings': (), ...}
+
+    @classmethod
+    def create(cls, **values: object):  # type: ignore[no-untyped-def]
+        if not cls.__pydantic_complete__:
+            # Resolve this class from its module globals first — the same
+            # resolution pydantic applies lazily at first construction.  Only
+            # the cross-module effect payloads need the full namespace
+            # cascade, so the expensive family-wide rebuild stays a fallback.
+            cls.model_rebuild(raise_errors=False)
+            if not cls.__pydantic_complete__:
+                rebuild_bootstrap_graph_effect_contracts()
+>       return super().create(schema_version=3, **values)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: memorii.core.semantic_ingestion.contracts._ContentAddressedContract.create() got multiple values for keyword argument 'schema_version'
+
+memorii/memorii/core/semantic_ingestion/contracts.py:7890: TypeError
+=========================== short test summary info ============================
+FAILED memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_observation_retention.py::test_builtin_group_request_retains_selected_mention_authority
+FAILED memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_observation_retention.py::test_empty_observation_bindings_preserve_legacy_fact_effect_bytes
+2 failed, 6 passed in 65.91s (0:01:05)

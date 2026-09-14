@@ -1,0 +1,18 @@
+{
+  "revision": "b4f6c24b091a28bd3d1f65102c742478fc7276b3",
+  "branch": "semantic_ingestion_m5",
+  "files": {
+    "AGENTS.md": "e1b8daff6d38bc681db57950a01fac5177d1336a4bfd3866c089f7bf47b663a4",
+    ".agents/PLANS.md": "7d8fdbbf9e3881950f720b400adce39b2718abed5318800c2b9f506b3e54ff5a",
+    "docs/design/scoped_memory_context.md": "f43d2cca76a57776cc2223ec1e9d413cb0deb6e94a5981263b0b43deae04386e",
+    "docs/design/memorii_spec.md": "5d24a08e7ca048c85d75aef7eb8eb264e9a869cadcd0ebd5d07d7e368f1d6cc5",
+    "docs/design/memorii_storage_details.md": "9ce9b03722be2344d93847f425a04a9a147369c900a32b1ceed21bb34ffb1f37",
+    "docs/design/event_model.md": "9ce93e4a826f3e47b2e41fa06d2ec1e40bb0cad2475fa0527d9bb2c9ab3acdec",
+    "docs/IMPLEMENTATION_RULES.md": "c962791b8ba6e3dcf7f59778151299f74821a1a152bc387a2e78a6fad7e41dea",
+    "docs/design/semantic_temporal_retrieval.md": "f1be742a4c071f0edef5a050c01ca980563ac23645203c17531094cef37266b2",
+    ".github/workflows/pr-gates.yml": "92d982a45a7cf21eb5c3b6922fc4f69691b960665b288380d1248c42e2738429",
+    "memorii/pyproject.toml": "ce794bf93eec54aae83c797354eee36cfecb257c771b12604cb68a15e71343e3",
+    "memorii/tests/ci/unit-shards.json": "26db974ee8724a719f6720559a277ef2e8fc6a9482136d3eb636c19fdfdb3f15",
+    "memorii/tests/ci/unit-test-durations.json": "0d34f5f8a2f92fc0fca3fd9ea6ac2b514393429d597c8c6a9b9375fa332953dd"
+  }
+}

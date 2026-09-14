@@ -1,0 +1,13 @@
+{
+  "base": "6029030d5212bcd3ce1cacd138f1ae6466b95ae0",
+  "scope": "Internal registered access and ingestion conversion only; no public runtime closure",
+  "files": {
+    ".github/workflows/pr-gates.yml": "0a9ce760989cfade7ac5e9402df81618d1a4a4f2a9a8d3e8e00c6dcdbb4d468a",
+    "memorii/tests/unit/tools/test_ctv_binding_authority_pr_gate.py": "f2ccd1881ac6158443e81dff3009cca0033e4c3c2f2a665f9f95c2980113b1f8",
+    "memorii/memorii/core/memory_evolution/graph_observation_access.py": "a1c7fc142ec3730bf35e707e7109aeb5773281ce07ab6a8b81747eff01e33fbb",
+    "memorii/memorii/core/memory_evolution/graph_observation_ingestion_projection.py": "0d5b52cd6d21f97eece0bf400572f443c0b145957f33fc040c76abb1e82bf700",
+    "memorii/memorii/core/memory_evolution/observation_activation_runtime.py": "440341ef490108c25ff35b00e3ca20a1dbdf21cc3c2c0fbf748d42a68ca785c9",
+    "memorii/tests/integration/test_graph_observation_access.py": "266359829430e37fd5afa2ef0c9134cf8bb382f96089ee78b3effdb83f67fc3c",
+    "memorii/tests/unit/core/memory_evolution/test_graph_observation_ingestion_projection.py": "4dd0faff5fd11b92965786efebbdd52bc71b1d7124960e8eae856fce1c222169"
+  }
+}

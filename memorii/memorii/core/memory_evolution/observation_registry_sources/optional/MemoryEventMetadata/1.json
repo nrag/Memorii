@@ -1,0 +1,1 @@
+{"fields":[{"field_name":"is_candidate","policy":"required"},{"field_name":"is_committed","policy":"required"},{"field_name":"version","policy":"required"}],"role":"optional","schema_id":"MemoryEventMetadata","schema_version":"1"}

@@ -1,0 +1,30 @@
+{
+  "scope": "Local construction regression only; runtime composition excluded while under edit",
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "tree": "authorized dirty tree",
+  "command": "../.venv/bin/python -W error -m pytest tests/unit/core/memory_evolution/test_typed_value_*.py tests/unit/core/memory_evolution/test_typed_numeric_values.py tests/unit/core/memory_evolution/test_native_observation_decoders.py tests/unit/core/test_ingestion_contracts.py tests/unit/acceptance/test_observation_registry_compiler.py -p no:cacheprovider -q",
+  "cwd": "memorii",
+  "result": "265 passed in 7.09s",
+  "test_files": {
+    "memorii/tests/unit/core/memory_evolution/test_typed_value_artifact_reader.py": "bfc810d72e8191c6cea12edf511b6444d8c27dee29d0bf356703ad938e2c79ea",
+    "memorii/tests/unit/core/memory_evolution/test_typed_value_body_validation.py": "542094eac82db5b7ba801e39b165b0c7a216a23b97576e26ae6807c369b61274",
+    "memorii/tests/unit/core/memory_evolution/test_typed_value_declarations.py": "67daa2524f49028963f7049f826b240b36f851d0cf8c06469eb499fe61c0dc9f",
+    "memorii/tests/unit/core/memory_evolution/test_typed_value_decoder_sources.py": "007fa4179fdc13bbc39fb60d5303271801a36f5531f6e3fcdf4896154c15bc57",
+    "memorii/tests/unit/core/memory_evolution/test_typed_value_model_codec.py": "71d01b3fe15139499b3918bce2bae178a4373e86a4210dab6df07503e62d213e",
+    "memorii/tests/unit/core/memory_evolution/test_typed_value_model_emission.py": "dd2ffc33c5992570ee5b04cc2652392af5b8f65c0e7fec59c3b7b32ad8893396",
+    "memorii/tests/unit/core/memory_evolution/test_typed_value_publication.py": "61f334106766fcce1e422124e0d48a193fcc5004c84970add8143dcc11beb555",
+    "memorii/tests/unit/core/memory_evolution/test_typed_value_publication_authoring.py": "3f18cea86044a2ce56f77d3dd2dde4f35e041657198905331e7b52aaa2b7cf26",
+    "memorii/tests/unit/core/memory_evolution/test_typed_value_registry_compilation.py": "7d35409502c80a6b4bb1aaee4aa630d9f33418fb13f02766f489d4814631640b",
+    "memorii/tests/unit/core/memory_evolution/test_typed_value_registry_history.py": "19d3ddfa0d81f6666cb6bd4992984e87e2769889291125ddaa7df2842cb1948d",
+    "memorii/tests/unit/core/memory_evolution/test_typed_numeric_values.py": "a8b9be5a3875f08815a7cd247b6314bcf08c4d709b4e121d487c5ced9bdeb698",
+    "memorii/tests/unit/core/memory_evolution/test_native_observation_decoders.py": "f83cc3b78c7e444343b6c761f4d625572671ea704621ec0ebae1386af5e47830",
+    "memorii/tests/unit/core/test_ingestion_contracts.py": "34109509658791f742ef1c177dd8dd5139934d06c6085c9036853b3d18120190",
+    "memorii/tests/unit/acceptance/test_observation_registry_compiler.py": "5b2770bdf712dd726fc78936023755ce791b8be69aaf52bc7d8e19247efeb863"
+  },
+  "publication_candidate_sha256": "56117190323694263a7c8774546062cb57691b6a658273b65aa1ecfa76ed1bcc",
+  "limitations": [
+    "No current wheel proof",
+    "No CI or full candidate review",
+    "No runtime/ledger/retrieval completion"
+  ]
+}

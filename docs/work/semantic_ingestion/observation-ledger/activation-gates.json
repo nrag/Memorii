@@ -1,0 +1,26 @@
+{
+  "status": "PLANNED_NOT_EXECUTED",
+  "workflow": ".github/workflows/pr-gates.yml",
+  "workflow_sha256": "49b09815dce26317b8f135900c5d2dc69f3f141401a916ed9d219ff338d896ce",
+  "local_python": "3.12.14",
+  "ci_python": "3.11 for static/package/unit;3.12 for isolated source authority gates",
+  "first_checks": [
+    "focused activation tests and existing semantic writer admission tests",
+    "affected observation ledger/replay contract tests",
+    "configured scopedRuff/Pyright",
+    "registry source regeneration, independent179entry+58vector parity"
+  ],
+  "required_before_milestone_closure": [
+    "static-analysis: full Ruff/identity/Pyright",
+    "package-smoke: isolated wheel prompt/import/removedmodule/dryrun/artifact checks",
+    "unit-test-shards: verify tests/ci/unit-shards.json and all6shards with timings",
+    "affected terminal-persistence and compatibility gates; finalaggregate dependencies perworkflow",
+    "current source authority/compiler/lifecycle/structural gates after generated refresh"
+  ],
+  "limitations": [
+    "No GitHub CI executed for current dirty tree",
+    "Current36-source wheel evidence precedes activation dependency edits",
+    "Complete shard plan/timing coverage must include new tests before CI enforcement claim"
+  ],
+  "long_command_owner": "root"
+}

@@ -1,0 +1,12 @@
+{
+  "candidate": "../candidate-committed-lookup.json",
+  "candidate_sha256": "68dee476566df106018c512c29c53f46f95811cd8186176f4564b36406bf73f5",
+  "logs": {
+    "tests.log": "2879a8163331963dc1a832a47612669073243593e2c7814afbbfb564f00fd029",
+    "ruff.log": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+    "pyright.log": "6d88a1b220adb7a3d62092b6e38431f0b3fe8babe9864fab90e5849766260332"
+  },
+  "tests": "103 passed in 0.64s; 56 preserved predecessor,47 new",
+  "typing": "Pyright extraPaths explicitly contains ../acceptance-authority-successor to match runtime import; Python3.12",
+  "limits": "nonproduction symbolic byte/CAS model; no signatures, CTV vectors, protected deployment or measurement certification"
+}

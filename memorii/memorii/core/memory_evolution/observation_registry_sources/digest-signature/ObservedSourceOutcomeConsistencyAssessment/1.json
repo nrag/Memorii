@@ -1,0 +1,1 @@
+{"policy":{"digest_domain":"memorii.semantic_ingestion.observation.ObservedSourceOutcomeConsistencyAssessment.v1","digest_field":"assessment_digest","kind":"self_digest"},"role":"digest-signature","schema_id":"ObservedSourceOutcomeConsistencyAssessment","schema_version":"1"}

@@ -186,7 +186,10 @@ Use one of these statuses:
 * `abandoned`
 
 A WorkPlan may be marked `complete` only when its work-type completion contract
-is satisfied.
+is satisfied at its recorded delivery fidelity. Deferred obligations from a
+higher fidelity level remain explicit follow-up and do not block the selected
+level. Completion at Level 1 or 2 must be named accordingly and must not be
+presented as production approval.
 
 A WorkPlan marked `blocked` must identify the precise condition required to
 resume.
@@ -200,6 +203,7 @@ Every WorkPlan begins with:
 
 - Work ID:
 - Work type:
+- Delivery fidelity:
 - Status:
 - Coordinator:
 - Created:
@@ -211,6 +215,10 @@ Every WorkPlan begins with:
 ```
 
 Use `None` where a relationship does not exist.
+
+For existing WorkPlans created before this field was introduced, add it at the
+next material update. Record the reason for the selected level and the concrete
+higher-level obligations deferred from the current completion contract.
 
 ## Required Common Sections
 

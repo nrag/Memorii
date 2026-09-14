@@ -1,0 +1,22 @@
+/Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/atomic_store.py
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/atomic_store.py:11179:36 - error: Cannot access attribute "observation_delta_id" for class "object"
+    Attribute "observation_delta_id" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/atomic_store.py:11184:39 - error: Cannot access attribute "observation_revision_after" for class "object"
+    Attribute "observation_revision_after" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/atomic_store.py:11187:44 - error: Cannot access attribute "observation_revision_before" for class "object"
+    Attribute "observation_revision_before" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/atomic_store.py:11191:39 - error: Cannot access attribute "observation_schema_fingerprint" for class "object"
+    Attribute "observation_schema_fingerprint" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/atomic_store.py:11193:39 - error: Cannot access attribute "source_outcome" for class "object"
+    Attribute "source_outcome" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/atomic_store.py:11308:61 - error: Cannot access attribute "observation_revision_after" for class "object"
+    Attribute "observation_revision_after" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/atomic_store.py:11448:65 - error: Cannot access attribute "canonical_source_result" for class "object"
+    Attribute "canonical_source_result" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/atomic_store.py:11451:36 - error: Cannot access attribute "canonical_source_result" for class "object"
+    Attribute "canonical_source_result" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/atomic_store.py:11456:61 - error: Cannot access attribute "result_digest" for class "object"
+    Attribute "result_digest" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/atomic_store.py:11496:72 - error: Cannot access attribute "result_digest" for class "object"
+    Attribute "result_digest" is unknown (reportAttributeAccessIssue)
+10 errors, 0 warnings, 0 informations

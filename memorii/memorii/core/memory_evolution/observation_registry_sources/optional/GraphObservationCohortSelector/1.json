@@ -1,0 +1,1 @@
+{"fields":[{"field_name":"include_referenced_boundary_entities","policy":"required"},{"field_name":"seed_operation_ids","policy":"required"},{"field_name":"seed_source_ids","policy":"required"}],"role":"optional","schema_id":"GraphObservationCohortSelector","schema_version":"1"}

@@ -1,0 +1,21 @@
+{
+  "name": "unit-shard-1",
+  "argv": [
+    "/Users/nandaraghunathan/Code/Memorii/Memorii/.venv/bin/python",
+    "-m",
+    "memorii.tools.test_shards",
+    "run",
+    "--config",
+    "tests/ci/unit-shards.json",
+    "--index",
+    "1",
+    "--timing-output",
+    "/private/tmp/scoped-context-gates/unit-shard-timings/unit-shard-1-timings.json"
+  ],
+  "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii",
+  "exit_status": 0,
+  "elapsed_seconds": 906.678,
+  "log_sha256": "6739b88c4b82f5c0b7b49332eb4e89ab98e827492e8feb1520c833797e5b74a6",
+  "source_revision_label": "b4f6c24b091a28bd3d1f65102c742478fc7276b3",
+  "evidence": "local working-tree execution only"
+}

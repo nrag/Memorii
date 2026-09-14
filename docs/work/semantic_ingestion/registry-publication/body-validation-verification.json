@@ -1,0 +1,17 @@
+{
+  "evidence_class": "local_construction_only",
+  "result": "6 passed in 4.59s",
+  "exit_status": 0,
+  "cwd": "memorii",
+  "command": "../.venv/bin/python -W error -m pytest tests/unit/core/memory_evolution/test_typed_value_body_validation.py -q -p no:cacheprovider",
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "tree": "authorized dirty working tree",
+  "sha256": {
+    "memorii/memorii/core/memory_evolution/typed_value_body_validation.py": "127494d6b424edef7d553aa9193cf7b9eafa9339123d1144eed777b579d5787d",
+    "memorii/tests/unit/core/memory_evolution/test_typed_value_body_validation.py": "542094eac82db5b7ba801e39b165b0c7a216a23b97576e26ae6807c369b61274"
+  },
+  "limitations": [
+    "No protected envelope, native model construction, publication, persistence or production caller",
+    "Not independent review or CI evidence"
+  ]
+}

@@ -150,8 +150,52 @@ pre-compression, explicit memory-write, and delegation hooks. Every mutating
 hook requires a stable caller-supplied `operation_id`; retries must reuse that
 ID so replay remains idempotent.
 
-This is a component integration surface, not a declaration that agent-level
-integration is ready. See the
+### Hermes External Memory Provider
+
+Install Memorii into the same Python environment used by Hermes, then select
+the pip-discovered external provider:
+
+```bash
+python -m pip install -e /path/to/Memorii/memorii
+hermes config set memory.provider memorii
+hermes memory status
+```
+
+This makes the provider discoverable, but semantic activation also requires
+one verified deployment-owned `memorii.hermes.provider_service` factory. That
+factory returns a `HermesProviderRuntimeBinding`: a configured
+`ProviderMemoryService` and the host-owned issuer of authenticated ingress for
+each mutating Hermes hook. Memorii supplies the profile/session/user evidence
+to that issuer, then activates and recovers the returned service in process.
+Current production signing and factory configuration are not shipped with
+Memorii, so an ordinary install alone cannot run a semantic-memory trial.
+
+Hermes passes the active profile's `hermes_home` to the provider. A configured
+factory receives `<hermes_home>/memorii` as its storage root; the Hermes home
+is supplied at initialization and does not need to exist before Hermes starts.
+
+Restart Hermes after selecting the provider. The same profile reopens its
+existing Memorii state on restart. To disable the integration, select another
+`memory.provider` (or remove that configuration) and restart; this leaves the
+local `<hermes_home>/memorii` directory untouched.
+
+After a verified factory is installed, `hermes memory status` should report
+the `memorii` provider and its factory should accept the profile-local root.
+Hermes normally supplies completed transcript messages, which makes replay IDs
+stable and distinguishes equal text at different transcript positions. If a
+host omits messages, Memorii deterministically hashes the session and turn
+contents: retries remain idempotent, but identical consecutive turns cannot be
+distinguished until transcript messages are supplied.
+
+A configured Hermes host uses `build_started_hermes_memory_provider(service=...)`.
+The builder activates or reloads the observation ledger, then runs pending-work
+recovery and one bounded monitoring pass before returning the provider. Plain
+`HermesMemoryProvider(...)` construction does not activate storage. Graph
+observation and ingestion-time attestations remain on-demand authenticated
+calls.
+
+The semantic-ingestion component is ready for early real-world Hermes testing.
+This does not certify full agent behavior or a production release. See the
 [Agent Integration Readiness Plan](docs/plans/agent_integration_readiness.md)
 for the remaining evaluation and operational requirements.
 

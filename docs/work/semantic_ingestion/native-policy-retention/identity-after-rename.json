@@ -1,0 +1,23 @@
+{
+  "command": [
+    "/Users/nandaraghunathan/Code/Memorii/Memorii/.venv/bin/python",
+    "-m",
+    "memorii.tools.identity_hygiene",
+    "--root",
+    "..",
+    "--allowlist",
+    "../.agents/identity_hygiene_allowlist.json"
+  ],
+  "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii",
+  "exit_code": 0,
+  "candidate_digest": "a49348ce42d36857af90d2bbed2efcb8486c31fb2da534004600a12cf7c27d4b",
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "test_hashes": {
+    "memorii/tests/unit/core/semantic_ingestion/test_native_policy_retention.py": "42b26d8e7e151453fa4f2fe26e99c4cfd040bf25676ea794e7c2d68e0c1cf338",
+    "memorii/tests/fixtures/semantic_ingestion/historical_terminal/native-planning-authority-without-policy-bundle.ctv": "65d321a60ed5e3352ed076feacd02514aabd2dd2a3504332d16f53b7bd6f0ce4",
+    "memorii/tests/integration/test_native_policy_persisted_reload.py": "97be5a5ab781e487d9cbae34dc63f92adb3452a6c531dc877a7de6d472a1184d",
+    "memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_observation_retention.py": "80c427a3bdd1caa7062beb5ecfb7fe8a0602cb9c26aaab1649d2998e0b36061c"
+  },
+  "log": "identity-after-rename.log",
+  "note": "Identity checker is silent on success; exit status recorded explicitly. Run after integration test rename."
+}

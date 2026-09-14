@@ -1,0 +1,12 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.12.14, pytest-9.0.3, pluggy-1.6.0
+rootdir: /Users/nandaraghunathan/Code/Memorii/Memorii/memorii
+configfile: pyproject.toml
+plugins: xdist-3.8.0, anyio-4.13.0
+collected 145 items
+
+tests/integration/test_scoped_context_production_binding.py ............ [  8%]
+........................................................................ [ 57%]
+.............................................................            [100%]
+
+============================= 145 passed in 20.19s =============================

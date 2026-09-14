@@ -1,0 +1,18 @@
+{
+  "scope": "Native projection publication receipt/evidence typed shapes and direct coordinate joins only",
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "tree": "authorized dirty tree",
+  "command": "../.venv/bin/python -W error -m pytest tests/unit/core/semantic_ingestion/test_bootstrap_graph_projection_publication.py -q -p no:cacheprovider",
+  "exit_code": 0,
+  "result": "7 passed in 6.15s",
+  "sha256": {
+    "memorii/memorii/core/semantic_ingestion/bootstrap_graph_projection_publication.py": "d146137ba509fe1f73d788b2daf809a9b22b9bf68cc5e1e1300ecf2b3cbd4a7b",
+    "memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_projection_publication.py": "2f44b17fcb287f51062c1daf783705e82fa937617ef87bcf34c82cb85b371449"
+  },
+  "limitations": [
+    "No protected profile-3 self-digest validation",
+    "No native CAS or reload integration",
+    "Fixture uses native typed owners but does not establish full publication semantic authority",
+    "No registry publication or independent closure review"
+  ]
+}

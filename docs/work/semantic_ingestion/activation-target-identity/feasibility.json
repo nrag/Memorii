@@ -1,0 +1,23 @@
+{
+  "wheel_sha256": "898031380b1524bf80d110e94e91282a052f75e3e1fb6e29351951ec89c4378c",
+  "historical_wheel_only": true,
+  "file_count": 1771,
+  "payload_bytes": 11124966,
+  "maximum_file_bytes": 2001242,
+  "record_rows": 1771,
+  "unsigned_record_rows": [
+    [
+      "memorii-0.1.0.dist-info/RECORD",
+      "",
+      ""
+    ]
+  ],
+  "registry_json_files": 1257,
+  "stale_pyc": {
+    "verified_disk_value": 2,
+    "executed_value": 1,
+    "fresh_cache_executed_value": 2,
+    "same_size_and_timestamp": true,
+    "conclusion": "Disk/RECORD verification alone cannot establish loaded source identity."
+  }
+}

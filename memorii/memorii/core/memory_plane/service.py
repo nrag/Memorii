@@ -23,6 +23,7 @@ from memorii.core.memory_plane.store import (
     InMemoryMemoryPlaneStore,
     MemoryPlanePrecondition,
     MemoryPlaneStore,
+    MemoryPlaneTimedWriteSnapshot,
     MemoryPlaneWriteAuthorization,
 )
 from memorii.core.memory_plane.unit_of_work import MemoryPlaneUnitOfWork
@@ -162,6 +163,23 @@ class MemoryPlaneService:
     def get_record(self, memory_id: str) -> CanonicalMemoryRecord | None:
         return self._record_store().get_record(memory_id)
 
+    def read_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]:
+        """Return one detached canonical snapshot for a read-only consumer."""
+
+        return self._record_store().read_snapshot()
+
+    def read_write_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]:
+        """Return one detached full-write snapshot for a conditional writer."""
+
+        return self._record_store().read_write_snapshot()
+
+    def read_timed_write_snapshot(
+        self, *, now: Callable[[], datetime]
+    ) -> MemoryPlaneTimedWriteSnapshot:
+        """Return a backend-atomic full-write snapshot and UTC creation time."""
+
+        return self._record_store().read_timed_write_snapshot(now=now)
+
     def stage_record(
         self,
         record: CanonicalMemoryRecord,
@@ -180,14 +198,24 @@ class MemoryPlaneService:
         records: tuple[CanonicalMemoryRecord, ...],
         *,
         preconditions: tuple[MemoryPlanePrecondition, ...],
+        expected_write_revision: int | None = None,
         authorization: MemoryPlaneWriteAuthorization | None = None,
         transaction_precondition: Callable[[], None] | None = None,
     ) -> int:
         if self._active_unit_of_work.get() is not None:
             raise RuntimeError("conditional control writes cannot be nested in a memory-plane unit of work")
+        if expected_write_revision is None:
+            return self._records.apply_batch(
+                records,
+                expected_revision=None,
+                preconditions=preconditions,
+                authorization=authorization,
+                transaction_precondition=transaction_precondition,
+            )
         return self._records.apply_batch(
             records,
             expected_revision=None,
+            expected_write_revision=expected_write_revision,
             preconditions=preconditions,
             authorization=authorization,
             transaction_precondition=transaction_precondition,

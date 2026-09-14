@@ -1266,6 +1266,8 @@ class BootstrapGraphArtifactAssemblerV3:
         final_plan: object, complete_lineage: object, execution_manifest: object,
         ordered_group_result_constructions: tuple[BootstrapNativeGroupCommitTerminalConstructionV3, ...],
         canonical_source_result_input: object, handoff_core: BootstrapGraphTerminalHandoffCoreV3,
+        source_finalization_observation_delta: object,
+        source_observation_intent: object = None,
         publication_intent: BootstrapGraphTerminalPublicationIntentV3,
         handoff: BootstrapGraphTerminalPersistenceHandoffV3, predecessor_generation: object,
         delivery_principal_binding_digest: str, required_outcome_scopes: object,
@@ -1327,6 +1329,34 @@ class BootstrapGraphArtifactAssemblerV3:
             or publication_intent.request_digest != handoff_core.request_digest
             or publication_intent.control_epoch_digest != handoff_core.control_epoch_digest
             or not constructions_match_lineage
+            or (
+                publication_intent.terminal_member_schema_version == 2
+                and (
+                    source_finalization_observation_delta is None
+                    or source_finalization_observation_delta.source_outcome
+                    != canonical_source_result_input.completed_canonical_source_result
+                    or tuple(
+                        item.construction_input_digest
+                        for item in publication_intent.member_intents
+                        if item.kind
+                        == "bootstrap_graph_source_finalization_observation_delta"
+                    ) != (source_finalization_observation_delta.delta_digest,)
+                )
+            )
+            or (
+                publication_intent.terminal_member_schema_version == 3
+                and (
+                    source_finalization_observation_delta is not None
+                    or source_observation_intent is None
+                    or source_observation_intent.source_outcome
+                    != canonical_source_result_input.completed_canonical_source_result
+                    or tuple(
+                        item.construction_input_digest
+                        for item in publication_intent.member_intents
+                        if item.kind == "source_observation_intent"
+                    ) != (source_observation_intent.intent_digest,)
+                )
+            )
         ):
             raise ValueError("bootstrap graph terminal publication inputs are substituted")
         return BootstrapGraphTerminalPublicationRequestV3.create(
@@ -1339,6 +1369,8 @@ class BootstrapGraphArtifactAssemblerV3:
                 for item in ordered_group_result_constructions
             ),
             canonical_source_result_input=canonical_source_result_input,
+            source_finalization_observation_delta=source_finalization_observation_delta,
+            source_observation_intent=source_observation_intent,
             handoff_core=handoff_core, publication_intent=publication_intent, handoff=handoff,
             predecessor_generation=predecessor_generation,
             delivery_principal_binding_digest=delivery_principal_binding_digest, required_outcome_scopes=required_outcome_scopes,

@@ -1,0 +1,12 @@
+B023 Function definition does not bind loop variable `invalid`
+   --> tests/unit/core/test_memory_plane_write_snapshot.py:110:57
+    |
+108 |     )):
+109 |         with pytest.raises(ValueError, match="created_at"):
+110 |             store.read_timed_write_snapshot(now=lambda: invalid)
+    |                                                         ^^^^^^^
+111 |         memory_id = f"after-invalid-clock-{index}"
+112 |         _write_with_deadline(writer, memory_id)
+    |
+
+Found 1 error.

@@ -1,0 +1,215 @@
+{
+  "format": "memorii.production-entrypoint-bindings.v1",
+  "updated": "2026-09-13",
+  "entries": [
+    {
+      "requirement": "R03",
+      "package": "01",
+      "status": "unmapped",
+      "canonical_owner": null,
+      "production_caller": null,
+      "authority": null,
+      "outcome_proof": null
+    },
+    {
+      "requirement": "R08",
+      "package": "02",
+      "status": "partial",
+      "canonical_owner": "HermesMemoryProvider -> ProviderMemoryService -> verified production authority, monitoring, observation and scoped-context owners",
+      "production_caller": "HermesMemoryProvider.sync_event/retrieve_context/activate_observation_ledger/run_capability_monitor_tick/process_capability_monitoring/observe_graph/observe_ingestion_time_attestations/reconcile_memory_evolution -> ProviderMemoryService; build_started_hermes_memory_provider(configured ProviderMemoryService) -> HermesMemoryProvider.start_semantic_ingestion -> activate_observation_ledger -> reconcile_memory_evolution -> process_capability_monitoring",
+      "authority": "The Hermes adapter forwards opaque host ingress and composition-held verified authorities unchanged. Missing configuration and wrong scope fail through the service typed denial contracts.",
+      "outcome_proof": "Level 2 Hermes forwarding and composed integration tests; consolidated 36-scenario pass covers intended flows and common configuration, scope, provider, retry, restart and stale-state failures. Exhaustive supported-root authorization and revocation permutations remain Level 3. The real configured Hermes observation/comparator case passes through the startup hook in 329.64s; four fast lifecycle cases pass in 8.37s. Production revision 4497325b; bounded Level 2 correctness review reports no remaining finding.",
+      "remaining": "Level 2 complete. Level 3 retains exhaustive supported-root authorization/revocation permutations, final candidate evidence and real deployment artifacts."
+    },
+    {
+      "requirement": "R13",
+      "package": "02",
+      "status": "partial",
+      "canonical_owner": "memorii.tools.semantic_ingestion_signature_verifier.Ed25519SignatureVerifier",
+      "production_caller": "RegisteredApprovalExecutor.from_resolver -> ConfiguredAcceptanceTrustResolver.resolve_registered_execution -> validate_release_candidate -> VerifierHeldTrustMaterial.verify_signature",
+      "authority": "ConfiguredAcceptanceTrustResolver receives immutable externally supplied Ed25519VerificationKeyBinding values and replaces only the composition-held verifier. Candidate artifacts retain signer profile/key references, but cannot provision a trust binding or select its digest domain.",
+      "outcome_proof": "memorii/tests/unit/tools/test_semantic_ingestion_signature_verifier.py verifies RFC 8032, malformed/duplicate bindings, adversarial payload/signatures, and a fully signed canonical current-release chain. test_configured_resolver_executes_signed_current_release constructs RegisteredApprovalExecutor.from_resolver, publishes a coherent signed predecessor, rejects a tampered successor without publication changes, and successfully publishes the valid successor through that executor. The file-fence backend requires explicit test-only opt-in; this is local integration evidence, not operational production certification.",
+      "offline_signing": {
+        "status": "locally_verified_partial",
+        "canonical_owner": "memorii.tools.semantic_ingestion_offline_signing.PemEd25519PrivateKeySigner.sign_preimage",
+        "production_caller": "semantic_ingestion_offline_signing.main -> _sign -> PemEd25519PrivateKeySigner.sign_preimage",
+        "authority": "Independently supplied PEM public key, explicit profile/digest domain/expected digest, and matching private key. No trust or policy is issued.",
+        "outcome_proof": "tests/unit/tools/test_semantic_ingestion_offline_signing.py subprocess sign/verify tests; final candidate review pending",
+        "remaining": "Whole-package verification and host integration. Four-artifact canonical preparation/assembly passes 14 API and subprocess integration tests in tests/integration/test_semantic_ingestion_release_signing.py."
+      },
+      "lifecycle_signing": {
+        "status": "locally_verified_partial",
+        "canonical_owner": "memorii.tools.semantic_ingestion_traceability_release.assemble_current_lifecycle_detached_signatures",
+        "production_caller": "semantic_ingestion_lifecycle_signing.main -> assemble_lifecycle_signatures -> assemble_current_lifecycle_detached_signatures -> Ed25519SignatureVerifier.verify",
+        "authority": "Independently configured trusted PEM bindings; current template coordinates cannot introduce key material. Preparation and assembly do not authorize lifecycle history or activate a release.",
+        "outcome_proof": "tests/integration/test_semantic_ingestion_lifecycle_signing.py signs records before the root, assembles a byte-identical CTV, reaches VerifiedReleaseCandidate for ordinary and threshold-recovery chains, rejects same-length signature tampering at both stages, and exercises CLI signature indices and exclusive outputs. Fourteen focused tests pass; exact hashes and run distinctions are in signing-local-evidence.json.",
+        "remaining": "Final independent package review and whole-host composition."
+      }
+    },
+    {
+      "requirement": "R14",
+      "package": "03",
+      "status": "engineering_complete",
+      "canonical_owner": "acceptance.authority_cli.main -> acceptance.host_runtime.InstalledAcceptanceRuntime.publish_authority -> acceptance.authority_repository.AcceptanceAuthorityRepository.compare_and_publish -> memorii.core.memory_evolution.deployment_authorization.InstalledProductionRevocationReader; acceptance.cli.main -> acceptance.evaluator.AcceptanceEvaluator -> memorii.core.memory_evolution.deployment_authorization.InstalledDeploymentAuthorizationPublisher",
+      "production_caller": "memorii-acceptance-authority-publish and memorii-acceptance-evaluate -> memorii.acceptance_evaluator_runtime:installed",
+      "production_caller_count": 2,
+      "target_binding": "administrator-prepared authority transaction -> fixed-trust publication CLI -> fenced repository CAS and independent production-revocation reader; public evaluation CLI -> lease-selected active release and candidate baseline -> fixed signed coverage/gate/sampling manifests plus signer/policy coordinates -> independent certificate verification -> registered signed receipt -> serialized production publisher",
+      "authority": "Fixed platform-data runtime-v2 configuration supplies repository coordinates, constructor-held trust, parser limits, evaluator signing authority, three canonical-base64 signed numeric manifests, the expected numeric signer and trust-policy digest, and separately discovered deployment and production-revocation providers. The fenced active release and candidate baseline/release are verified under the held lease; candidate paths cannot replace fixed authority. Complete V2 release, coverage, gate, sampling-frame, lifecycle, and production-revocation joins fail closed.",
+      "outcome_proof": "The wheel-installed authority command advances a signed successor through the real fence and independently configured production-revocation reader without changing numeric configuration, then rejects a signed R2-to-R1 rollback while retaining the R2 fence. The public evaluator runs the pinned four-cell, five-gate, ten-membership, enabled/unsupported, exact-binomial/weighted-Hoeffding corpus, publishes exact receipts and production authorizations, reconciles a missing receipt after real file publication, and rejects 24 authority, lifecycle, schema, signer/policy, reader-currentness, conflict, provider, path, history, and persistence failures. Independently validated signed vectors cover all 13 registered artifacts and recursively mutate their purpose/version/scalar/array/named/pair/signature/digest boundaries.",
+      "remaining": "No R14 engineering work. Exact-revision specification, correctness, and test reviews report no remaining findings. Ordinary provider activation consumption remains Stage 4 R13 integration; product policy approval, qualifying measurements, and production signatures are release conditions."
+    },
+    {
+      "requirement": "R15",
+      "package": "04",
+      "status": "engineering_complete",
+      "canonical_owner": "memorii.core.semantic_ingestion.production_authority.build_installed_capability_monitoring_authorities -> ProviderMemoryService.run_capability_monitor_tick/process_capability_monitoring -> memorii.core.memory_evolution.capability_monitoring.CapabilityMonitor -> SemanticWriterAdmissionStore.demote_capability_monitor; memorii.core.memory_evolution.atomic_store.SemanticIngestionAtomicStore.commit_or_reload_bootstrap_graph_group_v3; acceptance.revocation_cli.main -> acceptance.production_revocation.IndependentProductionRevocationEvidenceVerifier -> acceptance.production_revocation_bridge.configured_revocation_publisher -> InstalledProductionRevocationPublisher.from_fixed_configuration -> _SerializedProductionRevocationPublisher.publish_verified -> _FileProductionRevocationPublisherStorage.publish_revocation_evidence",
+      "production_caller": "build_provider_memory_service_from_env (and filesystem/Hermes composition roots) -> build_installed_capability_monitoring_authorities -> ProviderMemoryService.run_capability_monitor_tick/process_capability_monitoring -> CapabilityMonitor.tick/tick_missing_window; ProviderMemoryService.sync_event -> built-in bootstrap graph execution -> SemanticIngestionAtomicStore.commit_or_reload_bootstrap_graph_group_v3; memorii-semantic-ingestion-revocation-publish -> acceptance.revocation_cli.main -> registered memorii.acceptance_production_revocation_publisher endpoint",
+      "production_caller_count": 6,
+      "authority": "An operator-installed closed configuration supplies only absolute artifact paths, an Ed25519 public-key map and an independent fixed revocation-reader root; it contains no private signing key and candidate/model data cannot choose these coordinates. The revocation root is provisioning-only and must pre-exist as a secure operator-owned private directory; runtime can create only secure children under it. The configured builder parses the closed policy, baseline evidence and signed deployment authorization, rejects unknown key, tamper, expiry, substitution or a present/malformed revocation coordinate, and creates the opaque VerifiedCapabilityMonitoringAuthority. Its retained raw signed bytes and host-owned DeploymentAuthorizationCurrentTrustVerifier recheck canonical bytes, digest coordinates, signer/key, authority snapshot, active epoch, expiry, signature and current revocation state before monitor evaluation and learned ingress. For group commit it enters verify_current_use and holds a shared POSIX flock at the fixed revocation-root coordinate through final writer validation and the conditional group CAS; it re-samples the protected host clock after the lease acquisition, so expiry while waiting is unavailable. The installed revocation-publish CLI accepts receipt and checkpoint paths plus the prior release only. Its sole platform-data configuration contains trusted Ed25519 public keys and one fixed serialized storage configuration that is passed identically to the separately registered reader and publisher bridges; split reader/publisher coordinates are not representable. The reader capability exposes current-read and shared-lease operations only. Before the separate publisher-only storage capability may persist anything, both the independently owned acceptance verifier and the production-owned publisher verifier validate the exact registered shape and parser ceilings, canonical JSON, recomputed digest and signing preimage, fixed signer coordinate, signature, receipt/checkpoint join, monotonic epochs, timestamps, and checkpoint history. First creation of secure objects/current children fsyncs the root entry before use; immutable object and current mapping links fsync their owning directory before successful return. An idempotent retry also re-fsyncs each pre-existing object directory and the current mapping directory before its successful acknowledgement; partial or zero-progress mapping writes cannot publish and an interrupted attempt removes its temporary coordinate; a differing object or coordinate conflicts. The initial active status durably binds a typed authorization checkpoint containing those coordinates; writer admission and group commit require its exact record digest. A corrupt retained scheduler decision atomically takes the normal evidence_only status/writer fence before erroring, so later ingress cannot commit. The policy-owned scheduler inventories every active capability and produces separate missing_window, provider_failure and authorization_failure closed outcomes.",
+      "outcome_proof": "Focused monitor validation proves warning/breach, stale labels with healthy canary, zero traffic, pause/outage boundaries including missing-window grace, invalid input, idempotence/restart/CAS conflict/no reactivation, and both pre-field and e0/c9 extended V1 JSONL status/decision/freshness upcasts. Reopened pre-field V1 state reaches real signed ProviderMemoryService.sync_event -> built-in graph -> group CAS and is denied for its unavailable checkpoint with no accepted operation, effect or group; scheduler then durably demotes it. Reopened extended-V1 state transitions to V2, reaches the same real path and commits exactly one group whose final CAS retains exact V2 status and checkpoint digests. Signed production paths cover direct supplied-evidence trust revalidation, ordinary provider exception fencing including KeyError/custom exceptions, malformed polling with persisted provider-failure diagnostics, 17 signed authorities sharing one failing provider, expiry/restart trust demotion, and a two-thread real signed sync_event lease/CAS/revocation interleaving with byte-identical retained V2 capability registry. Installed configuration proof activates only a valid Ed25519-signed closed authority and fails closed for an unknown key, tamper, expiry, revocation, path substitution, and absent configuration; direct/factory/filesystem/Hermes production-capture roots receive the same verified configuration. A forked interprocess proof shows external revocation publication blocks through the current-use lease, then publishes; exact retry is idempotent and conflicting coordinates are rejected. The 21-test production boundary suite additionally proves reader mutation-capability absence, signed acceptance/production schema parity failures before write, caller-exception preservation, partial-write completion, zero-write cleanup, and successful retry. The consolidated monitor, acceptance-host, and revocation-boundary gate reports 111 passing tests under warnings-as-errors. The active correction proves the same production caller reaches the shared governed baseline grammar on initialization, current-status recovery, and CAS loss; later active and evidence_only status records reuse the immutable baseline without reactivation, malformed metrics and checkpoint envelopes fail closed, and the independent-host JSONL race has exactly one physical baseline trio batch. Targeted Ruff, first-party Pyright and diff validation pass.",
+      "remaining": "The active graph-transaction-authority debug WorkPlan is freezing its bounded durable monitor-baseline recovery and closed post-activation graph-control lineage correction for exact independent review. The production caller ProviderMemoryService.activate_observation_ledger reaches SemanticIngestionAtomicStore._reload_observation_ledger_activation after an evidence_only demotion; a real JSONL positive reopen/reload selector passes. The retained recomputed-batch activation-digest and writer-epoch negative selectors require exact-review execution before their outcomes are claimed. Approved monitoring policy values, qualifying evidence windows and production signatures remain release conditions; complete host-matrix composition remains allocated to R08, R16 and R19."
+    },
+    {
+      "requirement": "R16",
+      "package": "02",
+      "status": "partial",
+      "canonical_owner": "build_provider_memory_service_from_env/build_filesystem_provider -> verified registry, activation target, monitoring and observation authorities -> HermesMemoryProvider",
+      "production_caller": "HermesMemoryProvider construction and public lifecycle/read/write methods -> ProviderMemoryService composition; build_started_hermes_memory_provider(configured ProviderMemoryService) -> HermesMemoryProvider.start_semantic_ingestion -> activate_observation_ledger -> reconcile_memory_evolution -> process_capability_monitoring",
+      "authority": "Composition-owned registered bundle/profile and monitoring authorities are verified before use; request data cannot replace them.",
+      "outcome_proof": "Level 2 Hermes happy/common-failure pass plus installed registry and activation evidence. Final package/profile evidence and exhaustive configured-root matrix remain Level 3. The real configured Hermes observation/comparator case passes through the startup hook in 329.64s; four fast lifecycle cases pass in 8.37s. Production revision 4497325b; bounded Level 2 correctness review reports no remaining finding.",
+      "remaining": "Level 2 complete. Level 3 retains final package/profile evidence, exhaustive configured-root verification and approval of release fingerprints."
+    },
+    {
+      "requirement": "R17",
+      "package": "05",
+      "status": "partial",
+      "canonical_owner": "HermesMemoryProvider.observe_graph/observe_ingestion_time_attestations -> ProviderMemoryService -> GraphObservationPagingRuntime; acceptance.structural_comparator.collect_graph_observation",
+      "production_caller": "Hermes host -> HermesMemoryProvider public observation methods -> composed ProviderMemoryService; acceptance comparator consumes only the public Hermes observer protocol",
+      "authority": "Opaque host ingress is reauthorized by the service on every page; server-owned snapshot, cohort, scope, cursor and registered projection identities remain authoritative. The adapter does not reinterpret them.",
+      "outcome_proof": "Level 2 real activated JSONL Hermes observation/comparator test passes with a complete nonempty page chain, page digests, ingestion-time attestations, wrong-scope denial and invalid-cursor rejection. Consolidated observation/common-failure lane passes 2 cases; comparator unit coverage proves operation/fence/source/entity/terminal alignment and exact membership. Production revision 4497325b; bounded Level 2 correctness review reports no remaining finding.",
+      "remaining": "Level 2 complete. Level 3 retains exhaustive record-family mutations, forged topology, between-page revocation permutations, complete host matrix, final packaging and release CI.",
+      "binding_map": "source-finalization-integration-map.md",
+      "bounded_source_closure": "docs/work/semantic_ingestion/terminal-publication/closure.md; source candidate89907b04b2a9888ad6b708c859c3db1bde359dfb029dc24eed03a7780b80c9a5 independently approved. This historical bounded proof does not certify later group edits.",
+      "shared_observation_ledger": {
+        "status": "locally_verified_production_checkpoint",
+        "design": "docs/work/semantic_ingestion/observation-ledger/design.plan.md",
+        "runtime_boundaries": [
+          {
+            "behavior": "shared group/source append and exact reload",
+            "status": "locally_verified_production_checkpoint",
+            "production_caller": "ProviderMemoryService.sync_event -> ProviderIngestionCoordinator -> BootstrapGraphHostBundle.execute -> BootstrapGraphTransactionCoordinatorV3 -> AtomicStoreBootstrapGraphRepositoryV3.commit_or_reload / AtomicStoreBootstrapGraphTerminalPersistencePortV3.persist_and_reload",
+            "production_caller_count": 2,
+            "caller_count_definition": "One coordinator callsite to the group port and one to the source terminal port; ordinary ingestion and recovery share these ports.",
+            "canonical_owner": "SemanticIngestionAtomicStore.commit_or_reload_bootstrap_graph_group_v3 / persist_bootstrap_graph_terminal_v3",
+            "authority": "Host-composed verified registry and protected target, current admission/manifest, typed sealed request, exact source/fence/delivery/lease, selected publication; capability-specific mandatory snapshot validator after closed transaction grammar.",
+            "validation": "SemanticGovernedWritePolicy.validate creates one callback-local exact-artifact proof context in writer admission, validates proposed entry/head/current head, and passes that exact typed context to _validate_activated_observation_snapshot -> _replay_schema3_observation_ledger -> immutable native/source evidence checks, then post-validation lease expiry check.",
+            "write": "Native group or source terminal members plus one global entry/head in the same full-revision conditional write.",
+            "read": "Detached complete-prefix replay; immutable primary and source terminal recovery; fanout contents compared in JSON representation after durable reopen.",
+            "outcome_proof": "production-execution-results.json: real activated provider two sources/four entries, JSONL reopen and acknowledged retry pass1 test1269.55s; consolidated281 tests1108.52s; historical compatibility delta160 tests69.31s. Callback-local proof regression verifies one protected read/materialize/reencode per exact raw/schema selection, rejects changed raw/schema/foreign publication proof, and forces verification again for a fresh callback context. Activated lost acknowledgement, contention, authority failure and noncommitting public cases remain required.",
+            "exclusions": [
+              "checkpoint external authority",
+              "public authenticated retrieval",
+              "independent structural comparison",
+              "whole-M5 closure"
+            ]
+          },
+          {
+            "behavior": "writer activation and legacy-write fencing",
+            "status": "locally_verified_bounded_activation",
+            "production_caller": "ProviderMemoryService.activate_observation_ledger -> AuthorizedSemanticIngestionRuntime.activate_observation_ledger -> SemanticIngestionAtomicStore.activate_observation_ledger",
+            "production_caller_count": 1,
+            "proof": "observation_activation entry below retains bounded24-case approval; current four legacy-route rejection cases pass after active-epoch correction."
+          },
+          {
+            "behavior": "genesis observation replay",
+            "status": "locally_verified_production_checkpoint",
+            "production_caller": "SemanticIngestionAtomicStore._load_observation_activation / _validate_activated_observation_snapshot -> _replay_schema3_observation_ledger",
+            "production_caller_count": 2,
+            "authority": "Complete detached snapshot, independently loaded head, protected registry/target and immutable entry/result/graph joins.",
+            "proof": "Full-prefix regressions and activated provider durable reopen/retry pass; production-execution-results.json. External checkpoint authority remains absent."
+          },
+          {
+            "behavior": "authenticated observation checkpoint and tail replay",
+            "status": "absent",
+            "production_caller": null,
+            "production_caller_count": 0
+          },
+          {
+            "behavior": "consistent authenticated graph/reference/observation snapshot",
+            "status": "absent",
+            "production_caller": null,
+            "production_caller_count": 0
+          }
+        ],
+        "evidence": "observation-ledger/append-evidence/production-execution-results.json and production-review-results.md; real public sync_event with registered artifacts/admission/native graph/JSONL and fake host/model transport. Local evidence, not installed or live acceptance."
+      },
+      "native_policy_retention": {
+        "status": "locally verified; independent evidence delta review pending",
+        "canonical_owner": "BootstrapNativePlanningConstructionAuthorityV3; SemanticIngestionAtomicStore native group request codec",
+        "production_caller": "SourceNormalizationStage -> built-in graph builder -> artifact assembler -> AtomicStoreBootstrapGraphRepositoryV3.commit_or_reload",
+        "production_caller_count": 1,
+        "authority": "Exact source-supplied SemanticArbitrationPolicyBundle nested in ordered_operation_inputs.reduction.native_compilation.operation_input.planning_construction_authority; validation matches every temporal/trust closure, effective-time coordinate and predicate trust rule",
+        "write": "commit_or_reload_bootstrap_graph_group_v3 persists complete request_hex in immutable primary in group CAS",
+        "read": "_bootstrap_graph_v3_group_commit_request_from_record -> decode_semantic_contract(BootstrapGraphGroupCommitRequestV3)",
+        "proof": "tests-persisted-reload.log:4 passed67.53s, single public JSONL sync then reopened native group request decode and exact bundle bytes; legacy shape/tuple guards/policy coordinates. No projection or ledger closure.",
+        "exclusions": [
+          "native projection publication",
+          "shared observation ledger",
+          "authenticated retrieval",
+          "parent M5 closure"
+        ]
+      },
+      "protected_registry_composition": {
+        "status": "locally_verified_bounded_review_approved",
+        "canonical_owner": "verify_configured_typed_value_registry_history",
+        "production_caller": "ProviderMemoryService.__init__ -> BuiltInLocalHostSemanticIngestionCapability.build_semantic_ingestion_runtime -> verify_configured_typed_value_registry_history",
+        "production_caller_count": 1,
+        "authority": "Explicit host-owned immutable raw publications, source roots, parse limits and independently supplied pins. Same verified history object passed to paired writer/atomic store and authorized runtime. Omitted/different references and configured verification errors fail closed. Registry presence conveys no writer activation.",
+        "outcome": "Verified immutable history held by composed owners, or construction raises before writer creation. No artifact persistence/read path yet.",
+        "proof": "registry-publication/runtime-candidate-encoding-candidate.json:5 real-package/provider/direct-custom consistency tests passed; registry_composition_map queries verified by coordinator.",
+        "remaining": "Configured verifier has one reachable constructor callsite. Integrity helper invokes protected reader, but integrity/candidate encoding lack reachable public runtime owners. Checkpoint context, ledger, replay and public retrieval integration remain open.",
+        "registered_integrity": {
+          "owner": "verify_protected_typed_value_artifact_integrity",
+          "reachable_public_runtime_callers": 0,
+          "helper_reader_callsites": 1,
+          "proof": "registered-integrity-candidate.json and registered-integrity-review.json; 91 focused tests passed; ordinary/self-digest/cursor only",
+          "authority": "Integrity and cursor cryptography only; no lifecycle, key eligibility, activation, replay or persistence grant; external checkpoint fails closed"
+        }
+      },
+      "observation_activation": {
+        "status": "durable_activation_locally_verified_bounded_code_review_complete",
+        "entrypoint": "ProviderMemoryService.activate_observation_ledger -> AuthorizedSemanticIngestionRuntime.activate_observation_ledger -> SemanticIngestionAtomicStore.activate_observation_ledger",
+        "outcome": "Runtime revalidates deployment authorization; atomic owner validates target and binding, drains admitted work, validates the detached native inventory, and atomically publishes activation, genesis head and successor admission. Equivalent concurrent requests recover the same committed trio; invalid or incomplete state fails closed.",
+        "proof": "observation-ledger/activation-evidence/final-candidate.json and final-integration.log:24 passed218.82s on corrected activation; initial compatibility241 passed541.44s. Spec, correctness and test delta reviews report no remaining code or coverage defect. Evidence reconciliation only; CI unobserved.",
+        "durable_activation_implemented": true,
+        "design": "docs/design/semantic_ingestion_activation_target.md",
+        "construction_preflight": "docs/work/semantic_ingestion/observation-ledger/target-binding-preflight.md",
+        "reachable_public_runtime_callers": 1,
+        "authority": "Explicit payload-free trusted-host ProviderMemoryService API is the governing external trigger. Runtime revalidates bootstrap/deployment authorization and obtains current binding; atomic owner revalidates protected target/history, drains and validates complete native terminal inventory from a detached snapshot; writer performs the joined activation/genesis/successor CAS under full write revision and exact predecessor/absence conditions.",
+        "production_caller_count": 1,
+        "canonical_owner": "SemanticIngestionAtomicStore.activate_observation_ledger -> SemanticWriterAdmissionStore._activate_observation_ledger",
+        "remaining": "Activated append/reopen/retry locally verified; activated failure-family proof, checkpoint authority, authenticated retrieval, final packaging and CI evidence remain outstanding. No parent completion or release approval."
+      }
+    },
+    {
+      "requirement": "R19",
+      "package": "06",
+      "status": "partial",
+      "canonical_owner": "HermesMemoryProvider -> ProviderMemoryService and build_provider_memory_service_from_env/build_filesystem_provider composition roots",
+      "production_caller": "Hermes public ingestion, retrieval, activation, monitoring, graph observation, ingestion-time attestation and reconciliation methods -> canonical ProviderMemoryService owners; build_started_hermes_memory_provider(configured ProviderMemoryService) -> HermesMemoryProvider.start_semantic_ingestion -> activate_observation_ledger -> reconcile_memory_evolution -> process_capability_monitoring",
+      "authority": "Hermes forwards trusted arguments and opaque authority handles unchanged; service and storage owners retain validation and transactional responsibility.",
+      "outcome_proof": "Level 2 consolidated 36-scenario pass: 20 retrieval, 1 all-root monitor, 2 observation/common-failure and 13 ingestion/recovery cases. Real composed Hermes observation/comparator passes separately. Broader platform/root permutations remain Level 3. The real configured Hermes observation/comparator case passes through the startup hook in 329.64s; four fast lifecycle cases pass in 8.37s. Production revision 4497325b; bounded Level 2 correctness review reports no remaining finding.",
+      "remaining": "Level 2 complete. Level 3 retains broader platform/root permutations, final evidence assembly and installed production configuration."
+    },
+    {
+      "requirement": "R17",
+      "status": "partial",
+      "canonical_owner": "observation_activation_prepare.prepare_deployment; observation_activation_launch.main; prepare_observation_activation_target",
+      "production_caller": "operator prepare CLI -> offline pip installation -> protected host launcher -> verify_deployment -> origin guard -> host conversion/factory -> packaged target release prepare/verify",
+      "authority": "Pinned wheel bytes and explicit roots; independently protected bootstrap/configuration/host SHA256; verified deployment facts; protected publication and public-key profile/digest/domain. No runtime request selects these inputs.",
+      "outcome_proof": "release-preparation/run_installed_proof.py and check_installed_rejections.py exercise real installed dependency closure, unsigned manifest/preimage, isolated-key signature acceptance/rejections and retained target resolution. CI package-smoke invokes the complete chain; local evidence only until CI observed. No durable ledger activation.",
+      "removal_signal": "Removing preparation/bootstrap/guard or signature validation breaks offline-wheel and mutation assertions; wrong wheel cannot create environment, modified installed payload cannot execute host sentinel.",
+      "production_caller_count": "one explicit operator launcher and one packaged release prepare adapter"
+    }
+  ]
+}

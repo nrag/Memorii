@@ -1,0 +1,1 @@
+{"fields":[{"field_name":"entity_revision_id","policy":"required"},{"field_name":"logical_entity_id_at_assertion","policy":"required"}],"role":"optional","schema_id":"ImmutableAssertionEntityRef","schema_version":"1"}

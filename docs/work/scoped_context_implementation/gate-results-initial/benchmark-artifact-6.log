@@ -1,0 +1,2 @@
+suite=memory_evolution_runtime_v1 mode=llm systems=memorii profile=adversarial scenarios=10 events=110 checkpoints=12 passed=10 failed=0 llm_calls=60 artifacts=/private/tmp/scoped-context-gates/artifact-6/benchmark_runs/memory_evolution_runtime_v1/llm/bench-f780d6b0f7c5e634-rep0
+validated benchmark reports under /private/tmp/scoped-context-gates/artifact-6/benchmark_runs

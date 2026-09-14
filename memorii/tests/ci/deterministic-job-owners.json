@@ -7,6 +7,12 @@
       "timeout_minutes": 90,
       "timing_exemption_reason": "Exact public-root and independent-process JSONL graph transaction shards own 29 manifest selectors each."
     },
+    "acceptance-authority-runtime": {
+      "runtime_budget_seconds": 900,
+      "timeout_headroom_seconds": 300,
+      "timeout_minutes": 20,
+      "timing_exemption_reason": "Installed-wheel acceptance authority, revocation, and publication proofs run in an isolated environment with their own bounded timeout."
+    },
     "equal-version-replay-decision": {
       "runtime_budget_seconds": 60,
       "timeout_headroom_seconds": 240,
@@ -37,6 +43,12 @@
       "timeout_minutes": 15,
       "timing_exemption_reason": "Historical-revision integration recapture requires a dedicated checkout and fetch boundary."
     },
+    "scoped-context-integration": {
+      "runtime_budget_seconds": 60,
+      "timeout_headroom_seconds": 540,
+      "timeout_minutes": 10,
+      "timing_exemption_reason": "Real filesystem and Hermes composition, JSONL reopen, and exhaustive temporal roots are isolated from duration-balanced unit shards."
+    },
     "semantic-ingestion-acceptance": {
       "runtime_budget_seconds": 600,
       "timeout_headroom_seconds": 300,
@@ -66,6 +78,12 @@
       "timeout_headroom_seconds": 300,
       "timeout_minutes": 15,
       "timing_exemption_reason": "Scenario-authority acceptance has a dedicated deterministic gate and timeout."
+    },
+    "observation-ledger-activation": {
+      "runtime_budget_seconds": 12600,
+      "timeout_headroom_seconds": 1800,
+      "timeout_minutes": 240,
+      "timing_exemption_reason": "Durable observation-ledger activation, recovery, paging, and graph-observation materialization suites run against activation-backed stores whose measured runtime exceeds the file-granular unit shard budget."
     }
   }
 }

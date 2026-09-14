@@ -1,0 +1,58 @@
+I001 [*] Import block is un-sorted or un-formatted
+  --> tests/integration/test_ingestion_time_paging.py:3:1
+   |
+ 1 |   """Real registered cursor/retention behavior with a bounded fixture cohort."""
+ 2 |
+ 3 | / from collections.abc import Callable
+ 4 | | from concurrent.futures import ThreadPoolExecutor
+ 5 | | from datetime import UTC, datetime, timedelta
+ 6 | | from threading import Event
+ 7 | | from typing import TypeVar
+ 8 | |
+ 9 | | import pytest
+10 | | from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+11 | | from pydantic import BaseModel
+12 | | from memorii.core.memory_evolution.graph_ingestion_time_contracts import (
+13 | |     SourceRetentionTimeAttestation,
+14 | |     TransactionGroupCommitTimeAttestation,
+15 | | )
+16 | | from memorii.core.memory_evolution.graph_observation_contracts import GraphObservationCohortSelector
+17 | | from memorii.core.memory_evolution.graph_observation_paging import (
+18 | |     AuthenticatedGraphObservationPagingRuntime,
+19 | |     GraphObservationCohortInput,
+20 | |     IngestionTimeObservationCohortInput,
+21 | |     ObservationCohortUnavailableError,
+22 | |     ObservationRetentionBudget,
+23 | |     VerifiedGraphObservationAuthorization,
+24 | | )
+25 | | from memorii.core.memory_evolution.graph_observation_public_contracts import (
+26 | |     AuthenticatedGraphObservationContext,
+27 | |     GraphObservationAuthorizationDecision,
+28 | |     GraphObservationPage,
+29 | |     GraphObservationPagePolicySnapshot,
+30 | |     GraphObservationRequest,
+31 | |     IngestionTimeAttestationPage,
+32 | |     IngestionTimeAttestationRequest,
+33 | | )
+34 | | from memorii.core.memory_evolution.graph_observation_snapshot_contracts import GraphObservationRecordKey
+35 | | from memorii.core.memory_evolution.graph_observation_streams import EntityRevisionStreamRecord
+36 | | from memorii.core.memory_evolution.models import MemoryScope
+37 | | from memorii.core.memory_evolution.observation_activation_runtime import (
+38 | |     decode_registered_ingestion_time_attestation_cursor,
+39 | |     decode_registered_observation_cursor,
+40 | |     emit_registered_observation_artifact,
+41 | |     issue_registered_ingestion_time_attestation_cursor,
+42 | | )
+43 | | from memorii.core.memory_evolution.typed_value_artifact_integrity import TrustedTypedValueArtifactVerificationKey
+44 | | from memorii.core.memory_plane.service import MemoryPlaneService
+45 | | from tests.fixtures.semantic_ingestion.observation_publication import observation_publication
+46 | | from tests.unit.core.memory_evolution.test_graph_observation_public_contracts import _cohorts
+47 | | from tests.unit.core.memory_evolution.test_graph_observation_streams import _entity_payload
+   | |___________________________________________________________________________________________^
+48 |
+49 |   _Model = TypeVar("_Model", bound=BaseModel)
+   |
+help: Organize imports
+
+Found 1 error.
+[*] 1 fixable with the `--fix` option.

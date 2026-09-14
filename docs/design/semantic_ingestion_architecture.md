@@ -3,6 +3,15 @@
 **Document status:** Proposed target architecture for production memory
 ingestion.
 
+Operational observation update: the profile-3 contracts in
+[semantic_ingestion_observation.md](semantic_ingestion_observation.md) supersede
+the corresponding proposed registry publication, shared observation ledger,
+checkpoint and public observation shapes below. This includes separate temporal
+and trust projection observations, approved on 2026-09-07. Historical profile-2
+bytes and the nonoperational fixture inventory retain their existing contracts.
+The addendum is a target contract; runtime completion still requires the
+implementation and acceptance evidence in Section 5.
+
 Assessment baseline: commit
 `44cd7773a75ac8545ddcf799c76dc94c0240f788` (2026-07-26). The file and symbol
 references in this document were revalidated against that committed tree:
@@ -1247,6 +1256,182 @@ class CapabilityBaselineApprovalVerifier(Protocol):
         evaluation_time: datetime,
     ) -> VerifiedCapabilityBaselineApproval: ...
 ```
+
+#### Acceptance authority persistence and evaluator bootstrap
+
+The acceptance verifier reconstructs authority from one protected durable
+repository snapshot. The repository persists closed canonical typed-value
+artifacts for `AcceptanceTrustSnapshot`, `KeyLifecycleEvent`,
+`AcceptanceApprovalIssuanceSnapshot`, `CapabilityBaselineApprovalRelease`,
+`AcceptanceCurrentCheckpoint`, `ProductionRevocationReceipt`,
+`ProductionEpochCheckpoint`, `AcceptanceEvaluationReceipt`, and
+`AcceptanceAuthorityCommit`. Their schemas,
+purpose literals, complete profile bindings, digest domains, signature domains,
+field types, optionality, enum sets, and parser ceilings are declared in the
+packaged acceptance schema registry. The design traceability registry is not
+runtime wire authority.
+
+`AcceptanceStaticKeyDeclaration` is a closed nested value containing key
+reference, public-key bytes, half-open static validity, and a nonempty sorted
+purpose set. The trust snapshot contains a nonempty tuple of unique key
+declarations, snapshot sequence and predecessor, trust-policy digest, issue
+time, snapshot digest, root signer coordinate, and signature. Key events,
+issuance snapshots, current checkpoints, and production revocation receipts
+use the closed fields and chronology defined by their surrounding lifecycle
+contracts. `ProductionEpochCheckpoint` contains exactly schema version,
+purpose, production authority snapshot digest, checkpoint generation,
+predecessor checkpoint digest, active production epoch, ordered active
+authorization digests, ordered revocation receipt digests, observed time,
+checkpoint digest, signer coordinate, and signature. It is immutable
+serialized production evidence decoded independently by acceptance.
+`AcceptanceEvaluationReceipt` contains exactly schema version,
+purpose, authority commit digest, verified approval digest, certificate digest,
+policy digest, evidence digest, deployment authorization digest, evaluation
+time, evaluator subject, receipt digest, signer coordinate, and signature.
+
+`AcceptanceAuthorityCommit` contains exactly schema version, purpose,
+transaction sequence, predecessor commit digest, authority snapshot digest,
+key-history head digest and sequence, release-history head digest and sequence,
+the all-null or all-present active release digest/epoch/sequence, current
+checkpoint digest, the all-null or all-present issuance snapshot and approval
+release digests, ordered pairs of production revocation receipt and production
+epoch checkpoint digests, and commit digest. `AcceptanceCurrentCheckpoint`
+contains the same ordered evidence pairs for every acknowledged terminal
+transition. Every digest joins the referenced canonical bytes. Head sequences are
+contiguous and the transaction sequence advances by exactly one.
+
+For a signed body `U`, the artifact digest omits only the artifact's own digest
+and signature and equals `SHA256(LP(ASCII(domain)) ||
+LP(complete_profile_binding_bytes) || LP(CTV(U)))`, where `LP` is an unsigned
+64-bit big-endian length followed by that many bytes. The Ed25519 message is the
+canonical encoding of the closed map containing purpose, complete profile
+binding, signer coordinate, recomputed body digest, and unsigned canonical
+content. The commit omits only its own digest and is selected by the protected
+monotonic fence rather than an artifact signature. Statistical decimal values
+retain their explicit registered canonical decimal encoding-policy identifier;
+no runtime default supplies a representation.
+
+The repository transaction writes content-addressed immutable objects, then an
+immutable commit, then an advisory current index, and advances an independent
+append-only monotonic fence last. The fence record contains repository
+namespace, registered backend identity and failure domain, transaction
+sequence, commit digest, predecessor fence digest, and record digest. Only the
+commit named by the latest valid fence record is current. An index ahead of the
+fence is prepared state and repairs backward; a fence ahead of the index is
+committed state and repairs the index forward after complete validation.
+Missing, forked, truncated, substituted, noncontiguous, unavailable, or
+ambiguous state fails closed and never searches for a plausible latest object.
+
+The production fence port supports linearizable `load_current` and
+`compare_and_advance` with byte-identical idempotent retry. Its constructor
+receives a protected signed backend registration binding namespace, backend
+identity, backend kind, failure domain, repository identity, and credential
+reference. The standard local adapter is a separately managed SQLite database
+using an immediate serializable transaction and full durability; its registered
+failure domain must differ from the immutable-object repository. A file fence
+without an independently registered failure domain is test-only. Backend
+unavailability or an indeterminate commit makes evaluation unavailable.
+
+Approval issuance publishes its exact issuance snapshot and approval release
+as one commit, conditional on the captured key head, current commit, and status
+generation. A stale CAS selects neither artifact. Exact retry is idempotent;
+coordinate or byte substitution rejects. Legacy or incomplete artifacts cannot
+be reconstructed from timestamps or current state and require reissuance.
+
+The installed `memorii-acceptance-evaluate` command resolves exactly one
+`memorii.acceptance_evaluator_runtime` provider. The Memorii distribution
+registers the standard `acceptance.host_runtime:InstalledAcceptanceRuntime`
+provider. It reads one closed host-owned configuration from the platform data
+directory at `etc/memorii/acceptance/runtime-v1.json`; no command argument or
+environment variable can replace that path or any protected value. Missing,
+multiple, unloadable, mutable, or invalid providers and missing, symlinked,
+aliased, group-writable, or world-writable authority resources fail before
+candidate evidence is read. The configuration supplies repository and receipt
+roots, the registered fence binding and credential reference, trust anchors,
+bootstrap and numeric limits, evaluator signer, production evidence reader,
+deployment publisher, and clock. It supplies no policy thresholds, keys, or
+acceptance outcome defaults.
+
+The public CLI callable has no evaluator or authority injection parameter.
+Tests exercise the same installed discovery path through a test distribution or
+a private non-command helper; importing the command cannot bypass protected
+composition.
+
+The protected repository owns `AcceptanceEvaluationSnapshot`, an opaque
+acceptance-internal capability containing the selected authority commit digest,
+checkpoint digest, trusted evaluation instant, and the exclusive transaction
+lease. `begin_evaluation` acquires the lease, loads the fence-selected commit
+and signed checkpoint, validates their complete current state, samples the
+configured clock, requires `checkpoint.observed_at <= evaluation_time`, and
+returns the snapshot without publishing authority or releasing the lease.
+Callers cannot construct a
+snapshot, select its time, or replace its commit. The normal evaluator verifies
+the approval inside that snapshot and binds its commit digest and evaluation
+instant into the evaluation receipt. The legacy public `verify` shape may
+remain as a short-lived verification-only operation, but it cannot issue a
+receipt or publish deployment authority; the installed evaluator uses only the
+snapshot-bearing operation.
+
+This durability rule supersedes the earlier acceptance-authority feasibility
+model's exact timestamp-equality rule. Equality was a model device for rejecting
+an unprotected latest-status provider; the protected monotonic fence, complete
+selected commit validation, and held transaction lease establish currentness
+without mutating authority for a rejected evaluation. The checkpoint cannot be
+later than the evaluation instant. Any lifecycle commit that would make it
+stale is excluded by the lease and checked again before publication.
+
+Production supplies revocation evidence through a production-owned serialized
+reader boundary. For each requested prior release it returns the canonical
+`ProductionRevocationReceipt` plus the signed current
+`ProductionEpochCheckpoint` that contains its digest. Acceptance has a separate decoder and
+constructor-held production trust anchor, verifies both signatures, purposes,
+digest joins, epoch increase, checkpoint generation/predecessor currentness,
+and time ordering, and admits their exact digest pair to an acceptance
+checkpoint. Both canonical objects are persisted content-addressed in the same
+acceptance commit as that checkpoint and are revalidated on every recovery. A
+raw receipt, receipt
+digest alone, stale production checkpoint, reader outage, or conflicting
+current epoch cannot acknowledge withdrawal. Neither package imports the
+other's schema or verifier.
+
+One acceptance-owned publication coordinator serializes all authority commits
+and deployment publication using the evaluation snapshot's exclusive
+transaction lease. Verification, receipt creation, and publication retain that
+same lease, so no lifecycle or checkpoint transition can interleave. After the
+evaluation receipt is durable, the coordinator revalidates the exact snapshot
+commit and calls the production publisher. The production publisher is digest-idempotent and
+can query whether the exact prepared authorization is visible after an
+indeterminate outcome. The coordinator releases the lease only after durable
+publication or a reconciled terminal failure. Thus a revocation or supersession
+that commits first prevents publication, while one that follows publication
+must durably revoke that authorization before its acceptance checkpoint can
+acknowledge the transition. A durable evaluation receipt proves evaluation; it
+does not by itself assert production visibility. The command reports success
+only after publication is confirmed.
+
+Evaluation receipts use a store-wide process lock and publish complete bytes
+through a same-directory temporary file, file fsync, atomic replacement of an
+absent digest path, and directory fsync. An existing digest path is idempotent
+only when its bytes are identical. Temporary debris is never a receipt; a
+malformed or truncated digest path makes the store unavailable. Remote adapters
+must supply equivalent create-if-absent, exact-read, and durable-acknowledgement
+semantics.
+
+The acceptance schema source deterministically produces packaged runtime
+authority, exact schema/profile/domain cardinalities, and checksums. A separate
+implementation creates frozen expected-byte vectors without sharing an
+encoder, decoder, normalizer, digest helper, fixture, or derived manifest.
+Installed-wheel CI validates closed-schema mutations, vectors, package
+resources, crash/restart and concurrent-publication families, exact configured
+runtime success and failure, empty/current/legacy/mixed/corrupt inventory and
+rollback-as-a-later-transition, receipt interruption before and after every
+write and fsync boundary, both forbidden import directions, and workflow pins.
+The required `acceptance-authority-runtime` job builds and installs the actual
+distribution, provisions its standard provider configuration, and runs the
+command in a subprocess; the semantic-ingestion aggregate requires that job.
+These deterministic gates establish engineering behavior only; they do
+not supply policy approval, qualifying measurements, real keys or signatures,
+or revision-bound release certification.
 
 The release uses the canonical ingestion typed-value profile and its registered
 approval-release schema binding. `release_digest` excludes only
@@ -28432,6 +28617,7 @@ class BootstrapNativePlanningConstructionAuthorityV3(BaseModel):
     required_scope_set_digest: str
     predicate_registry_fingerprint: str
     predicate_trust_rule: PredicateTrustRule
+    arbitration_policy_bundle: SemanticArbitrationPolicyBundle | None
     action_policy_fingerprint: str
     action_transition: AcceptedActionTransitionReference | None
     planning_codec_entries: tuple[CanonicalGraphRecordCodecEntry, ...]
@@ -28448,6 +28634,23 @@ and `native-identity-construction-authority.v3`. The normalization owner obtains
 these bytes only from same-generation admission, temporal-policy, graph-policy,
 codec-manifest and canonical-identity owners, persists them inside each native
 operation input, and reloads them exactly. Ambient lookup and defaults reject.
+
+For newly constructed fact-path authority,
+`arbitration_policy_bundle` is the exact immutable
+`SemanticArbitrationPolicyBundle` supplied to normalization; it is not rebuilt
+from a fingerprint. Its trust policy's rule for
+`predicate_trust_rule.predicate_id` must equal `predicate_trust_rule`. For every
+retained temporal construction, the accepted closure's temporal and trust
+fingerprints and snapshot digests, and its arbitration instant, must equal the
+bundle's temporal/trust policies and `arbitration_as_of`; the construction
+temporal fingerprint and its effective-time temporal fingerprint/snapshot
+digest must equal the bundle's temporal policy. A present bundle is included in
+the authority CTV before `authority_digest` is computed. The absent field is a
+legacy decoding shape: it is omitted from both canonical lowering and digest
+preimage, preserving prior bytes and hashes. It does not authorize ambient
+lookup or future native projection publication without a bundle. No temporal
+construction count follows from this field; operation contracts retain their
+own cardinality rules.
 
 The literal Planning* field map is:
 
@@ -31844,7 +32047,11 @@ caller-supplied. Denial or authorizer/policy outage returns
 correlation token.
 
 `IngestionTimeAttestationRequest` resolves the same authorized cohort and
-snapshot through a distinct request purpose. Its page contains exactly the
+snapshot through a distinct request purpose. For the operational profile-3
+route, semantic_ingestion_observation.md, Ingestion-Time Cursor And Bounded
+Continuation Retention, supersedes the shared graph-cursor field inventory
+with IngestionTimeAttestationCursorPayload and its complete ingestion-time
+request coordinates; the graph endpoint retains GraphObservationCursorPayload. Its page contains exactly the
 source-retention attestations and committed-group attestations reachable from
 that cohort's accepted source and group results, in canonical
 `(kind, source_id, operation_fence_id, transaction_group_id-or-empty,
@@ -31940,8 +32147,11 @@ membership and temporal relations structurally only after validating the
 complete cursor chain.
 
 Every page request reauthorizes the authenticated caller context against the
-current production policy before cohort lookup. The opaque cursor must decode
-and verify as one `GraphObservationCursorPayload`. It binds cursor schema,
+current production policy before cohort lookup. For graph observation, the opaque
+cursor must decode and verify as one `GraphObservationCursorPayload`. Operational
+profile-3 ingestion-time continuation instead uses the distinct registered cursor
+and endpoint failure dispatch in semantic_ingestion_observation.md. Both endpoints
+use that amendment's shared protected retention budget. It binds cursor schema,
 exact next stream position, the complete preceding triple or three nulls at
 position zero, requested total page size, page-policy revision, caller-context
 digest, authorization decision/expiry, cohort/snapshot/revisions, and view/time

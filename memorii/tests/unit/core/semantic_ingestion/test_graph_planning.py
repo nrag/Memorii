@@ -1017,9 +1017,9 @@ def test_uncertified_items_keep_the_adapter_path_inside_active_arena() -> None:
         )
         canonical_graph_record_adapter().validate_python = counting
         try:
-            from memorii.core.memory_evolution.graph_planning import _snapshot_record
+            from memorii.core.memory_evolution.graph_planning import snapshot_record
 
-            _snapshot_record(uncertified, manifest["reference_disposition"])
+            snapshot_record(uncertified, manifest["reference_disposition"])
         finally:
             canonical_graph_record_adapter().validate_python = original_validate
         assert calls["n"] >= 1

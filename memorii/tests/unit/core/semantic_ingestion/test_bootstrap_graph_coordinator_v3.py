@@ -67,7 +67,7 @@ from tests.unit.core.test_provider_service import _build_production_scoped_provi
 @pytest.mark.parametrize(
     "outcome_kind",
     (
-        "retry", "success", "related_conflict", "exhausted_conflict",
+        "retry", "completed", "related_conflict", "exhausted_conflict",
         "lease_renewed", "lease_reclaimed", "writer_changed", "writer_unavailable",
     ),
 )
@@ -258,7 +258,7 @@ def test_coordinator_persists_retry_or_terminal_once(monkeypatch, outcome_kind: 
         capability_registry=capabilities,
         operation_inputs=operation_inputs,
         control_epoch=epoch,
-        accepted_materialization=outcome_kind == "success",
+        accepted_materialization=False,
     )
     commit_calls: list[tuple[str, str]] = []
     host_authority = build_bootstrap_graph_terminal_host_authority_v3(
@@ -298,7 +298,7 @@ def test_coordinator_persists_retry_or_terminal_once(monkeypatch, outcome_kind: 
             policy=policy,
             capability_registry=capabilities,
             operation_inputs=operation_inputs,
-            accepted_materialization=outcome_kind == "success",
+            accepted_materialization=False,
         ),
         authorizer=DeterministicBootstrapGraphPlanningAuthorizerV3(
             compilation=compilation
@@ -348,15 +348,12 @@ def test_coordinator_persists_retry_or_terminal_once(monkeypatch, outcome_kind: 
         return
     else:
         assert result.kind == "succeeded"
-    if outcome_kind == "success":
+    if outcome_kind == "completed":
         snapshot_after_commit = atomic.graph_state_snapshot()
-        assert tuple(
-            item.payload_record_kind for item in snapshot_after_commit.records
-        ) == ("provenance",)
-        assert snapshot_after_commit.graph_revision != "genesis"
+        assert snapshot_after_commit == graph_snapshot
     repeat = coordinator.coordinate(request=request, transition=transition)
     assert repeat == result
-    if outcome_kind == "success":
+    if outcome_kind == "completed":
         assert len(commit_calls) == 1
 
 
@@ -702,6 +699,7 @@ def test_terminal_request_reload_rejects_in_memory_corrupt_closure(monkeypatch) 
         f"{sha256(member['member_id'].encode('utf-8')).hexdigest()}"
     )
     original_get = plane.get_record
+    original_snapshot = plane.read_write_snapshot
     for variant in ("removed_member", "substituted_member", "locator"):
         def corrupted_get(memory_id, *, _variant=variant):
             record = original_get(memory_id)
@@ -713,10 +711,36 @@ def test_terminal_request_reload_rejects_in_memory_corrupt_closure(monkeypatch) 
                 substitute_member=substitute,
             )
 
+        # The exact terminal reload proves its immutable closure against one
+        # detached plane snapshot (read_write_snapshot) rather than per-record
+        # get_record reads, so in-memory corruption of that snapshot view must
+        # be rejected exactly like a corrupted persisted closure.
+        def corrupted_snapshot(*, _variant=variant):
+            revision, records = original_snapshot()
+            if _variant == "removed_member":
+                return revision, tuple(
+                    record for record in records if record.memory_id != member_id
+                )
+            return revision, tuple(
+                _corrupt_terminal_record(
+                    record,
+                    variant=_variant,
+                    locator_id=locator.memory_id,
+                    member_id=member_id,
+                    substitute_member=substitute,
+                )
+                for record in records
+            )
+
         monkeypatch.setattr(
             plane,
             "get_record",
             corrupted_get,
+        )
+        monkeypatch.setattr(
+            plane,
+            "read_write_snapshot",
+            corrupted_snapshot,
         )
         with pytest.raises(PreplanningStoreError, match="bootstrap graph terminal"):
             service._semantic_atomic_store.reload_bootstrap_graph_terminal_by_request_v3(
@@ -725,6 +749,7 @@ def test_terminal_request_reload_rejects_in_memory_corrupt_closure(monkeypatch) 
         with pytest.raises(PreplanningStoreError, match="bootstrap graph terminal"):
             _reload_terminal_by_recovery(service, plane)
     monkeypatch.setattr(plane, "get_record", original_get)
+    monkeypatch.setattr(plane, "read_write_snapshot", original_snapshot)
 
 
 def test_terminal_request_reload_rejects_corrupt_jsonl_closure_after_reopen(tmp_path) -> None:

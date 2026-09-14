@@ -1,0 +1,30 @@
+{
+  "scope": "acceptance authority design prerequisite; no canonical promotion or runtime approval",
+  "governing_design": {
+    "path": "docs/design/semantic_ingestion_architecture.md",
+    "sha256": "b469653e3ef92e9cc1bf45e797a2c7dff8eac4d9ee792ad94ada3a54bfbe05da"
+  },
+  "files": [
+    {
+      "path": "docs/work/semantic_ingestion/acceptance-authority/design.plan.md",
+      "sha256": "1cb3d0037df195ba82319f9fbf0a1cdc278204e04f3705e3ddc5cea8373a1272"
+    },
+    {
+      "path": "docs/work/semantic_ingestion/acceptance-authority/proposal.md",
+      "sha256": "7a63a93dd389e45a7e3f86db65cc89e72c281511794f44bb6274eea9c1c3bf5a"
+    },
+    {
+      "path": "docs/work/semantic_ingestion/acceptance-authority/authority_feasibility.py",
+      "sha256": "f46a6bf9e57031ddf417bac5906daeebf729c83c85f22043cc066dc74877d455"
+    },
+    {
+      "path": "docs/work/semantic_ingestion/acceptance-authority/test_authority_feasibility.py",
+      "sha256": "ffdc41360160e17a6332c3f4a50a250fd3dd6b102c27afd77c7653fb9d226f85"
+    }
+  ],
+  "verification": {
+    "command": ".venv/bin/python -W error -m pytest docs/work/semantic_ingestion/acceptance-authority/test_authority_feasibility.py -q -p no:cacheprovider",
+    "result": "16 passed in 0.29s; Ruff passes",
+    "scope": "bounded nonproduction feasibility only"
+  }
+}

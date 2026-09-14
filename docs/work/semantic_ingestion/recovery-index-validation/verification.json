@@ -1,0 +1,14 @@
+{
+  "candidate_identity": "ab2efbd33fd25e6a83c36616dad4369b7f108e9803770dd9c69d08c2b885108b",
+  "source_hashes_unchanged": true,
+  "result": "16 passed in145.85s",
+  "logs": {
+    "final-regressions.log": "df186fd8a1df454c02e9a89cf1994a278902cfae545f848406680cf616547b1d",
+    "reproducer.log": "9ca082682c43a9b9a78adb1bad5a97b8fbaa708758312f01e0c70ed6f9ab7273",
+    "regressions.log": "fb7769d50eccbfea4b6fb140751689192dad30091f683a2e06cb663b087a8318",
+    "publication-refresh.log": "b5f42c1b32281de67d39766588a080ac896b9e9bf11eaaa0745345122f603842",
+    "registry-vectors.log": "d78091ada173d74dc58d3c104893d745f4526184fbc6e55865d73cc9448bc274",
+    "identity.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "scope": "two writer canonical-field hooks and dependent public recovery family; no full branch closure"
+}

@@ -1,0 +1,18 @@
+{
+  "command_source": ".github/workflows/pr-gates.yml ctv-binding-authority-exact steps, same arguments; localPython3.12.14",
+  "checks": {
+    "check_ctv_binding_authority_v2": {
+      "exit_code": 0,
+      "log_sha256": "ad1cfc657d9c8dcdb916270a1e8f75672a1535cd1b357c977f234a94d4ca05d3"
+    },
+    "check_lifecycle_root_signer_provenance_v1": {
+      "exit_code": 0,
+      "log_sha256": "16ffaaba6110405301325ebac91f5b4b36d4469d0566124a0c54f41199eb64f5"
+    },
+    "check_cgs_structural_contract_v1": {
+      "exit_code": 0,
+      "log_sha256": "a760712ab12f4467ffefc5a7842b63a5823efc982809f6110a2f2ab4aa3a191b"
+    }
+  },
+  "note": "Initial invocations omitted required isolation/arguments and were rejected before execution; corrected exact workflow commands all passed."
+}

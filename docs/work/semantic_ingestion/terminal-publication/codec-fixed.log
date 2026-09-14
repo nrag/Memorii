@@ -1,0 +1,6 @@
+ENTER DeterministicBootstrapGraphTerminalPreparationV3.prepare
+RETURN DeterministicBootstrapGraphTerminalPreparationV3.prepare: BootstrapGraphTerminalPreparationV3
+ENTER SemanticIngestionAtomicStore.persist_bootstrap_graph_terminal_v3
+RETURN SemanticIngestionAtomicStore.persist_bootstrap_graph_terminal_v3: BootstrapGraphTerminalReloadV3
+.
+1 passed in 68.79s (0:01:08)

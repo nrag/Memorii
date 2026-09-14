@@ -1,0 +1,22 @@
+{
+  "status": "complete_bounded_recovery_repair",
+  "candidate": "ab2efbd33fd25e6a83c36616dad4369b7f108e9803770dd9c69d08c2b885108b",
+  "test_only_delta": "8b7d3768702e8ffd646284d1f327ef8bb6bbc4824485e3bdd5a0974d237d657a",
+  "baseline_head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "root_cause": "canonical model lowering included absent activation_digest while legacy serializer omitted it",
+  "correction": "existing canonical-field hook on both writer model types, omitting only activation_digest=None",
+  "evidence": [
+    "verification.json",
+    "final-regressions.log",
+    "contract-delta.log",
+    "null-sibling-delta.json",
+    "source-gates.json"
+  ],
+  "reviews": {
+    "correctness_reviewer": "approved exact bounded causal repair, no findings",
+    "test_reviewer": "approved two optional-null sibling cases after confirmed gap correction"
+  },
+  "remaining_validated_p1_p2": [],
+  "remaining_changes_required": [],
+  "scope_limit": "No M5, activation target milestone, branch or CI closure; deployment/release/CAS/retrieval work stays open"
+}

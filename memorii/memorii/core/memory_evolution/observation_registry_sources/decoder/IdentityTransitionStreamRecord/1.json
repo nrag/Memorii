@@ -1,0 +1,1 @@
+{"decoder_id":"memorii.semantic_ingestion.observation.IdentityTransitionStreamRecord.v1","implementation_source_digest":"6e2edfdb4679b1c216c55d1be09a77a040d2cab638a4ebeb0d87efa1b3308310","role":"decoder","schema_id":"IdentityTransitionStreamRecord","schema_version":"1","typed_root_kind":"model"}

@@ -57,6 +57,10 @@ cover/
 
 # Django stuff:
 *.log
+# Immutable scoped-context verification outputs referenced by retained manifests.
+!docs/work/scoped_context_implementation/gate-results/*.log
+!docs/work/scoped_context_implementation/gate-results-initial/*.log
+!docs/work/scoped_context_implementation/gate-results-delta/*.log
 local_settings.py
 db.sqlite3
 db.sqlite3-journal

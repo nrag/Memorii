@@ -135,14 +135,22 @@ def _current_chain(
     terminal_recovery_action: str | None = None,
     bootstrap_expires_at: str | None = None,
     release_issued_at: str | None = None,
+    signature_signer: Callable[[str, str, bytes], bytes] | None = None,
+    key_digests: tuple[str, str, str, str, str] | None = None,
 ) -> dict[str, object]:
     """Build the complete current CTV chain without any flat compatibility preimages."""
     now = datetime(2026, 1, 2, tzinfo=UTC)
-    key_a, key_b, key_r = "a" * 64, "b" * 64, "c" * 64
-    key_c, key_r2 = "4" * 64, "5" * 64
+    if key_digests is None:
+        key_a, key_b, key_r, key_c, key_r2 = "a" * 64, "b" * 64, "c" * 64, "4" * 64, "5" * 64
+    elif len(key_digests) == 5 and all(isinstance(digest, str) for digest in key_digests):
+        key_a, key_b, key_r, key_c, key_r2 = key_digests
+    else:
+        raise ValueError("current_chain_key_digests_invalid")
 
-    def signature(profile: str, key: str, payload: bytes) -> bytes:
+    def legacy_signature(profile: str, key: str, payload: bytes) -> bytes:
         return sha256(profile.encode() + b"\0" + key.encode() + b"\0" + payload).digest()
+
+    signature = legacy_signature if signature_signer is None else signature_signer
 
     def signed(profile: str, key: str, payload: bytes) -> str:
         return signature(profile, key, payload).hex()

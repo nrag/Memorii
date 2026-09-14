@@ -1,0 +1,1 @@
+{"fields":[{"integrity_role":"ordinary","name":"end","type":{"kind":"datetime","lexical_rule":"utc_six_fractional_digits"}},{"integrity_role":"ordinary","name":"start","type":{"kind":"datetime","lexical_rule":"utc_six_fractional_digits"}}],"role":"schema","root_kind":"model","schema_id":"TimeInterval","schema_version":"1"}

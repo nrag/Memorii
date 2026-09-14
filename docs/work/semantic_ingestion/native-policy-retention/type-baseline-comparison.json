@@ -1,0 +1,9 @@
+{
+  "merge_base": "b4f6c24b091a28bd3d1f65102c742478fc7276b3",
+  "baseline_errors": 280,
+  "working_errors": 280,
+  "same_diagnostics_by_file_source_line_message": true,
+  "added": [],
+  "removed": [],
+  "scope": "Supplemental forced-file check outside configured includes; configured repository gate passed separately. Paths and shifted line numbers normalized, diagnostic text and source text retained."
+}

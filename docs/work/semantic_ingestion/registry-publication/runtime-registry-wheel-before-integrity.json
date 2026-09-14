@@ -1,0 +1,14 @@
+{
+  "status": "LOCAL_WHEEL_BYTES_VERIFIED",
+  "wheel_sha256": "a44012d5c6a1bd7820d18135938e0d40c1d1ca0127b5c93a2d882efd353e365a",
+  "registry_json_files": 1257,
+  "acceptance_and_tests_excluded": true,
+  "command": "python -m pip wheel . --no-deps --no-build-isolation",
+  "limitations": [
+    "Local no-build-isolation check; not equivalent to required CI package gate",
+    "No deployment or runtime integrity claim"
+  ],
+  "candidate_sha256": "884fbaf3c90dbf2b5c2d161bd524ec7bf7eadab4643c67def297d3b9db03b4e1",
+  "installed_import_smoke": "Passed from /private/tmp with only installed wheel site ahead of interpreter dependencies: registry configuration, candidate codec, capability and provider",
+  "identity_hygiene": "Configured repository command exits0"
+}

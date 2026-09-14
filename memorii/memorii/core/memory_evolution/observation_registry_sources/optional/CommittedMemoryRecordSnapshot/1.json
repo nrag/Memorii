@@ -1,0 +1,1 @@
+{"fields":[{"field_name":"kind","policy":"required"},{"field_name":"record","policy":"required"}],"role":"optional","schema_id":"CommittedMemoryRecordSnapshot","schema_version":"1"}

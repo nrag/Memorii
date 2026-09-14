@@ -1,0 +1,12 @@
+{
+  "files": {
+    "docs/work/semantic_ingestion/acceptance-issuance-prefix/proposal.md": "a6526a2a62a4be196fd4ae8511713e9ecdf335c9af3046576121ab73664fcbfc",
+    "docs/work/semantic_ingestion/acceptance-issuance-prefix/issuance_prefix_feasibility.py": "26cd042f99c7a20e52750c0dbdae25d84351dc10b1d51c65d93b31cb99e6a645",
+    "docs/work/semantic_ingestion/acceptance-issuance-prefix/test_issuance_prefix_feasibility.py": "37c1877ede267ff8030fdcd48a5745b97217e2b2060c656233d252fe70d229ab",
+    "docs/work/semantic_ingestion/acceptance-authority-successor/proposal.md": "e0c554e793e7ed90eb34b305d311b4e77cd215593698865c82ad951260da18f1",
+    "docs/work/semantic_ingestion/acceptance-authority-successor/authority_successor_feasibility.py": "fc8dbbd81a73b78de44db119dcf74721ab5f2a3d074c11a0de5f1f523fd4ad9a",
+    "docs/work/semantic_ingestion/acceptance-authority-successor/test_authority_successor_feasibility.py": "e2a759d5c64e018a64b190f214565c9d10c876398003e4c37478d623eac5b1e1",
+    "docs/design/semantic_ingestion_architecture.md": "a7770e627e2dc627c772b8c54dd5998ce83c1baf43079a210056826b5ebce626"
+  },
+  "evidence": "103 passed in 0.64s; 56 preserved +47new; committed lookup and status-only CAS evidence added; proposal unchanged"
+}

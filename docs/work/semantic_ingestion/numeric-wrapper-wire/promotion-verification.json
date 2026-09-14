@@ -1,0 +1,22 @@
+{
+  "scope": "numeric amendment promotion, observation design only",
+  "reviewed_candidate": "2ad0df654836d87b72304a259265105075589a3153c34dc2054a46405e314d1d",
+  "observation_design_sha256": "d46aa5c3bb57552fed82dbfe76df476ad4f6d776f48535da180f379871560e63",
+  "unchanged_before": {
+    "docs/design/semantic_ingestion_architecture.md": "69140e58d650fbe9f59d69de2da06d846b6c4a9040256d82d29fced76e918e79",
+    "docs/design/semantic_ingestion/traceability_golden_vectors/ctv-binding-authority-v2.json": "653119939fa33484e4f16da25d332590202408dc9ed1b75daf9954c45183dd43",
+    "docs/design/semantic_ingestion/traceability_golden_vectors/cgs-structural-manifest-prototype-v1.json": "5b6fcc67103ba4d18842c89a68e3d2da95f3a70be143b7fd38b1aa06606519ec",
+    "docs/design/semantic_ingestion/traceability_golden_vectors/check_cgs_structural_contract_v1.py": "f05835dcbf0dc319855e34f79b6b051371ced0ce40f6d345fd78a729d62e7825",
+    "docs/design/semantic_ingestion/traceability_golden_vectors/check_lifecycle_root_signer_provenance_v1.py": "58f81fe028a4a89cb30f43bc1a88779a5567652eb11075785e7fe7e232228938",
+    ".github/workflows/pr-gates.yml": "49b09815dce26317b8f135900c5d2dc69f3f141401a916ed9d219ff338d896ce"
+  },
+  "unchanged_after": {
+    "docs/design/semantic_ingestion_architecture.md": "69140e58d650fbe9f59d69de2da06d846b6c4a9040256d82d29fced76e918e79",
+    "docs/design/semantic_ingestion/traceability_golden_vectors/ctv-binding-authority-v2.json": "653119939fa33484e4f16da25d332590202408dc9ed1b75daf9954c45183dd43",
+    "docs/design/semantic_ingestion/traceability_golden_vectors/cgs-structural-manifest-prototype-v1.json": "5b6fcc67103ba4d18842c89a68e3d2da95f3a70be143b7fd38b1aa06606519ec",
+    "docs/design/semantic_ingestion/traceability_golden_vectors/check_cgs_structural_contract_v1.py": "f05835dcbf0dc319855e34f79b6b051371ced0ce40f6d345fd78a729d62e7825",
+    "docs/design/semantic_ingestion/traceability_golden_vectors/check_lifecycle_root_signer_provenance_v1.py": "58f81fe028a4a89cb30f43bc1a88779a5567652eb11075785e7fe7e232228938",
+    ".github/workflows/pr-gates.yml": "49b09815dce26317b8f135900c5d2dc69f3f141401a916ed9d219ff338d896ce"
+  },
+  "result": "all excluded SIA/CTV/structural/workflow source hashes unchanged"
+}

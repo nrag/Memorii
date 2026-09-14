@@ -1,0 +1,1 @@
+{"fields":[{"field_name":"predicate_id","policy":"required"},{"field_name":"qualifier_partition","policy":"required"},{"field_name":"scope_identity","policy":"required"},{"field_name":"subject_logical_entity_id","policy":"required"}],"role":"optional","schema_id":"SemanticClaimSlotKey","schema_version":"1"}

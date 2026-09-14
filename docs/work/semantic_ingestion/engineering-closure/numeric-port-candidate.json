@@ -1,0 +1,40 @@
+{
+  "scope": "acceptance numerical component port only; independent context/CLI and canonical promotion excluded; R14 incomplete",
+  "files": [
+    {
+      "path": "acceptance/__init__.py",
+      "sha256": "9a40315873642abbbb80a5e91296de4a06183f1e84f9eeb3dab551b4bd774815"
+    },
+    {
+      "path": "acceptance/arithmetic.py",
+      "sha256": "0958fd3aff008ba15b309bd7f4e037bb4e139672f85b51807bfacc562a0528cd"
+    },
+    {
+      "path": "acceptance/ctv.py",
+      "sha256": "46a15f478a7cc16e2b653dc2d7f496448ac590c596677c0bd61539dbda3f35a1"
+    },
+    {
+      "path": "acceptance/statistical_certification.py",
+      "sha256": "c6ea91c12868f47bf0147f77f83f3039d92131a3e7da3af83302f7e7eaa66246"
+    },
+    {
+      "path": "memorii/tests/unit/acceptance/test_arithmetic.py",
+      "sha256": "8bdaf15afe5e89fba49f81df6e413a9bbf2b88ee5c3fc0e645f5be3e6a8d94bc"
+    },
+    {
+      "path": "memorii/tests/unit/acceptance/test_precision_contract.py",
+      "sha256": "fb2974c21729a1c46705e98045102c0b9d10701de974b62c5849f854be11aa92"
+    },
+    {
+      "path": "memorii/tests/unit/acceptance/test_statistical_certification.py",
+      "sha256": "9d2745d71ad8a80ceac3dbe54f7eec26d01fe35732a66931c8bd47a6bf37cc77"
+    }
+  ],
+  "verification": {
+    "tests": "81 passed from memorii/ working directory without PYTHONPATH override; four rejection regressions added after test review",
+    "independent_math": "33 vectors, 8 altered-result rejections using acceptance.arithmetic",
+    "ast": "Both arithmetic and verifier bodies match approved proof after import and module-docstring exclusion"
+  },
+  "candidate_head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "dirty_tree": true
+}

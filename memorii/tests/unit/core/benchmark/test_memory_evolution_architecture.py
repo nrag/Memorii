@@ -40,6 +40,18 @@ DYNAMIC_IMPORT_OWNERS = {
         frozenset({"importlib", "importlib.metadata.EntryPoint.load"}),
         "installed host capability discovery and post-verification manifest-bound component loading",
     ),
+    PACKAGE_ROOT / "memory_evolution" / "observation_activation_package.py": (
+        frozenset({"importlib.metadata"}),
+        "installed distribution metadata, RECORD, and package-byte verification for the observation activation payload",
+    ),
+    SOURCE_ROOT / "tools" / "semantic_ingestion_activation_target_release.py": (
+        frozenset({"importlib"}),
+        "host-supplied module:callable activation preparation factory loading in the release CLI",
+    ),
+    SOURCE_ROOT / "integrations" / "hermes_memory_provider.py": (
+        frozenset({"importlib.metadata"}),
+        "deployment-owned Hermes provider-service entry-point discovery",
+    ),
 }
 
 

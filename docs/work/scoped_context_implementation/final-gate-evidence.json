@@ -1,0 +1,289 @@
+{
+  "source_manifest": "final-source.json",
+  "source_manifest_sha256": "9ab323c49139b432cb4291020d0c0b92d76760cde1a45be0552239d4bf6fc7f6",
+  "tested_tree_digest": "0904a8776932a79c16928f91a823d2459c5ceb671759fb6b997f292389c1fa69",
+  "required_local_jobs": [
+    "benchmark-artifact-0",
+    "benchmark-artifact-1",
+    "benchmark-artifact-2",
+    "benchmark-artifact-3",
+    "benchmark-artifact-4",
+    "benchmark-artifact-5",
+    "benchmark-artifact-6",
+    "benchmark-artifact-7",
+    "benchmark-contract-tests-3",
+    "benchmark-contract-tests-4",
+    "ctv-binding-authority-pr-gate-3",
+    "package-smoke",
+    "provider-compatibility-4",
+    "scoped-context-integration-3",
+    "static-analysis-3",
+    "static-analysis-4",
+    "static-analysis-5",
+    "unit-shard-5",
+    "unit-shard-plan",
+    "unit-timing-merge",
+    "delta-identity",
+    "delta-package",
+    "delta-pyright",
+    "delta-ruff",
+    "delta-scoped-tests",
+    "delta-source-fingerprint",
+    "unit-shard-0",
+    "unit-shard-1",
+    "unit-shard-2",
+    "unit-shard-3",
+    "unit-shard-4"
+  ],
+  "passed_local_jobs": [
+    "benchmark-artifact-0",
+    "benchmark-artifact-1",
+    "benchmark-artifact-2",
+    "benchmark-artifact-3",
+    "benchmark-artifact-4",
+    "benchmark-artifact-5",
+    "benchmark-artifact-6",
+    "benchmark-artifact-7",
+    "benchmark-contract-tests-3",
+    "benchmark-contract-tests-4",
+    "ctv-binding-authority-pr-gate-3",
+    "package-smoke",
+    "provider-compatibility-4",
+    "scoped-context-integration-3",
+    "static-analysis-3",
+    "static-analysis-4",
+    "static-analysis-5",
+    "unit-shard-5",
+    "unit-shard-plan",
+    "unit-timing-merge",
+    "delta-identity",
+    "delta-package",
+    "delta-pyright",
+    "delta-ruff",
+    "delta-scoped-tests",
+    "delta-source-fingerprint",
+    "unit-shard-0",
+    "unit-shard-1",
+    "unit-shard-2",
+    "unit-shard-3",
+    "unit-shard-4"
+  ],
+  "known_local_failures": [],
+  "records": [
+    {
+      "gate": "benchmark-artifact-0",
+      "record": "docs/work/scoped_context_implementation/gate-results/benchmark-artifact-0.json",
+      "record_sha256": "7d752976eacc23a25db29c4e094ee74939f6b698af25efb6e0ae32e24f063848",
+      "source_manifest_sha256": "5310e597dde8d610d8345f63d0f9839f94d062526f00bb4b3d1e6f29424817bb",
+      "evidence_use": "successful pre-conformance full gate; behavior unchanged except validated omission schema"
+    },
+    {
+      "gate": "benchmark-artifact-1",
+      "record": "docs/work/scoped_context_implementation/gate-results/benchmark-artifact-1.json",
+      "record_sha256": "a40028157eda94edaa6aa491db3a4b3f74696698abd850f75510e5b435b8d491",
+      "source_manifest_sha256": "5310e597dde8d610d8345f63d0f9839f94d062526f00bb4b3d1e6f29424817bb",
+      "evidence_use": "successful pre-conformance full gate; behavior unchanged except validated omission schema"
+    },
+    {
+      "gate": "benchmark-artifact-2",
+      "record": "docs/work/scoped_context_implementation/gate-results/benchmark-artifact-2.json",
+      "record_sha256": "079ff1b1c13eb63eda7a9a099031d453cbb064f270800648b95129468751e889",
+      "source_manifest_sha256": "5310e597dde8d610d8345f63d0f9839f94d062526f00bb4b3d1e6f29424817bb",
+      "evidence_use": "successful pre-conformance full gate; behavior unchanged except validated omission schema"
+    },
+    {
+      "gate": "benchmark-artifact-3",
+      "record": "docs/work/scoped_context_implementation/gate-results/benchmark-artifact-3.json",
+      "record_sha256": "f0cd694edb7b195da9d4de2138bfcdb99349466233586e2268fe93ef3aa07f82",
+      "source_manifest_sha256": "5310e597dde8d610d8345f63d0f9839f94d062526f00bb4b3d1e6f29424817bb",
+      "evidence_use": "successful pre-conformance full gate; behavior unchanged except validated omission schema"
+    },
+    {
+      "gate": "benchmark-artifact-4",
+      "record": "docs/work/scoped_context_implementation/gate-results/benchmark-artifact-4.json",
+      "record_sha256": "089e06b1a244d677d0f649cc0efd2fc5b25c6ab2c499da195c4fc88c6564df26",
+      "source_manifest_sha256": "5310e597dde8d610d8345f63d0f9839f94d062526f00bb4b3d1e6f29424817bb",
+      "evidence_use": "successful pre-conformance full gate; behavior unchanged except validated omission schema"
+    },
+    {
+      "gate": "benchmark-artifact-5",
+      "record": "docs/work/scoped_context_implementation/gate-results/benchmark-artifact-5.json",
+      "record_sha256": "5b3d29092a33767230f2c41a86cb54b9f51378309f700156aca848b00265236c",
+      "source_manifest_sha256": "5310e597dde8d610d8345f63d0f9839f94d062526f00bb4b3d1e6f29424817bb",
+      "evidence_use": "successful pre-conformance full gate; behavior unchanged except validated omission schema"
+    },
+    {
+      "gate": "benchmark-artifact-6",
+      "record": "docs/work/scoped_context_implementation/gate-results/benchmark-artifact-6.json",
+      "record_sha256": "598080d7989609a6e65b9a5e14de4c71154bea8a0d915d46acab54bbed3b19ca",
+      "source_manifest_sha256": "5310e597dde8d610d8345f63d0f9839f94d062526f00bb4b3d1e6f29424817bb",
+      "evidence_use": "successful pre-conformance full gate; behavior unchanged except validated omission schema"
+    },
+    {
+      "gate": "benchmark-artifact-7",
+      "record": "docs/work/scoped_context_implementation/gate-results/benchmark-artifact-7.json",
+      "record_sha256": "de009366c5beed84b8928470ff4782fe8832b1938326e314c87d3e9a4072713f",
+      "source_manifest_sha256": "5310e597dde8d610d8345f63d0f9839f94d062526f00bb4b3d1e6f29424817bb",
+      "evidence_use": "successful pre-conformance full gate; behavior unchanged except validated omission schema"
+    },
+    {
+      "gate": "benchmark-contract-tests-3",
+      "record": "docs/work/scoped_context_implementation/gate-results/benchmark-contract-tests-3.json",
+      "record_sha256": "5ce9f6fa3da46f98543756de73b032107f88e8d811932c69d7d07a25cf74c128",
+      "source_manifest_sha256": "5310e597dde8d610d8345f63d0f9839f94d062526f00bb4b3d1e6f29424817bb",
+      "evidence_use": "successful pre-conformance full gate; behavior unchanged except validated omission schema"
+    },
+    {
+      "gate": "benchmark-contract-tests-4",
+      "record": "docs/work/scoped_context_implementation/gate-results/benchmark-contract-tests-4.json",
+      "record_sha256": "f65e56264c2cf80708117c6396b01d6f0524d121aa59b76eec322135fe94b164",
+      "source_manifest_sha256": "5310e597dde8d610d8345f63d0f9839f94d062526f00bb4b3d1e6f29424817bb",
+      "evidence_use": "successful pre-conformance full gate; behavior unchanged except validated omission schema"
+    },
+    {
+      "gate": "ctv-binding-authority-pr-gate-3",
+      "record": "docs/work/scoped_context_implementation/gate-results/ctv-binding-authority-pr-gate-3.json",
+      "record_sha256": "bedf5c007142f6045df6413fef8ad993422607797f8ca968c9abbd63351ffb11",
+      "source_manifest_sha256": "5310e597dde8d610d8345f63d0f9839f94d062526f00bb4b3d1e6f29424817bb",
+      "evidence_use": "successful pre-conformance full gate; behavior unchanged except validated omission schema"
+    },
+    {
+      "gate": "package-smoke",
+      "record": "docs/work/scoped_context_implementation/gate-results/package-smoke.json",
+      "record_sha256": "cbfa6a13e892f7549f52835a850360e488afafc71e222dbc646c19121c36423d",
+      "source_manifest_sha256": "5310e597dde8d610d8345f63d0f9839f94d062526f00bb4b3d1e6f29424817bb",
+      "evidence_use": "successful pre-conformance full gate; behavior unchanged except validated omission schema"
+    },
+    {
+      "gate": "provider-compatibility-4",
+      "record": "docs/work/scoped_context_implementation/gate-results/provider-compatibility-4.json",
+      "record_sha256": "aa49373cb44b03939e826c94e290899e9d54c5510c9051c3094520ba24eabf98",
+      "source_manifest_sha256": "5310e597dde8d610d8345f63d0f9839f94d062526f00bb4b3d1e6f29424817bb",
+      "evidence_use": "successful pre-conformance full gate; behavior unchanged except validated omission schema"
+    },
+    {
+      "gate": "scoped-context-integration-3",
+      "record": "docs/work/scoped_context_implementation/gate-results/scoped-context-integration-3.json",
+      "record_sha256": "ab940de94ffbca8a70bb9c566c89f0d4904e1a0d21a0a6af865777cf008ecb64",
+      "source_manifest_sha256": "5310e597dde8d610d8345f63d0f9839f94d062526f00bb4b3d1e6f29424817bb",
+      "evidence_use": "successful pre-conformance full gate; behavior unchanged except validated omission schema"
+    },
+    {
+      "gate": "static-analysis-3",
+      "record": "docs/work/scoped_context_implementation/gate-results/static-analysis-3.json",
+      "record_sha256": "86343f3579a797e9369b766abada4b96201878ada77d0c112105d39587eb5197",
+      "source_manifest_sha256": "5310e597dde8d610d8345f63d0f9839f94d062526f00bb4b3d1e6f29424817bb",
+      "evidence_use": "successful pre-conformance full gate; behavior unchanged except validated omission schema"
+    },
+    {
+      "gate": "static-analysis-4",
+      "record": "docs/work/scoped_context_implementation/gate-results/static-analysis-4.json",
+      "record_sha256": "09c0131686d19349305d4448ade4ec28aab9ca05e5b5fe6a5ab42e1a0e4db4d1",
+      "source_manifest_sha256": "5310e597dde8d610d8345f63d0f9839f94d062526f00bb4b3d1e6f29424817bb",
+      "evidence_use": "successful pre-conformance full gate; behavior unchanged except validated omission schema"
+    },
+    {
+      "gate": "static-analysis-5",
+      "record": "docs/work/scoped_context_implementation/gate-results/static-analysis-5.json",
+      "record_sha256": "41aac9c62d5a80f65ec999693fbfbc57ff0dc1e07bd8694970dd0a4740e5a370",
+      "source_manifest_sha256": "5310e597dde8d610d8345f63d0f9839f94d062526f00bb4b3d1e6f29424817bb",
+      "evidence_use": "successful pre-conformance full gate; behavior unchanged except validated omission schema"
+    },
+    {
+      "gate": "unit-shard-5",
+      "record": "docs/work/scoped_context_implementation/gate-results/unit-shard-5.json",
+      "record_sha256": "8cb1b9b63bf2ccb0ee5df9e0d8ee4a074c9596efaa1d448370474fb6bb3c937b",
+      "source_manifest_sha256": "5310e597dde8d610d8345f63d0f9839f94d062526f00bb4b3d1e6f29424817bb",
+      "evidence_use": "successful pre-conformance full gate; behavior unchanged except validated omission schema"
+    },
+    {
+      "gate": "unit-shard-plan",
+      "record": "docs/work/scoped_context_implementation/gate-results/unit-shard-plan.json",
+      "record_sha256": "1990de1a1d4c41769e26bb47dee7428bc3691d82dbf5d0fd153700afb6e82ca5",
+      "source_manifest_sha256": "5310e597dde8d610d8345f63d0f9839f94d062526f00bb4b3d1e6f29424817bb",
+      "evidence_use": "successful pre-conformance full gate; behavior unchanged except validated omission schema"
+    },
+    {
+      "gate": "unit-timing-merge",
+      "record": "docs/work/scoped_context_implementation/gate-results/unit-timing-merge.json",
+      "record_sha256": "20cb646de81890c253a0e3875401fe7ab9d16e412ae8a3e8a72daf2a850c52c7",
+      "source_manifest_sha256": "5310e597dde8d610d8345f63d0f9839f94d062526f00bb4b3d1e6f29424817bb",
+      "evidence_use": "successful pre-conformance full gate; behavior unchanged except validated omission schema"
+    },
+    {
+      "gate": "delta-identity",
+      "record": "docs/work/scoped_context_implementation/gate-results-delta/delta-identity.json",
+      "record_sha256": "cc9510f535a22d88857762b4821bb1125abf77ecf3d48957503dbfd1027e445d",
+      "source_manifest_sha256": "9ab323c49139b432cb4291020d0c0b92d76760cde1a45be0552239d4bf6fc7f6",
+      "evidence_use": "final affected-delta execution"
+    },
+    {
+      "gate": "delta-package",
+      "record": "docs/work/scoped_context_implementation/gate-results-delta/delta-package.json",
+      "record_sha256": "c5b4abd045ab9c6dc9a78aa541655df2fdd9b457d622a75203ce1240b20fe8bf",
+      "source_manifest_sha256": "9ab323c49139b432cb4291020d0c0b92d76760cde1a45be0552239d4bf6fc7f6",
+      "evidence_use": "final affected-delta execution"
+    },
+    {
+      "gate": "delta-pyright",
+      "record": "docs/work/scoped_context_implementation/gate-results-delta/delta-pyright.json",
+      "record_sha256": "31c585c785a7d956e66ee243bd53bfa14c74095e123825cce3c9189face1ca41",
+      "source_manifest_sha256": "9ab323c49139b432cb4291020d0c0b92d76760cde1a45be0552239d4bf6fc7f6",
+      "evidence_use": "final affected-delta execution"
+    },
+    {
+      "gate": "delta-ruff",
+      "record": "docs/work/scoped_context_implementation/gate-results-delta/delta-ruff.json",
+      "record_sha256": "ac54b7e1d229f7ab6b1f283c2c060a9a2dee545c430676ba3e9cb4787a17d08c",
+      "source_manifest_sha256": "9ab323c49139b432cb4291020d0c0b92d76760cde1a45be0552239d4bf6fc7f6",
+      "evidence_use": "final affected-delta execution"
+    },
+    {
+      "gate": "delta-scoped-tests",
+      "record": "docs/work/scoped_context_implementation/gate-results-delta/delta-scoped-tests.json",
+      "record_sha256": "018accb6a5911a5dd2b9c056d3b25ca8dcb7550db62585cc9a46d1ec7497dbd1",
+      "source_manifest_sha256": "9ab323c49139b432cb4291020d0c0b92d76760cde1a45be0552239d4bf6fc7f6",
+      "evidence_use": "final affected-delta execution"
+    },
+    {
+      "gate": "delta-source-fingerprint",
+      "record": "docs/work/scoped_context_implementation/gate-results-delta/delta-source-fingerprint.json",
+      "record_sha256": "27da5ea15f0faa18234d12e96f1aa33825621bc9bd85a0862261edee378201c0",
+      "source_manifest_sha256": "9ab323c49139b432cb4291020d0c0b92d76760cde1a45be0552239d4bf6fc7f6",
+      "evidence_use": "final affected-delta execution"
+    },
+    {
+      "gate": "unit-shard-0",
+      "record": "docs/work/scoped_context_implementation/gate-results-initial/unit-shard-0.json",
+      "record_sha256": "30905b4ea9d0af36411e8485512cea44b69a59d5d53322f5299d652aa09d30d1",
+      "evidence_use": "carried-forward unchanged tests/exercised production behavior; see gate-inventory correction rationale"
+    },
+    {
+      "gate": "unit-shard-1",
+      "record": "docs/work/scoped_context_implementation/gate-results-initial/unit-shard-1.json",
+      "record_sha256": "e7c62c296922fa6681dec1c327139e44083552e7f23372683f2525aeca80306c",
+      "evidence_use": "carried-forward unchanged tests/exercised production behavior; see gate-inventory correction rationale"
+    },
+    {
+      "gate": "unit-shard-2",
+      "record": "docs/work/scoped_context_implementation/gate-results-initial/unit-shard-2.json",
+      "record_sha256": "b1c3ff69eaa1e3b6605c422dc388f538ab83bd9d85662103fa755b33afb0a824",
+      "evidence_use": "carried-forward unchanged tests/exercised production behavior; see gate-inventory correction rationale"
+    },
+    {
+      "gate": "unit-shard-3",
+      "record": "docs/work/scoped_context_implementation/gate-results-initial/unit-shard-3.json",
+      "record_sha256": "dedf30cd7bf41acff65b939de27d20e91c8a0d548ebc0eac69195061357ba9d0",
+      "evidence_use": "carried-forward unchanged tests/exercised production behavior; see gate-inventory correction rationale"
+    },
+    {
+      "gate": "unit-shard-4",
+      "record": "docs/work/scoped_context_implementation/gate-results-initial/unit-shard-4.json",
+      "record_sha256": "02773d674cb6e94546a673ea03695743a110e49ffb4e6992c2f03f7d9bfb3ca9",
+      "evidence_use": "carried-forward unchanged tests/exercised production behavior; see gate-inventory correction rationale"
+    }
+  ],
+  "unit_result": "3548passed,2existing skips across all6shards; scoped delta153passed separately",
+  "carry_forward_rationale": "No changed test nodes/workflow/dependencies after broad gates. Only omission output-model validator and existing unit test expanded; all scoped consumers rerun, static/package/fingerprint refreshed. Unrelated broad tests and dry benchmark rows retained with original source identity, not misrepresented as exact-final executions. No live certification.",
+  "github": "No PR, no hosted run or operational evidence; local macOS3.12 vs hosted Ubuntu3.11"
+}

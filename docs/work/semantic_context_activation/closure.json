@@ -1,0 +1,36 @@
+{
+  "status": "complete",
+  "operation": "design only",
+  "approved_candidate": "candidate-approved.json",
+  "approved_design_sha256": "f43d2cca76a57776cc2223ec1e9d413cb0deb6e94a5981263b0b43deae04386e",
+  "base_revision": "b4f6c24b091a28bd3d1f65102c742478fc7276b3",
+  "tracked_baseline_unchanged": true,
+  "reviews": "fresh three-role whole-design review plus final bounded specification delta; no unresolved required findings",
+  "checks": [
+    "snapshot probe passed",
+    "omitted/null scope probe passed",
+    "identity hygiene exit 0",
+    "Python schema blocks AST parse",
+    "whitespace check passed",
+    "all governing source hashes unchanged",
+    "reviewed administrative archive hashes verified"
+  ],
+  "evidence_limit": "New API specified only; M5 remains pending; no deployment or quality certification",
+  "files": {
+    "docs/design/scoped_memory_context.md": "f43d2cca76a57776cc2223ec1e9d413cb0deb6e94a5981263b0b43deae04386e",
+    "docs/work/semantic_context_activation/source-requirements-audit.md": "b2036ff5e6f54d94b734bc5bba7fd6a0108f27ab938f0eb34028877c199ab6a5",
+    "docs/work/semantic_context_activation/snapshot_probe.py": "1fddcd692bfacec059524420eae21e094fac64da923cffb77c784960526f8b70",
+    "docs/work/semantic_context_activation/candidate-final.json": "51886732780bf39a74ed8d9b8fd87fa3e3ae4c95e49f1b2b85078a4086a62001",
+    "docs/work/semantic_context_activation/design.plan.md": "c312687f818ef7161c0739345ec674a757702bc58191590da17cf0d0c9bf1aeb",
+    "docs/work/semantic_context_activation/candidate.json": "336ba96865e1a5fcb89a1584966287cc3f66381303c12978b00c01b61720b0b1",
+    "docs/work/semantic_context_activation/scope_probe.py": "70290aec3eefeb349ecabc523372854590bf3bae037c616db5c18811b0f070db",
+    "docs/work/semantic_context_activation/research-notes.md": "edb4fbc371299d76c0aa5206e0dd24dc09d39733cfc2eae2acbdec3f8ad5aa1c",
+    "docs/work/semantic_context_activation/production-entrypoint-preflight.md": "a4b8f40f1c40608896bf29edbd5f0346f9e8e25d41fba50c4380033c0067c9d4",
+    "docs/work/semantic_context_activation/reviews.md": "75cb687bbf6343e8dee52d0163cfdd3090eb174fac2517211a69417002e9ceac",
+    "docs/work/semantic_context_activation/candidate-approved.json": "179b54535cb61d23f6ae4506bf581e7c7ca8dd34f20e3525d74b04d385a0b84c",
+    "docs/work/semantic_context_activation/review-archive-map.json": "23b1a7baa65237a31c9eb61a37a2097424d03234f8996e2e7e08ac0f0a0b5300",
+    "docs/work/semantic_context_activation/history/396fce1a7ca5625201d5a556a9c6fde04b7f9f22ebcbeeadb5c950e96cefe41d-design.plan.md": "396fce1a7ca5625201d5a556a9c6fde04b7f9f22ebcbeeadb5c950e96cefe41d",
+    "docs/work/semantic_context_activation/history/47620247b602e2056aaeb70ae403a8fa653063978625ff79e96163bbc5076f66-reviews.md": "47620247b602e2056aaeb70ae403a8fa653063978625ff79e96163bbc5076f66",
+    "docs/work/semantic_context_activation/history/2b58f21c734c12fa1a9f5261679805f07c00d3cb3747ddd76f1f64e51c0d6740-source-requirements-audit.md": "2b58f21c734c12fa1a9f5261679805f07c00d3cb3747ddd76f1f64e51c0d6740"
+  }
+}

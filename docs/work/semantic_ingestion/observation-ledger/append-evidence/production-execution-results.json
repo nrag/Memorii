@@ -1,0 +1,90 @@
+{
+  "base": "8785d9f3a2bb237e579da1242efbd0c8be31d7e2",
+  "tree": "authorized dirty production checkpoint",
+  "reviewed_candidate_sha256": "a39646bfcdd781e60b15d2e5b6632bcecc228fa28cc20d3251bb818fafcd6343",
+  "workflow_delta_candidate_sha256": "2e9e53e48a8938b83be5ea202c45e7de3677a6a92c5a851cbd0812a6801c171a",
+  "toolchain": {
+    "python": "3.12.14",
+    "pytest": "9.0.3",
+    "pydantic": "2.13.4",
+    "ruff": "0.15.21",
+    "pyright": "1.1.411"
+  },
+  "runs": [
+    {
+      "log": "activated-provider-final.log",
+      "sha256": "ec7b34437bc8a681a2b117adfe3f58e01f8dcbc0dad6374ef457bf06268977fd",
+      "command": "../.venv/bin/python -W error -m pytest tests/integration/test_activated_provider_ledger.py -p no:cacheprovider -xq",
+      "working_directory": "memorii",
+      "exit_code": 0,
+      "result": "1 passed in1269.55s"
+    },
+    {
+      "log": "production-consolidated-final.log",
+      "sha256": "723978e66fa3eb93b02834173821e3f76dd36d1891a30860a2cd85976130b0f5",
+      "command": "../.venv/bin/python -W error -m pytest tests/integration/test_observation_ledger_activation.py tests/integration/test_observation_ledger_artifacts.py tests/integration/test_observation_terminal_intent.py tests/integration/test_observation_ledger_replay.py tests/integration/test_bootstrap_group_observation.py tests/integration/test_registered_observation_cursor.py tests/integration/test_native_projection_evidence.py tests/integration/test_graph_observation_paging.py tests/unit/core/semantic_ingestion/test_semantic_writer_admission.py tests/unit/core/semantic_ingestion/test_semantic_atomic_store.py tests/unit/core/semantic_ingestion/test_historical_terminal_persisted_reload.py tests/unit/core/semantic_ingestion/test_semantic_provider_composition.py -p no:cacheprovider -q --durations=10",
+      "working_directory": "memorii",
+      "exit_code": 0,
+      "result": "281 passed in1108.52s"
+    },
+    {
+      "log": "production-final-delta.log",
+      "sha256": "f8173579a54442cf9554661cffd17bc4708ac58ecbf98f595c130a326e8c47d3",
+      "command": "../.venv/bin/python -W error -m pytest tests/unit/core/semantic_ingestion/test_semantic_writer_admission.py tests/unit/core/semantic_ingestion/test_historical_terminal_persisted_reload.py tests/unit/core/semantic_ingestion/test_historical_terminal_compatibility.py tests/integration/test_observation_terminal_intent.py -p no:cacheprovider -q",
+      "working_directory": "memorii",
+      "exit_code": 0,
+      "result": "160 passed in69.31s"
+    },
+    {
+      "log": "production-ruff.log",
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+      "command": "../.venv/bin/python -m ruff check memorii tests",
+      "working_directory": "memorii",
+      "exit_code": 0,
+      "result": "pass"
+    },
+    {
+      "log": "production-pyright.log",
+      "sha256": "6d88a1b220adb7a3d62092b6e38431f0b3fe8babe9864fab90e5849766260332",
+      "command": "../.venv/bin/pyright --pythonpath ../.venv/bin/python",
+      "working_directory": "memorii",
+      "exit_code": 0,
+      "result": "0 errors,0 warnings"
+    },
+    {
+      "log": "production-identity.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "command": "../.venv/bin/python -m memorii.tools.identity_hygiene --root .. --allowlist ../.agents/identity_hygiene_allowlist.json",
+      "working_directory": "memorii",
+      "exit_code": 0,
+      "result": "pass"
+    },
+    {
+      "log": "production-registry-refresh.log",
+      "sha256": "48dbdadd1df030a064755df0c728b9b6c669d53124f99f6eeecb2c95e9902a6e",
+      "command": "PYTHONPATH=.:memorii .venv/bin/python docs/work/semantic_ingestion/registry-publication/reproduce_publication.py --refresh-generated",
+      "working_directory": ".",
+      "exit_code": 0,
+      "result": "pass"
+    },
+    {
+      "log": "production-registry-vectors.log",
+      "sha256": "00e9f0844535b18f5db455069c8467fc37d21600bb1ce0a6de1273d99f35c0c9",
+      "command": "PYTHONPATH=.:memorii .venv/bin/python docs/work/semantic_ingestion/registry-publication/verify_registry_vectors.py",
+      "working_directory": ".",
+      "exit_code": 0,
+      "result": "58 vectors,no failures"
+    }
+  ],
+  "limitations": [
+    "Local Python3.12 evidence does not establish Ubuntu Python3.11 CI parity.",
+    "CI has not been observed for this checkpoint.",
+    "The declared activation job was exercised in the consolidated and separate provider commands, not one exact CI job invocation.",
+    "Fake host/model transport; full registry/native writes/JSONL are real.",
+    "Acknowledged retry does not establish lost acknowledgement; activated failure-family coverage remains open.",
+    "No public retrieval, checkpoint external authority, monitor or statistical acceptance closure.",
+    "Final changes after frozen review are timeout-only (reviewed) and documentation/evidence updates."
+  ],
+  "remaining_validated_p1_p2": [],
+  "milestone_complete": false
+}

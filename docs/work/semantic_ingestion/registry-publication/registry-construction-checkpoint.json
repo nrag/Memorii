@@ -1,0 +1,59 @@
+{
+  "scope": "Coherent local registry construction checkpoint only; no whole-M5 or runtime publication approval",
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "tree": "authorized dirty tree",
+  "python": "3.12.14",
+  "versions": {
+    "pytest": "9.0.3",
+    "ruff": "0.15.21",
+    "pyright": "1.1.411",
+    "pydantic": "2.13.4"
+  },
+  "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii",
+  "test_command": "../.venv/bin/python -W error -m pytest tests/unit/core/memory_evolution/test_typed_value_*.py tests/unit/core/memory_evolution/test_typed_numeric_values.py tests/unit/core/memory_evolution/test_native_observation_decoders.py tests/unit/core/test_ingestion_contracts.py tests/unit/acceptance/test_observation_registry_compiler.py -p no:cacheprovider -q",
+  "test_result": "168 passed in 6.42s",
+  "ruff_result": "All checks passed under memorii/pyproject.toml",
+  "pyright_result": "0 errors, 0 warnings, 0 informations; explicit scope matching Ruff plus independent compiler test",
+  "resolved_check_failures": [
+    "Initial command used incorrect historical test path and ran no tests; corrected to tests/unit/core/test_ingestion_contracts.py",
+    "Ruff B008 default construction replaced by immutable module singleton in independent compiler",
+    "Pyright acceptance-test environment now resolves repository-root acceptance package with scoped extraPaths; production environment unchanged"
+  ],
+  "files": {
+    "acceptance/observation_registry_compiler.py": "9853882ecb8dfc06b220954469e9fe4ccfa07bfc8327431b8a80f1c619a6430c",
+    "memorii/memorii/core/memory_evolution/ingestion_contracts.py": "fe4629dd90221a6a8fb700b065323a773f96466ce89c3df4fc3ea0f30245a0fe",
+    "memorii/memorii/core/memory_evolution/typed_numeric_values.py": "6416cdd27631c87fa16ed62a10e38ecbedfdcf7ac7f9db2ba71d3e7e7e4ee8f2",
+    "memorii/memorii/core/memory_evolution/typed_value_body_validation.py": "127494d6b424edef7d553aa9193cf7b9eafa9339123d1144eed777b579d5787d",
+    "memorii/memorii/core/memory_evolution/typed_value_declarations.py": "138599b2012285ef6a9ae9518a4227b55b2da1ff7c1d787ab8f2e9f5d41b4216",
+    "memorii/memorii/core/memory_evolution/typed_value_decoder_sources.py": "6e9a5dc789c572991e44e03d7338c6fe8c5abd8b8d64468e0f1ec62593833185",
+    "memorii/memorii/core/memory_evolution/typed_value_model_codec.py": "9eef0ce9c33cb4f17fa7f61ca69dea3526f6a4c469f6a8b997d9a035b9f9a944",
+    "memorii/memorii/core/memory_evolution/typed_value_publication.py": "63332ab3f7f0b0ff29c18bcd02c294a5813870656937e486e7b8fb205d18f686",
+    "memorii/memorii/core/memory_evolution/typed_value_publication_authoring.py": "c6225070032a821bc6e194f4d9a54f1eececcfc3d53293ed1a45976c6986c3a6",
+    "memorii/memorii/core/memory_evolution/typed_value_registry_compilation.py": "e9213c804f86aa5ab87ff713369c7b30d79854532447634277593f8a1414f9f9",
+    "memorii/memorii/core/memory_evolution/typed_value_registry_history.py": "1f1c0cfb1449485ca35c96f81363f649ed39d887ba21035871ae8636dd259be7",
+    "memorii/pyproject.toml": "87ce96c053d52cde4599d81244fc08ed726fe7718a3058cf8f47ef1e0c342a01",
+    "memorii/tests/unit/acceptance/test_observation_registry_compiler.py": "d38ef32e4ae6d4aaa916a0996a636201f89f6dce86a9e8c42f5f9cc7340a3d74",
+    "memorii/tests/unit/core/memory_evolution/test_native_observation_decoders.py": "f83cc3b78c7e444343b6c761f4d625572671ea704621ec0ebae1386af5e47830",
+    "memorii/tests/unit/core/memory_evolution/test_typed_numeric_values.py": "a8b9be5a3875f08815a7cd247b6314bcf08c4d709b4e121d487c5ced9bdeb698",
+    "memorii/tests/unit/core/memory_evolution/test_typed_value_body_validation.py": "542094eac82db5b7ba801e39b165b0c7a216a23b97576e26ae6807c369b61274",
+    "memorii/tests/unit/core/memory_evolution/test_typed_value_declarations.py": "67daa2524f49028963f7049f826b240b36f851d0cf8c06469eb499fe61c0dc9f",
+    "memorii/tests/unit/core/memory_evolution/test_typed_value_decoder_sources.py": "007fa4179fdc13bbc39fb60d5303271801a36f5531f6e3fcdf4896154c15bc57",
+    "memorii/tests/unit/core/memory_evolution/test_typed_value_model_codec.py": "71d01b3fe15139499b3918bce2bae178a4373e86a4210dab6df07503e62d213e",
+    "memorii/tests/unit/core/memory_evolution/test_typed_value_model_emission.py": "dd2ffc33c5992570ee5b04cc2652392af5b8f65c0e7fec59c3b7b32ad8893396",
+    "memorii/tests/unit/core/memory_evolution/test_typed_value_publication.py": "61f334106766fcce1e422124e0d48a193fcc5004c84970add8143dcc11beb555",
+    "memorii/tests/unit/core/memory_evolution/test_typed_value_publication_authoring.py": "3f18cea86044a2ce56f77d3dd2dde4f35e041657198905331e7b52aaa2b7cf26",
+    "memorii/tests/unit/core/memory_evolution/test_typed_value_registry_compilation.py": "7d35409502c80a6b4bb1aaee4aa630d9f33418fb13f02766f489d4814631640b",
+    "memorii/tests/unit/core/memory_evolution/test_typed_value_registry_history.py": "19d3ddfa0d81f6666cb6bd4992984e87e2769889291125ddaa7df2842cb1948d",
+    "memorii/tests/unit/core/test_ingestion_contracts.py": "34109509658791f742ef1c177dd8dd5139934d06c6085c9036853b3d18120190"
+  },
+  "positive_parity_evidence_sha256": "bea82188ff3cd157e0ee14fc11841809194af455aef761e14846068932b998b5",
+  "candidate_sha256": "e20337bd79c7f2b1c582804e74bb6d3e7861326df8e8400e8b2d31f890852d09",
+  "review_scope": "Only bounded DREV-001 source-exclusion delta approved; no whole publication/branch approval",
+  "remaining": [
+    "complete rejection-vector manifest",
+    "protected registry/envelope/integrity composition",
+    "native publication and ledger transactions",
+    "public retrieval and independent observer/comparator",
+    "final CI and whole-branch review"
+  ]
+}

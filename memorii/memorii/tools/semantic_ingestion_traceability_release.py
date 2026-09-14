@@ -13,7 +13,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from memorii.core.memory_evolution.ingestion_contracts import (
     CanonicalTypedValueError,
@@ -22,6 +22,7 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     decode_typed_value,
     encode_artifact,
     encode_typed_value,
+    serialize_artifact,
 )
 from memorii.tools.semantic_ingestion_acceptance_watermark_store import (
     TraceabilityReleaseWatermarkStore,
@@ -435,6 +436,12 @@ def _canonical_loaded_bytes(raw: bytes, name: str) -> bytes:
     return canonical_document(_load(raw, name))
 
 
+def load_current_traceability_artifact(raw: bytes, name: str) -> dict[str, Any]:
+    """Load one exact current CTV artifact for signing preparation or verification."""
+    decode_artifact(raw)
+    return _load(raw, name)
+
+
 def _time(value: object, name: str) -> datetime:
     if not isinstance(value, str):
         raise ValueError(f"{name}_missing_time")
@@ -841,12 +848,254 @@ def _typed_digest(domain: bytes, body: dict[str, Any]) -> str:
     return sha256(domain + b"\0" + encode_typed_value(body)).hexdigest()
 
 
+_SIGNED_ARTIFACT_FIELDS: dict[str, frozenset[str]] = {
+    'recovery_policy': frozenset({
+        'bootstrap_anchor_digest',
+        'bootstrap_anchor_id',
+        'canonical_profile_binding',
+        'effective_at',
+        'eligible_recovery_root_digests',
+        'expires_at',
+        'issuance_purpose',
+        'minimum_distinct_signatures',
+        'policy_id',
+        'predecessor_policy_digest',
+        'recorded_at',
+        'recovery_policy_digest',
+        'sequence',
+        'signature',
+        'signer_provenance',
+        'signer_separation_rule_digest',
+        'target_authority_id',
+    }),
+    'release': frozenset({
+        'anchor_binding_registry_digest',
+        'artifact_dag_digest',
+        'assertion_registry_digest',
+        'bootstrap_anchor_digest',
+        'bootstrap_anchor_history_digest',
+        'bootstrap_anchor_id',
+        'bootstrap_profile_coordinate',
+        'bootstrap_profile_trust_anchor_digest',
+        'bootstrap_rotation_sequence',
+        'canonical_profile_binding',
+        'coverage_root_digest',
+        'design_document_digest',
+        'epoch',
+        'execution_root_digest',
+        'expires_at',
+        'golden_vector_manifest_digest',
+        'grammar_revision',
+        'issuance_purpose',
+        'issued_at',
+        'issued_state',
+        'override_registry_digest',
+        'predecessor_release_id',
+        'recovery_policy_history_digest',
+        'recovery_root_history_digest',
+        'recovery_trust_policy_digest',
+        'recovery_trust_root_digests',
+        'registry_source_identity',
+        'release_digest',
+        'release_id',
+        'report_schema_registry_digest',
+        'requirement_binding_registry_digest',
+        'runner_environment_profile_registry_digest',
+        'section_default_registry_digest',
+        'sequence',
+        'signature',
+        'signer_coordinate',
+        'structural_manifest_digest',
+        'structural_mapping_rule_registry_digest',
+        'supersedes_release_id',
+        'test_evidence_group_registry_digest',
+        'trust_lifecycle_root_digest',
+        'trust_snapshot_digest',
+    }),
+    'release_history': frozenset({
+        'canonical_profile_binding',
+        'entries',
+        'history_id',
+        'issuance_purpose',
+        'release_history_digest',
+        'signature',
+        'signer_coordinate',
+    }),
+    'active_pointer': frozenset({
+        'active_pointer_digest',
+        'canonical_profile_binding',
+        'generation_id',
+        'generation_manifest_digest',
+        'issuance_purpose',
+        'pointer_id',
+        'pointer_sequence',
+        'predecessor_active_pointer_digest',
+        'predecessor_pointer_history_digest',
+        'published_at',
+        'release_digest',
+        'release_epoch',
+        'release_history_digest',
+        'release_id',
+        'release_sequence',
+        'signature',
+        'signer_coordinate',
+        'target_authority_id',
+    }),
+}
+
+
+def traceability_artifact_signature_preimage(kind: str, value: dict[str, Any]) -> tuple[str, bytes]:
+    """Recompute one supported current CTV artifact digest and signature preimage."""
+    details = {
+        "recovery_policy": ("recovery_policy_digest", b"memorii:sia-traceability-recovery-policy:v1", "signer_provenance"),
+        "release": ("release_digest", b"memorii:sia-traceability-release:v1", "signer_coordinate"),
+        "release_history": ("release_history_digest", b"memorii:sia-traceability-release-history:v1", "signer_coordinate"),
+        "active_pointer": ("active_pointer_digest", b"memorii:sia-traceability-active-release-pointer:v1", "signer_coordinate"),
+    }
+    try:
+        digest_field, domain, signer_field = details[kind]
+    except KeyError as exc:
+        raise ValueError("release_signature_kind_invalid") from exc
+    purpose = value.get("issuance_purpose")
+    if (set(value) != _SIGNED_ARTIFACT_FIELDS[kind]
+        or purpose != ("semantic_ingestion_traceability_active_release_pointer" if kind == "active_pointer" else f"semantic_ingestion_traceability_{kind}")
+        or value.get("canonical_profile_binding") != _binding_for(kind)):
+        raise ValueError("release_signature_shape_invalid")
+    signer = value.get(signer_field)
+    if not isinstance(purpose, str) or not isinstance(signer, dict):
+        raise ValueError("release_signature_shape_invalid")
+    digest = _typed_digest(domain, {key: item for key, item in value.items() if key not in {digest_field, "signature"}})
+    return digest, encode_typed_value(
+        {"issuance_purpose": purpose, "body_binding": value.get("canonical_profile_binding"), digest_field: digest, signer_field: signer}
+    )
+
+
 def _binding_for(kind: str) -> dict[str, object]:
     """Return the one frozen CTV binding accepted for a current body."""
     schema_id, binding_digest = _CTV_BODY_BINDINGS[kind]
     return CanonicalTypedValueProfileBinding(
         *_CTV_PROFILE, schema_id, 1, binding_digest
     ).as_value()
+
+
+@dataclass(frozen=True)
+class LifecycleDetachedSignatureRequest:
+    profile_id: str
+    public_key_digest: str
+    purpose: str
+    preimage: bytes
+    record_index: int | None
+    signature_index: int
+
+
+_LIFECYCLE_ROOT_BODY_FIELDS = frozenset({
+    "authority_id", "issuance_purpose", "canonical_profile_binding",
+    "bootstrap_anchor_history_digest", "recovery_root_history_digest",
+    "recovery_policy_history_digest", "records",
+})
+_LIFECYCLE_RECORD_BODY_FIELDS = frozenset({
+    "record_id", "issuance_purpose", "target_kind", "target_id", "target_digest", "action",
+    "replacement_target_id", "replacement_target_digest", "canonical_profile_binding", "effective_at",
+    "recorded_at", "sequence", "predecessor_record_digest", "recovery_policy_digest", "signer_bindings",
+})
+
+
+def prepare_current_lifecycle_detached_signatures(
+    raw: bytes, kind: Literal["lifecycle_record", "lifecycle_root"],
+) -> tuple[CanonicalTypedValueProfileBinding, tuple[LifecycleDetachedSignatureRequest, ...], dict[str, Any]]:
+    """Prepare one signing stage of a current root; this does not establish trust."""
+    if kind not in {"lifecycle_record", "lifecycle_root"}:
+        raise ValueError("lifecycle_signing_kind_invalid")
+    root = load_current_traceability_artifact(raw, "lifecycle")
+    if (
+        set(root) != _LIFECYCLE_ROOT_BODY_FIELDS | {"signer_coordinates", "signatures", "lifecycle_root_digest"}
+        or root.get("issuance_purpose") != "semantic_ingestion_traceability_lifecycle_root"
+        or root.get("canonical_profile_binding") != _binding_for("lifecycle")
+    ):
+        raise ValueError("lifecycle_signing_shape_invalid")
+    records, coordinates, signatures = root["records"], root["signer_coordinates"], root["signatures"]
+    if (not isinstance(records, list) or not records or not isinstance(coordinates, list)
+        or len(coordinates) != 1 or not isinstance(signatures, list) or len(signatures) != 1
+        or not all(isinstance(item, bytes) for item in signatures)):
+        raise ValueError("lifecycle_signing_cardinality_invalid")
+    requests: list[LifecycleDetachedSignatureRequest] = []
+    previous: str | None = None
+    for index, record in enumerate(records):
+        if (not isinstance(record, dict)
+            or set(record) != _LIFECYCLE_RECORD_BODY_FIELDS | {"signatures", "record_digest"}
+            or record.get("issuance_purpose") != "semantic_ingestion_traceability_lifecycle_record"
+            or record.get("canonical_profile_binding") != _binding_for("lifecycle_record")
+            or type(record.get("sequence")) is not int or record["sequence"] != index + 1
+            or record.get("predecessor_record_digest") != previous
+            or record.get("target_kind") not in {"bootstrap_anchor", "recovery_root"}
+            or record.get("action") not in {"activate", "rotate", "revoke", "compromise", "recover"}):
+            raise ValueError("lifecycle_signing_record_invalid")
+        digest = _typed_digest(b"memorii:sia-traceability-trust-lifecycle-record:v1", {key: record[key] for key in _LIFECYCLE_RECORD_BODY_FIELDS})
+        if record["record_digest"] != digest:
+            raise ValueError("lifecycle_signing_record_digest_invalid")
+        previous = digest
+        bindings, record_signatures = record["signer_bindings"], record["signatures"]
+        if (not isinstance(bindings, list) or not bindings or not isinstance(record_signatures, list)
+            or len(bindings) != len(record_signatures) or not all(isinstance(item, bytes) for item in record_signatures)):
+            raise ValueError("lifecycle_signing_cardinality_invalid")
+        seen: set[tuple[str, str]] = set()
+        for signature_index, binding in enumerate(bindings):
+            if (not isinstance(binding, dict) or set(binding) != {
+                "signature_purpose", "signer_id", "signer_key_or_certificate_digest", "signature_profile_id",
+                "eligibility_reference", "recovery_root_digest",
+            } or binding.get("signature_purpose") != "semantic_ingestion_traceability_lifecycle_record"):
+                raise ValueError("lifecycle_signing_binding_invalid")
+            profile, key = binding.get("signature_profile_id"), binding.get("signer_key_or_certificate_digest")
+            if not isinstance(profile, str) or not profile or not isinstance(key, str) or not key or (profile, key) in seen:
+                raise ValueError("lifecycle_signing_binding_invalid")
+            seen.add((profile, key))
+            if kind == "lifecycle_record":
+                requests.append(LifecycleDetachedSignatureRequest(profile, key, binding["signature_purpose"], encode_typed_value({
+                    "issuance_purpose": record["issuance_purpose"], "body_binding": record["canonical_profile_binding"],
+                    "record_digest": digest, "signer_binding": binding,
+                }), index, signature_index))
+    root_digest = _typed_digest(b"memorii:sia-traceability-trust-lifecycle-root:v1", {key: root[key] for key in _LIFECYCLE_ROOT_BODY_FIELDS})
+    if root["lifecycle_root_digest"] != root_digest:
+        raise ValueError("lifecycle_signing_root_digest_invalid")
+    coordinate = coordinates[0]
+    genesis_fields = {"source_kind", "authority_id", "provisioned_channel_id", "bootstrap_anchor_id", "bootstrap_anchor_digest", "issuer_id", "key_or_certificate_digest", "signature_profile_id", "signature_purpose", "eligible_not_before", "eligible_not_after"}
+    if not isinstance(coordinate, dict):
+        raise ValueError("lifecycle_signing_coordinate_invalid")
+    expected_fields = genesis_fields if coordinate.get("source_kind") == "independently_provisioned_bootstrap_anchor" else _SIGNER_COORDINATE_FIELDS
+    if (set(coordinate) != expected_fields
+        or coordinate.get("source_kind") not in {"independently_provisioned_bootstrap_anchor", "prior_verified_lifecycle_root"}
+        or coordinate.get("signature_purpose") != root["issuance_purpose"]):
+        raise ValueError("lifecycle_signing_coordinate_invalid")
+    profile, key = coordinate.get("signature_profile_id"), coordinate.get("key_or_certificate_digest")
+    if not isinstance(profile, str) or not profile or not isinstance(key, str) or not key:
+        raise ValueError("lifecycle_signing_coordinate_invalid")
+    if kind == "lifecycle_root":
+        requests.append(LifecycleDetachedSignatureRequest(profile, key, root["issuance_purpose"], encode_typed_value({
+            "issuance_purpose": root["issuance_purpose"], "body_binding": root["canonical_profile_binding"],
+            "lifecycle_root_digest": root_digest, "signer_coordinate": coordinate,
+        }), None, 0))
+    return decode_artifact(raw).binding, tuple(requests), root
+
+
+def assemble_current_lifecycle_detached_signatures(
+    raw: bytes, kind: Literal["lifecycle_record", "lifecycle_root"], signatures: tuple[bytes, ...],
+    *, verifier: SignatureVerifier,
+) -> bytes:
+    """Reprepare and verify every slot; record signing invalidates the root signature."""
+    binding, requests, root = prepare_current_lifecycle_detached_signatures(raw, kind)
+    if len(requests) != len(signatures):
+        raise ValueError("lifecycle_signing_cardinality_invalid")
+    for request, signature in zip(requests, signatures, strict=True):
+        if not isinstance(signature, bytes) or not verifier(request.profile_id, request.public_key_digest, request.preimage, signature):
+            raise ValueError("lifecycle_signing_signature_invalid")
+        if request.record_index is None:
+            root["signatures"][request.signature_index] = signature
+        else:
+            root["records"][request.record_index]["signatures"][request.signature_index] = signature
+    if kind == "lifecycle_record":
+        root["lifecycle_root_digest"] = _typed_digest(b"memorii:sia-traceability-trust-lifecycle-root:v1", {key: root[key] for key in _LIFECYCLE_ROOT_BODY_FIELDS})
+        root["signatures"] = [b""]
+    return serialize_artifact(root, binding)
 
 
 def _signer_coordinate(
@@ -891,13 +1140,7 @@ def _signer_coordinate(
 def _verify_corrected_recovery_policy(
     policy: dict[str, Any], *, authority_id: str, bootstrap: dict[str, Any], lifecycle: dict[str, Any], verifier: SignatureVerifier
 ) -> str:
-    required = {
-        "policy_id", "issuance_purpose", "target_authority_id", "bootstrap_anchor_id",
-        "bootstrap_anchor_digest", "eligible_recovery_root_digests", "minimum_distinct_signatures",
-        "signer_separation_rule_digest", "canonical_profile_binding", "effective_at", "recorded_at",
-        "sequence", "predecessor_policy_digest", "expires_at", "signer_provenance",
-        "signature", "recovery_policy_digest",
-    }
+    required = _SIGNED_ARTIFACT_FIELDS["recovery_policy"]
     if set(policy) != required:
         raise ValueError("recovery_policy_fields_invalid")
     if policy.get("issuance_purpose") != "semantic_ingestion_traceability_recovery_policy" or policy.get("target_authority_id") != authority_id:
@@ -924,14 +1167,9 @@ def _verify_corrected_recovery_policy(
         start, end = _provenance_interval(provenance, "recovery_policy_successor")
         if (provenance.get("issuer_id"), profile, key, start, end) not in authorized:
             raise ValueError("recovery_policy_successor_not_final_action_authorized")
-    preimage = encode_typed_value(
-        {
-            "issuance_purpose": "semantic_ingestion_traceability_recovery_policy",
-            "body_binding": binding,
-            "recovery_policy_digest": digest,
-            "signer_provenance": provenance,
-        }
-    )
+    prepared_digest, preimage = traceability_artifact_signature_preimage("recovery_policy", policy)
+    if prepared_digest != digest:
+        raise ValueError("recovery_policy_digest_invalid")
     _signature(policy.get("signature"), profile=profile, key=key, payload=preimage, verifier=verifier)
     return digest
 
@@ -951,11 +1189,7 @@ def _validate_current_lifecycle_genesis(
     This deliberately has no flat-digest or flat-signer fallback: both record
     and root signatures cover their registered typed preimages.
     """
-    root_body_keys = {
-        "authority_id", "issuance_purpose", "canonical_profile_binding",
-        "bootstrap_anchor_history_digest", "recovery_root_history_digest",
-        "recovery_policy_history_digest", "records",
-    }
+    root_body_keys = _LIFECYCLE_ROOT_BODY_FIELDS
     root_keys = root_body_keys | {"signer_coordinates", "signatures", "lifecycle_root_digest"}
     if set(root) != root_keys or root.get("authority_id") != authority_id or root.get("issuance_purpose") != "semantic_ingestion_traceability_lifecycle_root" or root.get("canonical_profile_binding") != _binding_for("lifecycle"):
         raise ValueError("lifecycle_root_invalid")
@@ -967,11 +1201,7 @@ def _validate_current_lifecycle_genesis(
     record = records[0]
     if not isinstance(record, dict):
         raise ValueError("lifecycle_record_invalid")
-    record_body_keys = {
-        "record_id", "issuance_purpose", "target_kind", "target_id", "target_digest", "action",
-        "replacement_target_id", "replacement_target_digest", "canonical_profile_binding", "effective_at",
-        "recorded_at", "sequence", "predecessor_record_digest", "recovery_policy_digest", "signer_bindings",
-    }
+    record_body_keys = _LIFECYCLE_RECORD_BODY_FIELDS
     if set(record) != record_body_keys | {"signatures", "record_digest"} or record.get("issuance_purpose") != "semantic_ingestion_traceability_lifecycle_record" or record.get("canonical_profile_binding") != _binding_for("lifecycle_record") or record.get("sequence") != 1 or record.get("predecessor_record_digest") is not None or record.get("action") != "activate":
         raise ValueError("lifecycle_record_invalid")
     record_digest = _typed_digest(b"memorii:sia-traceability-trust-lifecycle-record:v1", {key: record[key] for key in record_body_keys})
@@ -1054,11 +1284,7 @@ def _current_lifecycle_terminal_authorizations(
     records = root.get("records")
     if not isinstance(records, list) or not records:
         raise ValueError("lifecycle_record_invalid")
-    body_keys = {
-        "record_id", "issuance_purpose", "target_kind", "target_id", "target_digest", "action",
-        "replacement_target_id", "replacement_target_digest", "canonical_profile_binding", "effective_at",
-        "recorded_at", "sequence", "predecessor_record_digest", "recovery_policy_digest", "signer_bindings",
-    }
+    body_keys = _LIFECYCLE_RECORD_BODY_FIELDS
     previous_digest: str | None = None
     previous_recorded: datetime | None = None
     active_targets: set[tuple[str, str]] = set()
@@ -1143,7 +1369,7 @@ def _current_lifecycle_terminal_authorizations(
 def _validate_current_lifecycle_successor(
     root: dict[str, Any], *, authority_id: str, prior_verified_roots: dict[str, dict[str, Any]], verifier: SignatureVerifier
 ) -> tuple[str, dict[tuple[str, str], tuple[str, str, datetime, datetime | None]]]:
-    root_body_keys = {"authority_id", "issuance_purpose", "canonical_profile_binding", "bootstrap_anchor_history_digest", "recovery_root_history_digest", "recovery_policy_history_digest", "records"}
+    root_body_keys = _LIFECYCLE_ROOT_BODY_FIELDS
     if set(root) != root_body_keys | {"signer_coordinates", "signatures", "lifecycle_root_digest"} or root.get("authority_id") != authority_id or root.get("issuance_purpose") != "semantic_ingestion_traceability_lifecycle_root" or root.get("canonical_profile_binding") != _binding_for("lifecycle"):
         raise ValueError("lifecycle_root_invalid")
     sequence, terminal_digest, _ = _current_lifecycle_terminal_authorizations(root, authority_id=authority_id, verifier=verifier)
@@ -1163,7 +1389,7 @@ def _validate_current_lifecycle_successor(
     if not isinstance(prior_digest, str) or prior is None or prior is root:
         raise ValueError("lifecycle_root_successor_reference_unverified")
     prior_sequence, prior_terminal, authorized = _current_lifecycle_terminal_authorizations(prior, authority_id=authority_id, verifier=verifier)
-    prior_body_keys = {"authority_id", "issuance_purpose", "canonical_profile_binding", "bootstrap_anchor_history_digest", "recovery_root_history_digest", "recovery_policy_history_digest", "records"}
+    prior_body_keys = _LIFECYCLE_ROOT_BODY_FIELDS
     if (
         set(prior) != prior_body_keys | {"signer_coordinates", "signatures", "lifecycle_root_digest"}
         or _typed_digest(b"memorii:sia-traceability-trust-lifecycle-root:v1", {key: prior[key] for key in prior_body_keys}) != prior_digest
@@ -1840,14 +2066,7 @@ def verify_active_release_pointer(
         binding = active_pointer.get("canonical_profile_binding")
         if not isinstance(binding, dict):
             raise ValueError("active_pointer_signature_binding_invalid")
-        preimage = encode_typed_value(
-            {
-                "issuance_purpose": "semantic_ingestion_traceability_active_release_pointer",
-                "body_binding": binding,
-                "active_pointer_digest": digest,
-                "signer_coordinate": signer,
-            }
-        )
+        _, preimage = traceability_artifact_signature_preimage("active_pointer", active_pointer)
         pointer_time = _time(active_pointer.get("published_at"), "active_pointer")
         _signer_coordinate(
             signer,
@@ -2336,12 +2555,7 @@ def _validate_release_candidate(
         history_signer = history_document.get("signer_coordinate")
         if not isinstance(history_signer, dict):
             raise ValueError("release_history_signature_binding_invalid")
-        history_preimage = encode_typed_value({
-            "issuance_purpose": "semantic_ingestion_traceability_release_history",
-            "body_binding": history_document["canonical_profile_binding"],
-            "release_history_digest": history_document["release_history_digest"],
-            "signer_coordinate": history_signer,
-        })
+        _, history_preimage = traceability_artifact_signature_preimage("release_history", history_document)
         _signer_coordinate(
             history_signer, purpose="semantic_ingestion_traceability_release_history",
             lifecycle_root_digest=lifecycle_digest, active_signers=active_signers,
@@ -2429,12 +2643,7 @@ def _validate_release_candidate(
             signer = candidate.get("signer_coordinate")
             if not isinstance(signer, dict):
                 raise ValueError("release_signature_binding_invalid")
-            release_preimage = encode_typed_value({
-                "issuance_purpose": "semantic_ingestion_traceability_release",
-                "body_binding": candidate["canonical_profile_binding"],
-                "release_digest": candidate_digest,
-                "signer_coordinate": signer,
-            })
+            _, release_preimage = traceability_artifact_signature_preimage("release", candidate)
             _signer_coordinate(
                 signer, purpose="semantic_ingestion_traceability_release", lifecycle_root_digest=lifecycle_digest,
                 active_signers=active_signers, when=issued, verifier=verifier_material.verify_signature,
@@ -2529,12 +2738,7 @@ def _validate_release_candidate(
         current_signer = current.get("signer_coordinate")
         if not isinstance(current_signer, dict):
             raise ValueError("release_signature_binding_invalid")
-        current_preimage = encode_typed_value({
-            "issuance_purpose": "semantic_ingestion_traceability_release",
-            "body_binding": current["canonical_profile_binding"],
-            "release_digest": release_digest,
-            "signer_coordinate": current_signer,
-        })
+        _, current_preimage = traceability_artifact_signature_preimage("release", current)
         _signer_coordinate(
             current_signer, purpose="semantic_ingestion_traceability_release",
             lifecycle_root_digest=lifecycle_digest, active_signers=active_signers,
@@ -2677,11 +2881,9 @@ def verify_release_gate(
         *(recovery_artifacts or ()),
     )
     public_body_fields = {
-        "release": frozenset({
-            "release_id", "issuance_purpose", "registry_source_identity", "design_document_digest", "structural_manifest_digest", "grammar_revision", "canonical_profile_binding", "artifact_dag_digest", "requirement_binding_registry_digest", "assertion_registry_digest", "test_evidence_group_registry_digest", "report_schema_registry_digest", "runner_environment_profile_registry_digest", "golden_vector_manifest_digest", "section_default_registry_digest", "structural_mapping_rule_registry_digest", "override_registry_digest", "anchor_binding_registry_digest", "coverage_root_digest", "execution_root_digest", "bootstrap_anchor_id", "bootstrap_anchor_digest", "bootstrap_profile_coordinate", "bootstrap_profile_trust_anchor_digest", "bootstrap_anchor_history_digest", "bootstrap_rotation_sequence", "recovery_trust_policy_digest", "recovery_policy_history_digest", "recovery_trust_root_digests", "recovery_root_history_digest", "trust_lifecycle_root_digest", "trust_snapshot_digest", "epoch", "sequence", "issued_state", "predecessor_release_id", "supersedes_release_id", "issued_at", "expires_at", "signer_coordinate", "signature", "release_digest",
-        }),
-        "release_history": frozenset({"history_id", "issuance_purpose", "canonical_profile_binding", "entries", "signer_coordinate", "signature", "release_history_digest"}),
-        "active_pointer": frozenset({"pointer_id", "issuance_purpose", "target_authority_id", "canonical_profile_binding", "generation_id", "generation_manifest_digest", "release_id", "release_digest", "release_epoch", "release_sequence", "release_history_digest", "predecessor_pointer_history_digest", "predecessor_active_pointer_digest", "pointer_sequence", "published_at", "signer_coordinate", "signature", "active_pointer_digest"}),
+        "release": _SIGNED_ARTIFACT_FIELDS["release"],
+        "release_history": _SIGNED_ARTIFACT_FIELDS["release_history"],
+        "active_pointer": _SIGNED_ARTIFACT_FIELDS["active_pointer"],
         "lifecycle": frozenset({"authority_id", "issuance_purpose", "canonical_profile_binding", "bootstrap_anchor_history_digest", "recovery_root_history_digest", "recovery_policy_history_digest", "records", "signer_coordinates", "signatures", "lifecycle_root_digest"}),
     }
     named_public_inputs = (

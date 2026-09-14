@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
-from typing import Protocol
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Protocol
 
 from memorii.core.memory_evolution.graph_effect_contracts import (
     CanonicalSourceTerminalOutcomeCore,
     CanonicalSourceTerminalOutcomeRecord,
+    SourceFinalizationObservationDelta,
 )
 from memorii.core.memory_evolution.ingestion_contracts import encode_typed_value
+from memorii.core.memory_evolution.observation_persistence import (
+    build_source_finalization_observation_delta,
+    source_finalization_observation_delta_id,
+    source_finalization_observation_revision,
+    source_finalization_observation_schema_fingerprint,
+)
 from memorii.core.semantic_ingestion.bootstrap_graph_artifact_assembler import (
     BootstrapGraphArtifactAssemblerV3,
 )
@@ -37,6 +45,10 @@ from memorii.core.semantic_ingestion.contracts import (
     IngestionStageOutcome,
     contract_digest,
 )
+
+if TYPE_CHECKING:
+    from memorii.core.memory_evolution.ingestion_contracts import SemanticWriterCommitBinding
+    from memorii.core.memory_evolution.observation_ledger_contracts import SourceObservationIntent
 
 
 def _canonical_outcomes(
@@ -259,6 +271,20 @@ class BootstrapGraphTerminalPreparationPortV3(Protocol):
 class DeterministicBootstrapGraphTerminalPreparationV3:
     """Validates host authority before emitting the sealed preparation carrier."""
 
+    def __init__(
+        self,
+        *,
+        source_observation_intent_factory: Callable[
+            [CanonicalSourceTerminalOutcomeRecord, SemanticWriterCommitBinding],
+            SourceObservationIntent | None,
+        ]
+        | None = None,
+    ) -> None:
+        # Only built-in composition supplies this factory.  Standalone legacy
+        # preparation remains literal schema-2 history and cannot cross the
+        # activated writer fence.
+        self._source_observation_intent_factory = source_observation_intent_factory
+
     def execution_manifest(self, *, construction: BootstrapGraphExecutionManifestConstructionV3) -> IngestionExecutionManifest:
         if construction.pre_execution_manifest_identity_closure_digest != construction.pre_execution_manifests.closure_digest:
             raise ValueError("bootstrap graph execution manifest construction is substituted")
@@ -392,6 +418,31 @@ class DeterministicBootstrapGraphTerminalPreparationV3:
             for member in final_plan.group_members
             for operation_id in member.operation_ids
         }))
+        activated_observation_ledger = (
+            control_epoch.writer_commit_binding.activation_digest is not None
+        )
+        group_result_digests = tuple(
+            (
+                item.group_commit_reload.persisted_result.result_digest
+                if activated_observation_ledger
+                else item.result_digest
+            )
+            for item in constructions
+        )
+        # Schema 2 binds the terminal back to the admission seal through the
+        # sealed member's registered attestation digest. An unsealed admission
+        # (no seal publication or pre-seal legacy cohort) keeps the literal
+        # schema-1 outcome bytes; the preparation never force-upgrades it.
+        retention_binding = (
+            {}
+            if host_authority.source_retention_attestation_digest is None
+            else {
+                "source_result_schema_version": 2,
+                "source_retention_attestation_digest": (
+                    host_authority.source_retention_attestation_digest
+                ),
+            }
+        )
         outcome_core = CanonicalSourceTerminalOutcomeCore.create(
             ingestion_record_kind="source_terminal_outcome",
             source_id=host_authority.source_id,
@@ -405,9 +456,8 @@ class DeterministicBootstrapGraphTerminalPreparationV3:
             operation_fence_id=host_authority.operation_fence_binding.operation_fence_id,
             operation_ids=operation_ids,
             final_status=status,
-            group_result_digests=tuple(
-                item.result_digest for item in constructions
-            ),
+            group_result_digests=group_result_digests,
+            **retention_binding,
         )
         outcome_record = CanonicalSourceTerminalOutcomeRecord.create(
             core=outcome_core,
@@ -430,12 +480,45 @@ class DeterministicBootstrapGraphTerminalPreparationV3:
             request_digest=request.request_digest,
             normalization_replay_digest=request.normalization_replay.replay_digest,
             source_plan_lineage_digest=complete_lineage.lineage_digest,
-            ordered_group_result_digests=tuple(
-                item.result_digest for item in constructions
-            ),
+            ordered_group_result_digests=group_result_digests,
             canonical_source_result=outcome_record,
             control_epoch_digest=control_epoch.epoch_digest,
         )
+        source_observation_intent = (
+            None
+            if self._source_observation_intent_factory is None
+            else self._source_observation_intent_factory(
+                outcome_record, control_epoch.writer_commit_binding,
+            )
+        )
+        if (
+            source_observation_intent is not None
+            and source_observation_intent.source_outcome != outcome_record
+        ):
+            raise ValueError("bootstrap graph source observation intent is substituted")
+        if activated_observation_ledger and source_observation_intent is None:
+            raise ValueError("activated source terminal requires an observation intent")
+        source_finalization_observation_delta = None
+        if source_observation_intent is None:
+            observation_revision_before = (
+                constructions[-1].group_commit_reload.persisted_result.core.observation_revision_after
+                if constructions
+                else "genesis"
+            )
+            observation_revision_after = source_finalization_observation_revision(
+                observation_revision_before=observation_revision_before,
+                canonical_source_result_digest=canonical_result.result_digest,
+            )
+            source_finalization_observation_delta = build_source_finalization_observation_delta(
+                source_outcome=outcome_record,
+                observation_delta_id=source_finalization_observation_delta_id(
+                    operation_fence_id=host_authority.operation_fence_binding.operation_fence_id,
+                    canonical_source_result_digest=canonical_result.result_digest,
+                ),
+                observation_revision_before=observation_revision_before,
+                observation_revision_after=observation_revision_after,
+                observation_schema_fingerprint=source_finalization_observation_schema_fingerprint(),
+            )
         handoff_core = BootstrapGraphTerminalHandoffCoreV3.create(
             request_digest=request.request_digest,
             normalization_replay_digest=request.normalization_replay.replay_digest,
@@ -444,7 +527,7 @@ class DeterministicBootstrapGraphTerminalPreparationV3:
             transaction_group_plan_digest=final_plan.plan_digest,
             source_plan_lineage_digest=complete_lineage.lineage_digest,
             execution_manifest_digest=manifest.manifest_digest,
-            ordered_group_result_digests=tuple(item.result_digest for item in constructions),
+            ordered_group_result_digests=group_result_digests,
             final_source_result_digest=canonical_result.result_digest,
             operation_lease_binding=control_epoch.operation_lease_binding,
             operation_fence_binding=control_epoch.operation_fence_binding,
@@ -455,8 +538,11 @@ class DeterministicBootstrapGraphTerminalPreparationV3:
             request=request, control_epoch=control_epoch, attempt=final_attempt, plan=final_plan,
             lineage=complete_lineage, manifest=manifest, results=constructions,
             handoff_core=handoff_core, canonical_result=canonical_result,
+            source_finalization_observation_delta=source_finalization_observation_delta,
+            source_observation_intent=source_observation_intent,
         )
         publication_intent = BootstrapGraphTerminalPublicationIntentV3.create(
+            terminal_member_schema_version=(3 if source_observation_intent is not None else 2),
             source_id=host_authority.source_id, source_digest=host_authority.source_digest,
             preparation_fingerprint=host_authority.preparation_fingerprint,
             operation_id=control_epoch.operation_fence_binding.operation_id,
@@ -485,6 +571,8 @@ class DeterministicBootstrapGraphTerminalPreparationV3:
             final_plan=final_plan, complete_lineage=complete_lineage, execution_manifest=manifest,
             ordered_group_result_constructions=constructions,
             canonical_source_result_input=canonical_input, handoff_core=handoff_core,
+            source_finalization_observation_delta=source_finalization_observation_delta,
+            source_observation_intent=source_observation_intent,
             publication_intent=publication_intent, handoff=handoff,
             predecessor_generation=current_generation,
             delivery_principal_binding_digest=request.delivery_principal_binding_digest,
@@ -554,6 +642,8 @@ class DeterministicBootstrapGraphTerminalPreparationV3:
         results: tuple[BootstrapNativeGroupCommitTerminalConstructionV3, ...],
         handoff_core: BootstrapGraphTerminalHandoffCoreV3,
         canonical_result: BootstrapGraphCanonicalSourceResultV3,
+        source_finalization_observation_delta: SourceFinalizationObservationDelta | None,
+        source_observation_intent: SourceObservationIntent | None,
     ) -> tuple[BootstrapGraphTerminalMemberIntentV3, ...]:
         rows = [
             ("bootstrap_graph_coordinator_request", "coordinator-request", request.request_digest),
@@ -571,6 +661,19 @@ class DeterministicBootstrapGraphTerminalPreparationV3:
             ),
             ("bootstrap_graph_terminal_handoff", "terminal-handoff", handoff_core.core_digest),
             ("bootstrap_graph_canonical_source_result", "canonical-source-result", canonical_result.result_digest),
+            *(
+                ((
+                    "source_observation_intent",
+                    "source-finalization-observation",
+                    source_observation_intent.intent_digest,
+                ),)
+                if source_observation_intent is not None
+                else ((
+                    "bootstrap_graph_source_finalization_observation_delta",
+                    "source-finalization-observation",
+                    source_finalization_observation_delta.delta_digest,
+                ),)
+            ),
         ]
         return tuple(
             BootstrapGraphTerminalMemberIntentV3.create(

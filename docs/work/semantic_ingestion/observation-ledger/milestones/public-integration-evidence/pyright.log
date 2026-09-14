@@ -1,0 +1,76 @@
+/Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/integration/test_ingestion_time_paging.py
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/integration/test_ingestion_time_paging.py:83:25 - error: Cannot access attribute "context" for class "Harness*"
+    Attribute "context" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/integration/test_ingestion_time_paging.py:95:45 - error: Cannot access attribute "policy_revision" for class "BaseModel"
+    Attribute "policy_revision" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/integration/test_ingestion_time_paging.py:95:88 - error: Cannot access attribute "policy_digest" for class "BaseModel"
+    Attribute "policy_digest" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/integration/test_ingestion_time_paging.py:96:33 - error: Cannot access attribute "expires_at" for class "Harness*"
+    Attribute "expires_at" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/integration/test_ingestion_time_paging.py:98:58 - error: Argument of type "BaseModel" cannot be assigned to parameter "decision" of type "GraphObservationAuthorizationDecision" in function "__init__"
+    "BaseModel" is not assignable to "GraphObservationAuthorizationDecision" (reportArgumentType)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/integration/test_ingestion_time_paging.py:98:68 - error: Argument of type "BaseModel" cannot be assigned to parameter "page_policy" of type "GraphObservationPagePolicySnapshot" in function "__init__"
+    "BaseModel" is not assignable to "GraphObservationPagePolicySnapshot" (reportArgumentType)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/integration/test_ingestion_time_paging.py:98:81 - error: Cannot access attribute "scope" for class "Harness*"
+    Attribute "scope" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/integration/test_ingestion_time_paging.py:102:45 - error: Cannot access attribute "scope" for class "Harness*"
+    Attribute "scope" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/integration/test_ingestion_time_paging.py:103:51 - error: Cannot access attribute "runtime" for class "Harness*"
+    Attribute "runtime" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/integration/test_ingestion_time_paging.py:104:51 - error: Cannot access attribute "runtime" for class "Harness*"
+    Attribute "runtime" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/integration/test_ingestion_time_paging.py:107:37 - error: Cannot access attribute "wait" for class "None"
+    Attribute "wait" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/integration/test_ingestion_time_paging.py:111:39 - error: Cannot access attribute "expires_at" for class "Harness*"
+    Attribute "expires_at" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/integration/test_ingestion_time_paging.py:118:93 - error: Cannot access attribute "attestations" for class "Harness*"
+    Attribute "attestations" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/integration/test_ingestion_time_paging.py:135:7 - error: Cannot assign to attribute "scope" for class "Harness"
+    Attribute "scope" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/integration/test_ingestion_time_paging.py:136:7 - error: Cannot assign to attribute "expires_at" for class "Harness"
+    Attribute "expires_at" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/integration/test_ingestion_time_paging.py:137:7 - error: Cannot assign to attribute "context" for class "Harness"
+    Attribute "context" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/integration/test_ingestion_time_paging.py:141:7 - error: Cannot assign to attribute "attestations" for class "Harness"
+    Attribute "attestations" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/integration/test_ingestion_time_paging.py:155:7 - error: Cannot assign to attribute "key" for class "Harness"
+    Attribute "key" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/integration/test_ingestion_time_paging.py:156:7 - error: Cannot assign to attribute "codec" for class "Harness"
+    Attribute "codec" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/integration/test_ingestion_time_paging.py:157:80 - error: Cannot access attribute "key" for class "Harness"
+    Attribute "key" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/integration/test_ingestion_time_paging.py:158:7 - error: Cannot assign to attribute "runtime" for class "Harness"
+    Attribute "runtime" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/integration/test_ingestion_time_paging.py:161:30 - error: Cannot access attribute "key" for class "Harness"
+    Attribute "key" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/integration/test_ingestion_time_paging.py:161:59 - error: Argument of type "ProtectedTypedValueRegistryHistory | VerifiedTypedValuePublication | ProtectedTypedValueArtifactReaderLimits | TrustedTypedValueArtifactVerificationKey" cannot be assigned to parameter "cursor_verification_key" of type "TrustedTypedValueArtifactVerificationKey" in function "__init__"
+    Type "ProtectedTypedValueRegistryHistory | VerifiedTypedValuePublication | ProtectedTypedValueArtifactReaderLimits | TrustedTypedValueArtifactVerificationKey" is not assignable to type "TrustedTypedValueArtifactVerificationKey"
+      "ProtectedTypedValueArtifactReaderLimits" is not assignable to "TrustedTypedValueArtifactVerificationKey" (reportArgumentType)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/integration/test_ingestion_time_paging.py:161:61 - error: Cannot access attribute "codec" for class "Harness"
+    Attribute "codec" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/integration/test_ingestion_time_paging.py:167:7 - error: Cannot assign to attribute "request" for class "Harness"
+    Attribute "request" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/integration/test_ingestion_time_paging.py:168:28 - error: Cannot access attribute "scope" for class "Harness"
+    Attribute "scope" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/integration/test_ingestion_time_paging.py:172:7 - error: Cannot assign to attribute "emit" for class "Harness"
+    Attribute "emit" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/integration/test_ingestion_time_paging.py:173:7 - error: Cannot assign to attribute "graph_request" for class "Harness"
+    Attribute "graph_request" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/integration/test_ingestion_time_paging.py:174:13 - error: Cannot access attribute "request" for class "Harness"
+    Attribute "request" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/integration/test_ingestion_time_paging.py:176:7 - error: Cannot assign to attribute "read_graph" for class "Harness"
+    Attribute "read_graph" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/integration/test_ingestion_time_paging.py:176:43 - error: Cannot access attribute "runtime" for class "Harness"
+    Attribute "runtime" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/integration/test_ingestion_time_paging.py:176:110 - error: Cannot access attribute "graph_request" for class "Harness"
+    Attribute "graph_request" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/integration/test_ingestion_time_paging.py:177:7 - error: Cannot assign to attribute "read" for class "Harness"
+    Attribute "read" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/integration/test_ingestion_time_paging.py:177:37 - error: Cannot access attribute "runtime" for class "Harness"
+    Attribute "runtime" is unknown (reportAttributeAccessIssue)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/integration/test_ingestion_time_paging.py:177:126 - error: Cannot access attribute "request" for class "Harness"
+    Attribute "request" is unknown (reportAttributeAccessIssue)
+/Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/unit/core/test_memory_plane_write_snapshot.py
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/unit/core/test_memory_plane_write_snapshot.py:57:41 - error: "content" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/tests/unit/core/test_memory_plane_write_snapshot.py:88:38 - error: "content" is not a known attribute of "None" (reportOptionalMemberAccess)
+37 errors, 0 warnings, 0 informations

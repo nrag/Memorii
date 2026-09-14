@@ -1,0 +1,1 @@
+{"fields":[{"field_name":"decision_closure","policy":"required"},{"field_name":"reference_evidence","policy":"required_nullable"}],"role":"optional","schema_id":"AcceptedTemporalEvidence","schema_version":"1"}

@@ -1,0 +1,20 @@
+{
+  "baseline_head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "scope": "two canonical field hooks and SupportsIndex annotation; no generic encoder change",
+  "files": {
+    "memorii/memorii/core/memory_evolution/ingestion_contracts.py": "51220579a6f77d8e1451cd0f9bf64b89075facf114ec69c192082845c8c5c172",
+    "memorii/memorii/core/semantic_ingestion/contracts.py": "a3872301b872898dcbaa0d6079ab7f3198463cb29cd42cdee396769ad8d134a9",
+    "memorii/tests/unit/core/memory_evolution/test_observation_ledger_contracts.py": "1a857a7333824fcc7f65313a76deb5abaa4677a1253049973d2f18dcadb45d5b",
+    "memorii/tests/unit/core/semantic_ingestion/test_semantic_provider_composition.py": "2bb9519af2bbe2983d88c475bbf9e79edc092bef1a5e956c255adad9fe229e70",
+    "memorii/memorii/core/memory_evolution/atomic_store.py": "ccbce170d963ebda9126a888321e45740f193f4c6af40af75f77c61ba04fec90",
+    "memorii/memorii/core/semantic_ingestion/capability.py": "b4bde9eedf777e2f89af1313098ce12c039f965faeeefcc9cd2edc70585379a1",
+    "memorii/memorii/core/provider/service.py": "744f9ae1401511db9dbb5c9c7b34c30e5769beedbf028f8079e98ea28dae1b63",
+    "memorii/memorii/core/memory_evolution/writer_admission.py": "8925234a86cb503574a1385ddc32e93fac5181c39cfc81489795a1f5dec707fe"
+  },
+  "prior_evidence": {
+    "reproducer.log": "prefixed trace captured before repair; red ready-control constructor",
+    "regressions.log": "5 previously failing cases pass148.47s; before type-only SupportsIndex annotation correction"
+  },
+  "final_evidence": "final-regressions.log reruns all11contracttests plus5publicrecovery cases on frozen candidate",
+  "candidate_identity": "ab2efbd33fd25e6a83c36616dad4369b7f108e9803770dd9c69d08c2b885108b"
+}

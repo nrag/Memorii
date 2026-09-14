@@ -1,0 +1,1 @@
+{"fields":[{"field_name":"kind","policy":"required"},{"field_name":"reason","policy":"required"},{"field_name":"request_correlation_token","policy":"required"}],"role":"optional","schema_id":"GraphObservationFailure","schema_version":"1"}

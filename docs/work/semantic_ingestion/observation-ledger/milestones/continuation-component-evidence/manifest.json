@@ -1,0 +1,43 @@
+{
+  "candidate_sha256": "d19c7bfc93eebd730ff14f0125ee5887d0975cbc5a72008905f28c28244c0729",
+  "base_commit": "d17466d529500f7a0a5a789e97b4b175602dda90",
+  "tree": "authorized dirty working tree; detached authority/membership WIP excluded from component",
+  "runtime": "Python 3.12.14; CI Python 3.11 not observed",
+  "local_results": {
+    "paging_contract_tests": "30 passed,68.60s",
+    "codec_cursor_tests": "13 passed,13.17s",
+    "ruff": "passed",
+    "scoped_pyright": "0 errors/0 warnings",
+    "registry": "180 schemas/1262 roles exact independent output;58 vectors pass",
+    "identity": "exit0",
+    "activation_job": "interrupted by coordinator after findings; no tests completed; not passing evidence",
+    "hermetic_source_gates": "CTV/lifecycle/structural workflow commands all exit0, including isolated replicas and mutation checks",
+    "equal_version_decision_tests": "30 passed,0.37s; unchanged decision rules with refreshed document binding",
+    "source_gate_tests": "Initial279-case pass:276 passed,3 stale-pin/dependency failures in589.38s. All3 corrected cases rerun:2 passed3.33s,1 passed1.42s. No unresolved failing case; not a fresh single-run all-green claim."
+  },
+  "files": {
+    "semantic-canonical-ruff.log": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+    "semantic-activation-consolidated.log": "bcde629c059ccdbb749d03f4ee644d8ad7826c412799de19b54ff9a2450a75b4",
+    "semantic-identity.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "semantic-canonical-pyright.log": "6d88a1b220adb7a3d62092b6e38431f0b3fe8babe9864fab90e5849766260332",
+    "semantic-continuation-final.log": "72fe1358965c286de407a8c9c239f5d7e886acd0d60052f9ed4e8c1015b7ebf9",
+    "semantic-final-pyright.log": "6d88a1b220adb7a3d62092b6e38431f0b3fe8babe9864fab90e5849766260332",
+    "semantic-hermetic-gates.log": "32896f86c84461917067de611324dc9bcc2171a6b0350da1646e8d9fb234815b",
+    "semantic-codec-delta.log": "4bee24cbf6dde4227430f6f21e04c713ef9c002af0547648c9edf8b6a2bfc25c",
+    "semantic-publication-refresh.log": "9a57d15f73f8d7097aea7779702e58b47d23fe3d3515720d954dbc1736fd8e75",
+    "semantic-replay-decision-tests.log": "c6d4ac01e302843da1b19af68f34ab4317117777ad618f9e4730ae9fb1ce36be",
+    "semantic-registry-vectors.log": "1a5d5de3652a119056b54d4e6416e43b67010ea7510c047b670725a9a5a4902c",
+    "semantic-continuation-delta.log": "a37240815004952a6dc91c8f80b1bf7db88d3b6327798d63a5a325be9573ab01",
+    "semantic-pin-delta-tests.log": "700e038b703fc9b725fedd78b3bebb21c6267ea55e25984bf15a13b153da1c92",
+    "semantic-final-ruff.log": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+    "semantic-ctv-gate-tests.log": "e1c3ef8bf8c756d3cfdfd369927f6d5fe1bba10ecc7e8e1353efa566a93bbf47",
+    "semantic-isolated-pin-test.log": "4b6d07f3dd9162cdd77e3e17e4080e549552f0916da64fe26a751d430973d321"
+  },
+  "limitations": [
+    "No production provider/cohort binding",
+    "No complete milestone approval",
+    "No full activation or installed-package gate after delta",
+    "No current GitHub CI evidence",
+    "No production signatures or release approval"
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "status": "partial implemented matrix; CI wiring added but not executed here",
+  "paths": [
+    {
+      "path": "memorii/tests/integration/test_observation_activation_bootstrap.py",
+      "level": "fresh-process integration with synthetic installed closure",
+      "workflow": ".github/workflows/pr-gates.yml",
+      "job": "package-smoke",
+      "matrix": "Python3.11",
+      "aggregate_dependency": "existing package-smoke required aggregate dependency retained",
+      "local_command": "cd memorii && ../.venv/bin/python -W error -m pytest tests/integration/test_observation_activation_bootstrap.py -p no:cacheprovider -q",
+      "result": "14passed9.55s;localPython3.12.14",
+      "not_proved": [
+        "full candidatewheel",
+        "native dependency environment",
+        "release tooling",
+        "all caps",
+        "JSONL no-trigger",
+        "all importfinder attacks"
+      ]
+    },
+    {
+      "path": "memorii/tests/integration/test_observation_activation_release_tools.py",
+      "level": "operator subprocess rejection before install or unverified code execution",
+      "workflow": ".github/workflows/pr-gates.yml",
+      "job": "package-smoke",
+      "result": "five cases included in 21passed15.79s local combined suite; CI unobserved"
+    }
+  ],
+  "remaining": "complete approved matrix before testing-operation closure",
+  "local_real_wheel_proof": {
+    "path": "../observation-ledger/release-preparation/proof.json",
+    "status": "final candidate0c75be24918302760a7e91c091896b786cf5d28187947d0b6d37a41a5ab88039 locally verified; 21 distributions,5632files,1772payload; six signature-authority and five installed mutations reject",
+    "ci_enforced": true,
+    "ci_observed": false,
+    "workflow": ".github/workflows/pr-gates.yml package-smoke invokes acquisition, offlineprepare, pinnedproof and rejections"
+  }
+}

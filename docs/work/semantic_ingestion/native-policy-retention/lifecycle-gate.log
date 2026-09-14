@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/Users/nandaraghunathan/Code/Memorii/Memorii/docs/design/semantic_ingestion/traceability_golden_vectors/check_lifecycle_root_signer_provenance_v1.py", line 414, in <module>
+    main()
+  File "/Users/nandaraghunathan/Code/Memorii/Memorii/docs/design/semantic_ingestion/traceability_golden_vectors/check_lifecycle_root_signer_provenance_v1.py", line 389, in main
+    validate(args.design, args.matrix, args.fixture, args.validator, pinned=True)
+  File "/Users/nandaraghunathan/Code/Memorii/Memorii/docs/design/semantic_ingestion/traceability_golden_vectors/check_lifecycle_root_signer_provenance_v1.py", line 145, in validate
+    raise ValueError(
+ValueError: design SHA-256 mismatch: expected b469653e3ef92e9cc1bf45e797a2c7dff8eac4d9ee792ad94ada3a54bfbe05da, got 69140e58d650fbe9f59d69de2da06d846b6c4a9040256d82d29fced76e918e79

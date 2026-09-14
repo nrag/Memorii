@@ -1,0 +1,127 @@
+{
+  "base_commit": "7a92bce208ecfb7d8ff199e629edb09f663d1948",
+  "tree": "dirty candidate; all named changes owned by current task",
+  "candidate_sha256": "532fda2e4693f41b0a91c75114a7b17c9dd33fc5370c869dfc6e2e26c315071a",
+  "production_and_test_files": {
+    "memorii/memorii/core/memory_evolution/graph_observation_paging.py": "ab9a22c7b596b5a2605d00884fb21d7a244dc762dd3b3bb1376c3e3949b29163",
+    "memorii/memorii/core/memory_plane/service.py": "95420468b098def5d243e83d1359b7638acd7a5d6965a84a2d11c0d2d43d96f1",
+    "memorii/memorii/core/memory_plane/store.py": "6b9b16e981882ed251580f488bb04811fdfd7de94e3e487812a73a2302c5dc60",
+    "memorii/memorii/core/memory_plane/unit_of_work.py": "5360c0c11570b23aaab9be040b65ca8debacf5528c78a7376122845ad106f5f6",
+    "memorii/tests/integration/test_ingestion_time_paging.py": "65f2b26167b5be75175fa9da093a66ed69ca62484cce0cdd0b9b9313f7136fec",
+    "memorii/tests/unit/core/test_memory_plane_write_snapshot.py": "272ccc4ef3280655af16e3c3dd7dcd58243c444bedc6e8343bd906fb01dff5d6"
+  },
+  "changed_surface_files": {
+    "docs/work/semantic_ingestion/engineering-closure/implementation.plan.md": "2310bbf268a21488c5492700a4eeaa54140c6a0119f8d28bb0243b44c013579d",
+    "docs/work/semantic_ingestion/engineering-closure/resume.md": "4872e9a6a6fbc3d814183fb17fc6662e75a68fff246c7b640ace54e987725a1e",
+    "docs/work/semantic_ingestion/graph-observation-materialization/design.plan.md": "6b2405c0e30aff8b0879c118715b2494be8913f4fcbeae619dba5043a9ad4c09",
+    "docs/work/semantic_ingestion/graph-observation-materialization/drafts/graph_observation_host.py.draft": "00b854d744c01b12f9b67fbdb4dcba3a7be7ace0d2fbe0833d914b289c19a5d4",
+    "docs/work/semantic_ingestion/graph-observation-materialization/drafts/graph_observation_materialization.py.draft": "645c5cc2b6495285de812ae694c975736e299e2a9a66eeebe5867f1c9eb60526",
+    "docs/work/semantic_ingestion/graph-observation-materialization/drafts/graph_observation_native_projection.py.draft": "86098ef073400f8edec8be908fbf7de262fa30144a3cdc87288d63f7276e99ad",
+    "docs/work/semantic_ingestion/graph-observation-materialization/drafts/test_provider_observation.py.draft": "f50d1bd2ee558802400767e30e4a3b1b39ca4aa59e100f5b216d8a025e63290f",
+    "docs/work/semantic_ingestion/graph-observation-materialization/proposal.md": "b2ff1d0d47969f04b3200d4ec5c9ed90ab9fc79336252b7c22a7ac813557f8bd",
+    "docs/work/semantic_ingestion/observation-ledger/milestones/continuation-runtime.plan.md": "14c4630d422c6abd5a8ba4a05000c3c1240e2c4da4c9721ddd4e5b83445712ff",
+    "docs/work/semantic_ingestion/observation-ledger/milestones/public-observation-bindings.md": "155d59fc6d15c1669682a39cf0f59f0ea052d42d49256ccd822c29155d736ac3",
+    "docs/work/semantic_ingestion_completion_readiness/closure-plan.md": "7eee864a5c43fda3e46daed33467ac3c3568d8b2065c7d524ef313e9bad374df",
+    "memorii/memorii/core/memory_evolution/graph_observation_paging.py": "ab9a22c7b596b5a2605d00884fb21d7a244dc762dd3b3bb1376c3e3949b29163",
+    "memorii/memorii/core/memory_plane/service.py": "95420468b098def5d243e83d1359b7638acd7a5d6965a84a2d11c0d2d43d96f1",
+    "memorii/memorii/core/memory_plane/store.py": "6b9b16e981882ed251580f488bb04811fdfd7de94e3e487812a73a2302c5dc60",
+    "memorii/memorii/core/memory_plane/unit_of_work.py": "5360c0c11570b23aaab9be040b65ca8debacf5528c78a7376122845ad106f5f6",
+    "memorii/tests/integration/test_ingestion_time_paging.py": "65f2b26167b5be75175fa9da093a66ed69ca62484cce0cdd0b9b9313f7136fec",
+    "memorii/tests/unit/core/test_memory_plane_write_snapshot.py": "272ccc4ef3280655af16e3c3dd7dcd58243c444bedc6e8343bd906fb01dff5d6"
+  },
+  "command_cwd": "memorii",
+  "environment": {
+    "os": "macOS",
+    "python": "3.12.14",
+    "ruff": "0.15.21",
+    "pyright": "1.1.411"
+  },
+  "commands": [
+    {
+      "command": "../.venv/bin/python -W error -m pytest tests/unit/core/test_memory_plane_write_snapshot.py tests/integration/test_graph_observation_paging.py tests/integration/test_ingestion_time_paging.py -p no:cacheprovider -q --durations=5",
+      "log": "timed-snapshot-tests-delta.log",
+      "exit_code": 0,
+      "result": "57 passed in45.06s; followed by24 store tests after explicit lambda binding only"
+    },
+    {
+      "command": "../.venv/bin/python -m ruff check memorii tests",
+      "log": "ruff-delta-final.log",
+      "exit_code": 0
+    },
+    {
+      "command": "../.venv/bin/pyright --pythonpath ../.venv/bin/python",
+      "log": "pyright-configured.log",
+      "exit_code": 0
+    },
+    {
+      "command": "../.venv/bin/pyright --pythonpath ../.venv/bin/python memorii/core/memory_plane/store.py memorii/core/memory_plane/service.py memorii/core/memory_plane/unit_of_work.py memorii/core/memory_evolution/graph_observation_paging.py tests/unit/core/test_memory_plane_write_snapshot.py tests/integration/test_ingestion_time_paging.py",
+      "log": "pyright-delta-final.log",
+      "exit_code": 0
+    },
+    {
+      "command": "../.venv/bin/python -m memorii.tools.identity_hygiene --root .. --allowlist ../.agents/identity_hygiene_allowlist.json",
+      "log": "identity-final.log",
+      "exit_code": 0
+    },
+    {
+      "command": "../.venv/bin/python -W error -m pytest tests/unit/core/test_memory_plane_write_snapshot.py -p no:cacheprovider -q",
+      "log": "store-tests-delta-final.log",
+      "exit_code": 0,
+      "result": "24 passed in1.07s; final test bytes"
+    }
+  ],
+  "logs": {
+    "identity-final.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "identity.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "pyright-configured.log": "6d88a1b220adb7a3d62092b6e38431f0b3fe8babe9864fab90e5849766260332",
+    "pyright-corrected.log": "6d88a1b220adb7a3d62092b6e38431f0b3fe8babe9864fab90e5849766260332",
+    "pyright-delta-final.log": "6d88a1b220adb7a3d62092b6e38431f0b3fe8babe9864fab90e5849766260332",
+    "pyright-delta.log": "6d88a1b220adb7a3d62092b6e38431f0b3fe8babe9864fab90e5849766260332",
+    "pyright.log": "6f5fe2204a922a59fd6749b93c8a16aa56a53c8c495302700211d6d1d1a0050d",
+    "ruff-corrected.log": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+    "ruff-delta-final.log": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+    "ruff-delta.log": "f98f265073aab8de2fb74523fd2e9ee981bc007aa04a521f2bd891574a15f530",
+    "ruff-final.log": "54bfe8f68dde8d3bc3c3e0bf9fb258c1ef4dd3c6c6160feea4e769c5216ac553",
+    "ruff.log": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+    "store-tests-delta-final.log": "c1f6b36c20b7603f0531fbcd68b37b018a829ccc60e66a6773bd43286c5a7092",
+    "timed-snapshot-tests-corrected.log": "56ea8ab34274e73105f50b7eba24d02e948959d0a969bc668ca8cb8acc7832a3",
+    "timed-snapshot-tests-delta.log": "2cb13fd31eeb3d411c61e9115160edb7019c130f1304a8d5eae9dab1ad6d1497",
+    "timed-snapshot-tests-final.log": "6b4eee4423fe5d157e49e5b2edd772b2a9aef98ab1c3ec1b4cd04a51f94ff09c",
+    "timed-snapshot-tests-frozen.log": "a3d66645494cba96ce5cd1c669710cb73e798fa23a462296660421ccbc3a5488",
+    "timed-snapshot-tests.log": "a92ad3d720c52b483a0cfb105ab3cd8f5d654c2e919515559b3467f3e3b6282b"
+  },
+  "failures": [
+    {
+      "log": "timed-snapshot-tests.log",
+      "result": "1 failed, 52 passed",
+      "disposition": "wrong two-independent-store fixture; fixed shared InMemory authority and rerun green"
+    },
+    {
+      "log": "pyright.log",
+      "result": "37 errors",
+      "disposition": "expanded check included fixture typing; corrected Harness/emit/read methods and optional reads; rerun green; no pre-existing failure claim"
+    },
+    {
+      "log": "ruff-final.log",
+      "result": "unsorted imports",
+      "disposition": "Ruff sorted import; frozen test pass and Ruff rerun green"
+    },
+    {
+      "log": "ruff-delta.log",
+      "result": "B023 implicit loop-variable capture",
+      "disposition": "made synchronous clock lambda capture explicit; final24 store tests and Ruff green"
+    }
+  ],
+  "review": {
+    "correctness": "bounded four-production-file approval; no findings; code unchanged",
+    "test": "Bounded delta approved at candidate532fda2e4693f41b0a91c75114a7b17c9dd33fc5370c869dfc6e2e26c315071a; both required evidence gaps resolved; no residual determinate finding. Not public or parent approval.",
+    "remaining_validated_p1_p2": [],
+    "scope": "Internal timed snapshot/paging component only; parent integration blocked on separate proposed design."
+  },
+  "evidence_limits": [
+    "Public provider/materializer drafts are outside production, incomplete and unverified.",
+    "No complete17-stream materializer or parent requirement closure.",
+    "Full activation job not rerun. No current-revision GitHub CI claim; local Python3.12 differs from CI3.11.",
+    "New proposal remains unapproved and does not change canonical designs or registered artifacts."
+  ]
+}

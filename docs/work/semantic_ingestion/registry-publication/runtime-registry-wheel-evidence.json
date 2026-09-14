@@ -1,0 +1,17 @@
+{
+  "status": "HISTORICAL_CHECKPOINT_CANDIDATE_WHEEL_VERIFIED",
+  "wheel_sha256": "898031380b1524bf80d110e94e91282a052f75e3e1fb6e29351951ec89c4378c",
+  "registry_json_files": 1257,
+  "acceptance_and_tests_excluded": true,
+  "command": "python -m pip wheel . --no-deps --no-build-isolation",
+  "limitations": [
+    "Local no-build-isolation check; not equivalent to required CI package gate",
+    "No deployment or runtime integrity claim",
+    "Activation dependency edits underway; refresh required after activation freeze"
+  ],
+  "candidate_sha256": "6e95c7849bd437b3eb40bedbacb2420701b4bd0cf62ea301fe41c1be5116034a",
+  "installed_import_smoke": "Passed from /private/tmp using extracted36-source wheel: checkpoint/integrity, registry configuration, capability and provider",
+  "identity_hygiene": "Configured repository command exits0 after36-source checkpoint freeze",
+  "wheel_path": "/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-checkpoint-wheel-2rje6njr/wheels/memorii-0.1.0-py3-none-any.whl",
+  "initial_smoke_correction": "First smoke used nonexistent memorii.core.services path; corrected to verified canonical memorii.core.provider.service. Wheel unchanged."
+}

@@ -1,0 +1,10 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.12.14, pytest-9.0.3, pluggy-1.6.0
+rootdir: /Users/nandaraghunathan/Code/Memorii/Memorii/memorii
+configfile: pyproject.toml
+plugins: xdist-3.8.0, anyio-4.13.0
+collected 9 items
+
+tests/integration/test_benchmark_source_fingerprint.py .........         [100%]
+
+======================== 9 passed in 149.04s (0:02:29) =========================

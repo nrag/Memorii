@@ -1,0 +1,48 @@
+{
+  "reviewed_revision": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "investigation_status": "complete",
+  "parent_closure_verdict": "not_approved",
+  "remaining_validated_p1_p2": [],
+  "remaining_blocks_approval": [
+    "M5 required implementation and acceptance incomplete",
+    "M0 corrected trust/proof and external POLICY/TRACEABILITY unavailable",
+    "Current full-program hosted/operational acceptance missing"
+  ],
+  "remaining_changes_required": [
+    "Publish portable immutable closure execution evidence"
+  ],
+  "reviewers": [
+    {
+      "task": "ingestion_closure_spec",
+      "role": "spec_auditor",
+      "result": "parent not approved; all23requirements mapped"
+    },
+    {
+      "task": "ingestion_closure_runtime",
+      "role": "correctness_reviewer",
+      "result": "parent not approved; confirmed missing M5 runtime owners and host activation dependencies; original severity/caller findings reclassified or withdrawn"
+    },
+    {
+      "task": "ingestion_closure_evidence",
+      "role": "test_reviewer",
+      "result": "parent not approved; historical bounded evidence valid, current/full acceptance and portability incomplete"
+    }
+  ],
+  "product_changes": [],
+  "new_artifacts_directory": "docs/work/semantic_ingestion_closure_review",
+  "report": "review.md",
+  "bounded_closures_preserved": [
+    "M1",
+    "M2",
+    "M3.1/M4 at58ec5cc",
+    "SMC-R01-R10 local scoped API"
+  ],
+  "verification_limits": "Closure completeness audit with targeted code/evidence checks, not a full new regression or live certification run.",
+  "subsequent_correction": {
+    "m0": "Completed July31 canonical-genesis/structural implementation supersedes missing-replacement inference; reconcile stale parent status rather than redo engineering.",
+    "signing": "User explicitly defers issuance of actual production signed artifacts from engineering completion; verification/signing tools still required.",
+    "ci": "PR120 now open; CI in progress, no final green claim.",
+    "evidence": "Retention overlay independently verified; pending commit/push for repository availability.",
+    "current_plan": "docs/work/semantic_ingestion_completion_readiness/closure-plan.md"
+  }
+}

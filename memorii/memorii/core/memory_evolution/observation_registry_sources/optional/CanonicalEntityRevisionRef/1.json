@@ -1,0 +1,1 @@
+{"fields":[{"field_name":"entity_revision_id","policy":"required"},{"field_name":"kind","policy":"required"},{"field_name":"logical_entity_id","policy":"required"}],"role":"optional","schema_id":"CanonicalEntityRevisionRef","schema_version":"1"}

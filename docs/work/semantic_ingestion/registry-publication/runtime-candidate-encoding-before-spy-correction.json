@@ -1,0 +1,40 @@
+{
+  "status": "FROZEN_BOUNDED_REVIEW_CANDIDATE",
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "tree": "authorized dirty tree",
+  "scope": "Registry configuration and host/writer/store identity composition; source-directed native candidate encoder only. No ledger activation, integrity verification, replay, retrieval or whole-registry completion.",
+  "files": {
+    "memorii/memorii/core/memory_evolution/typed_value_registry_configuration.py": "14df68e746e075e8d92bab90b7860d85ab45a960adbd414633d60691d2ab4e6d",
+    "memorii/memorii/core/memory_evolution/writer_admission.py": "cc77a3e4be4769dbca995495e3eb6c6f59b0fa0e4eae7f61c677df90404f0254",
+    "memorii/memorii/core/memory_evolution/atomic_store.py": "0f1971555752f656a6e658b4a21b951f2803bf907fa28db382afc05836b47b2b",
+    "memorii/memorii/core/semantic_ingestion/capability.py": "bbeeea57afd1922cd922cf157ccfb08bee59ed30d84d1df5a8304c94cdf87c31",
+    "memorii/memorii/core/provider/service.py": "18419d17f2be08bb6c26925661d42486caa12b8ad101fcc723004158d460222d",
+    "memorii/tests/unit/core/semantic_ingestion/test_semantic_provider_composition.py": "adefb0bd4e663dd4e6247231d7a8c8685ae8e972f551a12fdb9ca2c39a6de037",
+    "memorii/memorii/core/memory_evolution/typed_value_model_codec.py": "f0a8515bd67d582a03dff866a1aca7e73e9786857a680b5f329d2c6ffb537d99",
+    "memorii/tests/unit/core/memory_evolution/test_typed_value_model_candidate_encoding.py": "1b403561e298e6c6a0d914668bd52ea6471f226636040dda62fa4df314d1d077"
+  },
+  "tests": [
+    {
+      "command": "../.venv/bin/python -W error -m pytest tests/unit/core/semantic_ingestion/test_semantic_provider_composition.py -k registry -p no:cacheprovider -q",
+      "result": "5 passed, 36 deselected in 19.77s through public production-domain ProviderMemoryService"
+    },
+    {
+      "command": "../.venv/bin/python -W error -m pytest tests/unit/core/memory_evolution/test_typed_value_model_candidate_encoding.py -p no:cacheprovider -q",
+      "result": "Original3passed4.65s; real-publication delta2passed5.12s; corrected independent-oracle case1passed5.08s"
+    }
+  ],
+  "regression": "Initial selected provider regression7passed; codec/reader103passed. New fixture/message assertion failures corrected and focused tests rerun; no production limits weakened.",
+  "ruff": "Scoped8files passed",
+  "pyright": "Configured production6files plus candidate encoding test:0errors0warnings. Entire provider testfile extra diagnostic had7remaining unclassified errors outside configured production scope; not claimed clean.",
+  "publication_candidate_sha256": "975a2c1eeadf0fdaca7dc742548258f969b5ee58b552ceee4790fa5f7abe28d9",
+  "vectors": "LOCAL_VECTOR_PARITY",
+  "remaining": [
+    "bounded independent review",
+    "registered integrity and native authority",
+    "ledger/retrieval runtime",
+    "package/CI/full review"
+  ],
+  "test_delta": "Real authoring/verifier plus independent literal nested enum/integer CTV oracles. Malformed nested literal bracket corrected using independent JSON syntax validation; codec unchanged.",
+  "production_review": "Spec and correctness approved frozen production; no production changes in evidence delta",
+  "prior_candidate_sha256": "884fbaf3c90dbf2b5c2d161bd524ec7bf7eadab4643c67def297d3b9db03b4e1"
+}

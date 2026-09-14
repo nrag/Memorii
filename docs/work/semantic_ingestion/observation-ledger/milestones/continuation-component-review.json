@@ -1,0 +1,83 @@
+{
+  "candidate_sha256": "d19c7bfc93eebd730ff14f0125ee5887d0975cbc5a72008905f28c28244c0729",
+  "scope": "registered paging and retention component only",
+  "findings": [
+    {
+      "id": "CP-001",
+      "classification": "confirmed",
+      "priority": "P2",
+      "disposition": "changes_required",
+      "type": "runtime behavior",
+      "resolution": "first-page revision race denies; continuation stales; both tested"
+    },
+    {
+      "id": "CP-002",
+      "classification": "confirmed; duplicate of spec capacity finding",
+      "priority": "P2",
+      "disposition": "changes_required",
+      "type": "runtime behavior",
+      "resolution": "typed codec/snapshot limits map to denied; programming failures propagate; both endpoints tested"
+    },
+    {
+      "id": "CP-003",
+      "classification": "confirmed",
+      "priority": "P2",
+      "disposition": "changes_required",
+      "type": "authorization",
+      "resolution": "decode-time expiry checked before policy comparison"
+    },
+    {
+      "id": "CP-004",
+      "classification": "confirmed",
+      "priority": "P2",
+      "disposition": "changes_required",
+      "type": "retention",
+      "resolution": "policy-age checked at retention and page issuance"
+    },
+    {
+      "id": "policy-stale-retention",
+      "classification": "confirmed",
+      "priority": "P2",
+      "disposition": "changes_required",
+      "type": "retention",
+      "resolution": "releases only current-caller-bound retained snapshot on stale policy; own recovery and foreign non-eviction tests pass"
+    },
+    {
+      "id": "second-snapshot-construction",
+      "classification": "unsupported",
+      "priority": "Not applicable",
+      "disposition": "follow_up",
+      "type": "review clarification",
+      "resolution": "second snapshot used only for revision fence; cohort is not rebuilt or mixed; revision-only optimization is not a confirmed defect"
+    },
+    {
+      "id": "duplicate-statements",
+      "classification": "unsupported; reviewer retracted",
+      "priority": "P3",
+      "disposition": "follow_up",
+      "type": "review clarification",
+      "resolution": "no duplicated statements in inspected candidate"
+    },
+    {
+      "id": "bounded-concrete-builder",
+      "classification": "accepted limitation of component scope",
+      "priority": "Not applicable",
+      "disposition": "changes_required",
+      "type": "integration",
+      "resolution": "still required before parent closure; fixture cannot prove production construction bound"
+    }
+  ],
+  "reviews": {
+    "spec": "CP001-004 conformance approved on corrective source; later retention correction follows same approved release rule",
+    "correctness": "final d19c7b candidate and hashes verified; bounded retention delta approved",
+    "tests": "inspected four final own/foreign policy-retention cases across both endpoints; no finding"
+  },
+  "remaining_validated_p1_p2": [],
+  "parent_completion": false,
+  "parent_gaps": [
+    "bounded concrete cohort and all17 streams",
+    "durable ingestion-time producer",
+    "protected public provider composition",
+    "monitor/evaluator and final CI/host/package proof"
+  ]
+}

@@ -802,7 +802,7 @@ def materialize_frozen_identity_graph_plan(
     records = tuple(
         sorted(
             (
-                _snapshot_record(
+                snapshot_record(
                     _materialize_planning_payload(
                         mutation.after_planning_record.payload,
                         commit_values=commit_values,
@@ -1007,7 +1007,7 @@ def build_frozen_identity_graph_planning_artifact_from_state(
     output_records = tuple(
         sorted(
             (
-                _snapshot_record(
+                snapshot_record(
                     item,
                     codec_by_kind[_certified_or_validated_record_kind(item)],
                 )
@@ -1358,7 +1358,7 @@ def _certified_or_validated_record_kind(record: BaseModel) -> str:
     ).record_kind
 
 
-def _snapshot_record(record: BaseModel, codec) -> SnapshotGraphRecord:
+def snapshot_record(record: BaseModel, codec) -> SnapshotGraphRecord:
     if (
         certified_instance(record)
         and deeply_immutable_type(type(record))

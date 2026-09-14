@@ -2,6 +2,7 @@ import re
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from typing import cast
 from unittest.mock import patch
 
 import pytest
@@ -14,6 +15,18 @@ from memorii.core.memory_evolution import (
     MemoryQueryRequest,
     RetrievalPurpose,
     StructuredQueryAnalyzer,
+)
+from memorii.core.memory_evolution.capability_monitoring import (
+    CapabilityEvidenceWindow,
+    CapabilityMonitorTickResult,
+)
+from memorii.core.memory_evolution.graph_observation_public_contracts import (
+    GraphObservationRequest,
+    IngestionTimeAttestationRequest,
+)
+from memorii.core.memory_evolution.ingestion_contracts import (
+    AuthenticatedHostIngress,
+    SemanticWriterCommitBinding,
 )
 from memorii.core.memory_evolution.models import SourceObservation
 from memorii.core.memory_plane import MemoryPlaneService
@@ -33,7 +46,10 @@ from memorii.domain.enums import (
     ProviderAttemptStatus,
     SourceModality,
 )
-from memorii.integrations.hermes_provider import HermesMemoryProvider
+from memorii.integrations.hermes_provider import (
+    HermesMemoryProvider,
+    build_started_hermes_memory_provider,
+)
 from pydantic import ValidationError
 from tests.fixtures.semantic_ingestion.host_bootstrap_authority import (
     DeterministicTestHostBootstrapMaterialVerifier,
@@ -210,7 +226,7 @@ def test_apply_memory_write_production_profile_path_enables_canonical_evidence_a
     assert observed == [True]
 
 
-def test_provider_preserves_caller_owned_event_time() -> None:
+def test_provider_retention_time_comes_from_protected_clock_not_caller_event_time() -> None:
     from tests.unit.core.semantic_ingestion.test_semantic_provider_composition import (
         _host_ingress,
         _SwitchingIngressResolver,
@@ -239,7 +255,12 @@ def test_provider_preserves_caller_owned_event_time() -> None:
     assert "semantic_ingestion_writer_admission" in kinds
     sources = memory_plane.list_records(source_kind="semantic_ingestion_source")
     if sources:
-        assert all(record.timestamp == source_time for record in sources)
+        # The protected ingestion clock owns retention time: the retained
+        # record carries the single protected sample (here the injected
+        # now_provider), while the caller-owned event timestamp remains
+        # delivery identity only and never authenticated retention time.
+        assert all(record.timestamp == processing_time for record in sources)
+        assert all(record.timestamp != source_time for record in sources)
 
 
 @pytest.mark.parametrize(
@@ -481,6 +502,103 @@ def test_memory_write_stages_semantic_candidate_and_blocks_commit() -> None:
     )
     assert result.candidate_ids == []
     assert result.evolution_outcomes == []
+
+
+def test_hermes_forwards_semantic_ingestion_lifecycle_surface() -> None:
+    """Hermes exposes the service lifecycle without changing trusted arguments."""
+
+    service = ProviderMemoryService()
+    provider = HermesMemoryProvider(service)
+    activation = cast(SemanticWriterCommitBinding, object())
+    evidence = cast(CapabilityEvidenceWindow, object())
+    tick = cast(CapabilityMonitorTickResult, object())
+    processed = (tick,)
+    ingress = cast(AuthenticatedHostIngress, object())
+    graph_request = cast(GraphObservationRequest, object())
+    attestation_request = cast(IngestionTimeAttestationRequest, object())
+    graph_response = object()
+    attestation_response = object()
+    reconciled = []
+
+    with (
+        patch.object(service, "activate_observation_ledger", return_value=activation) as activate,
+        patch.object(service, "run_capability_monitor_tick", return_value=tick) as run_tick,
+        patch.object(service, "process_capability_monitoring", return_value=processed) as process,
+        patch.object(service, "observe_graph", return_value=graph_response) as observe_graph,
+        patch.object(
+            service,
+            "observe_ingestion_time_attestations",
+            return_value=attestation_response,
+        ) as observe_attestations,
+        patch.object(service, "reconcile_memory_evolution", return_value=reconciled) as reconcile,
+    ):
+        assert provider.activate_observation_ledger() is activation
+        assert provider.run_capability_monitor_tick(evidence=evidence) is tick
+        assert provider.process_capability_monitoring(max_items=7) is processed
+        assert provider.observe_graph(host_ingress=ingress, request=graph_request) is graph_response
+        assert (
+            provider.observe_ingestion_time_attestations(
+                host_ingress=ingress, request=attestation_request
+            )
+            is attestation_response
+        )
+        assert provider.reconcile_memory_evolution() is reconciled
+
+    activate.assert_called_once_with()
+    run_tick.assert_called_once_with(evidence=evidence)
+    process.assert_called_once_with(max_items=7)
+    observe_graph.assert_called_once_with(host_ingress=ingress, request=graph_request)
+    observe_attestations.assert_called_once_with(
+        host_ingress=ingress, request=attestation_request
+    )
+    reconcile.assert_called_once_with()
+
+
+def test_hermes_reconciles_no_pending_memory_evolution() -> None:
+    """The public Hermes recovery hook is safe when no durable work is pending."""
+
+    assert HermesMemoryProvider(ProviderMemoryService()).reconcile_memory_evolution() == []
+
+
+def test_hermes_startup_activates_before_recovering_pending_work() -> None:
+    """The host startup hook owns the required activation/recovery sequence."""
+
+    service = ProviderMemoryService()
+    provider = HermesMemoryProvider(service)
+    activation = cast(SemanticWriterCommitBinding, object())
+    calls: list[str] = []
+
+    with (
+        patch.object(
+            service,
+            "activate_observation_ledger",
+            side_effect=lambda: calls.append("activate") or activation,
+        ),
+        patch.object(
+            service,
+            "reconcile_memory_evolution",
+            side_effect=lambda: calls.append("reconcile") or [],
+        ),
+    ):
+        assert provider.start_semantic_ingestion() is activation
+
+    assert calls == ["activate", "reconcile"]
+
+
+def test_started_hermes_root_runs_lifecycle_before_returning_provider() -> None:
+    """The production builder cannot return a configured but unstarted host."""
+
+    service = ProviderMemoryService()
+    activation = cast(SemanticWriterCommitBinding, object())
+    with (
+        patch.object(service, "activate_observation_ledger", return_value=activation) as activate,
+        patch.object(service, "reconcile_memory_evolution", return_value=[]) as reconcile,
+    ):
+        provider = build_started_hermes_memory_provider(service=service)
+
+    assert isinstance(provider, HermesMemoryProvider)
+    activate.assert_called_once_with()
+    reconcile.assert_called_once_with()
 
 
 def test_memory_write_stages_user_candidate_and_blocks_commit() -> None:

@@ -1,0 +1,37 @@
+{
+  "status": "LOCAL_PROTECTED_ENVELOPE_CONSTRUCTION",
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "tree": "authorized dirty working tree",
+  "files": {
+    "memorii/memorii/core/memory_evolution/typed_value_artifact_reader.py": "fc3e102c59bb3939f72caa3896c290e4a7e17f05b6badcc9e924c435c6fcd44c",
+    "memorii/tests/unit/core/memory_evolution/test_typed_value_artifact_reader.py": "bfc810d72e8191c6cea12edf511b6444d8c27dee29d0bf356703ad938e2c79ea",
+    "docs/work/semantic_ingestion/observation-ledger/registry-verification-matrix.md": "7ca6e7b80342d43a3ff322f80bb9335052bdcd4005da1a191eb03840ae540c8f",
+    "memorii/tests/fixtures/semantic_ingestion/observation_artifact.json": "5901aa4c15a1ab80180baa9b0f02719680e16288fdcf7d67792ecbe52b321934"
+  },
+  "pytest": {
+    "cwd": "memorii",
+    "command": "../.venv/bin/python -W error -m pytest tests/unit/core/memory_evolution/test_typed_value_artifact_reader.py tests/unit/acceptance/test_observation_registry_compiler.py -p no:cacheprovider -q",
+    "exit_code": 0,
+    "passed": 107,
+    "seconds": 5.46,
+    "scope": "combined reader and independent compiler check"
+  },
+  "static": {
+    "ruff": "passed after test import ordering fix",
+    "pyright": "0 errors, 0 warnings, 0 informations"
+  },
+  "scope": "opaque envelope, history, two native digests, unauthenticated body conversion; no signatures or persistence authority",
+  "remaining": [
+    "protected service composition",
+    "registered integrity and native authority verification"
+  ],
+  "evidence_actions": [
+    "frozen literal wire and exact digests",
+    "two-publication historical selection",
+    "strict scalar/integer and required-field omission negatives"
+  ],
+  "bounded_review": "Finite reader test delta approved; no integrity, persistence or whole-publication approval",
+  "source_refresh": "publication-candidate-construction.json: 34 files, 6086 rows; complete 179-entry parity in registry-vector-results.json",
+  "reader_review_matrix_sha256": "c8f2f4107075eee83b39e81e99a85b23e3147a46bbd653544a6bdf4aa64dc55d",
+  "matrix_delta": "Appended candidate encoding prerequisite; fixed-envelope reviewed section unchanged."
+}

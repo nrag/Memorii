@@ -1,0 +1,25 @@
+{
+  "candidate": "../detached-cohort-ci-candidate.json",
+  "candidate_sha256": "214718332b88138b841838ca6098d712b5423a0bf0f73ce8263b6962618d25c9",
+  "files": {
+    "provider.log": "f57878a50ec95108f030e7fe7637cc903888c26804b428ca1cebbae10319efb9",
+    "ci-selection.log": "59b9466559aeabf218a54ec041fd83cd357cf9bf1d80a17c47aab62ed0c205bf",
+    "identity.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "ruff.log": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+    "pyright.log": "6d88a1b220adb7a3d62092b6e38431f0b3fe8babe9864fab90e5849766260332",
+    "unit-result.json": "52f86de7c16ef3dbfe76da3b92375f214d4bbc67ccc25afedd12e5253832e33a"
+  },
+  "provider_gate": {
+    "command": "PYTHONPATH=memorii .venv/bin/python -m pytest memorii/tests/integration/test_activated_provider_ledger.py -x -q",
+    "exit_code": 0,
+    "result": "1 passed in1472.96s (24m32s)"
+  },
+  "toolchain": "macOS Python3.12.14; CI uses Ubuntu Python3.11; no runtime parity claimed",
+  "ci": "selection test passed0.40s; remoteCI unobserved",
+  "limitations": "Only internal detached authority/cohort; no public17-stream materializer or host API composition",
+  "static_checks": {
+    "full_package_ruff": 0,
+    "canonical_scoped_pyright": 0,
+    "identity_hygiene": 0
+  }
+}

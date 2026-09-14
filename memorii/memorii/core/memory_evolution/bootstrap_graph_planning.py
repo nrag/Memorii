@@ -57,6 +57,7 @@ from memorii.core.semantic_ingestion.contracts import (
     BootstrapNativeEvidenceProjectionV3,
     BootstrapNativeFactPlanningSeedV3,
     BootstrapNativeMentionTargetCandidateV3,
+    BootstrapNativeObservationMentionBindingV3,
     BootstrapNativeOperationReductionInputV3,
     BootstrapNativePlanningConstructionAuthorityV3,
     BootstrapNativePlanningRecordV3,
@@ -194,6 +195,31 @@ class BuiltInBootstrapGraphTargetMaterializationPlannerV3:
             return self._unavailable(request=request, reason="graph_target_missing")
         if len(candidates) != len(request.target_resolution_authority.mention_candidates):
             return self._unavailable(request=request, reason="graph_target_ambiguous")
+        mentions = {item.mention_digest: item for item in operation.normalized_proposal.mentions}
+        selected_candidates = {
+            fact.subject_mention_digest: subject_candidate,
+            fact.object.mention_digest: object_candidate,
+        }
+        selected_mentions = tuple(selected_candidates.items())
+        if any(mention_digest not in mentions for mention_digest, _ in selected_mentions):
+            return self._unavailable(request=request, reason="reference_closure_incomplete")
+        governance = authority.segment_governance
+        if len(governance.segment_governance_bindings) != 1:
+            return self._unavailable(request=request, reason="reference_closure_incomplete")
+        observation_bindings = tuple(sorted(
+            (BootstrapNativeObservationMentionBindingV3.create(
+                    operation_id=operation.operation_id,
+                    operation_execution_id=operation.operation_execution_id,
+                    mention_digest=mention_digest,
+                    mention_span=mentions[mention_digest].mention_span,
+                    target_candidate=candidate,
+                    segment_governance=governance.segment_governance_bindings[0],
+                    message_admission_identities=governance.message_admission_identities,
+                )
+                for mention_digest, candidate in selected_mentions
+            ),
+            key=lambda item: item.binding_digest,
+        ))
         subject = BootstrapNativeTargetBindingV3.create(
             role="fact_subject", source_coordinate_digest=_mention_coordinate(
                 operation=operation, path="fact.subject", mention=fact.subject_mention_digest
@@ -335,7 +361,7 @@ class BuiltInBootstrapGraphTargetMaterializationPlannerV3:
             target_bindings=(subject, object_target), operation_seed=seed,
             planning_records=tuple(records), terminal_bindings=(terminal,),
             evidence_projections=tuple(evidence_projections), identity_materialization=None,
-            planning_state_after=after,
+            planning_state_after=after, observation_mention_bindings=observation_bindings,
         )
 
     @staticmethod

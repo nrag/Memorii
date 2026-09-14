@@ -1,0 +1,8 @@
+.....................................................                    [100%]
+============================= slowest 5 durations ==============================
+1.36s call     tests/integration/test_graph_observation_paging.py::test_registered_pages_reauthorize_and_fence_request_and_full_write_revision
+1.13s call     tests/integration/test_ingestion_time_paging.py::test_tenant_and_global_capacity_are_distinct_and_do_not_evict
+0.92s call     tests/integration/test_ingestion_time_paging.py::test_registered_attestation_pages_verify_purpose_predecessor_and_current_authority
+0.86s call     tests/integration/test_ingestion_time_paging.py::test_graph_and_ingestion_share_capacity_and_final_release[ingestion]
+0.85s call     tests/integration/test_ingestion_time_paging.py::test_each_shared_capacity_dimension_limits_new_snapshot_without_evicting_live_token[maximum_retained_snapshots]
+53 passed in 40.96s

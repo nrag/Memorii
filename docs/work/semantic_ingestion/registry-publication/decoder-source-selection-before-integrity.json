@@ -1,0 +1,325 @@
+{
+  "status": "CONSTRUCTION_SELECTION_PENDING_READER_DELTA_REVIEW",
+  "basis": "Original 32-file finite native/validation closure plus protected artifact reader and immutable history; explicit source-selected files, no runtime import discovery or generated declarations",
+  "source_package_root": "memorii",
+  "shared_files": [
+    {
+      "source_file_id": "memorii.core.memory_evolution.conflict_attention",
+      "relative_path": "memorii/core/memory_evolution/conflict_attention.py"
+    },
+    {
+      "source_file_id": "memorii.core.memory_evolution.graph_effect_contracts",
+      "relative_path": "memorii/core/memory_evolution/graph_effect_contracts.py"
+    },
+    {
+      "source_file_id": "memorii.core.memory_evolution.graph_ingestion_observation_records",
+      "relative_path": "memorii/core/memory_evolution/graph_ingestion_observation_records.py"
+    },
+    {
+      "source_file_id": "memorii.core.memory_evolution.graph_ingestion_time_contracts",
+      "relative_path": "memorii/core/memory_evolution/graph_ingestion_time_contracts.py"
+    },
+    {
+      "source_file_id": "memorii.core.memory_evolution.graph_observation_contracts",
+      "relative_path": "memorii/core/memory_evolution/graph_observation_contracts.py"
+    },
+    {
+      "source_file_id": "memorii.core.memory_evolution.graph_observation_public_contracts",
+      "relative_path": "memorii/core/memory_evolution/graph_observation_public_contracts.py"
+    },
+    {
+      "source_file_id": "memorii.core.memory_evolution.graph_observation_records",
+      "relative_path": "memorii/core/memory_evolution/graph_observation_records.py"
+    },
+    {
+      "source_file_id": "memorii.core.memory_evolution.graph_observation_snapshot_contracts",
+      "relative_path": "memorii/core/memory_evolution/graph_observation_snapshot_contracts.py"
+    },
+    {
+      "source_file_id": "memorii.core.memory_evolution.graph_observation_streams",
+      "relative_path": "memorii/core/memory_evolution/graph_observation_streams.py"
+    },
+    {
+      "source_file_id": "memorii.core.memory_evolution.graph_records",
+      "relative_path": "memorii/core/memory_evolution/graph_records.py"
+    },
+    {
+      "source_file_id": "memorii.core.memory_evolution.ingestion_contracts",
+      "relative_path": "memorii/core/memory_evolution/ingestion_contracts.py"
+    },
+    {
+      "source_file_id": "memorii.core.memory_evolution.models",
+      "relative_path": "memorii/core/memory_evolution/models.py"
+    },
+    {
+      "source_file_id": "memorii.core.memory_evolution.observation_ledger_contracts",
+      "relative_path": "memorii/core/memory_evolution/observation_ledger_contracts.py"
+    },
+    {
+      "source_file_id": "memorii.core.memory_evolution.observation_replay_contracts",
+      "relative_path": "memorii/core/memory_evolution/observation_replay_contracts.py"
+    },
+    {
+      "source_file_id": "memorii.core.memory_evolution.projection_binding",
+      "relative_path": "memorii/core/memory_evolution/projection_binding.py"
+    },
+    {
+      "source_file_id": "memorii.core.memory_evolution.projection_history",
+      "relative_path": "memorii/core/memory_evolution/projection_history.py"
+    },
+    {
+      "source_file_id": "memorii.core.memory_evolution.reference_integrity",
+      "relative_path": "memorii/core/memory_evolution/reference_integrity.py"
+    },
+    {
+      "source_file_id": "memorii.core.memory_evolution.semantic_analysis.policies",
+      "relative_path": "memorii/core/memory_evolution/semantic_analysis/policies.py"
+    },
+    {
+      "source_file_id": "memorii.core.memory_evolution.semantic_state",
+      "relative_path": "memorii/core/memory_evolution/semantic_state.py"
+    },
+    {
+      "source_file_id": "memorii.core.memory_evolution.time_contracts",
+      "relative_path": "memorii/core/memory_evolution/time_contracts.py"
+    },
+    {
+      "source_file_id": "memorii.core.memory_evolution.typed_numeric_values",
+      "relative_path": "memorii/core/memory_evolution/typed_numeric_values.py"
+    },
+    {
+      "source_file_id": "memorii.core.memory_evolution.typed_value_artifact_reader",
+      "relative_path": "memorii/core/memory_evolution/typed_value_artifact_reader.py"
+    },
+    {
+      "source_file_id": "memorii.core.memory_evolution.typed_value_body_validation",
+      "relative_path": "memorii/core/memory_evolution/typed_value_body_validation.py"
+    },
+    {
+      "source_file_id": "memorii.core.memory_evolution.typed_value_declarations",
+      "relative_path": "memorii/core/memory_evolution/typed_value_declarations.py"
+    },
+    {
+      "source_file_id": "memorii.core.memory_evolution.typed_value_decoder_sources",
+      "relative_path": "memorii/core/memory_evolution/typed_value_decoder_sources.py"
+    },
+    {
+      "source_file_id": "memorii.core.memory_evolution.typed_value_model_codec",
+      "relative_path": "memorii/core/memory_evolution/typed_value_model_codec.py"
+    },
+    {
+      "source_file_id": "memorii.core.memory_evolution.typed_value_publication",
+      "relative_path": "memorii/core/memory_evolution/typed_value_publication.py"
+    },
+    {
+      "source_file_id": "memorii.core.memory_evolution.typed_value_registry_compilation",
+      "relative_path": "memorii/core/memory_evolution/typed_value_registry_compilation.py"
+    },
+    {
+      "source_file_id": "memorii.core.memory_evolution.typed_value_registry_history",
+      "relative_path": "memorii/core/memory_evolution/typed_value_registry_history.py"
+    },
+    {
+      "source_file_id": "memorii.core.semantic_ingestion.bootstrap_graph_projection_publication",
+      "relative_path": "memorii/core/semantic_ingestion/bootstrap_graph_projection_publication.py"
+    },
+    {
+      "source_file_id": "memorii.core.semantic_ingestion.canonical_evidence_arena",
+      "relative_path": "memorii/core/semantic_ingestion/canonical_evidence_arena.py"
+    },
+    {
+      "source_file_id": "memorii.core.semantic_ingestion.contracts",
+      "relative_path": "memorii/core/semantic_ingestion/contracts.py"
+    },
+    {
+      "source_file_id": "memorii.core.semantic_ingestion.event_replay",
+      "relative_path": "memorii/core/semantic_ingestion/event_replay.py"
+    },
+    {
+      "source_file_id": "memorii.domain.enums",
+      "relative_path": "memorii/domain/enums.py"
+    }
+  ],
+  "decoder_ids": [
+    "memorii.semantic_ingestion.observation.AcceptedClaimIdentity.v1",
+    "memorii.semantic_ingestion.observation.AcceptedTemporalEvidence.v1",
+    "memorii.semantic_ingestion.observation.ActionRevision.v1",
+    "memorii.semantic_ingestion.observation.ActionRevisionStreamRecord.v1",
+    "memorii.semantic_ingestion.observation.ActiveTemporalProjectionPointer.v1",
+    "memorii.semantic_ingestion.observation.ActiveTrustProjectionPointer.v1",
+    "memorii.semantic_ingestion.observation.AliasRevision.v1",
+    "memorii.semantic_ingestion.observation.AliasRevisionStreamRecord.v1",
+    "memorii.semantic_ingestion.observation.AuthenticatedDocumentTimeReference.v1",
+    "memorii.semantic_ingestion.observation.AuthenticatedEventTimeReference.v1",
+    "memorii.semantic_ingestion.observation.AuthenticatedGraphObservationContext.v1",
+    "memorii.semantic_ingestion.observation.AuthenticatedSourceIntervalEvidence.v1",
+    "memorii.semantic_ingestion.observation.BootstrapGraphNativeProjectionPublicationReceiptV3.v1",
+    "memorii.semantic_ingestion.observation.BootstrapGraphNativeReplayAuthorityEvidenceV3.v1",
+    "memorii.semantic_ingestion.observation.BootstrapGraphNativeReplayCheckpointEvidenceV3.v1",
+    "memorii.semantic_ingestion.observation.CanonicalEntityRevisionRef.v1",
+    "memorii.semantic_ingestion.observation.CanonicalOperationIntroductionRecord.v1",
+    "memorii.semantic_ingestion.observation.CanonicalOperationTerminalOutcomeRecord.v1",
+    "memorii.semantic_ingestion.observation.CanonicalSourceIntroductionRecord.v1",
+    "memorii.semantic_ingestion.observation.CanonicalSourceTerminalOutcomeCore.v1",
+    "memorii.semantic_ingestion.observation.CanonicalSourceTerminalOutcomeRecord.v1",
+    "memorii.semantic_ingestion.observation.CitationRecord.v1",
+    "memorii.semantic_ingestion.observation.CitationStreamRecord.v1",
+    "memorii.semantic_ingestion.observation.ClaimAssertion.v1",
+    "memorii.semantic_ingestion.observation.ClaimAssertionStreamRecord.v1",
+    "memorii.semantic_ingestion.observation.ClaimProjection.v1",
+    "memorii.semantic_ingestion.observation.CommittedMemoryRecordSnapshot.v1",
+    "memorii.semantic_ingestion.observation.CompiledIdentityLineageTransition.v1",
+    "memorii.semantic_ingestion.observation.EntityRevision.v1",
+    "memorii.semantic_ingestion.observation.EntityRevisionStreamRecord.v1",
+    "memorii.semantic_ingestion.observation.EnvelopeFieldTextArtifactMappingProof.v1",
+    "memorii.semantic_ingestion.observation.EventBatchLogPosition.v1",
+    "memorii.semantic_ingestion.observation.EventProvenance.v1",
+    "memorii.semantic_ingestion.observation.GovernanceCarrierArtifact.v1",
+    "memorii.semantic_ingestion.observation.GraphObservationAuthorizationDecision.v1",
+    "memorii.semantic_ingestion.observation.GraphObservationCohortPreimage.v1",
+    "memorii.semantic_ingestion.observation.GraphObservationCohortSelector.v1",
+    "memorii.semantic_ingestion.observation.GraphObservationCursorPayload.v1",
+    "memorii.semantic_ingestion.observation.GraphObservationFailure.v1",
+    "memorii.semantic_ingestion.observation.GraphObservationPage.v1",
+    "memorii.semantic_ingestion.observation.GraphObservationPagePolicySnapshot.v1",
+    "memorii.semantic_ingestion.observation.GraphObservationRecordKey.v1",
+    "memorii.semantic_ingestion.observation.GraphObservationRequest.v1",
+    "memorii.semantic_ingestion.observation.GraphObservationRequestCoordinates.v1",
+    "memorii.semantic_ingestion.observation.GraphRecordMutation.v1",
+    "memorii.semantic_ingestion.observation.GraphRecordObservationSnapshot.v1",
+    "memorii.semantic_ingestion.observation.GraphRevisionDelta.v1",
+    "memorii.semantic_ingestion.observation.GroundedMentionRef.v1",
+    "memorii.semantic_ingestion.observation.IdentityLineageRecord.v1",
+    "memorii.semantic_ingestion.observation.IdentityTransitionStreamRecord.v1",
+    "memorii.semantic_ingestion.observation.ImmutableAssertionEntityRef.v1",
+    "memorii.semantic_ingestion.observation.IngestionObservationDelta.v1",
+    "memorii.semantic_ingestion.observation.IngestionObservationRecordMutation.v1",
+    "memorii.semantic_ingestion.observation.IngestionObservationReplayCheckpoint.v1",
+    "memorii.semantic_ingestion.observation.IngestionTimeAttestationPage.v1",
+    "memorii.semantic_ingestion.observation.IngestionTimeAttestationRequest.v1",
+    "memorii.semantic_ingestion.observation.IngestionTimeAttestationRequestCoordinates.v1",
+    "memorii.semantic_ingestion.observation.IngestionTimeObservationSnapshot.v1",
+    "memorii.semantic_ingestion.observation.LineageEntityIdentity.v1",
+    "memorii.semantic_ingestion.observation.LineageEvidenceReference.v1",
+    "memorii.semantic_ingestion.observation.LineageReferenceDisposition.v1",
+    "memorii.semantic_ingestion.observation.LineageReverseReference.v1",
+    "memorii.semantic_ingestion.observation.MemoryEventMetadata.v1",
+    "memorii.semantic_ingestion.observation.MemoryScope.v1",
+    "memorii.semantic_ingestion.observation.MessageAdmissionCarrierSet.v1",
+    "memorii.semantic_ingestion.observation.MessageAdmissionIdentity.v1",
+    "memorii.semantic_ingestion.observation.ObservationCheckpointBundle.v1",
+    "memorii.semantic_ingestion.observation.ObservationCheckpointLifecycle.v1",
+    "memorii.semantic_ingestion.observation.ObservationCheckpointPublicationReceipt.v1",
+    "memorii.semantic_ingestion.observation.ObservationCheckpointSigningPreimage.v1",
+    "memorii.semantic_ingestion.observation.ObservationGroupResultLocator.v1",
+    "memorii.semantic_ingestion.observation.ObservationGroupSemanticPayload.v1",
+    "memorii.semantic_ingestion.observation.ObservationLedgerActivation.v1",
+    "memorii.semantic_ingestion.observation.ObservationLedgerEntry.v1",
+    "memorii.semantic_ingestion.observation.ObservationLedgerHead.v1",
+    "memorii.semantic_ingestion.observation.ObservationReplayState.v1",
+    "memorii.semantic_ingestion.observation.ObservationSourceResultLocator.v1",
+    "memorii.semantic_ingestion.observation.ObservationSourceSemanticPayload.v1",
+    "memorii.semantic_ingestion.observation.ObservedActionRevision.v1",
+    "memorii.semantic_ingestion.observation.ObservedActionRoleBinding.v1",
+    "memorii.semantic_ingestion.observation.ObservedAliasRevision.v1",
+    "memorii.semantic_ingestion.observation.ObservedAssertionEntityReference.v1",
+    "memorii.semantic_ingestion.observation.ObservedAuthenticatedReferenceEffectiveTime.v1",
+    "memorii.semantic_ingestion.observation.ObservedCertifiedTextEffectiveTime.v1",
+    "memorii.semantic_ingestion.observation.ObservedCitationRecord.v1",
+    "memorii.semantic_ingestion.observation.ObservedClaimAssertion.v1",
+    "memorii.semantic_ingestion.observation.ObservedEntityReference.v1",
+    "memorii.semantic_ingestion.observation.ObservedEntityRevision.v1",
+    "memorii.semantic_ingestion.observation.ObservedIdentityTransition.v1",
+    "memorii.semantic_ingestion.observation.ObservedOperationIntroduction.v1",
+    "memorii.semantic_ingestion.observation.ObservedOperationTerminalOutcome.v1",
+    "memorii.semantic_ingestion.observation.ObservedProvenanceRecord.v1",
+    "memorii.semantic_ingestion.observation.ObservedReferenceDisposition.v1",
+    "memorii.semantic_ingestion.observation.ObservedRelation.v1",
+    "memorii.semantic_ingestion.observation.ObservedSourceIntroduction.v1",
+    "memorii.semantic_ingestion.observation.ObservedSourceOutcomeConsistencyAssessment.v1",
+    "memorii.semantic_ingestion.observation.ObservedSourceTerminalOutcome.v1",
+    "memorii.semantic_ingestion.observation.ObservedSystemRecordedEffectiveTime.v1",
+    "memorii.semantic_ingestion.observation.ObservedTemporalClaimProjection.v1",
+    "memorii.semantic_ingestion.observation.ObservedTemporalTransition.v1",
+    "memorii.semantic_ingestion.observation.ObservedTrustClaimProjection.v1",
+    "memorii.semantic_ingestion.observation.ObservedTypeEvidence.v1",
+    "memorii.semantic_ingestion.observation.OperationIntroductionStreamRecord.v1",
+    "memorii.semantic_ingestion.observation.OperationTemporalAttachmentBinding.v1",
+    "memorii.semantic_ingestion.observation.OperationTemporalDecisionBinding.v1",
+    "memorii.semantic_ingestion.observation.OperationTerminalOutcomeStreamRecord.v1",
+    "memorii.semantic_ingestion.observation.PredicateStateRule.v1",
+    "memorii.semantic_ingestion.observation.PredicateTrustRule.v1",
+    "memorii.semantic_ingestion.observation.ProjectionEvidenceRecord.v1",
+    "memorii.semantic_ingestion.observation.ProjectionHistoryReplayBinding.v1",
+    "memorii.semantic_ingestion.observation.ProjectionTextSpan.v1",
+    "memorii.semantic_ingestion.observation.ProvenanceRecord.v1",
+    "memorii.semantic_ingestion.observation.ProvenanceStreamRecord.v1",
+    "memorii.semantic_ingestion.observation.ReferenceDispositionRecord.v1",
+    "memorii.semantic_ingestion.observation.ReferenceDispositionStreamRecord.v1",
+    "memorii.semantic_ingestion.observation.ReferenceEdgeLedgerEntry.v1",
+    "memorii.semantic_ingestion.observation.ReferenceTarget.v1",
+    "memorii.semantic_ingestion.observation.RelationRevision.v1",
+    "memorii.semantic_ingestion.observation.RelationStreamRecord.v1",
+    "memorii.semantic_ingestion.observation.RequiredOutcomeScopeSet.v1",
+    "memorii.semantic_ingestion.observation.ResolvedGraphObservationCohort.v1",
+    "memorii.semantic_ingestion.observation.RetainedSourceTextArtifact.v1",
+    "memorii.semantic_ingestion.observation.RetainedSourceTextSpan.v1",
+    "memorii.semantic_ingestion.observation.SegmentGovernanceBinding.v1",
+    "memorii.semantic_ingestion.observation.SegmentGovernanceCarrierSet.v1",
+    "memorii.semantic_ingestion.observation.SegmentLocalTextArtifact.v1",
+    "memorii.semantic_ingestion.observation.SegmentLocalTextSpan.v1",
+    "memorii.semantic_ingestion.observation.SemanticAssertionKey.v1",
+    "memorii.semantic_ingestion.observation.SemanticClaimSlotKey.v1",
+    "memorii.semantic_ingestion.observation.SemanticClaimValueKey.v1",
+    "memorii.semantic_ingestion.observation.SemanticConflictReplayBinding.v1",
+    "memorii.semantic_ingestion.observation.SemanticEventBinding.v1",
+    "memorii.semantic_ingestion.observation.SemanticGraphDelta.v1",
+    "memorii.semantic_ingestion.observation.SemanticMaterializedMemoryRecord.v1",
+    "memorii.semantic_ingestion.observation.SemanticMemoryEvent.v1",
+    "memorii.semantic_ingestion.observation.SemanticMemoryEventBatch.v1",
+    "memorii.semantic_ingestion.observation.SemanticMemoryEventPayload.v1",
+    "memorii.semantic_ingestion.observation.SemanticProjectionTextArtifact.v1",
+    "memorii.semantic_ingestion.observation.SemanticReplayAuthorityAggregate.v1",
+    "memorii.semantic_ingestion.observation.SemanticReplayAuthorityMemberBinding.v1",
+    "memorii.semantic_ingestion.observation.SemanticReplayCheckpoint.v1",
+    "memorii.semantic_ingestion.observation.SemanticReplayCheckpointBundle.v1",
+    "memorii.semantic_ingestion.observation.SemanticReplayState.v1",
+    "memorii.semantic_ingestion.observation.SemanticTerminalBindingSet.v1",
+    "memorii.semantic_ingestion.observation.SnapshotGraphRecord.v1",
+    "memorii.semantic_ingestion.observation.SourceAuthority.v1",
+    "memorii.semantic_ingestion.observation.SourceAuthorityEvidence.v1",
+    "memorii.semantic_ingestion.observation.SourceFinalizationObservationDelta.v1",
+    "memorii.semantic_ingestion.observation.SourceIntroductionStreamRecord.v1",
+    "memorii.semantic_ingestion.observation.SourceObservationIntent.v1",
+    "memorii.semantic_ingestion.observation.SourceRetentionTimeAttestation.v1",
+    "memorii.semantic_ingestion.observation.SourceSpan.v1",
+    "memorii.semantic_ingestion.observation.SourceSpanReference.v1",
+    "memorii.semantic_ingestion.observation.SourceTerminalOutcomeStreamRecord.v1",
+    "memorii.semantic_ingestion.observation.TemporalClaimProjectionStreamRecord.v1",
+    "memorii.semantic_ingestion.observation.TemporalEvidenceCandidate.v1",
+    "memorii.semantic_ingestion.observation.TemporalEvidenceDecisionClosure.v1",
+    "memorii.semantic_ingestion.observation.TemporalPolicyMigrationCertificate.v1",
+    "memorii.semantic_ingestion.observation.TemporalProjectionCommitCertificate.v1",
+    "memorii.semantic_ingestion.observation.TemporalProjectionGeneration.v1",
+    "memorii.semantic_ingestion.observation.TemporalProjectionHistoryEntry.v1",
+    "memorii.semantic_ingestion.observation.TemporalProjectionPublication.v1",
+    "memorii.semantic_ingestion.observation.TemporalProjectionRecord.v1",
+    "memorii.semantic_ingestion.observation.TemporalTransitionRecord.v1",
+    "memorii.semantic_ingestion.observation.TemporalTransitionStreamRecord.v1",
+    "memorii.semantic_ingestion.observation.TimeInterval.v1",
+    "memorii.semantic_ingestion.observation.TransactionGroupCommitTimeAttestation.v1",
+    "memorii.semantic_ingestion.observation.TrustClaimProjectionStreamRecord.v1",
+    "memorii.semantic_ingestion.observation.TrustDecayStep.v1",
+    "memorii.semantic_ingestion.observation.TrustPolicyMigrationCertificate.v1",
+    "memorii.semantic_ingestion.observation.TrustProjectionCommitCertificate.v1",
+    "memorii.semantic_ingestion.observation.TrustProjectionGeneration.v1",
+    "memorii.semantic_ingestion.observation.TrustProjectionHistoryEntry.v1",
+    "memorii.semantic_ingestion.observation.TrustProjectionPublication.v1",
+    "memorii.semantic_ingestion.observation.TrustProjectionRecord.v1",
+    "memorii.semantic_ingestion.observation.TypeEvidence.v1",
+    "memorii.semantic_ingestion.observation.TypeEvidenceStreamRecord.v1",
+    "memorii.semantic_ingestion.observation.TypedLiteral.v1",
+    "memorii.semantic_ingestion.observation.VerbatimTextArtifactMappingProof.v1"
+  ],
+  "scope_limit": "Source selection and construction only; independent source-closure review and full publication acceptance remain required."
+}

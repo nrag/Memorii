@@ -25,6 +25,16 @@ from memorii.core.memory_evolution.bootstrap_profile import (
     build_bootstrap_trust_anchor,
     serialize_bootstrap_profile_artifacts,
 )
+from memorii.core.memory_evolution.capability_monitoring import (
+    CAPABILITY_MONITOR_SEQUENTIAL_IMPLEMENTATION_FINGERPRINT,
+    CapabilityAuthorizationCheckpoint,
+    CapabilityEvidenceWindow,
+    CapabilityMonitor,
+    CapabilityMonitoringPolicy,
+    MonitoringMetricGate,
+    MonitoringObservation,
+    SequentialTestManifest,
+)
 from memorii.core.memory_evolution.delivery_coordinate_migration import (
     DeliveryCoordinateMigrationCheckpoint,
     activate_migration,
@@ -687,8 +697,114 @@ def _scenario_owner_evidences(prepared_source, candidates):
     )
 
 
+_SCENARIO_PROPOSAL_CAPABILITY_FINGERPRINT = (
+    "38a5be91af79d7e5ba9809bf383c699b6864ee50446239fe56a45e32b84638fe"
+)
+
+
+def _scenario_capability_monitoring(now: datetime):
+    implementation = CAPABILITY_MONITOR_SEQUENTIAL_IMPLEMENTATION_FINGERPRINT
+    manifest = SequentialTestManifest.create(
+        method="time_uniform_confidence_sequence",
+        bounded_value_lower="0",
+        bounded_value_upper="1",
+        spending_rule_id="inverse_quadratic_union_bound_v1",
+        implementation_fingerprint=implementation,
+    )
+    policy = CapabilityMonitoringPolicy.create(
+        capability_fingerprint=_SCENARIO_PROPOSAL_CAPABILITY_FINGERPRINT,
+        monitoring_policy_revision="scenario-v1",
+        maximum_independent_label_age=timedelta(days=1),
+        maximum_canary_success_age=timedelta(days=1),
+        minimum_labeled_clusters_per_window=1,
+        label_window=timedelta(days=1),
+        paused_traffic_grace_period=timedelta(hours=1),
+        label_pipeline_outage_grace_period=timedelta(hours=1),
+        stale_evidence_action="evidence_only",
+        metric_gates=(MonitoringMetricGate.create(
+            metric_id="error",
+            direction="upper",
+            warning_threshold="0.4",
+            breach_threshold="0.8",
+            minimum_independent_clusters=1,
+            maximum_label_delay=timedelta(days=1),
+            alpha_budget="0.1",
+        ),),
+        family_wise_alpha_budget="0.1",
+        sequential_test_manifest=manifest,
+        breach_action="evidence_only",
+    )
+    evidence = CapabilityEvidenceWindow.create(
+        capability_fingerprint=policy.capability_fingerprint,
+        monitoring_policy_digest=policy.policy_digest,
+        sequential_implementation_fingerprint=implementation,
+        observations=tuple(
+            MonitoringObservation(
+                event_id=f"scenario-baseline-{index}",
+                metric_id="error",
+                cluster_id=f"scenario-baseline-{index}",
+                observed_at=now,
+                value="0.1",
+            )
+            for index in range(100)
+        ),
+        latest_independent_label_at=now,
+        latest_canary_success_at=now,
+        traffic_state="active",
+        traffic_state_changed_at=now,
+        label_pipeline_state="healthy",
+        label_pipeline_state_changed_at=now,
+    )
+    checkpoint_values = {
+        "capability_fingerprint": policy.capability_fingerprint,
+        "monitoring_policy_digest": policy.policy_digest,
+        "deployment_authorization_digest": _scenario_digest(
+            "scenario-monitor-deployment-authorization"
+        ),
+        "deployment_artifact_raw_digest": _scenario_digest(
+            "scenario-monitor-deployment-artifact"
+        ),
+        "target_artifact_digest": _scenario_digest("scenario-monitor-target"),
+        "approval_release_digest": _scenario_digest("scenario-monitor-approval"),
+        "expires_at": datetime(2030, 1, 1, tzinfo=UTC),
+        "signer_subject_id": "scenario-test-host",
+        "signing_key_reference": "scenario-test-key",
+        "authority_snapshot_digest": _scenario_digest(
+            "scenario-monitor-authority-snapshot"
+        ),
+        "active_epoch": 1,
+    }
+    checkpoint = CapabilityAuthorizationCheckpoint(
+        **checkpoint_values,
+        checkpoint_digest=contract_digest(
+            b"memorii.semantic-ingestion.capability-authorization-checkpoint.v1",
+            checkpoint_values,
+        ),
+    )
+    return policy, evidence, checkpoint
+
+
+def _scenario_capability_bindings(
+    source, operation_inputs, compilation, registry, atomic_store
+):
+    from memorii.core.semantic_ingestion.bootstrap_graph_builtin import (
+        _active_capability_bindings,
+    )
+
+    bindings = _active_capability_bindings(
+        atomic_store=atomic_store,
+        source=source,
+        operation_inputs=operation_inputs,
+        compilation=compilation,
+        capability_registry=registry,
+    )
+    if bindings is None:
+        raise ValueError("scenario capability status binding is unavailable")
+    return bindings
+
+
 def _scenario_graph_host_bundle_builder():
-    """Build the scenario host's V3 graph bundle with a deterministic authority."""
+    """Build deterministic accepted and protected-unresolved scenario results."""
     from memorii.core.semantic_ingestion.bootstrap_graph_host import (
         BootstrapGraphHostBundleBuilder,
     )
@@ -700,6 +816,7 @@ def _scenario_graph_host_bundle_builder():
         authority_provider=DeterministicBootstrapGraphAuthorityProviderV3(
             successful_calls=[],
             accepted_materialization=_scenario_materialization_guard,
+            capability_bindings_factory=_scenario_capability_bindings,
             acquire_errors=[],
         )
     )
@@ -709,7 +826,8 @@ def build_scenario_test_provider_service(*, memory_plane, now_provider):
     """Fixture-private route to the only non-production provider composition."""
     from memorii.core.provider.service import ProviderMemoryService
 
-    return ProviderMemoryService._from_scenario_test_host(
+    policy, evidence, checkpoint = _scenario_capability_monitoring(now_provider())
+    service = ProviderMemoryService._from_scenario_test_host(
         memory_plane=memory_plane,
         host_bootstrap_capability=build_scenario_test_host_capability(),
         host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
@@ -717,8 +835,19 @@ def build_scenario_test_provider_service(*, memory_plane, now_provider):
             now_provider=now_provider
         ),
         bootstrap_graph_host_bundle_builder=_scenario_graph_host_bundle_builder(),
+        capability_monitoring_policies=(policy,),
         now_provider=now_provider,
     )
+    service._capability_monitor = CapabilityMonitor(
+        writers=service._semantic_writer_admission,
+        now=service._clock.now_utc,
+        policies=(policy,),
+        authorization_checkpoints=(checkpoint,),
+    )
+    service._capability_monitor.initialize_active_from_verified_evidence(
+        evidence=evidence
+    )
+    return service
 
 # The registered semantic ingestion package is a closed 18-member CTV-v2/raw-ledger closure.
 # Keep this local to the fixture producer rather than importing the execution

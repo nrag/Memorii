@@ -1,0 +1,14 @@
+{
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "scope": "numeric design proposal and feasibility only; no canonical edits or product approval",
+  "files": {
+    "docs/work/semantic_ingestion/acceptance-numeric-contract/design.plan.md": "d024a428df6fc85d5abbf9889e4f7344db48e7d6ab3ee2172f582ade0b6080df",
+    "docs/work/semantic_ingestion/acceptance-numeric-contract/proposal.md": "51a2af85544bfe6a439352ca07b2530e548becfe91698ac6fd99c4edf05e07a1",
+    "docs/work/semantic_ingestion/acceptance-numeric-contract/enclosure_feasibility.py": "32ffedaa73c448fbf36fe161447c47a6bcb1d791394f29f775d08ca76224bb5a",
+    "docs/work/semantic_ingestion/acceptance-numeric-contract/verify_feasibility_certificate.py": "46f7026c43b6447ee1b1198579df01b6d6171c2d754b0365451146b5a676642a",
+    "docs/work/semantic_ingestion/acceptance-numeric-contract/feasibility-result.json": "7ec10b497d385e6cf8f60872fe644005b9cf2f61a8e03c5163b79f3aedd36652",
+    "docs/design/semantic_ingestion_architecture.md": "b469653e3ef92e9cc1bf45e797a2c7dff8eac4d9ee792ad94ada3a54bfbe05da"
+  },
+  "status_sha256": "11c84b45c5ad3f2003c4def61073a445a116cb889fed430a21977d8992f97dcf",
+  "other_writers": "crypto adapter and coordination identity operate outside frozen files"
+}

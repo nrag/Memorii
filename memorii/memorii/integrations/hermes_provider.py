@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from datetime import datetime
 
 from memorii.core.filesystem_storage.bundle import build_filesystem_provider
@@ -14,27 +15,44 @@ from memorii.core.memory_evolution.bootstrap_profile import (
     HostBootstrapCapability,
     HostBootstrapMaterialVerifier,
 )
+from memorii.core.memory_evolution.capability_monitoring import (
+    CapabilityEvidenceWindow,
+    CapabilityMonitorTickResult,
+)
 from memorii.core.memory_evolution.conflict_attention import (
     EMBEDDED_PAGE_SIZE,
     ConflictAttention,
     ConflictAttentionPage,
     ConflictKind,
 )
+from memorii.core.memory_evolution.graph_observation_public_contracts import (
+    GraphObservationRequest,
+    GraphObservationResponse,
+    IngestionTimeAttestationRequest,
+    IngestionTimeAttestationResponse,
+)
 from memorii.core.memory_evolution.identity_lineage import IdentityLineageAuditView
-from memorii.core.memory_evolution.ingestion_contracts import AuthenticatedHostIngress
+from memorii.core.memory_evolution.ingestion_contracts import (
+    AuthenticatedHostIngress,
+    SemanticWriterCommitBinding,
+)
 from memorii.core.memory_evolution.retrieval_contracts import GraphAuditRequest
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.provider.attention_models import ProviderToolAttentionEnvelope
 from memorii.core.provider.classifier import classify_memory_target
 from memorii.core.provider.factory import build_provider_memory_service_from_env
 from memorii.core.provider.models import (
+    ProviderEvolutionOutcome,
     ProviderOperation,
     ProviderSyncResult,
     ProviderWriteDecision,
     normalize_delivery_id,
 )
 from memorii.core.provider.service import ProviderMemoryService
+from memorii.core.scoped_context.authority import ScopedHostReadAuthority
+from memorii.core.scoped_context.contracts import ScopedContextActivation, ScopedContextRequest
 from memorii.core.semantic_ingestion.production_authority import (
+    VerifiedCapabilityMonitoringAuthority,
     VerifiedProductionHostAuthority,
 )
 from memorii.core.semantic_ingestion.source_normalization_host import SourceNormalizationHostBundleBuilder
@@ -52,6 +70,12 @@ class HermesMemoryProvider(MemoryProviderInterface):
         verified_production_host_authority: VerifiedProductionHostAuthority | None = None,
         memory_plane: MemoryPlaneService | None = None,
         storage_root: str | None = None,
+        scoped_read_authority: ScopedHostReadAuthority | None = None,
+        verified_capability_monitoring_authorities: tuple[
+            VerifiedCapabilityMonitoringAuthority, ...
+        ] = (),
+        installed_capability_monitoring_configuration: object | None = None,
+        now_provider: Callable[[], datetime] | None = None,
     ) -> None:
         if memory_plane is not None and storage_root is not None:
             raise ValueError("memory plane and filesystem storage root are mutually exclusive")
@@ -62,6 +86,9 @@ class HermesMemoryProvider(MemoryProviderInterface):
             or verified_production_host_authority is not None
             or memory_plane is not None
             or storage_root is not None
+            or scoped_read_authority is not None
+            or verified_capability_monitoring_authorities
+            or installed_capability_monitoring_configuration is not None
         ):
             raise ValueError("service and host bootstrap capability are mutually exclusive")
         if service is not None:
@@ -73,6 +100,10 @@ class HermesMemoryProvider(MemoryProviderInterface):
                 host_bootstrap_material_verifier=host_bootstrap_material_verifier,
                 source_normalization_host_bundle_builder=source_normalization_host_bundle_builder,
                 verified_production_host_authority=verified_production_host_authority,
+                scoped_read_authority=scoped_read_authority,
+                verified_capability_monitoring_authorities=verified_capability_monitoring_authorities,
+                installed_capability_monitoring_configuration=installed_capability_monitoring_configuration,
+                now_provider=now_provider,
             )
         else:
             self._service = build_provider_memory_service_from_env(
@@ -81,7 +112,19 @@ class HermesMemoryProvider(MemoryProviderInterface):
                 host_bootstrap_material_verifier=host_bootstrap_material_verifier,
                 source_normalization_host_bundle_builder=source_normalization_host_bundle_builder,
                 verified_production_host_authority=verified_production_host_authority,
+                scoped_read_authority=scoped_read_authority,
+                verified_capability_monitoring_authorities=verified_capability_monitoring_authorities,
+                installed_capability_monitoring_configuration=installed_capability_monitoring_configuration,
+                now_provider=now_provider,
             )
+
+    def retrieve_context(
+        self,
+        request: ScopedContextRequest,
+        *,
+        opaque_host_ingress: object,
+    ) -> ScopedContextActivation:
+        return self._service.retrieve_context(request, opaque_host_ingress=opaque_host_ingress)
 
     def sync_event(
         self,
@@ -209,6 +252,61 @@ class HermesMemoryProvider(MemoryProviderInterface):
         return self._service.lookup_semantic_ingestion_outcome(
             request, authenticated_host_ingress=authenticated_host_ingress
         )
+
+    def activate_observation_ledger(self) -> SemanticWriterCommitBinding:
+        """Activate the configured observation ledger through the trusted host."""
+
+        return self._service.activate_observation_ledger()
+
+    def start_semantic_ingestion(self) -> SemanticWriterCommitBinding:
+        """Activate durable ingestion and recover pending work at host startup."""
+
+        activated = self._service.activate_observation_ledger()
+        self._service.reconcile_memory_evolution()
+        return activated
+
+    def run_capability_monitor_tick(
+        self,
+        *,
+        evidence: CapabilityEvidenceWindow,
+    ) -> CapabilityMonitorTickResult:
+        """Run one host-scheduled capability-monitoring evaluation."""
+
+        return self._service.run_capability_monitor_tick(evidence=evidence)
+
+    def process_capability_monitoring(
+        self, *, max_items: int = 1
+    ) -> tuple[CapabilityMonitorTickResult, ...]:
+        """Run one bounded host-scheduled capability-monitoring pass."""
+
+        return self._service.process_capability_monitoring(max_items=max_items)
+
+    def observe_graph(
+        self,
+        *,
+        host_ingress: AuthenticatedHostIngress,
+        request: GraphObservationRequest,
+    ) -> GraphObservationResponse:
+        """Return one protected graph-observation page or denial."""
+
+        return self._service.observe_graph(host_ingress=host_ingress, request=request)
+
+    def observe_ingestion_time_attestations(
+        self,
+        *,
+        host_ingress: AuthenticatedHostIngress,
+        request: IngestionTimeAttestationRequest,
+    ) -> IngestionTimeAttestationResponse:
+        """Return one protected ingestion-time-attestation page or denial."""
+
+        return self._service.observe_ingestion_time_attestations(
+            host_ingress=host_ingress, request=request
+        )
+
+    def reconcile_memory_evolution(self) -> list[ProviderEvolutionOutcome]:
+        """Retry the provider's pending memory-evolution work."""
+
+        return self._service.reconcile_memory_evolution()
 
     def sync_turn(
         self,
@@ -353,6 +451,16 @@ class HermesMemoryProvider(MemoryProviderInterface):
             operation_id=operation_id,
             authenticated_host_ingress=authenticated_host_ingress,
         )
+
+
+def build_started_hermes_memory_provider(
+    *, service: ProviderMemoryService,
+) -> HermesMemoryProvider:
+    """Build the explicit configured Hermes startup root."""
+
+    provider = HermesMemoryProvider(service=service)
+    provider.start_semantic_ingestion()
+    return provider
 
 
 def _messages_to_snapshot_text(messages: list[dict[str, object]] | list[str]) -> str:

@@ -1,0 +1,24 @@
+{
+  "format": "memorii.offline-signing-candidate.v1",
+  "scope": "offline-pem-ed25519-detached-preimage-signing",
+  "status": "partial-r13",
+  "files": [
+    {
+      "path": "memorii/memorii/tools/semantic_ingestion_offline_signing.py",
+      "sha256": "23c2e68abc715f010c5955ed5c6cecb1c667d9e27fb725fc7fccb2f2bafbd2c2"
+    },
+    {
+      "path": "memorii/tests/unit/tools/test_semantic_ingestion_offline_signing.py",
+      "sha256": "6e9c5c7cd917399140b04182d51740f22d9acc2a6b75f96a066d105a24879a4a"
+    },
+    {
+      "path": "docs/work/semantic_ingestion/engineering-closure/offline-signing.md",
+      "sha256": "7dedb9057d79a83c7b1a1545a2844b7e27b389437ebe91f7d3f06614bd76f6ff"
+    },
+    {
+      "path": "memorii/memorii/tools/semantic_ingestion_signature_verifier.py",
+      "sha256": "f09ba1ca5e16276cde07ced5c03f1ab49091a65d94e3be3310a1c336e3ed91a5",
+      "role": "canonical-verification-dependency"
+    }
+  ]
+}

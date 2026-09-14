@@ -1,0 +1,226 @@
+F........                                                                [100%]
+=================================== FAILURES ===================================
+_______ test_complete_replay_requires_exact_head_and_all_immutable_joins _______
+
+raw_bytes = b'{"$type":"map","entries":[["activation_digest","ed1c4067ce2928f7f59d40499b2824ac4f3f71a3ea10faa6f9ca1102b97ac10b"],[...{"$type":"integer","value":"1"}],["state_digest","0000000000000000000000000000000000000000000000000000000000000000"]]}'
+
+    def validate_typed_value_body(
+        raw_bytes: bytes,
+        *,
+        registry: CompiledTypedValueRegistry,
+        entry: CompiledRegistryEntry,
+        limits: ProtectedTypedValueBodyLimits,
+    ) -> ValidatedTypedValueBody:
+        """Validate exactly one root model body under an already selected entry."""
+        try:
+            if registry.entry_for(entry.schema_id, entry.schema_version) != entry:
+                raise TypedValueBodyValidationError("typed_value_body_entry_not_registry_member")
+>           parsed = parse_canonical_raw_json_object(raw_bytes, limits=_raw_limits(limits))
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+memorii/core/memory_evolution/typed_value_body_validation.py:98: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+memorii/core/memory_evolution/typed_value_decoder_sources.py:128: in parse_canonical_raw_json_object
+    return _parse_canonical_raw_json_object(raw_bytes, limits=limits)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+memorii/core/memory_evolution/typed_value_decoder_sources.py:142: in _parse_canonical_raw_json_object
+    _precheck_nesting(raw_bytes, limits.maximum_manifest_depth)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+raw = b'{"$type":"map","entries":[["activation_digest","ed1c4067ce2928f7f59d40499b2824ac4f3f71a3ea10faa6f9ca1102b97ac10b"],[...{"$type":"integer","value":"1"}],["state_digest","0000000000000000000000000000000000000000000000000000000000000000"]]}'
+maximum_depth = 32
+
+    def _precheck_nesting(raw: bytes, maximum_depth: int) -> None:
+        depth = 0
+        quoted = False
+        escaped = False
+        for byte in raw:
+            if quoted:
+                if escaped:
+                    escaped = False
+                elif byte == 0x5C:
+                    escaped = True
+                elif byte == 0x22:
+                    quoted = False
+            elif byte == 0x22:
+                quoted = True
+            elif byte in (0x5B, 0x7B):
+                depth += 1
+                if depth > maximum_depth:
+>                   raise DecoderSourceManifestError("decoder_source_manifest_depth_limit_exceeded")
+E                   memorii.core.memory_evolution.typed_value_decoder_sources.DecoderSourceManifestError: decoder_source_manifest_depth_limit_exceeded
+
+memorii/core/memory_evolution/typed_value_decoder_sources.py:528: DecoderSourceManifestError
+
+The above exception was the direct cause of the following exception:
+
+value = ObservationReplayState(schema_version=1, repository_id='repo', activation_digest='ed1c4067ce2928f7f59d40499b2824ac4f3f...9f3bd11446035467130ba66859be8e7383')), state_digest='0000000000000000000000000000000000000000000000000000000000000000')
+
+    def encode_typed_value_model_candidate(
+        value: BaseModel,
+        *,
+        entry: CompiledRegistryEntry,
+        publication: VerifiedTypedValuePublication,
+        maximum_bytes: int,
+        maximum_nodes: int,
+        maximum_depth: int,
+    ) -> MaterializedTypedValueModel:
+        """Encode and locally reconstruct one source-selected native candidate.
+    
+        The result is conversion evidence only.  A verified publication selects the
+        immutable schema and finite native decoder, but it grants neither writer,
+        persistence, signature, nor authentication authority.
+        """
+        _require_limits(maximum_bytes, maximum_nodes, maximum_depth)
+        if not isinstance(value, BaseModel):
+            raise TypedValueModelCodecError("typed_value_model_codec_native_model_invalid")
+        registry = publication.compiled_registry
+        _verify_publication_join(entry, registry, publication)
+        schema, optionals, numerics, _ = _roles_for_entry(registry, entry)
+        if any(policy.startswith("omittable") for policy in (item.policy for item in optionals.fields)):
+            raise TypedValueModelCodecError("typed_value_model_codec_omittable_native_presence_unsupported")
+    
+        writer = _BoundedWriter(maximum_bytes, maximum_nodes, maximum_depth)
+        _emit_model(
+            writer,
+            value,
+            schema,
+            optionals,
+            numerics,
+            registry,
+            publication,
+            entry,
+            frozenset(value.__dict__),
+        )
+        raw_bytes = writer.finish()
+        try:
+>           body = validate_typed_value_body(
+                raw_bytes,
+                registry=registry,
+                entry=entry,
+                limits=ProtectedTypedValueBodyLimits(
+                    maximum_bytes,
+                    maximum_nodes,
+                    maximum_depth,
+                ),
+            )
+
+memorii/core/memory_evolution/typed_value_model_codec.py:138: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+raw_bytes = b'{"$type":"map","entries":[["activation_digest","ed1c4067ce2928f7f59d40499b2824ac4f3f71a3ea10faa6f9ca1102b97ac10b"],[...{"$type":"integer","value":"1"}],["state_digest","0000000000000000000000000000000000000000000000000000000000000000"]]}'
+
+    def validate_typed_value_body(
+        raw_bytes: bytes,
+        *,
+        registry: CompiledTypedValueRegistry,
+        entry: CompiledRegistryEntry,
+        limits: ProtectedTypedValueBodyLimits,
+    ) -> ValidatedTypedValueBody:
+        """Validate exactly one root model body under an already selected entry."""
+        try:
+            if registry.entry_for(entry.schema_id, entry.schema_version) != entry:
+                raise TypedValueBodyValidationError("typed_value_body_entry_not_registry_member")
+            parsed = parse_canonical_raw_json_object(raw_bytes, limits=_raw_limits(limits))
+            schema, optionals, numerics, _ = _roles_for_entry(registry, entry)
+            _validate_model(
+                parsed.value,
+                schema,
+                optionals,
+                numerics,
+                _reachable_coordinates(registry, (entry.schema_id, entry.schema_version)),
+                registry,
+                limits,
+                "body",
+            )
+            return ValidatedTypedValueBody(raw_bytes=parsed.raw_bytes, entry=entry, tree=parsed.value)
+        except RecursionError as exc:
+            raise TypedValueBodyValidationError("typed_value_body_depth_limit_exceeded") from exc
+        except DecoderSourceManifestError as exc:
+>           raise TypedValueBodyValidationError("typed_value_body_raw_invalid") from exc
+E           memorii.core.memory_evolution.typed_value_body_validation.TypedValueBodyValidationError: typed_value_body_raw_invalid
+
+memorii/core/memory_evolution/typed_value_body_validation.py:114: TypedValueBodyValidationError
+
+The above exception was the direct cause of the following exception:
+
+ledger = ({'activation_artifact': b'{"$type":"map","entries":[["artifact_digest","e74f663e2d6d6a709aad47cd8efcec850d9a29e960d16...0783d624968ea92ff')), <function ledger.<locals>.emit at 0x10bc2bec0>, <function ledger.<locals>.append at 0x10bc2ae80>)
+
+    def test_complete_replay_requires_exact_head_and_all_immutable_joins(ledger):
+        arguments, entries, heads, _, _ = ledger
+        verified = []
+        def join(entry):
+            assert entry == entries[len(verified)].value
+            verified.append(entry)
+>       replay = replay_observation_ledger(**arguments, verify_immutable_result=join)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/integration/test_observation_ledger_replay.py:141: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+memorii/core/memory_evolution/observation_ledger_replay.py:159: in replay_observation_ledger
+    return emit_registered_observation_artifact(
+memorii/core/memory_evolution/observation_activation_runtime.py:155: in emit_registered_observation_artifact
+    raw = _registered_artifact(value, schema_id, history, publication)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+memorii/core/memory_evolution/observation_activation_runtime.py:228: in _registered_artifact
+    materialized = encode_typed_value_model_candidate(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = ObservationReplayState(schema_version=1, repository_id='repo', activation_digest='ed1c4067ce2928f7f59d40499b2824ac4f3f...9f3bd11446035467130ba66859be8e7383')), state_digest='0000000000000000000000000000000000000000000000000000000000000000')
+
+    def encode_typed_value_model_candidate(
+        value: BaseModel,
+        *,
+        entry: CompiledRegistryEntry,
+        publication: VerifiedTypedValuePublication,
+        maximum_bytes: int,
+        maximum_nodes: int,
+        maximum_depth: int,
+    ) -> MaterializedTypedValueModel:
+        """Encode and locally reconstruct one source-selected native candidate.
+    
+        The result is conversion evidence only.  A verified publication selects the
+        immutable schema and finite native decoder, but it grants neither writer,
+        persistence, signature, nor authentication authority.
+        """
+        _require_limits(maximum_bytes, maximum_nodes, maximum_depth)
+        if not isinstance(value, BaseModel):
+            raise TypedValueModelCodecError("typed_value_model_codec_native_model_invalid")
+        registry = publication.compiled_registry
+        _verify_publication_join(entry, registry, publication)
+        schema, optionals, numerics, _ = _roles_for_entry(registry, entry)
+        if any(policy.startswith("omittable") for policy in (item.policy for item in optionals.fields)):
+            raise TypedValueModelCodecError("typed_value_model_codec_omittable_native_presence_unsupported")
+    
+        writer = _BoundedWriter(maximum_bytes, maximum_nodes, maximum_depth)
+        _emit_model(
+            writer,
+            value,
+            schema,
+            optionals,
+            numerics,
+            registry,
+            publication,
+            entry,
+            frozenset(value.__dict__),
+        )
+        raw_bytes = writer.finish()
+        try:
+            body = validate_typed_value_body(
+                raw_bytes,
+                registry=registry,
+                entry=entry,
+                limits=ProtectedTypedValueBodyLimits(
+                    maximum_bytes,
+                    maximum_nodes,
+                    maximum_depth,
+                ),
+            )
+        except TypedValueBodyValidationError as exc:
+>           raise TypedValueModelCodecError("typed_value_model_codec_candidate_body_invalid") from exc
+E           memorii.core.memory_evolution.typed_value_model_codec.TypedValueModelCodecError: typed_value_model_codec_candidate_body_invalid
+
+memorii/core/memory_evolution/typed_value_model_codec.py:149: TypedValueModelCodecError
+=========================== short test summary info ============================
+FAILED tests/integration/test_observation_ledger_replay.py::test_complete_replay_requires_exact_head_and_all_immutable_joins
+1 failed, 8 passed in 20.13s

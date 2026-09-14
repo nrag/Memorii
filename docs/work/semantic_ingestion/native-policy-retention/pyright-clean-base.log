@@ -1,0 +1,656 @@
+/private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:173:20 - error: Argument of type "object" cannot be assigned to parameter "obj" of type "Sized" in function "len"
+    "object" is incompatible with protocol "Sized"
+      "__len__" is not present (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:175:36 - error: Argument of type "object" cannot be assigned to parameter "iter1" of type "Iterable[_T1@__new__]" in function "__new__"
+    "object" is incompatible with protocol "Iterable[_T1@__new__]"
+      "__iter__" is not present (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:178:38 - error: Argument of type "object" cannot be assigned to parameter "iterable" of type "Iterable[_T@list]" in function "__init__"
+    "object" is incompatible with protocol "Iterable[_T@list]"
+      "__iter__" is not present (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:254:27 - error: Cannot access attribute "path" for class "object"
+    Attribute "path" is unknown (reportAttributeAccessIssue)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:255:28 - error: Cannot access attribute "begin" for class "object"
+    Attribute "begin" is unknown (reportAttributeAccessIssue)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:256:26 - error: Cannot access attribute "end" for class "object"
+    Attribute "end" is unknown (reportAttributeAccessIssue)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:257:68 - error: Cannot access attribute "begin" for class "object"
+    Attribute "begin" is unknown (reportAttributeAccessIssue)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:257:81 - error: Cannot access attribute "end" for class "object"
+    Attribute "end" is unknown (reportAttributeAccessIssue)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:258:34 - error: Cannot access attribute "value_type" for class "object"
+    Attribute "value_type" is unknown (reportAttributeAccessIssue)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:496:97 - error: Cannot access attribute "evidence_digest" for class "object"
+    Attribute "evidence_digest" is unknown (reportAttributeAccessIssue)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:502:15 - error: Argument of type "object" cannot be assigned to parameter "source_id" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:502:15 - error: Argument of type "object" cannot be assigned to parameter "source_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:502:15 - error: Argument of type "object" cannot be assigned to parameter "trigger_mode" of type "ExtractionTriggerMode" in function "__init__"
+    "object" is not assignable to "ExtractionTriggerMode" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:502:15 - error: Argument of type "object" cannot be assigned to parameter "provenance_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:502:15 - error: Argument of type "object" cannot be assigned to parameter "temporal_references" of type "tuple[TemporalReferenceEvidence, ...]" in function "__init__"
+    "object" is not assignable to "tuple[TemporalReferenceEvidence, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:502:15 - error: Argument of type "object" cannot be assigned to parameter "received_at" of type "datetime" in function "__init__"
+    "object" is not assignable to "datetime" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:502:15 - error: Argument of type "object" cannot be assigned to parameter "retained_at" of type "datetime" in function "__init__"
+    "object" is not assignable to "datetime" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:502:15 - error: Argument of type "object" cannot be assigned to parameter "source_effective_interval_evidence" of type "AuthenticatedSourceIntervalEvidence | None" in function "__init__"
+    Type "object" is not assignable to type "AuthenticatedSourceIntervalEvidence | None"
+      "object" is not assignable to "AuthenticatedSourceIntervalEvidence"
+      "object" is not assignable to "None" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:502:15 - error: Argument of type "object" cannot be assigned to parameter "provider_egress_policy_fingerprint" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:502:15 - error: Argument of type "object" cannot be assigned to parameter "governance_policy_fingerprint" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:502:15 - error: Argument of type "object" cannot be assigned to parameter "trust_policy_fingerprint" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:892:15 - error: Argument of type "object" cannot be assigned to parameter "use_point" of type "AuthorizationUsePoint" in function "__init__"
+    Type "object" is not assignable to type "AuthorizationUsePoint"
+      "object" is not assignable to "Literal['pre_request']"
+      "object" is not assignable to "Literal['post_response']"
+      "object" is not assignable to "Literal['pre_analysis']"
+      "object" is not assignable to "Literal['pre_seal']"
+      "object" is not assignable to "Literal['pre_commit']"
+      "object" is not assignable to "Literal['recovery_activation']" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:892:15 - error: Argument of type "object" cannot be assigned to parameter "server_now" of type "datetime" in function "__init__"
+    "object" is not assignable to "datetime" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:892:15 - error: Argument of type "object" cannot be assigned to parameter "read_set" of type "SemanticAuthorizationReadSet" in function "__init__"
+    "object" is not assignable to "SemanticAuthorizationReadSet" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:892:15 - error: Argument of type "object" cannot be assigned to parameter "egress_policy_id" of type "str | None" in function "__init__"
+    Type "object" is not assignable to type "str | None"
+      "object" is not assignable to "str"
+      "object" is not assignable to "None" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:892:15 - error: Argument of type "object" cannot be assigned to parameter "egress_policy_fingerprint" of type "str | None" in function "__init__"
+    Type "object" is not assignable to type "str | None"
+      "object" is not assignable to "str"
+      "object" is not assignable to "None" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:892:15 - error: Argument of type "object" cannot be assigned to parameter "egress_expires_at" of type "datetime | None" in function "__init__"
+    Type "object" is not assignable to type "datetime | None"
+      "object" is not assignable to "datetime"
+      "object" is not assignable to "None" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:892:15 - error: Argument of type "object" cannot be assigned to parameter "deployment_expires_at" of type "datetime" in function "__init__"
+    "object" is not assignable to "datetime" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:892:15 - error: Argument of type "object" cannot be assigned to parameter "authority_record_id" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:892:15 - error: Argument of type "object" cannot be assigned to parameter "authority_revision" of type "int" in function "__init__"
+    "object" is not assignable to "int" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:892:15 - error: Argument of type "object" cannot be assigned to parameter "authority_coordinates_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:892:15 - error: Argument of type "object" cannot be assigned to parameter "authority_record_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2005:15 - error: Argument of type "object" cannot be assigned to parameter "operation_id" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2005:15 - error: Argument of type "object" cannot be assigned to parameter "plan_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2005:15 - error: Argument of type "object" cannot be assigned to parameter "authority_scope_id" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2005:15 - error: Argument of type "object" cannot be assigned to parameter "authority_record_id" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2005:15 - error: Argument of type "object" cannot be assigned to parameter "authority_revision" of type "int" in function "__init__"
+    "object" is not assignable to "int" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2005:15 - error: Argument of type "object" cannot be assigned to parameter "authority_coordinates_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2005:15 - error: Argument of type "object" cannot be assigned to parameter "authority_record_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2005:15 - error: Argument of type "object" cannot be assigned to parameter "read_set_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2303:15 - error: Argument of type "object" cannot be assigned to parameter "source_id" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2303:15 - error: Argument of type "object" cannot be assigned to parameter "segment_id" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2303:15 - error: Argument of type "object" cannot be assigned to parameter "message_semantic_context_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2303:15 - error: Argument of type "object" cannot be assigned to parameter "effective_scope_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2303:15 - error: Argument of type "object" cannot be assigned to parameter "authority_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2303:15 - error: Argument of type "object" cannot be assigned to parameter "data_classification" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2303:15 - error: Argument of type "object" cannot be assigned to parameter "modality" of type "SourceModality" in function "__init__"
+    "object" is not assignable to "SourceModality" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2303:15 - error: Argument of type "object" cannot be assigned to parameter "provider_egress_decision_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2303:15 - error: Argument of type "object" cannot be assigned to parameter "egress_disposition" of type "Literal['allow_verbatim', 'deny']" in function "__init__"
+    Type "object" is not assignable to type "Literal['allow_verbatim', 'deny']"
+      "object" is not assignable to "Literal['allow_verbatim']"
+      "object" is not assignable to "Literal['deny']" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2413:15 - error: Argument of type "object" cannot be assigned to parameter "delivery_principal_binding_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2413:15 - error: Argument of type "object" cannot be assigned to parameter "authenticated_source_reference" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2413:15 - error: Argument of type "object" cannot be assigned to parameter "authenticated_source_reference_key_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2413:15 - error: Argument of type "object" cannot be assigned to parameter "message_bytes_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2413:15 - error: Argument of type "object" cannot be assigned to parameter "segment_governance_binding_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2554:15 - error: Argument of type "object" cannot be assigned to parameter "selected_language" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2554:15 - error: Argument of type "object" cannot be assigned to parameter "proposal_capability_fingerprint" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2554:15 - error: Argument of type "object" cannot be assigned to parameter "stanza_analyzer_manifest_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2554:15 - error: Argument of type "object" cannot be assigned to parameter "spacy_analyzer_manifest_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2554:15 - error: Argument of type "object" cannot be assigned to parameter "predicate_event_manifest_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2554:15 - error: Argument of type "object" cannot be assigned to parameter "temporal_resolver_manifest_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2654:15 - error: Argument of type "object" cannot be assigned to parameter "source_id" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2654:15 - error: Argument of type "object" cannot be assigned to parameter "source_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2654:15 - error: Argument of type "object" cannot be assigned to parameter "segment_id" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2654:15 - error: Argument of type "object" cannot be assigned to parameter "parent_projection_segment_id" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2654:15 - error: Argument of type "object" cannot be assigned to parameter "segment_text_artifact_id" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2654:15 - error: Argument of type "object" cannot be assigned to parameter "segment_text_artifact_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2654:15 - error: Argument of type "object" cannot be assigned to parameter "segment_text_content_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2654:15 - error: Argument of type "object" cannot be assigned to parameter "declared_language" of type "str | None" in function "__init__"
+    Type "object" is not assignable to type "str | None"
+      "object" is not assignable to "str"
+      "object" is not assignable to "None" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2654:15 - error: Argument of type "object" cannot be assigned to parameter "candidates" of type "tuple[LanguageCandidate, ...]" in function "__init__"
+    "object" is not assignable to "tuple[LanguageCandidate, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2654:15 - error: Argument of type "object" cannot be assigned to parameter "code_switch_spans" of type "tuple[SegmentLocalTextSpan, ...]" in function "__init__"
+    "object" is not assignable to "tuple[SegmentLocalTextSpan, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2654:15 - error: Argument of type "object" cannot be assigned to parameter "selected_language" of type "str | None" in function "__init__"
+    Type "object" is not assignable to type "str | None"
+      "object" is not assignable to "str"
+      "object" is not assignable to "None" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2654:15 - error: Argument of type "object" cannot be assigned to parameter "decision" of type "Literal['selected', 'uncertain', 'unsupported', 'conflict', 'unresolved_code_switch', 'missing_resource']" in function "__init__"
+    Type "object" is not assignable to type "Literal['selected', 'uncertain', 'unsupported', 'conflict', 'unresolved_code_switch', 'missing_resource']"
+      "object" is not assignable to "Literal['selected']"
+      "object" is not assignable to "Literal['uncertain']"
+      "object" is not assignable to "Literal['unsupported']"
+      "object" is not assignable to "Literal['conflict']"
+      "object" is not assignable to "Literal['unresolved_code_switch']"
+      "object" is not assignable to "Literal['missing_resource']" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2654:15 - error: Argument of type "object" cannot be assigned to parameter "minimum_probability_ppm" of type "int" in function "__init__"
+    "object" is not assignable to "int" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2654:15 - error: Argument of type "object" cannot be assigned to parameter "minimum_margin_ppm" of type "int" in function "__init__"
+    "object" is not assignable to "int" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2654:15 - error: Argument of type "object" cannot be assigned to parameter "routing_policy_fingerprint" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2654:15 - error: Argument of type "object" cannot be assigned to parameter "router_manifest_fingerprint" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2654:15 - error: Argument of type "object" cannot be assigned to parameter "resource_binding" of type "SegmentLanguageResourceBinding | None" in function "__init__"
+    Type "object" is not assignable to type "SegmentLanguageResourceBinding | None"
+      "object" is not assignable to "SegmentLanguageResourceBinding"
+      "object" is not assignable to "None" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2698:15 - error: Argument of type "object" cannot be assigned to parameter "schema_id" of type "Literal['memorii.semantic_ingestion.bootstrap_declared_segm…']" in function "__init__"
+    "object" is not assignable to "Literal['memorii.semantic_ingestion.bootstrap_declared_segm…']" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2698:15 - error: Argument of type "object" cannot be assigned to parameter "schema_version" of type "Literal[1]" in function "__init__"
+    "object" is not assignable to "Literal[1]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2698:15 - error: Argument of type "object" cannot be assigned to parameter "source_id" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2698:15 - error: Argument of type "object" cannot be assigned to parameter "source_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2698:15 - error: Argument of type "object" cannot be assigned to parameter "segment_id" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2698:15 - error: Argument of type "object" cannot be assigned to parameter "parent_projection_segment_id" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2698:15 - error: Argument of type "object" cannot be assigned to parameter "segment_text_artifact_id" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2698:15 - error: Argument of type "object" cannot be assigned to parameter "segment_text_artifact_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2698:15 - error: Argument of type "object" cannot be assigned to parameter "segment_text_content_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2698:15 - error: Argument of type "object" cannot be assigned to parameter "declared_language" of type "Literal['en']" in function "__init__"
+    "object" is not assignable to "Literal['en']" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2698:15 - error: Argument of type "object" cannot be assigned to parameter "language_evidence_kind" of type "Literal['authenticated_host_declaration']" in function "__init__"
+    "object" is not assignable to "Literal['authenticated_host_declaration']" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2698:15 - error: Argument of type "object" cannot be assigned to parameter "language_evidence_trust" of type "Literal['trusted']" in function "__init__"
+    "object" is not assignable to "Literal['trusted']" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2698:15 - error: Argument of type "object" cannot be assigned to parameter "governance_agreement" of type "Literal['agrees']" in function "__init__"
+    "object" is not assignable to "Literal['agrees']" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2698:15 - error: Argument of type "object" cannot be assigned to parameter "bootstrap_language_evidence_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2698:15 - error: Argument of type "object" cannot be assigned to parameter "bootstrap_profile_manifest_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2698:15 - error: Argument of type "object" cannot be assigned to parameter "preparation_policy_fingerprint" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2698:15 - error: Argument of type "object" cannot be assigned to parameter "component_root_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2698:15 - error: Argument of type "object" cannot be assigned to parameter "corpus_case_id" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2698:15 - error: Argument of type "object" cannot be assigned to parameter "normalized_segment_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2698:15 - error: Argument of type "object" cannot be assigned to parameter "grammar_proof_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2698:15 - error: Argument of type "object" cannot be assigned to parameter "decision" of type "Literal['selected']" in function "__init__"
+    "object" is not assignable to "Literal['selected']" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2732:15 - error: Argument of type "object" cannot be assigned to parameter "source_id" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2732:15 - error: Argument of type "object" cannot be assigned to parameter "source_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2732:15 - error: Argument of type "object" cannot be assigned to parameter "routes" of type "tuple[LanguageRoute, ...]" in function "__init__"
+    "object" is not assignable to "tuple[LanguageRoute, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2753:15 - error: Argument of type "object" cannot be assigned to parameter "source_id" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2753:15 - error: Argument of type "object" cannot be assigned to parameter "source_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2753:15 - error: Argument of type "object" cannot be assigned to parameter "segment_id" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2753:15 - error: Argument of type "object" cannot be assigned to parameter "segment_language_route_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2753:15 - error: Argument of type "object" cannot be assigned to parameter "language_policy_fingerprint" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2753:15 - error: Argument of type "object" cannot be assigned to parameter "mention_span" of type "SourceSpanReference" in function "__init__"
+    "object" is not assignable to "SourceSpanReference" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2793:15 - error: Argument of type "object" cannot be assigned to parameter "segment_id" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2793:15 - error: Argument of type "object" cannot be assigned to parameter "segment_language_route_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2793:15 - error: Argument of type "object" cannot be assigned to parameter "language_policy_fingerprint" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2793:15 - error: Argument of type "object" cannot be assigned to parameter "mention_digests" of type "tuple[str, ...]" in function "__init__"
+    "object" is not assignable to "tuple[str, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2793:15 - error: Argument of type "object" cannot be assigned to parameter "proof_kind" of type "Literal['explicit_alias', 'explicit_apposition', 'authenticated_external_id', 'certified_unambiguous_repetition', 'insufficient_evidence', 'conflicting_evidence']" in function "__init__"
+    Type "object" is not assignable to type "Literal['explicit_alias', 'explicit_apposition', 'authenticated_external_id', 'certified_unambiguous_repetition', 'insufficient_evidence', 'conflicting_evidence']"
+      "object" is not assignable to "Literal['explicit_alias']"
+      "object" is not assignable to "Literal['explicit_apposition']"
+      "object" is not assignable to "Literal['authenticated_external_id']"
+      "object" is not assignable to "Literal['certified_unambiguous_repetition']"
+      "object" is not assignable to "Literal['insufficient_evidence']"
+      "object" is not assignable to "Literal['conflicting_evidence']" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2793:15 - error: Argument of type "object" cannot be assigned to parameter "source_evidence" of type "tuple[SourceSpanReference, ...]" in function "__init__"
+    "object" is not assignable to "tuple[SourceSpanReference, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2828:15 - error: Argument of type "object" cannot be assigned to parameter "source_id" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2828:15 - error: Argument of type "object" cannot be assigned to parameter "source_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2828:15 - error: Argument of type "object" cannot be assigned to parameter "mentions" of type "tuple[SourcePrePartitionMention, ...]" in function "__init__"
+    "object" is not assignable to "tuple[SourcePrePartitionMention, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2828:15 - error: Argument of type "object" cannot be assigned to parameter "assertions" of type "tuple[SourceLocalIdentityAssertion, ...]" in function "__init__"
+    "object" is not assignable to "tuple[SourceLocalIdentityAssertion, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2868:15 - error: Argument of type "object" cannot be assigned to parameter "cluster_id" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2868:15 - error: Argument of type "object" cannot be assigned to parameter "decision" of type "Literal['same_source_entity', 'singleton_distinct', 'unresolved']" in function "__init__"
+    Type "object" is not assignable to type "Literal['same_source_entity', 'singleton_distinct', 'unresolved']"
+      "object" is not assignable to "Literal['same_source_entity']"
+      "object" is not assignable to "Literal['singleton_distinct']"
+      "object" is not assignable to "Literal['unresolved']" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2868:15 - error: Argument of type "object" cannot be assigned to parameter "proof_kind" of type "Literal['explicit_alias', 'explicit_apposition', 'authenticated_external_id', 'certified_unambiguous_repetition', 'insufficient_evidence', 'conflicting_evidence']" in function "__init__"
+    Type "object" is not assignable to type "Literal['explicit_alias', 'explicit_apposition', 'authenticated_external_id', 'certified_unambiguous_repetition', 'insufficient_evidence', 'conflicting_evidence']"
+      "object" is not assignable to "Literal['explicit_alias']"
+      "object" is not assignable to "Literal['explicit_apposition']"
+      "object" is not assignable to "Literal['authenticated_external_id']"
+      "object" is not assignable to "Literal['certified_unambiguous_repetition']"
+      "object" is not assignable to "Literal['insufficient_evidence']"
+      "object" is not assignable to "Literal['conflicting_evidence']" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2868:15 - error: Argument of type "object" cannot be assigned to parameter "mention_digests" of type "tuple[str, ...]" in function "__init__"
+    "object" is not assignable to "tuple[str, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2868:15 - error: Argument of type "object" cannot be assigned to parameter "source_evidence" of type "tuple[SourceSpanReference, ...]" in function "__init__"
+    "object" is not assignable to "tuple[SourceSpanReference, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2868:15 - error: Argument of type "object" cannot be assigned to parameter "segment_route_policy_closure" of type "tuple[tuple[str, str, str], ...]" in function "__init__"
+    "object" is not assignable to "tuple[tuple[str, str, str], ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2920:15 - error: Argument of type "object" cannot be assigned to parameter "schema_version" of type "Literal[2]" in function "__init__"
+    "object" is not assignable to "Literal[2]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2920:15 - error: Argument of type "object" cannot be assigned to parameter "source_id" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2920:15 - error: Argument of type "object" cannot be assigned to parameter "grounded_mention_refs" of type "tuple[str, ...]" in function "__init__"
+    "object" is not assignable to "tuple[str, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2920:15 - error: Argument of type "object" cannot be assigned to parameter "clusters" of type "tuple[SourceLocalIdentityClusterDecision, ...]" in function "__init__"
+    "object" is not assignable to "tuple[SourceLocalIdentityClusterDecision, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2920:15 - error: Argument of type "object" cannot be assigned to parameter "unresolved_mention_refs" of type "tuple[str, ...]" in function "__init__"
+    "object" is not assignable to "tuple[str, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2959:15 - error: Argument of type "object" cannot be assigned to parameter "schema_version" of type "Literal[2]" in function "__init__"
+    "object" is not assignable to "Literal[2]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2959:15 - error: Argument of type "object" cannot be assigned to parameter "operation_id" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2959:15 - error: Argument of type "object" cannot be assigned to parameter "proposal_id" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2959:15 - error: Argument of type "object" cannot be assigned to parameter "segment_id" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2959:15 - error: Argument of type "object" cannot be assigned to parameter "segment_language_route_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2959:15 - error: Argument of type "object" cannot be assigned to parameter "parser_consensus_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2959:15 - error: Argument of type "object" cannot be assigned to parameter "scope_consensus_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:2959:15 - error: Argument of type "object" cannot be assigned to parameter "temporal_attachment_consensus_set_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3000:22 - error: Argument of type "object" cannot be assigned to parameter "schema_version" of type "Literal[2]" in function "__init__"
+    "object" is not assignable to "Literal[2]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3000:22 - error: Argument of type "object" cannot be assigned to parameter "operation_ids" of type "tuple[str, ...]" in function "__init__"
+    "object" is not assignable to "tuple[str, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3000:22 - error: Argument of type "object" cannot be assigned to parameter "segment_ids" of type "tuple[str, ...]" in function "__init__"
+    "object" is not assignable to "tuple[str, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3000:22 - error: Argument of type "object" cannot be assigned to parameter "kind" of type "Literal['independent_fact', 'correction', 'retraction', 'identity', 'action_state']" in function "__init__"
+    Type "object" is not assignable to type "Literal['independent_fact', 'correction', 'retraction', 'identity', 'action_state']"
+      "object" is not assignable to "Literal['independent_fact']"
+      "object" is not assignable to "Literal['correction']"
+      "object" is not assignable to "Literal['retraction']"
+      "object" is not assignable to "Literal['identity']"
+      "object" is not assignable to "Literal['action_state']" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3000:22 - error: Argument of type "object" cannot be assigned to parameter "source_dependency_kinds" of type "tuple[str, ...]" in function "__init__"
+    "object" is not assignable to "tuple[str, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3000:22 - error: Argument of type "object" cannot be assigned to parameter "atomic" of type "Literal[True]" in function "__init__"
+    "object" is not assignable to "Literal[True]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3000:22 - error: Argument of type "object" cannot be assigned to parameter "status" of type "Literal['complete', 'unresolved', 'failed']" in function "__init__"
+    Type "object" is not assignable to type "Literal['complete', 'unresolved', 'failed']"
+      "object" is not assignable to "Literal['complete']"
+      "object" is not assignable to "Literal['unresolved']"
+      "object" is not assignable to "Literal['failed']" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3000:22 - error: Argument of type "object" cannot be assigned to parameter "reason_codes" of type "tuple[str, ...]" in function "__init__"
+    "object" is not assignable to "tuple[str, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3109:15 - error: Argument of type "object" cannot be assigned to parameter "transaction_group_id" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3109:15 - error: Argument of type "object" cannot be assigned to parameter "source_dependency_group_ids" of type "tuple[str, ...]" in function "__init__"
+    "object" is not assignable to "tuple[str, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3109:15 - error: Argument of type "object" cannot be assigned to parameter "operation_ids" of type "tuple[str, ...]" in function "__init__"
+    "object" is not assignable to "tuple[str, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3109:15 - error: Argument of type "object" cannot be assigned to parameter "segment_governance_bindings" of type "tuple[SegmentGovernanceBinding, ...]" in function "__init__"
+    "object" is not assignable to "tuple[SegmentGovernanceBinding, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3109:15 - error: Argument of type "object" cannot be assigned to parameter "message_admission_identities" of type "tuple[MessageAdmissionIdentity, ...]" in function "__init__"
+    "object" is not assignable to "tuple[MessageAdmissionIdentity, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3109:15 - error: Argument of type "object" cannot be assigned to parameter "operation_carrier_memberships" of type "tuple[OperationCarrierMembership, ...]" in function "__init__"
+    "object" is not assignable to "tuple[OperationCarrierMembership, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3109:15 - error: Argument of type "object" cannot be assigned to parameter "governance_carrier_artifact" of type "GovernanceCarrierArtifact" in function "__init__"
+    "object" is not assignable to "GovernanceCarrierArtifact" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3109:15 - error: Argument of type "object" cannot be assigned to parameter "member_decisions" of type "tuple[tuple[str, Literal['accepted', 'rejected', 'unresolved']], ...]" in function "__init__"
+    "object" is not assignable to "tuple[tuple[str, Literal['accepted', 'rejected', 'unresolved']], ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3109:15 - error: Argument of type "object" cannot be assigned to parameter "graph_dependency_record_keys" of type "tuple[str, ...]" in function "__init__"
+    "object" is not assignable to "tuple[str, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3109:15 - error: Argument of type "object" cannot be assigned to parameter "dependency_kinds" of type "tuple[str, ...]" in function "__init__"
+    "object" is not assignable to "tuple[str, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3109:15 - error: Argument of type "object" cannot be assigned to parameter "atomic" of type "Literal[True]" in function "__init__"
+    "object" is not assignable to "Literal[True]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3109:15 - error: Argument of type "object" cannot be assigned to parameter "status" of type "Literal['commit_eligible', 'rejected', 'unresolved']" in function "__init__"
+    Type "object" is not assignable to type "Literal['commit_eligible', 'rejected', 'unresolved']"
+      "object" is not assignable to "Literal['commit_eligible']"
+      "object" is not assignable to "Literal['rejected']"
+      "object" is not assignable to "Literal['unresolved']" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3137:15 - error: Argument of type "object" cannot be assigned to parameter "transaction_group_id" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3137:15 - error: Argument of type "object" cannot be assigned to parameter "planning_snapshot_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3137:15 - error: Argument of type "object" cannot be assigned to parameter "prefix_state_digest_before" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3137:15 - error: Argument of type "object" cannot be assigned to parameter "planning_artifact" of type "PlanningArtifactReference" in function "__init__"
+    "object" is not assignable to "PlanningArtifactReference" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3137:15 - error: Argument of type "object" cannot be assigned to parameter "semantic_effect_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3137:15 - error: Argument of type "object" cannot be assigned to parameter "prefix_state_digest_after" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3137:15 - error: Argument of type "object" cannot be assigned to parameter "dependency_closure_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3175:15 - error: Argument of type "object" cannot be assigned to parameter "transaction_group_id" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3175:15 - error: Argument of type "object" cannot be assigned to parameter "preceding_group_ids" of type "tuple[str, ...]" in function "__init__"
+    "object" is not assignable to "tuple[str, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3175:15 - error: Argument of type "object" cannot be assigned to parameter "preceding_execution_digests" of type "tuple[str, ...]" in function "__init__"
+    "object" is not assignable to "tuple[str, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3175:15 - error: Argument of type "object" cannot be assigned to parameter "baseline_artifact" of type "PlanningArtifactReference" in function "__init__"
+    "object" is not assignable to "PlanningArtifactReference" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3175:15 - error: Argument of type "object" cannot be assigned to parameter "after_prefix_artifact" of type "PlanningArtifactReference" in function "__init__"
+    "object" is not assignable to "PlanningArtifactReference" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3175:15 - error: Argument of type "object" cannot be assigned to parameter "prefix_state_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3229:15 - error: Argument of type "object" cannot be assigned to parameter "plan_id" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3229:15 - error: Argument of type "object" cannot be assigned to parameter "source_id" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3229:15 - error: Argument of type "object" cannot be assigned to parameter "snapshot_token" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3229:15 - error: Argument of type "object" cannot be assigned to parameter "segment_governance_carriers" of type "SegmentGovernanceCarrierSet" in function "__init__"
+    "object" is not assignable to "SegmentGovernanceCarrierSet" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3229:15 - error: Argument of type "object" cannot be assigned to parameter "message_admission_carriers" of type "MessageAdmissionCarrierSet" in function "__init__"
+    "object" is not assignable to "MessageAdmissionCarrierSet" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3229:15 - error: Argument of type "object" cannot be assigned to parameter "governance_carrier_artifact" of type "GovernanceCarrierArtifact" in function "__init__"
+    "object" is not assignable to "GovernanceCarrierArtifact" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3229:15 - error: Argument of type "object" cannot be assigned to parameter "groups" of type "tuple[TransactionSemanticGroup, ...]" in function "__init__"
+    "object" is not assignable to "tuple[TransactionSemanticGroup, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3229:15 - error: Argument of type "object" cannot be assigned to parameter "planned_executions" of type "tuple[PlannedTransactionGroupExecution, ...]" in function "__init__"
+    "object" is not assignable to "tuple[PlannedTransactionGroupExecution, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3229:15 - error: Argument of type "object" cannot be assigned to parameter "independence_certificates" of type "tuple[GroupIndependenceCertificate, ...]" in function "__init__"
+    "object" is not assignable to "tuple[GroupIndependenceCertificate, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3229:15 - error: Argument of type "object" cannot be assigned to parameter "effective_read_set" of type "GraphReadSet" in function "__init__"
+    "object" is not assignable to "GraphReadSet" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3442:26 - error: Argument of type "tuple[object, ...]" cannot be assigned to parameter "dependencies" of type "tuple[IngestionStageDependencySpec, ...]" in function "__init__"
+    "tuple[object, ...]" is not assignable to "tuple[IngestionStageDependencySpec, ...]"
+      Tuple entry 1 is incorrect type
+        "object" is not assignable to "IngestionStageDependencySpec" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3443:75 - error: Argument of type "str" cannot be assigned to parameter "mode" of type "Literal['required', 'capability_conditional', 'diagnostic']" in function "__init__"
+    Type "str" is not assignable to type "Literal['required', 'capability_conditional', 'diagnostic']"
+      "str" is not assignable to type "Literal['required']"
+      "str" is not assignable to type "Literal['capability_conditional']"
+      "str" is not assignable to type "Literal['diagnostic']" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3584:15 - error: Argument of type "object" cannot be assigned to parameter "operation_id" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3584:15 - error: Argument of type "object" cannot be assigned to parameter "source_dependency_group_id" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3584:15 - error: Argument of type "object" cannot be assigned to parameter "segment_id" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3584:15 - error: Argument of type "object" cannot be assigned to parameter "segment_language_route_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3584:15 - error: Argument of type "object" cannot be assigned to parameter "proposal_capability_fingerprint" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3584:15 - error: Argument of type "object" cannot be assigned to parameter "capability_fingerprint" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3584:15 - error: Argument of type "object" cannot be assigned to parameter "capability_selection_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3584:15 - error: Argument of type "object" cannot be assigned to parameter "capability_registry_snapshot_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3584:15 - error: Argument of type "object" cannot be assigned to parameter "capability_status_revision" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3584:15 - error: Argument of type "object" cannot be assigned to parameter "capability_status_record_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3584:15 - error: Argument of type "object" cannot be assigned to parameter "monitoring_policy_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3584:15 - error: Argument of type "object" cannot be assigned to parameter "evidence_freshness_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3584:15 - error: Argument of type "object" cannot be assigned to parameter "nli_mode" of type "Literal['required', 'optional', 'shadow', 'disabled']" in function "__init__"
+    Type "object" is not assignable to type "Literal['required', 'optional', 'shadow', 'disabled']"
+      "object" is not assignable to "Literal['required']"
+      "object" is not assignable to "Literal['optional']"
+      "object" is not assignable to "Literal['shadow']"
+      "object" is not assignable to "Literal['disabled']" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3584:15 - error: Argument of type "object" cannot be assigned to parameter "verifier_manifest_digest" of type "str | None" in function "__init__"
+    Type "object" is not assignable to type "str | None"
+      "object" is not assignable to "str"
+      "object" is not assignable to "None" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3584:15 - error: Argument of type "object" cannot be assigned to parameter "temporal_policy_snapshot_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3584:15 - error: Argument of type "object" cannot be assigned to parameter "trust_policy_fingerprint" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3584:15 - error: Argument of type "object" cannot be assigned to parameter "trust_policy_snapshot_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3584:15 - error: Argument of type "object" cannot be assigned to parameter "arbitration_as_of" of type "datetime" in function "__init__"
+    "object" is not assignable to "datetime" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3676:14 - error: Set entry must be hashable
+    Type "IngestionStageInstanceRef" is not hashable (reportUnhashable)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3694:15 - error: Argument of type "object" cannot be assigned to parameter "attempt_id" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3694:15 - error: Argument of type "object" cannot be assigned to parameter "scope" of type "Literal['source_plan_attempt', 'transaction_group_attempt']" in function "__init__"
+    Type "object" is not assignable to type "Literal['source_plan_attempt', 'transaction_group_attempt']"
+      "object" is not assignable to "Literal['source_plan_attempt']"
+      "object" is not assignable to "Literal['transaction_group_attempt']" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3694:15 - error: Argument of type "object" cannot be assigned to parameter "trigger" of type "Literal['initial_plan', 'prior_group_commit', 'related_version_conflict']" in function "__init__"
+    Type "object" is not assignable to type "Literal['initial_plan', 'prior_group_commit', 'related_version_conflict']"
+      "object" is not assignable to "Literal['initial_plan']"
+      "object" is not assignable to "Literal['prior_group_commit']"
+      "object" is not assignable to "Literal['related_version_conflict']" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3694:15 - error: Argument of type "object" cannot be assigned to parameter "transaction_group_id" of type "str | None" in function "__init__"
+    Type "object" is not assignable to type "str | None"
+      "object" is not assignable to "str"
+      "object" is not assignable to "None" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3694:15 - error: Argument of type "object" cannot be assigned to parameter "segment_governance_bindings" of type "tuple[SegmentGovernanceBinding, ...]" in function "__init__"
+    "object" is not assignable to "tuple[SegmentGovernanceBinding, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3694:15 - error: Argument of type "object" cannot be assigned to parameter "message_admission_identities" of type "tuple[MessageAdmissionIdentity, ...]" in function "__init__"
+    "object" is not assignable to "tuple[MessageAdmissionIdentity, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3694:15 - error: Argument of type "object" cannot be assigned to parameter "governance_carrier_artifact" of type "GovernanceCarrierArtifact" in function "__init__"
+    "object" is not assignable to "GovernanceCarrierArtifact" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3694:15 - error: Argument of type "object" cannot be assigned to parameter "attempt_index" of type "int" in function "__init__"
+    "object" is not assignable to "int" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3694:15 - error: Argument of type "object" cannot be assigned to parameter "operation_lease_binding" of type "OperationLeaseBinding" in function "__init__"
+    "object" is not assignable to "OperationLeaseBinding" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3694:15 - error: Argument of type "object" cannot be assigned to parameter "supersedes_attempt_id" of type "str | None" in function "__init__"
+    Type "object" is not assignable to type "str | None"
+      "object" is not assignable to "str"
+      "object" is not assignable to "None" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3694:15 - error: Argument of type "object" cannot be assigned to parameter "base_snapshot_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3694:15 - error: Argument of type "object" cannot be assigned to parameter "transaction_snapshot_context_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3694:15 - error: Argument of type "object" cannot be assigned to parameter "source_alignment_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3694:15 - error: Argument of type "object" cannot be assigned to parameter "graph_proposal_alignment_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3694:15 - error: Argument of type "object" cannot be assigned to parameter "planned_identity_reservation_digests" of type "tuple[str, ...]" in function "__init__"
+    "object" is not assignable to "tuple[str, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3694:15 - error: Argument of type "object" cannot be assigned to parameter "planned_action_reservation_digests" of type "tuple[str, ...]" in function "__init__"
+    "object" is not assignable to "tuple[str, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3694:15 - error: Argument of type "object" cannot be assigned to parameter "reservation_use_authorization_digests" of type "tuple[str, ...]" in function "__init__"
+    "object" is not assignable to "tuple[str, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3694:15 - error: Argument of type "object" cannot be assigned to parameter "capability_selection_digests" of type "tuple[str, ...]" in function "__init__"
+    "object" is not assignable to "tuple[str, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3694:15 - error: Argument of type "object" cannot be assigned to parameter "capability_binding_digests" of type "tuple[str, ...]" in function "__init__"
+    "object" is not assignable to "tuple[str, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3694:15 - error: Argument of type "object" cannot be assigned to parameter "canonical_entity_decision_digests" of type "tuple[str, ...]" in function "__init__"
+    "object" is not assignable to "tuple[str, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3694:15 - error: Argument of type "object" cannot be assigned to parameter "reconciliation_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3694:15 - error: Argument of type "object" cannot be assigned to parameter "reference_closure_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3694:15 - error: Argument of type "object" cannot be assigned to parameter "transaction_group_plan" of type "TransactionSemanticGroupPlanReference" in function "__init__"
+    "object" is not assignable to "TransactionSemanticGroupPlanReference" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3694:15 - error: Argument of type "object" cannot be assigned to parameter "planning_authorizations" of type "tuple[GroupPlanningAuthorization, ...]" in function "__init__"
+    "object" is not assignable to "tuple[GroupPlanningAuthorization, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3694:15 - error: Argument of type "object" cannot be assigned to parameter "stage_outcomes" of type "tuple[IngestionStageOutcome, ...]" in function "__init__"
+    "object" is not assignable to "tuple[IngestionStageOutcome, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3694:15 - error: Argument of type "object" cannot be assigned to parameter "status" of type "Literal['eligible', 'superseded', 'rejected', 'unresolved', 'failed']" in function "__init__"
+    Type "object" is not assignable to type "Literal['eligible', 'superseded', 'rejected', 'unresolved', 'failed']"
+      "object" is not assignable to "Literal['eligible']"
+      "object" is not assignable to "Literal['superseded']"
+      "object" is not assignable to "Literal['rejected']"
+      "object" is not assignable to "Literal['unresolved']"
+      "object" is not assignable to "Literal['failed']" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3816:17 - error: Set entry must be hashable
+    Type "IngestionStageInstanceRef" is not hashable (reportUnhashable)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3819:13 - error: Set entry must be hashable
+    Type "IngestionStageInstanceRef" is not hashable (reportUnhashable)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3824:13 - error: Set entry must be hashable
+    Type "IngestionStageInstanceRef" is not hashable (reportUnhashable)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3835:13 - error: Set entry must be hashable
+    Type "IngestionStageInstanceRef" is not hashable (reportUnhashable)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3971:15 - error: Argument of type "object" cannot be assigned to parameter "pre_execution_manifests" of type "BootstrapGraphPreExecutionManifestIdentityClosureV3" in function "__init__"
+    "object" is not assignable to "BootstrapGraphPreExecutionManifestIdentityClosureV3" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3971:15 - error: Argument of type "object" cannot be assigned to parameter "pre_execution_manifest_identity_closure_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3971:15 - error: Argument of type "object" cannot be assigned to parameter "execution_graph_fingerprint" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3971:15 - error: Argument of type "object" cannot be assigned to parameter "segment_language_routes" of type "SegmentLanguageRouteSet" in function "__init__"
+    "object" is not assignable to "SegmentLanguageRouteSet" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3971:15 - error: Argument of type "object" cannot be assigned to parameter "segment_governance_carriers" of type "SegmentGovernanceCarrierSet" in function "__init__"
+    "object" is not assignable to "SegmentGovernanceCarrierSet" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3971:15 - error: Argument of type "object" cannot be assigned to parameter "message_admission_carriers" of type "MessageAdmissionCarrierSet" in function "__init__"
+    "object" is not assignable to "MessageAdmissionCarrierSet" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3971:15 - error: Argument of type "object" cannot be assigned to parameter "governance_carrier_artifact" of type "GovernanceCarrierArtifact" in function "__init__"
+    "object" is not assignable to "GovernanceCarrierArtifact" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3971:15 - error: Argument of type "object" cannot be assigned to parameter "capability_bindings" of type "tuple[OperationCapabilityExecutionBinding, ...]" in function "__init__"
+    "object" is not assignable to "tuple[OperationCapabilityExecutionBinding, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3971:15 - error: Argument of type "object" cannot be assigned to parameter "source_outcomes" of type "tuple[IngestionStageOutcome, ...]" in function "__init__"
+    "object" is not assignable to "tuple[IngestionStageOutcome, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3971:15 - error: Argument of type "object" cannot be assigned to parameter "graph_validation_attempts" of type "tuple[GraphDependentValidationAttempt, ...]" in function "__init__"
+    "object" is not assignable to "tuple[GraphDependentValidationAttempt, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3971:15 - error: Argument of type "object" cannot be assigned to parameter "transaction_group_outcomes" of type "tuple[tuple[str, tuple[IngestionStageOutcome, ...]], ...]" in function "__init__"
+    "object" is not assignable to "tuple[tuple[str, tuple[IngestionStageOutcome, ...]], ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3971:15 - error: Argument of type "object" cannot be assigned to parameter "causal_blockers" of type "tuple[IngestionStageInstanceRef, ...]" in function "__init__"
+    "object" is not assignable to "tuple[IngestionStageInstanceRef, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:3971:15 - error: Argument of type "object" cannot be assigned to parameter "terminal_before_planning_proof_digests" of type "tuple[str, ...]" in function "__init__"
+    "object" is not assignable to "tuple[str, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:4051:15 - error: Argument of type "object" cannot be assigned to parameter "lineage_id" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:4051:15 - error: Argument of type "object" cannot be assigned to parameter "repository_id" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:4051:15 - error: Argument of type "object" cannot be assigned to parameter "source_id" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:4051:15 - error: Argument of type "object" cannot be assigned to parameter "source_digest" of type "str" in function "__init__"
+    "object" is not assignable to "str" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:4051:15 - error: Argument of type "object" cannot be assigned to parameter "segment_governance_carriers" of type "SegmentGovernanceCarrierSet" in function "__init__"
+    "object" is not assignable to "SegmentGovernanceCarrierSet" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:4051:15 - error: Argument of type "object" cannot be assigned to parameter "message_admission_carriers" of type "MessageAdmissionCarrierSet" in function "__init__"
+    "object" is not assignable to "MessageAdmissionCarrierSet" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:4051:15 - error: Argument of type "object" cannot be assigned to parameter "governance_carrier_artifact" of type "GovernanceCarrierArtifact" in function "__init__"
+    "object" is not assignable to "GovernanceCarrierArtifact" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:4051:15 - error: Argument of type "object" cannot be assigned to parameter "required_outcome_scopes" of type "RequiredOutcomeScopeSet" in function "__init__"
+    "object" is not assignable to "RequiredOutcomeScopeSet" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:4051:15 - error: Argument of type "object" cannot be assigned to parameter "initial_group_plan" of type "TransactionSemanticGroupPlanReference" in function "__init__"
+    "object" is not assignable to "TransactionSemanticGroupPlanReference" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:4051:15 - error: Argument of type "object" cannot be assigned to parameter "entries" of type "tuple[TransactionGroupPlanLineageEntry, ...]" in function "__init__"
+    "object" is not assignable to "tuple[TransactionGroupPlanLineageEntry, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:4051:15 - error: Argument of type "object" cannot be assigned to parameter "final_entry_digests" of type "tuple[str, ...]" in function "__init__"
+    "object" is not assignable to "tuple[str, ...]" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:4779:18 - error: Cannot access attribute "artifact" for class "_TextSpan"
+    Attribute "artifact" is unknown (reportAttributeAccessIssue)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:4779:36 - error: Cannot access attribute "artifact" for class "_TextSpan"
+    Attribute "artifact" is unknown (reportAttributeAccessIssue)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:5210:40 - error: Argument of type "LanguageRoute" cannot be assigned to parameter "route" of type "SegmentLanguageRoute" in function "_validate_route_span"
+    Type "LanguageRoute" is not assignable to type "SegmentLanguageRoute"
+      "BootstrapDeclaredSegmentLanguageRoute" is not assignable to "SegmentLanguageRoute" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:6441:22 - error: Cannot access attribute "scope_policy" for class "ParserOperationPolicyAuthority"
+    Attribute "scope_policy" is unknown (reportAttributeAccessIssue)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:6441:69 - error: Cannot access attribute "construction_families" for class "ScopeOperationPolicyAuthority"
+    Attribute "construction_families" is unknown (reportAttributeAccessIssue)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:6444:50 - error: Cannot access attribute "scope_policy" for class "ParserOperationPolicyAuthority"
+    Attribute "scope_policy" is unknown (reportAttributeAccessIssue)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:6444:94 - error: Cannot access attribute "predicate_policy_bindings" for class "ScopeOperationPolicyAuthority"
+    Attribute "predicate_policy_bindings" is unknown (reportAttributeAccessIssue)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:7111:42 - error: Argument of type "tuple[LanguageRoute, ...]" cannot be assigned to parameter "routes" of type "tuple[SegmentLanguageRoute, ...]" in function "_validate_selected_lane_outcomes"
+    "tuple[LanguageRoute, ...]" is not assignable to "tuple[SegmentLanguageRoute, ...]"
+      Tuple entry 1 is incorrect type
+        Type "LanguageRoute" is not assignable to type "SegmentLanguageRoute"
+          "BootstrapDeclaredSegmentLanguageRoute" is not assignable to "SegmentLanguageRoute" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:7125:65 - error: Argument of type "LanguageRoute" cannot be assigned to parameter "route" of type "SegmentLanguageRoute" in function "_validate_route_span"
+    Type "LanguageRoute" is not assignable to type "SegmentLanguageRoute"
+      "BootstrapDeclaredSegmentLanguageRoute" is not assignable to "SegmentLanguageRoute" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:7127:44 - error: Argument of type "LanguageRoute" cannot be assigned to parameter "route" of type "SegmentLanguageRoute" in function "_validate_route_span"
+    Type "LanguageRoute" is not assignable to type "SegmentLanguageRoute"
+      "BootstrapDeclaredSegmentLanguageRoute" is not assignable to "SegmentLanguageRoute" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:7220:42 - error: Argument of type "tuple[LanguageRoute, ...]" cannot be assigned to parameter "routes" of type "tuple[SegmentLanguageRoute, ...]" in function "_validate_selected_lane_outcomes"
+    "tuple[LanguageRoute, ...]" is not assignable to "tuple[SegmentLanguageRoute, ...]"
+      Tuple entry 1 is incorrect type
+        Type "LanguageRoute" is not assignable to type "SegmentLanguageRoute"
+          "BootstrapDeclaredSegmentLanguageRoute" is not assignable to "SegmentLanguageRoute" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:7233:57 - error: Argument of type "LanguageRoute" cannot be assigned to parameter "route" of type "SegmentLanguageRoute" in function "_validate_route_span"
+    Type "LanguageRoute" is not assignable to type "SegmentLanguageRoute"
+      "BootstrapDeclaredSegmentLanguageRoute" is not assignable to "SegmentLanguageRoute" (reportArgumentType)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:7245:44 - error: Cannot access attribute "span_digest" for class "SourceSpanReference"
+    Attribute "span_digest" is unknown (reportAttributeAccessIssue)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:7273:21 - error: Set entry must be hashable
+    Type "SourceSpanReference" is not hashable (reportUnhashable)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:8221:45 - error: "item_digest" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:12336:47 - error: Cannot access attribute "predecessor_attempt_digest" for class "BootstrapInitialAttemptAuthorityV3"
+    Attribute "predecessor_attempt_digest" is unknown (reportAttributeAccessIssue)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/contracts.py:13136:11 - error: Argument of type "object" cannot be assigned to parameter "_fields_set" of type "set[str] | None" in function "model_construct"
+    Type "object" is not assignable to type "set[str] | None"
+      "object" is not assignable to "set[str]"
+      "object" is not assignable to "None" (reportArgumentType)
+/private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/source_normalization_stage.py
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/source_normalization_stage.py:114:53 - error: Cannot access attribute "predicate_id" for class "object"
+    Attribute "predicate_id" is unknown (reportAttributeAccessIssue)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/source_normalization_stage.py:126:68 - error: Cannot access attribute "predicate_id" for class "object"
+    Attribute "predicate_id" is unknown (reportAttributeAccessIssue)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/source_normalization_stage.py:146:29 - error: Cannot access attribute "subject_mention_digest" for class "object"
+    Attribute "subject_mention_digest" is unknown (reportAttributeAccessIssue)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/source_normalization_stage.py:147:13 - error: Cannot access attribute "object" for class "object"
+    Attribute "object" is unknown (reportAttributeAccessIssue)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/source_normalization_stage.py:148:34 - error: Cannot access attribute "object" for class "object"
+    Attribute "object" is unknown (reportAttributeAccessIssue)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/source_normalization_stage.py:155:51 - error: Cannot access attribute "assertion" for class "object"
+    Attribute "assertion" is unknown (reportAttributeAccessIssue)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/source_normalization_stage.py:155:67 - error: Cannot access attribute "predicate_anchor" for class "object"
+    Attribute "predicate_anchor" is unknown (reportAttributeAccessIssue)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/source_normalization_stage.py:155:91 - error: Cannot access attribute "temporal_qualifiers" for class "object"
+    Attribute "temporal_qualifiers" is unknown (reportAttributeAccessIssue)
+  /private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/memorii-type-baseline-lnuw3nd0/memorii/memorii/core/semantic_ingestion/source_normalization_stage.py:328:30 - error: Cannot access attribute "model_fields" for class "type[object]"
+    Attribute "model_fields" is unknown (reportAttributeAccessIssue)
+280 errors, 0 warnings, 0 informations

@@ -1,0 +1,36 @@
+{
+  "pins": {
+    "bootstrap": {
+      "path": "/private/tmp/memorii-activation-prepared-final/observation_activation_bootstrap.py",
+      "sha256": "abc6c5397078cf5c907a3c7b5002f6fbb1a19f1a2e2d4b663cb90b3dc8bf31f2"
+    },
+    "configuration": {
+      "path": "/private/tmp/memorii-activation-prepared-final/deployment_configuration.py",
+      "sha256": "42c7d5adda888a54f82fd1697cd5f9b24d360e96ff0af6dcfd0728e404e08ae5"
+    },
+    "host": {
+      "path": "/private/tmp/memorii-activation-proof-frozen/host.py",
+      "sha256": "091cfe52f13cfbf15ff7b2ff12fd9b7e89f2f2247e37098b5d71b4549a8ac10b"
+    }
+  },
+  "command": [
+    "/Users/nandaraghunathan/Code/Memorii/Memorii/.venv/bin/python",
+    "-I",
+    "-S",
+    "-X",
+    "pycache_prefix=/private/tmp/memorii-activation-proof-frozen/cache",
+    "/Users/nandaraghunathan/Code/Memorii/Memorii/tools/observation_activation_launch.py",
+    "--bootstrap",
+    "/private/tmp/memorii-activation-prepared-final/observation_activation_bootstrap.py",
+    "--bootstrap-sha256",
+    "abc6c5397078cf5c907a3c7b5002f6fbb1a19f1a2e2d4b663cb90b3dc8bf31f2",
+    "--configuration",
+    "/private/tmp/memorii-activation-prepared-final/deployment_configuration.py",
+    "--configuration-sha256",
+    "42c7d5adda888a54f82fd1697cd5f9b24d360e96ff0af6dcfd0728e404e08ae5",
+    "--host",
+    "/private/tmp/memorii-activation-proof-frozen/host.py",
+    "--host-sha256",
+    "091cfe52f13cfbf15ff7b2ff12fd9b7e89f2f2247e37098b5d71b4549a8ac10b"
+  ]
+}

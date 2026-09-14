@@ -1,0 +1,49 @@
+"""Public observation fails closed when protected host composition is absent."""
+
+from datetime import UTC, datetime
+
+import pytest
+from memorii.core.memory_evolution.graph_observation_contracts import GraphObservationCohortSelector
+from memorii.core.memory_evolution.graph_observation_public_contracts import (
+    GraphObservationRequest,
+    IngestionTimeAttestationRequest,
+)
+from memorii.core.memory_evolution.ingestion_contracts import AuthenticatedHostIngress
+from memorii.core.memory_evolution.models import MemoryScope
+from memorii.core.provider.factory import build_provider_memory_service_from_env
+
+
+@pytest.mark.parametrize("cursor", (None, "untrusted-token"))
+def test_unconfigured_public_observation_never_reads_seeds(monkeypatch, cursor):
+    service = build_provider_memory_service_from_env()
+
+    def unexpected_read():
+        raise AssertionError("unconfigured observation read the memory plane")
+
+    monkeypatch.setattr(service._memory_plane, "read_write_snapshot", unexpected_read)
+    now = datetime(2026, 9, 8, tzinfo=UTC)
+    ingress = AuthenticatedHostIngress(
+        provider_identity="host", principal_handle=object(), session_handle=object(), received_at=now,
+    )
+    selector = GraphObservationCohortSelector(
+        seed_source_ids=("unknown",), seed_operation_ids=(), include_referenced_boundary_entities=True,
+    )
+    graph_request = GraphObservationRequest(
+        scope_constraint=MemoryScope(user_id="alice"), cohort_selector=selector,
+        expected_graph_revision="graph", expected_observation_revision="observation",
+        total_page_size=1, cursor=cursor, view="current", valid_at=None, system_as_of=now,
+    )
+    time_request = IngestionTimeAttestationRequest(
+        scope_constraint=graph_request.scope_constraint, cohort_selector=selector,
+        expected_graph_revision="graph", expected_observation_revision="observation",
+        total_page_size=1, cursor=cursor,
+    )
+    responses = (
+        service.observe_graph(host_ingress=ingress, request=graph_request),
+        service.observe_ingestion_time_attestations(host_ingress=ingress, request=time_request),
+    )
+    for response in responses:
+        assert response.kind == "failure"
+        assert response.reason == ("denied" if cursor is None else "revoked_access")
+        assert set(response.model_dump()) == {"kind", "reason", "request_correlation_token"}
+    assert responses[0].request_correlation_token != responses[1].request_correlation_token

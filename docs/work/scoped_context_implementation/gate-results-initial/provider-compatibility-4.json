@@ -1,0 +1,14 @@
+{
+  "name": "provider-compatibility-4",
+  "argv": [
+    "bash",
+    "-c",
+    "pytest -W error tests/unit/core/semantic_ingestion/test_provider_compatibility.py tests/integration/semantic_ingestion/test_provider_compatibility_recapture.py -p no:cacheprovider"
+  ],
+  "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii",
+  "exit_status": 0,
+  "elapsed_seconds": 24.65,
+  "log_sha256": "a785b4542d0f82fe380bb5dee58804e9e4f9caf263ea66773804524f2cc71e5b",
+  "source_revision_label": "b4f6c24b091a28bd3d1f65102c742478fc7276b3",
+  "evidence": "local working-tree execution only"
+}

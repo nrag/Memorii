@@ -1,0 +1,100 @@
+ADMISSION DIFFERENCE semantic_ingestion:admission:b4d2e160e3ca03cd220c129ef6950f31a27da38d7ad2d971f27bc819670a68b1:outcome
+record.content.verification_digest '4757abb519bf3675b57f3ee572d8a68d2d7c0a73b573c3a5bf3c32f392d8dba1' '45b9f165ee8450f394960c1bed3dccb5755d53264c9f64ce87aea9281c0c544f'
+F
+=================================== FAILURES ===================================
+_ test_public_root_recovers_captured_v1_terminal_without_executor_or_audit_write _
+
+tmp_path = PosixPath('/private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/pytest-of-nandaraghunathan/pytest-999/test_public_root_recovers_capt0')
+
+    def test_public_root_recovers_captured_v1_terminal_without_executor_or_audit_write(
+        tmp_path: Path,
+    ) -> None:
+        plane = _rehydrated_historical_plane(tmp_path)
+        proposal = ProviderSemanticProposal(
+            mentions=(
+                ProviderMention(
+                    local_id="atlas", mention_quote="Atlas",
+                    mention_context_quote="Atlas owner is Bob.",
+                ),
+                ProviderMention(
+                    local_id="bob", mention_quote="Bob",
+                    mention_context_quote="Atlas owner is Bob.",
+                ),
+            ),
+            facts=(
+                ProviderFact(
+                    local_id="owner", predicate_id="owner_is",
+                    subject_entity_ref="atlas", object=ProviderEntityObject(entity_ref="bob"),
+                    assertion_quote="Atlas owner is Bob.", predicate_anchor_quote="owner",
+                    polarity="positive", commitment="asserted",
+                ),
+            ),
+            abstained=False,
+        )
+        normalization, lane_calls = _v3_normalization_host_builder(proposal=proposal)
+        graph_calls: list[str] = []
+        service = provider_service(
+            memory_plane=plane,
+            now_provider=lambda: TEST_NOW,
+            host_bootstrap_capability=_built_in_local_capability(),
+            host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+            source_normalization_host_bundle_builder=normalization,
+            bootstrap_graph_host_bundle_builder=BootstrapGraphHostBundleBuilder(
+                authority_provider=DeterministicBootstrapGraphAuthorityProviderV3(
+                    successful_calls=graph_calls,
+                ),
+            ),
+        )
+        before = plane.read_snapshot()
+    
+>       result = service.sync_event(
+            operation=ProviderOperation.CHAT_USER_TURN,
+            content="Atlas owner is Bob.", operation_id="graph-root-direct",
+            task_id="task:one", user_id="user:alice",
+            authenticated_host_ingress=_host_ingress(),
+        )
+
+memorii/tests/unit/core/semantic_ingestion/test_historical_terminal_persisted_reload.py:135: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+memorii/memorii/core/provider/service.py:714: in sync_event
+    return self._ingest_event(
+memorii/memorii/core/provider/service.py:765: in _ingest_event
+    result, _, evolution_result = self._provider_ingestion.ingest(
+memorii/memorii/core/provider/ingestion.py:352: in ingest
+    return self._ingest_semantic_source(
+memorii/memorii/core/provider/ingestion.py:515: in _ingest_semantic_source
+    prepared_admission = self._admit_with_writer_retry(prepare)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+memorii/memorii/core/provider/ingestion.py:851: in _admit_with_writer_retry
+    return self._atomic_store.publish_admitted_source(
+memorii/memorii/core/memory_evolution/atomic_store.py:1802: in publish_admitted_source
+    return self._publish_admitted_source_linearized(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <memorii.core.memory_evolution.atomic_store.SemanticIngestionAtomicStore object at 0x10e44eed0>
+
+    def _publish_admitted_source_linearized(
+        self,
+        *,
+        prepared: PreparedSourceAdmission,
+        writer_binding: SemanticWriterCommitBinding,
+    ) -> SourceAdmissionAccepted:
+        admission = prepared.accepted
+        existing_records = tuple(
+            self._memory_plane.get_record(record.memory_id)
+            for record in prepared.records
+        )
+        if any(record is not None for record in existing_records):
+            if not all(
+                _same_admission_record(existing, expected)
+                for existing, expected in zip(existing_records, prepared.records, strict=True)
+            ):
+>               raise PreplanningStoreError(
+                    "atomic admission evidence is partial or mismatched"
+                )
+E               memorii.core.memory_evolution.atomic_store.PreplanningStoreError: atomic admission evidence is partial or mismatched
+
+memorii/memorii/core/memory_evolution/atomic_store.py:1828: PreplanningStoreError
+=========================== short test summary info ============================
+FAILED memorii/tests/unit/core/semantic_ingestion/test_historical_terminal_persisted_reload.py::test_public_root_recovers_captured_v1_terminal_without_executor_or_audit_write
+1 failed in 11.60s

@@ -1,0 +1,20 @@
+{
+  "files": {
+    ".github/workflows/pr-gates.yml": "b8478414585bbe3113be883a550051526e866d2859e5d97ba28b21dcdc12dd19",
+    "docs/design/semantic_ingestion_activation_target.md": "ad69f8ed9f115a4493cce99614b77bac37e6eb10c246c0601c360750ef7f0912",
+    "memorii/memorii/core/memory_evolution/observation_activation_configuration.py": "2aec6f2cc4263281ee90b8f441810b6992440fca167f85e13db0fe1f861ed5f9",
+    "memorii/memorii/core/memory_evolution/observation_activation_package.py": "0710fa58dac0f39842c2dc072d2a2cb2b2a5fe887f626d9191d56c6bcadb9f0e",
+    "memorii/memorii/core/memory_evolution/observation_activation_preparation.py": "edfa19c513c1aee1c24f94cf5354140df490f115f770741588a2af89ee016b4e",
+    "memorii/memorii/core/memory_evolution/observation_activation_target.py": "8d8c8158f0143b0f2dfca430aed3ee44f7859576752954ace00c2fe63790024d",
+    "memorii/memorii/tools/semantic_ingestion_activation_target_release.py": "4fccc9c54cc875b25cd236afe586e5e3c3f258751d4d50b68fc6bae5cb5edce7",
+    "memorii/memorii/tools/semantic_ingestion_offline_signing.py": "23c2e68abc715f010c5955ed5c6cecb1c667d9e27fb725fc7fccb2f2bafbd2c2",
+    "memorii/tests/integration/test_observation_activation_bootstrap.py": "725e3d73a64eac6cc70cfb25d3301e53d4a04ba5f02fede0f79eab3b308186c5",
+    "memorii/tests/integration/test_observation_activation_release_tools.py": "f7f2f540bf130cea2b147c454644409548fad6638aff338fbb2c19bd2ae4cd20",
+    "memorii/tests/unit/core/memory_evolution/test_observation_activation_preparation.py": "bc456ce893ea5adf0c903c012773795930df6e02e832eeef091a915dedf70f2b",
+    "tools/observation_activation_bootstrap.py": "abc6c5397078cf5c907a3c7b5002f6fbb1a19f1a2e2d4b663cb90b3dc8bf31f2",
+    "tools/observation_activation_launch.py": "00015559da84ec93316d345e055dd00cc066f17ae3221c978c1240a5b828cac5",
+    "tools/observation_activation_prepare.py": "2740b49e95df8e4a1bd7554fee5e1efb4e162f35cb8e721809a6f7cf35300655"
+  },
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "scope": "offline deployment and target preparation only; no CAS, M5 or whole branch approval"
+}

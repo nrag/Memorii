@@ -1,0 +1,14 @@
+{
+  "name": "benchmark-artifact-3",
+  "argv": [
+    "bash",
+    "-c",
+    "if [ \"$BENCHMARK_SUITE\" = memory_evolution_runtime_v1 ]; then\n  runner=(python -m tests.support.run_memory_evolution_runtime_benchmark)\nelse\n  runner=(python -m memorii.tools.run_eval)\nfi\n\"${runner[@]}\" \\\n  --suite \"$BENCHMARK_SUITE\" \\\n  --mode \"$BENCHMARK_MODE\" \\\n  --dry-run \\\n  --fail-on-benchmark-failure \\\n  --storage-root /private/tmp/scoped-context-gates/artifact-3 \\\n  --sim-profile \"$BENCHMARK_PROFILE\" \\\n  --sim-scenario-count \"$BENCHMARK_COUNT\" \\\n  --sim-noise-rate 0.35 \\\n  --seed 7 \\\n  $BENCHMARK_EXTRA\npython -m memorii.tools.validate_benchmark_artifacts \\\n  --root /private/tmp/scoped-context-gates/artifact-3/benchmark_runs \\\n  --suite \"$BENCHMARK_SUITE\"\n"
+  ],
+  "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii",
+  "exit_status": 0,
+  "elapsed_seconds": 19.618,
+  "log_sha256": "79feed0d595b803a5cee53fc85832ffe97c8149f1c4aaa96f3af3d5525b09f70",
+  "source_revision_label": "b4f6c24b091a28bd3d1f65102c742478fc7276b3",
+  "evidence": "local working-tree execution only"
+}

@@ -1,0 +1,22 @@
+{
+  "scope": "preimplementation matrix",
+  "findings": [
+    {
+      "priority": "Not applicable",
+      "disposition": "changes_required",
+      "type": "verification",
+      "finding": "Exact cap must accept; cap+1 rejects",
+      "classification": "confirmed",
+      "correction": "matrix positive boundary clarified; zero byte explicit"
+    },
+    {
+      "priority": "Not applicable",
+      "disposition": "changes_required",
+      "type": "verification",
+      "finding": "No explicit trigger positive configuration proof absent",
+      "classification": "confirmed",
+      "correction": "added initialized JSONL snapshot unchanged bootstrap/composition case"
+    }
+  ],
+  "implementation_evidence": "none yet"
+}

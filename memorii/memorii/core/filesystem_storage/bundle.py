@@ -33,7 +33,9 @@ from memorii.core.memory_evolution.conflict_integrity import (
 from memorii.core.memory_plane import JsonlMemoryPlaneStore, MemoryPlaneService
 from memorii.core.provider.factory import build_provider_memory_service_from_env
 from memorii.core.provider.service import ProviderMemoryService
+from memorii.core.scoped_context.authority import ScopedHostReadAuthority
 from memorii.core.semantic_ingestion.production_authority import (
+    VerifiedCapabilityMonitoringAuthority,
     VerifiedProductionHostAuthority,
 )
 from memorii.core.semantic_ingestion.source_normalization_host import SourceNormalizationHostBundleBuilder
@@ -101,6 +103,11 @@ class FilesystemStorageBundle:
         | None = None,
         conflict_attention_composite: bool = False,
         now_provider: Callable[[], datetime] | None = None,
+        scoped_read_authority: ScopedHostReadAuthority | None = None,
+        verified_capability_monitoring_authorities: tuple[
+            VerifiedCapabilityMonitoringAuthority, ...
+        ] = (),
+        installed_capability_monitoring_configuration: object | None = None,
     ) -> ProviderMemoryService:
         return build_provider_memory_service_from_env(
             memory_plane=memory_plane or self.build_memory_plane_service(),
@@ -121,6 +128,9 @@ class FilesystemStorageBundle:
             conflict_attention_observability_sink=conflict_attention_observability_sink,
             conflict_attention_composite=conflict_attention_composite,
             now_provider=now_provider,
+            scoped_read_authority=scoped_read_authority,
+            verified_capability_monitoring_authorities=verified_capability_monitoring_authorities,
+            installed_capability_monitoring_configuration=installed_capability_monitoring_configuration,
         )
 
     def build_conflict_attention_repository(
@@ -152,6 +162,11 @@ def build_filesystem_provider(
     | None = None,
     conflict_attention_composite: bool = False,
     now_provider: Callable[[], datetime] | None = None,
+    scoped_read_authority: ScopedHostReadAuthority | None = None,
+    verified_capability_monitoring_authorities: tuple[
+        VerifiedCapabilityMonitoringAuthority, ...
+    ] = (),
+    installed_capability_monitoring_configuration: object | None = None,
 ) -> ProviderMemoryService:
     return FilesystemStorageBundle.from_root(
         storage_root=storage_root, policy=policy
@@ -167,4 +182,7 @@ def build_filesystem_provider(
         conflict_attention_observability_sink=conflict_attention_observability_sink,
         conflict_attention_composite=conflict_attention_composite,
         now_provider=now_provider,
+        scoped_read_authority=scoped_read_authority,
+        verified_capability_monitoring_authorities=verified_capability_monitoring_authorities,
+        installed_capability_monitoring_configuration=installed_capability_monitoring_configuration,
     )

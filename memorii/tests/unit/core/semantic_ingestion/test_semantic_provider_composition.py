@@ -1,3 +1,4 @@
+import json
 import re
 import sys as _sys
 from concurrent.futures import ThreadPoolExecutor
@@ -6,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
 from threading import Barrier
+from typing import cast
 from unittest.mock import patch
 
 # The sibling support module resolves as a top-level import under pytest's
@@ -60,6 +62,43 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     DeliveryPrincipalBinding,
     RequiredOutcomeScopeSet,
     encode_typed_value,
+)
+from memorii.core.memory_evolution.typed_value_declarations import (
+    ProtectedDeclarationParseLimits,
+)
+from memorii.core.memory_evolution.typed_value_decoder_sources import (
+    DecoderSourceManifest,
+    DecoderSourceSelection,
+    DecoderSourceSnapshot,
+    ProtectedDecoderSourceManifestLimits,
+    VerifiedDecoderSourceManifest,
+)
+from memorii.core.memory_evolution.typed_value_publication import (
+    DecoderSourceSnapshotPin,
+    ProtectedTypedValuePublicationLimits,
+    ProtectedTypedValuePublicationPins,
+    PublicationDecoderSourceSnapshot,
+    TypedValuePublicationManifest,
+    VerifiedTypedValuePublication,
+    parse_typed_value_publication_manifest,
+)
+from memorii.core.memory_evolution.typed_value_publication_authoring import (
+    author_typed_value_publication_package,
+)
+from memorii.core.memory_evolution.typed_value_registry_compilation import (
+    CompiledPolicyDigests,
+    CompiledProfile,
+    CompiledRegistryEntry,
+    CompiledTypedValueRegistry,
+)
+from memorii.core.memory_evolution.typed_value_registry_configuration import (
+    ProtectedTypedValueRegistryConfiguration,
+    ProtectedTypedValueRegistryPublicationConfiguration,
+    TypedValueRegistryConfigurationError,
+    verify_configured_typed_value_registry_history,
+)
+from memorii.core.memory_evolution.typed_value_registry_history import (
+    ProtectedTypedValueRegistryHistory,
 )
 from memorii.core.memory_evolution.writer_admission import (
     SemanticWriterAdmissionError,
@@ -977,6 +1016,221 @@ def _built_in_local_capability(
         ),
         source_normalization_host_bundle_builder=normalization_builder,
     )
+
+
+def _configured_registry_history() -> ProtectedTypedValueRegistryHistory:
+    profile = CompiledProfile(
+        "semantic_ingestion_typed_value", "3", "operational-3", "a" * 64, "b" * 64
+    )
+    entry = CompiledRegistryEntry(
+        profile, "MemoryScope", "1", "c" * 64,
+        CompiledPolicyDigests("d" * 64, "e" * 64, "f" * 64, "0" * 64),
+        "1" * 64, "memorii.semantic_ingestion.observation.MemoryScope.v1",
+        "2" * 64, "3" * 64, "4" * 64, "active",
+    )
+    registry = CompiledTypedValueRegistry(profile, (entry,), "5" * 64, ())
+    snapshot = DecoderSourceSnapshot(entry.decoder_id, entry.implementation_source_digest, ())
+    sources = VerifiedDecoderSourceManifest(
+        DecoderSourceManifest(b"{}", "6" * 64, profile.profile_id, profile.profile_version, ()),
+        (), (snapshot,),
+    )
+    manifest = TypedValuePublicationManifest(
+        b"{}", "7" * 64, profile.profile_id, profile.profile_version, (), "6" * 64,
+        (PublicationDecoderSourceSnapshot(entry.decoder_id, snapshot.source_snapshot_digest),), registry.registry_digest,
+    )
+    pins = ProtectedTypedValuePublicationPins(
+        manifest.publication_digest, registry.registry_digest,
+        (DecoderSourceSnapshotPin(entry.decoder_id, snapshot.source_snapshot_digest),), "8" * 64,
+    )
+    return ProtectedTypedValueRegistryHistory((VerifiedTypedValuePublication(registry, sources, manifest, pins, "8" * 64),))
+
+
+def _small_real_configured_registry_material(tmp_path: Path) -> ProtectedTypedValueRegistryConfiguration:
+    def raw(value: object) -> bytes:
+        return json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+
+    grammar = {
+        "role": "grammar", "profile_id": "semantic_ingestion_typed_value", "profile_version": "3", "grammar_revision": "operational-3",
+        "json": {"canonical": "RFC8785", "terminal_lf": False, "utf8": "strict"},
+        "envelope": {"binding_fields": ["profile_id", "profile_version", "profile_digest", "schema_id", "schema_version", "binding_digest"], "fields": ["binding", "canonical_value_bytes", "canonical_value_digest", "artifact_digest"], "permitted_value_kinds": ["bytes", "integer", "map", "scalar"]},
+        "tags": {"bytes": "rfc4648_standard_padded", "datetime": "utc_six_fractional_digits", "duration_microseconds": "signed_i64", "enum": "registered_qualified_member", "frozenset": "canonical_member_byte_order", "integer": "canonical_decimal_string", "list": "declared_order", "map": "encoded_json_string_key_order", "set": "canonical_member_byte_order", "tuple": "declared_order"},
+        "type_rules": {"bool_as_integer": False, "defaults_before_verification": False, "float_decimal": False, "map_keys": "string_only", "model_fields": "registered_exact", "optional": "registered_policy", "union": "one_registered_discriminator"},
+    }
+    common = {"schema_id": "MemoryScope", "schema_version": "1"}
+    fields = [{"name": name, "type": {"kind": "string", "lexical_rule": "unicode_scalar"}, "integrity_role": "ordinary"} for name in ("session_id", "task_id", "user_id")]
+    roles = (
+        raw(grammar), raw({"role": "schema", **common, "root_kind": "model", "fields": fields}),
+        raw({"role": "enum", **common, "enums": []}), raw({"role": "optional", **common, "fields": [{"field_name": name, "policy": "required_nullable"} for name in ("session_id", "task_id", "user_id")]}),
+        raw({"role": "numeric", **common, "fields": []}), raw({"role": "digest-signature", **common, "policy": {"kind": "ordinary"}}), raw({"role": "upcast", **common, "target_binding": None, "upcaster_id": None, "implementation_source_digest": None}),
+    )
+    (tmp_path / "decoder").mkdir()
+    (tmp_path / "decoder" / "native.py").write_bytes(b"def decode(value):\n    return value\n")
+    limits = ProtectedTypedValuePublicationLimits(
+        ProtectedDeclarationParseLimits(20_000, 300, 30),
+        ProtectedDecoderSourceManifestLimits(20_000, 300, 30, 10, 20_000), 20_000,
+    )
+    package = author_typed_value_publication_package(
+        roles, (DecoderSourceSelection("memorii.semantic_ingestion.observation.MemoryScope.v1", "native", "decoder/native.py"),), source_package_root=tmp_path, limits=limits,
+    )
+    raw_vector = b'{"independent":"configured-registry"}'
+    manifest = parse_typed_value_publication_manifest(package.raw_publication_manifest, maximum_bytes=20_000)
+    pins = ProtectedTypedValuePublicationPins(
+        manifest.publication_digest,
+        manifest.registry_digest,
+        tuple(
+            DecoderSourceSnapshotPin(item.decoder_id, item.source_snapshot_digest)
+            for item in manifest.decoder_source_snapshots
+        ),
+        sha256(raw_vector).hexdigest(),
+    )
+    return ProtectedTypedValueRegistryConfiguration((
+        ProtectedTypedValueRegistryPublicationConfiguration(
+            package.raw_role_sources, package.raw_decoder_source_manifest,
+            package.raw_publication_manifest, raw_vector, tmp_path, limits, pins,
+        ),
+    ))
+
+
+def test_configured_registry_verifies_real_package_and_rejects_wrong_pin(tmp_path: Path) -> None:
+    configuration = _small_real_configured_registry_material(tmp_path)
+    history = verify_configured_typed_value_registry_history(configuration)
+    assert len(history.publications[0].compiled_registry.entries) == 1
+    publication = configuration.publications[0]
+    bad = replace(
+        publication,
+        pins=replace(publication.pins, publication_digest="0" * 64),
+    )
+    with pytest.raises(TypedValueRegistryConfigurationError):
+        verify_configured_typed_value_registry_history(
+            ProtectedTypedValueRegistryConfiguration((bad,))
+        )
+    with pytest.raises(TypedValueRegistryConfigurationError):
+        verify_configured_typed_value_registry_history(
+            ProtectedTypedValueRegistryConfiguration((
+                replace(publication, source_package_root=Path("/missing-configured-source-root")),
+            ))
+        )
+    with pytest.raises(TypedValueRegistryConfigurationError):
+        ProtectedTypedValueRegistryPublicationConfiguration(
+            cast(tuple[bytes, ...], [b"mutable"]), publication.raw_decoder_source_manifest,
+            publication.raw_publication_manifest,
+            publication.raw_independent_vector_manifest,
+            publication.source_package_root, publication.limits, publication.pins,
+        )
+
+
+def test_builtin_provider_composition_verifies_configured_registry_once_and_preserves_identity(tmp_path: Path) -> None:
+    configuration = _small_real_configured_registry_material(tmp_path)
+    verifier = patch(
+        "memorii.core.semantic_ingestion.capability.verify_configured_typed_value_registry_history",
+        wraps=verify_configured_typed_value_registry_history,
+    )
+    with verifier as verify:
+        service = ProviderMemoryService(
+            memory_plane=MemoryPlaneService(), now_provider=lambda: TEST_NOW,
+            host_bootstrap_capability=replace(
+                _built_in_local_capability(),
+                typed_value_registry_configuration=configuration,
+            ),
+            host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        )
+    runtime = service._provider_ingestion._semantic_runtime
+    assert runtime is not None
+    verify.assert_called_once()
+    history = runtime.typed_value_registry_history
+    assert history is not None
+    assert service._semantic_writer_admission._typed_value_registry_history is history
+    assert service._semantic_atomic_store._typed_value_registry_history is history
+
+
+def test_invalid_configured_registry_fails_before_built_in_runtime_owners(tmp_path: Path) -> None:
+    configuration = _small_real_configured_registry_material(tmp_path)
+    publication = configuration.publications[0]
+    plane = MemoryPlaneService()
+    capability = replace(
+        _built_in_local_capability(),
+        typed_value_registry_configuration=ProtectedTypedValueRegistryConfiguration((
+            replace(publication, pins=replace(publication.pins, publication_digest="0" * 64)),
+        )),
+    )
+    with patch(
+        "memorii.core.memory_evolution.writer_admission.SemanticWriterAdmissionStore"
+    ) as writers, pytest.raises(TypedValueRegistryConfigurationError):
+        ProviderMemoryService(
+            memory_plane=plane, now_provider=lambda: TEST_NOW,
+            host_bootstrap_capability=capability,
+            host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        )
+    writers.assert_not_called()
+    assert plane.get_record(writer_admission_memory_id()) is None
+
+
+def test_direct_runtime_rejects_substituted_configured_registry_history() -> None:
+    plane = MemoryPlaneService()
+    history = _configured_registry_history()
+    writers = SemanticWriterAdmissionStore(
+        plane, bounded_preplanning_ownership_manifest(),
+        typed_value_registry_history=history,
+    )
+    store = SemanticIngestionAtomicStore(
+        plane, writers, typed_value_registry_history=history,
+    )
+    with pytest.raises(TypedValueRegistryConfigurationError, match="writer registry history differs"):
+        AuthorizedSemanticIngestionRuntime(
+            authorization_bytes=b"signed-test-authorization",
+            authorization_verifier=_AuthorizationVerifier(),
+            policy_provider=_PolicyProvider("owner_is"),
+            writer_admission=writers,
+            atomic_store=store,
+            typed_value_registry_history=_configured_registry_history(),
+        )
+    with pytest.raises(TypedValueRegistryConfigurationError, match="requires writer and atomic store"):
+        AuthorizedSemanticIngestionRuntime(
+            authorization_bytes=b"signed-test-authorization",
+            authorization_verifier=_AuthorizationVerifier(),
+            policy_provider=_PolicyProvider("owner_is"),
+            typed_value_registry_history=history,
+        )
+    with pytest.raises(TypedValueRegistryConfigurationError, match="writer registry history differs"):
+        AuthorizedSemanticIngestionRuntime(
+            authorization_bytes=b"signed-test-authorization",
+            authorization_verifier=_AuthorizationVerifier(),
+            policy_provider=_PolicyProvider("owner_is"),
+            writer_admission=writers,
+            atomic_store=store,
+        )
+
+
+def test_custom_runtime_builder_cannot_downgrade_a_registry_substitution_to_fallback() -> None:
+    plane = MemoryPlaneService()
+    history = _configured_registry_history()
+    writers = SemanticWriterAdmissionStore(
+        plane, bounded_preplanning_ownership_manifest(),
+        typed_value_registry_history=history,
+    )
+    store = SemanticIngestionAtomicStore(
+        plane, writers, typed_value_registry_history=history,
+    )
+
+    def substituted_runtime(*, bootstrap_profile):
+        del bootstrap_profile
+        return AuthorizedSemanticIngestionRuntime(
+            authorization_bytes=b"signed-test-authorization",
+            authorization_verifier=_AuthorizationVerifier(),
+            policy_provider=_PolicyProvider("owner_is"),
+            writer_admission=writers,
+            atomic_store=store,
+            typed_value_registry_history=_configured_registry_history(),
+        )
+
+    with pytest.raises(TypedValueRegistryConfigurationError):
+        ProviderMemoryService(
+            memory_plane=plane,
+            host_bootstrap_capability=_AuthorizedCapability(
+                runtime_factory=substituted_runtime
+            ),
+            host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        )
 
 
 def test_builtin_local_capability_wires_provider_hermes_and_filesystem_without_entrypoint_patch(
@@ -2496,3 +2750,109 @@ def test_composed_roots_write_nothing_without_resolved_ingress(root, tmp_path) -
         operation_id=f"{root}-absent-ingress", task_id="task:one", user_id="user:alice",
     )
     assert plane.get_record(writer_admission_memory_id()) is None
+
+
+def test_provider_preserves_verified_activation_target_and_revalidates_before_cutover(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from memorii.core.memory_evolution.observation_activation_configuration import (
+        ObservationActivationTargetConfigurationError,
+    )
+    from tests.unit.core.memory_evolution.test_observation_activation_configuration import _signed_package
+
+    registry = _small_real_configured_registry_material(tmp_path)
+    target, _, _ = _signed_package(tmp_path, monkeypatch, verify_configured_typed_value_registry_history(registry))
+    plane = MemoryPlaneService()
+    service = ProviderMemoryService(
+        memory_plane=plane, now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=replace(
+            _built_in_local_capability(), typed_value_registry_configuration=registry,
+            observation_activation_target_configuration=target,
+        ),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+    )
+    runtime = service._composed_semantic_runtime
+    assert runtime is not None and runtime.observation_activation_target is not None
+    assert runtime.writer_admission is not None and runtime.atomic_store is not None
+    assert runtime.observation_activation_target is runtime.writer_admission._observation_activation_target
+    assert runtime.observation_activation_target is runtime.atomic_store._observation_activation_target
+    runtime.writer_admission.create_initial_evidence_only(
+        admission_id="configured-host-writer",
+        writer_implementation_fingerprint="configured-host-legacy-writer",
+        graph_schema_fingerprint="memorii-semantic-graph-v1",
+    )
+    before = plane.read_write_snapshot()
+    with pytest.raises(PreplanningStoreError, match="registered schemas are unavailable"):
+        service.activate_observation_ledger()
+    assert plane.read_write_snapshot() == before
+    (target.deployment_configuration.installation_root / "memorii/empty.py").write_bytes(b"changed")
+    with pytest.raises(ObservationActivationTargetConfigurationError):
+        service.activate_observation_ledger()
+    assert plane.read_write_snapshot() == before
+
+
+def test_invalid_activation_target_never_falls_back_to_legacy_provider(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from memorii.core.memory_evolution.observation_activation_configuration import (
+        ObservationActivationTargetConfigurationError,
+    )
+    from tests.unit.core.memory_evolution.test_observation_activation_configuration import _signed_package
+
+    registry = _small_real_configured_registry_material(tmp_path)
+    target, _, _ = _signed_package(tmp_path, monkeypatch, verify_configured_typed_value_registry_history(registry))
+    target = replace(target, selected_manifest_sha256="0" * 64)
+    plane = MemoryPlaneService()
+    before = plane.read_write_snapshot()
+    with pytest.raises(ObservationActivationTargetConfigurationError):
+        ProviderMemoryService(
+            memory_plane=plane, now_provider=lambda: TEST_NOW,
+            host_bootstrap_capability=replace(
+                _built_in_local_capability(), typed_value_registry_configuration=registry,
+                observation_activation_target_configuration=target,
+            ),
+            host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        )
+    assert plane.read_write_snapshot() == before
+
+
+def test_unconfigured_provider_activation_is_explicitly_unavailable() -> None:
+    plane = MemoryPlaneService()
+    service = ProviderMemoryService(memory_plane=plane, now_provider=lambda: TEST_NOW)
+    before = plane.read_write_snapshot()
+    with pytest.raises(PreplanningStoreError, match="target authority is not configured"):
+        service.activate_observation_ledger()
+    assert plane.read_write_snapshot() == before
+
+
+def test_explicit_activation_checks_current_deployment_authorization_before_atomic_owner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tests.unit.core.memory_evolution.test_observation_activation_configuration import _signed_package
+
+    registry = _small_real_configured_registry_material(tmp_path)
+    target, _, _ = _signed_package(tmp_path, monkeypatch, verify_configured_typed_value_registry_history(registry))
+    verifier = _AuthorizationVerifier()
+    plane = MemoryPlaneService()
+    service = ProviderMemoryService(
+        memory_plane=plane, now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=replace(
+            _built_in_local_capability(), typed_value_registry_configuration=registry,
+            observation_activation_target_configuration=target, authorization_verifier=verifier,
+        ),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+    )
+    runtime = service._composed_semantic_runtime
+    assert runtime is not None and runtime.atomic_store is not None
+    before = plane.read_write_snapshot()
+    with patch.object(
+        runtime.atomic_store, "activate_observation_ledger", wraps=runtime.atomic_store.activate_observation_ledger
+    ) as activate:
+        for mode in ("revoked", "expired", "mutated", "outage"):
+            verifier.mode = mode
+            for trigger in (service.activate_observation_ledger, runtime.activate_observation_ledger):
+                error = OSError if mode == "outage" else PreplanningStoreError
+                with pytest.raises(error, match="authorization.*unavailable"):
+                    trigger()
+                activate.assert_not_called()
+                assert plane.read_write_snapshot() == before

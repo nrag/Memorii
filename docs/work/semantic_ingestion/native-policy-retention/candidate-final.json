@@ -1,0 +1,33 @@
+{
+  "scope": "Native policy retention plus typed field-name result validation only; no projection publication or M5 closure",
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "tree": "authorized dirty tree, no writer on reviewed code/test/SIA",
+  "files": {
+    "memorii/memorii/core/semantic_ingestion/contracts.py": "a3872301b872898dcbaa0d6079ab7f3198463cb29cd42cdee396769ad8d134a9",
+    "memorii/memorii/core/semantic_ingestion/source_normalization_stage.py": "0ca159b05501ab6a23a697a2c0ea9075096f347b3fe12d23cc91fb049552002d",
+    "memorii/tests/unit/core/semantic_ingestion/test_native_policy_retention.py": "42b26d8e7e151453fa4f2fe26e99c4cfd040bf25676ea794e7c2d68e0c1cf338",
+    "memorii/tests/fixtures/semantic_ingestion/historical_terminal/native-planning-authority-without-policy-bundle.ctv": "65d321a60ed5e3352ed076feacd02514aabd2dd2a3504332d16f53b7bd6f0ce4",
+    "docs/design/semantic_ingestion_architecture.md": "69140e58d650fbe9f59d69de2da06d846b6c4a9040256d82d29fced76e918e79",
+    "docs/work/semantic_ingestion/observation-ledger/entrypoint-preflight.md": "9106ad8f31dfe599c8e8f5352024a21e9ee5a545fea76ea14530f0ad63e12e54",
+    "memorii/tests/integration/test_native_policy_persisted_reload.py": "97be5a5ab781e487d9cbae34dc63f92adb3452a6c531dc877a7de6d472a1184d",
+    "memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_observation_retention.py": "80c427a3bdd1caa7062beb5ecfb7fe8a0602cb9c26aaab1649d2998e0b36061c",
+    "docs/work/semantic_ingestion/engineering-closure/production_entrypoint_bindings.json": "e2663745f35dc8afbda77672573669e9ee20ace63e08bd16295051208822d143"
+  },
+  "candidate_digest": "a49348ce42d36857af90d2bbed2efcb8486c31fb2da534004600a12cf7c27d4b",
+  "requirements": "native-policy-retention/implementation.plan.md; SIA4.8.2.26 exact policy retention, validated coordinate binding, historical absence omission and bytes",
+  "binding": "entrypoint-preflight.md; native group ordered_operation_inputs.reduction.native_compilation.operation_input",
+  "evidence": {
+    "tests": "4 passed in67.53s tests-persisted-reload.log; previous historical compatibility6pass remains recorded",
+    "configured_pyright": "pyright-repository-final.log 0 errors",
+    "forced_pyright": "280 identical clean-base diagnostics",
+    "source_gates": "exact-gates.json all3 exit0",
+    "identity": "identity-final.log exit0 before test rename; final refresh pending"
+  },
+  "exclusions": [
+    "Shared registry/ledger/retrieval implementation",
+    "new immutable projection publication receipt",
+    "full branch and CI approval"
+  ],
+  "review_status": "frozen test/ledger conformance delta; production unchanged from correctness-approved candidate",
+  "previous_candidate_digest": "bad11616bfd6989870d6bb5f25053e6cf22265b9295179bdaffc222992aa165d"
+}

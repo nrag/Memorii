@@ -1,0 +1,16 @@
+{
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "scope": "numeric design proposal and nonproduction feasibility only; no canonical edits or product approval",
+  "files": {
+    "docs/work/semantic_ingestion/acceptance-numeric-contract/design.plan.md": "13c2fd8fafd27b84ec693aed9f4cd77d283bd9de4c0e802e0b0122bb3f48d68f",
+    "docs/work/semantic_ingestion/acceptance-numeric-contract/proposal.md": "ef643d2878d2a5dd73742dd0ccb4a81e308c061712ad8f33ab549a64a657d3ec",
+    "docs/work/semantic_ingestion/acceptance-numeric-contract/enclosure_feasibility.py": "32ffedaa73c448fbf36fe161447c47a6bcb1d791394f29f775d08ca76224bb5a",
+    "docs/work/semantic_ingestion/acceptance-numeric-contract/verify_feasibility_certificate.py": "a4b021025211c48c75a07256f331c2394ded6e720465aac7011822091041dd54",
+    "docs/work/semantic_ingestion/acceptance-numeric-contract/numeric_contract_boundary_proof.py": "1f90a2b1f281b3f9710bf04bfd5998ea0efab28284342291379b25585afe45b7",
+    "docs/work/semantic_ingestion/acceptance-numeric-contract/feasibility-result.json": "7ec10b497d385e6cf8f60872fe644005b9cf2f61a8e03c5163b79f3aedd36652",
+    "docs/work/semantic_ingestion/acceptance-numeric-contract/review-round.md": "af61e82eb4e8f2df5604066acd6996dc60a72d655a887786f3f7626d9dcabecd",
+    "docs/work/semantic_ingestion/acceptance-numeric-contract/review-round-2.md": "c0f72233abc30348afe8c42bc0b50d9d49189789df97a3c92a0bd47e84bb942b",
+    "docs/design/semantic_ingestion_architecture.md": "b469653e3ef92e9cc1bf45e797a2c7dff8eac4d9ee792ad94ada3a54bfbe05da"
+  },
+  "other_writers": "Crypto integration and offline signing own disjoint files; every listed candidate file is frozen."
+}

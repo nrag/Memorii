@@ -4,11 +4,15 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from contextlib import ExitStack
-from datetime import UTC, datetime
+from datetime import datetime
 from hashlib import sha256
 from typing import Literal
 
-from memorii.core.memory_evolution.admission import GovernedSourceAdmissionService, PreparedSourceAdmission
+from memorii.core.memory_evolution.admission import (
+    GovernedSourceAdmissionService,
+    PreparedSourceAdmission,
+    SemanticIngestionSourceReplayRequest,
+)
 from memorii.core.memory_evolution.atomic_store import (
     BootstrapHandoffAccessDenied,
     BootstrapRetainedPendingAuthorityUnavailable,
@@ -29,6 +33,7 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     DeliveryIdentity,
     OperationFenceBinding,
 )
+from memorii.core.memory_evolution.ingestion_time_clock import IngestionTimeClock
 from memorii.core.memory_evolution.models import SourceObservation
 from memorii.core.memory_evolution.record_projection import source_observation_from_record
 from memorii.core.memory_evolution.source_admission import (
@@ -240,9 +245,9 @@ class ProviderIngestionCoordinator:
         bootstrap_unavailable_reason: str,
         atomic_store: SemanticIngestionAtomicStore,
         writer_admission: SemanticWriterAdmissionStore,
+        clock: IngestionTimeClock,
         semantic_policy_provider: SemanticPipelinePolicyProvider | None = None,
         semantic_runtime: AuthorizedSemanticIngestionRuntime | None = None,
-        now_provider: Callable[[], datetime] | None = None,
         canonical_evidence_arena_factory: Callable[[], CanonicalEvidenceArena] | None = None,
     ) -> None:
         self._memory_plane = memory_plane
@@ -251,9 +256,10 @@ class ProviderIngestionCoordinator:
         self._bootstrap_unavailable_reason = bootstrap_unavailable_reason
         self._atomic_store = atomic_store
         self._writer_admission = writer_admission
+        self._clock = clock
         self._semantic_policy_provider = semantic_policy_provider
         self._semantic_runtime = semantic_runtime
-        self._now_provider = now_provider or (lambda: datetime.now(UTC))
+        self._now_provider = clock.now_utc
         self._canonical_evidence_arena_factory = canonical_evidence_arena_factory
         self._authorization_repository = SemanticAuthorizationAuthorityRepository(
             atomic_store=atomic_store,
@@ -298,9 +304,33 @@ class ProviderIngestionCoordinator:
                 else:
                     outcome = "disabled"
                     reason = "operator_disabled"
+            # Recovery precedes derivation here as well: an exact redelivery
+            # reuses the winner's retained snapshot bytes.  The single
+            # protected-clock sample is taken once, outside the writer-retry
+            # closure, so retries within one attempt never resample.
+            retained_source = self._admission_service.replay_retained_source(
+                SemanticIngestionSourceReplayRequest(delivery_identity=identity),
+                authenticated_ingress=authenticated_ingress,
+            )
+            metadata_poor_source = (
+                retained_source
+                if retained_source is not None
+                else _governed_source(
+                    raw_sources[0],
+                    identity,
+                    retained_at=self._clock.now_utc(),
+                    metadata_poor=True,
+                )
+            )
+            if retained_source is not None:
+                snapshot_bytes = retained_source.content.get("snapshot_utf8_bytes")
+                if snapshot_bytes != (event.content or "").encode("utf-8"):
+                    raise PreplanningStoreError(
+                        "atomic admission evidence is partial or mismatched"
+                    )
             def prepare() -> PreparedSourceAdmission:
                 return self._admission_service.prepare_atomic(
-                source=_governed_source(raw_sources[0], identity, metadata_poor=True),
+                source=metadata_poor_source,
                 delivery_identity=identity,
                 ingress=authenticated_ingress,
                 operation_id=event.event_id,
@@ -390,93 +420,126 @@ class ProviderIngestionCoordinator:
                     )
                 identity = request.delivery_identity
                 source_id = f"semantic_ingestion:source:{identity.delivery_key_digest}"
-                # Exact redelivery must reconstruct identical admission evidence. The
-                # caller-owned event timestamp is immutable delivery identity; local
-                # processing time is not.
-                retained_at = delivery_event.timestamp
-                assert retained_at is not None
-                source_digest = step_one_source_digest(
-                    source_id=source_id,
-                    delivery_key_digest=identity.delivery_key_digest,
-                    original_text=request.original_text,
+                # Recovery precedes derivation.  Retained governance material
+                # embeds the winner's retention time, so an exact redelivery
+                # must reuse the winner's retained record and Step-1 material
+                # bytes verbatim after the authorized index lookup; a fresh
+                # protected-clock sample is permitted only when no winner
+                # exists.  The caller-owned event timestamp remains immutable
+                # delivery identity (DeliveryIdentity.create), never
+                # authenticated server retention time.
+                retained_source = self._admission_service.replay_retained_source(
+                    SemanticIngestionSourceReplayRequest(delivery_identity=identity),
+                    authenticated_ingress=authenticated_ingress,
                 )
-                governance_result = derive_source_governance_material(
-                    ingress=authenticated_ingress,
-                    event=delivery_event,
-                    source_id=source_id,
-                    source_digest=source_digest,
-                    received_at=retained_at,
-                    retained_at=retained_at,
-                )
-                if governance_result.kind == "nonpromoting":
-                    return (
-                        result.model_copy(
-                            update={
-                                "transcript_ids": [],
-                                "candidate_ids": [],
-                                "allowed_candidate_domains": [],
-                                "blocked_reasons": {
-                                    **result.blocked_reasons,
-                                    "semantic_ingestion": governance_result.reason_codes[0],
-                                },
-                            }
+                if retained_source is not None:
+                    # Reuse is authorized only for an exact redelivery: the
+                    # delivery identity alone does not bind the event bytes, so
+                    # a substituted delivery must never silently inherit the
+                    # winner's retained admission evidence.
+                    if retained_source.text != request.original_text:
+                        raise PreplanningStoreError(
+                            "atomic admission evidence is partial or mismatched"
+                        )
+                    recovered_observation = source_observation_from_record(retained_source)
+                    governed_source = retained_source
+                    bootstrap_language_evidence = (
+                        recovered_observation.bootstrap_language_evidence
+                    )
+                    projection = recovered_observation.semantic_text_projection
+                    if projection is None:
+                        raise RuntimeError(
+                            "retained admitted source has no sealed Step-1 material"
+                        )
+                else:
+                    # One protected-clock sample per admission supplies,
+                    # unchanged in one value: the retained record timestamp and
+                    # both governance times (received_at == retained_at).
+                    retained_at = self._clock.now_utc()
+                    source_digest = step_one_source_digest(
+                        source_id=source_id,
+                        delivery_key_digest=identity.delivery_key_digest,
+                        original_text=request.original_text,
+                    )
+                    governance_result = derive_source_governance_material(
+                        ingress=authenticated_ingress,
+                        event=delivery_event,
+                        source_id=source_id,
+                        source_digest=source_digest,
+                        received_at=retained_at,
+                        retained_at=retained_at,
+                    )
+                    if governance_result.kind == "nonpromoting":
+                        return (
+                            result.model_copy(
+                                update={
+                                    "transcript_ids": [],
+                                    "candidate_ids": [],
+                                    "allowed_candidate_domains": [],
+                                    "blocked_reasons": {
+                                        **result.blocked_reasons,
+                                        "semantic_ingestion": governance_result.reason_codes[0],
+                                    },
+                                }
+                            ),
+                            None,
+                            None,
+                        )
+                    assert governance_result.material is not None
+                    # The material's contract payloads are annotated as object at the
+                    # model boundary (import-cycle isolation); their constructor is the
+                    # single derivation owner above, so narrow once for these bindings.
+                    assert isinstance(
+                        governance_result.material.segment_governance_carriers,
+                        SegmentGovernanceCarrierSet,
+                    )
+                    assert isinstance(
+                        governance_result.material.governance_carrier_artifact,
+                        GovernanceCarrierArtifact,
+                    )
+                    assert isinstance(
+                        governance_result.material.message_admission_carriers,
+                        MessageAdmissionCarrierSet,
+                    )
+                    request = request.bind_bootstrap_language_evidence(
+                        ingress=authenticated_ingress,
+                        source_id=source_id,
+                        source_digest=source_digest,
+                        segment_governance_set_digest=(
+                            governance_result.material.segment_governance_carriers.carrier_set_digest
                         ),
-                        None,
-                        None,
+                        governance_carrier_artifact_digest=(
+                            governance_result.material.governance_carrier_artifact.artifact_digest
+                        ),
+                        segment_governance_carriers_digest=(
+                            governance_result.material.segment_governance_carriers.carrier_set_digest
+                        ),
+                        message_admission_carriers_digest=(
+                            governance_result.material.message_admission_carriers.carrier_set_digest
+                        ),
                     )
-                assert governance_result.material is not None
-                # The material's contract payloads are annotated as object at the
-                # model boundary (import-cycle isolation); their constructor is the
-                # single derivation owner above, so narrow once for these bindings.
-                assert isinstance(
-                    governance_result.material.segment_governance_carriers,
-                    SegmentGovernanceCarrierSet,
-                )
-                assert isinstance(
-                    governance_result.material.governance_carrier_artifact,
-                    GovernanceCarrierArtifact,
-                )
-                assert isinstance(
-                    governance_result.material.message_admission_carriers,
-                    MessageAdmissionCarrierSet,
-                )
-                request = request.bind_bootstrap_language_evidence(
-                    ingress=authenticated_ingress,
-                    source_id=source_id,
-                    source_digest=source_digest,
-                    segment_governance_set_digest=(
-                        governance_result.material.segment_governance_carriers.carrier_set_digest
-                    ),
-                    governance_carrier_artifact_digest=(
-                        governance_result.material.governance_carrier_artifact.artifact_digest
-                    ),
-                    segment_governance_carriers_digest=(
-                        governance_result.material.segment_governance_carriers.carrier_set_digest
-                    ),
-                    message_admission_carriers_digest=(
-                        governance_result.material.message_admission_carriers.carrier_set_digest
-                    ),
-                )
-                step_one_material = (
-                    build_structured_step_one_material_from_governance(
-                        source_id=source_id, source_digest=source_digest, original_text=request.original_text,
-                        envelope=request.structured_source_envelope, governance=governance_result.material,
+                    step_one_material = (
+                        build_structured_step_one_material_from_governance(
+                            source_id=source_id, source_digest=source_digest, original_text=request.original_text,
+                            envelope=request.structured_source_envelope, governance=governance_result.material,
+                        )
+                        if request.structured_source_envelope is not None
+                        else build_step_one_material_from_governance(
+                            source_id=source_id, source_digest=source_digest, original_text=request.original_text,
+                            source_reference=delivery_event.event_id, governance=governance_result.material,
+                        )
                     )
-                    if request.structured_source_envelope is not None
-                    else build_step_one_material_from_governance(
-                        source_id=source_id, source_digest=source_digest, original_text=request.original_text,
-                        source_reference=delivery_event.event_id, governance=governance_result.material,
+                    governed_source = build_admitted_source_record(
+                        request=request,
+                        source_id=source_id,
+                        retained_at=retained_at,
+                        material=step_one_material,
+                        session_id=delivery_event.session_id,
+                        task_id=delivery_event.task_id,
+                        user_id=delivery_event.user_id,
                     )
-                )
-                governed_source = build_admitted_source_record(
-                    request=request,
-                    source_id=source_id,
-                    retained_at=retained_at,
-                    material=step_one_material,
-                    session_id=delivery_event.session_id,
-                    task_id=delivery_event.task_id,
-                    user_id=delivery_event.user_id,
-                )
+                    bootstrap_language_evidence = request.bootstrap_language_evidence
+                    projection = step_one_material.semantic_text_projection
                 outcome = "unavailable"
                 reason = self._bootstrap_unavailable_reason
                 matched_case_id = None
@@ -485,7 +548,7 @@ class ProviderIngestionCoordinator:
                         BootstrapTextPreparationProducer.classify_projection_eligibility(
                             profile=self._bootstrap_profile,
                             ingress=authenticated_ingress,
-                            projection=step_one_material.semantic_text_projection,
+                            projection=projection,
                         )
                     )
                 def prepare(
@@ -497,7 +560,7 @@ class ProviderIngestionCoordinator:
                     outcome_kind: str = outcome,
                     outcome_reason: str | None = reason,
                     matched_case_id: str | None = matched_case_id,
-                    bootstrap_language_evidence: BootstrapAuthenticatedLanguageEvidence | None = request.bootstrap_language_evidence,
+                    bootstrap_language_evidence: BootstrapAuthenticatedLanguageEvidence | None = bootstrap_language_evidence,
                 ) -> PreparedSourceAdmission:
                     return self._admission_service.prepare_atomic(
                         source=source,
@@ -1639,12 +1702,21 @@ def _governed_source(
     source: CanonicalMemoryRecord,
     identity: DeliveryIdentity,
     *,
+    retained_at: datetime,
     metadata_poor: bool = False,
 ) -> CanonicalMemoryRecord:
+    """Copy the raw record under the protected retention sample.
+
+    ``retained_at`` is the single protected-clock sample for this admission:
+    it stamps the copied record's timestamp (and thereby the admission index
+    timestamp) so metadata-poor evidence never carries caller event time as
+    server retention time.
+    """
     update: dict[str, object] = {
         "memory_id": f"semantic_ingestion:source:{identity.delivery_key_digest}",
         "source_kind": "semantic_ingestion_source",
         "visibility": MemoryRecordVisibility.INTERNAL_CONTROL,
+        "timestamp": retained_at,
     }
     if metadata_poor:
         update.update(

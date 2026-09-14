@@ -48,6 +48,25 @@ def _relative_path(root: Path, value: str, context: str) -> Path:
     return candidate
 
 
+def _identity_path(root: Path, value: str, context: str) -> Path:
+    """Return a normalized, contained identity path before any identity I/O."""
+    if not isinstance(value, str) or not value or "\\" in value:
+        raise VerificationError(f"{context}: invalid relative path")
+    candidate = Path(value)
+    if (
+        candidate.is_absolute()
+        or "." in candidate.parts
+        or ".." in candidate.parts
+        or candidate.as_posix() != value
+    ):
+        raise VerificationError(f"{context}: invalid relative path")
+    resolved_root = root.resolve()
+    resolved = (resolved_root / candidate).resolve()
+    if resolved != resolved_root and resolved_root not in resolved.parents:
+        raise VerificationError(f"{context}: path escapes repository root")
+    return resolved
+
+
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -153,7 +172,7 @@ def _untracked_content_digest(root: Path, status: bytes) -> tuple[int, str]:
     return len(paths), hashlib.sha256(b"".join(sorted(entries))).hexdigest()
 
 
-def _verify_candidate_identity(root: Path, relative_path: str) -> None:
+def _verify_candidate_identity_v1(root: Path, relative_path: str) -> None:
     identity_path = _relative_path(root, relative_path, "candidate identity")
     _verify_manifest_pin(identity_path)
     try:
@@ -266,6 +285,105 @@ def _verify_candidate_identity(root: Path, relative_path: str) -> None:
         raise VerificationError("candidate coordination artifact digest mismatch")
     if not identity["self_exclusions"] or not identity["evidence_limitations"]:
         raise VerificationError("candidate identity must record exclusions and limitations")
+
+
+def _v2_exclusions(root: Path, relative_path: str, identity: dict[str, Any]) -> list[str]:
+    expected = [relative_path, f"{relative_path}.sha256"]
+    exclusions = identity["self_exclusions"]
+    if exclusions != expected:
+        raise VerificationError("v2 self_exclusions must be exactly identity and pin paths")
+    for value in exclusions:
+        _identity_path(root, value, "v2 self_exclusions")
+    return exclusions
+
+
+def _identity_command(root: Path, command: list[str], exclusions: list[str]) -> bytes:
+    pathspecs = ["--", ".", *(f":(exclude,literal){path}" for path in exclusions)]
+    return _command_bytes(root, *command, *pathspecs)
+
+
+def _verify_candidate_identity_v2(root: Path, relative_path: str, identity: dict[str, Any]) -> None:
+    exclusions = _v2_exclusions(root, relative_path, identity)
+    actual_head = _command_bytes(root, "git", "rev-parse", "HEAD").decode().strip()
+    if actual_head != identity["git_head"]:
+        raise VerificationError("candidate identity git HEAD mismatch")
+    status = _identity_command(
+        root, ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"], exclusions
+    )
+    status_contract = identity["git_status"]
+    _require_keys(status_contract, {"command", "entry_count", "sha256"}, "git_status")
+    if (
+        status_contract["command"]
+        != "git status --porcelain=v1 -z --untracked-files=all -- . "
+        + " ".join(f":(exclude,literal){path}" for path in exclusions)
+        or len(_status_records(status)) != status_contract["entry_count"]
+        or hashlib.sha256(status).hexdigest() != status_contract["sha256"]
+    ):
+        raise VerificationError("candidate identity git status mismatch")
+    for command, key, failure in (
+        (["git", "diff", "--binary"], "tracked_diff", "tracked diff mismatch"),
+        (["git", "diff", "--cached", "--binary"], "staged_diff", "staged diff mismatch"),
+    ):
+        actual = _identity_command(root, command, exclusions)
+        contract = identity[key]
+        _require_keys(contract, {"command", "sha256"}, key)
+        expected_command = " ".join(command) + " -- . " + " ".join(
+            f":(exclude,literal){path}" for path in exclusions
+        )
+        if contract["command"] != expected_command or hashlib.sha256(actual).hexdigest() != contract["sha256"]:
+            raise VerificationError(f"candidate identity {failure}")
+    count, digest = _untracked_content_digest(root, status)
+    untracked = identity["untracked_content_manifest"]
+    _require_keys(untracked, {"algorithm", "file_count", "sha256"}, "untracked_content_manifest")
+    if untracked["file_count"] != count or untracked["sha256"] != digest:
+        raise VerificationError("candidate identity untracked content mismatch")
+    artifacts = identity["coordination_artifacts"]
+    if not isinstance(artifacts, list) or not artifacts:
+        raise VerificationError("candidate coordination artifacts must be nonempty")
+    entries: list[str] = []
+    paths: set[str] = set()
+    identity_paths = {_identity_path(root, value, "v2 self_exclusions") for value in exclusions}
+    for artifact in artifacts:
+        if not isinstance(artifact, dict):
+            raise VerificationError("candidate coordination artifact must be an object")
+        _require_keys(artifact, {"path", "sha256"}, "candidate coordination artifact")
+        path, expected = artifact["path"], artifact["sha256"]
+        if not isinstance(path, str) or path in paths or not isinstance(expected, str):
+            raise VerificationError("invalid candidate coordination artifact")
+        paths.add(path)
+        resolved = Path.home() / path.removeprefix("~/" ) if path.startswith("~/" ) else _relative_path(root, path, "candidate coordination artifact")
+        if resolved.resolve() in identity_paths:
+            raise VerificationError("candidate identity cannot include itself as an artifact")
+        if not resolved.is_file() or _sha256(resolved) != expected:
+            raise VerificationError(f"candidate coordination artifact mismatch: {path}")
+        entries.append(f"{path}\0{expected}\n")
+    digest_contract = identity["coordination_artifact_digest"]
+    _require_keys(digest_contract, {"algorithm", "artifact_count", "sha256"}, "coordination_artifact_digest")
+    if digest_contract["artifact_count"] != len(entries) or digest_contract["sha256"] != hashlib.sha256("".join(sorted(entries)).encode()).hexdigest():
+        raise VerificationError("candidate coordination artifact digest mismatch")
+    if not identity["evidence_limitations"]:
+        raise VerificationError("candidate identity must record limitations")
+
+
+def _verify_candidate_identity(root: Path, relative_path: str) -> None:
+    identity_path = _relative_path(root, relative_path, "candidate identity")
+    _verify_manifest_pin(identity_path)
+    try:
+        identity = json.loads(identity_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise VerificationError(f"candidate identity is invalid JSON: {exc}") from exc
+    if not isinstance(identity, dict):
+        raise VerificationError("candidate identity root must be an object")
+    if identity.get("format") == "memorii.dirty-coordination-candidate.v1":
+        _verify_candidate_identity_v1(root, relative_path)
+        return
+    _require_keys(identity, {"format", "created", "git_head", "tree_state", "review_scope", "git_status", "tracked_diff", "staged_diff", "untracked_content_manifest", "coordination_artifact_digest", "coordination_artifacts", "self_exclusions", "evidence_limitations"}, "candidate identity")
+    if identity["format"] != "memorii.dirty-coordination-candidate.v2":
+        raise VerificationError("unsupported candidate identity format")
+    safe_path = _identity_path(root, relative_path, "candidate identity")
+    if safe_path != identity_path.resolve():
+        raise VerificationError("candidate identity path mismatch")
+    _verify_candidate_identity_v2(root, relative_path, identity)
 
 
 def verify(manifest_path: Path, *, verify_candidate: bool = True) -> None:
@@ -568,6 +686,74 @@ def _write_test_candidate_identity(root: Path, relative_path: str) -> Path:
     return identity_path
 
 
+def capture_current_candidate_identity(
+    root: Path, relative_path: str, artifacts: list[str], *, created: str
+) -> Path:
+    """Capture a v2 dirty-tree identity while excluding only its own two files."""
+    identity_path = _identity_path(root, relative_path, "candidate identity")
+    pin_relative_path = f"{relative_path}.sha256"
+    pin_path = _identity_path(root, pin_relative_path, "candidate identity pin")
+    exclusions = [relative_path, pin_relative_path]
+    paths = ["--", ".", *(f":(exclude,literal){path}" for path in exclusions)]
+    status = _command_bytes(
+        root, "git", "status", "--porcelain=v1", "-z", "--untracked-files=all", *paths
+    )
+    untracked_count, untracked_digest = _untracked_content_digest(root, status)
+    entries: list[str] = []
+    payload_artifacts: list[dict[str, str]] = []
+    for path in artifacts:
+        if not isinstance(path, str) or path.startswith("~/"):
+            raise VerificationError("invalid candidate coordination artifact")
+        resolved = _relative_path(root, path, "candidate coordination artifact")
+        if resolved.resolve() in {identity_path, pin_path}:
+            raise VerificationError("candidate identity cannot capture itself as an artifact")
+        digest = _sha256(resolved)
+        payload_artifacts.append({"path": path, "sha256": digest})
+        entries.append(f"{path}\0{digest}\n")
+    if not entries:
+        raise VerificationError("candidate identity requires an artifact")
+    command_suffix = " -- . " + " ".join(f":(exclude,literal){path}" for path in exclusions)
+    identity = {
+        "format": "memorii.dirty-coordination-candidate.v2",
+        "created": created,
+        "git_head": _command_bytes(root, "git", "rev-parse", "HEAD").decode().strip(),
+        "tree_state": "dirty-local",
+        "review_scope": "current coordination identity",
+        "git_status": {
+            "command": "git status --porcelain=v1 -z --untracked-files=all" + command_suffix,
+            "entry_count": len(_status_records(status)),
+            "sha256": hashlib.sha256(status).hexdigest(),
+        },
+        "tracked_diff": {
+            "command": "git diff --binary" + command_suffix,
+            "sha256": hashlib.sha256(_command_bytes(root, "git", "diff", "--binary", *paths)).hexdigest(),
+        },
+        "staged_diff": {
+            "command": "git diff --cached --binary" + command_suffix,
+            "sha256": hashlib.sha256(_command_bytes(root, "git", "diff", "--cached", "--binary", *paths)).hexdigest(),
+        },
+        "untracked_content_manifest": {
+            "algorithm": "sha256 of filtered raw Git untracked path bytes + NUL + file_sha256 + newline",
+            "file_count": untracked_count,
+            "sha256": untracked_digest,
+        },
+        "coordination_artifact_digest": {
+            "algorithm": "sha256 of sorted UTF-8 entries displayed_path + NUL + file_sha256 + newline",
+            "artifact_count": len(payload_artifacts),
+            "sha256": hashlib.sha256("".join(sorted(entries)).encode()).hexdigest(),
+        },
+        "coordination_artifacts": payload_artifacts,
+        "self_exclusions": exclusions,
+        "evidence_limitations": ["local dirty-tree identity; not hosted or clean-checkout evidence"],
+    }
+    identity_path.parent.mkdir(parents=True, exist_ok=True)
+    identity_path.write_text(json.dumps(identity, indent=2) + "\n", encoding="utf-8")
+    pin_path.write_text(
+        f"{_sha256(identity_path)}  {identity_path.name}\n", encoding="utf-8"
+    )
+    return identity_path
+
+
 def _expect_identity_failure_with_message(
     root: Path, relative_path: str, label: str, expected_message: str
 ) -> None:
@@ -580,6 +766,74 @@ def _expect_identity_failure_with_message(
             ) from exc
         return
     raise VerificationError(f"identity self-test unexpectedly passed: {label}")
+
+
+def _expect_manifest_failure_with_message(
+    manifest_path: Path, label: str, expected_message: str
+) -> None:
+    try:
+        verify(manifest_path)
+    except VerificationError as exc:
+        if expected_message not in str(exc):
+            raise VerificationError(
+                f"identity self-test {label!r} failed for the wrong reason: {exc}"
+            ) from exc
+        return
+    raise VerificationError(f"identity self-test unexpectedly passed: {label}")
+
+
+def _write_current_identity_manifest(root: Path, identity_relative: str) -> Path:
+    """Create a minimal complete split manifest for public v2 verification."""
+    work = root / "docs/work/semantic_ingestion"
+    history = work / "history"
+    milestones = work / "milestones"
+    history.mkdir(parents=True)
+    milestones.mkdir()
+    canonical = work / "implementation.plan.md"
+    canonical.write_text("## Canonical\nliteral\n", encoding="utf-8")
+    archive = history / "archive.md"
+    archive.write_text("## History\n- Decision: retained\nremaining_validated_p1_p2\n", encoding="utf-8")
+    milestone = milestones / "current.plan.md"
+    milestone.write_text(
+        "- Status: active\n" + " ".join(sorted(REQUIREMENT_IDS)) + "\n",
+        encoding="utf-8",
+    )
+    manifest_path = history / "current-manifest.json"
+    archive_relative = str(archive.relative_to(root))
+    canonical_relative = str(canonical.relative_to(root))
+    milestone_relative = str(milestone.relative_to(root))
+    data = {
+        "format": FORMAT,
+        "bundle_sha256": "",
+        "candidate_identity": identity_relative,
+        "canonical_path": canonical_relative,
+        "archive": {
+            "path": archive_relative,
+            "sha256": _sha256(archive),
+            "metrics": [
+                {
+                    "name": kind,
+                    "extractor": kind,
+                    "expected": _metric(kind, archive.read_text(encoding="utf-8"), archive.read_bytes()),
+                }
+                for kind in sorted(METRIC_KINDS)
+            ],
+        },
+        "artifacts": [
+            {"path": canonical_relative, "sha256": _sha256(canonical)},
+            {"path": archive_relative, "sha256": _sha256(archive)},
+            {"path": str(manifest_path.relative_to(root)), "sha256": "self"},
+        ],
+        "milestones": [
+            {"id": "current", "path": milestone_relative, "status": "active", "requirements": sorted(REQUIREMENT_IDS)}
+        ],
+        "reference_corpus": {"paths": [canonical_relative], "matcher": "literal", "expected_path_count": 1, "expected_count": 1},
+        "obligations": [{"id": "current", "detail_owner": canonical_relative, "summary_owners": [archive_relative], "required_literals": [{"owner": canonical_relative, "literal": "literal"}], "archive_anchors": ["History"]}],
+        "required_paths": [],
+        "section_counts": [],
+    }
+    _refresh_bundle(root, manifest_path, data)
+    return manifest_path
 
 
 def _candidate_identity_self_test(parent: Path) -> None:
@@ -621,6 +875,95 @@ def _candidate_identity_self_test(parent: Path) -> None:
     _expect_identity_failure_with_message(
         root, identity_relative, "newline path content change", "untracked content mismatch"
     )
+
+
+def _current_candidate_identity_self_test(parent: Path) -> None:
+    root = (parent / "current-candidate-identity").resolve()
+    root.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    subprocess.run(["git", "config", "user.name", "Memorii Self Test"], cwd=root, check=True)
+    subprocess.run(["git", "config", "user.email", "self-test@invalid"], cwd=root, check=True)
+    (root / "anchor.txt").write_text("anchor\n", encoding="utf-8")
+    artifact = root / "artifact.txt"
+    artifact.write_text("artifact\n", encoding="utf-8")
+    (root / ".git" / "info" / "exclude").write_text("artifact.txt\n", encoding="utf-8")
+    candidate = root / "candidate.txt"
+    candidate.write_text("base\n", encoding="utf-8")
+    identity_relative = ".review/identity*?.json"
+    identity_path = root / identity_relative
+    identity_path.parent.mkdir()
+    identity_path.write_text("{}\n", encoding="utf-8")
+    _manifest_pin_path(identity_path).write_text("placeholder\n", encoding="utf-8")
+    manifest_path = _write_current_identity_manifest(root, identity_relative)
+    sibling = root / ".review" / "identity-other.json"
+    sibling.write_text("sibling\n", encoding="utf-8")
+    subprocess.run(["git", "add", "anchor.txt", "candidate.txt", ".review"], cwd=root, check=True)
+    subprocess.run(["git", "-c", "commit.gpgsign=false", "commit", "-qm", "base"], cwd=root, check=True)
+
+    candidate.write_text("staged-a\n", encoding="utf-8")
+    subprocess.run(["git", "add", "candidate.txt"], cwd=root, check=True)
+    capture_current_candidate_identity(root, identity_relative, ["artifact.txt"], created="self-test")
+    verify(manifest_path)
+
+    candidate.write_text("unstaged-a\n", encoding="utf-8")
+    _expect_manifest_failure_with_message(manifest_path, "unstaged mutation", "git status mismatch")
+    subprocess.run(["git", "add", "candidate.txt"], cwd=root, check=True)
+    capture_current_candidate_identity(root, identity_relative, ["artifact.txt"], created="self-test")
+    candidate.write_text("staged-b\n", encoding="utf-8")
+    subprocess.run(["git", "add", "candidate.txt"], cwd=root, check=True)
+    _expect_manifest_failure_with_message(manifest_path, "tracked mutation", "staged diff mismatch")
+    capture_current_candidate_identity(root, identity_relative, ["artifact.txt"], created="self-test")
+    sibling.write_text("sibling tampered\n", encoding="utf-8")
+    _expect_manifest_failure_with_message(manifest_path, "literal wildcard sibling", "git status mismatch")
+    sibling.write_text("sibling\n", encoding="utf-8")
+    capture_current_candidate_identity(root, identity_relative, ["artifact.txt"], created="self-test")
+    extra = root / "extra.txt"
+    extra.write_text("first\n", encoding="utf-8")
+    capture_current_candidate_identity(root, identity_relative, ["artifact.txt"], created="self-test")
+    extra.write_text("second\n", encoding="utf-8")
+    _expect_manifest_failure_with_message(manifest_path, "untracked mutation", "untracked content mismatch")
+    capture_current_candidate_identity(root, identity_relative, ["artifact.txt"], created="self-test")
+    artifact.write_text("tampered\n", encoding="utf-8")
+    _expect_manifest_failure_with_message(manifest_path, "artifact mutation", "artifact mismatch")
+    artifact.write_text("artifact\n", encoding="utf-8")
+    capture_current_candidate_identity(root, identity_relative, ["artifact.txt"], created="self-test")
+    identity = json.loads(identity_path.read_text(encoding="utf-8"))
+    identity["self_exclusions"] = [".review"]
+    identity_path.write_text(json.dumps(identity, indent=2) + "\n", encoding="utf-8")
+    _manifest_pin_path(identity_path).write_text(f"{_sha256(identity_path)}  {identity_path.name}\n", encoding="utf-8")
+    _expect_manifest_failure_with_message(manifest_path, "broad exclusion", "self_exclusions")
+    capture_current_candidate_identity(root, identity_relative, ["artifact.txt"], created="self-test")
+    try:
+        capture_current_candidate_identity(root, identity_relative, [identity_relative], created="self-test")
+    except VerificationError as exc:
+        if "cannot capture itself" not in str(exc):
+            raise
+    else:
+        raise VerificationError("identity self-test self artifact unexpectedly passed")
+    try:
+        capture_current_candidate_identity(root, identity_relative, [".review/./identity*?.json"], created="self-test")
+    except VerificationError as exc:
+        if "cannot capture itself" not in str(exc):
+            raise
+    else:
+        raise VerificationError("identity self-test self artifact alias unexpectedly passed")
+    identity = json.loads(identity_path.read_text(encoding="utf-8"))
+    identity["coordination_artifacts"] = [None]
+    identity_path.write_text(json.dumps(identity, indent=2) + "\n", encoding="utf-8")
+    _manifest_pin_path(identity_path).write_text(f"{_sha256(identity_path)}  {identity_path.name}\n", encoding="utf-8")
+    _expect_manifest_failure_with_message(manifest_path, "artifact type", "must be an object")
+    capture_current_candidate_identity(root, identity_relative, ["artifact.txt"], created="self-test")
+    try:
+        capture_current_candidate_identity(root, "../outside.json", ["artifact.txt"], created="self-test")
+    except VerificationError as exc:
+        if "invalid relative path" not in str(exc):
+            raise
+    else:
+        raise VerificationError("identity self-test traversal unexpectedly passed")
+    if (parent / "outside.json").exists():
+        raise VerificationError("identity self-test traversal wrote outside root")
+    subprocess.run(["git", "mv", identity_relative, ".review/renamed.json"], cwd=root, check=True)
+    _expect_manifest_failure_with_message(manifest_path, "identity rename", "required file is missing")
 
 
 def self_test(manifest_path: Path) -> None:
@@ -788,6 +1131,7 @@ def self_test(manifest_path: Path) -> None:
             "required archive metric missing",
         )
         _candidate_identity_self_test(Path(directory))
+        _current_candidate_identity_self_test(Path(directory))
     print("workplan split self-test: passed")
 
 

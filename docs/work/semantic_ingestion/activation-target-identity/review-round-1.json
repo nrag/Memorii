@@ -1,0 +1,63 @@
+{
+  "candidate": "54be5bed2680fc5f4d2273f294dd96f5b7caf8aa6c6eefc9dc6ba6768b1b84ce",
+  "status": "CONSOLIDATED_CONFORMANCE_AND_EVIDENCE_ACTIONS",
+  "findings": [
+    {
+      "id": "DREV-001",
+      "reviewer": "spec_auditor",
+      "classification": "confirmed",
+      "priority": "Not applicable",
+      "disposition": "changes_required",
+      "type": "security/governance",
+      "action": "Exact JSON string/profile/version grammar and literal NUL signature delimiter."
+    },
+    {
+      "id": "DREV-002",
+      "reviewer": "correctness_reviewer",
+      "classification": "confirmed",
+      "priority": "Not applicable",
+      "disposition": "changes_required",
+      "type": "architecture/authority-boundary",
+      "action": "Explicit ProviderMemoryService host activation, selected raw-manifest pin, protected configuration/context forwarding, typed fail-closed outcomes. Automatic startup activation suggestion not adopted because configuration must not activate."
+    },
+    {
+      "id": "DREV-003",
+      "reviewer": "correctness_reviewer",
+      "classification": "confirmed",
+      "priority": "Not applicable",
+      "disposition": "changes_required",
+      "type": "security/contract-grammar",
+      "action": "Closed install/cache/origin policy literals included in E and receipt, validated at bootstrap and use."
+    },
+    {
+      "id": "DREV-004",
+      "reviewer": "test_reviewer",
+      "classification": "confirmed",
+      "priority": "Not applicable",
+      "disposition": "blocks_approval",
+      "type": "verification",
+      "action": "Bounded independent Python/JavaScript recipe feasibility, hand-authored input, frozen literal preimages and every-field mutation comparison; no product remediation."
+    },
+    {
+      "id": "DREV-005",
+      "reviewer": "test_reviewer",
+      "classification": "confirmed",
+      "priority": "Not applicable",
+      "disposition": "changes_required",
+      "type": "verification",
+      "action": "Concrete test-to-gate map including installed bootstrap/provider, authority removal, JSONL recovery, limits and signing."
+    }
+  ],
+  "root_conformance": [
+    {
+      "issue": "Required numpy/jsonschema dependencies install entrypoint scripts; blanket script rejection prevents ordinary deployment.",
+      "evidence": "Local installed RECORD lists ../../../bin/f2py and ../../../bin/jsonschema.",
+      "action": "Allow exact RECORD-owned regular scripts below protected script anchor; normalize into site/scripts locators; reject external traversal/overlaps/symlinks."
+    },
+    {
+      "issue": "Private issuer token contradicts explicit trusted-host extension boundary; zero-size files and nested sequence counts need exact treatment.",
+      "action": "Trusted immutable bootstrap facts without opaque token; zero-size supported; E includes all sequence counts."
+    }
+  ],
+  "review_scope": "Design only T01-T08; runtime activation still unavailable; no real signatures or final CI required for design proof."
+}

@@ -1,0 +1,4 @@
+/Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/atomic_store.py
+  /Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/atomic_store.py:11529:45 - error: Argument of type "BaseModel" cannot be assigned to parameter "head" of type "ObservationLedgerHead" in function "_observation_ledger_head_record"
+    "BaseModel" is not assignable to "ObservationLedgerHead" (reportArgumentType)
+1 error, 0 warnings, 0 informations

@@ -1,0 +1,12 @@
+{
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "scope": "current coordination identity v2 repair only; v1 unchanged",
+  "files": {
+    ".agents/scripts/verify_workplan_split.py": "a24181ce05510437b337d9a05ff1917dafe22bebe02f530baf54211c26ed04b6",
+    "docs/work/semantic_ingestion/coordination-identity/testing.plan.md": "ff61deb63a5efa46e5636b83b5c54ff23298d6c1b742a410e4a1f62731eb6bf4",
+    "docs/work/semantic_ingestion/history/implementation-split-manifest.json": "81259ad6c0e94ed9b286a1e9e5ec07b8db4c7e1c93edbf255e6eb849924b1114",
+    "docs/work/semantic_ingestion/history/implementation-split-manifest.json.sha256": "45099bd82efd38b08835fee37a9841d3851afe3b8e412b3cbeeca8138a77cf57"
+  },
+  "checks": "coordinator verify(...verify_candidate=False)+self_test passed; worker Ruff/diff passed",
+  "other_writers": "only unrelated crypto artifacts"
+}

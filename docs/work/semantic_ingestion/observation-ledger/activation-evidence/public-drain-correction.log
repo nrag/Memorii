@@ -1,0 +1,652 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__ test_public_drain_preserves_live_operation_and_rejects_new_old_epoch_work ___
+
+self = <memorii.core.provider.service.ProviderMemoryService object at 0x114ef5e80>
+memory_plane = <memorii.core.memory_plane.service.MemoryPlaneService object at 0x115ae99d0>
+work_state_service = None
+decision_state_service = <object object at 0x114848680>
+promotion_decision_provider = <object object at 0x1148486b0>
+llm_decision_trace_store = None, solver_frontier_planner = None
+solver_store = None, overlay_store = None
+emit_work_state_event_candidates = True, memory_evolution_extractor = None
+memory_evolution_query_analyzer = None
+memory_evolution_operation_repository = None
+now_provider = <function _provider_factory.<locals>.build.<locals>.<lambda> at 0x1142ca2a0>
+scoped_read_authority = None, conflict_attention_repository = None
+conflict_attention_enabled = False, conflict_attention_observability_sink = None
+conflict_attention_composite = False, authenticated_ingress_resolver = None
+source_user_event_verifier = None, user_confirmation_receipt_verifier = None
+conflict_clarification_pipeline = None, semantic_integrity_lifecycle = None
+semantic_integrity_root = None, identity_lineage_audit_reader = None
+identity_lineage_audit_authorizer = None
+host_bootstrap_capability = BuiltInLocalHostSemanticIngestionCapability(bootstrap_material_presentation=HostBootstrapMaterialPresentation(material...84d471c4e83fcf6e3a9d'),), selected_manifest_sha256='453ac36e5ed7bfd488a2b2add314c258c826b2bd77fa8c83d297aded5ba4ad6a'))
+host_bootstrap_material_verifier = <tests.fixtures.semantic_ingestion.host_bootstrap_authority.DeterministicTestHostBootstrapMaterialVerifier object at 0x1142e8620>
+source_normalization_host_bundle_builder = SourceNormalizationHostBundleBuilder(authority_provider=<tests.fixtures.semantic_ingestion.source_normalization_fixtur...0x115768360>, bootstrap_v3_temporal_request=<function _v3_normalization_host_builder.<locals>.<lambda> at 0x115768400>)
+verified_production_host_authority = None, canonical_evidence_enabled = None
+_host_construction = None
+
+    def __init__(
+        self,
+        memory_plane: MemoryPlaneService | None = None,
+        work_state_service: WorkStateService | None = None,
+        decision_state_service: DecisionStateService | None | object = _DEFAULT_DECISION_STATE_SERVICE,
+        promotion_decision_provider: PromotionAssessmentProvider | None | object = _DEFAULT_PROMOTION_DECISION_PROVIDER,
+        llm_decision_trace_store: LLMDecisionTraceStore | None = None,
+        solver_frontier_planner: SolverFrontierPlanner | None = None,
+        solver_store: SolverGraphStore | None = None,
+        overlay_store: OverlayStore | None = None,
+        emit_work_state_event_candidates: bool = True,
+        memory_evolution_extractor: MemoryExtractor | None = None,
+        memory_evolution_query_analyzer: QueryAnalyzer | None = None,
+        memory_evolution_operation_repository: EvolutionOperationRepository | None = None,
+        now_provider: Callable[[], datetime] | None = None,
+        scoped_read_authority: ScopedHostReadAuthority | None = None,
+        conflict_attention_repository: ConflictClarificationRepository | None = None,
+        conflict_attention_enabled: bool = False,
+        conflict_attention_observability_sink: ConflictAttentionObservabilitySink
+        | None = None,
+        conflict_attention_composite: bool = False,
+        authenticated_ingress_resolver: AuthenticatedIngressContextResolver | None = None,
+        source_user_event_verifier: SourceUserEventVerifier | None = None,
+        user_confirmation_receipt_verifier: UserConfirmationReceiptVerifier | None = None,
+        conflict_clarification_pipeline: ConflictClarificationSemanticPipeline | None = None,
+        semantic_integrity_lifecycle: PrivilegedSemanticIntegrityLifecycle
+        | None = None,
+        semantic_integrity_root: Path | None = None,
+        identity_lineage_audit_reader: ScopedIdentityLineageAuditReader | None = None,
+        identity_lineage_audit_authorizer: IdentityLineageAuditAuthorizer | None = None,
+        host_bootstrap_capability: HostBootstrapCapability | None = None,
+        host_bootstrap_material_verifier: HostBootstrapMaterialVerifier | None = None,
+        source_normalization_host_bundle_builder: SourceNormalizationHostBundleBuilder | None = None,
+        verified_production_host_authority: VerifiedProductionHostAuthority | None = None,
+        canonical_evidence_enabled: bool | None = None,
+        _host_construction: object | None = None,
+    ) -> None:
+        self._memory_plane = memory_plane or MemoryPlaneService()
+        self._scoped_read_authority = scoped_read_authority
+        self._canonical_evidence_requested = canonical_evidence_enabled
+        verified_material = None
+        verified_ingress_resolver = None
+        if verified_production_host_authority is not None:
+            if any(
+                value is not None
+                for value in (
+                    authenticated_ingress_resolver,
+                    host_bootstrap_capability,
+                    host_bootstrap_material_verifier,
+                    source_normalization_host_bundle_builder,
+                )
+            ) or _host_construction is not None:
+                raise ValueError(
+                    "verified production host authority rejects legacy authority injection"
+                )
+            (
+                host_bootstrap_capability,
+                verified_material,
+                verified_ingress_resolver,
+            ) = verified_production_authority_inputs(
+                verified_production_host_authority
+            )
+        elif host_bootstrap_capability is None:
+            capability_provider = InstalledHostBootstrapCapabilityProvider()
+            try:
+                host_bootstrap_capability = capability_provider.load()
+            except (ImportError, OSError, RuntimeError, TypeError, ValueError):
+                host_bootstrap_capability = None
+        if source_normalization_host_bundle_builder is not None:
+            if not isinstance(host_bootstrap_capability, BuiltInLocalHostSemanticIngestionCapability):
+                raise ValueError("source normalization host bundle requires the built-in local host capability")
+            if host_bootstrap_capability.source_normalization_host_bundle_builder is not None:
+                raise ValueError("source normalization host bundle is already configured")
+            host_bootstrap_capability = replace(
+                host_bootstrap_capability,
+                source_normalization_host_bundle_builder=source_normalization_host_bundle_builder,
+            )
+        if (
+            isinstance(
+                host_bootstrap_capability,
+                BuiltInLocalHostSemanticIngestionCapability,
+            )
+            and host_bootstrap_capability.bootstrap_graph_host_bundle_builder
+            is not None
+            and _host_construction is not self._SCENARIO_TEST_CONSTRUCTION
+        ):
+            raise ValueError(
+                "bootstrap graph host injection is restricted to the scenario-test harness"
+            )
+        if (
+            verified_production_host_authority is None
+            and (
+            host_bootstrap_capability is not None
+            and host_bootstrap_material_verifier is not None
+            )
+        ):
+            try:
+                presentation = host_bootstrap_capability.load_bootstrap_material_presentation()
+                verified_material = (
+                    host_bootstrap_material_verifier.verify(
+                        presentation=presentation,
+                        required_trust_domain=(
+                            "scenario_test"
+                            if _host_construction is self._SCENARIO_TEST_CONSTRUCTION
+                            else "production"
+                        ),
+                        server_time=(now_provider or (lambda: datetime.now(UTC)))(),
+                    )
+                    if presentation is not None
+                    else None
+                )
+            except (ImportError, OSError, RuntimeError, TypeError, ValueError):
+                verified_material = None
+        required_domain = (
+            "scenario_test"
+            if _host_construction is self._SCENARIO_TEST_CONSTRUCTION
+            else "production"
+        )
+        if (
+            verified_material is not None
+            and (
+                verified_material.trust_domain != required_domain
+                or verified_material.release_evidence.trust_domain != required_domain
+            )
+        ):
+            verified_material = None
+        self._canonical_evidence_enabled = False
+        self._canonical_closure_dispatcher = RetainingCanonicalClosureObservabilityDispatcher()
+        self._authenticated_ingress_resolver = None
+        self._bootstrap_profile: VerifiedBootstrapProfile | None = None
+        self._bootstrap_unavailable_reason = "invalid_config"
+        if verified_material is not None:
+            self._authenticated_ingress_resolver = (
+                verified_ingress_resolver
+                if verified_ingress_resolver is not None
+                else cast(
+                    AuthenticatedIngressContextResolver,
+                    verified_material.authenticated_ingress_resolver,
+                )
+            )
+            try:
+                self._bootstrap_profile = verify_bootstrap_profile(verified_material)
+                # The canonical-evidence substitution is the default for every
+                # verified runtime; an explicit request is the only way off
+                # (parity proofs and rollback).
+                self._canonical_evidence_enabled = (
+                    True
+                    if self._canonical_evidence_requested is None
+                    else self._canonical_evidence_requested
+                )
+            except BootstrapProfileVerificationError as exc:
+                self._bootstrap_profile = None
+                self._bootstrap_unavailable_reason = exc.reason.value
+            except ValueError:
+                self._bootstrap_profile = None
+                self._bootstrap_unavailable_reason = "invalid_manifest"
+        self._now_provider = now_provider or (lambda: datetime.now(UTC))
+        if conflict_attention_enabled and conflict_attention_repository is None:
+            raise ValueError("conflict attention is enabled without a repository")
+        self._conflict_attention_repository = conflict_attention_repository
+        self._conflict_attention_enabled = conflict_attention_enabled
+        self._conflict_attention_composite = conflict_attention_composite
+        self._composite_attention_repository_instance: (
+            CompositeConflictListingRepository | None
+        ) = None
+        self._conflict_attention_observability_sink = (
+            conflict_attention_observability_sink
+        )
+        self._identity_lineage_audit_reader = identity_lineage_audit_reader
+        self._identity_lineage_audit_authorizer = identity_lineage_audit_authorizer
+        self._source_user_event_verifier = source_user_event_verifier
+        self._user_confirmation_receipt_verifier = user_confirmation_receipt_verifier
+        if semantic_integrity_lifecycle is not None and semantic_integrity_root is not None:
+            raise ValueError("semantic integrity lifecycle and root are mutually exclusive")
+        if (
+            semantic_integrity_lifecycle is not None
+            and semantic_integrity_lifecycle.repository_id != "semantic_ingestion"
+        ):
+            raise ValueError(
+                "semantic integrity lifecycle does not bind the provider event authority"
+            )
+        if authenticated_ingress_resolver is not None:
+            self._authenticated_ingress_resolver = authenticated_ingress_resolver
+        if semantic_integrity_lifecycle is None and semantic_integrity_root is not None:
+            integrity_repository = FileConflictIntegrityRepository(
+                semantic_integrity_root / "integrity.jsonl",
+                repository_id="semantic_ingestion",
+                snapshot_provider=lambda: self._semantic_atomic_store.semantic_integrity_snapshot(),
+                clean_replay_verifier=(
+                    lambda repaired, retained, authority: self._semantic_atomic_store.prepare_semantic_clean_recovery(
+                        repaired,
+                        retained,
+                        authority,
+                    )
+                ),
+                now_provider=self._now_provider,
+            )
+            semantic_integrity_lifecycle = PrivilegedSemanticIntegrityLifecycle(
+                integrity_repository,
+                attention_repository=(
+                    conflict_attention_repository
+                    if isinstance(conflict_attention_repository, FileConflictAttentionRepository)
+                    else None
+                ),
+                clean_recovery_request_retainer=(
+                    lambda request: self._semantic_atomic_store.retain_semantic_clean_recovery_request(request)
+                ),
+                clean_recovery_activator=(
+                    lambda request: self._semantic_atomic_store.activate_semantic_clean_recovery(request)
+                ),
+                clean_recovery_reconciler=(
+                    lambda released: self._semantic_atomic_store.reconcile_semantic_clean_recovery(released)
+                ),
+            )
+        semantic_runtime: AuthorizedSemanticIngestionRuntime | None = None
+        runtime_builder = cast(
+            HostSemanticIngestionRuntimeBuilder | None, host_bootstrap_capability
+        )
+        if (
+            self._bootstrap_profile is not None
+            and runtime_builder is not None
+            and hasattr(runtime_builder, "build_semantic_ingestion_runtime")
+        ):
+            try:
+                if isinstance(
+                    host_bootstrap_capability,
+                    BuiltInLocalHostSemanticIngestionCapability,
+                ) and verified_material is not None:
+                    semantic_runtime = (
+>                       host_bootstrap_capability.build_semantic_ingestion_runtime(
+                        memory_plane=self._memory_plane,
+                        now_provider=self._now_provider,
+                        bootstrap_profile=self._bootstrap_profile,
+                        verified_material=verified_material,
+                        semantic_integrity_lifecycle=semantic_integrity_lifecycle,
+                        )
+                    )
+
+memorii/memorii/core/provider/service.py:481: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+memorii/memorii/core/semantic_ingestion/capability.py:431: in build_semantic_ingestion_runtime
+    else self.source_normalization_host_bundle_builder.build(atomic_store=store)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+memorii/memorii/core/semantic_ingestion/source_normalization_host.py:91: in build
+    bind_publication_lease(atomic_store.current_source_normalization_lease)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.fixtures.semantic_ingestion.source_normalization_fixture_builder.DynamicSourceNormalizationAuthorityProvider object at 0x114f81400>
+lookup = <bound method SemanticIngestionAtomicStore.current_source_normalization_lease of <memorii.core.memory_evolution.atomic_store.SemanticIngestionAtomicStore object at 0x1163d3530>>
+
+    def bind_publication_lease_lookup(
+        self, lookup: Callable[..., OperationLeaseBinding]
+    ) -> None:
+        """Receive the host-owned atomic lease reader during bundle composition."""
+        if self._publication_lease_lookup is not None:
+>           raise ValueError("fixture publication lease authority is already bound")
+E           ValueError: fixture publication lease authority is already bound
+
+memorii/tests/fixtures/semantic_ingestion/source_normalization_fixture_builder.py:894: ValueError
+
+The above exception was the direct cause of the following exception:
+
+tmp_path = PosixPath('/private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/pytest-of-nandaraghunathan/pytest-1078/test_public_drain_preserves_li0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x114d8a150>
+
+    def test_public_drain_preserves_live_operation_and_rejects_new_old_epoch_work(tmp_path, monkeypatch) -> None:
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Event
+    
+        from memorii.core.memory_evolution.ingestion_contracts import encode_typed_value
+        from memorii.core.memory_evolution.observation_activation_runtime import validate_registered_artifact
+        from memorii.core.memory_plane.store import record_digest
+        from memorii.core.provider.models import ProviderOperation
+        from tests.unit.core.semantic_ingestion.test_semantic_provider_composition import _host_ingress
+    
+        build, _, _ = _provider_factory(tmp_path, monkeypatch, normalization=True)
+        path = tmp_path / "draining-store"
+        plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path))
+        service = build(plane)
+        runtime = service._composed_semantic_runtime
+        assert runtime is not None and runtime.atomic_store is not None
+        atomic = runtime.atomic_store
+    
+        def ingest(operation):
+            return service.sync_event(
+                operation=ProviderOperation.CHAT_USER_TURN, content="Atlas owner is Bob.",
+                operation_id=operation, task_id="task:one", user_id="user:alice",
+                authenticated_host_ingress=_host_ingress(),
+            )
+    
+        ingest("completed-before-drain")
+        acquire = atomic.acquire_lease
+        ready, release = Event(), Event()
+        held = []
+    
+        def hold_after_lease(**kwargs):
+            control = acquire(**kwargs)
+            held.append(control)
+            ready.set()
+            assert release.wait(timeout=120), "test did not release the held operation"
+            return control
+    
+        monkeypatch.setattr(atomic, "acquire_lease", hold_after_lease)
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            running = executor.submit(ingest, "held-operation")
+            try:
+                assert ready.wait(timeout=30), "public ingestion did not acquire a lease"
+                assert held[0].lease is not None
+                with pytest.raises(PreplanningStoreError, match="not drained"):
+                    service.activate_observation_ledger()
+                assert atomic.get_operation(held[0].operation_fence) == held[0]
+                before_controls = plane.list_records(source_kind="semantic_ingestion_preplanning_control")
+                with pytest.raises(ValueError, match="draining and source admission is frozen"):
+                    ingest("new-operation-during-drain")
+                assert plane.list_records(source_kind="semantic_ingestion_preplanning_control") == before_controls
+            finally:
+                release.set()
+            running.result(timeout=120)
+        terminal = atomic.get_operation(held[0].operation_fence)
+        assert terminal.state == "terminal" and terminal.lease is None
+        snapshot = plane.read_write_snapshot()[1]
+        controls = tuple(record for record in snapshot if record.source_kind == "semantic_ingestion_preplanning_control")
+        assert len(controls) == 2
+        roots = tuple(record for record in snapshot
+                      if record.memory_id.startswith("semantic_ingestion:bootstrap-graph-v3:terminal-locator:"))
+        terminals = tuple(record for record in snapshot
+                          if record.source_kind == "semantic_ingestion_bootstrap_graph_v3_terminal_control")
+        assert len(roots) == len(terminals) == 2
+        expected_inventory = sha256(encode_typed_value(tuple(sorted(
+            (record.memory_id, record_digest(record)) for record in (*controls, *roots, *terminals)
+        )))).hexdigest()
+        activated = service.activate_observation_ledger()
+        artifact = plane.get_record("semantic_ingestion:observation-ledger:activation:" + activated.activation_digest)
+        assert artifact is not None and runtime.typed_value_registry_history is not None
+        decoded = validate_registered_artifact(artifact.content["artifact"].encode(), schema_id="ObservationLedgerActivation",
+                                               history=runtime.typed_value_registry_history)
+        assert decoded.legacy_terminal_inventory_digest == expected_inventory
+>       reopened = build(MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path)))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+memorii/tests/integration/test_observation_ledger_activation.py:516: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+memorii/tests/integration/test_observation_ledger_activation.py:88: in build
+    return ProviderMemoryService(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <memorii.core.provider.service.ProviderMemoryService object at 0x114ef5e80>
+memory_plane = <memorii.core.memory_plane.service.MemoryPlaneService object at 0x115ae99d0>
+work_state_service = None
+decision_state_service = <object object at 0x114848680>
+promotion_decision_provider = <object object at 0x1148486b0>
+llm_decision_trace_store = None, solver_frontier_planner = None
+solver_store = None, overlay_store = None
+emit_work_state_event_candidates = True, memory_evolution_extractor = None
+memory_evolution_query_analyzer = None
+memory_evolution_operation_repository = None
+now_provider = <function _provider_factory.<locals>.build.<locals>.<lambda> at 0x1142ca2a0>
+scoped_read_authority = None, conflict_attention_repository = None
+conflict_attention_enabled = False, conflict_attention_observability_sink = None
+conflict_attention_composite = False, authenticated_ingress_resolver = None
+source_user_event_verifier = None, user_confirmation_receipt_verifier = None
+conflict_clarification_pipeline = None, semantic_integrity_lifecycle = None
+semantic_integrity_root = None, identity_lineage_audit_reader = None
+identity_lineage_audit_authorizer = None
+host_bootstrap_capability = BuiltInLocalHostSemanticIngestionCapability(bootstrap_material_presentation=HostBootstrapMaterialPresentation(material...84d471c4e83fcf6e3a9d'),), selected_manifest_sha256='453ac36e5ed7bfd488a2b2add314c258c826b2bd77fa8c83d297aded5ba4ad6a'))
+host_bootstrap_material_verifier = <tests.fixtures.semantic_ingestion.host_bootstrap_authority.DeterministicTestHostBootstrapMaterialVerifier object at 0x1142e8620>
+source_normalization_host_bundle_builder = SourceNormalizationHostBundleBuilder(authority_provider=<tests.fixtures.semantic_ingestion.source_normalization_fixtur...0x115768360>, bootstrap_v3_temporal_request=<function _v3_normalization_host_builder.<locals>.<lambda> at 0x115768400>)
+verified_production_host_authority = None, canonical_evidence_enabled = None
+_host_construction = None
+
+    def __init__(
+        self,
+        memory_plane: MemoryPlaneService | None = None,
+        work_state_service: WorkStateService | None = None,
+        decision_state_service: DecisionStateService | None | object = _DEFAULT_DECISION_STATE_SERVICE,
+        promotion_decision_provider: PromotionAssessmentProvider | None | object = _DEFAULT_PROMOTION_DECISION_PROVIDER,
+        llm_decision_trace_store: LLMDecisionTraceStore | None = None,
+        solver_frontier_planner: SolverFrontierPlanner | None = None,
+        solver_store: SolverGraphStore | None = None,
+        overlay_store: OverlayStore | None = None,
+        emit_work_state_event_candidates: bool = True,
+        memory_evolution_extractor: MemoryExtractor | None = None,
+        memory_evolution_query_analyzer: QueryAnalyzer | None = None,
+        memory_evolution_operation_repository: EvolutionOperationRepository | None = None,
+        now_provider: Callable[[], datetime] | None = None,
+        scoped_read_authority: ScopedHostReadAuthority | None = None,
+        conflict_attention_repository: ConflictClarificationRepository | None = None,
+        conflict_attention_enabled: bool = False,
+        conflict_attention_observability_sink: ConflictAttentionObservabilitySink
+        | None = None,
+        conflict_attention_composite: bool = False,
+        authenticated_ingress_resolver: AuthenticatedIngressContextResolver | None = None,
+        source_user_event_verifier: SourceUserEventVerifier | None = None,
+        user_confirmation_receipt_verifier: UserConfirmationReceiptVerifier | None = None,
+        conflict_clarification_pipeline: ConflictClarificationSemanticPipeline | None = None,
+        semantic_integrity_lifecycle: PrivilegedSemanticIntegrityLifecycle
+        | None = None,
+        semantic_integrity_root: Path | None = None,
+        identity_lineage_audit_reader: ScopedIdentityLineageAuditReader | None = None,
+        identity_lineage_audit_authorizer: IdentityLineageAuditAuthorizer | None = None,
+        host_bootstrap_capability: HostBootstrapCapability | None = None,
+        host_bootstrap_material_verifier: HostBootstrapMaterialVerifier | None = None,
+        source_normalization_host_bundle_builder: SourceNormalizationHostBundleBuilder | None = None,
+        verified_production_host_authority: VerifiedProductionHostAuthority | None = None,
+        canonical_evidence_enabled: bool | None = None,
+        _host_construction: object | None = None,
+    ) -> None:
+        self._memory_plane = memory_plane or MemoryPlaneService()
+        self._scoped_read_authority = scoped_read_authority
+        self._canonical_evidence_requested = canonical_evidence_enabled
+        verified_material = None
+        verified_ingress_resolver = None
+        if verified_production_host_authority is not None:
+            if any(
+                value is not None
+                for value in (
+                    authenticated_ingress_resolver,
+                    host_bootstrap_capability,
+                    host_bootstrap_material_verifier,
+                    source_normalization_host_bundle_builder,
+                )
+            ) or _host_construction is not None:
+                raise ValueError(
+                    "verified production host authority rejects legacy authority injection"
+                )
+            (
+                host_bootstrap_capability,
+                verified_material,
+                verified_ingress_resolver,
+            ) = verified_production_authority_inputs(
+                verified_production_host_authority
+            )
+        elif host_bootstrap_capability is None:
+            capability_provider = InstalledHostBootstrapCapabilityProvider()
+            try:
+                host_bootstrap_capability = capability_provider.load()
+            except (ImportError, OSError, RuntimeError, TypeError, ValueError):
+                host_bootstrap_capability = None
+        if source_normalization_host_bundle_builder is not None:
+            if not isinstance(host_bootstrap_capability, BuiltInLocalHostSemanticIngestionCapability):
+                raise ValueError("source normalization host bundle requires the built-in local host capability")
+            if host_bootstrap_capability.source_normalization_host_bundle_builder is not None:
+                raise ValueError("source normalization host bundle is already configured")
+            host_bootstrap_capability = replace(
+                host_bootstrap_capability,
+                source_normalization_host_bundle_builder=source_normalization_host_bundle_builder,
+            )
+        if (
+            isinstance(
+                host_bootstrap_capability,
+                BuiltInLocalHostSemanticIngestionCapability,
+            )
+            and host_bootstrap_capability.bootstrap_graph_host_bundle_builder
+            is not None
+            and _host_construction is not self._SCENARIO_TEST_CONSTRUCTION
+        ):
+            raise ValueError(
+                "bootstrap graph host injection is restricted to the scenario-test harness"
+            )
+        if (
+            verified_production_host_authority is None
+            and (
+            host_bootstrap_capability is not None
+            and host_bootstrap_material_verifier is not None
+            )
+        ):
+            try:
+                presentation = host_bootstrap_capability.load_bootstrap_material_presentation()
+                verified_material = (
+                    host_bootstrap_material_verifier.verify(
+                        presentation=presentation,
+                        required_trust_domain=(
+                            "scenario_test"
+                            if _host_construction is self._SCENARIO_TEST_CONSTRUCTION
+                            else "production"
+                        ),
+                        server_time=(now_provider or (lambda: datetime.now(UTC)))(),
+                    )
+                    if presentation is not None
+                    else None
+                )
+            except (ImportError, OSError, RuntimeError, TypeError, ValueError):
+                verified_material = None
+        required_domain = (
+            "scenario_test"
+            if _host_construction is self._SCENARIO_TEST_CONSTRUCTION
+            else "production"
+        )
+        if (
+            verified_material is not None
+            and (
+                verified_material.trust_domain != required_domain
+                or verified_material.release_evidence.trust_domain != required_domain
+            )
+        ):
+            verified_material = None
+        self._canonical_evidence_enabled = False
+        self._canonical_closure_dispatcher = RetainingCanonicalClosureObservabilityDispatcher()
+        self._authenticated_ingress_resolver = None
+        self._bootstrap_profile: VerifiedBootstrapProfile | None = None
+        self._bootstrap_unavailable_reason = "invalid_config"
+        if verified_material is not None:
+            self._authenticated_ingress_resolver = (
+                verified_ingress_resolver
+                if verified_ingress_resolver is not None
+                else cast(
+                    AuthenticatedIngressContextResolver,
+                    verified_material.authenticated_ingress_resolver,
+                )
+            )
+            try:
+                self._bootstrap_profile = verify_bootstrap_profile(verified_material)
+                # The canonical-evidence substitution is the default for every
+                # verified runtime; an explicit request is the only way off
+                # (parity proofs and rollback).
+                self._canonical_evidence_enabled = (
+                    True
+                    if self._canonical_evidence_requested is None
+                    else self._canonical_evidence_requested
+                )
+            except BootstrapProfileVerificationError as exc:
+                self._bootstrap_profile = None
+                self._bootstrap_unavailable_reason = exc.reason.value
+            except ValueError:
+                self._bootstrap_profile = None
+                self._bootstrap_unavailable_reason = "invalid_manifest"
+        self._now_provider = now_provider or (lambda: datetime.now(UTC))
+        if conflict_attention_enabled and conflict_attention_repository is None:
+            raise ValueError("conflict attention is enabled without a repository")
+        self._conflict_attention_repository = conflict_attention_repository
+        self._conflict_attention_enabled = conflict_attention_enabled
+        self._conflict_attention_composite = conflict_attention_composite
+        self._composite_attention_repository_instance: (
+            CompositeConflictListingRepository | None
+        ) = None
+        self._conflict_attention_observability_sink = (
+            conflict_attention_observability_sink
+        )
+        self._identity_lineage_audit_reader = identity_lineage_audit_reader
+        self._identity_lineage_audit_authorizer = identity_lineage_audit_authorizer
+        self._source_user_event_verifier = source_user_event_verifier
+        self._user_confirmation_receipt_verifier = user_confirmation_receipt_verifier
+        if semantic_integrity_lifecycle is not None and semantic_integrity_root is not None:
+            raise ValueError("semantic integrity lifecycle and root are mutually exclusive")
+        if (
+            semantic_integrity_lifecycle is not None
+            and semantic_integrity_lifecycle.repository_id != "semantic_ingestion"
+        ):
+            raise ValueError(
+                "semantic integrity lifecycle does not bind the provider event authority"
+            )
+        if authenticated_ingress_resolver is not None:
+            self._authenticated_ingress_resolver = authenticated_ingress_resolver
+        if semantic_integrity_lifecycle is None and semantic_integrity_root is not None:
+            integrity_repository = FileConflictIntegrityRepository(
+                semantic_integrity_root / "integrity.jsonl",
+                repository_id="semantic_ingestion",
+                snapshot_provider=lambda: self._semantic_atomic_store.semantic_integrity_snapshot(),
+                clean_replay_verifier=(
+                    lambda repaired, retained, authority: self._semantic_atomic_store.prepare_semantic_clean_recovery(
+                        repaired,
+                        retained,
+                        authority,
+                    )
+                ),
+                now_provider=self._now_provider,
+            )
+            semantic_integrity_lifecycle = PrivilegedSemanticIntegrityLifecycle(
+                integrity_repository,
+                attention_repository=(
+                    conflict_attention_repository
+                    if isinstance(conflict_attention_repository, FileConflictAttentionRepository)
+                    else None
+                ),
+                clean_recovery_request_retainer=(
+                    lambda request: self._semantic_atomic_store.retain_semantic_clean_recovery_request(request)
+                ),
+                clean_recovery_activator=(
+                    lambda request: self._semantic_atomic_store.activate_semantic_clean_recovery(request)
+                ),
+                clean_recovery_reconciler=(
+                    lambda released: self._semantic_atomic_store.reconcile_semantic_clean_recovery(released)
+                ),
+            )
+        semantic_runtime: AuthorizedSemanticIngestionRuntime | None = None
+        runtime_builder = cast(
+            HostSemanticIngestionRuntimeBuilder | None, host_bootstrap_capability
+        )
+        if (
+            self._bootstrap_profile is not None
+            and runtime_builder is not None
+            and hasattr(runtime_builder, "build_semantic_ingestion_runtime")
+        ):
+            try:
+                if isinstance(
+                    host_bootstrap_capability,
+                    BuiltInLocalHostSemanticIngestionCapability,
+                ) and verified_material is not None:
+                    semantic_runtime = (
+                        host_bootstrap_capability.build_semantic_ingestion_runtime(
+                        memory_plane=self._memory_plane,
+                        now_provider=self._now_provider,
+                        bootstrap_profile=self._bootstrap_profile,
+                        verified_material=verified_material,
+                        semantic_integrity_lifecycle=semantic_integrity_lifecycle,
+                        )
+                    )
+                else:
+                    semantic_runtime = runtime_builder.build_semantic_ingestion_runtime(
+                        memory_plane=self._memory_plane,
+                        now_provider=self._now_provider,
+                        bootstrap_profile=self._bootstrap_profile,
+                    )
+            except (TypedValueRegistryConfigurationError, ObservationActivationTargetConfigurationError):
+                raise
+            except (ImportError, OSError, RuntimeError, TypeError, ValueError) as exc:
+                if isinstance(host_bootstrap_capability, BuiltInLocalHostSemanticIngestionCapability) and host_bootstrap_capability.observation_activation_target_configuration is not None:
+>                   raise ObservationActivationTargetConfigurationError("configured activation target runtime construction failed") from exc
+E                   memorii.core.memory_evolution.observation_activation_configuration.ObservationActivationTargetConfigurationError: configured activation target runtime construction failed
+
+memorii/memorii/core/provider/service.py:499: ObservationActivationTargetConfigurationError
+=========================== short test summary info ============================
+FAILED memorii/tests/integration/test_observation_ledger_activation.py::test_public_drain_preserves_live_operation_and_rejects_new_old_epoch_work
+1 failed, 22 deselected in 83.07s (0:01:23)

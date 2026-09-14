@@ -1,0 +1,65 @@
+{
+  "scope": "Full-write snapshot primitive only; parent observation ledger and M5 remain partial",
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "tree": "authorized dirty working tree",
+  "files": {
+    "memorii/memorii/core/memory_plane/store.py": "2422fbdb07feb325ae12fbc8c17f25412361d3dbb523fc054465ecd02079aced",
+    "memorii/memorii/core/memory_plane/service.py": "5aa962338fb93c1fd6d16824a0eca80f1091bf421a2045f949fc0f2ab21558a2",
+    "memorii/memorii/core/memory_plane/unit_of_work.py": "a9f25afbb2cf3a0e9ecec6a671b49b29751eb808c4a33f1ee6a0ed51d9399bd4",
+    "memorii/tests/unit/core/test_memory_plane_write_snapshot.py": "0e790139c42af903bd5c3f71d4d29c213009f7b6943ade4745e94e11843fb222"
+  },
+  "contract": "../observation-ledger/replay-snapshot-contract.md#snapshot-ownership-and-activation-preconditions",
+  "validation": {
+    "pytest": {
+      "command": "../.venv/bin/python -W error -m pytest tests/unit/core/test_memory_plane_write_snapshot.py tests/unit/core/test_memory_plane_store_contract.py tests/unit/core/test_jsonl_memory_plane_store.py tests/unit/core/test_memory_plane_visibility.py tests/unit/core/test_memory_plane_convergence.py -q -p no:cacheprovider",
+      "cwd": "memorii",
+      "exit_code": 0,
+      "result": "54 passed in 6.85s",
+      "scope": "Initial four-file candidate; three production files unchanged in final candidate"
+    },
+    "pyright": {
+      "exit_code": 0,
+      "result": "0 errors, 0 warnings, 0 informations",
+      "pythonpath": "../.venv/bin/python",
+      "files": [
+        "memorii/memorii/core/memory_plane/store.py",
+        "memorii/memorii/core/memory_plane/service.py",
+        "memorii/memorii/core/memory_plane/unit_of_work.py",
+        "memorii/tests/unit/core/test_memory_plane_write_snapshot.py"
+      ]
+    },
+    "ruff": {
+      "exit_code": 0,
+      "result": "All checks passed!"
+    },
+    "pytest_delta": {
+      "command": "../.venv/bin/python -W error -m pytest tests/unit/core/test_memory_plane_write_snapshot.py -q -p no:cacheprovider",
+      "cwd": "memorii",
+      "exit_code": 0,
+      "result": "19 passed in 1.07s"
+    },
+    "identity_hygiene": {
+      "exit_code": 0
+    }
+  },
+  "review_status": "approved_bounded_primitive",
+  "production_binding": {
+    "MemoryPlaneService.read_write_snapshot": "MemoryPlaneStore.read_write_snapshot on canonical built-in backend",
+    "MemoryPlaneService.conditionally_write_records": "MemoryPlaneStore.apply_batch expected_write_revision only when requested",
+    "MemoryPlaneUnitOfWork": "explicitly rejects root-only capability; ordinary commit uses original batch path"
+  },
+  "exclusions": [
+    "ledger activation and checkpoint consumers",
+    "operational profile registry",
+    "authenticated observation endpoint",
+    "full branch or CI certification"
+  ],
+  "candidate_digest": "e84b6eaae5242b5cc94d7e032675b558993f30fc079833112ef20f6439514ea3",
+  "candidate_digest_algorithm": "SHA256 of UTF-8 JSON(files, sort_keys=True, separators=(comma,colon)); not the manifest self hash",
+  "remaining_validated_p1_p2": [],
+  "reviews": {
+    "spec": "approved final four-file candidate",
+    "correctness": "approved unchanged production files; unsupported callback finding withdrawn",
+    "tests": "positive dual-guard evidence gap closed; no remaining bounded findings"
+  }
+}

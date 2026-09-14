@@ -1,0 +1,1 @@
+{"policy":{"kind":"signature_only","signature_domain":"memorii.ingestion-time-attestation.cursor.v3","signature_field":"signature","signature_purpose":"ingestion_time_attestation_cursor"},"role":"digest-signature","schema_id":"IngestionTimeAttestationCursorPayload","schema_version":"1"}

@@ -1,0 +1,23 @@
+{
+  "status": "FROZEN_BOUNDED_INTEGRITY_CANDIDATE",
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "tree": "authorized dirty tree",
+  "scope": "Ordinary, root self-digest and Ed25519 cursor signature checks after raw protected reader, before later lifecycle/persistence authorization. External checkpoint fails closed pending fixed context constructor. No production root caller.",
+  "files": {
+    "memorii/memorii/core/memory_evolution/typed_value_artifact_integrity.py": "189a434ae333f15d147cc6193be34574d6afa5d6658606ea830cdd23891bcc68",
+    "memorii/tests/unit/core/memory_evolution/test_typed_value_artifact_integrity.py": "10a6a6ddcbbf1751236e3731f8821022515b1ddf4f96eba03cb1399f219ae00b",
+    "docs/work/semantic_ingestion/registry-publication/registered-integrity-readiness.md": "0c447214a765bbc92b229588249234f5381218fd04065fb1c569926d18c2c7fe"
+  },
+  "test_command": "../.venv/bin/python -W error -m pytest tests/unit/core/memory_evolution/test_typed_value_artifact_integrity.py tests/unit/core/memory_evolution/test_typed_value_artifact_reader.py -p no:cacheprovider -q",
+  "test_result": "91 passed in 5.93s; root execution, warnings-as-errors",
+  "pyright": "Configured two-file explicit check:0errors0warnings",
+  "ruff": "Root scoped two-file check passed",
+  "source_selection": "35 files, 6265 rows; generated refresh and independent full-publication equality passed; 58 vectors passed",
+  "exclusions": [
+    "checkpoint context constructor",
+    "key lifecycle/read/write authorization",
+    "ledger activation and persistence",
+    "public observation API",
+    "whole registry/parent closure"
+  ]
+}

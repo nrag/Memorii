@@ -1,0 +1,41 @@
+{
+  "scope": "Local signing implementation and test evidence; not whole-package or branch approval",
+  "source_head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "dirty_tree": true,
+  "files": {
+    "memorii/pyproject.toml": "7aac24dd676ca2a06e2d594f84f71a1c6c0c7ea9e1474f19e45c81046bff399d",
+    "memorii/memorii/tools/semantic_ingestion_traceability_release.py": "953d814641a793cfaec68f622dda455793d2bedf2cea27d761ee7b0f4574d06c",
+    "memorii/memorii/tools/semantic_ingestion_trust_resolver.py": "7b0b018fc1bd5b09f8631823207c8c40bf917a56e57f40b55c2ad0730afeca18",
+    "memorii/memorii/tools/semantic_ingestion_signature_verifier.py": "f09ba1ca5e16276cde07ced5c03f1ab49091a65d94e3be3310a1c336e3ed91a5",
+    "memorii/memorii/tools/semantic_ingestion_offline_signing.py": "23c2e68abc715f010c5955ed5c6cecb1c667d9e27fb725fc7fccb2f2bafbd2c2",
+    "memorii/memorii/tools/semantic_ingestion_release_signing.py": "567359d4e9d99677179df7d2728978e8e82e20085df3c3e1f403871698040fa4",
+    "memorii/memorii/tools/semantic_ingestion_lifecycle_signing.py": "e376f5617a8314a245e7d2df4713a079c89a70f69580bacc0ab3d5524c290b9b",
+    "memorii/tests/fixtures/semantic_ingestion/current_release_chain.py": "82fd92e238bc83e5a7677f9b362ac7572cc22282adb8c3961a3c5b43b299da8c",
+    "memorii/tests/acceptance/semantic_ingestion/test_sia_requirements.py": "8a593073e7f709aa62c9ac4b217765b3d18ecb9a04f8f394051ee8b615227c7b",
+    "memorii/tests/unit/tools/test_semantic_ingestion_signature_verifier.py": "eb075717de2048ee373780d00bd27e2488aa4ed2af0c98fcf46590d4ea2c173d",
+    "memorii/tests/unit/tools/test_semantic_ingestion_offline_signing.py": "6e9c5c7cd917399140b04182d51740f22d9acc2a6b75f96a066d105a24879a4a",
+    "memorii/tests/unit/tools/test_traceability_release_provenance.py": "2b44516b1e1a3d2aff1f86ad59ec53d9a48a74bd0af3a23ba06428ad78e05988",
+    "memorii/tests/integration/test_semantic_ingestion_release_signing.py": "87bf490decffabb7f3537b0c8b53af89a57bb330a5c171cd2dc2629f1b2aa063",
+    "memorii/tests/integration/test_semantic_ingestion_lifecycle_signing.py": "2d60e4129ed69ec4d197c665daf2b85998c498ab123d26b33663239315786553"
+  },
+  "evidence": {
+    "coordinator_combined_before_test_only_extension": {
+      "passed": 81,
+      "seconds": 75.03,
+      "warnings": "error"
+    },
+    "writer_final_lifecycle": {
+      "passed": 14,
+      "non_cli_seconds": 7.92,
+      "cli_seconds": 28.86,
+      "ruff": "passed",
+      "pyright": "0 errors"
+    }
+  },
+  "limits": [
+    "No final independent package approval",
+    "No current CI or operational certification",
+    "Actual production signature issuance deferred",
+    "R14 design blocked; monitor, observer and complete host composition unfinished"
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "base": "d17466d529500f7a0a5a789e97b4b175602dda90",
+  "scope": "Bounded registered cursor/retention component, including caller-bound stale policy/expiry eviction. Source/design/policy quota release state machine inspected; full provider/cohort/persistence integration remains outside component. Updated workflow pins are regenerated, not altered checks.",
+  "files": {
+    "docs/design/semantic_ingestion_observation.md": "e6d811b29f4f43fc9e51e3326e846a922de0333d645346c19a6ff2d4935e7643",
+    "docs/design/semantic_ingestion_architecture.md": "a7770e627e2dc627c772b8c54dd5998ce83c1baf43079a210056826b5ebce626",
+    ".github/workflows/pr-gates.yml": "e89f69c7673bece831922aa3fae2c6985997976004f580ca92fa74a300ad5f92",
+    "memorii/memorii/core/memory_evolution/graph_observation_paging.py": "e3a8b8305e0bdb9bd637f9de821bf69c65990bf4105bb3ae77181ee74ae44890",
+    "memorii/memorii/core/memory_evolution/graph_observation_public_contracts.py": "d77d5800c0e29b967cd3847560d0db20d2f637ac66523ed76fd9ec3b31116b2b",
+    "memorii/memorii/core/memory_evolution/observation_activation_runtime.py": "74c0df255948b563e28a5358563455b55e147fdbe171f360467b35adb8f614ec",
+    "memorii/memorii/core/memory_evolution/ingestion_contracts.py": "b42193c91f723c4bcdb3f62fa5330511d94f0f3246e659eb87056c9a10ea0966",
+    "memorii/tests/integration/test_graph_observation_paging.py": "ae7c738493ae27f8f81365dc42f3410059a3860367809aed056617b8c847ea3d",
+    "memorii/tests/integration/test_ingestion_time_paging.py": "006bec317f73637100060720e7f04b034133a65577babbefa2b0a07801200199",
+    "memorii/tests/unit/core/memory_evolution/test_graph_observation_public_contracts.py": "c7f0c8ceed98dc61512e725b4bf5990675285e9f2eee17957abede45fc018282",
+    "memorii/memorii/core/memory_evolution/typed_value_model_codec.py": "26e43eda3da306baff0ba3905509bfedb0a4cfb39f905dc943b9101e4978f317"
+  }
+}

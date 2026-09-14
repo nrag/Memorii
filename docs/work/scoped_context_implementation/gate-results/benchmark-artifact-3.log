@@ -1,0 +1,2 @@
+suite=memory_evolution_sim_v1 mode=hybrid systems=memorii profile=adversarial scenarios=10 events=110 checkpoints=12 passed=10 failed=0 llm_calls=0 artifacts=/private/tmp/scoped-context-final-gates/artifact-3/benchmark_runs/memory_evolution_sim_v1/hybrid/bench-fbdecd6f4a6e95c9-rep0
+validated benchmark reports under /private/tmp/scoped-context-final-gates/artifact-3/benchmark_runs

@@ -1,0 +1,1 @@
+{"policy":{"digest_domain":"memorii.semantic_ingestion.observation.ObservationCheckpointLifecycle.v1","digest_field":"authority_digest","kind":"self_digest"},"role":"digest-signature","schema_id":"ObservationCheckpointLifecycle","schema_version":"1"}

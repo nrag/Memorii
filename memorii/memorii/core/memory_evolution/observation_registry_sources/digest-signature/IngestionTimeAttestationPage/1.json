@@ -1,0 +1,1 @@
+{"policy":{"digest_domain":"memorii.semantic_ingestion.observation.IngestionTimeAttestationPage.v1","digest_field":"page_digest","kind":"self_digest"},"role":"digest-signature","schema_id":"IngestionTimeAttestationPage","schema_version":"1"}

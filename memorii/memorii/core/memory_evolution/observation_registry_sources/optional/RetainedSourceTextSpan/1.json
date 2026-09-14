@@ -1,0 +1,1 @@
+{"fields":[{"field_name":"artifact","policy":"required"},{"field_name":"artifact_kind","policy":"required"},{"field_name":"end","policy":"required"},{"field_name":"span_digest","policy":"required"},{"field_name":"start","policy":"required"},{"field_name":"substring_digest","policy":"required"}],"role":"optional","schema_id":"RetainedSourceTextSpan","schema_version":"1"}

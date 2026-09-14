@@ -22,10 +22,13 @@ from memorii.core.semantic_ingestion.canonical_evidence_arena import (
     CanonicalValidationScope,
     RetainingCanonicalClosureObservabilityDispatcher,
     ValidatedCanonicalEvidenceResult,
+    canonical_digest_verification_scope,
+    current_digest_verification_scope,
 )
 from memorii.core.semantic_ingestion.contracts import (
     RetainedSourceTextArtifact,
     SemanticContractCodecError,
+    decode_semantic_contract,
     encode_semantic_contract,
     encode_semantic_contract_result,
 )
@@ -540,6 +543,81 @@ def test_no_arena_keeps_full_digest_verification(monkeypatch) -> None:
     baseline = calls["n"]
     _equal_copy(first)
     assert calls["n"] > baseline
+
+
+def test_lexical_digest_scope_reuses_enclosing_scope_and_purges_on_success_and_error() -> None:
+    created = None
+    with canonical_digest_verification_scope() as scope:
+        created = scope
+        assert current_digest_verification_scope() is scope
+        with canonical_digest_verification_scope() as nested:
+            assert nested is scope
+        _artifact(artifact_id="lexical-success")
+        assert scope.records > 0
+    assert created is not None
+    assert current_digest_verification_scope() is None
+    assert created.lookup_verified(RetainedSourceTextArtifact, "unused") is None
+    assert created.certified_instances == 0
+
+    failed = None
+    with pytest.raises(RuntimeError, match="expected"), canonical_digest_verification_scope() as scope:
+        failed = scope
+        _artifact(artifact_id="lexical-error")
+        raise RuntimeError("expected")
+    assert failed is not None
+    assert current_digest_verification_scope() is None
+    assert failed.certified_instances == 0
+
+
+def test_lexical_digest_scope_recomputes_in_new_invocation_and_never_crosses_threads(monkeypatch) -> None:
+    calls = _count_contract_digest(monkeypatch)
+    thread_scopes: list[object] = []
+
+    def inspect_thread() -> None:
+        assert current_digest_verification_scope() is None
+        with canonical_digest_verification_scope() as scope:
+            thread_scopes.append(scope)
+
+    with canonical_digest_verification_scope() as first_scope:
+        first = _artifact(artifact_id="fresh-invocation")
+        baseline = calls["n"]
+        _equal_copy(first)
+        assert calls["n"] == baseline
+        worker = Thread(target=inspect_thread)
+        worker.start()
+        worker.join()
+        assert len(thread_scopes) == 1
+        assert thread_scopes[0] is not first_scope
+        assert current_digest_verification_scope() is first_scope
+    with canonical_digest_verification_scope() as second_scope:
+        _equal_copy(first)
+        assert calls["n"] > baseline
+    assert second_scope is not first_scope
+    assert current_digest_verification_scope() is None
+
+
+def test_lexical_digest_scope_decode_then_encode_reuses_only_verified_nested_digests(monkeypatch) -> None:
+    raw = encode_semantic_contract(_artifact(artifact_id="decode-encode"))
+    calls = _count_contract_digest(monkeypatch)
+    with canonical_digest_verification_scope() as scope:
+        decoded = decode_semantic_contract(raw, RetainedSourceTextArtifact)
+        after_decode = calls["n"]
+        assert after_decode > 0
+        assert encode_semantic_contract(decoded) == raw
+        # The decoded instance is already certified.  Its immediate encode
+        # still builds the canonical envelope, but does not repeat its
+        # content-addressed digest verification.
+        assert calls["n"] == after_decode
+        equal_copy = RetainedSourceTextArtifact.model_validate(decoded.model_dump(mode="python"))
+        assert equal_copy == decoded
+        assert scope.reuses >= 1
+        forged_body = dict(decoded.model_dump(mode="python"))
+        forged_body["artifact_id"] = "altered"
+        with pytest.raises(ValueError, match="artifact_digest mismatch"):
+            RetainedSourceTextArtifact.model_validate(forged_body)
+        limited = decode_semantic_contract(raw, RetainedSourceTextArtifact, max_nodes=100)
+        assert limited == decoded
+        assert limited is not decoded
 
 
 def test_forged_digest_declaration_fails_closed_inside_active_scope() -> None:

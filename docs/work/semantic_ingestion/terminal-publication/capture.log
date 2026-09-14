@@ -1,0 +1,74 @@
+ENTER DeterministicBootstrapGraphTerminalPreparationV3.prepare
+RETURN DeterministicBootstrapGraphTerminalPreparationV3.prepare: BootstrapGraphTerminalPreparationV3
+ENTER SemanticIngestionAtomicStore.persist_bootstrap_graph_terminal_v3
+FAIL SemanticIngestionAtomicStore.persist_bootstrap_graph_terminal_v3
+Traceback (most recent call last):
+  File "/Users/nandaraghunathan/Code/Memorii/Memorii/docs/work/semantic_ingestion/terminal-publication/capture_terminal_failure.py", line 21, in traced
+    result = original(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/atomic_store.py", line 10626, in persist_bootstrap_graph_terminal_v3
+    return self._persist_bootstrap_graph_terminal_v3_linearized(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/atomic_store.py", line 10848, in _persist_bootstrap_graph_terminal_v3_linearized
+    members = _bootstrap_graph_v3_terminal_members(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/memory_evolution/atomic_store.py", line 14033, in _bootstrap_graph_v3_terminal_members
+    canonical_payload = encoder(payload)
+                        ^^^^^^^^^^^^^^^^
+  File "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii/memorii/core/semantic_ingestion/contracts.py", line 13872, in encode_semantic_contract
+    raise SemanticContractCodecError(f"unsupported semantic ingestion contract type: {type(value).__name__}")
+memorii.core.semantic_ingestion.contracts.SemanticContractCodecError: unsupported semantic ingestion contract type: SourceFinalizationObservationDelta
+F
+=================================== FAILURES ===================================
+__________ test_all_normal_roots_execute_graph_terminal_once[direct] ___________
+
+root = 'direct'
+tmp_path = PosixPath('/private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/pytest-of-nandaraghunathan/pytest-991/test_all_normal_roots_execute_0')
+
+    @pytest.mark.parametrize("root", ("direct", "factory", "filesystem", "hermes"))
+    def test_all_normal_roots_execute_graph_terminal_once(
+        root: str, tmp_path,
+    ) -> None:
+        proposal = graph_fact_proposal()
+        normalization, lane_calls = _v3_normalization_host_builder(proposal=proposal)
+        graph_calls: list[str] = []
+        graph_errors: list[str] = []
+        graph = BootstrapGraphHostBundleBuilder(
+            authority_provider=DeterministicBootstrapGraphAuthorityProviderV3(
+                successful_calls=graph_calls, acquire_errors=graph_errors,
+            )
+        )
+        common = {
+            "now_provider": lambda: TEST_NOW,
+            "host_bootstrap_capability": _built_in_local_capability(),
+            "host_bootstrap_material_verifier": DeterministicTestHostBootstrapMaterialVerifier(),
+            "source_normalization_host_bundle_builder": normalization,
+            "bootstrap_graph_host_bundle_builder": graph,
+        }
+        if root == "direct":
+            service = provider_service(**common)
+        elif root == "factory":
+            service = build_provider_memory_service_from_env(**common)
+        elif root == "filesystem":
+            service = build_filesystem_provider(tmp_path / "memorii-executable", **common)
+        else:
+            service = hermes_provider(service=provider_service(**common))._service
+    
+        result = service.sync_event(
+            operation=ProviderOperation.CHAT_USER_TURN,
+            content="Atlas owner is Bob.", operation_id=f"graph-root-{root}",
+            task_id="task:one", user_id="user:alice",
+            authenticated_host_ingress=_host_ingress(),
+        )
+>       assert result.blocked_reasons["semantic_ingestion"] == "source_only", graph_errors
+E       AssertionError: ['coordinator result kind: BootstrapGraphDurableRetryProgressV3']
+E       assert 'graph_transa...y_unavailable' == 'source_only'
+E         
+E         - source_only
+E         + graph_transaction_authority_unavailable
+
+memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_root_composition.py:574: AssertionError
+=========================== short test summary info ============================
+FAILED memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_root_composition.py::test_all_normal_roots_execute_graph_terminal_once[direct]
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 54.63s

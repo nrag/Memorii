@@ -1,0 +1,144 @@
+...................FF........F.......................................... [ 25%]
+........................................................................ [ 51%]
+........................................................................ [ 77%]
+...............................................................          [100%]
+=================================== FAILURES ===================================
+_ test_pr_workflow_structurally_runs_complete_matrix_and_exact_pinned_checker __
+
+    def test_pr_workflow_structurally_runs_complete_matrix_and_exact_pinned_checker() -> None:
+        workflow_path = ROOT / ".github" / "workflows" / "pr-gates.yml"
+        workflow = yaml.load(workflow_path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+        assert isinstance(workflow, dict)
+        trigger = workflow[True] if True in workflow else workflow["on"]
+        assert trigger == {"pull_request": {"branches": ["main"]}, "merge_group": {"branches": ["main"]}}
+        assert workflow["permissions"] == {"contents": "read"}
+        jobs = workflow["jobs"]
+        assert isinstance(jobs, dict)
+        compiler_job = jobs["ctv-binding-authority-compiler-parity"]
+        gate_job = jobs["ctv-binding-authority-pr-gate"]
+        exact_job = jobs["ctv-binding-authority-exact"]
+        unit_job = jobs["unit-tests"]
+        replay_job = jobs["equal-version-replay-decision"]
+        acceptance_job = jobs["semantic-ingestion-acceptance"]
+        generation_job = jobs["semantic-ingestion-generation"]
+        assert replay_job["name"] == "Equal Version Replay Decision"
+        assert replay_job["timeout-minutes"] == "5"
+        replay_steps = replay_job["steps"]
+        assert replay_steps[1]["with"]["python-version"] == "3.12"
+        assert replay_steps[2]["run"] == "python3.12 -m pip install 'pytest>=8,<10'"
+        assert "python3.12 -m pytest -W error" in replay_steps[3]["run"]
+        assert "memorii/tests/unit/tools/test_equal_version_replay_decision.py" in replay_steps[3]["run"]
+        assert "equal-version-replay-decision" in unit_job["needs"]
+        assert unit_job["steps"][0]["env"]["REPLAY_DECISION_RESULT"] == "${{ needs.equal-version-replay-decision.result }}"
+        scenario_job = jobs["semantic-ingestion-scenario"]
+        assert isinstance(compiler_job, dict)
+        assert isinstance(gate_job, dict)
+        assert isinstance(exact_job, dict)
+        assert isinstance(unit_job, dict)
+        assert isinstance(acceptance_job, dict)
+        assert compiler_job["name"] == "CTV Binding Authority Compiler Parity"
+        assert gate_job["name"] == "CTV Binding Authority PR Gate"
+        assert exact_job["name"] == "CTV Binding Authority Exact"
+        assert acceptance_job["name"] == "Semantic Ingestion Acceptance"
+        assert acceptance_job["runs-on"] == "ubuntu-latest"
+        assert acceptance_job["timeout-minutes"] == "15"
+        assert generation_job["timeout-minutes"] == "15"
+        assert scenario_job["timeout-minutes"] == "15"
+        assert unit_job["name"] == "Unit Tests"
+>       assert unit_job["needs"] == [
+            "equal-version-replay-decision",
+            "static-analysis",
+            "package-smoke",
+            "provider-compatibility",
+            "scoped-context-integration",
+            "unit-test-shards",
+            "unit-timing-inventory",
+            "semantic-terminal-persistence",
+            "semantic-terminal-persistence-timing-inventory",
+        ]
+E       AssertionError: assert ['equal-versi...ivation', ...] == ['equal-versi...-shards', ...]
+E         
+E         At index 5 diff: 'observation-ledger-activation' != 'unit-test-shards'
+E         Left contains one more item: 'semantic-terminal-persistence-timing-inventory'
+E         Use -v to get more diff
+
+memorii/tests/unit/tools/test_ctv_binding_authority_pr_gate.py:286: AssertionError
+_______ test_two_fresh_processes_reproduce_the_complete_frozen_authority _______
+
+tmp_path = PosixPath('/private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/pytest-of-nandaraghunathan/pytest-1130/test_two_fresh_processes_repro0')
+
+    def test_two_fresh_processes_reproduce_the_complete_frozen_authority(tmp_path: Path) -> None:
+        assert _command(DESIGN, REGISTRY, tmp_path / "authority.json")[:2] == list(
+            PYTHON312_ISOLATED
+        )
+        outputs = [tmp_path / "first.json", tmp_path / "second.json"]
+        for output in outputs:
+            completed = _run(DESIGN, REGISTRY, output)
+            assert completed.returncode == 0, completed.stderr
+    
+        first = outputs[0].read_bytes()
+        assert first == outputs[1].read_bytes()
+        assert first == FROZEN_AUTHORITY.read_bytes()
+>       assert hashlib.sha256(first).hexdigest() == EXPECTED_AUTHORITY_SHA256
+E       AssertionError: assert 'f0b03bbe49fc...8387b4ca4eff5' == '272617544ee6...49cfb0c492f3b'
+E         
+E         - 272617544ee6531f995f797f323b576bc4070282ff1dd2cd12e49cfb0c492f3b
+E         + f0b03bbe49fc2ca905ccc029ff04bd2ae6c2f3156c49e34382f8387b4ca4eff5
+
+memorii/tests/unit/tools/test_semantic_ingestion_ctv_reference_compiler.py:913: AssertionError
+____ test_isolated_runtime_succeeds_without_validator_or_checked_authority _____
+
+tmp_path = PosixPath('/private/var/folders/bq/jp47dp_x28z1c7_bb79t2bhr0000gn/T/pytest-of-nandaraghunathan/pytest-1130/test_isolated_runtime_succeeds0')
+
+    def test_isolated_runtime_succeeds_without_validator_or_checked_authority(tmp_path: Path) -> None:
+        isolated = tmp_path / "isolated"
+        isolated.mkdir()
+        compiler = isolated / "compiler.py"
+        design = isolated / "design.md"
+        registry = isolated / "registry.json"
+        output = isolated / "output.json"
+        bootstrap = tmp_path / "audit_bootstrap.py"
+        bootstrap.write_text(AUDIT_BOOTSTRAP, encoding="ascii")
+        shutil.copyfile(COMPILER, compiler)
+        shutil.copyfile(DESIGN, design)
+        shutil.copyfile(REGISTRY, registry)
+    
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-I",
+                str(bootstrap),
+                str(compiler),
+                str(design),
+                str(registry),
+                str(output),
+            ],
+            cwd=isolated,
+            env={
+                "PATH": os.environ.get("PATH", ""),
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "PYTHONHASHSEED": "101",
+                "PYTHONNOUSERSITE": "1",
+            },
+            capture_output=True,
+            text=True,
+        )
+        assert completed.returncode == 0, completed.stderr
+        assert set(path.name for path in isolated.iterdir()) == {
+            "compiler.py",
+            "design.md",
+            "registry.json",
+            "output.json",
+        }
+>       assert hashlib.sha256(output.read_bytes()).hexdigest() == EXPECTED_AUTHORITY_SHA256
+E       AssertionError: assert 'f0b03bbe49fc...8387b4ca4eff5' == '272617544ee6...49cfb0c492f3b'
+E         
+E         - 272617544ee6531f995f797f323b576bc4070282ff1dd2cd12e49cfb0c492f3b
+E         + f0b03bbe49fc2ca905ccc029ff04bd2ae6c2f3156c49e34382f8387b4ca4eff5
+
+memorii/tests/unit/tools/test_semantic_ingestion_ctv_reference_compiler.py:1107: AssertionError
+=========================== short test summary info ============================
+FAILED memorii/tests/unit/tools/test_ctv_binding_authority_pr_gate.py::test_pr_workflow_structurally_runs_complete_matrix_and_exact_pinned_checker
+FAILED memorii/tests/unit/tools/test_semantic_ingestion_ctv_reference_compiler.py::test_two_fresh_processes_reproduce_the_complete_frozen_authority
+FAILED memorii/tests/unit/tools/test_semantic_ingestion_ctv_reference_compiler.py::test_isolated_runtime_succeeds_without_validator_or_checked_authority
+3 failed, 276 passed in 589.38s (0:09:49)

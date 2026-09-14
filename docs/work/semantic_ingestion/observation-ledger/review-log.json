@@ -1,0 +1,59 @@
+{
+  "candidate_digest": "698874b5b29c9abce7623b3b3c4150639762cdd038f8ccd815521c28eaca2cd3",
+  "review_scope": "design only",
+  "full_review_round": 1,
+  "correction_budget": 1,
+  "findings": [
+    {
+      "id": "registry-read-status",
+      "reviewer": "spec_auditor",
+      "product_priority": "P2",
+      "approval_disposition": "changes_required",
+      "finding_type": "compatibility/runtime",
+      "coordinator": "confirmed ambiguous status permissions under immutable entries",
+      "remediation": "contract_conformance_action",
+      "reason": "Determinate SIA historical-entry preservation rule; no demonstrated current runtime failure in absent registry",
+      "status": "resolved at final design candidate215ab5f272d7b27589da04c9c1dd4a9fa0f1d8f01413d542ea72bffa4c924b9e"
+    },
+    {
+      "id": "decoder-source-manifest",
+      "reviewer": "spec_auditor",
+      "product_priority": "Not applicable",
+      "approval_disposition": "blocks_approval",
+      "finding_type": "architecture/governance",
+      "coordinator": "confirmed missing closed source selection authority",
+      "remediation": "contract_conformance_action",
+      "reason": "Existing source pin requirement has determinate whole-file implementation; no external choice needed",
+      "status": "resolved at final design candidate215ab5f272d7b27589da04c9c1dd4a9fa0f1d8f01413d542ea72bffa4c924b9e"
+    },
+    {
+      "id": "native-historical-publication",
+      "reviewer": "correctness_reviewer",
+      "product_priority": "P2",
+      "approval_disposition": "changes_required",
+      "finding_type": "transaction/recovery",
+      "coordinator": "confirmed: A lost acknowledgement, B commit, A retry cannot use mutable aggregate as historical authority",
+      "remediation": "eligible_p1_p2",
+      "reason": "Lost acknowledgement with subsequent writes is an important supported recovery scenario; immutable closure required by SIA22690-22703",
+      "status": "resolved at final design candidate215ab5f272d7b27589da04c9c1dd4a9fa0f1d8f01413d542ea72bffa4c924b9e"
+    },
+    {
+      "id": "entrypoint-verification",
+      "reviewer": "test_reviewer",
+      "product_priority": "Not applicable",
+      "approval_disposition": "changes_required",
+      "finding_type": "verification",
+      "coordinator": "confirmed need explicit production-trigger proof owners and removed-caller counterfactual",
+      "remediation": "evidence_action",
+      "reason": "Predefined build-design verification requirement, not demonstrated product defect",
+      "status": "resolved at final design candidate215ab5f272d7b27589da04c9c1dd4a9fa0f1d8f01413d542ea72bffa4c924b9e"
+    }
+  ],
+  "writer": "group_projection_owner; target contract/readiness/matrices only",
+  "parent_status": "partial",
+  "final_candidate_digest": "215ab5f272d7b27589da04c9c1dd4a9fa0f1d8f01413d542ea72bffa4c924b9e",
+  "remaining_validated_p1_p2": [],
+  "remaining_changes_required": [],
+  "remaining_blocks_approval": [],
+  "coordinator_verdict": "Design approved for implementation; original full cohort plus targeted conformance deltas resolved. Runtime/M5 remain partial."
+}

@@ -1,7 +1,7 @@
 # Proof And Compatibility Foundation Milestone
 
 - Parent WorkPlan: `docs/work/semantic_ingestion/implementation.plan.md`
-- Status: blocked
+- Status: complete (corrected replacement boundary)
 - Requirements: SIA-R03, SIA-R13, SIA-R22
 - Historical authority: archive headings `M0 - Independent proof and compatibility foundation`, `M0 Current-Pin Schema And Artifact Closure`, and the M0A/M0B/C1/C2 review sections
 
@@ -30,14 +30,17 @@ contracts, graph writes, active composition, and invented external trust.
 
 ## Recorded Result And Blocker
 
-Compatibility and several Layer1/C1 proof slices are complete, but the original
-milestone status remains blocked outside the approved replacement boundary.
-Rejected C2 v3 and round-10 baselines remain non-consumable. Later scenario-
-first/current-pin work is preserved in linked plans and the archive; this packet
-does not upgrade those historical claims.
+The corrected July 31 replacement at
+`docs/work/semantic_ingestion/m0-canonical-genesis-structural-contract-implementation-2026-07-31/implementation.plan.md`
+is complete. It records corrected genesis provenance, canonical structural
+manifest derivation, independent body/envelope/spool proof, atomic
+publication/rollback, composition-owned approval authority, final reviews, and
+183 passing acceptance regressions. Rejected C2 v3 and round-10 baselines
+remain non-consumable historical evidence. Missing real release signatures are
+M5 release gates, not an M0 engineering blocker.
 
 ## Exact Next Condition
 
-Only a separately approved corrected authority or an explicit linked design
-decision may unblock a still-required C2-dependent slice. M4 does not depend on
-silently reviving the rejected baseline.
+Retain the corrected replacement crosswalk in the active engineering-closure
+WorkPlan. Do not revive rejected C2 authority or equate absent release
+signatures with incomplete M0 implementation.

@@ -1,0 +1,143 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.12.14, pytest-9.0.3, pluggy-1.6.0
+rootdir: /Users/nandaraghunathan/Code/Memorii/Memorii/memorii
+configfile: pyproject.toml
+plugins: xdist-3.8.0, anyio-4.13.0
+collected 605 items
+
+tests/unit/core/benchmark/test_baselines.py ...                          [  0%]
+tests/unit/core/benchmark/test_decision_modes.py ...                     [  0%]
+tests/unit/core/benchmark/test_end_to_end_scenario.py .................. [  3%]
+                                                                         [  3%]
+tests/unit/core/benchmark/test_failure_policy.py ...                     [  4%]
+tests/unit/core/benchmark/test_fixture_validation.py .....               [  5%]
+tests/unit/core/benchmark/test_memory_evolution_public_contracts.py .... [  5%]
+.........................                                                [ 10%]
+tests/unit/core/benchmark/test_memory_evolution_runtime_retrieval_defaults.py . [ 10%]
+........                                                                 [ 11%]
+tests/unit/core/benchmark/test_memory_evolution_sim_closed_world_schema.py . [ 11%]
+........                                                                 [ 13%]
+tests/unit/core/benchmark/test_memory_evolution_sim_decision_compiler.py . [ 13%]
+.......                                                                  [ 14%]
+tests/unit/core/benchmark/test_memory_evolution_sim_test_helpers.py .... [ 15%]
+...                                                                      [ 15%]
+tests/unit/core/benchmark/test_memory_evolution_v1.py .................. [ 18%]
+.......................................                                  [ 24%]
+tests/unit/core/benchmark/test_preflight_validation.py ......            [ 25%]
+tests/unit/core/benchmark/test_reporting_contract.py ...............     [ 28%]
+tests/unit/core/memory_evolution/test_graph_effect_contracts.py ....     [ 29%]
+tests/unit/core/semantic_ingestion/test_bootstrap_graph_atomic_store.py . [ 29%]
+..                                                                       [ 29%]
+tests/unit/core/semantic_ingestion/test_bootstrap_graph_terminal_preparation.py . [ 29%]
+.                                                                        [ 29%]
+tests/unit/core/semantic_ingestion/test_bootstrap_source_admission.py .. [ 30%]
+............................................                             [ 37%]
+tests/unit/core/semantic_ingestion/test_bootstrap_v3_recovery_reopen.py . [ 37%]
+....                                                                     [ 38%]
+tests/unit/core/semantic_ingestion/test_conflict_replan_delivery_coordinate.py . [ 38%]
+...                                                                      [ 39%]
+tests/unit/core/semantic_ingestion/test_consensus_contract_codecs.py ... [ 39%]
+...                                                                      [ 40%]
+tests/unit/core/semantic_ingestion/test_linguistic_adapters.py ....s.... [ 41%]
+                                                                         [ 41%]
+tests/unit/core/semantic_ingestion/test_source_normalization_repository.py . [ 41%]
+...                                                                      [ 42%]
+tests/unit/core/semantic_ingestion/test_step_one_source_ingestion.py ... [ 42%]
+...                                                                      [ 43%]
+tests/unit/core/test_belief_golden_v1.py ...................             [ 46%]
+tests/unit/core/test_calibration_gates.py .............................. [ 51%]
+........                                                                 [ 52%]
+tests/unit/core/test_claim_semantic_context.py ......................... [ 56%]
+.............                                                            [ 58%]
+tests/unit/core/test_conflict_attention.py ...............               [ 61%]
+tests/unit/core/test_conflict_attention_composition.py .....             [ 62%]
+tests/unit/core/test_conflict_attention_provider_envelopes.py ......     [ 63%]
+tests/unit/core/test_graph_separation.py .                               [ 63%]
+tests/unit/core/test_jsonl_memory_plane_store.py ...........             [ 65%]
+tests/unit/core/test_llm_decision_adapters.py ............               [ 67%]
+tests/unit/core/test_llm_provider.py ..............                      [ 69%]
+tests/unit/core/test_memory_evolution_extraction_semantics.py .......... [ 71%]
+............                                                             [ 73%]
+tests/unit/core/test_promotion_framework.py ...........                  [ 74%]
+tests/unit/core/test_provider_policy.py ......                           [ 75%]
+tests/unit/core/test_provider_service.py ............................... [ 80%]
+..........                                                               [ 82%]
+tests/unit/core/test_recall_builder.py ..                                [ 82%]
+tests/unit/core/test_scoped_context_activation.py ........               [ 84%]
+tests/unit/core/test_solver_belief.py ..........                         [ 85%]
+tests/unit/core/test_structured_query_provider.py ........               [ 87%]
+tests/unit/core/test_work_state_store.py ......                          [ 88%]
+tests/unit/core/test_writeback_candidates.py .                           [ 88%]
+tests/unit/integrations/test_hermes_conflict_attention.py .....          [ 89%]
+tests/unit/tools/test_ctv_binding_authority_pr_gate.py ................. [ 92%]
+..F                                                                      [ 92%]
+tests/unit/tools/test_run_benchmark_registry.py .......                  [ 93%]
+tests/unit/tools/test_semantic_ingestion_traceability_manifest.py ...... [ 94%]
+......                                                                   [ 95%]
+tests/unit/tools/test_traceability_release_provenance.py ............... [ 98%]
+...........                                                              [100%]
+
+=================================== FAILURES ===================================
+_ test_pr_workflow_structurally_runs_complete_matrix_and_exact_pinned_checker __
+
+    def test_pr_workflow_structurally_runs_complete_matrix_and_exact_pinned_checker() -> None:
+        workflow_path = ROOT / ".github" / "workflows" / "pr-gates.yml"
+        workflow = yaml.load(workflow_path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+        assert isinstance(workflow, dict)
+        trigger = workflow[True] if True in workflow else workflow["on"]
+        assert trigger == {"pull_request": {"branches": ["main"]}, "merge_group": {"branches": ["main"]}}
+        assert workflow["permissions"] == {"contents": "read"}
+        jobs = workflow["jobs"]
+        assert isinstance(jobs, dict)
+        compiler_job = jobs["ctv-binding-authority-compiler-parity"]
+        gate_job = jobs["ctv-binding-authority-pr-gate"]
+        exact_job = jobs["ctv-binding-authority-exact"]
+        unit_job = jobs["unit-tests"]
+        replay_job = jobs["equal-version-replay-decision"]
+        acceptance_job = jobs["semantic-ingestion-acceptance"]
+        generation_job = jobs["semantic-ingestion-generation"]
+        assert replay_job["name"] == "Equal Version Replay Decision"
+        assert replay_job["timeout-minutes"] == "5"
+        replay_steps = replay_job["steps"]
+        assert replay_steps[1]["with"]["python-version"] == "3.12"
+        assert replay_steps[2]["run"] == "python3.12 -m pip install 'pytest>=8,<10'"
+        assert "python3.12 -m pytest -W error" in replay_steps[3]["run"]
+        assert "memorii/tests/unit/tools/test_equal_version_replay_decision.py" in replay_steps[3]["run"]
+        assert "equal-version-replay-decision" in unit_job["needs"]
+        assert unit_job["steps"][0]["env"]["REPLAY_DECISION_RESULT"] == "${{ needs.equal-version-replay-decision.result }}"
+        scenario_job = jobs["semantic-ingestion-scenario"]
+        assert isinstance(compiler_job, dict)
+        assert isinstance(gate_job, dict)
+        assert isinstance(exact_job, dict)
+        assert isinstance(unit_job, dict)
+        assert isinstance(acceptance_job, dict)
+        assert compiler_job["name"] == "CTV Binding Authority Compiler Parity"
+        assert gate_job["name"] == "CTV Binding Authority PR Gate"
+        assert exact_job["name"] == "CTV Binding Authority Exact"
+        assert acceptance_job["name"] == "Semantic Ingestion Acceptance"
+        assert acceptance_job["runs-on"] == "ubuntu-latest"
+        assert acceptance_job["timeout-minutes"] == "15"
+        assert generation_job["timeout-minutes"] == "15"
+        assert scenario_job["timeout-minutes"] == "15"
+        assert unit_job["name"] == "Unit Tests"
+>       assert unit_job["needs"] == [
+            "equal-version-replay-decision",
+            "static-analysis",
+            "package-smoke",
+            "provider-compatibility",
+            "unit-test-shards",
+            "unit-timing-inventory",
+            "semantic-terminal-persistence",
+            "semantic-terminal-persistence-timing-inventory",
+        ]
+E       AssertionError: assert ['equal-versi...-shards', ...] == ['equal-versi...ventory', ...]
+E         
+E         At index 4 diff: 'scoped-context-integration' != 'unit-test-shards'
+E         Left contains one more item: 'semantic-terminal-persistence-timing-inventory'
+E         Use -v to get more diff
+
+tests/unit/tools/test_ctv_binding_authority_pr_gate.py:286: AssertionError
+=========================== short test summary info ============================
+FAILED tests/unit/tools/test_ctv_binding_authority_pr_gate.py::test_pr_workflow_structurally_runs_complete_matrix_and_exact_pinned_checker
+============= 1 failed, 603 passed, 1 skipped in 835.52s (0:13:55) =============
+{"collected": 3550, "counts": [17, 533, 840, 697, 858, 605], "default_duration": 0.009, "estimated_seconds": [601.629, 583.978, 583.977, 583.977, 583.978, 583.977], "measured": 3485, "target_seconds": 720.0}

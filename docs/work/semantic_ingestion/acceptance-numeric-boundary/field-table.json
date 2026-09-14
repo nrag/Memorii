@@ -1,0 +1,240 @@
+{
+  "CandidateCertificate": [
+    {
+      "field": "schema",
+      "type": "Literal['numeric_acceptance_certificate.v1']"
+    },
+    {
+      "field": "manifest_digest",
+      "type": "<class 'str'>"
+    },
+    {
+      "field": "contribution_authority_digest",
+      "type": "<class 'str'>"
+    },
+    {
+      "field": "bundles",
+      "type": "tuple[numeric_boundary_contract.ProofBundle, ...]"
+    }
+  ],
+  "Contribution": [
+    {
+      "field": "contribution_id",
+      "type": "<class 'str'>"
+    },
+    {
+      "field": "cluster_id",
+      "type": "<class 'str'>"
+    },
+    {
+      "field": "value",
+      "type": "<class 'numeric_boundary_contract.RationalPoint'>"
+    },
+    {
+      "field": "weight",
+      "type": "<class 'numeric_boundary_contract.RationalPoint'>"
+    },
+    {
+      "field": "lower",
+      "type": "<class 'numeric_boundary_contract.RationalPoint'>"
+    },
+    {
+      "field": "upper",
+      "type": "<class 'numeric_boundary_contract.RationalPoint'>"
+    }
+  ],
+  "ContributionAuthority": [
+    {
+      "field": "authority_id",
+      "type": "<class 'str'>"
+    },
+    {
+      "field": "contributions",
+      "type": "tuple[numeric_boundary_contract.Contribution, ...]"
+    }
+  ],
+  "ExactBinomialProof": [
+    {
+      "field": "kind",
+      "type": "Literal['exact_binomial']"
+    },
+    {
+      "field": "contribution_ids",
+      "type": "tuple[str, ...]"
+    },
+    {
+      "field": "trial_count",
+      "type": "<class 'int'>"
+    },
+    {
+      "field": "success_count",
+      "type": "<class 'int'>"
+    },
+    {
+      "field": "null_probability",
+      "type": "<class 'numeric_boundary_contract.RationalPoint'>"
+    },
+    {
+      "field": "tail",
+      "type": "Literal['ge', 'le']"
+    },
+    {
+      "field": "result",
+      "type": "<class 'numeric_boundary_contract.RationalPoint'>"
+    }
+  ],
+  "GateBinding": [
+    {
+      "field": "locator",
+      "type": "<class 'numeric_boundary_contract.GateLocator'>"
+    },
+    {
+      "field": "proof_kind",
+      "type": "Literal['exact_binomial', 'weighted_hoeffding']"
+    },
+    {
+      "field": "comparison",
+      "type": "Literal['upper_at_most', 'lower_at_least']"
+    },
+    {
+      "field": "threshold",
+      "type": "<class 'numeric_boundary_contract.RationalPoint'>"
+    },
+    {
+      "field": "contribution_authority_digest",
+      "type": "<class 'str'>"
+    }
+  ],
+  "GateLocator": [
+    {
+      "field": "capability_id",
+      "type": "<class 'str'>"
+    },
+    {
+      "field": "coverage_cell_id",
+      "type": "<class 'str'>"
+    },
+    {
+      "field": "metric_id",
+      "type": "<class 'str'>"
+    }
+  ],
+  "NumericManifest": [
+    {
+      "field": "manifest_id",
+      "type": "<class 'str'>"
+    },
+    {
+      "field": "ctv_profile_id",
+      "type": "<class 'str'>"
+    },
+    {
+      "field": "ctv_profile_version",
+      "type": "<class 'int'>"
+    },
+    {
+      "field": "budget",
+      "type": "<class 'numeric_boundary_contract.WorkBudget'>"
+    },
+    {
+      "field": "gates",
+      "type": "tuple[numeric_boundary_contract.GateBinding, ...]"
+    }
+  ],
+  "ProofBundle": [
+    {
+      "field": "locator",
+      "type": "<class 'numeric_boundary_contract.GateLocator'>"
+    },
+    {
+      "field": "binding_digest",
+      "type": "<class 'str'>"
+    },
+    {
+      "field": "contribution_authority_digest",
+      "type": "<class 'str'>"
+    },
+    {
+      "field": "proof",
+      "type": "Union[numeric_boundary_contract.ExactBinomialProof, numeric_boundary_contract.WeightedHoeffdingProof]"
+    },
+    {
+      "field": "reported_probability",
+      "type": "<class 'numeric_boundary_contract.RationalEnclosure'>"
+    }
+  ],
+  "RationalEnclosure": [
+    {
+      "field": "lower",
+      "type": "<class 'str'>"
+    },
+    {
+      "field": "upper",
+      "type": "<class 'str'>"
+    }
+  ],
+  "RationalPoint": [
+    {
+      "field": "value",
+      "type": "<class 'str'>"
+    }
+  ],
+  "TransportLimit": [
+    {
+      "field": "max_document_bytes",
+      "type": "<class 'int'>"
+    }
+  ],
+  "WeightedHoeffdingProof": [
+    {
+      "field": "kind",
+      "type": "Literal['weighted_hoeffding']"
+    },
+    {
+      "field": "contribution_ids",
+      "type": "tuple[str, ...]"
+    },
+    {
+      "field": "margin",
+      "type": "<class 'numeric_boundary_contract.RationalPoint'>"
+    },
+    {
+      "field": "squared_range_weight_sum",
+      "type": "<class 'numeric_boundary_contract.RationalPoint'>"
+    },
+    {
+      "field": "terms",
+      "type": "<class 'int'>"
+    },
+    {
+      "field": "result",
+      "type": "<class 'numeric_boundary_contract.RationalEnclosure'>"
+    }
+  ],
+  "WorkBudget": [
+    {
+      "field": "max_document_bytes",
+      "type": "<class 'int'>"
+    },
+    {
+      "field": "max_contributions",
+      "type": "<class 'int'>"
+    },
+    {
+      "field": "max_numeric_digits",
+      "type": "<class 'int'>"
+    },
+    {
+      "field": "max_numeric_bits",
+      "type": "<class 'int'>"
+    },
+    {
+      "field": "max_operations",
+      "type": "<class 'int'>"
+    },
+    {
+      "field": "max_certificate_bytes",
+      "type": "<class 'int'>"
+    }
+  ]
+}

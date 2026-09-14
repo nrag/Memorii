@@ -1,0 +1,1 @@
+{"decoder_id":"memorii.semantic_ingestion.observation.AuthenticatedEventTimeReference.v1","implementation_source_digest":"5b812f62fe19c301a0e9c3f743abf29f1c114f244e061f423b0384a5e18ad39a","role":"decoder","schema_id":"AuthenticatedEventTimeReference","schema_version":"1","typed_root_kind":"model"}

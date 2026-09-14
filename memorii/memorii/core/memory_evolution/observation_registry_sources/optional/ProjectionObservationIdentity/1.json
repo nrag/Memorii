@@ -1,0 +1,1 @@
+{"fields":[{"field_name":"generation_digest","policy":"required"},{"field_name":"observation_id","policy":"required"},{"field_name":"projection_digest","policy":"required"},{"field_name":"projection_kind","policy":"required"},{"field_name":"repository_id","policy":"required"}],"role":"optional","schema_id":"ProjectionObservationIdentity","schema_version":"1"}

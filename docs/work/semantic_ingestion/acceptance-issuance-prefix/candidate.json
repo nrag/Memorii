@@ -1,0 +1,12 @@
+{
+  "files": {
+    "docs/work/semantic_ingestion/acceptance-issuance-prefix/proposal.md": "e5e22eb3620386a7f7a254da39bd4d043e6e0830c572dd684a3041812d99830b",
+    "docs/work/semantic_ingestion/acceptance-issuance-prefix/issuance_prefix_feasibility.py": "403f08916ce56fb52ceee9a0275178e2a70758ea603b076e85301cf98360e2ed",
+    "docs/work/semantic_ingestion/acceptance-issuance-prefix/test_issuance_prefix_feasibility.py": "2b0226fa3218f9aba31490e86b141668be7aee5a1501048980559711642134d1",
+    "docs/work/semantic_ingestion/acceptance-authority-successor/proposal.md": "e0c554e793e7ed90eb34b305d311b4e77cd215593698865c82ad951260da18f1",
+    "docs/work/semantic_ingestion/acceptance-authority-successor/authority_successor_feasibility.py": "fc8dbbd81a73b78de44db119dcf74721ab5f2a3d074c11a0de5f1f523fd4ad9a",
+    "docs/work/semantic_ingestion/acceptance-authority-successor/test_authority_successor_feasibility.py": "e2a759d5c64e018a64b190f214565c9d10c876398003e4c37478d623eac5b1e1",
+    "docs/design/semantic_ingestion_architecture.md": "a7770e627e2dc627c772b8c54dd5998ce83c1baf43079a210056826b5ebce626"
+  },
+  "evidence": "69 tests passed in 0.57s; local model only; no production cryptography or repository traversal proof"
+}

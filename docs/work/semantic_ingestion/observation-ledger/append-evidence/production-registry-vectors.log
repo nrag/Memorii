@@ -1,0 +1,13 @@
+{
+  "status": "LOCAL_VECTOR_PARITY",
+  "vector_count": 58,
+  "full_publication_entries": 179,
+  "full_publication_role_count": 1255,
+  "manifest_sha256": "c98657ca076871e9155b3753ed44409745c0c0016eb28a2e4c66fd353549ffee",
+  "failures": [],
+  "limitations": [
+    "construction parity only",
+    "not CI or deployment authority",
+    "protected runtime composition and final review remain open"
+  ]
+}

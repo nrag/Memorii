@@ -1,0 +1,693 @@
+{
+  "status": "INDEPENDENT_RECIPE_FEASIBILITY_PASSED",
+  "positive_preimages": 5,
+  "isolated_field_mutations": 56,
+  "mutations": [
+    {
+      "field": [
+        "decoder_source_manifest_digest"
+      ],
+      "changed": [
+        "codec",
+        "schema"
+      ]
+    },
+    {
+      "field": [
+        "entries",
+        0,
+        "binding_digest"
+      ],
+      "changed": [
+        "codec",
+        "schema"
+      ]
+    },
+    {
+      "field": [
+        "entries",
+        0,
+        "decoder_id"
+      ],
+      "changed": [
+        "codec"
+      ]
+    },
+    {
+      "field": [
+        "entries",
+        0,
+        "entry_digest"
+      ],
+      "changed": [
+        "codec",
+        "schema"
+      ]
+    },
+    {
+      "field": [
+        "entries",
+        0,
+        "implementation_source_digest"
+      ],
+      "changed": [
+        "codec"
+      ]
+    },
+    {
+      "field": [
+        "entries",
+        0,
+        "schema_fingerprint"
+      ],
+      "changed": [
+        "codec",
+        "schema"
+      ]
+    },
+    {
+      "field": [
+        "entries",
+        0,
+        "schema_id"
+      ],
+      "changed": [
+        "codec",
+        "schema"
+      ]
+    },
+    {
+      "field": [
+        "entries",
+        0,
+        "schema_version"
+      ],
+      "changed": [
+        "codec",
+        "schema"
+      ]
+    },
+    {
+      "field": [
+        "entries",
+        1,
+        "binding_digest"
+      ],
+      "changed": [
+        "codec",
+        "schema"
+      ]
+    },
+    {
+      "field": [
+        "entries",
+        1,
+        "decoder_id"
+      ],
+      "changed": [
+        "codec"
+      ]
+    },
+    {
+      "field": [
+        "entries",
+        1,
+        "entry_digest"
+      ],
+      "changed": [
+        "codec",
+        "schema"
+      ]
+    },
+    {
+      "field": [
+        "entries",
+        1,
+        "implementation_source_digest"
+      ],
+      "changed": [
+        "codec"
+      ]
+    },
+    {
+      "field": [
+        "entries",
+        1,
+        "schema_fingerprint"
+      ],
+      "changed": [
+        "codec",
+        "schema"
+      ]
+    },
+    {
+      "field": [
+        "entries",
+        1,
+        "schema_id"
+      ],
+      "changed": [
+        "codec",
+        "schema"
+      ]
+    },
+    {
+      "field": [
+        "entries",
+        1,
+        "schema_version"
+      ],
+      "changed": [
+        "codec",
+        "schema"
+      ]
+    },
+    {
+      "field": [
+        "entries",
+        2,
+        "binding_digest"
+      ],
+      "changed": [
+        "codec",
+        "schema"
+      ]
+    },
+    {
+      "field": [
+        "entries",
+        2,
+        "decoder_id"
+      ],
+      "changed": [
+        "codec"
+      ]
+    },
+    {
+      "field": [
+        "entries",
+        2,
+        "entry_digest"
+      ],
+      "changed": [
+        "codec",
+        "schema"
+      ]
+    },
+    {
+      "field": [
+        "entries",
+        2,
+        "implementation_source_digest"
+      ],
+      "changed": [
+        "codec"
+      ]
+    },
+    {
+      "field": [
+        "entries",
+        2,
+        "schema_fingerprint"
+      ],
+      "changed": [
+        "codec",
+        "schema"
+      ]
+    },
+    {
+      "field": [
+        "entries",
+        2,
+        "schema_id"
+      ],
+      "changed": [
+        "codec",
+        "schema"
+      ]
+    },
+    {
+      "field": [
+        "entries",
+        2,
+        "schema_version"
+      ],
+      "changed": [
+        "codec",
+        "schema"
+      ]
+    },
+    {
+      "field": [
+        "environment",
+        "cache_policy"
+      ],
+      "changed": [
+        "E",
+        "codec",
+        "schema",
+        "writer"
+      ]
+    },
+    {
+      "field": [
+        "environment",
+        "distributions",
+        0,
+        "name"
+      ],
+      "changed": [
+        "E",
+        "codec",
+        "schema",
+        "writer"
+      ]
+    },
+    {
+      "field": [
+        "environment",
+        "distributions",
+        0,
+        "record_sha256"
+      ],
+      "changed": [
+        "E",
+        "codec",
+        "schema",
+        "writer"
+      ]
+    },
+    {
+      "field": [
+        "environment",
+        "distributions",
+        0,
+        "top_level_roots",
+        0
+      ],
+      "changed": [
+        "E",
+        "codec",
+        "schema",
+        "writer"
+      ]
+    },
+    {
+      "field": [
+        "environment",
+        "distributions",
+        0,
+        "top_level_roots",
+        1
+      ],
+      "changed": [
+        "E",
+        "codec",
+        "schema",
+        "writer"
+      ]
+    },
+    {
+      "field": [
+        "environment",
+        "distributions",
+        0,
+        "version"
+      ],
+      "changed": [
+        "E",
+        "codec",
+        "schema",
+        "writer"
+      ]
+    },
+    {
+      "field": [
+        "environment",
+        "distributions",
+        0,
+        "wheel_sha256"
+      ],
+      "changed": [
+        "E",
+        "codec",
+        "schema",
+        "writer"
+      ]
+    },
+    {
+      "field": [
+        "environment",
+        "distributions",
+        1,
+        "name"
+      ],
+      "changed": [
+        "E",
+        "codec",
+        "schema",
+        "writer"
+      ]
+    },
+    {
+      "field": [
+        "environment",
+        "distributions",
+        1,
+        "record_sha256"
+      ],
+      "changed": [
+        "E",
+        "codec",
+        "schema",
+        "writer"
+      ]
+    },
+    {
+      "field": [
+        "environment",
+        "distributions",
+        1,
+        "top_level_roots",
+        0
+      ],
+      "changed": [
+        "E",
+        "codec",
+        "schema",
+        "writer"
+      ]
+    },
+    {
+      "field": [
+        "environment",
+        "distributions",
+        1,
+        "version"
+      ],
+      "changed": [
+        "E",
+        "codec",
+        "schema",
+        "writer"
+      ]
+    },
+    {
+      "field": [
+        "environment",
+        "distributions",
+        1,
+        "wheel_sha256"
+      ],
+      "changed": [
+        "E",
+        "codec",
+        "schema",
+        "writer"
+      ]
+    },
+    {
+      "field": [
+        "environment",
+        "install_policy"
+      ],
+      "changed": [
+        "E",
+        "codec",
+        "schema",
+        "writer"
+      ]
+    },
+    {
+      "field": [
+        "environment",
+        "installed_files",
+        0,
+        "distribution"
+      ],
+      "changed": [
+        "E",
+        "codec",
+        "schema",
+        "writer"
+      ]
+    },
+    {
+      "field": [
+        "environment",
+        "installed_files",
+        0,
+        "path"
+      ],
+      "changed": [
+        "E",
+        "codec",
+        "schema",
+        "writer"
+      ]
+    },
+    {
+      "field": [
+        "environment",
+        "installed_files",
+        0,
+        "sha256"
+      ],
+      "changed": [
+        "E",
+        "codec",
+        "schema",
+        "writer"
+      ]
+    },
+    {
+      "field": [
+        "environment",
+        "installed_files",
+        0,
+        "size"
+      ],
+      "changed": [
+        "E",
+        "codec",
+        "schema",
+        "writer"
+      ]
+    },
+    {
+      "field": [
+        "environment",
+        "installed_files",
+        1,
+        "distribution"
+      ],
+      "changed": [
+        "E",
+        "codec",
+        "schema",
+        "writer"
+      ]
+    },
+    {
+      "field": [
+        "environment",
+        "installed_files",
+        1,
+        "path"
+      ],
+      "changed": [
+        "E",
+        "codec",
+        "schema",
+        "writer"
+      ]
+    },
+    {
+      "field": [
+        "environment",
+        "installed_files",
+        1,
+        "sha256"
+      ],
+      "changed": [
+        "E",
+        "codec",
+        "schema",
+        "writer"
+      ]
+    },
+    {
+      "field": [
+        "environment",
+        "installed_files",
+        1,
+        "size"
+      ],
+      "changed": [
+        "E",
+        "codec",
+        "schema",
+        "writer"
+      ]
+    },
+    {
+      "field": [
+        "environment",
+        "origin_policy"
+      ],
+      "changed": [
+        "E",
+        "codec",
+        "schema",
+        "writer"
+      ]
+    },
+    {
+      "field": [
+        "environment",
+        "platform_tag"
+      ],
+      "changed": [
+        "E",
+        "codec",
+        "schema",
+        "writer"
+      ]
+    },
+    {
+      "field": [
+        "environment",
+        "python_implementation"
+      ],
+      "changed": [
+        "E",
+        "codec",
+        "schema",
+        "writer"
+      ]
+    },
+    {
+      "field": [
+        "environment",
+        "python_version"
+      ],
+      "changed": [
+        "E",
+        "codec",
+        "schema",
+        "writer"
+      ]
+    },
+    {
+      "field": [
+        "memorii_wheel_sha256"
+      ],
+      "changed": [
+        "writer"
+      ]
+    },
+    {
+      "field": [
+        "package_files",
+        0,
+        "relative_path"
+      ],
+      "changed": [
+        "P",
+        "codec",
+        "schema",
+        "writer"
+      ]
+    },
+    {
+      "field": [
+        "package_files",
+        0,
+        "sha256"
+      ],
+      "changed": [
+        "P",
+        "codec",
+        "schema",
+        "writer"
+      ]
+    },
+    {
+      "field": [
+        "package_files",
+        0,
+        "size"
+      ],
+      "changed": [
+        "P",
+        "codec",
+        "schema",
+        "writer"
+      ]
+    },
+    {
+      "field": [
+        "package_files",
+        1,
+        "relative_path"
+      ],
+      "changed": [
+        "P",
+        "codec",
+        "schema",
+        "writer"
+      ]
+    },
+    {
+      "field": [
+        "package_files",
+        1,
+        "sha256"
+      ],
+      "changed": [
+        "P",
+        "codec",
+        "schema",
+        "writer"
+      ]
+    },
+    {
+      "field": [
+        "package_files",
+        1,
+        "size"
+      ],
+      "changed": [
+        "P",
+        "codec",
+        "schema",
+        "writer"
+      ]
+    },
+    {
+      "field": [
+        "publication_digest"
+      ],
+      "changed": [
+        "codec",
+        "schema"
+      ]
+    },
+    {
+      "field": [
+        "registry_digest"
+      ],
+      "changed": [
+        "codec",
+        "schema"
+      ]
+    }
+  ],
+  "limitation": "Synthetic recipe inputs, not manifest parsing or coherent publication/deployment acceptance.",
+  "files": {
+    "identity-input.json": "e1274715c27dec5c2616299541d8e32c2be7a0c3b3b6f0fee6b52b872a05f81e",
+    "identity-expected.json": "7e799574af8dbaa4d2b3b29cef196fa2331b8472cfde6995d322495a653261c2",
+    "identity_oracle.py": "cc25ab4f266a27ec98a20f751103a49360c62fd13cf4821a215700d4efa7b446",
+    "identity_reference.mjs": "ae01f71933a09b07856949bb369076facbbc16c951546ebce659f3b06b91ceec"
+  }
+}

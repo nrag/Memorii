@@ -63,6 +63,7 @@ if TYPE_CHECKING:
         CanonicalSourceTerminalOutcomeRecord,
         GraphRevisionDelta,
         IngestionObservationDelta,
+        SourceFinalizationObservationDelta,
     )
     from memorii.core.memory_evolution.graph_planning import (
         CanonicalPlanningRecordPayload,
@@ -86,9 +87,13 @@ if TYPE_CHECKING:
         TrustedAcceptedIdentityOperationDecision,
         VerifiedIdentityDecisionAuthority,
     )
+    from memorii.core.memory_evolution.observation_ledger_contracts import SourceObservationIntent
     from memorii.core.memory_evolution.transaction_coordinator import (
         GraphReadSetToken,
         SealedGraphStateSnapshot,
+    )
+    from memorii.core.semantic_ingestion.bootstrap_graph_projection_publication import (
+        BootstrapGraphNativeProjectionPublicationReceiptV3,
     )
     from memorii.core.semantic_ingestion.canonical_evidence_arena import CanonicalEvidenceArena
     from memorii.core.semantic_ingestion.event_replay import SemanticMemoryEventBatch
@@ -129,8 +134,16 @@ def canonical_contract_value(value: object) -> object:
             lowered = reuse_scope.lookup_lowered_value(value)
             if lowered is not None:
                 return lowered
+        field_names = getattr(value, "_canonical_contract_field_names", None)
+        names = (
+            field_names()
+            if callable(field_names)
+            else tuple(type(value).model_fields)
+        )
+        if not isinstance(names, tuple):
+            raise TypeError("canonical contract field names must be a tuple")
         lowered = _CanonicalContractMap(
-            {name: canonical_contract_value(getattr(value, name)) for name in type(value).model_fields}
+            {name: canonical_contract_value(getattr(value, name)) for name in names}
         )
         if reuse_scope is not None:
             reuse_scope.record_lowered_value(value, lowered)
@@ -4206,6 +4219,18 @@ class _ContentAddressedContract(BaseModel):
     _digest_field: ClassVar[str]
     _create_static_values: ClassVar[Mapping[str, object]] = {}
     _digest_excluded_fields: ClassVar[frozenset[str]] = frozenset()
+    _legacy_v1_digest_excluded_fields: ClassVar[frozenset[str]] = frozenset()
+
+    @classmethod
+    def _uses_legacy_digest_shape(cls, values: Mapping[str, object]) -> bool:
+        return False
+
+    @classmethod
+    def _versioned_digest_excluded_fields(cls, values: Mapping[str, object]) -> frozenset[str]:
+        return cls._legacy_v1_digest_excluded_fields if cls._uses_legacy_digest_shape(values) else frozenset()
+
+    def _canonical_contract_field_names(self) -> tuple[str, ...]:
+        return tuple(type(self).model_fields)
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
@@ -4214,10 +4239,14 @@ class _ContentAddressedContract(BaseModel):
         declared = getattr(self, self._digest_field)
         if _digest_verification_hit(self, declared):
             return self
+        values = {
+            name: getattr(self, name) for name in type(self).model_fields
+        }
+        excluded = self._digest_excluded_fields | type(self)._versioned_digest_excluded_fields(values)
         body = {
-            name: getattr(self, name)
-            for name in type(self).model_fields
-            if name != self._digest_field and name not in self._digest_excluded_fields
+            name: value
+            for name, value in values.items()
+            if name != self._digest_field and name not in excluded
         }
         if declared != contract_digest(self._digest_domain, body):
             raise ValueError(f"{self._digest_field} mismatch")
@@ -4232,10 +4261,11 @@ class _ContentAddressedContract(BaseModel):
         if "schema_version" in cls.model_fields:
             body["schema_version"] = 2
         body.update(values)
+        excluded = cls._digest_excluded_fields | cls._versioned_digest_excluded_fields(body)
         digest_body = {
             name: value
             for name, value in body.items()
-            if name not in cls._digest_excluded_fields
+            if name not in excluded
         }
         return cls(
             **body,
@@ -9109,6 +9139,7 @@ class BootstrapNativePlanningConstructionAuthorityV3(_BootstrapV3Contract):
     required_scope_set_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     predicate_registry_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     predicate_trust_rule: PredicateTrustRule
+    arbitration_policy_bundle: SemanticArbitrationPolicyBundle | None = None
     predicate_state_rule: PredicateStateRule
     source_authority_evidence: SourceAuthorityEvidence
     action_policy_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -9120,6 +9151,26 @@ class BootstrapNativePlanningConstructionAuthorityV3(_BootstrapV3Contract):
     authority_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     _digest_domain = b"memorii.bootstrap-graph.native-planning-construction-authority.v3"
     _digest_field = "authority_digest"
+    _legacy_v1_digest_excluded_fields = frozenset({"arbitration_policy_bundle"})
+
+    @classmethod
+    def _uses_legacy_digest_shape(cls, values: Mapping[str, object]) -> bool:
+        return values.get("arbitration_policy_bundle") is None
+
+    def _canonical_contract_field_names(self) -> tuple[str, ...]:
+        names = tuple(type(self).model_fields)
+        return (
+            tuple(name for name in names if name != "arbitration_policy_bundle")
+            if self.arbitration_policy_bundle is None
+            else names
+        )
+
+    @model_serializer(mode="wrap")
+    def serialize_arbitration_policy_bundle(self, handler):  # type: ignore[no-untyped-def]
+        values = handler(self)
+        if self.arbitration_policy_bundle is None:
+            values.pop("arbitration_policy_bundle", None)
+        return values
 
     @model_validator(mode="after")
     def validate_authority(self) -> BootstrapNativePlanningConstructionAuthorityV3:
@@ -9128,13 +9179,34 @@ class BootstrapNativePlanningConstructionAuthorityV3(_BootstrapV3Contract):
             or self.predicate_state_rule.predicate_id != self.predicate_trust_rule.predicate_id
             or self.source_authority_evidence.source_id != self.source_id
             or self.source_authority_evidence.source_digest != self.source_digest
-            or not self.message_admission_identities
+            or len(self.message_admission_identities) != 1
             or self.planning_codec_entries
             != tuple(sorted(self.planning_codec_entries, key=lambda item: item.record_kind))
             or len({item.record_kind for item in self.planning_codec_entries})
             != len(self.planning_codec_entries)
         ):
             raise ValueError("bootstrap native planning construction authority is incomplete")
+        bundle = self.arbitration_policy_bundle
+        if bundle is not None:
+            SemanticArbitrationPolicyBundle.model_validate(bundle.model_dump(mode="python"))
+            if self.predicate_trust_rule != bundle.trust_policy.rule_for(self.predicate_trust_rule.predicate_id):
+                raise ValueError("bootstrap native planning construction policy rule is substituted")
+            for construction in self.temporal_constructions:
+                closure = construction.accepted_temporal_evidence.decision_closure
+                if closure != construction.temporal_decision_binding.decision_closure:
+                    raise ValueError("bootstrap native planning construction temporal evidence is substituted")
+                effective_time = construction.effective_time
+                if (
+                    closure.temporal_policy_fingerprint != bundle.temporal_policy.fingerprint
+                    or closure.temporal_policy_snapshot_digest != bundle.temporal_policy.snapshot_digest
+                    or closure.trust_policy_fingerprint != bundle.trust_policy.fingerprint
+                    or closure.trust_policy_snapshot_digest != bundle.trust_policy.snapshot_digest
+                    or closure.arbitration_as_of != bundle.arbitration_as_of
+                    or construction.temporal_policy_fingerprint != bundle.temporal_policy.fingerprint
+                    or effective_time.temporal_policy_fingerprint != bundle.temporal_policy.fingerprint
+                    or effective_time.temporal_policy_snapshot_digest != bundle.temporal_policy.snapshot_digest
+                ):
+                    raise ValueError("bootstrap native planning construction policy authority is substituted")
         return self
 
 
@@ -10858,9 +10930,26 @@ class BootstrapGraphTargetMaterializationPlanV3(_BootstrapV3Contract):
     evidence_projections: tuple[BootstrapNativeEvidenceProjectionV3, ...]
     identity_materialization: BootstrapNativeIdentityMaterializationV3 | None
     planning_state_after: GraphPlanningState
+    observation_mention_bindings: tuple[BootstrapNativeObservationMentionBindingV3, ...] = ()
     plan_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     _digest_domain = b"memorii.bootstrap-graph.target-materialization-plan.v3"
     _digest_field = "plan_digest"
+    _legacy_v1_digest_excluded_fields = frozenset({"observation_mention_bindings"})
+
+    @classmethod
+    def _uses_legacy_digest_shape(cls, values: Mapping[str, object]) -> bool:
+        return not values.get("observation_mention_bindings")
+
+    def _canonical_contract_field_names(self) -> tuple[str, ...]:
+        names = tuple(type(self).model_fields)
+        return tuple(name for name in names if name != "observation_mention_bindings") if not self.observation_mention_bindings else names
+
+    @model_serializer(mode="wrap")
+    def serialize_observation_bindings(self, handler):  # type: ignore[no-untyped-def]
+        value = handler(self)
+        if not self.observation_mention_bindings:
+            value.pop("observation_mention_bindings", None)
+        return value
 
     @model_validator(mode="after")
     def validate_plan_order(self) -> BootstrapGraphTargetMaterializationPlanV3:
@@ -10869,6 +10958,26 @@ class BootstrapGraphTargetMaterializationPlanV3(_BootstrapV3Contract):
             raise ValueError("native target plan records are not canonical")
         if self.planning_state_after.base_snapshot_digest != self.sealed_snapshot_digest:
             raise ValueError("native target plan state authority is substituted")
+        bindings = self.observation_mention_bindings
+        expected_mentions = None
+        if bindings and isinstance(self.operation_seed, BootstrapNativeFactPlanningSeedV3):
+            if self.operation_seed.fact.object.kind != "entity":
+                raise ValueError("native target plan observation authority is invalid")
+            expected_mentions = {
+                self.operation_seed.fact.subject_mention_digest,
+                self.operation_seed.fact.object.mention_digest,
+            }
+        if (
+            bindings != tuple(sorted(bindings, key=lambda item: item.binding_digest))
+            or len({item.mention_digest for item in bindings}) != len(bindings)
+            or any(
+                item.operation_id != self.operation_id
+                or item.operation_execution_id != self.operation_execution_id
+                for item in bindings
+            )
+            or (expected_mentions is not None and {item.mention_digest for item in bindings} != expected_mentions)
+        ):
+            raise ValueError("native target plan observation authority is substituted")
         return self
 
 
@@ -10913,6 +11022,34 @@ class BootstrapNativeRecordMaterializationIntentV3(_BootstrapV3Contract):
         return self
 
 
+class BootstrapNativeObservationMentionBindingV3(_BootstrapV3Contract):
+    """The planner's exact selected mention-to-canonical-entity authority."""
+
+    operation_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    operation_execution_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    mention_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    mention_span: SourceSpanReference
+    target_candidate: BootstrapNativeMentionTargetCandidateV3
+    segment_governance: SegmentGovernanceBinding
+    message_admission_identities: tuple[MessageAdmissionIdentity, ...]
+    binding_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    _digest_domain = b"memorii.bootstrap-graph.native-observation-mention-binding.v3"
+    _digest_field = "binding_digest"
+
+    @model_validator(mode="after")
+    def validate_binding(self) -> BootstrapNativeObservationMentionBindingV3:
+        if (
+            self.mention_span.source_id != self.segment_governance.source_id
+            or self.target_candidate.mention_digest != self.mention_digest
+            or not self.message_admission_identities
+            or self.message_admission_identities != tuple(sorted(self.message_admission_identities, key=lambda item: item.message_admission_key_digest))
+            or len({item.message_admission_key_digest for item in self.message_admission_identities}) != len(self.message_admission_identities)
+            or any(item.segment_governance_binding_digest != self.segment_governance.binding_digest for item in self.message_admission_identities)
+        ):
+            raise ValueError("bootstrap observation mention binding is substituted")
+        return self
+
+
 class BootstrapNativeFactEffectV3(_BootstrapV3Contract):
     kind: Literal["fact"]
     fact: BootstrapProposalFactV3
@@ -10920,9 +11057,45 @@ class BootstrapNativeFactEffectV3(_BootstrapV3Contract):
     planning_records: tuple[BootstrapNativePlanningRecordV3, ...]
     terminal_bindings: tuple[BootstrapNativeTemporalTerminalBindingV3, ...]
     evidence_projections: tuple[BootstrapNativeEvidenceProjectionV3, ...]
+    observation_mention_bindings: tuple[BootstrapNativeObservationMentionBindingV3, ...] = ()
     effect_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     _digest_domain = b"memorii.bootstrap-graph.native-fact-effect.v3"
     _digest_field = "effect_digest"
+    _legacy_v1_digest_excluded_fields = frozenset({"observation_mention_bindings"})
+
+    @classmethod
+    def _uses_legacy_digest_shape(cls, values: Mapping[str, object]) -> bool:
+        return not values.get("observation_mention_bindings")
+
+    def _canonical_contract_field_names(self) -> tuple[str, ...]:
+        names = tuple(type(self).model_fields)
+        return tuple(name for name in names if name != "observation_mention_bindings") if not self.observation_mention_bindings else names
+
+    @model_serializer(mode="wrap")
+    def serialize_observation_bindings(self, handler):  # type: ignore[no-untyped-def]
+        value = handler(self)
+        if not self.observation_mention_bindings:
+            value.pop("observation_mention_bindings", None)
+        return value
+
+    @model_validator(mode="after")
+    def validate_observation_bindings(self) -> BootstrapNativeFactEffectV3:
+        bindings = self.observation_mention_bindings
+        expected_mentions = None
+        if bindings:
+            if self.fact.object.kind != "entity":
+                raise ValueError("native fact observation authority is invalid")
+            expected_mentions = {
+                self.fact.subject_mention_digest,
+                self.fact.object.mention_digest,
+            }
+        if (
+            bindings != tuple(sorted(bindings, key=lambda item: item.binding_digest))
+            or len({item.mention_digest for item in bindings}) != len(bindings)
+            or (expected_mentions is not None and {item.mention_digest for item in bindings} != expected_mentions)
+        ):
+            raise ValueError("native fact observation authority is substituted")
+        return self
 
 
 class BootstrapNativeCorrectionEffectV3(_BootstrapV3Contract):
@@ -11279,6 +11452,7 @@ class BootstrapGraphOperationCommitResultV3(_BootstrapV3Contract):
 
 
 class BootstrapGraphGroupCommitResultCoreV3(_BootstrapV3Contract):
+    group_result_schema_version: Literal[1, 2, 3] = 1
     request_ctv_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     disposition: Literal["committed", "noncommitting"]
     ordered_operation_results: tuple[BootstrapGraphOperationCommitResultV3, ...]
@@ -11291,9 +11465,60 @@ class BootstrapGraphGroupCommitResultCoreV3(_BootstrapV3Contract):
     publication_operation_generation: int = Field(ge=1)
     publication_artifact_generation: int = Field(ge=1)
     atomic_write_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    transaction_group_commit_attestation_digest: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
+    observation_delta: IngestionObservationDelta | None = None
+    native_projection_publication_receipt: BootstrapGraphNativeProjectionPublicationReceiptV3 | None = None
     core_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     _digest_domain = b"memorii.semantic-ingestion.bootstrap-graph-group-commit-result-core.v3"
     _digest_field = "core_digest"
+    _legacy_v1_digest_excluded_fields = frozenset({
+        "group_result_schema_version", "observation_delta",
+        "native_projection_publication_receipt", "transaction_group_commit_attestation_digest",
+    })
+    _schema_2_digest_excluded_fields: ClassVar[frozenset[str]] = frozenset({
+        "transaction_group_commit_attestation_digest",
+    })
+
+    @classmethod
+    def _uses_legacy_digest_shape(cls, values: Mapping[str, object]) -> bool:
+        return values.get("group_result_schema_version", 1) == 1
+
+    @classmethod
+    def _versioned_digest_excluded_fields(cls, values: Mapping[str, object]) -> frozenset[str]:
+        version = values.get("group_result_schema_version", 1)
+        if version == 1:
+            return cls._legacy_v1_digest_excluded_fields
+        if version == 2:
+            return cls._schema_2_digest_excluded_fields
+        return frozenset()
+
+    def _canonical_contract_field_names(self) -> tuple[str, ...]:
+        excluded = (
+            self._legacy_v1_digest_excluded_fields
+            if self.group_result_schema_version == 1
+            else self._schema_2_digest_excluded_fields
+            if self.group_result_schema_version == 2
+            else frozenset()
+        )
+        return tuple(
+            name for name in type(self).model_fields if name not in excluded
+        )
+
+    @model_serializer(mode="wrap")
+    def serialize_group_result_core(self, handler):  # type: ignore[no-untyped-def]
+        value = handler(self)
+        excluded = (
+            self._legacy_v1_digest_excluded_fields
+            if self.group_result_schema_version == 1
+            else self._schema_2_digest_excluded_fields
+            if self.group_result_schema_version == 2
+            else frozenset()
+        )
+        for field in excluded:
+            value.pop(field, None)
+        return value
 
     @model_validator(mode="after")
     def validate_core(self) -> BootstrapGraphGroupCommitResultCoreV3:
@@ -11301,6 +11526,45 @@ class BootstrapGraphGroupCommitResultCoreV3(_BootstrapV3Contract):
         committed = any(item.final_status == "accepted" for item in self.ordered_operation_results)
         if not ids or ids != tuple(sorted(set(ids))) or (self.disposition == "committed") != committed:
             raise ValueError("bootstrap graph group commit result core is invalid")
+        if self.group_result_schema_version == 1:
+            if (
+                self.observation_delta is not None
+                or self.native_projection_publication_receipt is not None
+                or self.transaction_group_commit_attestation_digest is not None
+            ):
+                raise ValueError("legacy group result forbids ledger fields")
+        else:
+            delta = self.observation_delta
+            group_ids = {item.reduction.transaction_group_id for item in self.ordered_operation_results}
+            if (
+                delta is None
+                or len(group_ids) != 1
+                or delta.transaction_group_id not in group_ids
+                or delta.operation_ids != ids
+                or delta.observation_revision_before != self.observation_revision_before
+                or delta.observation_revision_after != self.observation_revision_after
+                or (self.disposition == "committed") != (delta.terminal_status == "committed")
+                or (self.disposition == "committed") != (self.native_projection_publication_receipt is not None)
+                or (
+                    self.native_projection_publication_receipt is not None
+                    and (
+                        self.native_projection_publication_receipt.transaction_group_id
+                        != delta.transaction_group_id
+                        or self.native_projection_publication_receipt.request_ctv_digest
+                        != self.request_ctv_digest
+                        or self.native_projection_publication_receipt.graph_revision_before
+                        != self.graph_revision_before
+                        or self.native_projection_publication_receipt.graph_revision_after
+                        != self.graph_revision_after
+                    )
+                )
+            ):
+                raise ValueError("schema-2 group result ledger closure is invalid")
+            if self.group_result_schema_version == 3 and (
+                (self.disposition == "committed")
+                != (self.transaction_group_commit_attestation_digest is not None)
+            ):
+                raise ValueError("schema-3 group result attestation binding is invalid")
         return self
 
 
@@ -11580,7 +11844,7 @@ class BootstrapGraphTerminalHandoffCoreV3(_BootstrapV3Contract):
 
 
 class BootstrapGraphTerminalMemberIntentV3(_BootstrapV3Contract):
-    kind: Literal["bootstrap_graph_coordinator_request", "bootstrap_graph_control_epoch", "bootstrap_graph_dependent_attempt", "bootstrap_transaction_group_plan", "bootstrap_source_plan_lineage_entry", "ingestion_execution_manifest", "transaction_group_result", "bootstrap_graph_terminal_handoff", "bootstrap_graph_canonical_source_result"]
+    kind: Literal["bootstrap_graph_coordinator_request", "bootstrap_graph_control_epoch", "bootstrap_graph_dependent_attempt", "bootstrap_transaction_group_plan", "bootstrap_source_plan_lineage_entry", "ingestion_execution_manifest", "transaction_group_result", "bootstrap_graph_terminal_handoff", "bootstrap_graph_canonical_source_result", "bootstrap_graph_source_finalization_observation_delta", "source_observation_intent"]
     member_id: str = Field(min_length=1)
     construction_input_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     intent_member_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -11589,6 +11853,7 @@ class BootstrapGraphTerminalMemberIntentV3(_BootstrapV3Contract):
 
 
 class BootstrapGraphTerminalPublicationIntentV3(_BootstrapV3Contract):
+    terminal_member_schema_version: Literal[1, 2, 3] = 1
     source_id: str = Field(min_length=1)
     source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     preparation_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -11612,11 +11877,35 @@ class BootstrapGraphTerminalPublicationIntentV3(_BootstrapV3Contract):
     _digest_domain = b"memorii.semantic-ingestion.bootstrap-graph-terminal-publication-intent.v3"
     _digest_field = "intent_digest"
     _digest_excluded_fields = frozenset({"locator_digest"})
+    _legacy_v1_digest_excluded_fields = frozenset({
+        "terminal_member_schema_version",
+    })
+
+    @classmethod
+    def _uses_legacy_digest_shape(cls, values: Mapping[str, object]) -> bool:
+        return values.get("terminal_member_schema_version", 1) == 1
+
+    def _canonical_contract_field_names(self) -> tuple[str, ...]:
+        names = tuple(type(self).model_fields)
+        return (
+            tuple(name for name in names if name != "terminal_member_schema_version")
+            if self.terminal_member_schema_version == 1 else names
+        )
+
+    @model_serializer(mode="wrap")
+    def serialize_terminal_intent(self, handler):  # type: ignore[no-untyped-def]
+        value = handler(self)
+        if self.terminal_member_schema_version == 1:
+            value.pop("terminal_member_schema_version", None)
+        return value
 
     @classmethod
     def create(cls, **values: object):  # type: ignore[no-untyped-def]
         body = {"schema_version": 3, **values}
-        intent_digest = contract_digest(cls._digest_domain, body)
+        digest_body = dict(body)
+        if values.get("terminal_member_schema_version", 1) == 1:
+            digest_body.pop("terminal_member_schema_version", None)
+        intent_digest = contract_digest(cls._digest_domain, digest_body)
         locator_digest = contract_digest(
             b"memorii.semantic-ingestion.bootstrap-graph-terminal-publication-locator.v3",
             {"intent_digest": intent_digest},
@@ -11635,10 +11924,19 @@ class BootstrapGraphTerminalPublicationIntentV3(_BootstrapV3Contract):
             "bootstrap_source_plan_lineage_entry": 4, "ingestion_execution_manifest": 5,
             "transaction_group_result": 6, "bootstrap_graph_terminal_handoff": 7,
             "bootstrap_graph_canonical_source_result": 8,
+            "bootstrap_graph_source_finalization_observation_delta": 9,
+            "source_observation_intent": 9,
         }
         kinds = tuple(item.kind for item in self.member_intents)
         ids = tuple(item.member_id for item in self.member_intents)
         required = set(order)
+        if self.terminal_member_schema_version in {1, 2}:
+            required.remove("source_observation_intent")
+        if self.terminal_member_schema_version == 1:
+            required.remove("bootstrap_graph_source_finalization_observation_delta")
+        elif self.terminal_member_schema_version == 3:
+            required.remove("bootstrap_graph_source_finalization_observation_delta")
+            required.add("source_observation_intent")
         repeated = {"bootstrap_source_plan_lineage_entry", "transaction_group_result"}
         present = set(kinds)
         if (
@@ -11717,6 +12015,10 @@ class BootstrapGraphTerminalReloadV3(_BootstrapV3Contract):
     final_write_identity: BootstrapGraphPlanAtomicWriteIdentityV3
     terminal_control: BootstrapGraphTerminalControlV3
     canonical_source_result: BootstrapGraphCanonicalSourceResultV3
+    source_finalization_observation_delta: SourceFinalizationObservationDelta | None = None
+    terminal_member_schema_version: Literal[1, 2, 3] = 1
+    ledger_entry_id: str | None = Field(default=None, min_length=1)
+    ledger_entry_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     delivery_principal_binding_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     required_scope_set_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     operation_fence_binding_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -11726,6 +12028,45 @@ class BootstrapGraphTerminalReloadV3(_BootstrapV3Contract):
     reload_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     _digest_domain = b"memorii.semantic-ingestion.bootstrap-graph-terminal-reload.v3"
     _digest_field = "reload_digest"
+    _legacy_v1_digest_excluded_fields = frozenset({
+        "terminal_member_schema_version",
+        "source_finalization_observation_delta",
+    })
+
+    @classmethod
+    def _uses_legacy_digest_shape(cls, values: Mapping[str, object]) -> bool:
+        return values.get("terminal_member_schema_version", 1) == 1
+
+    @classmethod
+    def _versioned_digest_excluded_fields(cls, values: Mapping[str, object]) -> frozenset[str]:
+        version = values.get("terminal_member_schema_version", 1)
+        return (
+            (cls._legacy_v1_digest_excluded_fields if version == 1 else frozenset())
+            | (frozenset({"ledger_entry_id", "ledger_entry_digest"}) if version in {1, 2} else frozenset())
+        )
+
+    def _canonical_contract_field_names(self) -> tuple[str, ...]:
+        names = tuple(type(self).model_fields)
+        return (
+            tuple(name for name in names if name not in {
+                "terminal_member_schema_version",
+                "source_finalization_observation_delta", "ledger_entry_id", "ledger_entry_digest",
+            }) if self.terminal_member_schema_version == 1 else (
+                tuple(name for name in names if name not in {"ledger_entry_id", "ledger_entry_digest"})
+                if self.terminal_member_schema_version == 2 else names
+            )
+        )
+
+    @model_serializer(mode="wrap")
+    def serialize_terminal_reload(self, handler):  # type: ignore[no-untyped-def]
+        value = handler(self)
+        if self.terminal_member_schema_version == 1:
+            value.pop("terminal_member_schema_version", None)
+            value.pop("source_finalization_observation_delta", None)
+        if self.terminal_member_schema_version in {1, 2}:
+            value.pop("ledger_entry_id", None)
+            value.pop("ledger_entry_digest", None)
+        return value
 
     @model_validator(mode="after")
     def validate_terminal_receipt(self) -> BootstrapGraphTerminalReloadV3:
@@ -11738,6 +12079,22 @@ class BootstrapGraphTerminalReloadV3(_BootstrapV3Contract):
             or receipt.publication_artifact_generation
             != self.final_write_identity.publication_artifact_generation
             or receipt.reload_core_digest != self.terminal_control.terminal_control_digest
+            or (
+                self.terminal_member_schema_version in {2, 3}
+                and self.source_finalization_observation_delta is None
+            )
+            or (
+                self.terminal_member_schema_version == 1
+                and self.source_finalization_observation_delta is not None
+            )
+            or (
+                self.terminal_member_schema_version == 3
+                and (self.ledger_entry_id is None or self.ledger_entry_digest is None)
+            )
+            or (
+                self.terminal_member_schema_version in {1, 2}
+                and (self.ledger_entry_id is not None or self.ledger_entry_digest is not None)
+            )
         ):
             raise ValueError("bootstrap graph terminal reload receipt is substituted")
         return self
@@ -11760,11 +12117,18 @@ class BootstrapGraphCanonicalSourceResultInputV3(_BootstrapV3Contract):
     @model_validator(mode="after")
     def validate_canonical_outcome(self) -> BootstrapGraphCanonicalSourceResultInputV3:
         record = self.completed_canonical_source_result
+        construction_result_digests = tuple(
+            item.result_digest for item in self.ordered_group_result_constructions
+        )
+        persisted_group_result_digests = tuple(
+            item.group_commit_reload.persisted_result.result_digest
+            for item in self.ordered_group_result_constructions
+        )
         if (
             record.core != self.canonical_outcome_core
             or record.final_status != self.source_status
             or record.group_result_digests
-            != tuple(item.result_digest for item in self.ordered_group_result_constructions)
+            not in {construction_result_digests, persisted_group_result_digests}
             or self.ordered_group_commit_reload_digests
             != tuple(
                 item.group_commit_reload.reload_digest
@@ -11785,6 +12149,8 @@ class BootstrapGraphTerminalPublicationRequestV3(_BootstrapV3Contract):
     ordered_group_result_constructions: tuple[BootstrapNativeGroupCommitTerminalConstructionV3, ...]
     ordered_group_commit_reload_digests: tuple[str, ...]
     canonical_source_result_input: BootstrapGraphCanonicalSourceResultInputV3
+    source_finalization_observation_delta: SourceFinalizationObservationDelta | None = None
+    source_observation_intent: SourceObservationIntent | None = None
     handoff_core: BootstrapGraphTerminalHandoffCoreV3
     publication_intent: BootstrapGraphTerminalPublicationIntentV3
     handoff: BootstrapGraphTerminalPersistenceHandoffV3
@@ -11797,6 +12163,37 @@ class BootstrapGraphTerminalPublicationRequestV3(_BootstrapV3Contract):
     publication_request_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     _digest_domain = b"memorii.semantic-ingestion.bootstrap-graph-terminal-publication-request.v3"
     _digest_field = "publication_request_digest"
+    _legacy_v1_digest_excluded_fields = frozenset({
+        "source_finalization_observation_delta",
+        "source_observation_intent",
+    })
+
+    @classmethod
+    def _uses_legacy_digest_shape(cls, values: Mapping[str, object]) -> bool:
+        return values.get("source_finalization_observation_delta") is None
+
+    @classmethod
+    def _versioned_digest_excluded_fields(cls, values: Mapping[str, object]) -> frozenset[str]:
+        return (
+            (frozenset({"source_finalization_observation_delta"}) if values.get("source_finalization_observation_delta") is None else frozenset())
+            | (frozenset({"source_observation_intent"}) if values.get("source_observation_intent") is None else frozenset())
+        )
+
+    def _canonical_contract_field_names(self) -> tuple[str, ...]:
+        omitted = self._versioned_digest_excluded_fields({
+            "source_finalization_observation_delta": self.source_finalization_observation_delta,
+            "source_observation_intent": self.source_observation_intent,
+        })
+        return tuple(name for name in type(self).model_fields if name not in omitted)
+
+    @model_serializer(mode="wrap")
+    def serialize_terminal_request(self, handler):  # type: ignore[no-untyped-def]
+        value = handler(self)
+        if self.source_finalization_observation_delta is None:
+            value.pop("source_finalization_observation_delta", None)
+        if self.source_observation_intent is None:
+            value.pop("source_observation_intent", None)
+        return value
 
     @model_validator(mode="after")
     def validate_terminal_request(self) -> BootstrapGraphTerminalPublicationRequestV3:
@@ -11823,6 +12220,42 @@ class BootstrapGraphTerminalPublicationRequestV3(_BootstrapV3Contract):
             or self.predecessor_generation.control_epoch_digest != self.control_epoch.epoch_digest
         ):
             raise ValueError("bootstrap graph terminal publication request is invalid")
+        expected_group_result_digests = tuple(
+            (
+                item.group_commit_reload.persisted_result.result_digest
+                if self.publication_intent.terminal_member_schema_version == 3
+                else item.result_digest
+            )
+            for item in self.ordered_group_result_constructions
+        )
+        if (
+            self.canonical_source_result_input.completed_canonical_source_result.group_result_digests
+            != expected_group_result_digests
+            or self.handoff_core.ordered_group_result_digests
+            != expected_group_result_digests
+        ):
+            raise ValueError("bootstrap graph terminal source group results are invalid")
+        if (
+            self.publication_intent.terminal_member_schema_version == 2
+            and (
+                self.source_finalization_observation_delta is None
+                or self.source_finalization_observation_delta.source_outcome
+                != self.canonical_source_result_input.completed_canonical_source_result
+            )
+        ):
+            raise ValueError("bootstrap graph source finalization observation is invalid")
+        if self.publication_intent.terminal_member_schema_version in {1, 2} and self.source_observation_intent is not None:
+            raise ValueError("historical terminal request forbids source observation intent")
+        if (
+            self.publication_intent.terminal_member_schema_version == 3
+            and (
+                self.source_finalization_observation_delta is not None
+                or self.source_observation_intent is None
+                or self.source_observation_intent.source_outcome
+                != self.canonical_source_result_input.completed_canonical_source_result
+            )
+        ):
+            raise ValueError("bootstrap graph source observation intent is invalid")
         return self
 
 
@@ -11833,7 +12266,17 @@ class BootstrapGraphTerminalHostAuthorityV3(_BootstrapV3Contract):
     delivery_principal_binding_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     delivery_key_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     execution_graph_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    # The admission seal's registered attestation digest, supplied by the
+    # composition that can read the sealed member; ``None`` keeps the legacy
+    # schema-1 terminal outcome default for unsealed cohorts. The carrier is
+    # host-composed and never persisted, and the binding is content-addressed
+    # where it matters (the schema-2 outcome core preimage), so the field
+    # rides outside the authority digest and every legacy digest stays exact.
+    source_retention_attestation_digest: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
     segment_language_routes: SegmentLanguageRouteSet
+    _digest_excluded_fields = frozenset({"source_retention_attestation_digest"})
     segment_governance_carriers: SegmentGovernanceCarrierSet
     message_admission_carriers: MessageAdmissionCarrierSet
     governance_carrier_artifact: GovernanceCarrierArtifact
@@ -12106,6 +12549,7 @@ BootstrapGraphPlanAtomicMemberKindV3: TypeAlias = Literal[
     "bootstrap_graph_retry_progress", "bootstrap_graph_final_stage_evidence",
     "ingestion_execution_manifest", "transaction_group_result",
     "bootstrap_graph_terminal_handoff", "bootstrap_graph_canonical_source_result",
+    "bootstrap_graph_source_finalization_observation_delta",
     "bootstrap_graph_replay_bundle", "bootstrap_graph_observed_counters",
     "bootstrap_graph_source_progress", "bootstrap_graph_successor_attempt_authority",
     "bootstrap_source_plan_lineage",
@@ -12137,6 +12581,7 @@ BOOTSTRAP_GRAPH_V3_ATOMIC_MEMBER_CODECS: dict[str, str] = {
     "transaction_group_result": "bootstrap_graph_v3/transaction_group_result/native",
     "bootstrap_graph_terminal_handoff": "bootstrap_graph_v3/bootstrap_graph_terminal_handoff/native",
     "bootstrap_graph_canonical_source_result": "bootstrap_graph_v3/bootstrap_graph_canonical_source_result/native",
+    "bootstrap_graph_source_finalization_observation_delta": "bootstrap_graph_v3/bootstrap_graph_source_finalization_observation_delta/native",
     "bootstrap_graph_replay_bundle": "bootstrap_graph_v3/bootstrap_graph_replay_bundle/native",
     "bootstrap_graph_observed_counters": "bootstrap_graph_v3/bootstrap_graph_observed_counters/native",
     "bootstrap_graph_source_progress": "bootstrap_graph_v3/bootstrap_graph_source_progress/native",
@@ -12181,6 +12626,10 @@ def encode_bootstrap_graph_atomic_member_payload_v3(
         and not isinstance(artifact, BootstrapNativeGroupCommitTerminalConstructionV3)
     ):
         raise SemanticContractCodecError("native transaction group result has an incompatible type")
+    from memorii.core.memory_evolution.graph_effect_contracts import (
+        SourceFinalizationObservationDelta,
+    )
+
     expected_types: dict[str, type[BaseModel] | tuple[type[BaseModel], ...]] = {
         "group_compilation_artifact": BootstrapGraphPlanCompilationV3,
         "bootstrap_graph_replay_bundle": BootstrapGraphReplayBundleV3,
@@ -12189,6 +12638,9 @@ def encode_bootstrap_graph_atomic_member_payload_v3(
             BootstrapGraphPlanPublishedProgressV3,
             BootstrapGraphAttemptPublishedProgressV3,
             BootstrapGraphPlannedProgressV3,
+        ),
+        "bootstrap_graph_source_finalization_observation_delta": (
+            SourceFinalizationObservationDelta
         ),
     }
     expected_type = expected_types.get(kind)
@@ -12234,6 +12686,19 @@ def decode_bootstrap_graph_atomic_member_payload_v3(
         except (TypeError, ValueError) as exc:
             raise SemanticContractCodecError(
                 "native transaction group result is incompatible"
+            ) from exc
+    if kind == "bootstrap_graph_source_finalization_observation_delta":
+        from memorii.core.memory_evolution.graph_effect_contracts import (
+            SourceFinalizationObservationDelta,
+        )
+
+        try:
+            return canonical_contract_value(
+                SourceFinalizationObservationDelta.model_validate(payload, strict=False)
+            )
+        except (TypeError, ValueError) as exc:
+            raise SemanticContractCodecError(
+                "native source finalization observation is incompatible"
             ) from exc
     return payload
 
@@ -12377,15 +12842,55 @@ class BootstrapGraphGroupCommitRequestV3(_BootstrapV3Contract):
 
 
 class BootstrapGraphGroupCommitReloadV3(_BootstrapV3Contract):
+    group_result_schema_version: Literal[1, 2, 3] = 1
     source_operation_id: str = Field(min_length=1)
     transaction_group_id: str = Field(pattern=r"^[0-9a-f]{64}$")
     operation_ids: tuple[str, ...]
     request_ctv_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     persisted_result: BootstrapGraphGroupCommitResultV3
     successor_generation: BootstrapGraphCurrentGenerationV3
+    observation_delta: IngestionObservationDelta | None = None
+    native_projection_publication_receipt: BootstrapGraphNativeProjectionPublicationReceiptV3 | None = None
+    ledger_entry_id: str | None = Field(default=None, min_length=1)
+    ledger_entry_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     reload_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     _digest_domain = b"memorii.semantic-ingestion.bootstrap-graph-group-commit-reload.v3"
     _digest_field = "reload_digest"
+    _legacy_v1_digest_excluded_fields = frozenset({
+        "group_result_schema_version", "observation_delta",
+        "native_projection_publication_receipt", "ledger_entry_id", "ledger_entry_digest",
+    })
+
+    @classmethod
+    def _uses_legacy_digest_shape(cls, values: Mapping[str, object]) -> bool:
+        return values.get("group_result_schema_version", 1) == 1
+
+    @classmethod
+    def _versioned_digest_excluded_fields(cls, values: Mapping[str, object]) -> frozenset[str]:
+        return (
+            cls._legacy_v1_digest_excluded_fields
+            if values.get("group_result_schema_version", 1) == 1
+            else frozenset()
+        )
+
+    def _canonical_contract_field_names(self) -> tuple[str, ...]:
+        return (
+            tuple(
+                name
+                for name in type(self).model_fields
+                if name not in self._legacy_v1_digest_excluded_fields
+            )
+            if self.group_result_schema_version == 1
+            else tuple(type(self).model_fields)
+        )
+
+    @model_serializer(mode="wrap")
+    def serialize_group_commit_reload(self, handler):  # type: ignore[no-untyped-def]
+        value = handler(self)
+        if self.group_result_schema_version == 1:
+            for field in self._legacy_v1_digest_excluded_fields:
+                value.pop(field, None)
+        return value
 
     @model_validator(mode="after")
     def validate_reload(self) -> BootstrapGraphGroupCommitReloadV3:
@@ -12397,6 +12902,39 @@ class BootstrapGraphGroupCommitReloadV3(_BootstrapV3Contract):
             or self.successor_generation.operation_id != self.source_operation_id
         ):
             raise ValueError("bootstrap graph group commit reload is invalid")
+        core = self.persisted_result.core
+        if self.group_result_schema_version == 1:
+            if (
+                self.observation_delta is not None
+                or self.native_projection_publication_receipt is not None
+                or self.ledger_entry_id is not None
+                or self.ledger_entry_digest is not None
+                or core.group_result_schema_version != 1
+            ):
+                raise ValueError("legacy group reload forbids ledger fields")
+        else:
+            if (
+                core.group_result_schema_version != self.group_result_schema_version
+                or self.observation_delta != core.observation_delta
+                or self.native_projection_publication_receipt
+                != core.native_projection_publication_receipt
+                or self.observation_delta is None
+                or self.ledger_entry_id is None
+                or self.ledger_entry_digest is None
+                or self.observation_delta.transaction_group_id != self.transaction_group_id
+                or (
+                    self.native_projection_publication_receipt is not None
+                    and (
+                        self.native_projection_publication_receipt.source_operation_id
+                        != self.source_operation_id
+                        or self.native_projection_publication_receipt.transaction_group_id
+                        != self.transaction_group_id
+                    )
+                )
+            ):
+                raise ValueError(
+                    f"schema-{self.group_result_schema_version} group reload ledger closure is invalid"
+                )
         return self
 
 
@@ -13159,6 +13697,7 @@ def rebuild_bootstrap_graph_effect_contracts() -> None:
         CanonicalSourceTerminalOutcomeRecord,
         GraphRevisionDelta,
         IngestionObservationDelta,
+        SourceFinalizationObservationDelta,
         rebuild_graph_effect_contracts,
     )
     from memorii.core.memory_evolution.graph_planning import (
@@ -13184,10 +13723,14 @@ def rebuild_bootstrap_graph_effect_contracts() -> None:
         TrustedAcceptedIdentityOperationDecision,
         VerifiedIdentityDecisionAuthority,
     )
+    from memorii.core.memory_evolution.observation_ledger_contracts import SourceObservationIntent
     from memorii.core.memory_evolution.semantic_compilation import SemanticCompilationResult
     from memorii.core.memory_evolution.transaction_coordinator import (
         GraphReadSetToken,
         SealedGraphStateSnapshot,
+    )
+    from memorii.core.semantic_ingestion.bootstrap_graph_projection_publication import (
+        BootstrapGraphNativeProjectionPublicationReceiptV3,
     )
     from memorii.core.semantic_ingestion.event_replay import SemanticMemoryEventBatch
 
@@ -13198,6 +13741,11 @@ def rebuild_bootstrap_graph_effect_contracts() -> None:
         "CanonicalSourceTerminalOutcomeCore": CanonicalSourceTerminalOutcomeCore,
         "GraphRevisionDelta": GraphRevisionDelta,
         "IngestionObservationDelta": IngestionObservationDelta,
+        "SourceFinalizationObservationDelta": SourceFinalizationObservationDelta,
+        "SourceObservationIntent": SourceObservationIntent,
+        "BootstrapGraphNativeProjectionPublicationReceiptV3": (
+            BootstrapGraphNativeProjectionPublicationReceiptV3
+        ),
         "SemanticMemoryEventBatch": SemanticMemoryEventBatch,
         "GraphPlanningState": GraphPlanningState,
         "CanonicalPlanningRecordPayload": CanonicalPlanningRecordPayload,
@@ -13216,6 +13764,7 @@ def rebuild_bootstrap_graph_effect_contracts() -> None:
         "PlanningTypeEvidence": PlanningTypeEvidence,
         "SealedGraphStateSnapshot": SealedGraphStateSnapshot,
         "BootstrapNativeTargetResolutionAuthorityV3": BootstrapNativeTargetResolutionAuthorityV3,
+        "BootstrapNativeObservationMentionBindingV3": BootstrapNativeObservationMentionBindingV3,
         "AcceptedIdentityOperationArtifact": AcceptedIdentityOperationArtifact,
         "PlannedIdentityReservation": PlannedIdentityReservation,
         "TrustedAcceptedIdentityOperationDecision": TrustedAcceptedIdentityOperationDecision,
@@ -13260,11 +13809,13 @@ def rebuild_bootstrap_graph_effect_contracts() -> None:
         BootstrapNativeIdentityAdmissionRequestV3,
         BootstrapNativeIdentityAdmissionV3,
         BootstrapNativeRecordMaterializationIntentV3,
+        BootstrapNativeObservationMentionBindingV3,
         BootstrapNativeIdentityEffectV3,
         BootstrapGraphOperationReductionV3,
         BootstrapGraphOperationStoreMaterializationInputV3,
         BootstrapGraphGroupCommitRequestV3,
         BootstrapGraphGroupCommitReloadV3,
+        BootstrapGraphGroupCommitResultCoreV3,
     ):
         model.model_rebuild(_types_namespace=namespace)
 
@@ -13443,6 +13994,7 @@ _CONTRACT_KINDS: dict[type[BaseModel], str] = {
     BootstrapCanonicalIdentityBindingAllocationAuthorityV3: "bootstrap_canonical_identity_binding_allocation_authority_v3",
     BootstrapCanonicalIdentityBindingAllocationReloadV3: "bootstrap_canonical_identity_binding_allocation_reload_v3",
     BootstrapNativeMentionTargetCandidateV3: "bootstrap_native_mention_target_candidate_v3",
+    BootstrapNativeObservationMentionBindingV3: "bootstrap_native_observation_mention_binding_v3",
     BootstrapNativeSelectorTargetV3: "bootstrap_native_selector_target_v3",
     BootstrapNativeTargetResolutionAuthorityV3: "bootstrap_native_target_resolution_authority_v3",
     BootstrapNativeEntitySeedV3: "bootstrap_native_entity_seed_v3",
@@ -13804,6 +14356,8 @@ def decode_semantic_contract(
     expected_kind = _CONTRACT_KINDS.get(expected_type)
     if expected_kind is None:
         raise SemanticContractCodecError(f"unsupported semantic ingestion contract type: {expected_type.__name__}")
+    if not expected_type.__pydantic_complete__:
+        rebuild_bootstrap_graph_effect_contracts()
     reuse_scope = (
         current_digest_verification_scope()
         if max_nodes is None and max_depth is None
@@ -14040,6 +14594,7 @@ __all__ = [
     "BootstrapCanonicalIdentityBindingAllocationReloadV3",
     "BootstrapCanonicalIdentityAuthorityWriteRequestV3",
     "BootstrapNativeMentionTargetCandidateV3",
+    "BootstrapNativeObservationMentionBindingV3",
     "BootstrapNativeSelectorTargetV3",
     "BootstrapNativeTargetResolutionAuthorityV3",
     "BootstrapNativeEntitySeedV3",

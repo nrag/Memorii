@@ -1,0 +1,1 @@
+{"fields":[{"field_name":"payload","policy":"required"},{"field_name":"primary_key","policy":"required"},{"field_name":"record_digest","policy":"required"},{"field_name":"record_kind","policy":"required"}],"role":"optional","schema_id":"ReferenceDispositionStreamRecord","schema_version":"1"}

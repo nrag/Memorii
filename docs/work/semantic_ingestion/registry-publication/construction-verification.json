@@ -1,0 +1,37 @@
+{
+  "scope": "operational raw declaration compilation, decoder-source verification and publication join; no runtime registry/table or production callers",
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "tree": "authorized dirty tree",
+  "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii",
+  "python": "3.12.14",
+  "pytest": "9.0.3",
+  "checks": [
+    {
+      "command": "../.venv/bin/python -W error -m pytest tests/unit/core/memory_evolution/test_typed_value_declarations.py tests/unit/core/memory_evolution/test_typed_value_registry_compilation.py tests/unit/core/memory_evolution/test_typed_value_decoder_sources.py tests/unit/core/memory_evolution/test_typed_value_publication.py -p no:cacheprovider",
+      "exit_code": 0,
+      "result": "65 passed in 4.61s"
+    },
+    {
+      "command": "../.venv/bin/pyright --pythonpath ../.venv/bin/python memorii/core/memory_evolution/typed_value_declarations.py memorii/core/memory_evolution/typed_value_registry_compilation.py memorii/core/memory_evolution/typed_value_decoder_sources.py memorii/core/memory_evolution/typed_value_publication.py tests/unit/core/memory_evolution/test_typed_value_declarations.py tests/unit/core/memory_evolution/test_typed_value_registry_compilation.py tests/unit/core/memory_evolution/test_typed_value_decoder_sources.py tests/unit/core/memory_evolution/test_typed_value_publication.py",
+      "exit_code": 0,
+      "result": "0 errors, 0 warnings, 0 informations"
+    }
+  ],
+  "sha256": {
+    "memorii/memorii/core/memory_evolution/typed_value_declarations.py": "9662a4f1a577d1adff4a82bf9db3107005300daf856a97e908444e08f562da51",
+    "memorii/memorii/core/memory_evolution/typed_value_registry_compilation.py": "c437225416605414e9190ab04b6a6309a4afedbd1325a61a5fd9a6707d8b4af9",
+    "memorii/memorii/core/memory_evolution/typed_value_decoder_sources.py": "0b736656a7d48aa76d9e0591a1157786dcd87555d41948e2a5039fee5fe6bd38",
+    "memorii/memorii/core/memory_evolution/typed_value_publication.py": "378e32110697d9052de0e8a06b6da5e1a808b5d36d3a7f8e5f586459c16f8e76",
+    "memorii/tests/unit/core/memory_evolution/test_typed_value_declarations.py": "6eb1d1987ab4b6c68383c7ec2d2cf708c821736492566f1e9ad0080ca78d12f9",
+    "memorii/tests/unit/core/memory_evolution/test_typed_value_registry_compilation.py": "9643745fa464fb48bd027c12adb25a0b16a499c591933f3f81f0d80564d10d2c",
+    "memorii/tests/unit/core/memory_evolution/test_typed_value_decoder_sources.py": "2ffe69527bdca3890aeefc0897923dc7fadaf05c21d3f8d4181fe8f786ea3d18",
+    "memorii/tests/unit/core/memory_evolution/test_typed_value_publication.py": "61f334106766fcce1e422124e0d48a193fcc5004c84970add8143dcc11beb555"
+  },
+  "limitations": [
+    "No full production source declaration package",
+    "No static runtime decoder table or body decoder",
+    "No independent compiler parity",
+    "No production composition, registry history, ledger or retrieval closure",
+    "No GitHub CI evidence for this dirty tree"
+  ]
+}

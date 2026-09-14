@@ -1,0 +1,1 @@
+{"fields":[{"integrity_role":"ordinary","name":"entity_revision_id","type":{"kind":"string","lexical_rule":"nonempty_unicode_scalar"}},{"integrity_role":"ordinary","name":"logical_entity_id_at_assertion","type":{"kind":"string","lexical_rule":"nonempty_unicode_scalar"}}],"role":"schema","root_kind":"model","schema_id":"ImmutableAssertionEntityRef","schema_version":"1"}

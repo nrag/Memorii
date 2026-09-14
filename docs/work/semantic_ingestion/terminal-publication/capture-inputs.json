@@ -1,0 +1,38 @@
+{
+  "head": "191826cd3afb38bf605a337a71d576063b3bae5e",
+  "dirty_tree": true,
+  "files": [
+    {
+      "path": "memorii/memorii/core/memory_evolution/atomic_store.py",
+      "sha256": "3049e3feed0855bc1e92c3f5e28d5c9fdbc63a8fe434948c1a581043f387136a"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/writer_admission.py",
+      "sha256": "b8f5a04d8369dfb7fad16eacc0946cd483072d3293e1be015eb29286cdd1eda1"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/observation_persistence.py",
+      "sha256": "9e89f6e9b722f49d305b359e82d906cd4af19d0b99623535c8f22eb758afce92"
+    },
+    {
+      "path": "memorii/memorii/core/memory_evolution/graph_effect_contracts.py",
+      "sha256": "2778e9d511f092f725f9a024ba9f2592771bde1ea78009a24769c2c3f26923c0"
+    },
+    {
+      "path": "memorii/memorii/core/semantic_ingestion/contracts.py",
+      "sha256": "6081be1bf42b5903701e1cb25ef2b19f7bbf325e0c48d97f98a68ded7fe3de10"
+    },
+    {
+      "path": "memorii/memorii/core/semantic_ingestion/bootstrap_graph_terminal_preparation.py",
+      "sha256": "b3baea36f0f9d463dd6524ff66434c39e4c246f9a46da1046f09243186ef438a"
+    },
+    {
+      "path": "memorii/memorii/core/semantic_ingestion/bootstrap_graph_artifact_assembler.py",
+      "sha256": "e07dcc7039d47a25d14b1d79e25e09bc33599777b1b939df42fc324c40171a93"
+    },
+    {
+      "path": "memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_root_composition.py",
+      "sha256": "c7d4edcb85145eda669844c005a09e003861d4234f33088aae3454f3aad79496"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "name": "benchmark-contract-tests-3",
+  "argv": [
+    "bash",
+    "-e",
+    "-o",
+    "pipefail",
+    "-c",
+    "pytest -W error tests/unit/core/benchmark/test_memory_evolution_public_contracts.py tests/unit/core/benchmark/test_memory_evolution_architecture.py tests/unit/core/benchmark/test_memory_evolution_oracle.py tests/unit/core/benchmark/test_memory_evolution_runtime_alignment.py tests/unit/core/benchmark/test_memory_evolution_runtime_execution_state.py tests/unit/core/benchmark/test_memory_evolution_sim_leakage_contracts.py tests/unit/core/benchmark/test_memory_evolution_sim_judge_contracts.py tests/unit/core/test_memory_evolution_temporal.py tests/unit/core/test_memory_evolution_execution.py tests/unit/core/test_memory_evolution_retrieval.py tests/unit/core/test_calibration_gates.py tests/unit/core/test_calibration.py tests/unit/tools/test_validate_benchmark_artifacts.py -p no:cacheprovider"
+  ],
+  "cwd": "/Users/nandaraghunathan/Code/Memorii/Memorii/memorii",
+  "exit_status": 0,
+  "elapsed_seconds": 93.947,
+  "log_sha256": "27b2b77a91cc2c1c2f4a7a2bcfd970311ed25beb1fd5c395a2211d0ed31802e5",
+  "source_revision_label": "b4f6c24b091a28bd3d1f65102c742478fc7276b3",
+  "candidate_manifest_sha256": "5310e597dde8d610d8345f63d0f9839f94d062526f00bb4b3d1e6f29424817bb",
+  "evidence": "local working-tree execution only"
+}

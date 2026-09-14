@@ -1,0 +1,126 @@
+.......F....FF.............................                              [100%]
+=================================== FAILURES ===================================
+_ test_terminal_request_rejects_generation_mismatch_before_schema_construction _
+
+    def test_terminal_request_rejects_generation_mismatch_before_schema_construction() -> None:
+        core = SimpleNamespace(request_digest="a" * 64, transaction_group_plan_digest="d" * 64, control_epoch_digest="e" * 64)
+        intent = SimpleNamespace(
+            request_digest="a" * 64, control_epoch_digest="e" * 64,
+            expected_operation_generation=2, expected_artifact_generation=2,
+        )
+        handoff = SimpleNamespace(core=core, publication_intent=intent)
+        with pytest.raises(ValueError, match="substituted"):
+>           BootstrapGraphArtifactAssemblerV3.build_terminal_publication_request(
+                coordinator_request=object(), control_epoch=object(), final_attempt=_attempt(),
+                final_plan=object(), complete_lineage=object(), execution_manifest=object(),
+                ordered_group_result_constructions=(SimpleNamespace(attempt_digest="c" * 64),),
+                canonical_source_result_input=object(), handoff_core=core, publication_intent=intent,
+                source_finalization_observation_delta=None,
+                handoff=handoff,
+                predecessor_generation=SimpleNamespace(
+                    operation_generation=3, artifact_generation=3,
+                ), delivery_principal_binding_digest="b" * 64,
+                required_outcome_scopes=object(), operation_lease_binding=object(),
+                operation_fence_binding=object(), writer_commit_binding=object(),
+            )
+E           TypeError: BootstrapGraphArtifactAssemblerV3.build_terminal_publication_request() missing 1 required keyword-only argument: 'source_observation_intent'
+
+tests/unit/core/semantic_ingestion/test_bootstrap_graph_artifact_assembler.py:55: TypeError
+_________ test_terminal_reload_rejects_absent_repository_group_primary _________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1140a18b0>
+
+    def test_terminal_reload_rejects_absent_repository_group_primary(
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        service, plane = _graph_service(
+            storage=None, executor_calls=[], built_in=True
+        )
+        result = _sync(service, operation_id="terminal-missing-group-primary")
+        assert result.blocked_reasons["semantic_ingestion"] == "source_only"
+    
+        primary = plane.list_records(
+            source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+        )[0]
+        group_request = decode_semantic_contract(
+            bytes.fromhex(primary.content["request_hex"]),
+            BootstrapGraphGroupCommitRequestV3,
+        )
+        locator = next(
+            record
+            for record in plane.list_records(
+                source_kind="semantic_ingestion_bootstrap_graph_v3_terminal_locator"
+            )
+            if record.content.get("semantic_ingestion_kind")
+            == "bootstrap_graph_v3_terminal_locator"
+        )
+        terminal_reload = BootstrapGraphTerminalReloadV3.model_validate(
+            locator.content["reload"], strict=False
+        )
+        get_record = plane.get_record
+    
+        def hide_group_primary(memory_id: str):
+            if memory_id == primary.memory_id:
+                return None
+            return get_record(memory_id)
+    
+        monkeypatch.setattr(plane, "get_record", hide_group_primary)
+>       with pytest.raises(
+            PreplanningStoreError,
+            match="transaction result is not repository-owned",
+        ):
+E       Failed: DID NOT RAISE <class 'memorii.core.memory_evolution.atomic_store.PreplanningStoreError'>
+
+tests/unit/core/semantic_ingestion/test_bootstrap_graph_post_effect_recovery.py:250: Failed
+__ test_terminal_reload_rejects_absent_source_finalization_observation_member __
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x114814a70>
+
+    def test_terminal_reload_rejects_absent_source_finalization_observation_member(
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        service, plane = _graph_service(
+            storage=None, executor_calls=[], built_in=True
+        )
+        _sync(service, operation_id="terminal-missing-source-finalization-observation")
+        locator = next(
+            record for record in plane.list_records(
+                source_kind="semantic_ingestion_bootstrap_graph_v3_terminal_locator"
+            ) if record.content.get("semantic_ingestion_kind")
+            == "bootstrap_graph_v3_terminal_locator"
+        )
+        terminal_reload = BootstrapGraphTerminalReloadV3.model_validate(
+            locator.content["reload"], strict=False
+        )
+        source_member = next(
+            record for record in plane.list_records(
+                source_kind="semantic_ingestion_bootstrap_graph_v3_member"
+            ) if record.content["member"]["kind"]
+            == "bootstrap_graph_source_finalization_observation_delta"
+        )
+        get_record = plane.get_record
+    
+        def hide_source_observation(memory_id: str):
+            if memory_id == source_member.memory_id:
+                return None
+            return get_record(memory_id)
+    
+        monkeypatch.setattr(plane, "get_record", hide_source_observation)
+        primary = plane.list_records(
+            source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+        )[0]
+        request = decode_semantic_contract(
+            bytes.fromhex(primary.content["request_hex"]), BootstrapGraphGroupCommitRequestV3
+        )
+>       with pytest.raises(
+            PreplanningStoreError,
+            match="bootstrap graph terminal member closure is incomplete",
+        ):
+E       Failed: DID NOT RAISE <class 'memorii.core.memory_evolution.atomic_store.PreplanningStoreError'>
+
+tests/unit/core/semantic_ingestion/test_bootstrap_graph_post_effect_recovery.py:305: Failed
+=========================== short test summary info ============================
+FAILED tests/unit/core/semantic_ingestion/test_bootstrap_graph_artifact_assembler.py::test_terminal_request_rejects_generation_mismatch_before_schema_construction
+FAILED tests/unit/core/semantic_ingestion/test_bootstrap_graph_post_effect_recovery.py::test_terminal_reload_rejects_absent_repository_group_primary
+FAILED tests/unit/core/semantic_ingestion/test_bootstrap_graph_post_effect_recovery.py::test_terminal_reload_rejects_absent_source_finalization_observation_member
+3 failed, 40 passed in 1151.62s (0:19:11)

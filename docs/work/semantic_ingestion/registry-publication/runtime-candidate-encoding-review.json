@@ -1,0 +1,22 @@
+{
+  "scope": "Bounded registry configuration/provider identity and source-directed candidate encoding construction only",
+  "status": "BOUNDED_INDEPENDENT_REVIEWS_APPROVED",
+  "candidate_sha256": "565f7ff22967ba5a783017a9a9cc86fb396da86f3c18b05800888b9049a9bf7a",
+  "reviews": {
+    "spec_auditor": "No concrete conformance gap in frozen production; protected host extension boundary does not require opaque in-process issuer token",
+    "correctness_reviewer": "Approved after retracting unsupported token and excluded production-caller observations",
+    "test_reviewer": "Approved finite public-provider and independent literal oracle/verified-publication delta; all eight file hashes match; confirmed canonical-module constructor-spy correction"
+  },
+  "parent_requirements": {
+    "R03": "partial",
+    "R13": "partial",
+    "R17": "partial",
+    "R19": "partial"
+  },
+  "remaining": [
+    "registered artifact integrity including checkpoint external context",
+    "native production candidate emission and ledger transactions",
+    "replay and public retrieval",
+    "required whole-candidate gates and CI"
+  ]
+}

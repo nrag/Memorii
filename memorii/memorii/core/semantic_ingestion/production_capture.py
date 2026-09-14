@@ -23,7 +23,9 @@ from memorii.core.provider.models import ProviderOperation
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.semantic_ingestion.production_authority import (
     ProductionAuthorityCompositionReceipt,
+    VerifiedCapabilityMonitoringAuthority,
     VerifiedProductionHostAuthority,
+    build_installed_capability_monitoring_authorities,
     build_verified_production_host_authority,
 )
 from memorii.domain.enums import SourceModality
@@ -56,6 +58,7 @@ class CanonicalEvidenceCaptureCell:
     language: str = "en"
     speaker_id: str | None = None
     source_modality: SourceModality | None = None
+    installed_capability_monitoring_configuration: object | None = None
 
 
 @dataclass(frozen=True)
@@ -111,8 +114,20 @@ def _capture_child(
     )
     if authority is None:
         raise ValueError("production host authority verification failed")
+    monitoring_authorities: tuple[VerifiedCapabilityMonitoringAuthority, ...] = ()
+    if cell.installed_capability_monitoring_configuration is not None:
+        monitoring_authorities = build_installed_capability_monitoring_authorities(
+            configuration=cell.installed_capability_monitoring_configuration,
+            server_time=cell.server_time,
+            now_provider=lambda: cell.server_time,
+        )
     storage_root = cell.storage_root or Path(mkdtemp(prefix="memorii-canonical-evidence-"))
-    service = _build_root(cell=cell, storage_root=storage_root, authority=authority)
+    service = _build_root(
+        cell=cell,
+        storage_root=storage_root,
+        authority=authority,
+        monitoring_authorities=monitoring_authorities,
+    )
     result = service.sync_event(
         operation=cell.operation,
         content=cell.content,
@@ -144,6 +159,7 @@ def _build_root(
     cell: CanonicalEvidenceCaptureCell,
     storage_root: Path,
     authority: VerifiedProductionHostAuthority,
+    monitoring_authorities: tuple[VerifiedCapabilityMonitoringAuthority, ...],
 ) -> ProviderMemoryService | HermesMemoryProvider:
     if cell.backend == "memory":
         memory_plane = MemoryPlaneService()
@@ -156,27 +172,37 @@ def _build_root(
         return ProviderMemoryService(
             memory_plane=memory_plane,
             verified_production_host_authority=authority,
+            verified_capability_monitoring_authorities=monitoring_authorities,
+            now_provider=lambda: cell.server_time,
         )
     if cell.root == "factory":
         return build_provider_memory_service_from_env(
             memory_plane=memory_plane,
             verified_production_host_authority=authority,
+            verified_capability_monitoring_authorities=monitoring_authorities,
+            now_provider=lambda: cell.server_time,
         )
     if cell.root == "filesystem":
         return build_filesystem_provider(
             storage_root=storage_root,
             memory_plane=memory_plane,
             verified_production_host_authority=authority,
+            verified_capability_monitoring_authorities=monitoring_authorities,
+            now_provider=lambda: cell.server_time,
         )
     if cell.root == "hermes":
         if cell.backend == "jsonl":
             return HermesMemoryProvider(
                 storage_root=str(storage_root),
                 verified_production_host_authority=authority,
+                verified_capability_monitoring_authorities=monitoring_authorities,
+                now_provider=lambda: cell.server_time,
             )
         return HermesMemoryProvider(
             memory_plane=memory_plane,
             verified_production_host_authority=authority,
+            verified_capability_monitoring_authorities=monitoring_authorities,
+            now_provider=lambda: cell.server_time,
         )
     raise ValueError("unsupported canonical evidence capture root")
 

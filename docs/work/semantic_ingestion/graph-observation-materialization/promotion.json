@@ -1,0 +1,28 @@
+{
+  "candidate": "graph-observation-field-identity-promotion",
+  "date": "2026-09-09",
+  "proposal_sha256": "0fbf84657da956dc6afc7915a076d1037bb7799a50d075b187c43e082cfe1625",
+  "feasibility_manifest_r2_sha256": "954e2641c8af2fe96c45d45913b6928600e53ac686caff66cb4eb10621006c45",
+  "canonical_path": "docs/design/semantic_ingestion_observation.md",
+  "before_sha256": "1ebdec16f48716ec47fedae9cdb705bd7065cbff393118aafe2cf3d2c6df17e2",
+  "after_sha256": "73ab8a55f1fc4df84f64e3bf48bb0f721ceb5c3c8cd3f31b96ae531ceadaa379",
+  "promoted_excerpt_sha256": "763ff438e4e1511b971709eaa321fb81c6968f98d9431b84c3a8d764178c4037",
+  "registry": {
+    "root": "ProjectionObservationIdentity",
+    "decoder_id": "memorii.semantic_ingestion.observation.ProjectionObservationIdentity.v1",
+    "digest_domain": "memorii.semantic_ingestion.observation.ProjectionObservationIdentity.v1",
+    "schemas": 181,
+    "authored_roles": 1087,
+    "total_roles": 1269,
+    "vector_results_sha256": "7ce6ab125f249b687dc1ac445d0db879f6d8f7c73f808fed887e43434042da24"
+  },
+  "unchanged": {
+    "semantic_ingestion_architecture.md": "a7770e627e2dc627c772b8c54dd5998ce83c1baf43079a210056826b5ebce626"
+  },
+  "reviews": {
+    "spec": "approved (round 1 approve-with-actions; delta resolved)",
+    "correctness": "approved",
+    "tests": "rejected round 1; delta review resolved"
+  },
+  "review_basis": "feasibility r2 delta review verdict resolved/promotable; promotion follows the addendum + registry checklist"
+}

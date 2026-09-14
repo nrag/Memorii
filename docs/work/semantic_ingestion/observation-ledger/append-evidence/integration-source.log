@@ -1,0 +1,13 @@
+................................................                         [100%]
+============================= slowest 10 durations =============================
+89.56s call     tests/integration/test_observation_ledger_activation.py::test_public_drain_preserves_live_operation_and_rejects_new_old_epoch_work
+19.84s call     tests/integration/test_observation_ledger_activation.py::test_public_concurrent_activation_recovers_winning_jsonl_cutover[_begin_observation_ledger_drain]
+18.76s call     tests/integration/test_observation_ledger_activation.py::test_public_concurrent_activation_recovers_winning_jsonl_cutover[_activate_observation_ledger]
+18.27s call     tests/integration/test_observation_ledger_activation.py::test_public_activation_preserves_captured_jsonl_history_bytes
+17.85s call     tests/integration/test_observation_ledger_activation.py::test_public_activation_recovers_jsonl_failure_before_or_after_commit[True]
+17.59s call     tests/integration/test_observation_ledger_activation.py::test_public_activation_recovers_jsonl_failure_before_or_after_commit[False]
+12.58s call     tests/integration/test_observation_terminal_intent.py::test_versioned_terminal_request_roundtrips_and_omits_other_source_grammar[2]
+11.87s call     tests/integration/test_observation_terminal_intent.py::test_versioned_terminal_request_roundtrips_and_omits_other_source_grammar[3]
+7.11s call     tests/integration/test_observation_ledger_replay.py::test_zero_operation_source_replays_without_fabricated_group_and_cannot_finalize_twice
+7.00s call     tests/integration/test_observation_ledger_activation.py::test_provider_activation_is_explicit_and_revalidates_configured_authority
+48 passed in 266.93s (0:04:26)

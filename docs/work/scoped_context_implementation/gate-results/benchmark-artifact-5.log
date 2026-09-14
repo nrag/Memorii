@@ -1,0 +1,2 @@
+suite=memory_evolution_runtime_v1 mode=hybrid systems=memorii profile=long_horizon scenarios=25 events=625 checkpoints=30 passed=25 failed=0 llm_calls=625 artifacts=/private/tmp/scoped-context-final-gates/artifact-5/benchmark_runs/memory_evolution_runtime_v1/hybrid/bench-e6a82ac781509d7c-rep0
+validated benchmark reports under /private/tmp/scoped-context-final-gates/artifact-5/benchmark_runs

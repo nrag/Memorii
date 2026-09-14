@@ -1,0 +1,1 @@
+{"fields":[{"field_name":"source_id","policy":"required"},{"field_name":"source_type","policy":"required"}],"role":"optional","schema_id":"EventProvenance","schema_version":"1"}

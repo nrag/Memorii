@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import ExitStack, contextmanager
 from dataclasses import replace
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
+from secrets import token_urlsafe
+from threading import RLock
 from typing import Any, Protocol, cast
+
+from pydantic import ValidationError
 
 from memorii.core.decision_state.service import DecisionStateService
 from memorii.core.decision_state.summary import DecisionStateSummary
@@ -43,6 +48,13 @@ from memorii.core.memory_evolution.bootstrap_profile import (
     InstalledHostBootstrapCapabilityProvider,
     VerifiedBootstrapProfile,
     verify_bootstrap_profile,
+)
+from memorii.core.memory_evolution.capability_monitoring import (
+    CapabilityEvidenceWindow,
+    CapabilityEvidenceWindowProvider,
+    CapabilityMonitor,
+    CapabilityMonitoringPolicy,
+    CapabilityMonitorTickResult,
 )
 from memorii.core.memory_evolution.composite_conflict_listing import (
     CompositeConflictListingRepository,
@@ -83,6 +95,18 @@ from memorii.core.memory_evolution.conflict_integrity import (
     FileConflictIntegrityRepository,
     PrivilegedSemanticIntegrityLifecycle,
 )
+from memorii.core.memory_evolution.graph_observation_contracts import (
+    GraphObservationFailure,
+)
+from memorii.core.memory_evolution.graph_observation_paging import (
+    AuthenticatedGraphObservationPagingRuntime,
+)
+from memorii.core.memory_evolution.graph_observation_public_contracts import (
+    GraphObservationRequest,
+    GraphObservationResponse,
+    IngestionTimeAttestationRequest,
+    IngestionTimeAttestationResponse,
+)
 from memorii.core.memory_evolution.identity_lineage import (
     IdentityLineageAuditScopeSnapshot,
     IdentityLineageAuditView,
@@ -93,9 +117,20 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     AuthenticatedIngressContextResolver,
     AuthenticatedIngressResolutionError,
     DeliveryIdentity,
+    SemanticWriterCommitBinding,
+)
+from memorii.core.memory_evolution.ingestion_time_clock import (
+    PRODUCTION_INGESTION_TIME_CLOCK_IDENTITY,
+    IngestionTimeClock,
+)
+from memorii.core.memory_evolution.observation_activation_configuration import (
+    ObservationActivationTargetConfigurationError,
 )
 from memorii.core.memory_evolution.operation_store import (
     EvolutionOperationRepository,
+)
+from memorii.core.memory_evolution.typed_value_registry_configuration import (
+    TypedValueRegistryConfigurationError,
 )
 from memorii.core.memory_evolution.writer_admission import (
     SemanticWriterAdmissionStore,
@@ -103,6 +138,7 @@ from memorii.core.memory_evolution.writer_admission import (
     writer_admission_memory_id,
 )
 from memorii.core.memory_plane import MemoryPlaneService
+from memorii.core.memory_plane.store import MemoryPlaneCorruptionError
 from memorii.core.next_step import NextStepEngine
 from memorii.core.promotion.provider import PromotionAssessmentProvider
 from memorii.core.promotion.rule_provider import RuleBasedPromotionAssessmentProvider
@@ -135,6 +171,13 @@ from memorii.core.provider.tool_schemas import provider_tool_schemas, provider_t
 from memorii.core.provider.tools import ProviderToolCallResult
 from memorii.core.provider.work_state_projection import WorkStateMemoryProjector
 from memorii.core.recall import RecallStateBundle, WorkStateSummary, summarize_work_states
+from memorii.core.scoped_context.authority import ScopedHostReadAuthority
+from memorii.core.scoped_context.contracts import ScopedContextActivation, ScopedContextRequest, ScopedContextStatus
+from memorii.core.scoped_context.service import (
+    ScopedContextAssembler,
+    ScopedSnapshotBackendError,
+    ScopedSnapshotDecodeError,
+)
 from memorii.core.semantic_ingestion.bootstrap_graph_host import BootstrapGraphHostBundleBuilder
 from memorii.core.semantic_ingestion.canonical_evidence_arena import (
     CanonicalEvidenceArena,
@@ -146,7 +189,12 @@ from memorii.core.semantic_ingestion.capability import (
     HostSemanticIngestionRuntimeBuilder,
 )
 from memorii.core.semantic_ingestion.production_authority import (
+    VerifiedCapabilityMonitoringAuthority,
     VerifiedProductionHostAuthority,
+    capability_monitoring_authority_checkpoint,
+    capability_monitoring_authority_current_use,
+    capability_monitoring_authority_is_current,
+    verified_capability_monitoring_authority_inputs,
     verified_production_authority_inputs,
 )
 from memorii.core.semantic_ingestion.source_normalization_host import (
@@ -158,6 +206,20 @@ from memorii.core.work_state.selector import WorkStateSelector
 from memorii.core.work_state.service import WorkStateService
 from memorii.domain.enums import SourceModality
 from memorii.stores.base.interfaces import OverlayStore, SolverGraphStore
+
+
+def _scoped_empty(status: ScopedContextStatus) -> ScopedContextActivation:
+    return ScopedContextActivation(
+        status=status,
+        request_task_id=None,
+        request_state_id=None,
+        authority_binding_receipt=None,
+        memory_snapshot_revision=None,
+        mandatory_items=(),
+        optional_items=(),
+        omissions=(),
+        structured_outcome=None,
+    )
 
 
 class ScopedIdentityLineageAuditReader(Protocol):
@@ -233,6 +295,8 @@ class ProviderMemoryService:
         memory_evolution_query_analyzer: QueryAnalyzer | None = None,
         memory_evolution_operation_repository: EvolutionOperationRepository | None = None,
         now_provider: Callable[[], datetime] | None = None,
+        clock: IngestionTimeClock | None = None,
+        scoped_read_authority: ScopedHostReadAuthority | None = None,
         conflict_attention_repository: ConflictClarificationRepository | None = None,
         conflict_attention_enabled: bool = False,
         conflict_attention_observability_sink: ConflictAttentionObservabilitySink
@@ -252,12 +316,38 @@ class ProviderMemoryService:
         source_normalization_host_bundle_builder: SourceNormalizationHostBundleBuilder | None = None,
         verified_production_host_authority: VerifiedProductionHostAuthority | None = None,
         canonical_evidence_enabled: bool | None = None,
+        graph_observation_runtime: AuthenticatedGraphObservationPagingRuntime
+        | None = None,
+        capability_monitoring_policies: tuple[CapabilityMonitoringPolicy, ...] = (),
+        capability_monitoring_evidence_provider: CapabilityEvidenceWindowProvider
+        | None = None,
+        verified_capability_monitoring_authorities: tuple[
+            VerifiedCapabilityMonitoringAuthority, ...
+        ] = (),
         _host_construction: object | None = None,
     ) -> None:
         self._memory_plane = memory_plane or MemoryPlaneService()
+        self._scoped_read_authority = scoped_read_authority
         self._canonical_evidence_requested = canonical_evidence_enabled
         verified_material = None
         verified_ingress_resolver = None
+        monitoring_initializations: tuple[CapabilityEvidenceWindow, ...] = ()
+        self._verified_capability_monitoring_authorities = verified_capability_monitoring_authorities
+        if verified_capability_monitoring_authorities:
+            if (
+                capability_monitoring_policies
+                or capability_monitoring_evidence_provider is not None
+            ):
+                raise ValueError(
+                    "verified capability monitoring authority rejects direct monitor inputs"
+                )
+            (
+                capability_monitoring_policies,
+                capability_monitoring_evidence_provider,
+                monitoring_initializations,
+            ) = verified_capability_monitoring_authority_inputs(
+                verified_capability_monitoring_authorities
+            )
         if verified_production_host_authority is not None:
             if any(
                 value is not None
@@ -372,7 +462,16 @@ class ProviderMemoryService:
             except ValueError:
                 self._bootstrap_profile = None
                 self._bootstrap_unavailable_reason = "invalid_manifest"
-        self._now_provider = now_provider or (lambda: datetime.now(UTC))
+        # One protected clock instance is the single ingestion-time authority:
+        # the provider raw-source construction sites sample through it and the
+        # atomic store's now_provider is its own now_utc, so group-CAS instants
+        # and lease arithmetic share the same authority (never an ambient wall
+        # clock or a caller-supplied event timestamp).
+        self._clock = clock or IngestionTimeClock(
+            identity=PRODUCTION_INGESTION_TIME_CLOCK_IDENTITY,
+            now_provider=now_provider or (lambda: datetime.now(UTC)),
+        )
+        self._now_provider = self._clock.now_utc
         if conflict_attention_enabled and conflict_attention_repository is None:
             raise ValueError("conflict attention is enabled without a repository")
         self._conflict_attention_repository = conflict_attention_repository
@@ -459,11 +558,21 @@ class ProviderMemoryService:
                         now_provider=self._now_provider,
                         bootstrap_profile=self._bootstrap_profile,
                     )
-            except (ImportError, OSError, RuntimeError, TypeError, ValueError):
+            except (TypedValueRegistryConfigurationError, ObservationActivationTargetConfigurationError):
+                raise
+            except (ImportError, OSError, RuntimeError, TypeError, ValueError) as exc:
+                if isinstance(host_bootstrap_capability, BuiltInLocalHostSemanticIngestionCapability) and host_bootstrap_capability.observation_activation_target_configuration is not None:
+                    raise ObservationActivationTargetConfigurationError("configured activation target runtime construction failed") from exc
                 semantic_runtime = None
+        if isinstance(host_bootstrap_capability, BuiltInLocalHostSemanticIngestionCapability) and host_bootstrap_capability.observation_activation_target_configuration is not None and semantic_runtime is None:
+            raise ObservationActivationTargetConfigurationError("configured activation target requires an available semantic runtime")
         # Post-ingress runtime validation reads this stored composition
         # reference instead of reaching into the coordinator's privates.
         self._composed_semantic_runtime = semantic_runtime
+        # Structural observation is a host-held protected capability: without an
+        # explicitly composed paging runtime every public observation request
+        # fails closed without reading the memory plane.
+        self._graph_observation_runtime = graph_observation_runtime
         self._work_state_service = work_state_service
         self._work_state_selector = WorkStateSelector(work_state_service)
         self._solver_frontier_planner = solver_frontier_planner
@@ -521,6 +630,7 @@ class ProviderMemoryService:
             self._memory_plane,
             self._semantic_writer_admission,
             now_provider=self._now_provider,
+            ingestion_time_clock=self._clock,
             semantic_freeze_guard=(
                 semantic_integrity_lifecycle.freeze_guard
                 if semantic_integrity_lifecycle is not None
@@ -556,11 +666,35 @@ class ProviderMemoryService:
             bootstrap_unavailable_reason=self._bootstrap_unavailable_reason,
             atomic_store=self._semantic_atomic_store,
             writer_admission=self._semantic_writer_admission,
+            clock=self._clock,
             semantic_policy_provider=semantic_runtime.policy_provider if semantic_runtime is not None else None,
             semantic_runtime=semantic_runtime,
-            now_provider=self._now_provider,
             canonical_evidence_arena_factory=self._new_canonical_evidence_arena,
         )
+        self._capability_monitor = CapabilityMonitor(
+            writers=self._semantic_writer_admission,
+            now=self._clock.now_utc,
+            policies=capability_monitoring_policies,
+            authorization_checkpoints=tuple(
+                capability_monitoring_authority_checkpoint(item)
+                for item in verified_capability_monitoring_authorities
+            ),
+        )
+        self._capability_monitoring_evidence_provider = (
+            capability_monitoring_evidence_provider
+        )
+        self._pending_capability_monitoring_initializations = monitoring_initializations
+        self._capability_monitoring_initialization_lock = RLock()
+        if verified_capability_monitoring_authorities:
+            self._semantic_atomic_store.install_capability_authorization_guard(
+                self._require_current_capability_authorizations_for_group
+            )
+        if (
+            monitoring_initializations
+            and not self._semantic_writer_admission.has_retained_capability_monitoring_predecessor()
+        ):
+            self._ensure_writer_admission_record()
+            self._initialize_pending_capability_monitoring()
         self._semantic_runtime_validated_after_ingress = False
         self._conflict_clarification_processor: ConflictClarificationProcessor | None = None
         if self._conflict_attention_enabled and conflict_clarification_pipeline is not None:
@@ -589,6 +723,212 @@ class ProviderMemoryService:
         self._last_memory_evolution_result: MemoryEvolutionResult | None = None
         self._last_recall_bundle: RecallStateBundle | None = None
         self._last_prefetch_result: ProviderPrefetchResult[ProductionRetrievalDecision] | None = None
+
+    def activate_observation_ledger(self) -> SemanticWriterCommitBinding:
+        """Explicit trusted-host cutover; never exposed as a provider tool."""
+        if self._composed_semantic_runtime is None:
+            raise PreplanningStoreError("observation ledger activation target authority is not configured")
+        activated = self._composed_semantic_runtime.activate_observation_ledger()
+        self._writer_admission_record_initialized = True
+        self._initialize_pending_capability_monitoring()
+        return activated
+
+    def _initialize_pending_capability_monitoring(self) -> None:
+        """Persist signed monitor status only after any retained cutover succeeds."""
+        with self._capability_monitoring_initialization_lock:
+            authorities_by_fingerprint = {
+                authority._policy.capability_fingerprint: authority
+                for authority in self._verified_capability_monitoring_authorities
+            }
+            while self._pending_capability_monitoring_initializations:
+                initial_evidence = self._pending_capability_monitoring_initializations[0]
+                authority = authorities_by_fingerprint[initial_evidence.capability_fingerprint]
+                retained_status = self._semantic_atomic_store.current_capability_status(
+                    initial_evidence.capability_fingerprint
+                )
+                if (
+                    retained_status is not None
+                    and retained_status[0].schema_version == 1
+                ):
+                    # Historical monitor state remains fenced until the normal
+                    # monitor tick deterministically promotes or demotes it.
+                    self._pending_capability_monitoring_initializations = (
+                        self._pending_capability_monitoring_initializations[1:]
+                    )
+                    continue
+                if self._capability_monitor.has_verified_initialization(evidence=initial_evidence):
+                    self._pending_capability_monitoring_initializations = (
+                        self._pending_capability_monitoring_initializations[1:]
+                    )
+                    continue
+                # Active status/checkpoint creation is a durable authority write.
+                # Hold the same host revocation linearizer used by the group CAS.
+                with capability_monitoring_authority_current_use(
+                    authority, server_time=self._clock.now_utc()
+                ) as current:
+                    if current:
+                        # An exception leaves this item and its suffix pending;
+                        # completed prefixes have already been consumed.
+                        self._capability_monitor.initialize_active_from_verified_evidence(
+                            evidence=initial_evidence,
+                        )
+                # Consume after success or the intentional non-current skip.
+                self._pending_capability_monitoring_initializations = (
+                    self._pending_capability_monitoring_initializations[1:]
+                )
+
+    def run_capability_monitor_tick(
+        self,
+        *,
+        evidence: CapabilityEvidenceWindow,
+    ) -> CapabilityMonitorTickResult:
+        """Run one bounded host-scheduled monitor evaluation without ingest traffic."""
+        demotions = self._revalidate_capability_monitoring_authorities()
+        for demotion in demotions:
+            if demotion.status.capability_fingerprint == evidence.capability_fingerprint:
+                return demotion
+        return self._capability_monitor.tick(evidence=evidence)
+
+    def process_capability_monitoring(
+        self, *, max_items: int = 1
+    ) -> tuple[CapabilityMonitorTickResult, ...]:
+        """Run one bounded no-ingest scheduler pass over host evidence windows."""
+
+        if max_items < 1:
+            raise ValueError("max_items must be positive")
+        initial_demotions = self._revalidate_capability_monitoring_authorities()
+        results_by_capability = {
+            result.status.capability_fingerprint: result for result in initial_demotions
+        }
+        provider = self._capability_monitoring_evidence_provider
+        fingerprints = self._capability_monitor.configured_capability_fingerprints
+        limit = max(max_items, len(fingerprints))
+        windows: tuple[CapabilityEvidenceWindow, ...] = ()
+        provider_failure_reason: str | None = None
+        if provider is not None:
+            try:
+                candidate = provider.load_evidence_windows(max_items=limit)
+            except (OSError, RuntimeError, TypeError, ValueError):
+                provider_failure_reason = "provider_failure_known_exception"
+            except Exception:
+                # The external evidence-provider port is fail-closed.  Do not
+                # expose exception messages or permit an unaccounted poll.
+                provider_failure_reason = "provider_failure_unexpected_exception"
+            else:
+                if not isinstance(candidate, tuple):
+                    provider_failure_reason = "provider_failure_non_tuple"
+                elif len(candidate) > limit:
+                    provider_failure_reason = "provider_failure_oversized_result"
+                else:
+                    by_capability: dict[str, CapabilityEvidenceWindow] = {}
+                    for window in candidate:
+                        if not isinstance(window, CapabilityEvidenceWindow):
+                            provider_failure_reason = "provider_failure_non_window"
+                            break
+                        if window.capability_fingerprint not in fingerprints:
+                            provider_failure_reason = "provider_failure_unknown_capability"
+                            break
+                        if window.capability_fingerprint in by_capability:
+                            provider_failure_reason = "provider_failure_duplicate_capability"
+                            break
+                        by_capability[window.capability_fingerprint] = window
+                    if provider_failure_reason is None:
+                        windows = candidate
+        by_capability = (
+            {window.capability_fingerprint: window for window in windows}
+            if provider_failure_reason is None
+            else {}
+        )
+        for fingerprint in fingerprints:
+            if fingerprint in results_by_capability:
+                continue
+            window = by_capability.get(fingerprint)
+            if window is not None:
+                results_by_capability[fingerprint] = self._capability_monitor.tick(
+                    evidence=window
+                )
+                continue
+            missing = self._capability_monitor.tick_missing_window(
+                capability_fingerprint=fingerprint,
+                provider_failure=provider_failure_reason is not None,
+                provider_failure_reason=provider_failure_reason,
+            )
+            if missing is not None:
+                results_by_capability[fingerprint] = missing
+        return tuple(
+            results_by_capability[fingerprint]
+            for fingerprint in fingerprints
+            if fingerprint in results_by_capability
+        )
+
+    def observe_graph(
+        self,
+        *,
+        host_ingress: AuthenticatedHostIngress,
+        request: GraphObservationRequest,
+    ) -> GraphObservationResponse:
+        """Return one registered graph-observation page or a non-disclosing failure."""
+        runtime = self._graph_observation_runtime
+        if runtime is None:
+            return self._observation_denial(cursor=request.cursor)
+        return runtime.observe_graph(host_ingress=host_ingress, request=request)
+
+    def observe_ingestion_time_attestations(
+        self,
+        *,
+        host_ingress: AuthenticatedHostIngress,
+        request: IngestionTimeAttestationRequest,
+    ) -> IngestionTimeAttestationResponse:
+        """Return one ingestion-time attestation page or a non-disclosing failure."""
+        runtime = self._graph_observation_runtime
+        if runtime is None:
+            return self._observation_denial(cursor=request.cursor)
+        return runtime.observe_ingestion_time_attestations(
+            host_ingress=host_ingress, request=request,
+        )
+
+    @staticmethod
+    def _observation_denial(*, cursor: str | None) -> GraphObservationFailure:
+        """Exact non-disclosing denial for an unavailable protected runtime."""
+        return GraphObservationFailure(
+            reason="denied" if cursor is None else "revoked_access",
+            request_correlation_token=token_urlsafe(24),
+        )
+
+    def retrieve_context(
+        self,
+        request: ScopedContextRequest,
+        *,
+        opaque_host_ingress: object,
+    ) -> ScopedContextActivation:
+        """Activate explicit host context from one authority-bound record snapshot."""
+
+        try:
+            request = ScopedContextRequest.model_validate(request.model_dump(mode="python"))
+        except (AttributeError, ValidationError):
+            return _scoped_empty(ScopedContextStatus.INVALID_REQUEST)
+        authority = self._scoped_read_authority
+        if authority is None:
+            return _scoped_empty(ScopedContextStatus.DENIED)
+        grant = authority.resolve(opaque_host_ingress, task_id=request.host_task_id, state_id=request.host_state_id)
+        if grant is None:
+            return _scoped_empty(ScopedContextStatus.DENIED)
+        try:
+            revision, records = self._memory_plane.read_snapshot()
+        except (ScopedSnapshotBackendError, ScopedSnapshotDecodeError, MemoryPlaneCorruptionError, OSError):
+            return _scoped_empty(ScopedContextStatus.UNAVAILABLE)
+        try:
+            activation = ScopedContextAssembler().assemble(request=request, revision=revision, records=records, grant=grant)
+        except ScopedSnapshotDecodeError:
+            return _scoped_empty(ScopedContextStatus.UNAVAILABLE)
+        receipt = authority.authorize_release(grant)
+        if receipt is None:
+            return _scoped_empty(ScopedContextStatus.DENIED)
+        if activation.status not in {ScopedContextStatus.COMPLETE, ScopedContextStatus.PARTIAL_OPTIONAL}:
+            return activation
+        return ScopedContextActivation.model_validate(
+            activation.model_dump(mode="python") | {"authority_binding_receipt": receipt}
+        )
 
     def _ensure_writer_admission_record(self) -> None:
         if not self._owns_writer_admission_record:
@@ -727,8 +1067,56 @@ class ProviderMemoryService:
         ingress = self._resolve_ingress(host_ingress)
         if ingress is not None:
             self._ensure_writer_admission_record()
+            self._revalidate_capability_monitoring_authorities()
             self._validate_semantic_runtime_after_ingress()
         return ingress
+
+    def _revalidate_capability_monitoring_authorities(
+        self,
+    ) -> tuple[CapabilityMonitorTickResult, ...]:
+        """Run retained live deployment-trust checks before monitor or learned use."""
+        now = self._clock.now_utc()
+        demotions: list[CapabilityMonitorTickResult] = []
+        for authority in self._verified_capability_monitoring_authorities:
+            if not capability_monitoring_authority_is_current(authority, server_time=now):
+                result = self._capability_monitor.demote_untrusted_authority(
+                    capability_fingerprint=authority._policy.capability_fingerprint
+                )
+                if result is not None:
+                    demotions.append(result)
+        return tuple(demotions)
+
+    @contextmanager
+    def _require_current_capability_authorizations_for_group(
+        self, fingerprints: tuple[str, ...]
+    ) -> Iterator[None]:
+        """Hold host revocation linearizers through the group write CAS."""
+        now = self._clock.now_utc()
+        authorities = {
+            authority._policy.capability_fingerprint: authority
+            for authority in self._verified_capability_monitoring_authorities
+        }
+        if len(authorities) != len(self._verified_capability_monitoring_authorities) or any(
+            fingerprint not in authorities for fingerprint in fingerprints
+        ):
+            raise PreplanningStoreError("capability deployment authorization is unavailable")
+        unavailable: list[str] = []
+        with ExitStack() as stack:
+            for fingerprint in fingerprints:
+                if not stack.enter_context(
+                    capability_monitoring_authority_current_use(
+                        authorities[fingerprint], server_time=now
+                    )
+                ):
+                    unavailable.append(fingerprint)
+            if not unavailable:
+                yield
+                return
+        for fingerprint in unavailable:
+            self._capability_monitor.demote_untrusted_authority(
+                capability_fingerprint=fingerprint
+            )
+        raise PreplanningStoreError("capability deployment authorization is not current")
 
     def _validate_semantic_runtime_after_ingress(self) -> None:
         if self._semantic_runtime_validated_after_ingress:
@@ -1545,6 +1933,7 @@ class ProviderMemoryService:
     def reconcile_memory_evolution(self) -> list[ProviderEvolutionOutcome]:
         """Retry pending and retryable failed evolution operations."""
 
+        self.process_capability_monitoring(max_items=16)
         self.process_pending_conflict_clarifications(max_items=16)
         return self._provider_ingestion.reconcile()
 

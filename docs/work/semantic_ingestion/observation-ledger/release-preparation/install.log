@@ -1,0 +1,28 @@
+WARNING: The directory '/Users/nandaraghunathan/Library/Caches/pip' or its parent directory is not owned or is not writable by the current user. The cache has been disabled. Check the permissions and owner of that directory. If executing pip with sudo, you should use sudo's -H flag.
+Processing /private/tmp/memorii-activation-prepared-final/wheels/annotated_types-0.7.0-py3-none-any.whl
+Processing /private/tmp/memorii-activation-prepared-final/wheels/attrs-26.1.0-py3-none-any.whl
+Processing /private/tmp/memorii-activation-prepared-final/wheels/cffi-2.1.1-cp312-cp312-macosx_10_15_x86_64.whl
+Processing /private/tmp/memorii-activation-prepared-final/wheels/cryptography-50.0.1-cp312-abi3-macosx_10_12_x86_64.whl
+Processing /private/tmp/memorii-activation-prepared-final/wheels/joblib-1.5.3-py3-none-any.whl
+Processing /private/tmp/memorii-activation-prepared-final/wheels/jsonschema-4.26.0-py3-none-any.whl
+Processing /private/tmp/memorii-activation-prepared-final/wheels/jsonschema_specifications-2025.9.1-py3-none-any.whl
+Processing /private/tmp/memorii-activation-prepared-final/wheels/memorii-0.1.0-py3-none-any.whl
+Processing /private/tmp/memorii-activation-prepared-final/wheels/numpy-1.26.4-cp312-cp312-macosx_10_9_x86_64.whl
+Processing /private/tmp/memorii-activation-prepared-final/wheels/pycparser-3.0-py3-none-any.whl
+Processing /private/tmp/memorii-activation-prepared-final/wheels/pydantic-2.13.4-py3-none-any.whl
+Processing /private/tmp/memorii-activation-prepared-final/wheels/pydantic_core-2.46.4-cp312-cp312-macosx_10_12_x86_64.whl
+Processing /private/tmp/memorii-activation-prepared-final/wheels/pyicu-2.16.2-cp312-cp312-macosx_26_0_x86_64.whl
+Processing /private/tmp/memorii-activation-prepared-final/wheels/pyyaml-6.0.3-cp312-cp312-macosx_10_13_x86_64.whl
+Processing /private/tmp/memorii-activation-prepared-final/wheels/referencing-0.37.0-py3-none-any.whl
+Processing /private/tmp/memorii-activation-prepared-final/wheels/rpds_py-0.30.0-cp312-cp312-macosx_10_12_x86_64.whl
+Processing /private/tmp/memorii-activation-prepared-final/wheels/scikit_learn-1.8.0-cp312-cp312-macosx_10_13_x86_64.whl
+Processing /private/tmp/memorii-activation-prepared-final/wheels/scipy-1.17.1-cp312-cp312-macosx_14_0_x86_64.whl
+Processing /private/tmp/memorii-activation-prepared-final/wheels/threadpoolctl-3.6.0-py3-none-any.whl
+Processing /private/tmp/memorii-activation-prepared-final/wheels/typing_extensions-4.15.0-py3-none-any.whl
+Processing /private/tmp/memorii-activation-prepared-final/wheels/typing_inspection-0.4.2-py3-none-any.whl
+Installing collected packages: pyicu, typing-inspection, typing-extensions, threadpoolctl, scipy, scikit-learn, rpds-py, referencing, pyyaml, pydantic-core, pydantic, pycparser, numpy, memorii, jsonschema-specifications, jsonschema, joblib, cryptography, cffi, attrs, annotated-types
+
+Successfully installed annotated-types-0.7.0 attrs-26.1.0 cffi-2.1.1 cryptography-50.0.1 joblib-1.5.3 jsonschema-4.26.0 jsonschema-specifications-2025.9.1 memorii-0.1.0 numpy-1.26.4 pycparser-3.0 pydantic-2.13.4 pydantic-core-2.46.4 pyicu-2.16.2 pyyaml-6.0.3 referencing-0.37.0 rpds-py-0.30.0 scikit-learn-1.8.0 scipy-1.17.1 threadpoolctl-3.6.0 typing-extensions-4.15.0 typing-inspection-0.4.2
+configuration_sha256=42c7d5adda888a54f82fd1697cd5f9b24d360e96ff0af6dcfd0728e404e08ae5
+bootstrap_sha256=abc6c5397078cf5c907a3c7b5002f6fbb1a19f1a2e2d4b663cb90b3dc8bf31f2
+deployment_identity=59be525c392d92d46dc01f436f8a1b673e1cff3d07e627891a43e8c94c2e7e4e

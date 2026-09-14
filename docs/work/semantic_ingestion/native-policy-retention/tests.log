@@ -1,0 +1,74 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_____ test_historical_native_planning_authority_omits_bundle_and_reencodes _____
+
+    def test_historical_native_planning_authority_omits_bundle_and_reencodes() -> None:
+        raw = _FIXTURE.read_bytes()
+        body = decode_typed_value(raw)
+        assert isinstance(body, dict)
+>       authority = BootstrapNativePlanningConstructionAuthorityV3.model_validate(body)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 2 validation errors for BootstrapNativePlanningConstructionAuthorityV3
+E       segment_governance.segment_governance_bindings.0.modality
+E         Input should be an instance of SourceModality [type=is_instance_of, input_value='assertion', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.13/v/is_instance_of
+E       segment_governance.governance_carrier_artifact.segment_governance.bindings.0.modality
+E         Input should be an instance of SourceModality [type=is_instance_of, input_value='assertion', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.13/v/is_instance_of
+
+tests/unit/core/semantic_ingestion/test_native_policy_retention.py:85: ValidationError
+____ test_public_fact_path_forwards_exact_bundle_and_validates_coordinates _____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1115e08c0>
+
+    def test_public_fact_path_forwards_exact_bundle_and_validates_coordinates(
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+>       authority = _captured_public_fact_authority(monkeypatch)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/core/semantic_ingestion/test_native_policy_retention.py:96: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/unit/core/semantic_ingestion/test_native_policy_retention.py:65: in _captured_public_fact_authority
+    authority = requests[0].ordered_operation_inputs[0].planning_construction_authority
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = BootstrapGraphOperationStoreMaterializationInputV3(schema_version=3, transaction_group_id='2048b74537f2a37dfbc05566b28...3850fcaf5601e50f2d1b1bace89c66b41f2'), input_digest='5a9dc83096b8177034d8e59bd2a45f1da0bbf621b772e579a40e0fa1126b63e0')
+item = 'planning_construction_authority'
+
+    def __getattr__(self, item: str) -> Any:
+        private_attributes = object.__getattribute__(self, '__private_attributes__')
+        if item in private_attributes:
+            attribute = private_attributes[item]
+            if hasattr(attribute, '__get__'):
+                return attribute.__get__(self, type(self))  # type: ignore
+    
+            try:
+                # Note: self.__pydantic_private__ cannot be None if self.__private_attributes__ has items
+                return self.__pydantic_private__[item]  # type: ignore
+            except KeyError as exc:
+                raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}') from exc
+        else:
+            # `__pydantic_extra__` can fail to be set if the model is not yet fully initialized.
+            # See `BaseModel.__repr_args__` for more details
+            try:
+                pydantic_extra = object.__getattribute__(self, '__pydantic_extra__')
+            except AttributeError:
+                pydantic_extra = None
+    
+            if pydantic_extra and item in pydantic_extra:
+                return pydantic_extra[item]
+            else:
+                if hasattr(self.__class__, item):
+                    return super().__getattribute__(item)  # Raises AttributeError if appropriate
+                else:
+                    # this is the current error
+>                   raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E                   AttributeError: 'BootstrapGraphOperationStoreMaterializationInputV3' object has no attribute 'planning_construction_authority'
+
+../.venv/lib/python3.12/site-packages/pydantic/main.py:1042: AttributeError
+=========================== short test summary info ============================
+FAILED tests/unit/core/semantic_ingestion/test_native_policy_retention.py::test_historical_native_planning_authority_omits_bundle_and_reencodes
+FAILED tests/unit/core/semantic_ingestion/test_native_policy_retention.py::test_public_fact_path_forwards_exact_bundle_and_validates_coordinates
+2 failed in 33.68s

@@ -1,0 +1,86 @@
+{
+  "candidate": "graph-observation-field-identity-feasibility-r2",
+  "date": "2026-09-09",
+  "base_revision": "a7c6a9edcf6bbee71735dfe287ee49a078cafc35",
+  "branch": "semantic_ingestion_m5",
+  "spec": "proposal.md (owner approved 2026-09-08)",
+  "supersedes": "feasibility-evidence-manifest.json r1 (0fe565296ea9736f96e64ec41ae565658fa7e93677ac7888f62efcdc707355c6)",
+  "files": {
+    "feasibility.py": "29eccb0be41bd98ba90fcdedeee35aa14258d141480c2959a94de92ec733fa58",
+    "test_feasibility.py": "31019a87fbd8765bc7298d03e997df4e5868ba10d1637b3867f477f72e153b76",
+    "evidence/field-derivation.log": "69c63dd6b4a9f378f3c6926955664739199d254a1e84aef2f0cb83b8cd59af1c"
+  },
+  "commands": [
+    {
+      "cwd": "memorii/",
+      "argv": [
+        ".venv/bin/python",
+        "-m",
+        "pytest",
+        "../docs/work/semantic_ingestion/graph-observation-materialization/test_feasibility.py",
+        "-p",
+        "no:cacheprovider",
+        "-q"
+      ],
+      "interpreter": "CPython 3.14.7 (clang-2100.1.1.101)",
+      "result": "28 passed in 24.69s"
+    },
+    {
+      "cwd": "memorii/",
+      "argv": [
+        ".venv/bin/python",
+        "-m",
+        "ruff",
+        "check",
+        "../docs/work/semantic_ingestion/graph-observation-materialization/feasibility.py",
+        "../docs/work/semantic_ingestion/graph-observation-materialization/test_feasibility.py"
+      ],
+      "result": "All checks passed"
+    }
+  ],
+  "review_remediation_r1_to_r2": {
+    "sources": "spec_auditor approve-with-actions; correctness_reviewer approve; test_reviewer reject-resubmit",
+    "resolved": [
+      "canonical payload equality implemented via the claim's retained AcceptedClaimIdentity assertion key versus the projection endpoints (identityless or mismatched claims never become supporting)",
+      "relation provenance_ids implemented: only provenance pairs whose citations target the exact supporting claims; relation-targeted citations never reinterpreted",
+      "entity source ids now derive from native_operation_source_authority (retained planning construction authority); foreign operation and missing/substituted authority deny; no caller-injected source tuples remain",
+      "successor selection additionally requires payload.record_id lineage equality (defense in depth; the real event owner refuses cross-record construction, proven by test)",
+      "identity constructor validates projection_kind/repository/lowercase-hex64 digests before any digest",
+      "grounded-mention type-evidence exclusion tested"
+    ],
+    "recorded_follow_ups_for_promotion": [
+      "relation lifecycle_state must be gated on the requested system coordinate rather than unconditional structural active",
+      "TypeEvidence.valid_interval view/time applicability must scope canonical_type eligibility",
+      "supporting-claim pairing scope (projection-content-wide vs operation-scoped) must be settled at promotion",
+      "observed-record identity carriage and registered reader re-derivation from the selected publication remain implementation obligations",
+      "untested deny polish: record_digest matching no owning event; claim_identity=None silent skip now denied-by-default at the relation level",
+      "OperationSourceAuthority must become an owner-constructed type at promotion so project_entity_fields cannot receive a hand-built authority"
+    ]
+  },
+  "coverage": [
+    "entity canonical_type unique/absent/competing/grounded-mention-excluded derivation",
+    "entity sources from verified creating-operation authority (native planning construction authority)",
+    "relation exact supporting-claim pairing with canonical claim-identity payload equality",
+    "relation provenance_ids from supporting-claim-cited evidence pairs only",
+    "relation interval common-interval agreement/disagreement",
+    "system interval ordering by (timestamp, sequence) with same-time successor lineage retention and ambiguity denials; cross-record successor impossible at the event owner",
+    "complete retained SourceSpanReference unique copy; missing/ambiguous denies",
+    "ProjectionObservationIdentity.v1 round-trip, every-field flip, and nonconforming-field denial"
+  ],
+  "evidence_basis": {
+    "real_retained_capture": "fact arm: entity/relation/claim/projection records, evidence-projection citation/provenance pairs, retained source span, planning construction authority (all via _capture_builtin_fact_planning)",
+    "constructed_variants": "TypeEvidence instances, rebuilt sibling claims/intervals, synthetic commit events and positions, identity placeholder binding coordinates",
+    "per_arm_disclosure": {
+      "fact": "exercised on real retained capture",
+      "correction": "retained production capture unavailable in this environment; not exercised",
+      "retraction": "retained production capture unavailable in this environment; not exercised",
+      "action": "retained production capture unavailable in this environment; not exercised",
+      "identity": "no validated identity materialization producer exists yet (per observed-provenance closure); not exercised"
+    }
+  },
+  "limitations": [
+    "nonproduction feasibility only; no runtime materializer, provider caller, registry promotion or public endpoint is claimed",
+    "identity binding uses feasibility placeholder profile coordinates; promotion must use authored publication coordinates",
+    "local CPython 3.14.7 run is not CI parity (CI uses 3.11/3.12); the 3.12 and 3.11 interpreters present in this environment lack pytest, and no package installation was performed to avoid environment mutation"
+  ]
+}
