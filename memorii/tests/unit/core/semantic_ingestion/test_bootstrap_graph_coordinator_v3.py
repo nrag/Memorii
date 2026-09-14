@@ -67,7 +67,7 @@ from tests.unit.core.test_provider_service import _build_production_scoped_provi
 @pytest.mark.parametrize(
     "outcome_kind",
     (
-        "retry", "success", "related_conflict", "exhausted_conflict",
+        "retry", "completed", "related_conflict", "exhausted_conflict",
         "lease_renewed", "lease_reclaimed", "writer_changed", "writer_unavailable",
     ),
 )
@@ -258,7 +258,7 @@ def test_coordinator_persists_retry_or_terminal_once(monkeypatch, outcome_kind: 
         capability_registry=capabilities,
         operation_inputs=operation_inputs,
         control_epoch=epoch,
-        accepted_materialization=outcome_kind == "success",
+        accepted_materialization=False,
     )
     commit_calls: list[tuple[str, str]] = []
     host_authority = build_bootstrap_graph_terminal_host_authority_v3(
@@ -298,7 +298,7 @@ def test_coordinator_persists_retry_or_terminal_once(monkeypatch, outcome_kind: 
             policy=policy,
             capability_registry=capabilities,
             operation_inputs=operation_inputs,
-            accepted_materialization=outcome_kind == "success",
+            accepted_materialization=False,
         ),
         authorizer=DeterministicBootstrapGraphPlanningAuthorizerV3(
             compilation=compilation
@@ -348,15 +348,12 @@ def test_coordinator_persists_retry_or_terminal_once(monkeypatch, outcome_kind: 
         return
     else:
         assert result.kind == "succeeded"
-    if outcome_kind == "success":
+    if outcome_kind == "completed":
         snapshot_after_commit = atomic.graph_state_snapshot()
-        assert tuple(
-            item.payload_record_kind for item in snapshot_after_commit.records
-        ) == ("provenance",)
-        assert snapshot_after_commit.graph_revision != "genesis"
+        assert snapshot_after_commit == graph_snapshot
     repeat = coordinator.coordinate(request=request, transition=transition)
     assert repeat == result
-    if outcome_kind == "success":
+    if outcome_kind == "completed":
         assert len(commit_calls) == 1
 
 

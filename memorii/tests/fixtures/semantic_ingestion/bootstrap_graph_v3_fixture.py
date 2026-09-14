@@ -1050,7 +1050,11 @@ class DeterministicBootstrapGraphAuthorityProviderV3:
     before_epoch_created: Callable[[object], None] | None = None
     after_epoch_created: Callable[[object, object, object], object] | None = None
     capability_bindings_factory: (
-        Callable[[object, tuple[object, ...]], tuple[object, ...]] | None
+        Callable[
+            [object, tuple[object, ...], object, object, object],
+            tuple[object, ...],
+        ]
+        | None
     ) = None
     acquire_errors: list[str] | None = None
     _related_conflict_emitted: bool = False
@@ -1215,7 +1219,11 @@ class DeterministicBootstrapGraphAuthorityProviderV3:
             )
             capability_bindings = (
                 self.capability_bindings_factory(
-                    request.prepared_source, operation_inputs
+                    request.prepared_source,
+                    operation_inputs,
+                    compilation,
+                    capabilities,
+                    atomic_store,
                 )
                 if self.capability_bindings_factory is not None
                 else ()

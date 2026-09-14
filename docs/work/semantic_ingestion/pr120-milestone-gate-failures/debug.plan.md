@@ -58,6 +58,10 @@ Observed on run `34795511535`: Acceptance Authority Runtime, Package Smoke, Benc
 - The final Python 3.11 installed-wheel proof passes for candidate source `25b1d22b`: 23 distributions, 6,036 installed files, 1,800 package files, valid preparation accepted, and all five configured mutation families rejected.
 - Targeted correctness and test reviewers found no confirmed P1/P2 issue in the production repair slice at `3684a9e3`.
 - GitHub run `34805514963` advanced to one Unit Test Shard 2 failure after 23 jobs passed. The Hermes reopen fixture coupled Atlas seeding to writer-admission absence; current production graph composition already installs that writer record, so the retrieval fixture was never created. Seeding writer authority idempotently and guarding the Atlas record by its own identity restores the intended persistent reopen proof (9 Hermes bridge tests pass under the CI source-revision environment).
+- The superseded replacement run also exposed Linux sticky-ancestor handling in the separate revocation publisher. Applying the same private-descendant rule as the runtime path validator restores all eight revocation CLI cases without admitting a writable leaf or descendant.
+- Accepted graph fixtures had not adopted the capability authorization checkpoint now required by the production group CAS. The scenario host now initializes a complete current status/checkpoint pair and derives its operation bindings through the production binding constructor; accepted and protected-unresolved public ingress both pass.
+- The coordinator lifecycle fixture now uses an unresolved completed group for its generic success arm. Accepted effect persistence remains covered by production-shaped graph tests and no longer depends on an incomplete empty capability registry.
+- A captured capability-monitor predecessor is a cutover-only manifest under the current contract. Its immutable terminal still reloads without writes through the atomic read API, while the public ingestion root now has an explicit regression proof that it fails closed before activation and invokes neither normalization nor graph execution.
 
 ## Changed Surfaces
 
@@ -85,8 +89,15 @@ Observed on run `34795511535`: Acceptance Authority Runtime, Package Smoke, Benc
 | Package smoke bootstrap tests | passed on Python 3.11, 19 tests |
 | Registry publication parity and rejection vectors | passed, 181 entries / 1,269 roles / 58 vectors |
 | Package smoke installed proof | passed for source `25b1d22b`; five mutation families rejected |
-| PR 120 run `34805514963` | Unit Shard 2 fixture defect corrected after 23 jobs passed; replacement run pending |
+| PR 120 run `34805514963` | Superseded; exposed Shards 1, 2, and 4 fixture/path defects now corrected in focused tests |
+| Revocation CLI Linux path family | passed, 8 tests |
+| Coordinator lifecycle family | passed, 8 cases |
+| Historical terminal reload/cutover family | passed, 3 tests |
+| Scenario public ingress accepted and protected-unresolved reproducers | passed |
+| Unit Test Shard 1 | passed, 723 tests |
+| Unit Test Shard 4 | passed, 957 tests / 1 expected skip |
+| Static Analysis | Ruff, Pyright, and identity hygiene passed |
 
 ## Next Action
 
-Commit and push the isolated Hermes fixture correction, then verify every PR 120 check on the replacement GitHub revision.
+Complete exact Unit Shards 1 and 4, refresh the release candidate against the corrected source revision, then push and verify every PR 120 check on the replacement GitHub revision.

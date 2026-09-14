@@ -9,8 +9,9 @@ from pathlib import Path
 
 import pytest
 from memorii.core.memory_evolution import bootstrap_profile
-from memorii.core.memory_evolution.atomic_store import PreplanningStoreError, SemanticIngestionAtomicStore
+from memorii.core.memory_evolution.atomic_store import SemanticIngestionAtomicStore
 from memorii.core.memory_evolution.writer_admission import (
+    SemanticWriterAdmissionError,
     SemanticWriterAdmissionStore,
     bounded_preplanning_ownership_manifest,
 )
@@ -95,7 +96,7 @@ def test_historical_terminal_reloads_from_captured_records_without_write(
 
 
 @pytest.mark.parametrize("unique_distribution", [True, False])
-def test_public_root_recovers_captured_v1_terminal_without_executor_or_audit_write(
+def test_public_root_requires_historical_writer_cutover_without_executor_or_write(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, unique_distribution: bool,
 ) -> None:
     # Reconstruct the captured package inventory, retaining real version and
@@ -146,38 +147,19 @@ def test_public_root_recovers_captured_v1_terminal_without_executor_or_audit_wri
         if record.memory_id.endswith(":outcome") and "verification_digest" in record.content
     )
     assert service._bootstrap_profile is not None
-    if not unique_distribution:
+    if unique_distribution:
+        assert service._bootstrap_profile.verification_digest == expected_verification
+    else:
         assert service._bootstrap_profile.verification_digest != expected_verification
-        with pytest.raises(PreplanningStoreError, match="admission evidence is partial or mismatched"):
-            service.sync_event(
-                operation=ProviderOperation.CHAT_USER_TURN,
-                content="Atlas owner is Bob.", operation_id="graph-root-direct",
-                task_id="task:one", user_id="user:alice",
-                authenticated_host_ingress=_host_ingress(),
-            )
-        assert sum(lane_calls.values()) == 0
-        assert graph_calls == []
-        return
-    assert service._bootstrap_profile.verification_digest == expected_verification
-
-    result = service.sync_event(
-        operation=ProviderOperation.CHAT_USER_TURN,
-        content="Atlas owner is Bob.", operation_id="graph-root-direct",
-        task_id="task:one", user_id="user:alice",
-        authenticated_host_ingress=_host_ingress(),
-    )
-
-    assert result.blocked_reasons["semantic_ingestion"] == "source_only"
+    with pytest.raises(
+        SemanticWriterAdmissionError, match="semantic writer manifest is mismatched"
+    ):
+        service.sync_event(
+            operation=ProviderOperation.CHAT_USER_TURN,
+            content="Atlas owner is Bob.", operation_id="graph-root-direct",
+            task_id="task:one", user_id="user:alice",
+            authenticated_host_ingress=_host_ingress(),
+        )
     assert sum(lane_calls.values()) == 0
     assert graph_calls == []
     assert plane.read_snapshot() == before
-    terminal = next(
-        BootstrapGraphTerminalReloadV3.model_validate(record.content["reload"], strict=False)
-        for record in plane.list_records(
-            source_kind="semantic_ingestion_bootstrap_graph_v3_terminal_locator"
-        )
-        if record.content.get("semantic_ingestion_kind")
-        == "bootstrap_graph_v3_terminal_locator"
-    )
-    assert terminal.terminal_member_schema_version == 1
-    assert terminal.source_finalization_observation_delta is None

@@ -14,7 +14,9 @@ import stat
 import sysconfig
 from pathlib import Path
 
-from acceptance.production_revocation import IndependentProductionRevocationEvidenceVerifier
+from acceptance.production_revocation import (
+    IndependentProductionRevocationEvidenceVerifier,
+)
 from acceptance.production_revocation_bridge import (
     SerializedProductionRevocationPublisher,
     configured_revocation_publisher,
@@ -35,17 +37,27 @@ def _secure_file(path: Path) -> bytes:
     if not path.is_absolute():
         raise ValueError("acceptance_revocation_configuration")
     current = path
+    validated_private_coordinate = False
     while True:
         try:
             metadata = os.lstat(current)
         except OSError as exc:
             raise ValueError("acceptance_revocation_configuration") from exc
+        mode = stat.S_IMODE(metadata.st_mode)
+        trusted_sticky_ancestor = (
+            stat.S_ISDIR(metadata.st_mode)
+            and metadata.st_uid in {os.geteuid(), 0}
+            and bool(mode & stat.S_ISVTX)
+            and validated_private_coordinate
+        )
         if (
             stat.S_ISLNK(metadata.st_mode)
             or metadata.st_uid not in {os.geteuid(), 0}
-            or stat.S_IMODE(metadata.st_mode) & 0o022
+            or (mode & 0o022 and not trusted_sticky_ancestor)
         ):
             raise ValueError("acceptance_revocation_configuration")
+        if not mode & 0o022:
+            validated_private_coordinate = True
         if current.parent == current:
             break
         current = current.parent
