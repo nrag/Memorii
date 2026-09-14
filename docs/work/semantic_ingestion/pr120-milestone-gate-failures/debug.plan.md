@@ -3,10 +3,10 @@
 - Work ID: semantic-ingestion-pr120-milestone-gates
 - Work type: debugging
 - Delivery fidelity: Level 2 early real-world testing
-- Status: active
+- Status: complete
 - Coordinator: `/root`
 - Created: 2026-09-13
-- Last updated: 2026-09-13
+- Last updated: 2026-09-14
 - Parent WorkPlan: `docs/work/semantic_ingestion/implementation.plan.md`
 - Related WorkPlans: `docs/work/hermes-memory-provider-integration/implementation.plan.md`
 - Canonical inputs: `.github/workflows/pr-gates.yml`, PR 120 run `34795511535`, semantic-ingestion and acceptance governing designs
@@ -74,6 +74,7 @@ Observed on run `34795511535`: Acceptance Authority Runtime, Package Smoke, Benc
 - Unit shard setup plus the corrected 13-minute recovery family cannot fit the former 15-minute whole-job limit. The gate retains the complete shard and raises only its execution ceiling to 45 minutes.
 - Exact Shard 3 then exposed the same missing active-authority setup in the two accepted clarification-race fixtures. Installing the shared monitor/checkpoint fixture lets both the in-memory stale-plan race and fresh-process JSONL reopen reach their intended group CAS and pass in 242.30 seconds.
 - The corrected full shard reached 874 passes and one expected skip in 1,601.17 seconds. Its only two failures were caused by the coordinator supplying an abbreviated local `MEMORII_SOURCE_REVISION`; rerunning those exact benchmark tests with the repository's full HEAD produced two passes. The GitHub workflow already supplies `${{ github.sha }}`. The shard ceiling is therefore 45 minutes, preserving every test while allowing package setup and runner variance around the measured 26-minute test body.
+- GitHub PR Gates run `34822169627` completed successfully at `3797b37e`: all 50 workflow jobs passed, including Unit Shard 3, Observation Ledger Activation, all eight transaction-boundary roots, both timing inventories, Package Smoke, and both umbrellas. PR 120 reported 53 passing checks, zero pending checks, and zero failed checks including CodeQL.
 
 ## Changed Surfaces
 
@@ -127,7 +128,9 @@ Observed on run `34795511535`: Acceptance Authority Runtime, Package Smoke, Benc
 | Clarification accepted-race family | passed, memory and independent JSONL reopen, 2 tests |
 | Unit Test Shard 3 corrected run | 874 passed / 1 expected skip; two local invocation identity errors pass with full HEAD |
 | PR workflow static contract | passed, 18 tests with the explicit 45-minute complete-shard bound |
+| PR 120 run `34822169627` | passed, all 50 jobs at `3797b37e` |
+| PR 120 complete check inventory | passed, 53 checks including CodeQL; zero failed or pending |
 
 ## Next Action
 
-Commit and push the production/fixture/workflow repair, refresh the release-preparation candidate against that clean code commit, then verify every PR 120 check on the replacement revision.
+Return to the parent semantic-ingestion implementation WorkPlan for the separately deferred release-signing step.
