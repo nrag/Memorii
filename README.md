@@ -183,6 +183,21 @@ provider path. It is suitable only for Level 2 integration testing; uninstall
 `memorii-hermes-development-connector` before installing a production factory.
 Production signing remains independent of this connector.
 
+Inspect the validated state from the same Python environment used by Hermes:
+
+```bash
+python -m memorii_hermes_development.inspect summary
+python -m memorii_hermes_development.inspect graph --output /tmp/memorii-graph.json
+```
+
+Both commands refresh the connector's replaceable development authority and
+open an atomic, read-only Memory Plane snapshot under its file lock. `summary`
+separates captured semantic sources, observation-ledger entries,
+retrieval-visible memories, and canonical graph records. `graph` exports the
+complete typed `GraphStateSnapshot`, including every record payload and its
+revision and integrity metadata. Pass `--hermes-home /path/to/profile` when the
+container does not expose the active profile through `HERMES_HOME`.
+
 Hermes passes the active profile's `hermes_home` to the provider. A configured
 factory receives `<hermes_home>/memorii` as its storage root; the Hermes home
 is supplied at initialization and does not need to exist before Hermes starts.

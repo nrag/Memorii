@@ -6,7 +6,7 @@
 - Status: Level 2 integration runnable; production authority deferred to Level 3
 - Coordinator: `/root`
 - Created: 2026-09-13
-- Last updated: 2026-09-14
+- Last updated: 2026-09-21
 - Parent WorkPlan: `docs/work/semantic_ingestion/implementation.plan.md`
 - Related WorkPlans: `docs/work/semantic_ingestion_completion_readiness/closure-plan.md`
 - Canonical inputs: `docs/design/semantic_ingestion_architecture.md`, `docs/design/memory_evolution_runtime.md`, `docs/design/scoped_memory_context.md`, current Hermes `MemoryProvider` ABC
@@ -55,6 +55,7 @@ Deferred to Level 3: signed release artifacts, immutable version pinning guidanc
 | Recall and completed-turn capture | Forward `prefetch` and `sync_turn` with scope, host-issued ingress, and stable delivery identity | configured committed-recall and source-capture/replay test | production binding ledger | implemented, locally verified |
 | Common lifecycle hooks | Forward turn-author binding, session end, pre-compress, memory write, delegation, and session switch where Hermes exposes them | hook dispatch, durable memory-write/session-switch, and shared-participant isolation test | compatibility notes | implemented, locally verified |
 | Common failure behavior | Explicit unavailable/pre-init/invalid-root and invalid factory/binding behavior | negative tests | setup diagnostics | implemented, locally verified |
+| Development graph inspection | Reconstruct a verified detached graph from one atomic profile snapshot | inspection summary unit test | real activated JSONL profile produced summary and full graph export | implemented, locally verified |
 
 ## Change Map
 
@@ -82,6 +83,7 @@ Deferred to Level 3: signed release artifacts, immutable version pinning guidanc
 | `memorii/pyproject.toml` | package metadata | this plan | installed distribution -> Hermes entry-point discovery | metadata test, package build/check | complete locally; wheel built and inspected |
 | `memorii/tests/unit/integrations/test_hermes_memory_provider_bridge.py` | tests | this plan | host contract -> production call path | focused pytest | complete locally |
 | `README.md` | current-state documentation | this plan | install/config -> runtime behavior | doc review | complete locally |
+| `tools/hermes_development_connector/src/memorii_hermes_development/inspect.py` | Level 2 operator tooling | this plan | profile JSONL -> verified detached observation authority -> summary/full graph JSON | focused unit and real activated-profile checks | complete locally |
 
 ## Production Entrypoint Bindings
 
@@ -128,6 +130,7 @@ No persisted-data migration is introduced. Rollout is opt-in by installing the d
 | Current Hermes contract | yes | current `NousResearch/hermes-agent` revision `ee445299` loaded the entry point through `plugins.memory.load_memory_provider`; concrete class satisfies the real ABC and returns the explicit missing-factory diagnostic |
 | Development connector package and setup | yes | both wheels built; exact provider/factory entry points inspected; setup unit tests passed |
 | Real Hermes development initialize/capture/reopen | yes | current loader reported available; two completed-turn source records persisted and reopened |
+| Development graph inspection | yes | focused setup/inspection suite passed; activated profile reconstructed 9 canonical records and exported valid graph JSON |
 | Current PR CI | external evidence | PR #120 merged green at `410ce4a8`; connector commits require a successor PR for hosted gates |
 
 Known candidate limitation: the development connector imports repository test authority and must be installed editable from this checkout. It proves the real Hermes/plugin/storage path before release signing, but it is not production authority or release evidence.
@@ -160,7 +163,8 @@ Candidate freeze: development connector implementation commit `3dd29f4e`; revisi
 - 2026-09-13: Independent reviews confirmed the bridge cannot honestly close interactive validation while the production service-factory caller count is zero. This is an external deployment/signing blocker, not a reason to add a test-authority fallback.
 - 2026-09-14: Added an explicit, separately installed development connector. The real Hermes loader discovered it, initialized the canonical provider, captured a completed turn into durable semantic-ingestion source records, and reopened those records on a second start. The connector uses deterministic ephemeral scenario authority and does not alter the production provider package or signing contract.
 - 2026-09-14: PR #120 had already merged at `410ce4a8` before the connector commits were pushed. Local focused, package, and real-loader checks pass; hosted gates for `3dd29f4e` require a successor PR.
+- 2026-09-21: Added a container-friendly development inspector. It refreshes the replaceable development authority, opens the Memory Plane under its lock, verifies the complete detached observation authority, and emits either separated operational counts or the full typed graph. An activated end-to-end fixture reconstructed 9 records (2 entities, 1 relation, 1 claim, 1 projection, 2 citations, and 2 provenance records). A pre-activation fixture failed closed rather than presenting incomplete state as a graph.
 
 ## Next Action
 
-Run an interactive Hermes turn with the development connector and inspect the profile-local source ledger; production signing and the deployment-owned factory remain the Level 3 next action.
+Run interactive Hermes turns and use the development inspector to compare captured sources, graph records, and retrieval-visible memories; production signing and the deployment-owned factory remain the Level 3 next action.
