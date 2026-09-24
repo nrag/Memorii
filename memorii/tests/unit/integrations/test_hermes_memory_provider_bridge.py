@@ -108,6 +108,114 @@ def test_operation_identity_reuses_completed_transcript_and_separates_positions(
     assert first.startswith("hermes:")
 
 
+def test_completed_runtime_lifecycle_hooks_drain_before_read_or_return_without_legacy_ingress(bridge_module) -> None:
+    calls: list[object] = []
+    ordering: list[str] = []
+    provider = bridge_module.MemoriiHermesMemoryProvider()
+    provider._provider = SimpleNamespace(
+        on_session_end=lambda *args, **kwargs: calls.append(("session_end", args, kwargs)),
+        on_pre_compress=lambda *args, **kwargs: calls.append(("pre_compress", args, kwargs)),
+    )
+    provider._completed_turn_runtime = SimpleNamespace(
+        wait_for_idle=lambda: ordering.append("drain"),
+        prefetch=lambda **_kwargs: (ordering.append("prefetch") or "committed context"),
+    )
+    provider._issue_ingress = lambda _request: (_ for _ in ()).throw(AssertionError("legacy ingress must not issue"))
+
+    provider.on_session_end(["completed turn"])
+    assert provider.on_pre_compress(["completed turn"]) == ""
+    assert provider.prefetch("what changed") == "committed context"
+
+    assert calls == []
+    assert ordering == ["drain", "drain", "drain", "prefetch"]
+
+
+@pytest.mark.parametrize(
+    "invoke",
+    [
+        lambda provider: provider.on_session_end(["completed turn"]),
+        lambda provider: provider.on_pre_compress(["completed turn"]),
+        lambda provider: provider.prefetch("what changed"),
+    ],
+)
+def test_completed_runtime_lifecycle_drain_failures_surface_without_clearing_state(bridge_module, invoke) -> None:
+    provider = bridge_module.MemoriiHermesMemoryProvider()
+    legacy = object()
+    runtime = SimpleNamespace(wait_for_idle=lambda: (_ for _ in ()).throw(RuntimeError("semantic worker failed")))
+    provider._provider = legacy
+    provider._completed_turn_runtime = runtime
+    provider._issue_ingress = lambda _request: object()
+
+    with pytest.raises(RuntimeError, match="semantic worker failed"):
+        invoke(provider)
+
+    assert provider._provider is legacy
+    assert provider._completed_turn_runtime is runtime
+    assert provider._issue_ingress is not None
+
+
+def test_legacy_lifecycle_hooks_remain_active_without_completed_runtime(bridge_module) -> None:
+    calls: list[tuple[str, object, dict[str, object]]] = []
+    ingress_hooks: list[str] = []
+    provider = bridge_module.MemoriiHermesMemoryProvider()
+    provider._session_id = "session:one"
+    provider._default_user_id = "user:ada"
+    provider._provider = SimpleNamespace(
+        on_session_end=lambda messages, **kwargs: calls.append(("session_end", messages, kwargs)),
+        on_pre_compress=lambda messages, **kwargs: calls.append(("pre_compress", messages, kwargs)),
+    )
+    provider._require_ingress = lambda *, hook, **_kwargs: ingress_hooks.append(hook) or object()
+
+    provider.on_session_end(["legacy turn"])
+    assert provider.on_pre_compress(["legacy turn"]) == ""
+
+    assert [call[0] for call in calls] == ["session_end", "pre_compress"]
+    assert ingress_hooks == ["session_end", "pre_compress"]
+
+
+def test_shutdown_drains_completed_runtime_before_clearing_provider_state(bridge_module) -> None:
+    calls: list[str] = []
+    provider = bridge_module.MemoriiHermesMemoryProvider()
+    legacy = object()
+    provider._provider = legacy
+    provider._session_id = "session:one"
+    provider._default_user_id = "user:ada"
+    provider._agent_identity = "profile:primary"
+    provider._issue_ingress = lambda _request: object()
+
+    def wait_for_idle() -> None:
+        assert provider._provider is legacy
+        calls.append("drained")
+
+    provider._completed_turn_runtime = SimpleNamespace(wait_for_idle=wait_for_idle)
+    provider.shutdown()
+
+    assert calls == ["drained"]
+    assert provider._provider is None
+    assert provider._completed_turn_runtime is None
+    assert provider._issue_ingress is None
+    assert provider._session_id == ""
+    assert provider._current_user_id() is None
+
+
+def test_shutdown_propagates_worker_failure_and_still_clears_provider_state(bridge_module) -> None:
+    provider = bridge_module.MemoriiHermesMemoryProvider()
+    provider._provider = object()
+    provider._issue_ingress = lambda _request: object()
+
+    def failed_wait_for_idle() -> None:
+        raise RuntimeError("semantic worker failed")
+
+    provider._completed_turn_runtime = SimpleNamespace(wait_for_idle=failed_wait_for_idle)
+
+    with pytest.raises(RuntimeError, match="semantic worker failed"):
+        provider.shutdown()
+
+    assert provider._provider is None
+    assert provider._completed_turn_runtime is None
+    assert provider._issue_ingress is None
+
+
 def test_default_storage_root_is_profile_local_and_invalid_roots_fail(bridge_module, tmp_path: Path) -> None:
     assert bridge_module._resolve_storage_root(hermes_home=tmp_path / "profile") == (tmp_path / "profile" / "memorii")
 

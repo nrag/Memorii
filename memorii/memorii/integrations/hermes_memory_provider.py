@@ -130,6 +130,7 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         runtime = self._completed_turn_runtime
         prefetch = getattr(runtime, "prefetch", None) if runtime is not None else None
         if runtime is not None:
+            self._wait_for_completed_runtime()
             if not callable(prefetch):
                 raise TypeError("Memorii completed-turn runtime is invalid")
             return prefetch(
@@ -205,6 +206,10 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         )
 
     def on_session_end(self, messages: list[dict[str, object]] | list[str]) -> None:
+        if self._completed_turn_runtime is not None:
+            self._require_provider()
+            self._wait_for_completed_runtime()
+            return
         self._require_provider().on_session_end(
             messages,
             operation_id=_operation_id("session_end", self._session_id, messages),
@@ -214,6 +219,10 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         )
 
     def on_pre_compress(self, messages: list[dict[str, object]] | list[str]) -> str:
+        if self._completed_turn_runtime is not None:
+            self._require_provider()
+            self._wait_for_completed_runtime()
+            return ""
         self._require_provider().on_pre_compress(
             messages,
             operation_id=_operation_id("pre_compress", self._session_id, messages),
@@ -280,10 +289,26 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         self._turn_user_id.set(self._default_user_id)
 
     def shutdown(self) -> None:
-        self._provider = None
-        self._issue_ingress = None
-        self._completed_turn_runtime = None
-        self._absent_author_id = "memorii.hermes.author.absent.v1"
+        try:
+            self._wait_for_completed_runtime()
+        finally:
+            self._provider = None
+            self._session_id = ""
+            self._default_user_id = None
+            self._turn_user_id.set(None)
+            self._agent_identity = None
+            self._issue_ingress = None
+            self._completed_turn_runtime = None
+            self._absent_author_id = "memorii.hermes.author.absent.v1"
+
+    def _wait_for_completed_runtime(self) -> None:
+        runtime = self._completed_turn_runtime
+        if runtime is None:
+            return
+        wait_for_idle = getattr(runtime, "wait_for_idle", None)
+        if not callable(wait_for_idle):
+            raise TypeError("Memorii completed-turn runtime is invalid")
+        wait_for_idle()
 
     def _require_provider(self) -> HermesMemoryProvider:
         if self._provider is None:

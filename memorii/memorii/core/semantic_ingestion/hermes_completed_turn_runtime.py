@@ -139,12 +139,21 @@ class HermesCompletedTurnRuntime:
             try:
                 if isinstance(work, _RecoverySweep):
                     self._recover_pending()
+                    with self._condition:
+                        # A successful reconciliation resolves every retained
+                        # post-admission failure before a caller can observe idle.
+                        self._failures.clear()
                 else:
                     self._process(work)
             except Exception as exc:
                 logger.exception("hermes_completed_turn_semantic_worker_failed")
                 with self._condition:
                     self._failures.append(exc)
+                if isinstance(work, _CompletedTurnWork):
+                    # A work failure can leave admitted V3 state pending after
+                    # its lease. Reconcile once; a failed sweep stays visible
+                    # and never schedules an unbounded recovery loop.
+                    self._enqueue(_RecoverySweep())
             finally:
                 with self._condition:
                     self._outstanding -= 1
@@ -199,7 +208,7 @@ class HermesCompletedTurnRuntime:
             )
 
     def wait_for_idle(self, *, timeout: float = 1200.0) -> None:
-        """Wait for admitted work and surface the first worker failure."""
+        """Wait for admitted work and surface an unresolved worker failure."""
         deadline = time.monotonic() + timeout
         with self._condition:
             while self._outstanding:
@@ -208,7 +217,7 @@ class HermesCompletedTurnRuntime:
                     raise TimeoutError("Hermes semantic worker did not become idle")
                 self._condition.wait(remaining)
             if self._failures:
-                failure = self._failures.pop(0)
+                failure = self._failures[0]
                 raise RuntimeError("Hermes semantic worker failed") from failure
 
     def prefetch(self, *, query: str, session_id: str, authenticated_author_id: str, now: datetime) -> str:
@@ -297,23 +306,43 @@ def _canonicalize_completed_messages(
 
 
 def _canonicalize_message(value: object) -> dict[str, object]:
-    if type(value) is not dict or set(value) - {"role", "content", "tool_calls", "tool_call_id"}:
+    if type(value) is not dict:
         raise ValueError("Hermes transcript message is not a closed object")
     role = value.get("role")
     if role not in {"system", "developer", "user", "assistant", "tool"}:
         raise ValueError("Hermes transcript role is unsupported")
-    content = _canonical_text(value.get("content"))
+    allowed_fields = {
+        "system": {"role", "content"},
+        "developer": {"role", "content"},
+        "user": {
+            "role", "content", "timestamp", "display_kind", "display_metadata",
+            "platform_message_id", "api_content",
+        },
+        "assistant": {
+            "role", "content", "reasoning", "finish_reason", "timestamp",
+            "reasoning_content", "reasoning_details", "anthropic_content_blocks",
+            "bedrock_content_blocks", "codex_reasoning_items", "codex_message_items",
+            "api_content", "tool_calls",
+        },
+        "tool": {
+            "role", "content", "tool_call_id", "name", "tool_name", "timestamp",
+            "_tool_output_risk", "effect_disposition",
+        },
+    }
+    if set(value) - allowed_fields[role]:
+        raise ValueError("Hermes transcript message is not a closed object")
     if role in {"system", "developer", "user"}:
-        if set(value) != {"role", "content"}:
-            raise ValueError("Hermes transcript message has invalid role fields")
+        content = _canonical_text(value.get("content"))
         return {"role": role, "content": content}
     if role == "tool":
-        if set(value) != {"role", "content", "tool_call_id"}:
+        content = _canonical_text(value.get("content"))
+        if "tool_call_id" not in value:
             raise ValueError("Hermes tool message has invalid fields")
         call_id = _canonical_text(value.get("tool_call_id"))
         return {"role": role, "content": content, "tool_call_id": call_id}
-    if set(value) not in ({"role", "content"}, {"role", "content", "tool_calls"}):
-        raise ValueError("Hermes assistant message has invalid fields")
+    content_value = value.get("content")
+    textless_tool_call = content_value == "" and "tool_calls" in value
+    content = "" if textless_tool_call else _canonical_text(content_value)
     result: dict[str, object] = {"role": role, "content": content}
     if "tool_calls" in value:
         calls = value["tool_calls"]
@@ -324,20 +353,42 @@ def _canonicalize_message(value: object) -> dict[str, object]:
 
 
 def _canonicalize_tool_call(value: object) -> dict[str, str]:
-    if type(value) is not dict or set(value) != {"id", "type", "function"} or value.get("type") != "function":
+    if (
+        type(value) is not dict
+        or set(value) - {"id", "call_id", "response_item_id", "type", "function", "extra_content"}
+        or value.get("type") != "function"
+        or "id" not in value
+        or "function" not in value
+    ):
         raise ValueError("Hermes assistant tool call is invalid")
     function = value["function"]
     if type(function) is not dict or set(function) != {"name", "arguments"}:
         raise ValueError("Hermes assistant tool function is invalid")
     arguments = _canonical_text(function["arguments"])
     try:
-        parsed = json.loads(arguments, parse_constant=lambda _: (_ for _ in ()).throw(ValueError()))
+        parsed = json.loads(
+            arguments,
+            object_pairs_hook=_reject_duplicate_json_object_keys,
+            parse_constant=lambda _: (_ for _ in ()).throw(ValueError()),
+        )
         canonical_arguments = json.dumps(parsed, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
     except (TypeError, ValueError, json.JSONDecodeError) as exc:
-        raise ValueError("Hermes tool arguments are not canonical JSON") from exc
-    if arguments != canonical_arguments:
-        raise ValueError("Hermes tool arguments are not canonical JSON")
-    return {"id": _canonical_text(value["id"]), "type": "function", "name": _canonical_text(function["name"]), "arguments": arguments}
+        raise ValueError("Hermes tool arguments are not valid JSON") from exc
+    return {
+        "id": _canonical_text(value["id"]),
+        "type": "function",
+        "name": _canonical_text(function["name"]),
+        "arguments": canonical_arguments,
+    }
+
+
+def _reject_duplicate_json_object_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("Hermes tool arguments contain duplicate object keys")
+        result[key] = value
+    return result
 
 
 def _canonical_text(value: object) -> str:

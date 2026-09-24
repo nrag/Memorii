@@ -6,7 +6,7 @@
 - Status: active
 - Coordinator: `/root`
 - Created: 2026-09-23
-- Last updated: 2026-09-23
+- Last updated: 2026-09-24
 - Parent WorkPlan: `docs/work/hermes-conversation-memory-trial/implementation.plan.md`
 - Related WorkPlans: None
 - Canonical inputs: Windows Docker observation at branch head `10b67a5781e2eeaab656b1ee2b6eacd7a274a928`; pinned Hermes image `nousresearch/hermes-agent@sha256:eaa1c0b93eea54dadb8b072ffaffd569f93af444eacc2f3a`
@@ -95,6 +95,37 @@ Hermes' normal primary workspace metadata.
    sources to LF SHA-256 values. CRLF conversion invalidates each snapshot and
    raises `typed_value_registry_configuration_verification_failed` before
    Hermes obtains a runtime binding.
+6. **Confirmed fourth root cause: Hermes 0.21.4 enriches transcript messages
+   with host and model-carrier fields.** The completed-turn canonicalizer
+   accepted only four keys and rejected the ordinary user-plus-assistant turn
+   before source admission. Its role-specific known fields must be discarded
+   from the canonical digest while role, content, and validated tool structure
+   remain bound. Its tool-call rows also carry `call_id`, `response_item_id`,
+   and optional `extra_content`, and it permits textless assistant tool-call
+   rows; the canonicalizer must preserve only canonical tool identity/function
+   structure and allow that bounded textless form.
+7. **Confirmed fifth root cause: completed-turn runtime and legacy lifecycle
+   hooks overlap.** Hermes calls session-end, pre-compress, and shutdown after
+   completed-turn sync. Legacy hooks issue a second ingress that is absent-author
+   incompatible, and shutdown clears the runtime before queued semantic work
+   drains.
+8. **Confirmed sixth root cause: lifecycle and read boundaries did not wait for
+   completed-turn work.** An immediate prefetch could run before queued
+   semantic work committed, while session-end and pre-compress returned without
+   a durability barrier. Those completed-runtime hooks must drain and surface a
+   worker failure without clearing retryable state; shutdown alone clears in
+   `finally`.
+9. **Confirmed seventh root cause: tool arguments were required to arrive as
+   canonically encoded JSON.** Hermes preserves valid formatted or reordered
+   JSON bytes. The canonicalizer must reject malformed JSON and duplicate keys,
+   then bind a sorted compact encoding rather than rejecting valid transport
+   formatting.
+10. **Confirmed eighth root cause: `wait_for_idle()` consumed an unresolved
+    worker failure.** A post-admission work failure could be removed by one
+    lifecycle wait, allowing a later prefetch to look like a normal empty read.
+    Failed admitted work must schedule one recovery sweep; successful recovery
+    clears retained signals, while a failed sweep remains visible and does not
+    schedule another sweep.
 
 ## Experiments
 
@@ -140,6 +171,25 @@ Hermes' normal primary workspace metadata.
   preparation, then authorizes a temporary Hermes home and starts the real
   factory inside the prepared image.
 
+### Hermes 0.21.4 transcript and lifecycle reproduction
+
+- Prediction: decorated user, assistant, and tool messages fail under the
+  former closed four-key parser; lifecycle hooks issue legacy ingress despite a
+  completed-turn runtime; CLI shutdown can clear queued work before it reaches
+  the semantic worker.
+- Actual result: the reported ordinary decorated user-plus-assistant pair
+  reproduces canonicalization failure. Focused bridge doubles prove the former
+  session-end and pre-compress paths invoked legacy ingress, while shutdown did
+  not wait. Real Hermes tool-call carriers and textless tool-call rows also
+  reproduce rejection. Role-specific canonicalization, lifecycle bypass, and
+  shutdown drain tests now cover the shared boundary. Multimodal tool-result
+  content remains a Level 2 follow-up because this bounded fix preserves only
+  string content and does not silently coerce arbitrary carrier structures.
+  Ordered bridge doubles now prove session-end, pre-compress, and prefetch each
+  drain before returning or reading, and a drain failure leaves nonterminal
+  bridge state intact. Formatted/reordered JSON arguments produce equal
+  canonical transcript digests; malformed JSON and duplicate keys are denied.
+
 ## Evidence Log
 
 - Windows inspection returned
@@ -164,6 +214,18 @@ Hermes' normal primary workspace metadata.
   the user's successfully built Windows image. Selecting and release-validating
   an immutable base-image digest is deferred to Level 3 rather than inventing a
   checksum.
+- Hermes 0.21.4 logs show a completed turn reaches Memorii with documented
+  role-specific transport fields. The prior parser rejects those fields before
+  durable admission; its failure is independent of authority and storage.
+- The opt-in Docker regression now loads the installed `memorii` entry point,
+  drives it through real Hermes `MemoryManager` initialization, sync,
+  queued prefetch, the CLI session-boundary queue, shutdown, reopen, and later
+  prefetch, and monkeypatches only the disposable image's OpenAI transport to a
+  fixed response. It supplies one decorated textless-tool-call transcript with
+  real carrier fields and a matching tool row.
+  The current probe injects one post-admission `_run_semantic_ingestion`
+  failure before the serialized session boundary, then requires recovery,
+  persisted reopen, and later recall.
 
 ## Decision Log
 
@@ -383,14 +445,97 @@ remaining_operational_evidence:
   - Windows Hermes conversation, durable inspection, restart, and later-session recall
 ```
 
+The Hermes 0.21.4 transcript and lifecycle correction is active and awaits
+final targeted review. Focused proof includes
+decorated ordinary and tool transcripts, JSON canonical equivalence and
+duplicate-key rejection, runtime lifecycle/read barriers and retained-failure
+state, legacy fallback, and shutdown drain/failure cleanup.
+
+`PYTHONPATH=memorii .venv/bin/python -m pytest -q
+memorii/tests/unit/integrations/test_hermes_memory_provider_bridge.py
+memorii/tests/unit/core/semantic_ingestion/test_hermes_completed_turn_runtime.py`
+passed after recovery remediation with `46 passed in 202.89s`. Scoped Ruff and
+`git diff --check` passed.
+
+- Current correction checks: `PYTHONPATH=memorii .venv/bin/python -m pytest -q
+  memorii/tests/unit/integrations/test_hermes_memory_provider_bridge.py -k
+  'completed_runtime_lifecycle or shutdown or legacy_lifecycle'` passed with
+  `7 passed, 24 deselected in 10.79s`; the complete runtime canonicalization
+  module passed `13 passed in 10.88s`. Scoped Ruff and `git diff --check`
+  passed.
+- Recovery delta checks prove a fail-once work item recovers before idle and
+  clears its signal; a persistent recovery failure remains visible over
+  repeated waits and schedules no additional sweep. The complete runtime module
+  passed with `15 passed in 8.46s` before the aggregate run above.
+- `MEMORII_RUN_DOCKER_TESTS=1 PYTHONPATH=memorii .venv/bin/python -m pytest
+  -q memorii/tests/unit/tools/test_prepare_memorii_docker_context.py -k
+  docker_build -p no:cacheprovider` passed after the final recovery evidence
+  delta with `1 passed, 10 deselected in 331.66s`. The test builds the current
+  CRLF-shaped image, loads the installed
+  provider entry point through the real Hermes manager, commits a decorated
+  tool-bearing turn, injects one post-admission semantic failure, recovers it,
+  crosses the serialized CLI session boundary, shuts down, reopens the same
+  store, and retrieves the committed project fact.
+- The final installed-manager Docker rerun passed with `1 passed, 10
+  deselected in 331.84s`. Its separate persistent-failure scenario now counts
+  the actual `_recover_pending` invocation, proves exactly one recovery sweep
+  runs, and proves repeated barriers neither hide the failure nor schedule an
+  additional sweep.
+- Initial targeted review found a P1 read-after-write/session-boundary race and
+  a P2 rejection of valid provider-formatted tool JSON. Both are resolved:
+  completed-runtime session hooks and reads drain admitted work, and tool
+  arguments are strictly parsed with duplicate-key rejection then canonicalized
+  for the transcript digest. The corrected candidate manifest is
+  `hermes-transcript-lifecycle-correction-manifest.json`, SHA-256
+  `cf6c6384eac07e3f84e69298a19d18c5e83e4c82aad1fc27f1814413fb4d34e8`.
+- Final correctness review found one P2 recovery sibling: session-end could
+  consume the only post-admission worker-failure signal before a later read.
+  The runtime now schedules exactly one existing recovery sweep for failed
+  admitted work, clears retained failures only after successful reconciliation,
+  and reports unresolved recovery failures on every later barrier without an
+  unbounded reschedule loop. The installed-manager Docker proof now covers both
+  fail-once recovery and a separate persistent failure whose signal remains
+  visible on repeated barriers while its recovery-attempt count stays fixed.
+- Final test delta review verified manifest SHA-256
+  `cf6c6384eac07e3f84e69298a19d18c5e83e4c82aad1fc27f1814413fb4d34e8`,
+  all five member hashes, the complete changed-file inventory, and the actual
+  `_recover_pending` caller proof. It re-ran the runtime suite with `15
+  passed`, resolved the prior verification finding, approved the correction,
+  and reported `remaining_validated_p1_p2: []`.
+
+The transcript and lifecycle correction is bound as follows:
+
+```yaml
+base_revision: 9e91df930107c62f76c89fbeaa66edda88a1cd77
+reviewed_revision: working-tree correction manifest cf6c6384eac07e3f84e69298a19d18c5e83e4c82aad1fc27f1814413fb4d34e8
+tested_revision: working-tree correction manifest cf6c6384eac07e3f84e69298a19d18c5e83e4c82aad1fc27f1814413fb4d34e8
+changed_surface_inventory_complete: true
+scope_delta_resolved: true
+authority_chains_complete: true
+passed_local_jobs:
+  - completed-turn runtime and Hermes provider bridge suites: 46 passed
+  - focused runtime review rerun: 15 passed
+  - installed Hermes MemoryManager Docker regression: 1 passed, 10 deselected
+  - scoped Ruff and diff/manifest integrity: passed
+known_local_failures: []
+failure_exclusions: []
+remaining_validated_p1_p2: []
+remaining_blocks_approval: []
+remaining_changes_required: []
+required_checks_green: true
+remaining_operational_evidence:
+  - Windows Hermes conversation, durable inspection, restart, and later-session recall
+```
+
 ## Production Entrypoint Bindings
 
 | Trigger | Composition root and caller | Context authority and validation | Durable/read outcome |
 | --- | --- | --- | --- |
 | Docker image build | `Dockerfile.memorii` after `COPY` -> preparation tool -> editable `uv pip install` -> installed bundle gate | The tool permits only fixed project-profile coordinates and Bootstrap decoder-manifest package paths, converts only CRLF, and verifies profile plus every declared decoder SHA-256. Runtime repeats profile and registry verification during factory initialization. | Build fails closed for drift or malformed bytes; a successful image contains the bytes accepted by the production provider factory and Bootstrap V3 registry. |
 | Hermes external-provider initialization | Hermes `MemoryManager.initialize_all` -> installed `MemoriiHermesMemoryProvider.initialize` -> sole `memorii.hermes.provider_service` factory | Bridge retains `platform`, `agent_context`, profile identity, workspace, parent session, user, home, and session. Factory accepts exactly `cli` + `primary` + `hermes` + no parent before authority/service construction. | Successful binding constructs the JSONL Memory Plane, current Bootstrap V3 runtime, durable completed-turn worker, and protected reader. |
-| Completed user/assistant turn | Hermes 0.21.4 `turn_finalizer.py` or `codex_runtime.py` -> `MemoryManager.sync_all` -> the initialized bridge's `sync_turn` | Existing raw-author consistency, canonical transcript, current authority, installation/profile, agent, session, and source checks remain unchanged. | Atomic source admission creates `memory_records.jsonl`; worker commits graph, ledger, terminal outcome, and runtime-context projection. |
-| Later query | Hermes prefetch -> initialized bridge -> completed-turn runtime protected reader | Existing installation, agent, query, purpose, grant, and freshness checks remain unchanged. | Returns committed project assertion or an empty non-disclosing result. |
+| Completed user/assistant turn | Hermes 0.21.4 `turn_finalizer.py` or `codex_runtime.py` -> `MemoryManager.sync_all` -> the initialized bridge's `sync_turn` | Role-specific known carrier fields are excluded from the canonical digest; unknown keys, malformed tool calls, and unmatched tool pairs remain denied. | Atomic source admission creates `memory_records.jsonl`; worker commits graph, ledger, terminal outcome, and runtime-context projection. |
+| Completed-runtime lifecycle | Hermes session-end, pre-compress, and shutdown -> installed bridge | Session-end and pre-compress drain completed-turn work and bypass legacy ingress when the runtime exists. Failed admitted work schedules one reconciliation sweep; only successful recovery clears its failure signal. Shutdown clears in `finally`. Runtime-free installations retain legacy hooks. | One completed-turn execution path admits each turn; CLI process exit cannot silently discard queued semantic work or consume an unresolved failure. |
+| Later query | Hermes `MemoryManager.prefetch_all` -> installed bridge -> completed-turn runtime protected reader | The bridge drains completed-turn work before protected prefetch; existing installation, agent, query, purpose, grant, and freshness checks remain unchanged. | Returns the just-committed project assertion or an empty non-disclosing result. |
 
 Non-test production caller counts remain one installed provider entry point and
 one installed service-factory entry point. The correction changes only the
@@ -403,10 +548,8 @@ pinned-source and runtime evidence must be returned from that container.
 
 ## Next Action
 
-Rebuild the Windows image from published revision
-`826c9ee5875c8b2d99ccdd8a316b89fad0cc7af2` without cache, re-authorize the
-existing Level 2 volume, and repeat one Hermes conversation, inspection,
-later-session recall, and restart test.
+Publish the approved correction to `semantic_ingestion_m5`, then run the live
+Windows Hermes conversation, inspection, restart, and recall trial.
 
 ## Outcome And Retrospective
 
