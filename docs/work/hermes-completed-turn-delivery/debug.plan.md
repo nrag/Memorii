@@ -3,7 +3,7 @@
 - Work ID: `hermes-completed-turn-delivery-failure`
 - Work type: debugging
 - Delivery fidelity: Level 2 early real-world testing
-- Status: active
+- Status: complete
 - Coordinator: `/root`
 - Created: 2026-09-23
 - Last updated: 2026-09-24
@@ -312,6 +312,14 @@ Hermes' normal primary workspace metadata.
   retains one `Not applicable / changes_required / verification` item: this Mac
   cannot execute the opt-in installed-image Docker test, so the successful
   Windows Docker result must be bound before final Level 2 closure.
+- Windows Docker validation at runtime revision `450eccd3` completed the product
+  proof. Inspection after the unsupported project-name turn and supported owner
+  turn reported four captured sources, one `evidence_only` terminal, one
+  `fully_committed` terminal, one graph revision delta, three observation-ledger
+  entries, and one retrieval-visible runtime projection. After restarting the
+  container, a fresh Hermes session asked `Who owns Mars Venus 008` and returned
+  `Ada.` The delayed `Initializing agent...` state completed successfully; it
+  is startup latency rather than a stuck recovery loop.
 
 ## Decision Log
 
@@ -653,10 +661,14 @@ pinned-source and runtime evidence must be returned from that container.
 
 ## Next Action
 
-Publish the reviewed correction, run the opt-in installed-image Docker probe on
-the Windows host, and bind its successful result before the manual Hermes
-conversation, restart, and recall trial.
+Begin a separate `$build-design` operation for richer and learned ontology
+support, using the completed Hermes production-path proof as its integration
+baseline.
 
 ## Outcome And Retrospective
 
-Active investigation; no completion claim.
+Completed at runtime revision `450eccd3`: Hermes conversation ingestion,
+evidence-only abstention, supported semantic commit, restart, and later-session
+recall all succeed through the installed Docker production path. Startup replay
+latency remains a follow-up performance concern and does not block the Level 2
+functional proof.
