@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY . /opt/memorii-src
-RUN python3 /opt/memorii-src/tools/prepare_project_assertions_docker_context.py \
+RUN python3 /opt/memorii-src/tools/prepare_memorii_docker_context.py \
         --source-root /opt/memorii-src/memorii \
     && uv pip install --python /opt/hermes/.venv/bin/python \
         --editable '/opt/memorii-src/memorii[live]' \

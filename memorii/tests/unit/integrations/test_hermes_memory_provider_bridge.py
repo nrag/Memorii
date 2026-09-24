@@ -58,7 +58,7 @@ def test_pinned_hermes_image_and_first_party_factory_match_the_level2_abi() -> N
         "memorii.integrations.hermes_factory:build_local_level2_runtime_binding"
         in (root / "memorii" / "pyproject.toml").read_text()
     )
-    assert "prepare_project_assertions_docker_context.py" in dockerfile
+    assert "prepare_memorii_docker_context.py" in dockerfile
     assert "load_project_assertions_bundle" in dockerfile
 
 

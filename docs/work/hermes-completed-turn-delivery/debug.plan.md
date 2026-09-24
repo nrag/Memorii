@@ -87,6 +87,13 @@ Hermes' normal primary workspace metadata.
    first mismatch as `project_assertions.output_schema.v1.json`; Hermes swallows
    that initialization exception, so completed-turn calls find no initialized
    provider.
+5. **Confirmed third root cause: Windows Docker build context also changes
+   Bootstrap V3 decoder-source bytes.** The installed factory reaches typed
+   registry verification after the profile bundle succeeds, but
+   `decoder-source-manifest.json` binds 6,516 rows over 36 unique Python
+   sources to LF SHA-256 values. CRLF conversion invalidates each snapshot and
+   raises `typed_value_registry_configuration_verification_failed` before
+   Hermes obtains a runtime binding.
 
 ## Experiments
 
@@ -118,6 +125,19 @@ Hermes' normal primary workspace metadata.
 - Actual result: focused replicas prove deterministic CRLF-to-LF preparation
   restores every declared resource and component hash. Semantic drift, lone
   CR, and an unsafe module coordinate fail closed.
+
+### Bootstrap V3 decoder-source reproduction
+
+- Hypotheses distinguished: a Bootstrap V3 registry defect, versus the same
+  Windows source-byte conversion outside the project profile family.
+- Prediction: every manifest-declared decoder source changes digest after CRLF
+  conversion; an unprepared primary factory fails typed-registry verification,
+  while preparation restores the declared source bytes and factory startup.
+- Actual result: all 36 local LF source hashes match their repeated decoder
+  manifest rows, and every CRLF replica differs. The opt-in Docker regression
+  reproduces `typed_value_registry_configuration_verification_failed` before
+  preparation, then authorizes a temporary Hermes home and starts the real
+  factory inside the prepared image.
 
 ## Evidence Log
 
@@ -192,12 +212,12 @@ Hermes' normal primary workspace metadata.
   memorii/tests/unit/integrations/test_hermes_memory_provider_bridge.py
   memorii/tests/integration/test_hermes_bootstrap_v3_product.py` and
   `git diff --check`: passed.
-- Added `tools/prepare_project_assertions_docker_context.py`. Before install,
-  it normalizes CRLF to LF only for the profile manifest, its fixed
-  manifest-declared resource members, and component-source modules. It rejects
-  invalid UTF-8, lone CR, unknown resource names, unsafe module coordinates,
-  malformed SHA-256 values, semantic resource drift, and source-fingerprint
-  drift, while preserving exact runtime verification.
+- Generalized the build tool to `tools/prepare_memorii_docker_context.py`.
+  Before install, it normalizes CRLF to LF only for the project profile's fixed
+  members and component modules, plus the Bootstrap V3 decoder manifest's
+  declared source files. It strictly validates manifest literals, safe
+  package-relative coordinates, repeated-row consistency, UTF-8, line endings,
+  and every declared SHA-256 without weakening runtime verification.
 - Changed `Dockerfile.memorii` to run that preparation tool after `COPY` and
   before editable install, then call `load_project_assertions_bundle()` inside
   Hermes' virtual environment as a post-install build gate.
@@ -205,7 +225,7 @@ Hermes' normal primary workspace metadata.
   fingerprinted source module.
 - Added focused CRLF-replica, semantic-drift, lone-carriage-return, and unsafe
   component-module tests. `PYTHONPATH=memorii .venv/bin/python -m pytest -q
-  memorii/tests/unit/tools/test_prepare_project_assertions_docker_context.py
+  memorii/tests/unit/tools/test_prepare_memorii_docker_context.py
   memorii/tests/unit/core/semantic_ingestion/test_project_assertions_profile.py`:
   `6 passed in 18.60s`.
 - `PYTHONPATH=memorii .venv/bin/python -m pytest -q
@@ -213,7 +233,7 @@ Hermes' normal primary workspace metadata.
   `24 passed in 128.86s`. The existing bridge suite now asserts that the pinned
   Dockerfile includes preparation and the installed-profile gate.
 - `PYTHONPATH=memorii .venv/bin/python
-  tools/prepare_project_assertions_docker_context.py --source-root memorii`,
+  tools/prepare_memorii_docker_context.py --source-root memorii`,
   scoped Ruff, and `git diff --check`: passed.
 - `docker build --no-cache -f Dockerfile.memorii -t
   hermes-memorii-profile-prep-test .`: passed. Docker executed the production
@@ -228,8 +248,24 @@ Hermes' normal primary workspace metadata.
   real Dockerfile, and invokes `load_project_assertions_bundle()` in the
   resulting image. `MEMORII_RUN_DOCKER_TESTS=1 PYTHONPATH=memorii
   .venv/bin/python -m pytest -q
-  memorii/tests/unit/tools/test_prepare_project_assertions_docker_context.py
+  memorii/tests/unit/tools/test_prepare_memorii_docker_context.py
   -k docker_build`: `1 passed, 5 deselected in 144.14s`.
+- The strengthened opt-in Docker regression CRLF-converts both signed profile
+  and every decoder-declared source. It first authorizes a temporary home in
+  the unprepared source tree and proves exact typed-registry verification
+  failure. It then builds the real Dockerfile, authorizes a temporary Hermes
+  home inside the image, and proves the real primary factory constructs its
+  completed-turn runtime. `MEMORII_RUN_DOCKER_TESTS=1 PYTHONPATH=memorii
+  .venv/bin/python -m pytest -q
+  memorii/tests/unit/tools/test_prepare_memorii_docker_context.py -k
+  docker_build`: `1 passed, 10 deselected in 285.66s`.
+- `PYTHONPATH=memorii .venv/bin/python
+  tools/prepare_memorii_docker_context.py --source-root memorii` and
+  `PYTHONPATH=memorii .venv/bin/python -m pytest -q
+  memorii/tests/unit/tools/test_prepare_memorii_docker_context.py
+  memorii/tests/unit/core/semantic_ingestion/test_project_assertions_profile.py`:
+  `12 passed, 1 skipped in 48.00s`. The focused Hermes bridge suite also
+  passed: `24 passed in 144.90s`. Scoped Ruff and `git diff --check` passed.
 
 ## Review Log
 
@@ -248,6 +284,15 @@ Hermes' normal primary workspace metadata.
   verification): component-source drift lacked a direct assertion. Resolved by
   a focused semantic revision of `project_assertions.py`, which preparation
   rejects through the declared component fingerprint.
+- The Windows runtime exposed the decoder-source byte family after the frozen
+  correction passed its profile-only gate. This is a confirmed Level 2 P1
+  (`changes_required`, runtime behavior): ordinary Hermes initialization fails
+  on Windows CRLF checkouts. The earlier frozen correction remains unchanged.
+  The generalized candidate is frozen in
+  `windows-bootstrap-build-correction-manifest.json`, SHA-256
+  `a79bc92231f4a6664668710d3cbde8e160a60bedd243259149602129e5d8ae2b`.
+  Targeted correctness and test reviewers verified every hash and deletion,
+  approved the correction, and reported no remaining P1 or P2 finding.
 - Initial root-cause consultation declined approval because no correction
   candidate or current binding ledger existed. That was a valid readiness
   blocker rather than a product finding.
@@ -314,11 +359,34 @@ remaining_operational_evidence:
   - Windows Hermes conversation, durable inspection, restart, and later-session recall
 ```
 
+The generalized Bootstrap decoder-source correction is bound as follows:
+
+```yaml
+base_revision: fa0763952a142a34ee6a04e4e65ef95d6649c77a
+reviewed_revision: working-tree correction manifest a79bc92231f4a6664668710d3cbde8e160a60bedd243259149602129e5d8ae2b
+tested_revision: working-tree correction manifest a79bc92231f4a6664668710d3cbde8e160a60bedd243259149602129e5d8ae2b
+changed_surface_inventory_complete: true
+scope_delta_resolved: true
+authority_chains_complete: true
+passed_local_jobs:
+  - signed profile and decoder preparation plus bridge suites: 36 passed, 1 skipped
+  - opt-in real CRLF Docker factory regression: 1 passed
+  - scoped Ruff, preparation, and diff integrity: passed
+known_local_failures: []
+failure_exclusions: []
+remaining_validated_p1_p2: []
+remaining_blocks_approval: []
+remaining_changes_required: []
+required_checks_green: true
+remaining_operational_evidence:
+  - Windows Hermes conversation, durable inspection, restart, and later-session recall
+```
+
 ## Production Entrypoint Bindings
 
 | Trigger | Composition root and caller | Context authority and validation | Durable/read outcome |
 | --- | --- | --- | --- |
-| Docker image build | `Dockerfile.memorii` after `COPY` -> preparation tool -> editable `uv pip install` -> installed `load_project_assertions_bundle()` | The tool permits only fixed resource and module coordinates, converts only CRLF, and verifies every declared resource and component SHA-256. The installed runtime repeats exact validation. | Build fails closed for drift or malformed bytes; a successful image contains the bytes accepted by the production provider factory. |
+| Docker image build | `Dockerfile.memorii` after `COPY` -> preparation tool -> editable `uv pip install` -> installed bundle gate | The tool permits only fixed project-profile coordinates and Bootstrap decoder-manifest package paths, converts only CRLF, and verifies profile plus every declared decoder SHA-256. Runtime repeats profile and registry verification during factory initialization. | Build fails closed for drift or malformed bytes; a successful image contains the bytes accepted by the production provider factory and Bootstrap V3 registry. |
 | Hermes external-provider initialization | Hermes `MemoryManager.initialize_all` -> installed `MemoriiHermesMemoryProvider.initialize` -> sole `memorii.hermes.provider_service` factory | Bridge retains `platform`, `agent_context`, profile identity, workspace, parent session, user, home, and session. Factory accepts exactly `cli` + `primary` + `hermes` + no parent before authority/service construction. | Successful binding constructs the JSONL Memory Plane, current Bootstrap V3 runtime, durable completed-turn worker, and protected reader. |
 | Completed user/assistant turn | Hermes 0.21.4 `turn_finalizer.py` or `codex_runtime.py` -> `MemoryManager.sync_all` -> the initialized bridge's `sync_turn` | Existing raw-author consistency, canonical transcript, current authority, installation/profile, agent, session, and source checks remain unchanged. | Atomic source admission creates `memory_records.jsonl`; worker commits graph, ledger, terminal outcome, and runtime-context projection. |
 | Later query | Hermes prefetch -> initialized bridge -> completed-turn runtime protected reader | Existing installation, agent, query, purpose, grant, and freshness checks remain unchanged. | Returns committed project assertion or an empty non-disclosing result. |
@@ -334,9 +402,9 @@ pinned-source and runtime evidence must be returned from that container.
 
 ## Next Action
 
-Obtain the published cross-platform build correction, rebuild the Windows image
-without cache, re-authorize the existing Level 2 volume against the rebuilt
-image, then repeat one Hermes conversation, inspection, later-session recall,
+Publish the reviewed generalized Bootstrap decoder-source correction, then
+rebuild the Windows image without cache, re-authorize the existing Level 2
+volume, and repeat one Hermes conversation, inspection, later-session recall,
 and restart test.
 
 ## Outcome And Retrospective

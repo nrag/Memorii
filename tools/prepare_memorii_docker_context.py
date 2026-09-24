@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Prepare signed project-assertions source bytes for a Docker build context.
+"""Prepare signed Memorii source bytes for a Docker build context.
 
 Docker copies Windows working-tree bytes verbatim.  The installed
-project-assertions profile deliberately fingerprints exact source and resource
-bytes, so this tool converts only its declared text material from CRLF to LF
-before an editable install.  It rejects every other carriage-return form,
-unsafe coordinate, and digest mismatch instead of attempting to repair it.
+project-assertions profile and Bootstrap V3 decoder registry deliberately
+fingerprint exact source and resource bytes. This tool converts only their
+declared text material from CRLF to LF before an editable install. It rejects
+every other carriage-return form, unsafe coordinate, and digest mismatch
+instead of attempting to repair it.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from pathlib import PurePosixPath
 from typing import Any
 
 
@@ -31,11 +33,13 @@ _MEMBER_NAMES = frozenset(
     }
 )
 _MODULE_PREFIX = "memorii.core.semantic_ingestion."
+_DECODER_MANIFEST = Path("memorii/core/memory_evolution/observation_registry_sources/decoder-source-manifest.json")
+_DECODER_FIELDS = frozenset({"decoder_id", "relative_path", "sha256", "source_file_id"})
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 
 
 class PreparationError(ValueError):
-    """The build context cannot safely produce the signed profile bytes."""
+    """The build context cannot safely produce signed Memorii bootstrap bytes."""
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -104,8 +108,68 @@ def _component_path(source_root: Path, module: object) -> Path:
     return resolved
 
 
+def _decoder_source_path(source_root: Path, relative_path: object) -> Path:
+    if not isinstance(relative_path, str):
+        raise PreparationError("decoder source coordinate is unsafe")
+    coordinate = PurePosixPath(relative_path)
+    if (
+        coordinate.is_absolute()
+        or coordinate.parts[:1] != ("memorii",)
+        or coordinate.suffix != ".py"
+        or any(part in {"", ".", ".."} for part in coordinate.parts)
+    ):
+        raise PreparationError("decoder source coordinate is unsafe")
+    import_root = source_root.resolve()
+    candidate = (import_root / Path(*coordinate.parts)).resolve()
+    package_root = (source_root / "memorii").resolve()
+    if package_root not in candidate.parents or candidate.suffix != ".py":
+        raise PreparationError("decoder source coordinate is unsafe")
+    return candidate
+
+
+def _prepare_decoder_sources(source_root: Path) -> None:
+    manifest_path = source_root / _DECODER_MANIFEST
+    manifest = _strict_object(_normalized_text(manifest_path, label="decoder source manifest"), "decoder source manifest")
+    if (
+        set(manifest) != {"files", "profile_id", "profile_version", "role"}
+        or manifest["profile_id"] != "semantic_ingestion_typed_value"
+        or manifest["profile_version"] != "3"
+        or manifest["role"] != "decoder_source_manifest"
+    ):
+        raise PreparationError("decoder source manifest fields are invalid")
+    files = manifest["files"]
+    if not isinstance(files, list) or not files:
+        raise PreparationError("decoder source manifest files are invalid")
+    declared: dict[str, tuple[str, str]] = {}
+    for row in files:
+        if not isinstance(row, dict) or set(row) != _DECODER_FIELDS:
+            raise PreparationError("decoder source manifest row is invalid")
+        relative_path = row["relative_path"]
+        source_file_id = row["source_file_id"]
+        expected_digest = row["sha256"]
+        if (
+            not isinstance(relative_path, str)
+            or not isinstance(source_file_id, str)
+            or not source_file_id
+            or not isinstance(expected_digest, str)
+            or _SHA256.fullmatch(expected_digest) is None
+        ):
+            raise PreparationError("decoder source manifest row is invalid")
+        # Repeated decoder rows are valid only when they bind the same source
+        # coordinate to the same immutable source identity and bytes.
+        previous = declared.setdefault(relative_path, (source_file_id, expected_digest))
+        if previous != (source_file_id, expected_digest):
+            raise PreparationError("decoder source manifest duplicates conflict")
+    for relative_path, (_, expected_digest) in declared.items():
+        payload = _normalized_text(
+            _decoder_source_path(source_root, relative_path), label=f"decoder source {relative_path}"
+        )
+        if _sha256(payload) != expected_digest:
+            raise PreparationError(f"decoder source digest is invalid: {relative_path}")
+
+
 def prepare(source_root: Path) -> None:
-    """Normalize and verify every exact byte sequence trusted by the profile."""
+    """Normalize and verify every signed project-profile and Bootstrap V3 byte."""
 
     root = source_root.resolve()
     manifest_path = _resource_path(root, _MANIFEST_NAME)
@@ -137,6 +201,7 @@ def prepare(source_root: Path) -> None:
         payload = _normalized_text(_component_path(root, module), label=f"component {module}")
         if _sha256(payload) != expected_digest:
             raise PreparationError(f"component source digest is invalid: {module}")
+    _prepare_decoder_sources(root)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -144,7 +209,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         prepare(args.source_root)
     except PreparationError as error:
-        print(f"project-assertions Docker context preparation failed: {error}", file=sys.stderr)
+        print(f"signed Memorii Docker context preparation failed: {error}", file=sys.stderr)
         return 1
     return 0
 
