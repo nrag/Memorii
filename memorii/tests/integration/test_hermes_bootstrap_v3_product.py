@@ -30,14 +30,16 @@ from memorii.integrations.hermes_local_authority import (
 )
 
 
-def _context(home: Path, *, session_id: str, agent_identity: object | None = None) -> SimpleNamespace:
+def _context(home: Path, *, session_id: str, agent_identity: object | None = "profile:primary") -> SimpleNamespace:
     return SimpleNamespace(
         storage_root=home / "memorii",
         hermes_home=home,
         session_id=session_id,
         user_id="user:ada",
         agent_identity=agent_identity,
-        agent_workspace=None,
+        platform="cli",
+        agent_context="primary",
+        agent_workspace="hermes",
         parent_session_id=None,
     )
 
@@ -222,7 +224,7 @@ def test_installed_hermes_completed_turn_commits_and_recalls_after_reopen(
     assert len(projections) == 2
     assert all(record.session_id is None for record in projections)
     assert len({record.task_id for record in projections}) == 1
-    assert {record.agent_id for record in projections} == {"memorii.hermes.agent.absent.v1"}
+    assert {record.agent_id for record in projections} == {runtime._authenticated_agent_id}
     assert {record.content["source_id"] for record in projections} <= {
         record.memory_id for record in records_after_two if record.source_kind == "semantic_ingestion_source"
     }
@@ -431,6 +433,7 @@ def test_startup_recovers_atomic_admission_before_handoff(tmp_path: Path, monkey
     assert first.completed_turn_runtime is not None
     first.completed_turn_runtime.wait_for_idle()
     operator_id = first.absent_author_id
+    agent_id = first.completed_turn_runtime._authenticated_agent_id
     completed_at = datetime.now(UTC)
     messages = (
         HermesCompletedTurnMessage(role="user", content="Mars Venus 001 project owner is Ada."),
@@ -440,7 +443,7 @@ def test_startup_recovers_atomic_admission_before_handoff(tmp_path: Path, monkey
         SimpleNamespace(
             session_id="session:interrupted",
             user_id=operator_id,
-            agent_id="memorii.hermes.agent.absent.v1",
+            agent_id=agent_id,
             received_at=completed_at,
         )
     )
@@ -457,7 +460,7 @@ def test_startup_recovers_atomic_admission_before_handoff(tmp_path: Path, monkey
             installation_id=first.completed_turn_runtime._installation_id,
             session_id="session:interrupted",
             authenticated_author_id=operator_id,
-            authenticated_agent_id="memorii.hermes.agent.absent.v1",
+            authenticated_agent_id=agent_id,
             project_task_namespace=first.completed_turn_runtime._project_task_id,
             turn_ordinal=1,
             canonical_transcript_digest=_canonical_messages_digest(

@@ -37,8 +37,10 @@ class HermesProviderServiceContext:
     session_id: str
     user_id: str | None
     agent_identity: object | None
+    platform: object | None
+    agent_context: object | None
     agent_workspace: object | None
-    parent_session_id: str | None
+    parent_session_id: object | None
 
 
 @dataclass(frozen=True)
@@ -94,8 +96,12 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
                 session_id=resolved_session_id,
                 user_id=user_id,
                 agent_identity=kwargs.get("agent_identity"),
+                platform=kwargs.get("platform"),
+                agent_context=kwargs.get("agent_context"),
                 agent_workspace=kwargs.get("agent_workspace"),
-                parent_session_id=_optional_text(kwargs.get("parent_session_id")),
+                # This is an execution-boundary marker, not user text.  Keep
+                # opaque host values intact so the factory can fail closed.
+                parent_session_id=kwargs.get("parent_session_id"),
             )
         )
         if type(binding) is not HermesProviderRuntimeBinding:

@@ -52,6 +52,7 @@ def build_local_level2_runtime_binding(context: object) -> object:
     storage_root = getattr(context, "storage_root", None)
     if hermes_home is None or storage_root is None:
         raise TypeError("Hermes factory context is invalid")
+    _require_primary_cli_context(context)
 
     bundle = load_project_assertions_bundle()
     sidecar = load_local_level2_authority(hermes_home=hermes_home)
@@ -68,8 +69,6 @@ def build_local_level2_runtime_binding(context: object) -> object:
         + sha256((f"memorii.hermes.local-level2-operator.v1:{authorization.installation_id}").encode()).hexdigest()
     )
     agent_id = _canonical_agent_id(getattr(context, "agent_identity", None))
-    if getattr(context, "parent_session_id", None) is not None or getattr(context, "agent_workspace", None) is not None:
-        raise LocalLevel2AuthorityError("local Level 2 delegated or shared execution is unsupported")
     _bind_single_local_operator_context(
         storage_root=storage_root,
         installation_id=authorization.installation_id,
@@ -287,6 +286,24 @@ def _canonical_agent_id(value: object) -> str:
         except (TypeError, ValueError) as exc:
             raise LocalLevel2AuthorityError("Hermes agent identity is invalid") from exc
     return "memorii:hermes:agent:" + sha256(b"memorii.hermes.agent-identity.v1\0" + payload.encode("utf-8")).hexdigest()
+
+
+def _require_primary_cli_context(context: object) -> None:
+    """Admit only Hermes' pinned primary CLI provider context.
+
+    Hermes uses ``agent_workspace='hermes'`` as a fixed marker for its primary
+    CLI profile.  It is not a delegated workspace.  Every other context is
+    denied because this local Level 2 authority has one operator and no shared
+    or child-agent isolation contract.
+    """
+
+    if (
+        getattr(context, "platform", None) != "cli"
+        or getattr(context, "agent_context", None) != "primary"
+        or getattr(context, "agent_workspace", None) != "hermes"
+        or getattr(context, "parent_session_id", None) is not None
+    ):
+        raise LocalLevel2AuthorityError("local Level 2 requires Hermes primary CLI execution")
 
 
 def _bind_single_local_operator_context(*, storage_root: Path, installation_id: str, raw_user_id: object) -> None:

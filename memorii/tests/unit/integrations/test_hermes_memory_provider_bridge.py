@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from datetime import UTC, datetime
 from importlib.metadata import EntryPoint
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -150,8 +150,10 @@ def test_first_party_factory_rejects_missing_authority_before_service_constructi
         hermes_home=tmp_path,
         session_id="session:one",
         user_id="user:one",
-        agent_identity=None,
-        agent_workspace=None,
+        agent_identity="profile:primary",
+        platform="cli",
+        agent_context="primary",
+        agent_workspace="hermes",
         parent_session_id=None,
     )
 
@@ -175,8 +177,10 @@ def test_first_party_factory_initializes_after_authority_validation_without_open
         hermes_home=tmp_path,
         session_id="session:one",
         user_id="user:one",
-        agent_identity=None,
-        agent_workspace=None,
+        agent_identity="profile:primary",
+        platform="cli",
+        agent_context="primary",
+        agent_workspace="hermes",
         parent_session_id=None,
     )
 
@@ -189,7 +193,7 @@ def test_first_party_factory_initializes_after_authority_validation_without_open
                 hook="sync_turn",
                 session_id="session:one",
                 user_id="user:one",
-                agent_identity=None,
+                agent_identity="profile:primary",
                 turn_author=None,
                 received_at=datetime.now(UTC),
             )
@@ -214,8 +218,10 @@ def test_first_party_factory_initializes_after_authority_validation_without_open
                 hermes_home=tmp_path,
                 session_id="session:two",
                 user_id="user:two",
-                agent_identity=None,
-                agent_workspace=None,
+                agent_identity="profile:primary",
+                platform="cli",
+                agent_context="primary",
+                agent_workspace="hermes",
                 parent_session_id=None,
             )
         )
@@ -234,7 +240,15 @@ def test_bridge_rejects_changed_raw_author_before_turn_admission(
         lambda *, group: (_FactoryEntryPoint(build_local_level2_runtime_binding),),
     )
     provider = bridge_module.MemoriiHermesMemoryProvider()
-    provider.initialize("session:one", hermes_home=tmp_path, user_id="raw:user:one")
+    provider.initialize(
+        "session:one",
+        hermes_home=tmp_path,
+        user_id="raw:user:one",
+        agent_identity="profile:primary",
+        platform="cli",
+        agent_context="primary",
+        agent_workspace="hermes",
+    )
 
     with pytest.raises(ValueError, match="author identity changed"):
         provider.on_turn_start(1, "hello", author_id="raw:user:two")
@@ -264,7 +278,14 @@ def test_bridge_without_initial_raw_user_rejects_author_bearing_callbacks(
         lambda *, group: (_FactoryEntryPoint(build_local_level2_runtime_binding),),
     )
     provider = bridge_module.MemoriiHermesMemoryProvider()
-    provider.initialize("session:one", hermes_home=tmp_path)
+    provider.initialize(
+        "session:one",
+        hermes_home=tmp_path,
+        agent_identity="profile:primary",
+        platform="cli",
+        agent_context="primary",
+        agent_workspace="hermes",
+    )
     before = tuple(provider._provider._service._memory_plane.list_records())
 
     with pytest.raises(ValueError, match="author identity changed"):
@@ -339,6 +360,8 @@ def test_factory_context_is_profile_scoped_and_rejects_the_wrong_service_type(
             hermes_home=tmp_path / "profile",
             user_id="user:alice",
             agent_identity={"id": "agent:one"},
+            platform="cli",
+            agent_context="primary",
             agent_workspace="/workspace",
             parent_session_id="parent:one",
         )
@@ -347,4 +370,135 @@ def test_factory_context_is_profile_scoped_and_rejects_the_wrong_service_type(
     assert contexts[0].storage_root == tmp_path / "profile" / "memorii"
     assert contexts[0].session_id == "session:one"
     assert contexts[0].user_id == "user:alice"
+    assert contexts[0].platform == "cli"
+    assert contexts[0].agent_context == "primary"
     assert contexts[0].parent_session_id == "parent:one"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("platform", None),
+        ("platform", "api"),
+        ("agent_context", None),
+        ("agent_context", "delegated"),
+        ("agent_workspace", None),
+        ("agent_workspace", "shared"),
+        ("parent_session_id", "session:parent"),
+    ],
+)
+def test_first_party_factory_rejects_every_non_primary_cli_context(
+    bridge_module, tmp_path: Path, field: str, value: object
+) -> None:
+    from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
+    from memorii.integrations.hermes_local_authority import LocalLevel2AuthorityError
+
+    context = SimpleNamespace(
+        storage_root=tmp_path / "memorii",
+        hermes_home=tmp_path,
+        session_id="session:one",
+        user_id="raw:user:one",
+        agent_identity="profile:primary",
+        platform="cli",
+        agent_context="primary",
+        agent_workspace="hermes",
+        parent_session_id=None,
+    )
+    setattr(context, field, value)
+
+    with pytest.raises(LocalLevel2AuthorityError, match="requires Hermes primary CLI execution"):
+        build_local_level2_runtime_binding(context)
+
+
+@pytest.mark.parametrize("parent_session_id", [0, object()])
+def test_bridge_preserves_opaque_parent_markers_for_factory_denial(
+    bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, parent_session_id: object
+) -> None:
+    from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
+    from memorii.integrations.hermes_local_authority import LocalLevel2AuthorityError
+
+    constructed = False
+
+    def should_not_construct(*_args: object, **_kwargs: object) -> object:
+        nonlocal constructed
+        constructed = True
+        raise AssertionError("service construction must not follow a rejected parent marker")
+
+    monkeypatch.setattr(
+        "memorii.integrations.hermes_factory.build_provider_memory_service_from_env", should_not_construct
+    )
+    monkeypatch.setattr(
+        bridge_module.importlib.metadata,
+        "entry_points",
+        lambda *, group: (_FactoryEntryPoint(build_local_level2_runtime_binding),),
+    )
+    provider = bridge_module.MemoriiHermesMemoryProvider()
+
+    with pytest.raises(LocalLevel2AuthorityError, match="requires Hermes primary CLI execution"):
+        provider.initialize(
+            "session:one",
+            hermes_home=tmp_path,
+            user_id="raw:user:one",
+            agent_identity="profile:primary",
+            platform="cli",
+            agent_context="primary",
+            agent_workspace="hermes",
+            parent_session_id=parent_session_id,
+        )
+
+    assert constructed is False
+
+
+def test_bridge_primary_cli_initialization_admits_a_completed_turn(
+    bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from memorii.core.semantic_ingestion.openai_responses_project_assertions import OpenAIResponsesApiClient
+    from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
+    from memorii.integrations.hermes_local_authority import authorize_local_level2
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(
+        OpenAIResponsesApiClient,
+        "complete",
+        lambda _client, **_kwargs: (
+            '{"abstained":false,"candidates":[{'
+            '"predicate_id":"project_owner",'
+            '"assertion_quote":"Mars Venus 001 project owner is Ada.",'
+            '"subject_quote":"Mars Venus 001",'
+            '"predicate_anchor_quote":"owner",'
+            '"value_quote":"Ada"}]}'
+        ),
+    )
+    authorize_local_level2(hermes_home=tmp_path)
+    monkeypatch.setattr(
+        bridge_module.importlib.metadata,
+        "entry_points",
+        lambda *, group: (_FactoryEntryPoint(build_local_level2_runtime_binding),),
+    )
+    provider = bridge_module.MemoriiHermesMemoryProvider()
+
+    provider.initialize(
+        "session:one",
+        hermes_home=tmp_path,
+        user_id="raw:user:one",
+        agent_identity="profile:primary",
+        platform="cli",
+        agent_context="primary",
+        agent_workspace="hermes",
+    )
+    provider.sync_turn(
+        "Mars Venus 001 project owner is Ada.",
+        "I will remember that.",
+        session_id="session:one",
+        messages=[
+            {"role": "user", "content": "Mars Venus 001 project owner is Ada."},
+            {"role": "assistant", "content": "I will remember that."},
+        ],
+    )
+
+    runtime = provider._completed_turn_runtime
+    assert runtime is not None
+    runtime.wait_for_idle()
+    records = provider._provider._service._memory_plane.list_records()
+    assert any(record.source_kind == "semantic_ingestion_source" for record in records)
+    assert any(record.visibility.value == "runtime_context" for record in records)
