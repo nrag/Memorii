@@ -137,6 +137,32 @@ Hermes' normal primary workspace metadata.
     construction failed`. The immediate unreleased-product recovery is a clean
     Memorii root with one authorization; authorization renewal over retained
     semantic state requires a separate design rather than an implicit rewrite.
+12. **Confirmed tenth root cause: the preserved observation-ledger genesis is
+    bound to the prior image's complete package identity.** The
+    captured six-record inventory contains one activated writer bound to
+    activation `3f5805...`, its matching activation artifact, and its ledger
+    head, plus the three capability records. Every persisted record, inventory,
+    authorization, and activation digest revalidates. Only the writer,
+    observation-schema, and ledger-codec fingerprints differ from the current
+    target because those identities deliberately include the complete installed
+    Memorii package digest. The volume was initialized by an earlier image and
+    then retained across source-changing rebuilds. This is an unsupported code
+    upgrade of an unreleased Level 2 store, rather than a partial activation or
+    same-build restart defect.
+13. **Confirmed eleventh root cause: the real completed turn reaches durable source
+    admission but a fully abstained extraction cannot terminalize.** After the
+    package-bound store reset, Windows inspection reports two captured sources,
+    26 total records, and write revision 19. Graph, ledger-entry, terminal, and
+    runtime-context counts remain zero, while the log reports
+    `hermes_completed_turn_semantic_worker_failed`. The complete traceback proves
+    the model correctly abstained from the unsupported project-name statement,
+    then Bootstrap V3 rejected the intentional zero-operation reduction and its
+    empty lineage, plan, terminal-member closure, and schema-3 ledger replay.
+    Recovery retained the source as pending and blocked later startup. The
+    correction recognizes only an exact fully abstained proposal with no
+    operation alignments, dependency groups, operation IDs, or group results;
+    it persists an evidence-only terminal and one observation-ledger entry while
+    producing no semantic graph revision or runtime projection.
 
 ## Experiments
 
@@ -243,6 +269,49 @@ Hermes' normal primary workspace metadata.
   under `local Level 2 semantic runtime construction failed`. This confirms the
   user's new empty inspection is caused by reauthorization of retained
   bootstrap state, not transcript delivery.
+- The uploaded diagnostic archive reproduces the later Windows reload failure
+  byte for byte. A predicate-level replay reports all activation, inventory,
+  authorization, repository, head, and record-byte checks true. The only false
+  predicates are the current and activation writer fingerprints, observation
+  schema fingerprint, and ledger codec fingerprint. Their common preimage
+  includes the installed package-root digest, so rebuilding with changed source
+  correctly changes all three.
+- Starting from the archive's unchanged installation ID, sidecar authorization,
+  and operator binding while omitting only `memory-plane`, the current image
+  activates successfully and a second factory construction against the same
+  newly created store succeeds. The local Docker proof prints
+  `fresh_activation_and_same_build_reopen: ok`.
+- A production-path regression sends the unsupported project-name sentence,
+  requires one durable observation-ledger terminal with zero graph revision and
+  zero retrieval projection, reopens the same Level 2 store, then ingests the
+  supported owner sentence and recalls it. The focused test passes in 300.88
+  seconds. The earlier, narrower abstention-and-reopen proof passes in 85.52
+  seconds. Ruff and the three normalization grammar checks also pass.
+- Targeted test review required proof through Hermes' installed
+  `MemoryManager` rather than only the provider's completed-turn runtime. The
+  opt-in Docker probe now sends decorated persisted rows through
+  `initialize_all`, `sync_all`, the session boundary, shutdown, a fresh manager,
+  then a supported owner fact and a second fresh-manager recall. Its local
+  non-Docker suite passes with `10 passed, 1 skipped`; execution of the Docker
+  branch remains Windows trial evidence because Docker is unavailable here.
+- The same review requested an exact evidence-only outcome and zero semantic
+  effect. Inspection now derives terminal outcomes from the persisted canonical
+  source-result member and the regression requires exactly
+  `{"evidence_only": 1}`, one ledger entry, zero graph revision deltas, and
+  zero retrieval-visible/runtime-context projections. The requested
+  `graph_record_count == 0` assertion was rejected because that field counts
+  the terminal's durable evidence members, which must exist for a completed
+  no-op; graph-effect absence is represented by the revision/projection fields.
+- After the remediation and final registry refresh, the focused production
+  runtime proof passes with `1 passed, 3 deselected in 332.21s`; registry
+  publication reproduction, all 58 independent vectors, scoped Ruff, and diff
+  integrity pass.
+- Targeted correctness closure approved the bounded Level 2 slice with no
+  remaining validated P1/P2. Targeted test closure approved the probe topology
+  and the graph-effect interpretation with no remaining validated P1/P2, but
+  retains one `Not applicable / changes_required / verification` item: this Mac
+  cannot execute the opt-in installed-image Docker test, so the successful
+  Windows Docker result must be bound before final Level 2 closure.
 
 ## Decision Log
 
@@ -584,9 +653,9 @@ pinned-source and runtime evidence must be returned from that container.
 
 ## Next Action
 
-Rebuild the Windows image at the published persisted-transcript correction
-without reauthorizing its current clean home, then run conversation,
-inspection, restart, and recall.
+Publish the reviewed correction, run the opt-in installed-image Docker probe on
+the Windows host, and bind its successful result before the manual Hermes
+conversation, restart, and recall trial.
 
 ## Outcome And Retrospective
 

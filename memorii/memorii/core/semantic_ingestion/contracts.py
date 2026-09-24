@@ -9646,8 +9646,17 @@ class BootstrapSemanticReductionAuthorityMemberV3(_BootstrapV3Contract):
         policy_bytes = encode_typed_value(canonical_contract_value(self.execution_policy))
         registry_bytes = encode_typed_value(canonical_contract_value(self.capability_registry))
         core = self.normalization_request_core
+        fully_abstained = (
+            bool(core.proposal_payload.normalized_proposals)
+            and all(
+                proposal.status == "abstained" and not proposal.operation_members
+                for proposal in core.proposal_payload.normalized_proposals
+            )
+            and not core.source_alignment.operation_alignments
+            and not core.source_alignment.source_dependency_groups
+        )
         if (
-            not self.operation_inputs
+            (not self.operation_inputs and not fully_abstained)
             or tuple(
                 (item.dependency_group.group_id, item.operation_id)
                 for item in self.operation_inputs
@@ -10260,7 +10269,7 @@ class BootstrapTransactionGroupPlanV3(_BootstrapV3Contract):
     @model_validator(mode="after")
     def validate_plan_members(self) -> BootstrapTransactionGroupPlanV3:
         ids = tuple(member.transaction_group_id for member in self.group_members)
-        if not ids or self.canonical_group_order != ids or ids != tuple(sorted(set(ids))):
+        if self.canonical_group_order != ids or ids != tuple(sorted(set(ids))):
             raise ValueError("bootstrap graph plan membership is invalid")
         return self
 
@@ -10349,8 +10358,7 @@ class BootstrapInitialAttemptAuthorityV3(_BootstrapV3Contract):
             item.authorization_digest for item in self.planning_authorizations
         )
         if (
-            not group_ids
-            or group_ids != tuple(sorted(set(group_ids)))
+            group_ids != tuple(sorted(set(group_ids)))
             or len(set(authorization_digests)) != len(authorization_digests)
         ):
             raise ValueError("bootstrap initial authorizations are invalid")
@@ -10524,7 +10532,7 @@ class BootstrapSourcePlanLineageV3(_BootstrapV3Contract):
 
     @model_validator(mode="after")
     def validate_lineage(self) -> BootstrapSourcePlanLineageV3:
-        if not self.entries or tuple(item.lineage_ordinal for item in self.entries) != tuple(range(len(self.entries))):
+        if tuple(item.lineage_ordinal for item in self.entries) != tuple(range(len(self.entries))):
             raise ValueError("bootstrap graph lineage order is invalid")
         latest_by_group: dict[str, str] = {}
         for entry in self.entries:
@@ -12076,10 +12084,19 @@ class BootstrapGraphTerminalPublicationIntentV3(_BootstrapV3Contract):
             required.add("source_observation_intent")
         repeated = {"bootstrap_source_plan_lineage_entry", "transaction_group_result"}
         present = set(kinds)
+        allowed_member_sets = (
+            required,
+            required - {"transaction_group_result"},
+            required
+            - {
+                "bootstrap_source_plan_lineage_entry",
+                "transaction_group_result",
+            },
+        )
         if (
             not kinds or tuple(sorted(kinds, key=order.__getitem__)) != kinds
             or len(ids) != len(set(ids))
-            or present not in (required, required - {"transaction_group_result"})
+            or present not in allowed_member_sets
             or any(kinds.count(kind) != 1 for kind in present - repeated)
             or self.expected_operation_generation != self.expected_artifact_generation
             or self.locator_digest != contract_digest(
@@ -12334,6 +12351,33 @@ class BootstrapGraphTerminalPublicationRequestV3(_BootstrapV3Contract):
 
     @model_validator(mode="after")
     def validate_terminal_request(self) -> BootstrapGraphTerminalPublicationRequestV3:
+        plan_group_ids = tuple(
+            item.transaction_group_id for item in self.final_plan.group_members
+        )
+        lineage_group_ids = tuple(
+            item[0] for item in self.complete_lineage.latest_entry_by_group
+        )
+        request_group_ids = tuple(
+            item.group_id for item in self.coordinator_request.source_dependency_groups
+        )
+        operation_ids = tuple(
+            sorted(
+                operation.operation_id
+                for group in self.final_plan.group_members
+                for operation in group.operation_plans
+            )
+        )
+        proposals = (
+            self.coordinator_request.normalization_replay.source_normalization_request
+            .proposal_run.proposal_payload.normalized_proposals
+        )
+        fully_abstained = (
+            bool(proposals)
+            and all(
+                proposal.status == "abstained" and not proposal.operation_members
+                for proposal in proposals
+            )
+        )
         if (
             self.control_epoch.epoch_digest != self.publication_intent.control_epoch_digest
             or self.operation_fence_binding != self.handoff_core.operation_fence_binding
@@ -12355,6 +12399,11 @@ class BootstrapGraphTerminalPublicationRequestV3(_BootstrapV3Contract):
             or self.predecessor_generation.operation_id != self.operation_fence_binding.operation_id
             or self.predecessor_generation.request_digest != self.coordinator_request.request_digest
             or self.predecessor_generation.control_epoch_digest != self.control_epoch.epoch_digest
+            or plan_group_ids != lineage_group_ids
+            or plan_group_ids != request_group_ids
+            or (not plan_group_ids and not fully_abstained)
+            or self.canonical_source_result_input.completed_canonical_source_result.operation_ids
+            != operation_ids
         ):
             raise ValueError("bootstrap graph terminal publication request is invalid")
         expected_group_result_digests = tuple(

@@ -793,8 +793,7 @@ class BootstrapGraphArtifactAssemblerV3:
     ) -> BootstrapGraphDependentAttemptV3:
         authorizations = authority.planning_authorizations
         if (
-            not authorizations
-            or tuple(item.transaction_group_id for item in authorizations)
+            tuple(item.transaction_group_id for item in authorizations)
             != tuple(member.transaction_group_id for member in plan.group_members)
             or any(
                 item.request_digest != inputs.request_digest
@@ -1316,10 +1315,25 @@ class BootstrapGraphArtifactAssemblerV3:
             construction_matches_lineage(item)
             for item in ordered_group_result_constructions
         )
+        proposals = (
+            coordinator_request.normalization_replay.source_normalization_request
+            .proposal_run.proposal_payload.normalized_proposals
+        )
+        empty_abstained = (
+            not ordered_group_result_constructions
+            and not final_plan.group_members
+            and canonical_source_result_input.source_status == "evidence_only"
+            and bool(proposals)
+            and all(
+                proposal.status == "abstained" and not proposal.operation_members
+                for proposal in proposals
+            )
+        )
         if (
             (
                 not ordered_group_result_constructions
                 and canonical_source_result_input.source_status != "failed"
+                and not empty_abstained
             )
             or final_attempt.request_digest != handoff_core.request_digest
             or final_attempt.transaction_group_plan_digest != handoff_core.transaction_group_plan_digest

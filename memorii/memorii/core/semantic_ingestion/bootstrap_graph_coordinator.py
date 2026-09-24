@@ -1091,6 +1091,9 @@ class BootstrapGraphDependentCoordinatorV3:
                 finalized_failure_group_id=finalized_failure_group_id,
             )
         except (PreplanningStoreError, ValueError):
+            logger.warning(
+                "bootstrap_graph_terminal_preparation_retry", exc_info=True
+            )
             return self._post_effect_retry(
                 request=request, epoch=epoch, attempt=attempt,
                 plan=compilation.plan, authorizations=authorizations, lineage=lineage,
@@ -1103,6 +1106,7 @@ class BootstrapGraphDependentCoordinatorV3:
                 request=preparation.publication_request
             )
         except (PreplanningStoreError, ValueError):
+            logger.warning("bootstrap_graph_terminal_persistence_retry", exc_info=True)
             # A terminal CAS can commit before transport/acknowledgement fails.
             # Found-first reload is the only authoritative recovery path.
             try:

@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.ActionRevision.v1","implementation_source_digest":"9d1f3d84648d0f28c95393c3ed1a46e27015ef538d56bec2c5acd1c833c0a472","role":"decoder","schema_id":"ActionRevision","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.ActionRevision.v1","implementation_source_digest":"9d9883ae965fb8b759fa8929615fd2ffde6be58a09e88e053876f2d1ae7ba373","role":"decoder","schema_id":"ActionRevision","schema_version":"1","typed_root_kind":"model"}

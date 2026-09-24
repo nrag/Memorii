@@ -217,8 +217,6 @@ def _compile(
     policy = request.graph_authority.execution_policy
     groups = request.source_dependency_groups
     expected_ids = tuple(operation_id for group in groups for operation_id in group.operation_ids)
-    if not groups:
-        raise ValueError("retained bootstrap graph reduction authority is incomplete")
     relevant_operations = tuple(
         sorted(
             (
@@ -344,7 +342,16 @@ def _compile(
         normalization_result_digest=request.normalization_replay.source_normalization_result.result_digest,
         source_alignment_digest=request.source_alignment.alignment_digest, graph_snapshot_digest=sealed_snapshot.snapshot_digest,
         sealed_read_set_digest=snapshot.base_read_set.read_set_digest,
-        reconciliation_digest=evidence[0].reconciliation_digest, reference_closure_digest=evidence[0].reference_closure_digest,
+        reconciliation_digest=(
+            evidence[0].reconciliation_digest
+            if evidence
+            else _digest((request.request_digest, "reconciliation"))
+        ),
+        reference_closure_digest=(
+            evidence[0].reference_closure_digest
+            if evidence
+            else _digest((request.request_digest, "reference"))
+        ),
         execution_policy_reference_digest=policy.artifact_digest, control_epoch_digest=epoch.epoch_digest,
         ordered_pre_execution_evidence_digests=tuple(item.evidence_digest for item in evidence),
     )
@@ -609,8 +616,10 @@ class _BuiltInBootstrapGraphExecutionBuilderV3:
         )
         operation_inputs = reduction_reload.authority_member.operation_inputs
         initial_state = GraphPlanningState.create(base_snapshot_digest=sealed_snapshot.snapshot_digest, records=(), codec_manifest_fingerprint=authority.snapshot.graph_snapshot.codec_manifest_fingerprint, applied_planned_delta_digests=())
-        canonical_candidate = BootstrapCanonicalIdentityBindingAllocationProjectorV3().project(operation_inputs=operation_inputs, recovery_key_digest=request.normalization_replay.recovery_key_digest, sealed_snapshot=sealed_snapshot, effective_read_set=graph_snapshot.read_set, current_planning_state=initial_state, required_scope_set_digest=request.required_outcome_scopes.required_scope_set_digest, authorized_scope_identity=request.operation_fence_binding.delivery_principal_binding_digest, allocation_namespace_id=request.operation_fence_binding.allocation_namespace_id, allocation_policy_fingerprint=authority.execution_policy.policy_digest, allow_new_allocation=True, source_plan_checkpoint_digest=request_core_digest, publication_generation_digest=epoch.epoch_digest)
-        canonical_reload = AtomicStoreBootstrapCanonicalIdentityAuthorityRepositoryV3(atomic_store=atomic_store).publish_or_reload(request=BootstrapCanonicalIdentityAuthorityWriteRequestV3.create(authority_reload=canonical_candidate, operation_fence_binding=request.operation_fence_binding, operation_lease_binding=request.operation_lease_binding, writer_commit_binding=request.writer_commit_binding, delivery_principal_binding_digest=request.operation_fence_binding.delivery_principal_binding_digest, required_outcome_scopes=request.required_outcome_scopes))
+        canonical_reload = None
+        if operation_inputs:
+            canonical_candidate = BootstrapCanonicalIdentityBindingAllocationProjectorV3().project(operation_inputs=operation_inputs, recovery_key_digest=request.normalization_replay.recovery_key_digest, sealed_snapshot=sealed_snapshot, effective_read_set=graph_snapshot.read_set, current_planning_state=initial_state, required_scope_set_digest=request.required_outcome_scopes.required_scope_set_digest, authorized_scope_identity=request.operation_fence_binding.delivery_principal_binding_digest, allocation_namespace_id=request.operation_fence_binding.allocation_namespace_id, allocation_policy_fingerprint=authority.execution_policy.policy_digest, allow_new_allocation=True, source_plan_checkpoint_digest=request_core_digest, publication_generation_digest=epoch.epoch_digest)
+            canonical_reload = AtomicStoreBootstrapCanonicalIdentityAuthorityRepositoryV3(atomic_store=atomic_store).publish_or_reload(request=BootstrapCanonicalIdentityAuthorityWriteRequestV3.create(authority_reload=canonical_candidate, operation_fence_binding=request.operation_fence_binding, operation_lease_binding=request.operation_lease_binding, writer_commit_binding=request.writer_commit_binding, delivery_principal_binding_digest=request.operation_fence_binding.delivery_principal_binding_digest, required_outcome_scopes=request.required_outcome_scopes))
         compilation = _compile(
             request=coordinator_request, epoch=epoch, operation_inputs=operation_inputs,
             sealed_snapshot=sealed_snapshot, canonical_identity_authority=canonical_reload,

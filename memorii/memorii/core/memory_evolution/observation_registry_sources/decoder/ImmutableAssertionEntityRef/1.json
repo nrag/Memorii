@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.ImmutableAssertionEntityRef.v1","implementation_source_digest":"d85e7eb93802adf0862b6d8de5d187962a558daeedc50274c1e87d9c2d8046a6","role":"decoder","schema_id":"ImmutableAssertionEntityRef","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.ImmutableAssertionEntityRef.v1","implementation_source_digest":"4851b4bc24d2c503b6fee43df1cb5206fd740319dbb72e8bbe086f8640115a6f","role":"decoder","schema_id":"ImmutableAssertionEntityRef","schema_version":"1","typed_root_kind":"model"}

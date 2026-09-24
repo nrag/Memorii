@@ -207,17 +207,30 @@ def _inspection_summary(
         if record.source_kind == "semantic_ingestion_bootstrap_graph_v3_member"
     )
     graph_kinds: Counter[str] = Counter()
+    terminal_outcomes: Counter[str] = Counter()
     for record in graph_members:
         member = record.content.get("member")
         kind = member.get("kind") if isinstance(member, dict) else None
         graph_kinds[kind if isinstance(kind, str) else "unknown"] += 1
-    terminal_outcomes: Counter[str] = Counter()
-    for record in records:
-        if record.source_kind != "semantic_ingestion_bootstrap_graph_v3_terminal_control":
+        if kind != "bootstrap_graph_canonical_source_result":
             continue
-        terminal = record.content.get("terminal_control")
-        outcome = terminal.get("outcome") if isinstance(terminal, dict) else None
-        terminal_outcomes[outcome if isinstance(outcome, str) else "unknown"] += 1
+        try:
+            from memorii.core.semantic_ingestion.contracts import (
+                BootstrapGraphCanonicalSourceResultV3,
+                BootstrapGraphPlanAtomicMemberV3,
+                decode_semantic_contract,
+            )
+
+            atomic_member = BootstrapGraphPlanAtomicMemberV3.model_validate(
+                member, strict=False
+            )
+            result = decode_semantic_contract(
+                atomic_member.canonical_payload,
+                BootstrapGraphCanonicalSourceResultV3,
+            )
+            terminal_outcomes[result.canonical_source_result.final_status] += 1
+        except (TypeError, ValueError):
+            terminal_outcomes["unknown"] += 1
     return {
         "captured_source_count": source_kinds["semantic_ingestion_source"],
         "graph_record_count": len(graph_members),

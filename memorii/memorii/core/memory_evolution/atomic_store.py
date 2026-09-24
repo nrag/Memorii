@@ -12697,6 +12697,56 @@ class SemanticIngestionAtomicStore:
             and actual_kind_set
             == expected_kind_set - {"transaction_group_result"}
         )
+        empty_abstained_without_groups = False
+        if actual_kind_set == expected_kind_set - {
+            "bootstrap_source_plan_lineage_entry",
+            "transaction_group_result",
+        }:
+            try:
+                from memorii.core.semantic_ingestion.contracts import (
+                    BootstrapGraphDependentCoordinatorRequestV3,
+                    BootstrapTransactionGroupPlanV3,
+                    decode_semantic_contract,
+                )
+
+                coordinator_member = next(
+                    item
+                    for item in members
+                    if item.kind == "bootstrap_graph_coordinator_request"
+                )
+                plan_member = next(
+                    item
+                    for item in members
+                    if item.kind == "bootstrap_transaction_group_plan"
+                )
+                coordinator_request = decode_semantic_contract(
+                    coordinator_member.canonical_payload,
+                    BootstrapGraphDependentCoordinatorRequestV3,
+                )
+                terminal_plan = decode_semantic_contract(
+                    plan_member.canonical_payload,
+                    BootstrapTransactionGroupPlanV3,
+                )
+                proposals = (
+                    coordinator_request.normalization_replay.source_normalization_request
+                    .proposal_run.proposal_payload.normalized_proposals
+                )
+                source_result = reload.canonical_source_result.canonical_source_result
+                empty_abstained_without_groups = (
+                    not coordinator_request.source_dependency_groups
+                    and not terminal_plan.group_members
+                    and bool(proposals)
+                    and all(
+                        proposal.status == "abstained"
+                        and not proposal.operation_members
+                        for proposal in proposals
+                    )
+                    and source_result.final_status == "evidence_only"
+                    and not source_result.operation_ids
+                    and not source_result.group_result_digests
+                )
+            except (StopIteration, TypeError, ValueError):
+                empty_abstained_without_groups = False
         if (
             index.content.get("locator_digest") != locator_digest
             or index.content.get("handoff_digest") != reload.handoff_digest
@@ -12737,6 +12787,7 @@ class SemanticIngestionAtomicStore:
             or (
                 actual_kind_set != expected_kind_set
                 and not failed_without_group_result
+                and not empty_abstained_without_groups
             )
             or tuple(sorted(kinds, key=kind_order.__getitem__)) != kinds
             or any(kinds.count(kind) != 1 for kind in (
@@ -12776,7 +12827,9 @@ class SemanticIngestionAtomicStore:
                 and reload.control_epoch_digest != expected_control_epoch_digest
             )
         ):
-            raise PreplanningStoreError("bootstrap graph terminal reload is corrupt or substituted")
+            raise PreplanningStoreError(
+                "bootstrap graph terminal reload is corrupt or substituted"
+            )
         for member, member_value in zip(members, member_values, strict=True):
             record = lookup(
                 _bootstrap_graph_v3_member_id(

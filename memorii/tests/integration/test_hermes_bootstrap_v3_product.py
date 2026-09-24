@@ -24,6 +24,7 @@ from memorii.core.semantic_ingestion.hermes_completed_turn_runtime import (
 from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
 from memorii.integrations.hermes_local_authority import (
     authorize_local_level2,
+    inspect_local_memory,
 )
 from memorii.integrations.hermes_local_authority import (
     main as memorii_hermes_main,
@@ -63,6 +64,78 @@ def _response(_: object, **kwargs: object) -> str:
         '"predicate_anchor_quote":"owner",'
         '"value_quote":"Ada"}]}'
     )
+
+
+def test_installed_hermes_abstained_turn_is_terminal_and_does_not_block_reopen(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from memorii.core.semantic_ingestion.openai_responses_project_assertions import (
+        OpenAIResponsesApiClient,
+    )
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    calls: list[str] = []
+
+    def response(_: object, **kwargs: object) -> str:
+        source = str(kwargs.get("source_segment"))
+        calls.append(source)
+        if "project name is Mars Venus 001" in source:
+            return '{"abstained":true,"candidates":[]}'
+        return _response(_, **kwargs)
+
+    monkeypatch.setattr(OpenAIResponsesApiClient, "complete", response)
+    authorize_local_level2(hermes_home=tmp_path)
+    first = build_local_level2_runtime_binding(_context(tmp_path, session_id="session:abstained"))
+    runtime = first.completed_turn_runtime
+    assert runtime is not None
+    runtime.wait_for_idle()
+    runtime.sync_completed_turn(
+        user_content="For this session the project name is Mars Venus 001.",
+        assistant_content="Understood.",
+        messages=[
+            {"role": "user", "content": "For this session the project name is Mars Venus 001."},
+            {"role": "assistant", "content": "Understood."},
+        ],
+        session_id="session:abstained",
+        authenticated_author_id=first.absent_author_id,
+        received_at=datetime.now(UTC),
+    )
+    runtime.wait_for_idle()
+    assert len(calls) == 1
+    inspection = inspect_local_memory(hermes_home=tmp_path)
+    assert inspection["captured_source_count"] >= 2
+    assert inspection["observation_ledger_entry_count"] == 1
+    assert inspection["operation_terminal_counts_by_outcome"] == {"evidence_only": 1}
+    assert inspection["graph_revision_delta_count"] == 0
+    assert inspection["retrieval_visible_record_count"] == 0
+    assert inspection["runtime_context_projection_count"] == 0
+    assert not any(
+        record.content.get("runtime_context_projection_kind") == "bootstrap_v3_claim_assertion"
+        for record in first.service._memory_plane.list_records()
+    )
+
+    reopened = build_local_level2_runtime_binding(_context(tmp_path, session_id="session:reopened"))
+    assert reopened.completed_turn_runtime is not None
+    reopened.completed_turn_runtime.wait_for_idle()
+    reopened.completed_turn_runtime.sync_completed_turn(
+        user_content="Mars Venus 001 project owner is Ada.",
+        assistant_content="I will remember that.",
+        messages=[
+            {"role": "user", "content": "Mars Venus 001 project owner is Ada."},
+            {"role": "assistant", "content": "I will remember that."},
+        ],
+        session_id="session:reopened",
+        authenticated_author_id=reopened.absent_author_id,
+        received_at=datetime.now(UTC),
+    )
+    reopened.completed_turn_runtime.wait_for_idle()
+    assert "Mars Venus 001 project owner is Ada." in reopened.completed_turn_runtime.prefetch(
+        query="Who owns Mars Venus 001?",
+        session_id="session:reopened",
+        authenticated_author_id=reopened.absent_author_id,
+        now=datetime.now(UTC),
+    )
+    assert len(calls) == 2
 
 
 def test_installed_hermes_completed_turn_commits_and_recalls_after_reopen(
