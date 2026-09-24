@@ -16,14 +16,10 @@ from hashlib import sha256
 from typing import Any, cast
 
 from memorii.core.memory_evolution.bootstrap_profile import (
-    BOOTSTRAP_COORDINATE,
-    BootstrapGrammarCorpusCase,
-    BootstrapProfileReleaseMetadata,
+    BootstrapProfileReleaseBuilder,
+    BootstrapProfileReleaseVerifier,
     CurrentBootstrapReleaseAssertion,
     HostVerifiedBootstrapMaterial,
-    build_bootstrap_profile_artifacts,
-    build_bootstrap_trust_anchor,
-    serialize_bootstrap_profile_artifacts,
 )
 from memorii.core.memory_evolution.capability_monitoring import (
     CAPABILITY_MONITOR_SEQUENTIAL_IMPLEMENTATION_FINGERPRINT,
@@ -306,35 +302,6 @@ class _ScenarioInitialWriterActivation:
         )
 
 
-def _scenario_corpus_cases() -> tuple[BootstrapGrammarCorpusCase, ...]:
-    values = (
-        ("scenario_abstain_mismatch", "en", "mismatched", "mismatched", "disagrees", b"mismatch", "abstain_form", "language_mismatch"),
-        ("scenario_abstain_missing", None, "missing", "missing", "missing", b"missing", "abstain_form", "missing_language_declaration"),
-        ("scenario_abstain_non_english", "fr", "authenticated_host_declaration", "trusted", "agrees", b"bonjour", "abstain_form", "non_english_language"),
-        ("scenario_abstain_untrusted", None, "untrusted", "untrusted", "missing", b"untrusted", "abstain_form", "untrusted_language"),
-        ("scenario_ambiguous_owner", b"Atlas owner is Alice. Atlas owner is Bob.", "supported_form", None),
-        ("scenario_insufficient", b"No source-grounded assertion is available.", "abstain_form", "extractor_abstained"),
-        ("scenario_owner_alice", b"Atlas owner is Alice.", "supported_form", None),
-        ("scenario_owner_bob", b"Atlas owner is Bob.", "supported_form", None),
-        ("scenario_status_running", b"Orion status is running.", "supported_form", None),
-        ("scenario_unsupported_grammar", b"unstructured", "unsupported_form", "unsupported_grammar"),
-        ("scenario_unsupported_residue", b"Atlas is Bob. trailing", "unsupported_form", "mixed_residue"),
-    )
-    cases: list[BootstrapGrammarCorpusCase] = []
-    for value in values:
-        if len(value) == 4:
-            case_id, source, disposition, reason = value
-            language, kind, trust, agreement = "en", "authenticated_host_declaration", "trusted", "agrees"
-        else:
-            case_id, language, kind, trust, agreement, source, disposition, reason = value
-        cases.append(BootstrapGrammarCorpusCase(
-            case_id=case_id, declared_language=language, language_evidence_kind=kind,
-            language_evidence_trust=trust, governance_agreement=agreement,
-            normalized_segment_bytes=source, disposition=disposition, expected_reason=reason,
-        ))
-    return tuple(cases)
-
-
 def build_scenario_test_host_capability() -> BuiltInLocalHostSemanticIngestionCapability:
     """Construct the only scenario-test runtime root, sealed to ``scenario_test``.
 
@@ -342,19 +309,12 @@ def build_scenario_test_host_capability() -> BuiltInLocalHostSemanticIngestionCa
     material is deliberately generated in-process and is never discoverable by
     the installed production/default host capability path.
     """
-    artifacts = build_bootstrap_profile_artifacts(_scenario_corpus_cases())
-    anchor = build_bootstrap_trust_anchor(artifacts)
-    metadata = BootstrapProfileReleaseMetadata(
-        coordinate=BOOTSTRAP_COORDINATE,
-        bootstrap_profile_trust_anchor_digest=anchor.trust_anchor_digest,
-        signed_release_digest=_scenario_digest("scenario-test-signed-release"),
-    )
+    release = BootstrapProfileReleaseBuilder.build(enabled=True)
+    profile = BootstrapProfileReleaseVerifier.verify(payloads=release.payloads, enabled=True)
     material = HostVerifiedBootstrapMaterial(
-        release_metadata=metadata,
-        trust_anchor=anchor,
-        artifact_payloads=serialize_bootstrap_profile_artifacts(artifacts),
+        artifact_payloads=release.payloads,
         release_evidence=build_test_host_verified_bootstrap_release_evidence(
-            metadata=metadata,
+            profile=profile,
             external_root_digest=_scenario_digest("scenario-test-root"),
             active_lifecycle_snapshot_digest=_scenario_digest("scenario-test-lifecycle"),
             verified_at=datetime(2026, 7, 30, tzinfo=UTC),

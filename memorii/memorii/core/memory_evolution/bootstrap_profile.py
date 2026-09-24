@@ -69,6 +69,23 @@ BOOTSTRAP_COORDINATE = BootstrapProfileCoordinate(
 BootstrapArtifactCoordinate = BootstrapProfileCoordinate
 
 
+class _FreeformAdmissionPolicyCreateValues(TypedDict):
+    schema_id: Literal["memorii.semantic_ingestion.bootstrap_freeform_admission_policy"]
+    schema_version: Literal[1]
+    bootstrap_coordinate: BootstrapProfileCoordinate
+    policy_version: Literal[1]
+    declared_language: Literal["en"]
+    required_language_evidence: Literal["authenticated_host_declaration"]
+    max_segment_unicode_scalars: int
+    max_segment_utf8_bytes: int
+    max_child_segments: int
+    allowed_unicode_normalization: Literal["NFC"]
+    prohibited_residue_classes: tuple[
+        Literal["control", "private_use", "unpaired_surrogate"], ...
+    ]
+    require_nonempty_visible_text: Literal[True]
+
+
 class BootstrapFreeformAdmissionPolicy(BaseModel):
     """Installed V2 policy for admission before the unchanged V3 runtime."""
 
@@ -97,7 +114,9 @@ class BootstrapFreeformAdmissionPolicy(BaseModel):
         return self
 
     @classmethod
-    def create(cls, **values: object) -> BootstrapFreeformAdmissionPolicy:
+    def create(
+        cls, **values: Unpack[_FreeformAdmissionPolicyCreateValues]
+    ) -> BootstrapFreeformAdmissionPolicy:
         body = cls.model_construct(
             **values, policy_digest="0" * 64
         ).model_dump(mode="python", exclude={"policy_digest"})
@@ -416,6 +435,13 @@ def serialize_bootstrap_profile_artifacts(
     )
 
 
+class _GrammarCapabilityManifestCreateValues(TypedDict):
+    schema_id: Literal["memorii.semantic_ingestion.bootstrap_grammar_capability_manifest"]
+    schema_version: Literal[2]
+    coordinate: BootstrapProfileCoordinate
+    freeform_admission_policy_digest: str
+
+
 class BootstrapGrammarCapabilityManifest(BaseModel):
     schema_id: Literal["memorii.semantic_ingestion.bootstrap_grammar_capability_manifest"]
     schema_version: Literal[2]
@@ -432,11 +458,23 @@ class BootstrapGrammarCapabilityManifest(BaseModel):
         return self
 
     @classmethod
-    def create(cls, **values: object) -> BootstrapGrammarCapabilityManifest:
+    def create(
+        cls, **values: Unpack[_GrammarCapabilityManifestCreateValues]
+    ) -> BootstrapGrammarCapabilityManifest:
         body = cls.model_construct(
             **values, manifest_digest="0" * 64
         ).model_dump(mode="python", exclude={"manifest_digest"})
         return cls(**values, manifest_digest=sha256(encode_typed_value(body)).hexdigest())
+
+
+class _LocalProfileManifestCreateValues(TypedDict):
+    schema_id: Literal["memorii.semantic_ingestion.bootstrap_local_profile_manifest"]
+    schema_version: Literal[2]
+    coordinate: BootstrapProfileCoordinate
+    preparation_policy: TextPreparationPolicy
+    freeform_admission_policy_digest: str
+    component_root_digest: str
+    network_capability: Literal["denied"]
 
 
 class BootstrapLocalProfileManifest(BaseModel):
@@ -460,7 +498,9 @@ class BootstrapLocalProfileManifest(BaseModel):
         return self
 
     @classmethod
-    def create(cls, **values: object) -> BootstrapLocalProfileManifest:
+    def create(
+        cls, **values: Unpack[_LocalProfileManifestCreateValues]
+    ) -> BootstrapLocalProfileManifest:
         body = cls.model_construct(
             **values, profile_digest="0" * 64
         ).model_dump(mode="python", exclude={"profile_digest"})

@@ -35671,10 +35671,12 @@ semantic `prefetch` override.
 
 This section supersedes the message-ID rule in Section 8.5 and the persistent
 nonce/grant lifecycle imagined in Section 8.6. The supported Hermes ABI is the
-`nousresearch/hermes-agent:latest` image resolved for this trial to
-`sha256:eaa1c0b93eea54dadb8b072ffaffd569f93af444eacc2f3a`; implementation must
-pin that image digest and record the exact Hermes package commit/version exposed
-inside the rebuilt image. Its `MemoryProvider.sync_turn` ABI is
+`nousresearch/hermes-agent:v2026.9.21` image, which exposed Hermes Agent
+v0.21.4 (2026.9.21) in the Windows Level 2 trial. The Dockerfile permits an
+exact immutable `HERMES_IMAGE` RepoDigest build override. The observed digest
+prefix `sha256:eaa1c0b93eea54dadb8b072ffaffd569f93af444eacc2f3a` is incomplete and
+must not be used as a pin; capture the full Windows `RepoDigest` before
+production signing or release. Its `MemoryProvider.sync_turn` ABI is
 `(user_content, assistant_content, *, session_id="", messages=None,
 turn_author=None)` and supplies no message IDs. Any image/ABI change requires a
 fresh bridge conformance test before Level 2 evidence is accepted.

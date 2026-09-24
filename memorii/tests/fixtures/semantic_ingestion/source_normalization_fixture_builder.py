@@ -694,10 +694,6 @@ def build_source_normalization_authority_bundle(
         **authority_body,
         authority_digest=contract_digest(b"memorii.semantic-ingestion.proposal-run-production-authority.v1", authority_body),
     )
-    resources = tuple(
-        route.resource_binding for route in source.segment_language_routes.routes
-        if getattr(route, "resource_binding", None) is not None
-    )
     bootstrap_routes = bootstrap_analysis_routes or BootstrapAnalysisRouteBindingSet(
         source_id=source.source_id,
         source_digest=source.source_digest,
@@ -712,6 +708,12 @@ def build_source_normalization_authority_bundle(
                 "bindings": (),
             },
         ),
+    )
+    resources = tuple(
+        sorted(
+            {binding.resource_binding for binding in bootstrap_routes.bindings},
+            key=lambda binding: binding.resource_binding_digest,
+        )
     )
     derivation_body = {
         "source_id": source.source_id, "source_digest": source.source_digest,

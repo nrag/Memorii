@@ -36,13 +36,15 @@ def _inspection_module(monkeypatch):
     return module
 
 
-def test_development_connector_declares_exactly_one_service_factory() -> None:
+def test_development_connector_does_not_compete_with_first_party_service_factory() -> None:
     project = tomllib.loads(
         (_ROOT / "tools" / "hermes_development_connector" / "pyproject.toml").read_text()
     )
 
-    assert project["project"]["entry-points"]["memorii.hermes.provider_service"] == {
-        "development": "memorii_hermes_development:build_runtime_binding"
+    assert "entry-points" not in project["project"]
+    memorii = tomllib.loads((_ROOT / "memorii" / "pyproject.toml").read_text())
+    assert memorii["project"]["entry-points"]["memorii.hermes.provider_service"] == {
+        "installed": "memorii.integrations.hermes_factory:build_local_level2_runtime_binding"
     }
 
 

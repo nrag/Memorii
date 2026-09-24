@@ -10,11 +10,14 @@ import time
 import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from secrets import token_hex
 
-from memorii.core.memory_evolution.ingestion_contracts import AuthenticatedHostIngress
+from memorii.core.memory_evolution.ingestion_contracts import (
+    AuthenticatedHostIngress,
+    AuthenticatedIngressContext,
+)
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.scoped_context.authority import (
     InProcessScopedReadAuthority,
@@ -26,6 +29,7 @@ from memorii.core.scoped_context.contracts import (
     ScopedContextStatus,
 )
 from memorii.core.semantic_ingestion.hermes_completed_turn_admission import (
+    HermesCompletedTurnAdmission,
     HermesCompletedTurnAdmissionRequest,
     HermesCompletedTurnAdmissionService,
     HermesCompletedTurnMessage,
@@ -37,8 +41,8 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class _CompletedTurnWork:
-    admitted: object
-    ingress: object
+    admitted: HermesCompletedTurnAdmission
+    ingress: AuthenticatedIngressContext
 
 
 @dataclass(frozen=True)
@@ -100,8 +104,12 @@ class HermesCompletedTurnRuntime:
         canonical_messages = _canonicalize_completed_messages(
             messages=messages, user_content=user_content, assistant_content=assistant_content
         )
+        # Hermes may redeliver the same persisted completion after the callback
+        # clock has advanced.  Source retention is bound to the transcript's
+        # final persisted timestamp, never to the callback delivery time.
+        completed_at = _completed_turn_timestamp(canonical_messages)
         ordinal = sum(1 for item in canonical_messages if item["role"] == "assistant")
-        host_ingress = self._issue_host_ingress(session_id, author, received_at)
+        host_ingress = self._issue_host_ingress(session_id, author, completed_at)
         ingress = self._service._preflight_ingress(host_ingress)
         if ingress is None:
             raise ValueError("Hermes completed-turn ingress is unavailable")
@@ -117,7 +125,7 @@ class HermesCompletedTurnRuntime:
                 HermesCompletedTurnMessage(role="user", content=user_content),
                 HermesCompletedTurnMessage(role="assistant", content=assistant_content),
             ),
-            completed_at=received_at,
+            completed_at=completed_at,
             ingress=ingress,
         )
         binding = self._service._semantic_writer_admission.commit_binding(
@@ -294,10 +302,16 @@ def _canonicalize_completed_messages(
     pending_calls: set[str] = set()
     for item in canonical:
         if item["role"] == "assistant":
-            pending_calls.update(call["id"] for call in item.get("tool_calls", ()))
+            tool_calls = item.get("tool_calls", ())
+            if not isinstance(tool_calls, tuple):
+                raise ValueError("Hermes assistant tool calls are invalid")
+            for call in tool_calls:
+                if not isinstance(call, dict) or not isinstance(call.get("id"), str):
+                    raise ValueError("Hermes assistant tool calls are invalid")
+                pending_calls.add(call["id"])
         elif item["role"] == "tool":
             call_id = item["tool_call_id"]
-            if call_id not in pending_calls:
+            if not isinstance(call_id, str) or call_id not in pending_calls:
                 raise ValueError("Hermes tool message is unmatched")
             pending_calls.remove(call_id)
     if pending_calls:
@@ -336,13 +350,15 @@ def _canonicalize_message(value: object) -> dict[str, object]:
         raise ValueError(f"Hermes transcript {role} message has unsupported fields: {fields}")
     if role in {"system", "developer", "user"}:
         content = _canonical_text(value.get("content"))
-        return {"role": role, "content": content}
+        return _with_canonical_timestamp({"role": role, "content": content}, value)
     if role == "tool":
         content = _canonical_text(value.get("content"))
         if "tool_call_id" not in value:
             raise ValueError("Hermes tool message has invalid fields")
         call_id = _canonical_text(value.get("tool_call_id"))
-        return {"role": role, "content": content, "tool_call_id": call_id}
+        return _with_canonical_timestamp(
+            {"role": role, "content": content, "tool_call_id": call_id}, value
+        )
     content_value = value.get("content")
     textless_tool_call = content_value == "" and "tool_calls" in value
     content = "" if textless_tool_call else _canonical_text(content_value)
@@ -352,7 +368,38 @@ def _canonicalize_message(value: object) -> dict[str, object]:
         if type(calls) is not list or not calls:
             raise ValueError("Hermes assistant tool calls are invalid")
         result["tool_calls"] = tuple(_canonicalize_tool_call(call) for call in calls)
+    return _with_canonical_timestamp(result, value)
+
+
+def _with_canonical_timestamp(result: dict[str, object], raw: dict[str, object]) -> dict[str, object]:
+    """Retain only a validated, canonical persisted Hermes message timestamp."""
+    if "timestamp" in raw:
+        result["timestamp"] = _canonical_timestamp(raw["timestamp"])
     return result
+
+
+def _completed_turn_timestamp(canonical_messages: tuple[dict[str, object], ...]) -> datetime:
+    """Return the immutable timestamp bound to the final persisted completion."""
+    final_timestamp = canonical_messages[-1].get("timestamp")
+    if not isinstance(final_timestamp, str):
+        raise ValueError("Hermes completed-turn transcript is missing its final timestamp")
+    return _parse_canonical_timestamp(final_timestamp)
+
+
+def _canonical_timestamp(value: object) -> str:
+    if not isinstance(value, str) or not value:
+        raise ValueError("Hermes transcript timestamp is invalid")
+    return _parse_canonical_timestamp(value).isoformat().replace("+00:00", "Z")
+
+
+def _parse_canonical_timestamp(value: str) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError("Hermes transcript timestamp is invalid") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError("Hermes transcript timestamp is invalid")
+    return parsed.astimezone(UTC)
 
 
 def _canonicalize_tool_call(value: object) -> dict[str, str]:

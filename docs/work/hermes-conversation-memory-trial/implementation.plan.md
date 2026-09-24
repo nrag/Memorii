@@ -3,7 +3,7 @@
 - Work ID: `hermes-conversation-memory-trial-implementation`
 - Work type: implementation
 - Delivery fidelity: Level 2 early real-world testing
-- Status: `complete`
+- Status: `under-review`
 - Coordinator: `/root`
 - Base branch: `codex/hermes-level2`
 - Base revision: `d0c96305397f03c1e4a09e548f0fbd62602b3f95`
@@ -43,8 +43,8 @@ future design concern and do not block this Level 2 learning loop.
 | --- | --- | --- |
 | HCM-01 | One first-party provider and service-factory entry point; strict installed resource and fresh local sidecar validation at ingress, egress, pre-publication, recovery, and read; development factory declaration removed | verified locally and in the Windows image |
 | HCM-02 | Complete Hermes user/assistant pair enters one governed two-child operation; transcript substitution and incomplete turn deny; replay is stable | locally verified |
-| HCM-03 | Fake only the OpenAI Responses edge; source-quoted free-form proposal reaches the canonical V3 materializer, validators, graph group commit, and ledger | verified locally and through live OpenAI in Windows Docker |
-| HCM-04 | One stable installation/resource task scope, sessionless reusable projections, exact user/agent grants, installation-bound raw-user consistency lock, absent/changed-author denial, later-session recall, cross-user/agent denial, and store reopen | locally verified |
+| HCM-03 | Fake only the OpenAI Responses edge; source-quoted free-form proposal reaches the canonical V3 materializer, validators, graph group commit, and ledger | verified locally; one eligible fact verified through live OpenAI in Windows Docker, second eligible fact pending final candidate |
+| HCM-04 | One stable installation/resource task scope, sessionless reusable projections, exact user/agent grants, installation-bound raw-user consistency lock, absent/changed-author denial, later-session recall, cross-user/agent denial, and store reopen | locally verified; final two-fact Windows restart proof pending |
 | HCM-05 | Callback returns after durable admission; one worker owns two durable provider attempts; startup reconstructs a missing handoff from sealed ingress before activation; atomic graph commit, duplicate idempotence, and reopen are proven | verified locally and by same-volume Windows restart and recall |
 | HCM-06 | `memorii-hermes status` reports authority; `memorii-hermes inspect` reports source, graph, ledger, terminal, projection, and retrieval-visible counts without constructing a runtime | verified locally and from the Windows container |
 
@@ -95,6 +95,16 @@ records can be appended without changing the implementation candidate.
 
 ## Deterministic Evidence
 
+The earlier counts below describe the first implementation candidate and are
+retained as history. The corrected PR candidate now collects 5,192 unit tests
+in the repository and 4,506 tests in the exhaustive broad unit owner. Its
+six-shard plan is complete and balanced with 3,517 measured node durations and
+estimated shard times of 610.431-610.432 seconds. Full Ruff and configured
+Pyright pass, the workflow/setup structure suite passes (`22 passed`), the
+exact-redelivery bridge regression passes, and the direct current Bootstrap V3
+provider recovery reproducer passes (`1 passed in 53.79s`). The final dedicated
+Hermes product run and GitHub checks remain PR evidence.
+
 - Product integration:
   `PYTHONPATH=memorii .venv/bin/python -m pytest memorii/tests/integration/test_hermes_bootstrap_v3_product.py -q -p no:cacheprovider`
   -> `3 passed in 2153.19s`. The main scenario deterministically blocks the
@@ -124,8 +134,8 @@ records can be appended without changing the implementation candidate.
 ## Candidate Freeze
 
 - Candidate manifest: `docs/work/hermes-conversation-memory-trial/candidate-manifest.json`
-- Candidate manifest SHA-256: `91b228c96a6b893c4a54cd475b70336c9293b471e323a726c843ed33d4805539`
-- Candidate file count: `264`
+- Candidate manifest SHA-256: `597f1d6bdfbc59f7176dfedae74025675a00004dd73b19de5c9c3dad64bc5202`
+- Candidate file count: `276`
 - Manifest scope: every changed or untracked product, design, generated,
   Docker, and test file outside `docs/work/`
 - Exclusions: `.git`, local environments/caches/build outputs, and mutable
@@ -156,7 +166,7 @@ initialization, synchronization, or semantic-worker failure. Earlier 18:41 to
 18:48 failures remain append-only diagnostic history and predate the successful
 run.
 
-## Final Level 2 Review
+## Prior Level 2 Review
 
 The earlier candidate received independent spec, correctness, and test review
 against manifest SHA-256
@@ -165,10 +175,9 @@ That approval was superseded by the Windows-driven runtime corrections. The
 current PR candidate is frozen by manifest SHA-256
 `91b228c96a6b893c4a54cd475b70336c9293b471e323a726c843ed33d4805539`
 and requires a fresh independent PR review.
-All three reviewers reported no current P1/P2 findings. They independently
-confirmed the installed factory path, installation-bound identity isolation,
-typed retained restart authority, missing-handoff reconstruction, durable
-two-attempt retry, atomic commit, protected recall, and exact replay behavior.
+That review is superseded by the correction set and is not approval for the
+current candidate. A fresh independent review is required after candidate
+freeze.
 
 The earlier review findings are resolved: an absent or changed raw Hermes
 author is rejected before admission; a second raw user cannot reuse the same
@@ -179,9 +188,12 @@ recovery, with no duplicate on replay.
 
 ```yaml
 remaining_validated_p1_p2: []
-remaining_blocks_approval: []
-level_2_candidate_disposition: approved
-operational_evidence_pending: []
+remaining_blocks_approval:
+  - final revision-bound PR review and GitHub checks
+level_2_candidate_disposition: under_review
+operational_evidence_pending:
+  - two eligible facts recalled after Windows same-volume restart
+  - full Hermes image RepoDigest
 ```
 
 The intentionally removed V1/V2 profile APIs leave older pre-cutover test
@@ -194,13 +206,10 @@ above; it does not claim whole-repository unit-suite compatibility.
 
 ## Next Action
 
-Create and complete the separate Level 2 pull-request review for evidence-only
-descendant `63658193b8a4c296b553bb6c3e7fd89392566b2a` plus this WorkPlan closure.
+Freeze the corrected candidate and run the separate Level 2 pull-request review.
 
 ## Outcome
 
-Level 2 is complete. The installed Windows Docker production path performed a
-live model-backed semantic commit and protected later-session recall across a
-same-volume restart. This is early real-world integration evidence; production
-signing, release certification, learned ontology support, and Level 3 rollout
-evidence remain separate work.
+The one-fact installed Windows Docker learning loop is proven. Final Level 2
+closure awaits the two-fact restart run, immutable base-image identity, current
+PR review, and green required checks.

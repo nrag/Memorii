@@ -9,7 +9,7 @@
 - Last updated: 2026-09-24
 - Parent WorkPlan: `docs/work/hermes-conversation-memory-trial/implementation.plan.md`
 - Related WorkPlans: None
-- Canonical inputs: Windows Docker observation at branch head `10b67a5781e2eeaab656b1ee2b6eacd7a274a928`; pinned Hermes image `nousresearch/hermes-agent@sha256:eaa1c0b93eea54dadb8b072ffaffd569f93af444eacc2f3a`
+- Canonical inputs: Windows Docker observation at branch head `10b67a5781e2eeaab656b1ee2b6eacd7a274a928`; Hermes Agent v0.21.4 (2026.9.21) image tag `nousresearch/hermes-agent:v2026.9.21`; the observed 48-character digest prefix is not a valid immutable pin and the exact Windows `RepoDigest` remains required before production signing.
 - Published correction revisions:
   `e21e4886ffc292e941b5af2ada28ccd9f5eb469b` (primary-context binding) and
   `f5e903d8f1c1a01fc8e7db7098fa882234e08394` (Windows Docker profile bytes), and
@@ -245,12 +245,12 @@ Hermes' normal primary workspace metadata.
   primary profile metadata. Local reproduction against the reviewed revision
   with that exact value raises `LocalLevel2AuthorityError: local Level 2
   delegated or shared execution is unsupported` at `hermes_factory.py:72`.
-- Local Docker verification found the previous `FROM` checksum has 48
-  hexadecimal characters, and Docker requires a 64-character SHA-256 digest.
-  This Level 2 Dockerfile now uses `nousresearch/hermes-agent:latest`, matching
-  the user's successfully built Windows image. Selecting and release-validating
-  an immutable base-image digest is deferred to Level 3 rather than inventing a
-  checksum.
+- Local Docker verification found the previously recorded checksum has 48
+  hexadecimal characters, while Docker requires a 64-character SHA-256 digest.
+  The Level 2 Dockerfile selects `nousresearch/hermes-agent:v2026.9.21`, which
+  matches the observed Hermes Agent v0.21.4 (2026.9.21), and accepts a verified
+  immutable base image through `HERMES_IMAGE`. Capturing the exact Windows
+  `RepoDigest` remains required before production signing.
 - Hermes 0.21.4 logs show a completed turn reaches Memorii with documented
   role-specific transport fields. The prior parser rejects those fields before
   durable admission; its failure is independent of authority and storage.

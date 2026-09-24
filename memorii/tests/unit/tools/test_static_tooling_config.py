@@ -568,6 +568,37 @@ def test_exact_semantic_ingestion_workflow_argv_is_pinned() -> None:
     assert count_command.count("tests/integration/test_semantic_ingestion_replay.py") == 1
 
 
+def test_hermes_level2_product_gate_is_exact_and_required_by_semantic_ingestion() -> None:
+    config = _workflow_config("pr-gates.yml")
+    job = config["jobs"]["hermes-level2-product"]
+    steps = job["steps"]
+    run_command = next(
+        step["run"] for step in steps if step["name"] == "Run Hermes Level 2 product closure"
+    )
+    assert run_command.split() == [
+        "pytest",
+        "-W",
+        "error",
+        "tests/integration/test_hermes_bootstrap_v3_product.py",
+        "-p",
+        "no:cacheprovider",
+    ]
+    count_command = next(
+        step["run"] for step in steps if step["name"] == "Verify exact Hermes product collection count"
+    )
+    assert '"4 tests collected in "*' in count_command
+    assert count_command.count("tests/integration/test_hermes_bootstrap_v3_product.py") == 1
+
+    aggregate = config["jobs"]["semantic-ingestion"]
+    assert "hermes-level2-product" in aggregate["needs"]
+    require_step = next(
+        step for step in aggregate["steps"]
+        if step["name"] == "Require every semantic-ingestion dependency"
+    )
+    assert require_step["env"]["HERMES_LEVEL2_RESULT"] == "${{ needs.hermes-level2-product.result }}"
+    assert 'test "$HERMES_LEVEL2_RESULT" = success' in require_step["run"]
+
+
 def test_projection_history_job_is_exact_and_disjoint_from_broad_unit_shards() -> None:
     config = _workflow_config("pr-gates.yml")
     steps = config["jobs"]["semantic-projection-history"]["steps"]
@@ -605,6 +636,7 @@ def test_projection_history_job_is_exact_and_disjoint_from_broad_unit_shards() -
         "GENERATION_RESULT": "semantic-ingestion-generation",
         "SCENARIO_RESULT": "semantic-ingestion-scenario",
         "ACCEPTANCE_RESULT": "semantic-ingestion-acceptance",
+        "HERMES_LEVEL2_RESULT": "hermes-level2-product",
         "PROJECTION_HISTORY_RESULT": "semantic-projection-history",
         "BOOTSTRAP_GRAPH_RESULT": "bootstrap-graph-transaction-boundary-aggregate",
         "ACCEPTANCE_RUNTIME_RESULT": "acceptance-authority-runtime",

@@ -13,6 +13,7 @@ from types import SimpleNamespace
 
 import pytest
 from memorii.core.filesystem_storage.bundle import build_filesystem_provider
+from memorii.core.memory_evolution.bootstrap_profile import BootstrapProfileReleaseVerifier
 from memorii.core.memory_evolution.conflict_attention import (
     ConflictAccessContext,
     ConflictAttentionPage,
@@ -2484,10 +2485,13 @@ class _AttentionRepository:
 def _production_capability() -> BuiltInLocalHostSemanticIngestionCapability:
     scenario = build_scenario_test_host_capability()
     material = scenario.bootstrap_material_presentation.material
+    profile = BootstrapProfileReleaseVerifier.verify(
+        payloads=material.artifact_payloads, enabled=material.profile_enabled
+    )
     production_material = replace(
         material,
         release_evidence=build_test_host_verified_bootstrap_release_evidence(
-            metadata=material.release_metadata,
+            profile=profile,
             external_root_digest=material.release_evidence.external_root_digest,
             active_lifecycle_snapshot_digest=(
                 material.release_evidence.active_lifecycle_snapshot_digest

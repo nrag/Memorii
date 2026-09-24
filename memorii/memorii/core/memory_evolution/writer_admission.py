@@ -1284,6 +1284,8 @@ class SemanticGovernedWritePolicy:
         )
         if len(governed) == 1 and controls[0].memory_id == control_id:
             return
+        if _is_bootstrap_v3_claim_lease_renewal_write(governed, current):
+            return
         if _is_bootstrap_v3_ready_claim_write(governed, current):
             return
         if _is_bootstrap_v3_publish_consume_write(governed, current):
@@ -4896,9 +4898,13 @@ def _is_bootstrap_v3_claim_lease_renewal_write(
             and next_control["state_revision"] == prior_control["state_revision"] + 1
             and all(
                 next_lease[name] == prior_lease[name]
-                for name in set(prior_lease) - {"expires_at", "renewal_interval"}
+                for name in set(prior_lease) - {"expires_at"}
             )
-            and next_lease["expires_at"] > prior_lease["expires_at"]
+            # The authoritative monotonic claim clock advances on every
+            # renewal.  A valid provider may renew twice in one wall-clock
+            # instant, so the wall-clock lease must not regress but need not
+            # be strictly later.
+            and next_lease["expires_at"] >= prior_lease["expires_at"]
             and all(
                 getattr(new_ready, name) == getattr(old_ready, name)
                 for name in type(new_ready).model_fields

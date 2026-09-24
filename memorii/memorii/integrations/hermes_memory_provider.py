@@ -133,12 +133,15 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
             self._wait_for_completed_runtime()
             if not callable(prefetch):
                 raise TypeError("Memorii completed-turn runtime is invalid")
-            return prefetch(
+            result = prefetch(
                 query=query,
                 session_id=self._effective_session_id(session_id),
                 authenticated_author_id=self._absent_author_id,
                 now=datetime.now(UTC),
             )
+            if not isinstance(result, str):
+                raise TypeError("Memorii completed-turn runtime returned an invalid prefetch result")
+            return result
         return self._require_provider().prefetch(
             query,
             session_id=self._effective_session_id(session_id),
@@ -239,6 +242,10 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         content: str,
         metadata: dict[str, object] | None = None,
     ) -> None:
+        if self._completed_turn_runtime is not None:
+            self._require_provider()
+            self._wait_for_completed_runtime()
+            return
         self._require_provider().on_memory_write(
             action,
             target,
@@ -258,6 +265,10 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         **kwargs: Any,
     ) -> None:
         del kwargs
+        if self._completed_turn_runtime is not None:
+            self._require_provider()
+            self._wait_for_completed_runtime()
+            return
         effective_session_id = self._effective_session_id(child_session_id)
         self._require_provider().on_delegation(
             task,

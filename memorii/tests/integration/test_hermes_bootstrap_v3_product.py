@@ -93,8 +93,8 @@ def test_installed_hermes_abstained_turn_is_terminal_and_does_not_block_reopen(
         user_content="For this session the project name is Mars Venus 001.",
         assistant_content="Understood.",
         messages=[
-            {"role": "user", "content": "For this session the project name is Mars Venus 001."},
-            {"role": "assistant", "content": "Understood."},
+            {"role": "user", "content": "For this session the project name is Mars Venus 001.", "timestamp": "2026-09-24T20:00:00Z"},
+            {"role": "assistant", "content": "Understood.", "timestamp": "2026-09-24T20:00:01Z"},
         ],
         session_id="session:abstained",
         authenticated_author_id=first.absent_author_id,
@@ -121,8 +121,8 @@ def test_installed_hermes_abstained_turn_is_terminal_and_does_not_block_reopen(
         user_content="Mars Venus 001 project owner is Ada.",
         assistant_content="I will remember that.",
         messages=[
-            {"role": "user", "content": "Mars Venus 001 project owner is Ada."},
-            {"role": "assistant", "content": "I will remember that."},
+            {"role": "user", "content": "Mars Venus 001 project owner is Ada.", "timestamp": "2026-09-24T20:01:00Z"},
+            {"role": "assistant", "content": "I will remember that.", "timestamp": "2026-09-24T20:01:01Z"},
         ],
         session_id="session:reopened",
         authenticated_author_id=reopened.absent_author_id,
@@ -174,8 +174,8 @@ def test_installed_hermes_completed_turn_commits_and_recalls_after_reopen(
         user_content="Mars Venus 001 project owner is Ada.",
         assistant_content="I will remember that.",
         messages=[
-            {"role": "user", "content": "Mars Venus 001 project owner is Ada."},
-            {"role": "assistant", "content": "I will remember that."},
+            {"role": "user", "content": "Mars Venus 001 project owner is Ada.", "timestamp": "2026-09-24T21:00:00Z"},
+            {"role": "assistant", "content": "I will remember that.", "timestamp": "2026-09-24T21:00:01Z"},
         ],
         session_id="session:one",
         authenticated_author_id=operator_id,
@@ -256,8 +256,8 @@ def test_installed_hermes_completed_turn_commits_and_recalls_after_reopen(
         user_content="Mars Venus 001 project owner is Ada.",
         assistant_content="I will remember that.",
         messages=[
-            {"role": "user", "content": "Mars Venus 001 project owner is Ada."},
-            {"role": "assistant", "content": "I will remember that."},
+            {"role": "user", "content": "Mars Venus 001 project owner is Ada.", "timestamp": "2026-09-24T21:00:00Z"},
+            {"role": "assistant", "content": "I will remember that.", "timestamp": "2026-09-24T21:00:01Z"},
         ],
         session_id="session:one",
         authenticated_author_id=operator_id,
@@ -271,13 +271,13 @@ def test_installed_hermes_completed_turn_commits_and_recalls_after_reopen(
         if record.content.get("runtime_context_projection_kind") == "bootstrap_v3_claim_assertion"
     } == {record.memory_id for record in projected}
     first_turn_messages = [
-        {"role": "user", "content": "Mars Venus 001 project owner is Ada."},
-        {"role": "assistant", "content": "I will remember that."},
+        {"role": "user", "content": "Mars Venus 001 project owner is Ada.", "timestamp": "2026-09-24T21:00:00Z"},
+        {"role": "assistant", "content": "I will remember that.", "timestamp": "2026-09-24T21:00:01Z"},
     ]
     second_turn_messages = [
         *first_turn_messages,
-        {"role": "user", "content": "Mars Venus 001 project status is active."},
-        {"role": "assistant", "content": "I will remember the status."},
+        {"role": "user", "content": "Mars Venus 001 project status is active.", "timestamp": "2026-09-24T21:01:00Z"},
+        {"role": "assistant", "content": "I will remember the status.", "timestamp": "2026-09-24T21:01:01Z"},
     ]
     runtime.sync_completed_turn(
         user_content="Mars Venus 001 project status is active.",
@@ -459,8 +459,8 @@ def test_active_runtime_revocation_during_egress_prevents_semantic_commit(
         user_content="Mars Venus 001 project owner is Ada.",
         assistant_content="I will remember that.",
         messages=[
-            {"role": "user", "content": "Mars Venus 001 project owner is Ada."},
-            {"role": "assistant", "content": "I will remember that."},
+            {"role": "user", "content": "Mars Venus 001 project owner is Ada.", "timestamp": "2026-09-24T22:00:00Z"},
+            {"role": "assistant", "content": "I will remember that.", "timestamp": "2026-09-24T22:00:01Z"},
         ],
         session_id="session:revoked",
         authenticated_author_id=operator_id,
@@ -507,11 +507,15 @@ def test_startup_recovers_atomic_admission_before_handoff(tmp_path: Path, monkey
     first.completed_turn_runtime.wait_for_idle()
     operator_id = first.absent_author_id
     agent_id = first.completed_turn_runtime._authenticated_agent_id
-    completed_at = datetime.now(UTC)
+    completed_at = datetime(2026, 9, 24, 23, 0, 1, tzinfo=UTC)
     messages = (
         HermesCompletedTurnMessage(role="user", content="Mars Venus 001 project owner is Ada."),
         HermesCompletedTurnMessage(role="assistant", content="I will remember that."),
     )
+    persisted_messages = [
+        {"role": "user", "content": messages[0].content, "timestamp": "2026-09-24T23:00:00Z"},
+        {"role": "assistant", "content": messages[1].content, "timestamp": "2026-09-24T23:00:01Z"},
+    ]
     host_ingress = first.issue_ingress(
         SimpleNamespace(
             session_id="session:interrupted",
@@ -537,7 +541,7 @@ def test_startup_recovers_atomic_admission_before_handoff(tmp_path: Path, monkey
             project_task_namespace=first.completed_turn_runtime._project_task_id,
             turn_ordinal=1,
             canonical_transcript_digest=_canonical_messages_digest(
-                tuple(message.model_dump(mode="json") for message in messages)
+                tuple(persisted_messages)
             ),
             completed_messages=messages,
             completed_at=completed_at,
@@ -579,7 +583,7 @@ def test_startup_recovers_atomic_admission_before_handoff(tmp_path: Path, monkey
     reopened.completed_turn_runtime.sync_completed_turn(
         user_content=messages[0].content,
         assistant_content=messages[1].content,
-        messages=[message.model_dump(mode="json") for message in messages],
+        messages=persisted_messages,
         session_id="session:interrupted",
         authenticated_author_id=reopened.absent_author_id,
         received_at=completed_at,

@@ -53,7 +53,8 @@ def test_pinned_hermes_image_and_first_party_factory_match_the_level2_abi() -> N
     root = Path(__file__).parents[4]
     dockerfile = (root / "Dockerfile.memorii").read_text()
 
-    assert "FROM nousresearch/hermes-agent:latest" in dockerfile
+    assert "ARG HERMES_IMAGE=nousresearch/hermes-agent:v2026.9.21" in dockerfile
+    assert "FROM ${HERMES_IMAGE}" in dockerfile
     assert (
         "memorii.integrations.hermes_factory:build_local_level2_runtime_binding"
         in (root / "memorii" / "pyproject.toml").read_text()
@@ -125,9 +126,11 @@ def test_completed_runtime_lifecycle_hooks_drain_before_read_or_return_without_l
     provider.on_session_end(["completed turn"])
     assert provider.on_pre_compress(["completed turn"]) == ""
     assert provider.prefetch("what changed") == "committed context"
+    provider.on_memory_write("add", "MEMORY.md", "completed turn")
+    provider.on_delegation("task", "result", child_session_id="child:one")
 
     assert calls == []
-    assert ordering == ["drain", "drain", "drain", "prefetch"]
+    assert ordering == ["drain", "drain", "drain", "prefetch", "drain", "drain"]
 
 
 @pytest.mark.parametrize(
@@ -136,6 +139,8 @@ def test_completed_runtime_lifecycle_hooks_drain_before_read_or_return_without_l
         lambda provider: provider.on_session_end(["completed turn"]),
         lambda provider: provider.on_pre_compress(["completed turn"]),
         lambda provider: provider.prefetch("what changed"),
+        lambda provider: provider.on_memory_write("add", "MEMORY.md", "completed turn"),
+        lambda provider: provider.on_delegation("task", "result"),
     ],
 )
 def test_completed_runtime_lifecycle_drain_failures_surface_without_clearing_state(bridge_module, invoke) -> None:
@@ -601,8 +606,16 @@ def test_bridge_primary_cli_initialization_admits_a_completed_turn(
         "I will remember that.",
         session_id="session:one",
         messages=[
-            {"role": "user", "content": "Mars Venus 001 project owner is Ada."},
-            {"role": "assistant", "content": "I will remember that."},
+            {
+                "role": "user",
+                "content": "Mars Venus 001 project owner is Ada.",
+                "timestamp": "2026-09-24T21:00:00Z",
+            },
+            {
+                "role": "assistant",
+                "content": "I will remember that.",
+                "timestamp": "2026-09-24T21:00:01Z",
+            },
         ],
     )
 
@@ -612,3 +625,81 @@ def test_bridge_primary_cli_initialization_admits_a_completed_turn(
     records = provider._provider._service._memory_plane.list_records()
     assert any(record.source_kind == "semantic_ingestion_source" for record in records)
     assert any(record.visibility.value == "runtime_context" for record in records)
+
+
+def test_bridge_exact_redelivery_at_later_callback_times_reuses_one_completed_turn_operation(
+    bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from memorii.core.semantic_ingestion.openai_responses_project_assertions import OpenAIResponsesApiClient
+    from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
+    from memorii.integrations.hermes_local_authority import authorize_local_level2
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(
+        OpenAIResponsesApiClient,
+        "complete",
+        lambda _client, **_kwargs: (
+            '{"abstained":false,"candidates":[{'
+            '"predicate_id":"project_owner",'
+            '"assertion_quote":"Mars Venus 001 project owner is Ada.",'
+            '"subject_quote":"Mars Venus 001",'
+            '"predicate_anchor_quote":"owner",'
+            '"value_quote":"Ada"}]}'
+        ),
+    )
+    authorize_local_level2(hermes_home=tmp_path)
+    monkeypatch.setattr(
+        bridge_module.importlib.metadata,
+        "entry_points",
+        lambda *, group: (_FactoryEntryPoint(build_local_level2_runtime_binding),),
+    )
+    provider = bridge_module.MemoriiHermesMemoryProvider()
+    provider.initialize(
+        "session:one",
+        hermes_home=tmp_path,
+        user_id="raw:user:one",
+        agent_identity="profile:primary",
+        platform="cli",
+        agent_context="primary",
+        agent_workspace="hermes",
+    )
+    messages = [
+        {
+            "role": "user",
+            "content": "Mars Venus 001 project owner is Ada.",
+            "timestamp": "2026-09-24T21:00:00Z",
+        },
+        {
+            "role": "assistant",
+            "content": "I will remember that.",
+            "timestamp": "2026-09-24T21:00:01Z",
+        },
+    ]
+
+    callback_times = iter((
+        datetime(2026, 9, 24, 21, 5, tzinfo=UTC),
+        datetime(2026, 9, 24, 21, 15, tzinfo=UTC),
+    ))
+
+    class _CallbackClock:
+        @classmethod
+        def now(cls, timezone: object) -> datetime:
+            assert timezone is UTC
+            return next(callback_times)
+
+    monkeypatch.setattr(bridge_module, "datetime", _CallbackClock)
+
+    provider.sync_turn("Mars Venus 001 project owner is Ada.", "I will remember that.", messages=messages)
+    runtime = provider._completed_turn_runtime
+    assert runtime is not None
+    runtime.wait_for_idle()
+
+    # Authority freshness has separate coverage. This assertion isolates the
+    # persisted delivery identity after the first operation has committed.
+    runtime._require_current_authority = lambda: None
+    provider.sync_turn("Mars Venus 001 project owner is Ada.", "I will remember that.", messages=messages)
+    runtime.wait_for_idle()
+
+    records = provider._provider._service._memory_plane.list_records()
+    assert len([record for record in records if record.source_kind == "semantic_ingestion_source"]) == 2
+    assert len([record for record in records if record.visibility.value == "runtime_context"]) == 1

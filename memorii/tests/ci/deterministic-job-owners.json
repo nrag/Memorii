@@ -19,6 +19,12 @@
       "timeout_minutes": 5,
       "timing_exemption_reason": "Hermetic decision-artifact mutation gate runs outside the package unit environment."
     },
+    "hermes-level2-product": {
+      "runtime_budget_seconds": 3000,
+      "timeout_headroom_seconds": 600,
+      "timeout_minutes": 60,
+      "timing_exemption_reason": "Production-shaped Hermes composition, persistent reopen, replay, revocation, and recovery run as one dedicated Level 2 product gate."
+    },
     "benchmark-contract-tests": {
       "runtime_budget_seconds": 600,
       "timeout_headroom_seconds": 300,

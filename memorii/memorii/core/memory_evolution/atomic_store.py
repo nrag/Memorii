@@ -1763,11 +1763,19 @@ class SemanticIngestionAtomicStore:
             self._persist_bootstrap_authority_terminal_if_absent(terminal)
             return terminal, 0
         expected_routes = prepared.segment_language_routes.routes
+        typed_proofs = tuple(
+            proof for proof in segment_proofs
+            if isinstance(proof, BootstrapFreeformSegmentProof)
+        )
+        typed_routes = tuple(
+            route for route in expected_routes
+            if isinstance(route, BootstrapFreeformSegmentLanguageRoute)
+        )
         if (
-            not all(isinstance(proof, BootstrapFreeformSegmentProof) for proof in segment_proofs)
-            or not all(isinstance(route, BootstrapFreeformSegmentLanguageRoute) for route in expected_routes)
-            or tuple(proof.segment_id for proof in segment_proofs)
-            != tuple(route.segment_id for route in expected_routes)
+            len(typed_proofs) != len(segment_proofs)
+            or len(typed_routes) != len(expected_routes)
+            or tuple(proof.segment_id for proof in typed_proofs)
+            != tuple(route.segment_id for route in typed_routes)
             or any(
                 any(
                     getattr(proof, field) != getattr(route, field)
@@ -1786,7 +1794,7 @@ class SemanticIngestionAtomicStore:
                         "trusted_language_evidence_digest", "route_digest",
                     )
                 )
-                for proof, route in zip(segment_proofs, expected_routes, strict=True)
+                for proof, route in zip(typed_proofs, typed_routes, strict=True)
             )
         ):
             raise PreplanningStoreError("bootstrap freeform proofs do not exactly bind prepared routes")
@@ -1804,7 +1812,7 @@ class SemanticIngestionAtomicStore:
                 "bootstrap_authority_pin": authority_pin.model_dump(mode="json"),
                 "bootstrap_release_evidence": release_evidence.model_dump(mode="json"),
                 "bootstrap_language_evidence": language_evidence.model_dump(mode="json"),
-                "bootstrap_segment_proofs": [proof.model_dump(mode="json") for proof in segment_proofs],
+                "bootstrap_segment_proofs": [proof.model_dump(mode="json") for proof in typed_proofs],
                 "prepared_generation": 1,
             },
             status=CommitStatus.COMMITTED, source_kind="semantic_ingestion_prepared_source",

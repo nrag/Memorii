@@ -121,8 +121,8 @@ def test_full_transcript_canonicalization_discards_known_hermes_message_carriers
     )
 
     assert messages == (
-        {"role": "user", "content": "Find Atlas"},
-        {"role": "assistant", "content": "Atlas is found."},
+        {"role": "user", "content": "Find Atlas", "timestamp": "2026-09-24T00:00:00Z"},
+        {"role": "assistant", "content": "Atlas is found.", "timestamp": "2026-09-24T00:00:01Z"},
     )
 
 
@@ -158,7 +158,32 @@ def test_full_transcript_canonicalization_accepts_decorated_tool_sequence() -> N
     assert messages[1]["tool_calls"] == (
         {"id": "call-1", "type": "function", "name": "lookup", "arguments": "{\"name\":\"Atlas\"}"},
     )
-    assert messages[2] == {"role": "tool", "content": "Atlas found", "tool_call_id": "call-1"}
+    assert messages[2] == {
+        "role": "tool",
+        "content": "Atlas found",
+        "tool_call_id": "call-1",
+        "timestamp": "2026-09-24T00:00:01Z",
+    }
+
+
+@pytest.mark.parametrize("timestamp", [None, "not-a-timestamp", "2026-09-24T00:00:00"])
+def test_completed_turn_timestamp_requires_a_timezone_aware_final_persisted_timestamp(timestamp: object) -> None:
+    final: dict[str, object] = {"role": "assistant", "content": "Acknowledged."}
+    if timestamp is not None:
+        final["timestamp"] = timestamp
+
+    from memorii.core.semantic_ingestion.hermes_completed_turn_runtime import _completed_turn_timestamp
+
+    with pytest.raises(ValueError, match="timestamp"):
+        canonical = _canonicalize_completed_messages(
+            messages=[
+                {"role": "user", "content": "Remember Atlas", "timestamp": "2026-09-24T00:00:00Z"},
+                final,
+            ],
+            user_content="Remember Atlas",
+            assistant_content="Acknowledged.",
+        )
+        _completed_turn_timestamp(canonical)
 
 
 def test_full_transcript_canonicalization_accepts_real_hermes_textless_tool_call() -> None:
