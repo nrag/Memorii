@@ -1,7 +1,7 @@
 {
   "schema": "memorii.production-entrypoint-preflight.v1",
   "mapping_id": "hermes_level2_completed_turn_binding_preflight_2026_09_24",
-  "mapped_revision": "c179de9740dde275034823a3b7b429a1bcfc7aed",
+  "mapped_revision": "2f6b5e5230d01dbb176aaa8a4bf111af83a12f0d",
   "mapped_tree_state": "clean",
   "requirement": "hermes_level2_completed_turn_memory",
   "composition_roots": [
@@ -60,7 +60,10 @@
     "memorii/memorii/core/semantic_ingestion/hermes_completed_turn_runtime.py": "8dd3ea7be56dd7cfc8d746a7aacb92835dbd968e70366fab87c0b2ceeb060631",
     "memorii/memorii/core/semantic_ingestion/source_normalization_repository.py": "c0ee9e76b87e7d2d3c14c329e1cffad2a790049be6575bef68fe0e311b5bd796",
     "memorii/memorii/core/memory_evolution/atomic_store.py": "7ba49823419388b98db0872c1c6a1ed9b909faf0431bab3cb0a8d479a31bedad",
-    "memorii/memorii/core/memory_evolution/writer_admission.py": "de0433b024423a0cff077f8f05589fa1fd4dee8d9932e7e9e3250622dcd154ea"
+    "memorii/memorii/core/memory_evolution/writer_admission.py": "de0433b024423a0cff077f8f05589fa1fd4dee8d9932e7e9e3250622dcd154ea",
+    "memorii/memorii/core/semantic_ingestion/project_assertions.py": "d09d7d85884d3d4576cdf544bad971bd37cf68165ccb6421f3308320095a462a",
+    "memorii/memorii/core/semantic_ingestion/resources/project_assertions.component_fingerprints.v1.json": "32db7689265e96b0e86d179899cc56c15ac168465489267391227dbc9fb63306",
+    "memorii/memorii/core/semantic_ingestion/resources/project_assertions.manifest.v1.json": "e78da4095c58f0d068e3fd6af3ee5b9d96c424e89e2f08ed3d25920d2a550947"
   },
   "result": "implemented_with_nonzero_production_callers"
 }

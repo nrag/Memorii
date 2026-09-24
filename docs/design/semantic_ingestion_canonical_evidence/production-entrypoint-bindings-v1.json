@@ -428,7 +428,7 @@
       "mapper_preflight": {
         "identity": "hermes_level2_completed_turn_binding_preflight_2026_09_24",
         "mapped_on": "2026-09-24",
-        "baseline_revision": "c179de9740dde275034823a3b7b429a1bcfc7aed",
+        "baseline_revision": "2f6b5e5230d01dbb176aaa8a4bf111af83a12f0d",
         "artifact": "docs/work/hermes-level2-pr/production-entrypoint-preflight.json"
       },
       "composition_roots": [
