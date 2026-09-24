@@ -10,7 +10,9 @@
 - Parent WorkPlan: `docs/work/hermes-conversation-memory-trial/implementation.plan.md`
 - Related WorkPlans: None
 - Canonical inputs: Windows Docker observation at branch head `10b67a5781e2eeaab656b1ee2b6eacd7a274a928`; pinned Hermes image `nousresearch/hermes-agent@sha256:eaa1c0b93eea54dadb8b072ffaffd569f93af444eacc2f3a`
-- Published correction revision: `e21e4886ffc292e941b5af2ada28ccd9f5eb469b`
+- Published correction revisions:
+  `e21e4886ffc292e941b5af2ada28ccd9f5eb469b` (primary-context binding) and
+  `f5e903d8f1c1a01fc8e7db7098fa882234e08394` (Windows Docker profile bytes)
 - Expected outputs: confirmed host delivery root cause, smallest production-path correction, focused regression proof, rebuilt Windows Docker verification
 
 ## Objective
@@ -291,8 +293,8 @@ The cross-platform Docker correction is separately bound as follows:
 
 ```yaml
 base_revision: 306c4fd281cae1fa527a1ea91ccbd2ffa5123303
-reviewed_revision: working-tree correction manifest d47dbeae03b0e208bcdb1eff41edf616eede346ee20ebb563cc5bd3169ec79f7
-tested_revision: working-tree correction manifest d47dbeae03b0e208bcdb1eff41edf616eede346ee20ebb563cc5bd3169ec79f7
+reviewed_revision: f5e903d8f1c1a01fc8e7db7098fa882234e08394, candidate manifest d47dbeae03b0e208bcdb1eff41edf616eede346ee20ebb563cc5bd3169ec79f7
+tested_revision: f5e903d8f1c1a01fc8e7db7098fa882234e08394, candidate manifest d47dbeae03b0e208bcdb1eff41edf616eede346ee20ebb563cc5bd3169ec79f7
 changed_surface_inventory_complete: true
 scope_delta_resolved: true
 authority_chains_complete: true
