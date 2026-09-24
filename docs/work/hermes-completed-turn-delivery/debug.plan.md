@@ -10,6 +10,7 @@
 - Parent WorkPlan: `docs/work/hermes-conversation-memory-trial/implementation.plan.md`
 - Related WorkPlans: None
 - Canonical inputs: Windows Docker observation at branch head `10b67a5781e2eeaab656b1ee2b6eacd7a274a928`; pinned Hermes image `nousresearch/hermes-agent@sha256:eaa1c0b93eea54dadb8b072ffaffd569f93af444eacc2f3a`
+- Published correction revision: `e21e4886ffc292e941b5af2ada28ccd9f5eb469b`
 - Expected outputs: confirmed host delivery root cause, smallest production-path correction, focused regression proof, rebuilt Windows Docker verification
 
 ## Objective
@@ -227,9 +228,9 @@ pinned-source and runtime evidence must be returned from that container.
 
 ## Next Action
 
-Commit and push the approved correction, then rebuild the Windows image and
-repeat the Hermes conversation, inspection, later-session recall, and restart
-test.
+Rebuild the Windows image from published correction revision
+`e21e4886ffc292e941b5af2ada28ccd9f5eb469b`, then repeat the Hermes
+conversation, inspection, later-session recall, and restart test.
 
 ## Outcome And Retrospective
 
