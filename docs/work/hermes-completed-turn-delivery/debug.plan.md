@@ -78,6 +78,13 @@ Hermes' normal primary workspace metadata.
    logs and swallows the initialization error, leaving a discoverable provider
    object with no initialized runtime. Completed-turn delivery then cannot
    admit a source, and no Memory Plane file is created.
+4. **Confirmed second root cause: Windows Docker build context changes signed
+   profile bytes.** Docker `COPY` preserves CRLF bytes from the Windows working
+   tree, while the Level 2 profile validates resource and component-source
+   digests against LF distribution bytes. The installed log identifies the
+   first mismatch as `project_assertions.output_schema.v1.json`; Hermes swallows
+   that initialization exception, so completed-turn calls find no initialized
+   provider.
 
 ## Experiments
 
@@ -98,6 +105,18 @@ Hermes' normal primary workspace metadata.
   using the exact primary context reproduces the rejection before service
   construction.
 
+### Cross-platform signed-byte reproduction
+
+- Hypotheses distinguished: a stale image or volume, versus byte conversion in
+  the Windows Docker build context.
+- Prediction: converting a verified LF profile resource to CRLF changes its raw
+  SHA-256; normalizing only manifest-declared resources and component modules
+  restores their declared digests. Semantic changes, lone carriage returns,
+  and unsafe component coordinates remain rejected.
+- Actual result: focused replicas prove deterministic CRLF-to-LF preparation
+  restores every declared resource and component hash. Semantic drift, lone
+  CR, and an unsafe module coordinate fail closed.
+
 ## Evidence Log
 
 - Windows inspection returned
@@ -116,6 +135,12 @@ Hermes' normal primary workspace metadata.
   primary profile metadata. Local reproduction against the reviewed revision
   with that exact value raises `LocalLevel2AuthorityError: local Level 2
   delegated or shared execution is unsupported` at `hermes_factory.py:72`.
+- Local Docker verification found the previous `FROM` checksum has 48
+  hexadecimal characters, and Docker requires a 64-character SHA-256 digest.
+  This Level 2 Dockerfile now uses `nousresearch/hermes-agent:latest`, matching
+  the user's successfully built Windows image. Selecting and release-validating
+  an immutable base-image digest is deferred to Level 3 rather than inventing a
+  checksum.
 
 ## Decision Log
 
@@ -165,9 +190,62 @@ Hermes' normal primary workspace metadata.
   memorii/tests/unit/integrations/test_hermes_memory_provider_bridge.py
   memorii/tests/integration/test_hermes_bootstrap_v3_product.py` and
   `git diff --check`: passed.
+- Added `tools/prepare_project_assertions_docker_context.py`. Before install,
+  it normalizes CRLF to LF only for the profile manifest, its fixed
+  manifest-declared resource members, and component-source modules. It rejects
+  invalid UTF-8, lone CR, unknown resource names, unsafe module coordinates,
+  malformed SHA-256 values, semantic resource drift, and source-fingerprint
+  drift, while preserving exact runtime verification.
+- Changed `Dockerfile.memorii` to run that preparation tool after `COPY` and
+  before editable install, then call `load_project_assertions_bundle()` inside
+  Hermes' virtual environment as a post-install build gate.
+- Added `.gitattributes` LF policy for the profile resources and each
+  fingerprinted source module.
+- Added focused CRLF-replica, semantic-drift, lone-carriage-return, and unsafe
+  component-module tests. `PYTHONPATH=memorii .venv/bin/python -m pytest -q
+  memorii/tests/unit/tools/test_prepare_project_assertions_docker_context.py
+  memorii/tests/unit/core/semantic_ingestion/test_project_assertions_profile.py`:
+  `6 passed in 18.60s`.
+- `PYTHONPATH=memorii .venv/bin/python -m pytest -q
+  memorii/tests/unit/integrations/test_hermes_memory_provider_bridge.py`:
+  `24 passed in 128.86s`. The existing bridge suite now asserts that the pinned
+  Dockerfile includes preparation and the installed-profile gate.
+- `PYTHONPATH=memorii .venv/bin/python
+  tools/prepare_project_assertions_docker_context.py --source-root memorii`,
+  scoped Ruff, and `git diff --check`: passed.
+- `docker build --no-cache -f Dockerfile.memorii -t
+  hermes-memorii-profile-prep-test .`: passed. Docker executed the production
+  `COPY` -> preparation -> editable install -> installed bundle-gate chain and
+  produced image `hermes-memorii-profile-prep-test:latest`. The same chain is
+  the non-test caller used by the Windows build.
+- The opt-in Docker regression builds a minimal disposable context containing
+  only `Dockerfile.memorii`, the preparation tool, `memorii/pyproject.toml`,
+  `memorii/memorii`, and the root `acceptance` package. It converts every
+  manifest resource and fingerprinted component source to CRLF, proves the
+  unprepared output-schema bytes differ from their declared digest, builds the
+  real Dockerfile, and invokes `load_project_assertions_bundle()` in the
+  resulting image. `MEMORII_RUN_DOCKER_TESTS=1 PYTHONPATH=memorii
+  .venv/bin/python -m pytest -q
+  memorii/tests/unit/tools/test_prepare_project_assertions_docker_context.py
+  -k docker_build`: `1 passed, 5 deselected in 144.14s`.
 
 ## Review Log
 
+- Frozen Windows-build correction manifest:
+  `docs/work/hermes-completed-turn-delivery/windows-build-correction-manifest.json`.
+  Its base is `306c4fd281cae1fa527a1ea91ccbd2ffa5123303` and its
+  post-remediation SHA-256 is
+  `d47dbeae03b0e208bcdb1eff41edf616eede346ee20ebb563cc5bd3169ec79f7`.
+  Targeted correctness review approved the product correction with no finding.
+  Final test delta review verified the updated manifest, confirmed both prior
+  verification findings resolved, and reported no remaining P1 or P2 finding.
+- Targeted test review found two confirmed correction gaps. P2
+  (`changes_required`, verification): the prior proof built an LF working tree,
+  so it did not demonstrate the real Windows CRLF failure boundary. Resolved by
+  the opt-in minimal-context Docker regression above. P3 (`follow_up`,
+  verification): component-source drift lacked a direct assertion. Resolved by
+  a focused semantic revision of `project_assertions.py`, which preparation
+  rejects through the declared component fingerprint.
 - Initial root-cause consultation declined approval because no correction
   candidate or current binding ledger existed. That was a valid readiness
   blocker rather than a product finding.
@@ -209,10 +287,36 @@ local_ci_parity: focused Level 2 correction gates only
 required_checks_green: true
 ```
 
+The cross-platform Docker correction is separately bound as follows:
+
+```yaml
+base_revision: 306c4fd281cae1fa527a1ea91ccbd2ffa5123303
+reviewed_revision: working-tree correction manifest d47dbeae03b0e208bcdb1eff41edf616eede346ee20ebb563cc5bd3169ec79f7
+tested_revision: working-tree correction manifest d47dbeae03b0e208bcdb1eff41edf616eede346ee20ebb563cc5bd3169ec79f7
+changed_surface_inventory_complete: true
+scope_delta_resolved: true
+authority_chains_complete: true
+passed_local_jobs:
+  - CRLF preparation and installed-profile tests: 7 passed, 1 skipped
+  - opt-in real Docker CRLF regression: 1 passed
+  - focused Hermes bridge suite: 24 passed
+  - no-cache production Docker build: passed
+  - scoped Ruff and diff integrity: passed
+known_local_failures: []
+failure_exclusions: []
+remaining_validated_p1_p2: []
+remaining_blocks_approval: []
+remaining_changes_required: []
+required_checks_green: true
+remaining_operational_evidence:
+  - Windows Hermes conversation, durable inspection, restart, and later-session recall
+```
+
 ## Production Entrypoint Bindings
 
 | Trigger | Composition root and caller | Context authority and validation | Durable/read outcome |
 | --- | --- | --- | --- |
+| Docker image build | `Dockerfile.memorii` after `COPY` -> preparation tool -> editable `uv pip install` -> installed `load_project_assertions_bundle()` | The tool permits only fixed resource and module coordinates, converts only CRLF, and verifies every declared resource and component SHA-256. The installed runtime repeats exact validation. | Build fails closed for drift or malformed bytes; a successful image contains the bytes accepted by the production provider factory. |
 | Hermes external-provider initialization | Hermes `MemoryManager.initialize_all` -> installed `MemoriiHermesMemoryProvider.initialize` -> sole `memorii.hermes.provider_service` factory | Bridge retains `platform`, `agent_context`, profile identity, workspace, parent session, user, home, and session. Factory accepts exactly `cli` + `primary` + `hermes` + no parent before authority/service construction. | Successful binding constructs the JSONL Memory Plane, current Bootstrap V3 runtime, durable completed-turn worker, and protected reader. |
 | Completed user/assistant turn | Hermes 0.21.4 `turn_finalizer.py` or `codex_runtime.py` -> `MemoryManager.sync_all` -> the initialized bridge's `sync_turn` | Existing raw-author consistency, canonical transcript, current authority, installation/profile, agent, session, and source checks remain unchanged. | Atomic source admission creates `memory_records.jsonl`; worker commits graph, ledger, terminal outcome, and runtime-context projection. |
 | Later query | Hermes prefetch -> initialized bridge -> completed-turn runtime protected reader | Existing installation, agent, query, purpose, grant, and freshness checks remain unchanged. | Returns committed project assertion or an empty non-disclosing result. |
@@ -228,9 +332,10 @@ pinned-source and runtime evidence must be returned from that container.
 
 ## Next Action
 
-Rebuild the Windows image from published correction revision
-`e21e4886ffc292e941b5af2ada28ccd9f5eb469b`, then repeat the Hermes
-conversation, inspection, later-session recall, and restart test.
+Obtain the published cross-platform build correction, rebuild the Windows image
+without cache, re-authorize the existing Level 2 volume against the rebuilt
+image, then repeat one Hermes conversation, inspection, later-session recall,
+and restart test.
 
 ## Outcome And Retrospective
 

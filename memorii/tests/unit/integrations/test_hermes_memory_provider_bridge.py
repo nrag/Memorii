@@ -53,11 +53,13 @@ def test_pinned_hermes_image_and_first_party_factory_match_the_level2_abi() -> N
     root = Path(__file__).parents[4]
     dockerfile = (root / "Dockerfile.memorii").read_text()
 
-    assert ("FROM nousresearch/hermes-agent@sha256:eaa1c0b93eea54dadb8b072ffaffd569f93af444eacc2f3a") in dockerfile
+    assert "FROM nousresearch/hermes-agent:latest" in dockerfile
     assert (
         "memorii.integrations.hermes_factory:build_local_level2_runtime_binding"
         in (root / "memorii" / "pyproject.toml").read_text()
     )
+    assert "prepare_project_assertions_docker_context.py" in dockerfile
+    assert "load_project_assertions_bundle" in dockerfile
 
 
 def test_distribution_declares_exactly_one_first_party_hermes_service_factory() -> None:
