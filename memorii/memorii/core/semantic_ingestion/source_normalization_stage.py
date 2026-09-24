@@ -20,7 +20,7 @@ from memorii.core.semantic_ingestion.contracts import (
     AcceptedTemporalEvidence,
     AuthenticatedSourceIntervalEvidence,
     BootstrapAnalysisLaneResultV3,
-    BootstrapDeclaredSegmentLanguageRoute,
+    BootstrapFreeformSegmentLanguageRoute,
     BootstrapGraphFreeIdentityPlanningInputV3,
     BootstrapGraphFreeInterpretationBundleV3,
     BootstrapGraphNormalizationAuthorityMemberV3,
@@ -169,7 +169,7 @@ def _planning_construction_authority_for_operation(
         required_scope_set_digest=prepared_source.governance_carrier_artifact.required_outcome_scopes.required_scope_set_digest,
         predicate_registry_fingerprint=planning_policy_authority.predicate_registry_fingerprint, predicate_trust_rule=rule,
         arbitration_policy_bundle=policy_bundle,
-        predicate_state_rule=planning_policy_authority.predicate_state_rule,
+        predicate_state_rule=planning_policy_authority.rule_for(fact.predicate_id),
         source_authority_evidence=source_authority_evidence,
         action_policy_fingerprint=planning_policy_authority.action_policy_fingerprint, action_transition=None,
         planning_codec_entries=canonical_graph_codec_manifest().entries, temporal_constructions=(temporal,), evidence_constructions=evidence,
@@ -393,7 +393,7 @@ def validate_reloaded_bootstrap_v3_source_normalization_result(
     expected_segments = {
         (route.segment_id, route.route_digest)
         for route in source.segment_language_routes.routes
-        if isinstance(route, BootstrapDeclaredSegmentLanguageRoute)
+        if isinstance(route, BootstrapFreeformSegmentLanguageRoute)
     }
     actual_segments = {
         (item.segment_id, item.bootstrap_route_digest)

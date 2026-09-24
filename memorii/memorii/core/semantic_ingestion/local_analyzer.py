@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from memorii.core.semantic_ingestion.contracts import (
     AnalyzerRoleInterpretation,
     AuthenticatedSourceIntervalEvidence,
+    BootstrapFreeformSegmentLanguageRoute,
     CanonicalRoleAssignment,
     ConstructionFamily,
     IndependentSourceAnalysis,
@@ -176,7 +177,10 @@ class ProductionLocalSemanticAnalyzer:
         assertion_offset = segment_text.find(proposal.assertion_quote)
         if assertion_offset < 0:
             return None
-        if segment.language_route != route or route.decision != "selected":
+        if (
+            segment.language_route != route
+            or not isinstance(route, BootstrapFreeformSegmentLanguageRoute)
+        ):
             return None
 
         def source_reference(start: int, end: int) -> SourceSpanReference:

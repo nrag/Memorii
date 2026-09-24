@@ -12,7 +12,7 @@ from memorii.core.semantic_ingestion.contracts import (
     encode_semantic_contract,
 )
 from tests.fixtures.semantic_ingestion.source_normalization_fixture_builder import (
-    build_bootstrap_declared_prepared_source,
+    build_bootstrap_freeform_prepared_source,
     build_bootstrap_v3_fixture_authority,
 )
 
@@ -46,8 +46,8 @@ def test_bootstrap_v3_limit_policy_and_authority_are_closed_codec_records() -> N
         )
 
 
-def test_bootstrap_v3_fixture_issues_declared_route_and_exact_four_lane_requests() -> None:
-    source = build_bootstrap_declared_prepared_source(
+def test_bootstrap_v3_fixture_issues_current_route_and_exact_four_lane_requests() -> None:
+    source = build_bootstrap_freeform_prepared_source(
         source_id="source:bootstrap-fixture",
         source_digest=_hex("bootstrap-fixture-source"),
         source_text="Alice works for Globex.",

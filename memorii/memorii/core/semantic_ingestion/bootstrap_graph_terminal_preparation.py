@@ -92,6 +92,16 @@ def build_bootstrap_graph_execution_stage_outcomes(
     This deliberately has no store lookup: the terminal manifest is an exact projection
     of the retained replay authority, epoch, lineage, and CAS constructions.
     """
+    empty_abstained = (
+        not request.source_dependency_groups
+        and not complete_lineage.entries
+        and not complete_lineage.latest_entry_by_group
+        and not group_constructions
+        and all(
+            proposal.status == "abstained" and not proposal.operation_members
+            for proposal in request.normalization_replay.source_normalization_request.proposal_run.proposal_payload.normalized_proposals
+        )
+    )
     if (
         final_attempt.request_digest != request.request_digest
         or final_attempt.normalization_replay_digest != request.normalization_replay.replay_digest
@@ -99,12 +109,22 @@ def build_bootstrap_graph_execution_stage_outcomes(
         or complete_lineage.control_epoch_digest != control_epoch.epoch_digest
         or host_authority.execution_graph_fingerprint
         != CANONICAL_INGESTION_EXECUTION_GRAPH.graph_fingerprint
-        or not complete_lineage.entries
-        or (host_authority.source_id, host_authority.source_digest, host_authority.preparation_fingerprint)
-        != (
-            complete_lineage.entries[0].source_id,
-            complete_lineage.entries[0].source_digest,
-            complete_lineage.entries[0].preparation_fingerprint,
+        or (
+            empty_abstained
+            and (host_authority.source_id, host_authority.source_digest, host_authority.preparation_fingerprint)
+            != (control_epoch.source_id, control_epoch.source_digest, control_epoch.preparation_fingerprint)
+        )
+        or (
+            not empty_abstained
+            and (
+                not complete_lineage.entries
+                or (host_authority.source_id, host_authority.source_digest, host_authority.preparation_fingerprint)
+                != (
+                    complete_lineage.entries[0].source_id,
+                    complete_lineage.entries[0].source_digest,
+                    complete_lineage.entries[0].preparation_fingerprint,
+                )
+            )
         )
     ):
         raise ValueError("bootstrap graph execution stage inputs are substituted")
@@ -114,8 +134,8 @@ def build_bootstrap_graph_execution_stage_outcomes(
         group_id for group_id, _entry_digest in complete_lineage.latest_entry_by_group
     )
     if (
-        not group_ids
-        or len(dispositions) != len(group_constructions)
+        len(dispositions) != len(group_constructions)
+        or (not group_ids and not empty_abstained)
         or not set(dispositions).issubset(group_ids)
         or (
             finalized_failure_group_id is not None
@@ -308,13 +328,22 @@ class DeterministicBootstrapGraphTerminalPreparationV3:
         *, request: object, complete_lineage: object, manifest: object,
         host_authority: object,
     ) -> None:
-        if (
-            (host_authority.source_id, host_authority.source_digest, host_authority.preparation_fingerprint)
-            != (
+        source_coordinates = (
+            (
                 complete_lineage.entries[0].source_id,
                 complete_lineage.entries[0].source_digest,
                 complete_lineage.entries[0].preparation_fingerprint,
             )
+            if complete_lineage.entries
+            else (
+                request.initial_control_epoch.source_id,
+                request.initial_control_epoch.source_digest,
+                request.initial_control_epoch.preparation_fingerprint,
+            )
+        )
+        if (
+            (host_authority.source_id, host_authority.source_digest, host_authority.preparation_fingerprint)
+            != source_coordinates
             or host_authority.segment_governance_carriers != manifest.segment_governance_carriers
             or host_authority.message_admission_carriers != manifest.message_admission_carriers
             or host_authority.governance_carrier_artifact != manifest.governance_carrier_artifact
@@ -622,6 +651,8 @@ class DeterministicBootstrapGraphTerminalPreparationV3:
     ) -> str:
         dispositions = tuple(item.disposition for item in constructions)
         observations = tuple(item.terminal_observation_status for item in constructions)
+        if not constructions:
+            return "evidence_only"
         if "failed" in dispositions:
             return "failed"
         if all(item == "committed" for item in dispositions):

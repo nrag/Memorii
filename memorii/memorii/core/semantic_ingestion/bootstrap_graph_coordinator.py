@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -45,6 +46,8 @@ from memorii.core.semantic_ingestion.contracts import (
     decode_bootstrap_graph_atomic_member_payload_v3,
 )
 from memorii.core.semantic_ingestion.event_replay import SemanticEventReplayError
+
+logger = logging.getLogger(__name__)
 
 
 class BootstrapGraphPlanCompilerPortV3(Protocol):
@@ -576,6 +579,7 @@ class BootstrapGraphDependentCoordinatorV3:
             except SemanticEventReplayError:
                 raise
             except (PreplanningStoreError, ValueError):
+                logger.warning("bootstrap_graph_group_commit_storage_retry", exc_info=True)
                 reason = "storage_retry"
                 return self._post_effect_retry(
                     request=request, epoch=epoch, attempt=attempt,
@@ -1087,6 +1091,9 @@ class BootstrapGraphDependentCoordinatorV3:
                 finalized_failure_group_id=finalized_failure_group_id,
             )
         except (PreplanningStoreError, ValueError):
+            logger.warning(
+                "bootstrap_graph_terminal_preparation_retry", exc_info=True
+            )
             return self._post_effect_retry(
                 request=request, epoch=epoch, attempt=attempt,
                 plan=compilation.plan, authorizations=authorizations, lineage=lineage,
@@ -1099,6 +1106,7 @@ class BootstrapGraphDependentCoordinatorV3:
                 request=preparation.publication_request
             )
         except (PreplanningStoreError, ValueError):
+            logger.warning("bootstrap_graph_terminal_persistence_retry", exc_info=True)
             # A terminal CAS can commit before transport/acknowledgement fails.
             # Found-first reload is the only authoritative recovery path.
             try:

@@ -320,6 +320,9 @@ class AtomicStoreBootstrapRecoveryClaimRepository:
             claim=claim, server_time=server_time, monotonic_tick=monotonic_tick
         )
 
+    def begin_provider_attempt(self, *, claim: BootstrapRecoveryClaimV3) -> bool:
+        return self._atomic_store.begin_bootstrap_v3_provider_attempt(claim=claim)
+
     def reload_found(self, *, recovery_key_digest: str) -> BootstrapSourceNormalizationResultV3 | None:
         """Reload a committed V3 result; never reconstruct or re-run a lane."""
         try:

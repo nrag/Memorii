@@ -236,12 +236,9 @@ def _accepted_effect(
     plan: BootstrapGraphTargetMaterializationPlanV3,
 ):
     if member.kind == "fact":
-        if member.object.kind != "entity":
-            raise ValueError("native fact observation authority is incomplete")
-        expected_mentions = {
-            member.subject_mention_digest,
-            member.object.mention_digest,
-        }
+        expected_mentions = {member.subject_mention_digest}
+        if member.object.kind == "entity":
+            expected_mentions.add(member.object.mention_digest)
         observed_mentions = {
             item.mention_digest for item in plan.observation_mention_bindings
         }

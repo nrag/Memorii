@@ -6,6 +6,7 @@ composition root supplies sealed producers and a complete authority bundle.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from datetime import datetime
 from typing import Literal, Protocol
@@ -19,7 +20,7 @@ from memorii.core.semantic_ingestion.bootstrap_v3_interpreter import BootstrapV3
 from memorii.core.semantic_ingestion.contracts import (
     BootstrapAnalysisLaneResultV3,
     BootstrapAnalysisRouteBindingSet,
-    BootstrapDeclaredSegmentLanguageRoute,
+    BootstrapFreeformSegmentLanguageRoute,
     BootstrapProposalRunPayloadV3,
     BootstrapRecoveryAbortedV3,
     BootstrapRecoveryClaimV3,
@@ -47,6 +48,8 @@ from memorii.core.semantic_ingestion.source_normalization_stage import (
     BootstrapV3SourceNormalizationStage,
     GraphFreeSourceNormalizationInvocation,
 )
+
+logger = logging.getLogger(__name__)
 
 _DIGEST = r"^[0-9a-f]{64}$"
 
@@ -322,6 +325,8 @@ class BootstrapRecoveryClaimRepository(Protocol):
         self, *, claim: BootstrapRecoveryClaimV3, server_time: datetime, monotonic_tick: int
     ) -> BootstrapRecoveryRenewedV3 | BootstrapRecoveryAbortedV3 | BootstrapRecoveryClaimV3 | None: ...
 
+    def begin_provider_attempt(self, *, claim: BootstrapRecoveryClaimV3) -> bool: ...
+
 
 class SourceNormalizationExecutionOwnerProtocol(Protocol):
     """The mandatory typed continuation from bootstrap into normalization."""
@@ -348,6 +353,7 @@ class SourceNormalizationExecutionOwner:
         bootstrap_v3_proposal_producer: BootstrapV3ProposalProducer | None = None,
         bootstrap_v3_evidence_producer: BootstrapV3EvidenceProducerProtocol | None = None,
         bootstrap_v3_interpreter: BootstrapV3GraphFreeInterpreter | None = None,
+        authorization_is_current: Callable[[], bool] | None = None,
     ) -> None:
         self._trusted_time = trusted_time
         self._recovery_repository = recovery_repository
@@ -355,6 +361,7 @@ class SourceNormalizationExecutionOwner:
         self._bootstrap_v3_proposal_producer = bootstrap_v3_proposal_producer
         self._bootstrap_v3_evidence_producer = bootstrap_v3_evidence_producer
         self._bootstrap_v3_interpreter = bootstrap_v3_interpreter
+        self._authorization_is_current = authorization_is_current or (lambda: True)
 
     def normalize_after_recovery_claim(
         self,
@@ -404,19 +411,20 @@ class SourceNormalizationExecutionOwner:
             or publication.operation_fence_binding != invocation.operation_fence_binding
         ):
             raise ValueError("authority does not join invocation")
-        route_bindings = tuple(
-            route.resource_binding.resource_binding_digest
-            for route in invocation.source.segment_language_routes.routes
-            if getattr(route, "resource_binding", None) is not None
-        )
-        supplied_bindings = tuple(binding.resource_binding_digest for binding in authority.derivation.analyzer_resource_bindings)
-        if supplied_bindings != route_bindings:
-            raise ValueError("authority analyzer resources do not biject with source routes")
         bootstrap_routes = tuple(
             route for route in invocation.source.segment_language_routes.routes
-            if isinstance(route, BootstrapDeclaredSegmentLanguageRoute)
+            if isinstance(route, BootstrapFreeformSegmentLanguageRoute)
         )
         bootstrap_bindings = authority.derivation.bootstrap_analysis_routes.bindings
+        supplied_bindings = tuple(
+            binding.resource_binding_digest
+            for binding in authority.derivation.analyzer_resource_bindings
+        )
+        expected_bindings = tuple(
+            sorted({binding.resource_binding_digest for binding in bootstrap_bindings})
+        )
+        if supplied_bindings != expected_bindings:
+            raise ValueError("authority analyzer resources do not close current route bindings")
         if (
             tuple(binding.segment_id for binding in bootstrap_bindings)
             != tuple(route.segment_id for route in bootstrap_routes)
@@ -441,7 +449,7 @@ class SourceNormalizationExecutionOwner:
                 for binding, route in zip(bootstrap_bindings, bootstrap_routes, strict=True)
             )
         ):
-            raise ValueError("bootstrap analysis bindings do not biject with declared routes")
+            raise ValueError("bootstrap analysis bindings do not biject with current routes")
         if authority.derivation.proposal_run_authority.route_set_digest != invocation.source.segment_language_routes.route_set_digest:
             raise ValueError("proposal-run authority does not bind source route set")
         marker = handoff.marker
@@ -527,12 +535,18 @@ class SourceNormalizationExecutionOwner:
             current = renewed
             return True
 
-        if not renew():
-            return SourceNormalizationNonCommit.create(
-                phase="proposal_sealed", reason="proposal_run_unavailable", invocation=invocation
-            )
         try:
-            payload = self._bootstrap_v3_proposal_producer.produce(authority=runtime, renew=renew)
+            payload = None
+            for _attempt in range(2):
+                if not self._authorization_is_current() or not renew():
+                    break
+                if not self._recovery_repository.begin_provider_attempt(claim=current):
+                    break
+                payload = self._bootstrap_v3_proposal_producer.produce(
+                    authority=runtime, renew=renew
+                )
+                if payload is not None:
+                    break
             if payload is None or not renew():
                 return SourceNormalizationNonCommit.create(
                     phase="proposal_sealed", reason="proposal_run_unavailable", invocation=invocation
@@ -546,7 +560,7 @@ class SourceNormalizationExecutionOwner:
                 proposal_payload=payload, lane_results=lanes,
                 payload_limit_authority=runtime.payload_limit_authority,
             )
-            if not renew():
+            if not self._authorization_is_current() or not renew():
                 raise ValueError("bootstrap claim expired before publication")
             return self._bootstrap_v3_stage.normalize(BootstrapV3SourceNormalizationInputs(
                 proposal_payload=payload, lane_results=lanes, interpretation_bundle=interpreted.bundle,
@@ -562,12 +576,15 @@ class SourceNormalizationExecutionOwner:
                 source_interval_evidence=invocation.source_interval_evidence,
                 policy_bundle=invocation.policy_bundle,
                 planning_policy_authority=authority.derivation.bootstrap_planning_policy_authority,
-                operation_lease_binding=authority.publication.operation_lease_binding,
+                operation_lease_binding=(
+                    current.control_snapshot.control_record.operation_lease_binding
+                ),
                 writer_commit_binding=authority.publication.writer_commit_binding,
                 expected_operation_generation=authority.publication.expected_operation_generation,
                 expected_artifact_generation=authority.publication.expected_artifact_generation,
             ))
         except ValueError:
+            logger.warning("bootstrap_v3_normalization_publication_rejected", exc_info=True)
             return SourceNormalizationNonCommit.create(
                 phase="publication_linearized", reason="publication_conflict", invocation=invocation
             )

@@ -1,0 +1,4 @@
+# Signed profile resources and source fingerprints are byte-sensitive.
+memorii/memorii/core/semantic_ingestion/resources/project_assertions*.json text eol=lf
+memorii/memorii/core/memory_evolution/observation_registry_sources/decoder-source-manifest.json text eol=lf
+memorii/memorii/**/*.py text eol=lf

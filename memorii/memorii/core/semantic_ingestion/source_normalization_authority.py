@@ -46,7 +46,7 @@ class BootstrapPlanningPolicyAuthority(BaseModel):
     """Host-owned graph-planning policy identity sealed before normalization."""
 
     predicate_registry_fingerprint: str = Field(pattern=_DIGEST)
-    predicate_state_rule: PredicateStateRule
+    predicate_state_rules: tuple[PredicateStateRule, ...]
     action_policy_fingerprint: str = Field(pattern=_DIGEST)
     authority_digest: str = Field(pattern=_DIGEST)
 
@@ -54,14 +54,28 @@ class BootstrapPlanningPolicyAuthority(BaseModel):
 
     @model_validator(mode="after")
     def validate_digest(self) -> BootstrapPlanningPolicyAuthority:
-        if self.predicate_state_rule.predicate_id == "":
-            raise ValueError("bootstrap planning predicate state rule is invalid")
+        rules = self.predicate_state_rules
+        if (
+            not rules
+            or tuple(rule.predicate_id for rule in rules)
+            != tuple(sorted(rule.predicate_id for rule in rules))
+            or len({rule.predicate_id for rule in rules}) != len(rules)
+        ):
+            raise ValueError("bootstrap planning predicate state rules are invalid")
         if self.authority_digest != contract_digest(
             b"memorii.semantic-ingestion.bootstrap-planning-policy-authority.v3",
             self.model_dump(mode="python", exclude={"authority_digest"}),
         ):
             raise ValueError("bootstrap planning policy authority digest mismatch")
         return self
+
+    def rule_for(self, predicate_id: str) -> PredicateStateRule:
+        """Return the sole sealed rule for a post-proposal predicate."""
+
+        for rule in self.predicate_state_rules:
+            if rule.predicate_id == predicate_id:
+                return rule
+        raise ValueError("bootstrap planning predicate state rule is unavailable")
 
 
 class BootstrapV3RuntimeAuthority(BaseModel):

@@ -163,10 +163,9 @@ class BuiltInBootstrapGraphTargetMaterializationPlannerV3:
         operation = request.operation_input
         if (
             operation.operation_member.kind == "fact"
-            and operation.operation_member.object.kind == "entity"
             and operation.planning_construction_authority is not None
         ):
-            return self._plan_entity_fact(request=request)
+            return self._plan_fact(request=request)
         return BootstrapNativePlanningUnavailableV3.create(
             request_digest=request.request_digest,
             transaction_group_id=request.transaction_group_id,
@@ -180,26 +179,30 @@ class BuiltInBootstrapGraphTargetMaterializationPlannerV3:
             planning_state_before_digest=request.current_planning_state.state_digest,
         )
 
-    def _plan_entity_fact(
+    def _plan_fact(
         self, *, request: BootstrapNativeTargetPlanningRequestV3,
     ) -> BootstrapGraphTargetMaterializationPlanV3 | BootstrapNativePlanningUnavailableV3:
         operation = request.operation_input
         fact = operation.operation_member
-        assert fact.kind == "fact" and fact.object.kind == "entity"
+        assert fact.kind == "fact"
         authority = operation.planning_construction_authority
         assert authority is not None
         candidates = {item.mention_digest: item for item in request.target_resolution_authority.mention_candidates}
         subject_candidate = candidates.get(fact.subject_mention_digest)
-        object_candidate = candidates.get(fact.object.mention_digest)
-        if subject_candidate is None or object_candidate is None:
+        object_candidate = (
+            candidates.get(fact.object.mention_digest)
+            if fact.object.kind == "entity"
+            else None
+        )
+        if subject_candidate is None or (fact.object.kind == "entity" and object_candidate is None):
             return self._unavailable(request=request, reason="graph_target_missing")
         if len(candidates) != len(request.target_resolution_authority.mention_candidates):
             return self._unavailable(request=request, reason="graph_target_ambiguous")
         mentions = {item.mention_digest: item for item in operation.normalized_proposal.mentions}
-        selected_candidates = {
-            fact.subject_mention_digest: subject_candidate,
-            fact.object.mention_digest: object_candidate,
-        }
+        selected_candidates = {fact.subject_mention_digest: subject_candidate}
+        if fact.object.kind == "entity":
+            assert object_candidate is not None
+            selected_candidates[fact.object.mention_digest] = object_candidate
         selected_mentions = tuple(selected_candidates.items())
         if any(mention_digest not in mentions for mention_digest, _ in selected_mentions):
             return self._unavailable(request=request, reason="reference_closure_incomplete")
@@ -225,15 +228,19 @@ class BuiltInBootstrapGraphTargetMaterializationPlannerV3:
                 operation=operation, path="fact.subject", mention=fact.subject_mention_digest
             ), authority=subject_candidate.target_authority,
         )
-        object_target = BootstrapNativeTargetBindingV3.create(
-            role="fact_object", source_coordinate_digest=_mention_coordinate(
-                operation=operation, path="fact.object", mention=fact.object.mention_digest
-            ), authority=object_candidate.target_authority,
+        object_target = (
+            BootstrapNativeTargetBindingV3.create(
+                role="fact_object", source_coordinate_digest=_mention_coordinate(
+                    operation=operation, path="fact.object", mention=fact.object.mention_digest
+                ), authority=object_candidate.target_authority,
+            )
+            if fact.object.kind == "entity" and object_candidate is not None
+            else None
         )
         temporal = _one_assertion_temporal(authority)
         records: list[BootstrapNativePlanningRecordV3] = []
         created: list[BootstrapNativeEntitySeedV3] = []
-        for candidate in (subject_candidate, object_candidate):
+        for candidate in selected_candidates.values():
             if candidate.target_authority.kind != "new_first_use":
                 continue
             decision = next(
@@ -296,21 +303,33 @@ class BuiltInBootstrapGraphTargetMaterializationPlannerV3:
             claim_assertion_id=claim_id,
             subject_entity_revision_id=subject_candidate.entity_revision_id,
             subject_logical_entity_id=subject_candidate.logical_entity_id,
-            object_entity_revision_id=object_candidate.entity_revision_id,
-            object_logical_entity_id=object_candidate.logical_entity_id,
+            object_entity_revision_id=(
+                object_candidate.entity_revision_id if object_candidate is not None else None
+            ),
+            object_logical_entity_id=(
+                object_candidate.logical_entity_id if object_candidate is not None else None
+            ),
         )
         projection_record = _planning_record(operation=operation, group_id=request.transaction_group_id, record=projection)
-        relation = RelationRevision.create(
-            operation_id=operation.operation_id, codec_fingerprint=_codec(authority, "relation_revision"),
-            relation_revision_id=contract_digest(b"memorii.bootstrap-graph.native-fact-relation.v3", claim_id),
-            subject_entity_revision_id=subject_candidate.entity_revision_id,
-            subject_logical_entity_id=subject_candidate.logical_entity_id,
-            object_entity_revision_id=object_candidate.entity_revision_id,
-            object_logical_entity_id=object_candidate.logical_entity_id,
-            predicate_id=fact.predicate_id,
+        relation_record = None
+        if object_candidate is not None:
+            relation = RelationRevision.create(
+                operation_id=operation.operation_id, codec_fingerprint=_codec(authority, "relation_revision"),
+                relation_revision_id=contract_digest(b"memorii.bootstrap-graph.native-fact-relation.v3", claim_id),
+                subject_entity_revision_id=subject_candidate.entity_revision_id,
+                subject_logical_entity_id=subject_candidate.logical_entity_id,
+                object_entity_revision_id=object_candidate.entity_revision_id,
+                object_logical_entity_id=object_candidate.logical_entity_id,
+                predicate_id=fact.predicate_id,
+            )
+            relation_record = _planning_record(
+                operation=operation, group_id=request.transaction_group_id, record=relation
+            )
+        records.extend(
+            (claim_record, projection_record)
+            if relation_record is None
+            else (claim_record, projection_record, relation_record)
         )
-        relation_record = _planning_record(operation=operation, group_id=request.transaction_group_id, record=relation)
-        records.extend((claim_record, projection_record, relation_record))
         citations = []
         provenances = []
         evidence_projections = []
@@ -348,7 +367,9 @@ class BuiltInBootstrapGraphTargetMaterializationPlannerV3:
             created_entities=tuple(sorted(created, key=lambda item: item.entity_revision_id)),
             claim_assertion=claim_record.planning_payload,
             claim_projection=projection_record.planning_payload,
-            relation_revision=relation_record.planning_payload,
+            relation_revision=(
+                relation_record.planning_payload if relation_record is not None else None
+            ),
             citations=tuple(citations), provenances=tuple(provenances), terminal_bindings=(terminal,),
         )
         return BootstrapGraphTargetMaterializationPlanV3.create(
@@ -358,7 +379,8 @@ class BuiltInBootstrapGraphTargetMaterializationPlannerV3:
             sealed_snapshot_digest=request.sealed_snapshot.snapshot_digest,
             effective_read_set_digest=request.effective_read_set.read_set_digest,
             planning_state_before_digest=request.current_planning_state.state_digest,
-            target_bindings=(subject, object_target), operation_seed=seed,
+            target_bindings=(subject,) if object_target is None else (subject, object_target),
+            operation_seed=seed,
             planning_records=tuple(records), terminal_bindings=(terminal,),
             evidence_projections=tuple(evidence_projections), identity_materialization=None,
             planning_state_after=after, observation_mention_bindings=observation_bindings,
@@ -414,15 +436,15 @@ def _one_assertion_temporal(authority: BootstrapNativePlanningConstructionAuthor
 
 def _claim_assertion(*, operation, fact, claim_id: str, authority, temporal, subject, object_target, target_resolution_authority):
     canonical = target_resolution_authority.canonical_identity_authority.authority
+    decision_digests = {subject.canonical_identity_decision_digest}
+    if object_target is not None:
+        decision_digests.add(object_target.canonical_identity_decision_digest)
     decisions = tuple(
         item for item in canonical.cluster_decisions
-        if item.decision_digest in {
-            subject.canonical_identity_decision_digest,
-            object_target.canonical_identity_decision_digest,
-        }
+        if item.decision_digest in decision_digests
     )
     if (
-        len(decisions) != 2
+        len(decisions) != len(decision_digests)
         or any(
             item.proof.required_scope_set_digest != authority.required_scope_set_digest
             or item.proof.authorized_scope_identity != canonical.authorized_scope_identity
@@ -431,15 +453,34 @@ def _claim_assertion(*, operation, fact, claim_id: str, authority, temporal, sub
         )
     ):
         raise ValueError("native fact claim identity authority is incomplete")
+    object_assertion_ref = (
+        ImmutableAssertionEntityRef(
+            entity_revision_id=object_target.entity_revision_id,
+            logical_entity_id_at_assertion=object_target.logical_entity_id,
+        )
+        if object_target is not None
+        else None
+    )
+    claim_value = (
+        SemanticClaimValueKey(
+            object_kind="entity",
+            object_logical_entity_id=object_target.logical_entity_id,
+            value_policy_fingerprint=authority.predicate_state_rule.policy_fingerprint,
+        )
+        if object_target is not None
+        else SemanticClaimValueKey(
+            object_kind="literal",
+            literal_type=fact.object.value.literal_type.value,
+            canonical_literal_value=fact.object.value.canonical_value,
+            value_policy_fingerprint=authority.predicate_state_rule.policy_fingerprint,
+        )
+    )
     claim_identity = AcceptedClaimIdentity(
         subject_assertion_ref=ImmutableAssertionEntityRef(
             entity_revision_id=subject.entity_revision_id,
             logical_entity_id_at_assertion=subject.logical_entity_id,
         ),
-        object_assertion_ref=ImmutableAssertionEntityRef(
-            entity_revision_id=object_target.entity_revision_id,
-            logical_entity_id_at_assertion=object_target.logical_entity_id,
-        ),
+        object_assertion_ref=object_assertion_ref,
         assertion_key_at_recording=SemanticAssertionKey(
             slot=SemanticClaimSlotKey(
                 subject_logical_entity_id=subject.logical_entity_id,
@@ -447,11 +488,7 @@ def _claim_assertion(*, operation, fact, claim_id: str, authority, temporal, sub
                 scope_identity=canonical.authorized_scope_identity,
                 qualifier_partition=(),
             ),
-            value=SemanticClaimValueKey(
-                object_kind="entity",
-                object_logical_entity_id=object_target.logical_entity_id,
-                value_policy_fingerprint=authority.predicate_state_rule.policy_fingerprint,
-            ),
+            value=claim_value,
         ),
         predicate_state_rule=authority.predicate_state_rule,
         identity_lineage_snapshot_digest=canonical.sealed_snapshot_digest,

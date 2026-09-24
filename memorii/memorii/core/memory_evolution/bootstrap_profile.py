@@ -6,20 +6,19 @@ module contains no root, credential, network client, or writer-safe preplanning 
 
 from __future__ import annotations
 
+import unicodedata
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from hashlib import sha256
-from importlib import import_module
-from importlib.metadata import PackageNotFoundError, entry_points, packages_distributions, version
-from importlib.util import find_spec
+from importlib.metadata import entry_points
+from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Literal, Protocol, TypedDict, Unpack, cast
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
 from memorii.core.memory_evolution.ingestion_contracts import (
-    AuthenticatedIngressContext,
     CanonicalTypedValueProfileBinding,
     decode_artifact,
     decode_typed_value,
@@ -35,62 +34,87 @@ _CTV_PROFILE_ID = "semantic_ingestion_typed_value"
 _CTV_PROFILE_VERSION = 2
 _CTV_PROFILE_DIGEST = "9dc8b3d01e3f78ed6a11c7668cbb576b09f48ddf107c5efe441bb8bad234fd7f"
 _BOOTSTRAP_ARTIFACT_BINDING_DIGESTS = {
-    "memorii.semantic_ingestion.bootstrap_local_profile_manifest":
+    ("memorii.semantic_ingestion.bootstrap_local_profile_manifest", 1):
         "0136ac668b2cb67e9b3e4740da0299e757492707de47f079003ae2259173e87d",
-    "memorii.semantic_ingestion.bootstrap_grammar_capability_manifest":
+    ("memorii.semantic_ingestion.bootstrap_grammar_capability_manifest", 1):
         "80a0adf476264036eca1e604596871a7abbf05e634f1b0fbac4421aa516d0121",
-    "memorii.semantic_ingestion.bootstrap_grammar_corpus":
-        "d69cd728deefa7e7c0b93a9d8422b1cb865c3b168d92f5246848796d71bd4c5e",
+    # These are frozen CTV binding identities, not content digests.  Content
+    # substitution is detected by the nested artifact and release digests.
+    ("memorii.semantic_ingestion.bootstrap_local_profile_manifest", 2):
+        "2a8f9ad8329124fbb24e28ac052f28e960c8a7fe94e9f1c75a83d8d3a23db9d1",
+    ("memorii.semantic_ingestion.bootstrap_grammar_capability_manifest", 2):
+        "25a93c7dba8b6f90df699e946fb3d1f621f21c3ace76a61ebd67942a041c3d3f",
+    ("memorii.semantic_ingestion.bootstrap_freeform_admission_policy", 1):
+        "0cdf3736b5bd73f5897fa1ba2eaf362811e234a2810e6e77cbe6245709289f30",
 }
 
 
 class BootstrapProfileCoordinate(BaseModel):
-    profile_id: Literal["memorii.bootstrap_local_english_rule"]
-    profile_version: Literal[1]
+    """The sole installed Bootstrap V3 profile coordinate."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    schema_id: Literal["memorii.semantic_ingestion.bootstrap_profile_coordinate"]
+    schema_version: Literal[2]
+    profile_id: Literal["memorii.bootstrap_local_english_rule"]
+    profile_version: Literal[2]
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
 
 BOOTSTRAP_COORDINATE = BootstrapProfileCoordinate(
-    profile_id="memorii.bootstrap_local_english_rule", profile_version=1
+    schema_id="memorii.semantic_ingestion.bootstrap_profile_coordinate",
+    schema_version=2,
+    profile_id="memorii.bootstrap_local_english_rule",
+    profile_version=2,
 )
+BootstrapArtifactCoordinate = BootstrapProfileCoordinate
 
 
-class BootstrapProfileTrustAnchor(BaseModel):
-    schema_id: Literal["memorii.semantic_ingestion.bootstrap_profile_trust_anchor"] = "memorii.semantic_ingestion.bootstrap_profile_trust_anchor"
-    schema_version: Literal[1] = 1
-    coordinate: BootstrapProfileCoordinate
-    profile_manifest_digest: str = _DIGEST
-    grammar_capability_manifest_digest: str = _DIGEST
-    grammar_corpus_digest: str = _DIGEST
-    component_root_digest: str = _DIGEST
-    trust_anchor_digest: str = _DIGEST
+class BootstrapFreeformAdmissionPolicy(BaseModel):
+    """Installed V2 policy for admission before the unchanged V3 runtime."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    schema_id: Literal["memorii.semantic_ingestion.bootstrap_freeform_admission_policy"]
+    schema_version: Literal[1]
+    bootstrap_coordinate: BootstrapProfileCoordinate
+    policy_version: Literal[1]
+    declared_language: Literal["en"]
+    required_language_evidence: Literal["authenticated_host_declaration"]
+    max_segment_unicode_scalars: int = Field(ge=1, le=4096)
+    max_segment_utf8_bytes: int = Field(ge=1, le=16384)
+    max_child_segments: int = Field(ge=1, le=16)
+    allowed_unicode_normalization: Literal["NFC"]
+    prohibited_residue_classes: tuple[Literal["control", "private_use", "unpaired_surrogate"], ...]
+    require_nonempty_visible_text: Literal[True]
+    policy_digest: str = _DIGEST
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     @model_validator(mode="after")
-    def validate_digest(self) -> BootstrapProfileTrustAnchor:
-        if self.trust_anchor_digest != _content_digest(self, "trust_anchor_digest"):
-            raise ValueError("bootstrap trust anchor digest mismatch")
+    def validate_policy(self) -> BootstrapFreeformAdmissionPolicy:
+        if self.prohibited_residue_classes != tuple(sorted(set(self.prohibited_residue_classes))):
+            raise ValueError("freeform policy residue classes must be ordered and unique")
+        if self.policy_digest != _content_digest(self, "policy_digest"):
+            raise ValueError("freeform admission policy digest mismatch")
         return self
 
-
-class BootstrapProfileReleaseMetadata(BaseModel):
-    coordinate: BootstrapProfileCoordinate
-    bootstrap_profile_trust_anchor_digest: str = _DIGEST
-    signed_release_digest: str = _DIGEST
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    @classmethod
+    def create(cls, **values: object) -> BootstrapFreeformAdmissionPolicy:
+        body = cls.model_construct(
+            **values, policy_digest="0" * 64
+        ).model_dump(mode="python", exclude={"policy_digest"})
+        return cls(
+            **values,
+            policy_digest=sha256(encode_typed_value(body)).hexdigest(),
+        )
 
 
 class BootstrapTrustRootProvider(Protocol):
-    """Host/OS trust capability; production code must not implement this from package bytes."""
+    """Host/OS trust capability for the installed Bootstrap V3 release."""
 
-    def verify_active_release(self, metadata: BootstrapProfileReleaseMetadata) -> bool: ...
+    def verify_active_release(self, metadata: object) -> bool: ...
 
 
 class HostVerifiedBootstrapReleaseEvidence(BaseModel):
-    """Host-only proof of the externally rooted, active V1 release chain."""
+    """Host-only proof of the active Bootstrap V3 release."""
 
     coordinate: BootstrapProfileCoordinate
     signed_release_digest: str = _DIGEST
@@ -98,7 +122,9 @@ class HostVerifiedBootstrapReleaseEvidence(BaseModel):
     external_root_digest: str = _DIGEST
     active_lifecycle_snapshot_digest: str = _DIGEST
     lifecycle_state: Literal["active"]
-    trust_domain: Literal["production", "scenario_test"]
+    # ``local_level2`` is an installation-bound authorization mode for the
+    # same current Bootstrap V3 release.  It is not another profile family.
+    trust_domain: Literal["production", "local_level2", "scenario_test"]
     verified_at: datetime
     evidence_digest: str = _DIGEST
 
@@ -213,6 +239,15 @@ class BootstrapAuthenticatedLanguageEvidence(BaseModel):
         )
 
 
+class BootstrapLanguageEvidence(Protocol):
+    """Read-only language evidence shared by ingress and sealed Step-1 state."""
+
+    language_declaration: str | None
+    language_evidence_kind: str
+    language_evidence_trust: str
+    language_governance_agreement: str
+
+
 class _AdmissionPinCreateValues(TypedDict):
     coordinate: BootstrapProfileCoordinate
     profile_digest: str
@@ -224,7 +259,7 @@ class _AdmissionPinCreateValues(TypedDict):
 
 
 class BootstrapAdmissionPin(BaseModel):
-    """Persisted V1 authority selected at admission, never a current assertion."""
+    """Persisted Bootstrap V3 authority selected at admission."""
 
     coordinate: BootstrapProfileCoordinate
     profile_digest: str = _DIGEST
@@ -260,72 +295,15 @@ class BootstrapAdmissionPin(BaseModel):
         )
 
 
-class _SegmentGrammarProofCreateValues(TypedDict):
-    source_id: str
-    segment_id: str
-    language_evidence_tuple: tuple[
-        Literal["en"],
-        Literal["authenticated_host_declaration"],
-        Literal["trusted"],
-        Literal["agrees"],
-    ]
-    bootstrap_language_evidence_digest: str
-    corpus_case_id: str
-    normalized_segment_digest: str
-
-
-class BootstrapSegmentGrammarProof(BaseModel):
-    """One deterministic corpus match bound to one prepared route."""
-
-    source_id: str = Field(min_length=1)
-    segment_id: str = Field(min_length=1)
-    language_evidence_tuple: tuple[
-        Literal["en"],
-        Literal["authenticated_host_declaration"],
-        Literal["trusted"],
-        Literal["agrees"],
-    ]
-    bootstrap_language_evidence_digest: str = _DIGEST
-    corpus_case_id: str = Field(min_length=1)
-    normalized_segment_digest: str = _DIGEST
-    proof_digest: str = _DIGEST
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    @model_validator(mode="after")
-    def validate_proof(self) -> BootstrapSegmentGrammarProof:
-        if self.language_evidence_tuple != (
-            "en", "authenticated_host_declaration", "trusted", "agrees"
-        ):
-            raise ValueError("bootstrap grammar proof language evidence is not the V1 route")
-        body = self.model_dump(mode="python", exclude={"proof_digest"})
-        if self.proof_digest != _domain_digest(
-            b"memorii.semantic_ingestion.bootstrap_segment_grammar_proof.v1", body
-        ):
-            raise ValueError("bootstrap segment grammar proof digest mismatch")
-        return self
-
-    @classmethod
-    def create(cls, **body: Unpack[_SegmentGrammarProofCreateValues]) -> BootstrapSegmentGrammarProof:
-        return cls(
-            **body,
-            proof_digest=_domain_digest(
-                b"memorii.semantic_ingestion.bootstrap_segment_grammar_proof.v1", body
-            ),
-        )
-
-
 @dataclass(frozen=True)
 class HostVerifiedBootstrapMaterial:
-    """Atomic result returned only after the host verifies its external release root."""
+    """Atomic host-verified Bootstrap V3 release material."""
 
-    release_metadata: BootstrapProfileReleaseMetadata
-    trust_anchor: BootstrapProfileTrustAnchor
     artifact_payloads: BootstrapProfileArtifactPayloads
     release_evidence: HostVerifiedBootstrapReleaseEvidence
     authenticated_ingress_resolver: object
     profile_enabled: bool
-    trust_domain: Literal["production", "scenario_test"] = "production"
+    trust_domain: Literal["production", "local_level2", "scenario_test"] = "production"
 
 
 @dataclass(frozen=True)
@@ -348,7 +326,7 @@ class HostBootstrapMaterialVerifier(Protocol):
         self,
         *,
         presentation: HostBootstrapMaterialPresentation,
-        required_trust_domain: Literal["production", "scenario_test"],
+        required_trust_domain: Literal["production", "local_level2", "scenario_test"],
         server_time: datetime,
     ) -> HostVerifiedBootstrapMaterial | None: ...
 
@@ -383,207 +361,29 @@ class InstalledHostBootstrapCapabilityProvider:
         return cast(HostBootstrapCapability | None, value)
 
 
-def verify_bootstrap_release(
-    *,
-    provider: BootstrapTrustRootProvider | None,
-    metadata: BootstrapProfileReleaseMetadata,
-    anchor: BootstrapProfileTrustAnchor,
-) -> bool:
-    """Fail closed before any artifact/component construction."""
-
-    return bool(
-        provider is not None
-        and metadata.coordinate == anchor.coordinate == BOOTSTRAP_COORDINATE
-        and metadata.bootstrap_profile_trust_anchor_digest == anchor.trust_anchor_digest
-        and provider.verify_active_release(metadata)
-    )
-
-
-class BootstrapGrammarCorpusCase(BaseModel):
-    case_id: str
-    declared_language: str | None
-    language_evidence_kind: Literal["authenticated_host_declaration", "missing", "untrusted", "mismatched"]
-    language_evidence_trust: Literal["trusted", "missing", "untrusted", "mismatched"]
-    governance_agreement: Literal["agrees", "missing", "disagrees"]
-    normalized_segment_bytes: bytes
-    disposition: Literal["supported_form", "unsupported_form", "abstain_form"]
-    expected_reason: Literal["missing_language_declaration", "untrusted_language", "language_mismatch", "non_english_language", "mixed_residue", "unsupported_grammar", "extractor_abstained"] | None
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    @model_validator(mode="after")
-    def validate_disposition(self) -> BootstrapGrammarCorpusCase:
-        en = (self.language_evidence_kind, self.language_evidence_trust, self.governance_agreement, self.declared_language)
-        if self.disposition == "supported_form":
-            valid = en == ("authenticated_host_declaration", "trusted", "agrees", "en") and self.expected_reason is None
-        elif self.disposition == "unsupported_form":
-            valid = en == ("authenticated_host_declaration", "trusted", "agrees", "en") and self.expected_reason in {"mixed_residue", "unsupported_grammar"}
-        else:
-            valid = (en, self.expected_reason) in {
-                (("missing", "missing", "missing", None), "missing_language_declaration"),
-                (("untrusted", "untrusted", "missing", None), "untrusted_language"),
-                (("mismatched", "mismatched", "disagrees", "en"), "language_mismatch"),
-                (("authenticated_host_declaration", "trusted", "agrees", "en"), "extractor_abstained"),
-            } or (en[:3] == ("authenticated_host_declaration", "trusted", "agrees") and en[3] not in {None, "en"} and self.expected_reason == "non_english_language")
-        if not valid:
-            raise ValueError("invalid bootstrap grammar corpus tuple")
-        return self
-
-
-class BootstrapGrammarCorpus(BaseModel):
-    schema_id: Literal["memorii.semantic_ingestion.bootstrap_grammar_corpus"]
-    schema_version: Literal[1]
-    coordinate: BootstrapProfileCoordinate
-    cases: tuple[BootstrapGrammarCorpusCase, ...]
-    corpus_digest: str = _DIGEST
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    @model_validator(mode="after")
-    def validate_corpus(self) -> BootstrapGrammarCorpus:
-        ids = tuple(case.case_id for case in self.cases)
-        if ids != tuple(sorted(set(ids))):
-            raise ValueError("bootstrap corpus cases must be ordered and unique")
-        if {case.disposition for case in self.cases} != {
-            "supported_form",
-            "unsupported_form",
-            "abstain_form",
-        }:
-            raise ValueError("bootstrap corpus disposition inventory is incomplete")
-        required_reasons = {
-            "missing_language_declaration",
-            "untrusted_language",
-            "language_mismatch",
-            "non_english_language",
-            "mixed_residue",
-            "unsupported_grammar",
-            "extractor_abstained",
-        }
-        if {case.expected_reason for case in self.cases if case.expected_reason is not None} != required_reasons:
-            raise ValueError("bootstrap corpus reason inventory is incomplete")
-        if self.corpus_digest != _content_digest(self, "corpus_digest"):
-            raise ValueError("bootstrap corpus digest mismatch")
-        return self
-
-
-class BootstrapGrammarCapabilityManifest(BaseModel):
-    schema_id: Literal["memorii.semantic_ingestion.bootstrap_grammar_capability_manifest"]
-    schema_version: Literal[1]
-    coordinate: BootstrapProfileCoordinate
-    grammar_corpus_digest: str = _DIGEST
-    manifest_digest: str = _DIGEST
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    @model_validator(mode="after")
-    def validate_digest(self) -> BootstrapGrammarCapabilityManifest:
-        if self.manifest_digest != _content_digest(self, "manifest_digest"):
-            raise ValueError("grammar capability manifest digest mismatch")
-        return self
-
-
-class ComponentSymbolFingerprint(BaseModel):
-    module_path: str
-    qualified_symbol: str
-    distribution_name: str | None = None
-    distribution_version: str | None = None
-    repository_blob_identity: str | None = None
-    source_or_package_content_digest: str = _DIGEST
-    fingerprint_digest: str = _DIGEST
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    @model_validator(mode="after")
-    def validate_digest(self) -> ComponentSymbolFingerprint:
-        if (self.distribution_name is None) != (self.distribution_version is None):
-            raise ValueError("component distribution name and version must be paired")
-        if self.distribution_name is None and self.repository_blob_identity is None:
-            raise ValueError("component without distribution identity requires repository blob identity")
-        if self.repository_blob_identity is not None and not self.repository_blob_identity:
-            raise ValueError("component repository blob identity must be non-empty")
-        if self.fingerprint_digest != _component_fingerprint_digest(self):
-            raise ValueError("component fingerprint digest mismatch")
-        return self
-
-
-class BootstrapLocalProfileManifest(BaseModel):
-    schema_id: Literal["memorii.semantic_ingestion.bootstrap_local_profile_manifest"]
-    schema_version: Literal[1]
-    coordinate: BootstrapProfileCoordinate
-    extractor_symbol: Literal["memorii.core.memory_evolution.extraction.EnglishRuleMemoryExtractor"]
-    compiler_symbol: Literal["memorii.core.memory_evolution.semantic_compilation.SemanticIngestionCompiler"]
-    validator_symbol: Literal["memorii.core.memory_evolution.validation.MemoryEvolutionValidator"]
-    service_symbol: Literal["memorii.core.memory_evolution.service.MemoryEvolutionService"]
-    source_normalizer_symbol: Literal["memorii.core.memory_evolution.source_admission.ProviderEventNormalizer"]
-    scope_authorizer_symbol: Literal["memorii.core.memory_evolution.source_governance.require_complete_scope_authorization"]
-    preparation_service_symbol: Literal["memorii.core.semantic_ingestion.source_preparation.TextPreparationService"]
-    local_analyzer_symbol: Literal["memorii.core.semantic_ingestion.local_analyzer.ProductionLocalSemanticAnalyzer"]
-    preparation_policy: TextPreparationPolicy
-    declared_language: Literal["en"]
-    grammar_capability_manifest_digest: str = _DIGEST
-    grammar_corpus_digest: str = _DIGEST
-    component_root_digest: str = _DIGEST
-    component_fingerprints: tuple[ComponentSymbolFingerprint, ...]
-    profile_digest: str = _DIGEST
-    network_capability: Literal["denied"]
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    @model_validator(mode="after")
-    def validate_manifest(self) -> BootstrapLocalProfileManifest:
-        if self.preparation_policy.supported_languages != (self.declared_language,):
-            raise ValueError("bootstrap preparation policy must authorize only its declared language")
-        keys = tuple((item.module_path, item.qualified_symbol) for item in self.component_fingerprints)
-        if keys != tuple(sorted(set(keys))):
-            raise ValueError("component fingerprints must be ordered and unique")
-        required_keys = (
-            ("memorii.core.memory_evolution.extraction", "EnglishRuleMemoryExtractor"),
-            ("memorii.core.memory_evolution.semantic_compilation", "SemanticIngestionCompiler"),
-            ("memorii.core.memory_evolution.service", "MemoryEvolutionService"),
-            ("memorii.core.memory_evolution.source_admission", "ProviderEventNormalizer"),
-            ("memorii.core.memory_evolution.source_governance", "require_complete_scope_authorization"),
-            ("memorii.core.memory_evolution.validation", "MemoryEvolutionValidator"),
-            ("memorii.core.semantic_ingestion.local_analyzer", "ProductionLocalSemanticAnalyzer"),
-            ("memorii.core.semantic_ingestion.source_preparation", "TextPreparationService"),
-        )
-        if keys != required_keys:
-            raise ValueError("bootstrap component inventory is incomplete or substituted")
-        if self.component_root_digest != _component_root(self.coordinate, self.component_fingerprints):
-            raise ValueError("component root digest mismatch")
-        if self.profile_digest != _content_digest(self, "profile_digest"):
-            raise ValueError("bootstrap profile digest mismatch")
-        return self
-
-
-class BootstrapProfileArtifacts(BaseModel):
-    profile_manifest: BootstrapLocalProfileManifest
-    grammar_capability_manifest: BootstrapGrammarCapabilityManifest
-    grammar_corpus: BootstrapGrammarCorpus
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
 class BootstrapProfileArtifactPayloads(BaseModel):
+    """Exact CTV envelopes for the installed Bootstrap V3 artifact family."""
+
     profile_manifest: bytes
     grammar_capability_manifest: bytes
-    grammar_corpus: bytes
+    freeform_admission_policy: bytes
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
 
-def bootstrap_artifact_binding(schema_id: str) -> CanonicalTypedValueProfileBinding:
-    """Return the frozen decoder coordinate for one bootstrap content artifact."""
-
+def bootstrap_artifact_binding(
+    schema_id: str, *, schema_version: int
+) -> CanonicalTypedValueProfileBinding:
     try:
-        binding_digest = _BOOTSTRAP_ARTIFACT_BINDING_DIGESTS[schema_id]
+        binding_digest = _BOOTSTRAP_ARTIFACT_BINDING_DIGESTS[(schema_id, schema_version)]
     except KeyError as exc:
-        raise ValueError("unknown bootstrap artifact schema") from exc
+        raise ValueError("unknown Bootstrap V3 artifact schema") from exc
     return CanonicalTypedValueProfileBinding(
         profile_id=_CTV_PROFILE_ID,
         profile_version=_CTV_PROFILE_VERSION,
         profile_digest=_CTV_PROFILE_DIGEST,
         schema_id=schema_id,
-        schema_version=1,
+        schema_version=schema_version,
         binding_digest=binding_digest,
     )
 
@@ -591,152 +391,137 @@ def bootstrap_artifact_binding(schema_id: str) -> CanonicalTypedValueProfileBind
 def serialize_bootstrap_profile_artifacts(
     artifacts: BootstrapProfileArtifacts,
 ) -> BootstrapProfileArtifactPayloads:
-    """Envelope release-tooling bodies under their exact frozen CTV bindings."""
-
     return BootstrapProfileArtifactPayloads(
         profile_manifest=serialize_artifact(
             artifacts.profile_manifest.model_dump(mode="python"),
-            bootstrap_artifact_binding(artifacts.profile_manifest.schema_id),
+            bootstrap_artifact_binding(
+                artifacts.profile_manifest.schema_id,
+                schema_version=artifacts.profile_manifest.schema_version,
+            ),
         ),
         grammar_capability_manifest=serialize_artifact(
             artifacts.grammar_capability_manifest.model_dump(mode="python"),
-            bootstrap_artifact_binding(artifacts.grammar_capability_manifest.schema_id),
+            bootstrap_artifact_binding(
+                artifacts.grammar_capability_manifest.schema_id,
+                schema_version=artifacts.grammar_capability_manifest.schema_version,
+            ),
         ),
-        grammar_corpus=serialize_artifact(
-            artifacts.grammar_corpus.model_dump(mode="python"),
-            bootstrap_artifact_binding(artifacts.grammar_corpus.schema_id),
+        freeform_admission_policy=serialize_artifact(
+            artifacts.freeform_admission_policy.model_dump(mode="python"),
+            bootstrap_artifact_binding(
+                artifacts.freeform_admission_policy.schema_id,
+                schema_version=artifacts.freeform_admission_policy.schema_version,
+            ),
         ),
     )
+
+
+class BootstrapGrammarCapabilityManifest(BaseModel):
+    schema_id: Literal["memorii.semantic_ingestion.bootstrap_grammar_capability_manifest"]
+    schema_version: Literal[2]
+    coordinate: BootstrapProfileCoordinate
+    freeform_admission_policy_digest: str = _DIGEST
+    manifest_digest: str = _DIGEST
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    @model_validator(mode="after")
+    def validate_digest(self) -> BootstrapGrammarCapabilityManifest:
+        if self.manifest_digest != _content_digest(self, "manifest_digest"):
+            raise ValueError("bootstrap grammar capability manifest digest mismatch")
+        return self
+
+    @classmethod
+    def create(cls, **values: object) -> BootstrapGrammarCapabilityManifest:
+        body = cls.model_construct(
+            **values, manifest_digest="0" * 64
+        ).model_dump(mode="python", exclude={"manifest_digest"})
+        return cls(**values, manifest_digest=sha256(encode_typed_value(body)).hexdigest())
+
+
+class BootstrapLocalProfileManifest(BaseModel):
+    schema_id: Literal["memorii.semantic_ingestion.bootstrap_local_profile_manifest"]
+    schema_version: Literal[2]
+    coordinate: BootstrapProfileCoordinate
+    preparation_policy: TextPreparationPolicy
+    freeform_admission_policy_digest: str = _DIGEST
+    component_root_digest: str = _DIGEST
+    profile_digest: str = _DIGEST
+    network_capability: Literal["denied"]
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    @model_validator(mode="after")
+    def validate_manifest(self) -> BootstrapLocalProfileManifest:
+        if self.preparation_policy.supported_languages != ("en",):
+            raise ValueError("bootstrap preparation policy must authorize only English")
+        if self.profile_digest != _content_digest(self, "profile_digest"):
+            raise ValueError("bootstrap profile digest mismatch")
+        return self
+
+    @classmethod
+    def create(cls, **values: object) -> BootstrapLocalProfileManifest:
+        body = cls.model_construct(
+            **values, profile_digest="0" * 64
+        ).model_dump(mode="python", exclude={"profile_digest"})
+        return cls(**values, profile_digest=sha256(encode_typed_value(body)).hexdigest())
+
+
+class BootstrapProfileArtifacts(BaseModel):
+    profile_manifest: BootstrapLocalProfileManifest
+    grammar_capability_manifest: BootstrapGrammarCapabilityManifest
+    freeform_admission_policy: BootstrapFreeformAdmissionPolicy
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    @model_validator(mode="after")
+    def validate_artifacts(self) -> BootstrapProfileArtifacts:
+        if not (
+            self.profile_manifest.coordinate
+            == self.grammar_capability_manifest.coordinate
+            == self.freeform_admission_policy.bootstrap_coordinate
+            == BOOTSTRAP_COORDINATE
+            and self.profile_manifest.freeform_admission_policy_digest
+            == self.freeform_admission_policy.policy_digest
+            and self.grammar_capability_manifest.freeform_admission_policy_digest
+            == self.freeform_admission_policy.policy_digest
+        ):
+            raise ValueError("bootstrap artifacts are substituted")
+        return self
 
 
 class VerifiedBootstrapProfile(BaseModel):
     coordinate: BootstrapProfileCoordinate
     enabled: bool
     artifacts: BootstrapProfileArtifacts
-    release_evidence: HostVerifiedBootstrapReleaseEvidence
     selection_digest: str = _DIGEST
     verification_digest: str = _DIGEST
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    @model_validator(mode="after")
+    def validate_profile(self) -> VerifiedBootstrapProfile:
+        if self.coordinate != BOOTSTRAP_COORDINATE or self.artifacts.profile_manifest.coordinate != self.coordinate:
+            raise ValueError("verified bootstrap profile coordinate is substituted")
+        return self
 
 
 def verify_bootstrap_profile(material: HostVerifiedBootstrapMaterial) -> VerifiedBootstrapProfile:
-    """Verify the externally rooted release and complete local artifact graph."""
+    """Verify only the installed Bootstrap V3 release artifacts."""
 
-    _bootstrap_manifest_model()
-    anchor = material.trust_anchor
-    metadata = material.release_metadata
-    release_evidence = material.release_evidence
-    if not (
-        metadata.coordinate == anchor.coordinate == BOOTSTRAP_COORDINATE
-        and metadata.bootstrap_profile_trust_anchor_digest == anchor.trust_anchor_digest
-        and release_evidence.coordinate == metadata.coordinate
-        and release_evidence.signed_release_digest == metadata.signed_release_digest
-        and release_evidence.bootstrap_anchor_digest == anchor.trust_anchor_digest
-        and release_evidence.lifecycle_state == "active"
-        and release_evidence.trust_domain == material.trust_domain
+    evidence = material.release_evidence
+    if (
+        evidence.coordinate != BOOTSTRAP_COORDINATE
+        or evidence.lifecycle_state != "active"
+        or evidence.trust_domain != material.trust_domain
     ):
         raise BootstrapProfileVerificationError(BootstrapUnavailableReason.INVALID_MANIFEST)
-    payloads = material.artifact_payloads
-    artifacts = BootstrapProfileArtifacts(
-        profile_manifest=TypeAdapter(BootstrapLocalProfileManifest).validate_python(
-            decode_typed_value(
-                decode_artifact(
-                    payloads.profile_manifest,
-                    expected_binding=bootstrap_artifact_binding(
-                        "memorii.semantic_ingestion.bootstrap_local_profile_manifest"
-                    ),
-                ).canonical_value_bytes
-            )
-        ),
-        grammar_capability_manifest=TypeAdapter(BootstrapGrammarCapabilityManifest).validate_python(
-            decode_typed_value(
-                decode_artifact(
-                    payloads.grammar_capability_manifest,
-                    expected_binding=bootstrap_artifact_binding(
-                        "memorii.semantic_ingestion.bootstrap_grammar_capability_manifest"
-                    ),
-                ).canonical_value_bytes
-            )
-        ),
-        grammar_corpus=TypeAdapter(BootstrapGrammarCorpus).validate_python(
-            decode_typed_value(
-                decode_artifact(
-                    payloads.grammar_corpus,
-                    expected_binding=bootstrap_artifact_binding(
-                        "memorii.semantic_ingestion.bootstrap_grammar_corpus"
-                    ),
-                ).canonical_value_bytes
-            )
-        ),
+    profile = BootstrapProfileReleaseVerifier.verify(
+        payloads=material.artifact_payloads, enabled=material.profile_enabled
     )
-    profile = artifacts.profile_manifest
-    grammar = artifacts.grammar_capability_manifest
-    corpus = artifacts.grammar_corpus
-    if not (
-        anchor.coordinate == profile.coordinate == grammar.coordinate == corpus.coordinate == BOOTSTRAP_COORDINATE
-        and anchor.profile_manifest_digest == profile.profile_digest
-        and anchor.grammar_capability_manifest_digest == grammar.manifest_digest
-        and anchor.grammar_corpus_digest == corpus.corpus_digest
-        and anchor.component_root_digest == profile.component_root_digest
-        and profile.grammar_capability_manifest_digest == grammar.manifest_digest
-        and profile.grammar_corpus_digest == grammar.grammar_corpus_digest == corpus.corpus_digest
-    ):
+    if evidence.signed_release_digest != profile.verification_digest:
         raise BootstrapProfileVerificationError(BootstrapUnavailableReason.ALTERED_MANIFEST)
-    for fingerprint in profile.component_fingerprints:
-        spec = find_spec(fingerprint.module_path)
-        if spec is None or spec.origin is None:
-            raise BootstrapProfileVerificationError(BootstrapUnavailableReason.MISSING_COMPONENT)
-        try:
-            component_bytes = Path(spec.origin).read_bytes()
-        except OSError as exc:
-            raise BootstrapProfileVerificationError(
-                BootstrapUnavailableReason.MISSING_COMPONENT
-            ) from exc
-        if sha256(component_bytes).hexdigest() != fingerprint.source_or_package_content_digest:
-            raise BootstrapProfileVerificationError(BootstrapUnavailableReason.ALTERED_COMPONENT)
-        if fingerprint.distribution_name is not None:
-            try:
-                installed_version = version(fingerprint.distribution_name)
-            except PackageNotFoundError as exc:
-                raise BootstrapProfileVerificationError(BootstrapUnavailableReason.MISSING_COMPONENT) from exc
-            if installed_version != fingerprint.distribution_version:
-                raise BootstrapProfileVerificationError(BootstrapUnavailableReason.ALTERED_COMPONENT)
-        try:
-            symbol: object = import_module(fingerprint.module_path)
-            for component in fingerprint.qualified_symbol.split("."):
-                symbol = getattr(symbol, component)
-            if symbol is None:
-                raise AttributeError("bootstrap component symbol is null")
-        except (AttributeError, ImportError) as exc:
-            raise BootstrapProfileVerificationError(BootstrapUnavailableReason.MISSING_COMPONENT) from exc
-    selection_digest = sha256(
-        encode_typed_value(
-            {"coordinate": BOOTSTRAP_COORDINATE.model_dump(mode="python"), "enabled": material.profile_enabled}
-        )
-    ).hexdigest()
-    verification_digest = sha256(
-        encode_typed_value(
-            {
-                "anchor": anchor.trust_anchor_digest,
-                "profile": profile.profile_digest,
-                "grammar": grammar.manifest_digest,
-                "corpus": corpus.corpus_digest,
-                "components": profile.component_root_digest,
-                "signed_release": release_evidence.signed_release_digest,
-                "release_evidence": release_evidence.evidence_digest,
-                "trust_domain": release_evidence.trust_domain,
-            }
-        )
-    ).hexdigest()
-    return VerifiedBootstrapProfile(
-        coordinate=BOOTSTRAP_COORDINATE,
-        enabled=material.profile_enabled,
-        artifacts=artifacts,
-        release_evidence=release_evidence,
-        selection_digest=selection_digest,
-        verification_digest=verification_digest,
-    )
+    return profile
 
 
 class GovernedSourceAdmissionFact(BaseModel):
@@ -819,23 +604,13 @@ def normalized_input_digest(value: bytes) -> str:
     return sha256(value).hexdigest()
 
 
-def disposition_outcome(case: BootstrapGrammarCorpusCase) -> Literal["selected_pipeline_pending", "unsupported_input", "abstained"]:
-    """Map grammar disposition to the only legal governed-source admission semantic result."""
-
-    if case.disposition == "supported_form":
-        return "selected_pipeline_pending"
-    if case.disposition == "unsupported_form":
-        return "unsupported_input"
-    return "abstained"
-
-
 def classify_bootstrap_input(
     *,
     profile: VerifiedBootstrapProfile,
-    ingress: AuthenticatedIngressContext,
+    ingress: BootstrapLanguageEvidence,
     normalized_segment: bytes,
 ) -> tuple[str, str | None, str | None]:
-    """Classify only authenticated evidence against the exact verified corpus."""
+    """Classify a segment using the installed free-form policy only."""
 
     if not profile.enabled:
         return "disabled", "operator_disabled", None
@@ -845,15 +620,21 @@ def classify_bootstrap_input(
         ingress.language_governance_agreement,
         ingress.language_declaration,
     )
-    for case in profile.artifacts.grammar_corpus.cases:
-        case_evidence = (
-            case.language_evidence_kind,
-            case.language_evidence_trust,
-            case.governance_agreement,
-            case.declared_language,
-        )
-        if case.normalized_segment_bytes == normalized_segment and case_evidence == evidence:
-            return disposition_outcome(case), case.expected_reason, case.case_id
+    return _classify_freeform(
+        policy=profile.artifacts.freeform_admission_policy,
+        evidence=evidence,
+        raw_segment=normalized_segment,
+    )
+
+
+def _classify_freeform(
+    *,
+    policy: BootstrapFreeformAdmissionPolicy,
+    evidence: tuple[object, object, object, object],
+    raw_segment: bytes,
+) -> tuple[str, str | None, str | None]:
+    """Validate policy-owned raw text without a language detector or corpus scan."""
+
     if evidence == ("missing", "missing", "missing", None):
         return "abstained", "missing_language_declaration", None
     if evidence == ("untrusted", "untrusted", "missing", None):
@@ -864,24 +645,29 @@ def classify_bootstrap_input(
         return "abstained", "non_english_language", None
     if evidence != ("authenticated_host_declaration", "trusted", "agrees", "en"):
         return "abstained", "untrusted_language", None
-    return "unsupported_input", "unsupported_grammar", None
+    try:
+        text = raw_segment.decode("utf-8")
+    except UnicodeDecodeError:
+        return "unsupported_input", "prohibited_residue", None
+    if not text or (policy.require_nonempty_visible_text and not any(not char.isspace() for char in text)):
+        return "unsupported_input", "empty_segment", None
+    if unicodedata.normalize("NFC", text) != text:
+        return "unsupported_input", "normalization_mismatch", None
+    if len(text) > policy.max_segment_unicode_scalars or len(raw_segment) > policy.max_segment_utf8_bytes:
+        return "unsupported_input", "segment_limit", None
+    for char in text:
+        category = unicodedata.category(char)
+        if (
+            ("control" in policy.prohibited_residue_classes and category == "Cc")
+            or ("private_use" in policy.prohibited_residue_classes and category == "Co")
+            or ("unpaired_surrogate" in policy.prohibited_residue_classes and category == "Cs")
+        ):
+            return "unsupported_input", "prohibited_residue", None
+    return "selected_pipeline_pending", None, None
 
 
 def _content_digest(model: BaseModel, digest_field: str) -> str:
     return sha256(encode_typed_value(model.model_dump(mode="python", exclude={digest_field}))).hexdigest()
-
-
-def _component_root(
-    coordinate: BootstrapProfileCoordinate,
-    fingerprints: tuple[ComponentSymbolFingerprint, ...],
-) -> str:
-    return _domain_digest(
-        b"memorii.semantic_ingestion.bootstrap_package_root.v1",
-        {
-            "coordinate": coordinate.model_dump(mode="python"),
-            "fingerprint_digests": tuple(item.fingerprint_digest for item in fingerprints),
-        },
-    )
 
 
 def _domain_digest(domain: bytes, value: object) -> str:
@@ -890,139 +676,174 @@ def _domain_digest(domain: bytes, value: object) -> str:
     return sha256(domain + b"\0" + encode_typed_value(value)).hexdigest()
 
 
-def _component_fingerprint_digest(fingerprint: ComponentSymbolFingerprint) -> str:
-    return _domain_digest(
-        b"memorii.semantic_ingestion.bootstrap_component_fingerprint.v1",
-        fingerprint.model_dump(mode="python", exclude={"fingerprint_digest"}),
-    )
+def build_bootstrap_profile(
+    *,
+    policy: BootstrapFreeformAdmissionPolicy,
+    enabled: bool = True,
+) -> VerifiedBootstrapProfile:
+    """Build the one current profile from installed free-form policy material."""
 
-
-def _component_distribution_identity(module_path: str) -> tuple[str | None, str | None]:
-    top_level = module_path.split(".", 1)[0]
-    distributions = packages_distributions().get(top_level, ())
-    if len(distributions) != 1:
-        return None, None
-    distribution_name = distributions[0]
-    try:
-        return distribution_name, version(distribution_name)
-    except PackageNotFoundError:
-        return None, None
-
-
-def build_bootstrap_profile_artifacts(
-    cases: tuple[BootstrapGrammarCorpusCase, ...],
-) -> BootstrapProfileArtifacts:
-    """Build content-addressed artifacts for release tooling and deterministic tests."""
-
+    if policy.bootstrap_coordinate != BOOTSTRAP_COORDINATE:
+        raise ValueError("policy has the wrong bootstrap coordinate")
     TextPreparationPolicy = _bootstrap_manifest_model()
-    corpus_fields = {
-        "schema_id": "memorii.semantic_ingestion.bootstrap_grammar_corpus",
-        "schema_version": 1,
-        "coordinate": BOOTSTRAP_COORDINATE.model_dump(mode="python"),
-        "cases": tuple(case.model_dump(mode="python") for case in cases),
-    }
-    corpus = BootstrapGrammarCorpus(
-        **corpus_fields,
-        corpus_digest=sha256(encode_typed_value(corpus_fields)).hexdigest(),
-    )
-    grammar_fields = {
-        "schema_id": "memorii.semantic_ingestion.bootstrap_grammar_capability_manifest",
-        "schema_version": 1,
-        "coordinate": BOOTSTRAP_COORDINATE.model_dump(mode="python"),
-        "grammar_corpus_digest": corpus.corpus_digest,
-    }
-    grammar = BootstrapGrammarCapabilityManifest(
-        **grammar_fields,
-        manifest_digest=sha256(encode_typed_value(grammar_fields)).hexdigest(),
-    )
-    symbols = (
-        ("memorii.core.memory_evolution.extraction", "EnglishRuleMemoryExtractor"),
-        ("memorii.core.memory_evolution.semantic_compilation", "SemanticIngestionCompiler"),
-        ("memorii.core.memory_evolution.service", "MemoryEvolutionService"),
-        ("memorii.core.memory_evolution.source_admission", "ProviderEventNormalizer"),
-        ("memorii.core.memory_evolution.source_governance", "require_complete_scope_authorization"),
-        ("memorii.core.memory_evolution.validation", "MemoryEvolutionValidator"),
-        ("memorii.core.semantic_ingestion.local_analyzer", "ProductionLocalSemanticAnalyzer"),
-        ("memorii.core.semantic_ingestion.source_preparation", "TextPreparationService"),
-    )
-    fingerprints: list[ComponentSymbolFingerprint] = []
-    for module_path, qualified_symbol in symbols:
-        spec = find_spec(module_path)
-        if spec is None or spec.origin is None:
-            raise ValueError("bootstrap component is missing")
-        distribution_name, distribution_version = _component_distribution_identity(module_path)
-        component_digest = sha256(Path(spec.origin).read_bytes()).hexdigest()
-        fields = {
-            "module_path": module_path,
-            "qualified_symbol": qualified_symbol,
-            "distribution_name": distribution_name,
-            "distribution_version": distribution_version,
-            # A source checkout has no installed distribution identity.  Its
-            # exact module digest is the repository-owned blob identity.
-            "repository_blob_identity": None if distribution_name is not None else component_digest,
-            "source_or_package_content_digest": component_digest,
-        }
-        fingerprints.append(
-            ComponentSymbolFingerprint(
-                **fields,
-                fingerprint_digest=_domain_digest(
-                    b"memorii.semantic_ingestion.bootstrap_component_fingerprint.v1", fields
-                ),
-            )
-        )
-    ordered = tuple(fingerprints)
-    component_root_digest = _component_root(BOOTSTRAP_COORDINATE, ordered)
     preparation_policy = TextPreparationPolicy.create(
-        max_segment_characters=4096,
-        supported_languages=("en",),
+        max_segment_characters=policy.max_segment_unicode_scalars,
+        supported_languages=(policy.declared_language,),
         segmentation_algorithm="memorii.semantic-ingestion.safe-sentence-first-paragraph-bounded.v1",
         context_window_algorithm="memorii.semantic-ingestion.owned-partition-whole-boundary-context.v1",
     )
-    profile_fields = {
-        "schema_id": "memorii.semantic_ingestion.bootstrap_local_profile_manifest",
-        "schema_version": 1,
-        "coordinate": BOOTSTRAP_COORDINATE.model_dump(mode="python"),
-        "extractor_symbol": "memorii.core.memory_evolution.extraction.EnglishRuleMemoryExtractor",
-        "compiler_symbol": "memorii.core.memory_evolution.semantic_compilation.SemanticIngestionCompiler",
-        "validator_symbol": "memorii.core.memory_evolution.validation.MemoryEvolutionValidator",
-        "service_symbol": "memorii.core.memory_evolution.service.MemoryEvolutionService",
-        "source_normalizer_symbol": "memorii.core.memory_evolution.source_admission.ProviderEventNormalizer",
-        "scope_authorizer_symbol": "memorii.core.memory_evolution.source_governance.require_complete_scope_authorization",
-        "preparation_service_symbol": "memorii.core.semantic_ingestion.source_preparation.TextPreparationService",
-        "local_analyzer_symbol": "memorii.core.semantic_ingestion.local_analyzer.ProductionLocalSemanticAnalyzer",
-        "preparation_policy": preparation_policy.model_dump(mode="python"),
-        "declared_language": "en",
-        "grammar_capability_manifest_digest": grammar.manifest_digest,
-        "grammar_corpus_digest": corpus.corpus_digest,
-        "component_root_digest": component_root_digest,
-        "component_fingerprints": tuple(item.model_dump(mode="python") for item in ordered),
-        "network_capability": "denied",
-    }
-    profile = BootstrapLocalProfileManifest(
-        **profile_fields,
-        profile_digest=sha256(encode_typed_value(profile_fields)).hexdigest(),
+    component_root_digest = sha256(
+        b"memorii.bootstrap-current-freeform-components.v1\0"
+        + Path(__file__).read_bytes()
+    ).hexdigest()
+    grammar = BootstrapGrammarCapabilityManifest.create(
+        schema_id="memorii.semantic_ingestion.bootstrap_grammar_capability_manifest",
+        schema_version=2,
+        coordinate=BOOTSTRAP_COORDINATE,
+        freeform_admission_policy_digest=policy.policy_digest,
     )
-    return BootstrapProfileArtifacts(
-        profile_manifest=profile,
+    manifest = BootstrapLocalProfileManifest.create(
+        schema_id="memorii.semantic_ingestion.bootstrap_local_profile_manifest",
+        schema_version=2,
+        coordinate=BOOTSTRAP_COORDINATE,
+        preparation_policy=preparation_policy,
+        freeform_admission_policy_digest=policy.policy_digest,
+        component_root_digest=component_root_digest,
+        network_capability="denied",
+    )
+    artifacts = BootstrapProfileArtifacts(
+        profile_manifest=manifest,
         grammar_capability_manifest=grammar,
-        grammar_corpus=corpus,
+        freeform_admission_policy=policy,
     )
-
-
-def build_bootstrap_trust_anchor(artifacts: BootstrapProfileArtifacts) -> BootstrapProfileTrustAnchor:
-    fields = {
-        "schema_id": "memorii.semantic_ingestion.bootstrap_profile_trust_anchor",
-        "schema_version": 1,
-        "coordinate": BOOTSTRAP_COORDINATE.model_dump(mode="python"),
-        "profile_manifest_digest": artifacts.profile_manifest.profile_digest,
-        "grammar_capability_manifest_digest": artifacts.grammar_capability_manifest.manifest_digest,
-        "grammar_corpus_digest": artifacts.grammar_corpus.corpus_digest,
-        "component_root_digest": artifacts.profile_manifest.component_root_digest,
+    selection_body = {"coordinate": BOOTSTRAP_COORDINATE.model_dump(mode="python"), "enabled": enabled}
+    verification_body = {
+        "profile": manifest.profile_digest,
+        "grammar": grammar.manifest_digest,
+        "policy": policy.policy_digest,
     }
-    return BootstrapProfileTrustAnchor(
-        **fields,
-        trust_anchor_digest=sha256(encode_typed_value(fields)).hexdigest(),
+    return VerifiedBootstrapProfile(
+        coordinate=BOOTSTRAP_COORDINATE,
+        enabled=enabled,
+        artifacts=artifacts,
+        selection_digest=sha256(encode_typed_value(selection_body)).hexdigest(),
+        verification_digest=sha256(encode_typed_value(verification_body)).hexdigest(),
     )
+
+
+@dataclass(frozen=True)
+class BootstrapProfileReleaseMaterial:
+    """Release-tool output consumed by the matching current verifier."""
+
+    artifacts: BootstrapProfileArtifacts
+    payloads: BootstrapProfileArtifactPayloads
+
+
+class BootstrapProfileReleaseBuilder:
+    """Build the one release family from the installed policy resource."""
+
+    _POLICY_RESOURCE = "bootstrap_freeform_admission_policy.json"
+
+    @classmethod
+    def build(cls, *, enabled: bool = True) -> BootstrapProfileReleaseMaterial:
+        policy = cls.load_installed_policy()
+        verified = build_bootstrap_profile(policy=policy, enabled=enabled)
+        return BootstrapProfileReleaseMaterial(
+            artifacts=verified.artifacts,
+            payloads=serialize_bootstrap_profile_artifacts(verified.artifacts),
+        )
+
+    @classmethod
+    def load_installed_policy(cls) -> BootstrapFreeformAdmissionPolicy:
+        """Decode strict package JSON and recompute its declared digest."""
+
+        import json
+
+        raw = files("memorii.core.memory_evolution").joinpath(
+            "resources", cls._POLICY_RESOURCE
+        ).read_bytes()
+        try:
+            value = json.loads(raw)
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise BootstrapProfileVerificationError(
+                BootstrapUnavailableReason.INVALID_CONFIG
+            ) from exc
+        if not isinstance(value, dict):
+            raise BootstrapProfileVerificationError(BootstrapUnavailableReason.INVALID_CONFIG)
+        residues = value.get("prohibited_residue_classes")
+        if isinstance(residues, list):
+            # JSON has no tuple, while the persisted policy contract does.
+            # Conversion is limited to this one declared JSON-array field;
+            # every other field remains strict and closed.
+            value["prohibited_residue_classes"] = tuple(residues)
+        return BootstrapFreeformAdmissionPolicy.model_validate(value)
+
+
+class BootstrapProfileReleaseVerifier:
+    """Decode only the complete installed current-release artifact family."""
+
+    @staticmethod
+    def verify(
+        *, payloads: BootstrapProfileArtifactPayloads, enabled: bool = True
+    ) -> VerifiedBootstrapProfile:
+        _bootstrap_manifest_model()
+
+        def decode(raw: bytes, model: type[BaseModel], schema_id: str, schema_version: int) -> BaseModel:
+            decoded = decode_artifact(
+                raw,
+            expected_binding=bootstrap_artifact_binding(
+                    schema_id, schema_version=schema_version
+                ),
+            )
+            return TypeAdapter(model).validate_python(
+                decode_typed_value(decoded.canonical_value_bytes)
+            )
+
+        try:
+            profile = decode(
+                payloads.profile_manifest,
+                BootstrapLocalProfileManifest,
+                "memorii.semantic_ingestion.bootstrap_local_profile_manifest",
+                2,
+            )
+            grammar = decode(
+                payloads.grammar_capability_manifest,
+                BootstrapGrammarCapabilityManifest,
+                "memorii.semantic_ingestion.bootstrap_grammar_capability_manifest",
+                2,
+            )
+            policy = decode(
+                payloads.freeform_admission_policy,
+                BootstrapFreeformAdmissionPolicy,
+                "memorii.semantic_ingestion.bootstrap_freeform_admission_policy",
+                1,
+            )
+            artifacts = BootstrapProfileArtifacts(
+                profile_manifest=cast(BootstrapLocalProfileManifest, profile),
+                grammar_capability_manifest=cast(BootstrapGrammarCapabilityManifest, grammar),
+                freeform_admission_policy=cast(BootstrapFreeformAdmissionPolicy, policy),
+            )
+        except (ValueError, TypeError) as exc:
+            raise BootstrapProfileVerificationError(
+                BootstrapUnavailableReason.INVALID_MANIFEST
+            ) from exc
+
+        selection_body = {
+            "coordinate": BOOTSTRAP_COORDINATE.model_dump(mode="python"),
+            "enabled": enabled,
+        }
+        verification_body = {
+            "profile": artifacts.profile_manifest.profile_digest,
+            "grammar": artifacts.grammar_capability_manifest.manifest_digest,
+            "policy": artifacts.freeform_admission_policy.policy_digest,
+        }
+        return VerifiedBootstrapProfile(
+            coordinate=BOOTSTRAP_COORDINATE,
+            enabled=enabled,
+            artifacts=artifacts,
+            selection_digest=sha256(encode_typed_value(selection_body)).hexdigest(),
+            verification_digest=sha256(encode_typed_value(verification_body)).hexdigest(),
+        )
 
 
 def _bootstrap_manifest_model():

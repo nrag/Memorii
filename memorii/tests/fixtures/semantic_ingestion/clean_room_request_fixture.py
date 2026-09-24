@@ -57,7 +57,7 @@ _PREDICATE_SCHEMA = "7c2fef7072d3996b93949eab7db1701d5458379a6b65d96f5851415d748
 
 
 def _digest(label: str) -> str:
-    return sha256(label.encode("ascii")).hexdigest()
+    return sha256(label.encode("utf-8")).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -200,7 +200,7 @@ def build_prepared_source_authority(
         segment_governance_carriers=request.governance_carrier_artifact.segment_governance,
         message_admission_carriers=request.governance_carrier_artifact.message_admissions,
         governance_carrier_artifact=request.governance_carrier_artifact,
-        sentence_spans=(), segments=(segment,), token_spans=(), grammar_proofs=(), preparation_policy=policy,
+        sentence_spans=(), segments=(segment,), token_spans=(), segment_proofs=(), preparation_policy=policy,
         status="complete", diagnostics=(),
     )
     return PreparedSource(

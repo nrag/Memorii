@@ -167,8 +167,36 @@ factory returns a `HermesProviderRuntimeBinding`: a configured
 `ProviderMemoryService` and the host-owned issuer of authenticated ingress for
 each mutating Hermes hook. Memorii supplies the profile/session/user evidence
 to that issuer, then activates and recovers the returned service in process.
-Current production signing and factory configuration are not shipped with
-Memorii, so an ordinary install alone cannot run a semantic-memory trial.
+
+For an early real-world trial before release signing, install the explicit
+development connector into the Python environment used by Hermes:
+
+```bash
+python tools/setup_hermes_development.py
+hermes
+```
+
+The setup command installs Memorii and the development-only service factory as
+editable packages, selects `memory.provider=memorii`, and runs `hermes memory
+status`. It uses deterministic ephemeral test authority and the real durable
+provider path. It is suitable only for Level 2 integration testing; uninstall
+`memorii-hermes-development-connector` before installing a production factory.
+Production signing remains independent of this connector.
+
+Inspect the validated state from the same Python environment used by Hermes:
+
+```bash
+python -m memorii_hermes_development.inspect summary
+python -m memorii_hermes_development.inspect graph --output /tmp/memorii-graph.json
+```
+
+Both commands refresh the connector's replaceable development authority and
+open an atomic, read-only Memory Plane snapshot under its file lock. `summary`
+separates captured semantic sources, observation-ledger entries,
+retrieval-visible memories, and canonical graph records. `graph` exports the
+complete typed `GraphStateSnapshot`, including every record payload and its
+revision and integrity metadata. Pass `--hermes-home /path/to/profile` when the
+container does not expose the active profile through `HERMES_HOME`.
 
 Hermes passes the active profile's `hermes_home` to the provider. A configured
 factory receives `<hermes_home>/memorii` as its storage root; the Hermes home
@@ -179,7 +207,7 @@ existing Memorii state on restart. To disable the integration, select another
 `memory.provider` (or remove that configuration) and restart; this leaves the
 local `<hermes_home>/memorii` directory untouched.
 
-After a verified factory is installed, `hermes memory status` should report
+After a development or verified factory is installed, `hermes memory status` should report
 the `memorii` provider and its factory should accept the profile-local root.
 Hermes normally supplies completed transcript messages, which makes replay IDs
 stable and distinguishes equal text at different transcript positions. If a
