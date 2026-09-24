@@ -14,7 +14,8 @@
   `e21e4886ffc292e941b5af2ada28ccd9f5eb469b` (primary-context binding) and
   `f5e903d8f1c1a01fc8e7db7098fa882234e08394` (Windows Docker profile bytes), and
   `826c9ee5875c8b2d99ccdd8a316b89fad0cc7af2` (Bootstrap decoder-source bytes), and
-  `dc79ac8b098315d78c00b78a4af52adda0a31d7c` (Hermes transcript lifecycle and recovery)
+  `dc79ac8b098315d78c00b78a4af52adda0a31d7c` (Hermes transcript lifecycle and recovery), and
+  `c647211705eee6ed947ce25ab0a6aca1c2265902` (Hermes persisted transcript markers)
 - Expected outputs: confirmed host delivery root cause, smallest production-path correction, focused regression proof, rebuilt Windows Docker verification
 
 ## Objective
@@ -583,9 +584,9 @@ pinned-source and runtime evidence must be returned from that container.
 
 ## Next Action
 
-Publish the persisted-transcript correction, rebuild the Windows image without
-reauthorizing its current clean home, then run conversation, inspection,
-restart, and recall.
+Rebuild the Windows image at the published persisted-transcript correction
+without reauthorizing its current clean home, then run conversation,
+inspection, restart, and recall.
 
 ## Outcome And Retrospective
 
