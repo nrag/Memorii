@@ -7,6 +7,7 @@
 - Coordinator: `/root`
 - Base branch: `semantic_ingestion_m5`
 - Base revision: `3cfc1efc521c98ba4c8dfa048af8546cf4ec0d3e`
+- Published implementation revision: `ea64d2c0293c6b4805616ec1f79883f5f42a2a68`
 - Last updated: 2026-09-23
 - Parent: `docs/work/hermes-conversation-memory-trial/design.plan.md`
 - Governing design: `docs/design/hermes_conversation_memory_trial.md`
@@ -180,9 +181,10 @@ above; it does not claim whole-repository unit-suite compatibility.
 
 ## Next Action
 
-Commit and push the independently approved candidate, then run the clean
-Windows Docker conversation, inspection, later-session recall, and same-volume
-restart trial from that exact revision.
+Run the clean Windows Docker conversation, inspection, later-session recall,
+and same-volume restart trial from published implementation revision
+`ea64d2c0293c6b4805616ec1f79883f5f42a2a68` or a later documentation-only
+descendant containing this unchanged candidate.
 
 ## Outcome
 
