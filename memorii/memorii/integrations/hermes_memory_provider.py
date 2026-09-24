@@ -22,8 +22,10 @@ from agent.memory_provider import MemoryProvider  # pyright: ignore[reportMissin
 from memorii.core.memory_evolution.ingestion_contracts import AuthenticatedHostIngress
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.integrations.hermes_provider import HermesMemoryProvider, build_started_hermes_memory_provider
+from memorii.integrations.hermes_runtime_binding import HermesProviderRuntimeBinding
 
 _SERVICE_FACTORY_ENTRY_POINT_GROUP = "memorii.hermes.provider_service"
+_FIRST_PARTY_FACTORY_VALUE = "memorii.integrations.hermes_factory:build_local_level2_runtime_binding"
 
 
 @dataclass(frozen=True)
@@ -51,14 +53,6 @@ class HermesIngressRequest:
     received_at: datetime
 
 
-@dataclass(frozen=True)
-class HermesProviderRuntimeBinding:
-    """One configured service and its host-owned authenticated ingress issuer."""
-
-    service: ProviderMemoryService
-    issue_ingress: Callable[[HermesIngressRequest], AuthenticatedHostIngress]
-
-
 class MemoriiHermesMemoryProvider(MemoryProvider):
     """Adapt Hermes lifecycle hooks to the canonical Memorii provider."""
 
@@ -66,11 +60,11 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         self._provider: HermesMemoryProvider | None = None
         self._session_id = ""
         self._default_user_id: str | None = None
-        self._turn_user_id: ContextVar[str | None] = ContextVar(
-            "memorii_hermes_turn_user_id", default=None
-        )
+        self._turn_user_id: ContextVar[str | None] = ContextVar("memorii_hermes_turn_user_id", default=None)
         self._agent_identity: object | None = None
         self._issue_ingress: Callable[[HermesIngressRequest], AuthenticatedHostIngress] | None = None
+        self._completed_turn_runtime: object | None = None
+        self._absent_author_id = "memorii.hermes.author.absent.v1"
 
     @property
     def name(self) -> str:
@@ -115,6 +109,8 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         self._turn_user_id.set(user_id)
         self._agent_identity = kwargs.get("agent_identity")
         self._issue_ingress = binding.issue_ingress
+        self._completed_turn_runtime = binding.completed_turn_runtime
+        self._absent_author_id = binding.absent_author_id
 
     def get_tool_schemas(self) -> list[dict[str, object]]:
         return []
@@ -125,6 +121,17 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
 
     def prefetch(self, query: str, *, session_id: str = "") -> str:
         user_id = self._current_user_id()
+        runtime = self._completed_turn_runtime
+        prefetch = getattr(runtime, "prefetch", None) if runtime is not None else None
+        if runtime is not None:
+            if not callable(prefetch):
+                raise TypeError("Memorii completed-turn runtime is invalid")
+            return prefetch(
+                query=query,
+                session_id=self._effective_session_id(session_id),
+                authenticated_author_id=self._absent_author_id,
+                now=datetime.now(UTC),
+            )
         return self._require_provider().prefetch(
             query,
             session_id=self._effective_session_id(session_id),
@@ -139,9 +146,10 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
     ) -> None:
         del turn_number, message
         self._require_provider()
-        self._turn_user_id.set(
-            _optional_text(kwargs.get("author_id")) or self._default_user_id
-        )
+        observed = _optional_text(kwargs.get("author_id"))
+        if self._completed_turn_runtime is not None and observed is not None and observed != self._default_user_id:
+            raise ValueError("Hermes local Level 2 author identity changed")
+        self._turn_user_id.set(observed or self._default_user_id)
 
     def sync_turn(
         self,
@@ -156,6 +164,22 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         effective_user_id = (
             _optional_text(turn_author.get("id")) if turn_author is not None else None
         ) or self._current_user_id()
+        runtime = self._completed_turn_runtime
+        if runtime is not None:
+            if effective_user_id is not None and effective_user_id != self._default_user_id:
+                raise ValueError("Hermes local Level 2 author identity changed")
+            sync = getattr(runtime, "sync_completed_turn", None)
+            if not callable(sync):
+                raise TypeError("Memorii completed-turn runtime is invalid")
+            sync(
+                user_content=user_content,
+                assistant_content=assistant_content,
+                messages=messages,
+                session_id=effective_session_id,
+                authenticated_author_id=self._absent_author_id,
+                received_at=datetime.now(UTC),
+            )
+            return
         self._require_provider().sync_turn(
             user_content,
             assistant_content,
@@ -204,9 +228,7 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
             action,
             target,
             content,
-            operation_id=_operation_id(
-                "memory_write", self._session_id, [action, target, content, metadata]
-            ),
+            operation_id=_operation_id("memory_write", self._session_id, [action, target, content, metadata]),
             session_id=self._session_id,
             user_id=self._current_user_id(),
             authenticated_host_ingress=self._require_ingress(hook="memory_write"),
@@ -225,14 +247,10 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         self._require_provider().on_delegation(
             task,
             result,
-            operation_id=_operation_id(
-                "delegation", effective_session_id, [task, result]
-            ),
+            operation_id=_operation_id("delegation", effective_session_id, [task, result]),
             session_id=effective_session_id,
             user_id=self._current_user_id(),
-            authenticated_host_ingress=self._require_ingress(
-                hook="delegation", session_id=effective_session_id
-            ),
+            authenticated_host_ingress=self._require_ingress(hook="delegation", session_id=effective_session_id),
         )
 
     def on_session_switch(
@@ -244,17 +262,22 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         rewound: bool = False,
         **kwargs: Any,
     ) -> None:
-        del parent_session_id, reset, rewound
+        del reset, rewound
         self._require_provider()
+        switched_user_id = _optional_text(kwargs.get("user_id")) or _optional_text(kwargs.get("user_id_alt"))
+        if self._completed_turn_runtime is not None and (
+            parent_session_id or (switched_user_id is not None and switched_user_id != self._default_user_id)
+        ):
+            raise ValueError("Hermes local Level 2 execution context changed")
         self._session_id = _require_nonempty_text(new_session_id, "new_session_id")
-        self._default_user_id = _optional_text(kwargs.get("user_id")) or _optional_text(
-            kwargs.get("user_id_alt")
-        ) or self._default_user_id
+        self._default_user_id = switched_user_id or self._default_user_id
         self._turn_user_id.set(self._default_user_id)
 
     def shutdown(self) -> None:
         self._provider = None
         self._issue_ingress = None
+        self._completed_turn_runtime = None
+        self._absent_author_id = "memorii.hermes.author.absent.v1"
 
     def _require_provider(self) -> HermesMemoryProvider:
         if self._provider is None:
@@ -350,6 +373,8 @@ def _service_factory_status() -> tuple[Any | None, str | None]:
         return None, f"no {_SERVICE_FACTORY_ENTRY_POINT_GROUP} factory is installed"
     if len(entry_points) != 1:
         return None, f"multiple {_SERVICE_FACTORY_ENTRY_POINT_GROUP} factories are installed"
+    if entry_points[0].value != _FIRST_PARTY_FACTORY_VALUE:
+        return None, f"configured {_SERVICE_FACTORY_ENTRY_POINT_GROUP} factory is not the Memorii first-party factory"
     try:
         factory = entry_points[0].load()
     except (AttributeError, ImportError, OSError, RuntimeError, TypeError, ValueError) as exc:

@@ -17,7 +17,7 @@ from memorii.core.semantic_ingestion.contracts import (
     encode_semantic_contract,
 )
 from tests.fixtures.semantic_ingestion.source_normalization_fixture_builder import (
-    build_bootstrap_declared_prepared_source,
+    build_bootstrap_freeform_prepared_source,
     build_bootstrap_v3_fixture_authority,
 )
 
@@ -27,7 +27,7 @@ def _digest(value: str) -> str:
 
 
 def _native_values() -> tuple[object, object, object]:
-    source = build_bootstrap_declared_prepared_source(
+    source = build_bootstrap_freeform_prepared_source(
         source_id="source:native-lane", source_digest=_digest("source"), source_text="Alice works.",
     )
     issued = build_bootstrap_v3_fixture_authority(source=source)

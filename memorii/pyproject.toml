@@ -20,6 +20,7 @@ dependencies = [
 memorii-acceptance-evaluate = "acceptance.cli:main"
 memorii-acceptance-authority-publish = "acceptance.authority_cli:main"
 memorii-semantic-ingestion-revocation-publish = "acceptance.revocation_cli:main"
+memorii-hermes = "memorii.integrations.hermes_local_authority:main"
 
 [project.entry-points."memorii.acceptance_evaluator_runtime"]
 installed = "acceptance.host_runtime:InstalledAcceptanceRuntime"
@@ -35,6 +36,9 @@ installed = "memorii.core.memory_evolution.deployment_authorization:InstalledPro
 
 [project.entry-points."hermes_agent.memory_providers"]
 memorii = "memorii.integrations.hermes_memory_provider:MemoriiHermesMemoryProvider"
+
+[project.entry-points."memorii.hermes.provider_service"]
+installed = "memorii.integrations.hermes_factory:build_local_level2_runtime_binding"
 
 [project.optional-dependencies]
 local = [
@@ -72,7 +76,7 @@ prod = [
 include-package-data = true
 
 [tool.setuptools.package-data]
-memorii = ["core/benchmark/fixture_sets/*.json", "core/semantic_ingestion/resources/*.json", "core/memory_evolution/observation_registry_sources/*.json", "core/memory_evolution/observation_registry_sources/*/*/*.json", "prompts/**/*.yaml"]
+memorii = ["core/benchmark/fixture_sets/*.json", "core/semantic_ingestion/resources/*.json", "core/memory_evolution/resources/*.json", "core/memory_evolution/observation_registry_sources/*.json", "core/memory_evolution/observation_registry_sources/*/*/*.json", "prompts/**/*.yaml"]
 acceptance = ["resources/*.json", "generated/*.json"]
 
 [tool.setuptools.packages.find]

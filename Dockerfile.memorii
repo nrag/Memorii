@@ -1,0 +1,10 @@
+FROM nousresearch/hermes-agent@sha256:eaa1c0b93eea54dadb8b072ffaffd569f93af444eacc2f3a
+
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential python3-dev pkg-config libicu-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY . /opt/memorii-src
+RUN uv pip install --python /opt/hermes/.venv/bin/python \
+    --editable '/opt/memorii-src/memorii[live]'

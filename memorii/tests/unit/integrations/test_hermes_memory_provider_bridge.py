@@ -2,21 +2,16 @@
 
 from __future__ import annotations
 
-import contextvars
 import importlib
 import sys
-import threading
 import tomllib
 from abc import ABC, abstractmethod
+from datetime import UTC, datetime
 from importlib.metadata import EntryPoint
 from pathlib import Path
 from types import ModuleType
 
 import pytest
-from memorii.core.memory_plane import MemoryPlaneService
-from memorii.core.memory_plane.store import JsonlMemoryPlaneStore
-from memorii.core.provider.models import ProviderStoredRecord
-from memorii.domain.enums import MemoryDomain
 
 
 @pytest.fixture
@@ -54,7 +49,27 @@ def test_distribution_declares_the_hermes_memory_provider_entry_point() -> None:
     assert entry_point.value == "memorii.integrations.hermes_memory_provider:MemoriiHermesMemoryProvider"
 
 
+def test_pinned_hermes_image_and_first_party_factory_match_the_level2_abi() -> None:
+    root = Path(__file__).parents[4]
+    dockerfile = (root / "Dockerfile.memorii").read_text()
+
+    assert ("FROM nousresearch/hermes-agent@sha256:eaa1c0b93eea54dadb8b072ffaffd569f93af444eacc2f3a") in dockerfile
+    assert (
+        "memorii.integrations.hermes_factory:build_local_level2_runtime_binding"
+        in (root / "memorii" / "pyproject.toml").read_text()
+    )
+
+
+def test_distribution_declares_exactly_one_first_party_hermes_service_factory() -> None:
+    project = tomllib.loads((Path(__file__).parents[3] / "pyproject.toml").read_text())
+
+    assert project["project"]["entry-points"]["memorii.hermes.provider_service"] == {
+        "installed": "memorii.integrations.hermes_factory:build_local_level2_runtime_binding"
+    }
+
+
 def test_bridge_is_a_usable_hermes_abc_subclass_without_touching_storage(bridge_module) -> None:
+    bridge_module.importlib.metadata.entry_points = lambda *, group: ()
     provider = bridge_module.MemoriiHermesMemoryProvider()
 
     assert isinstance(provider, bridge_module.MemoryProvider)
@@ -92,9 +107,7 @@ def test_operation_identity_reuses_completed_transcript_and_separates_positions(
 
 
 def test_default_storage_root_is_profile_local_and_invalid_roots_fail(bridge_module, tmp_path: Path) -> None:
-    assert bridge_module._resolve_storage_root(hermes_home=tmp_path / "profile") == (
-        tmp_path / "profile" / "memorii"
-    )
+    assert bridge_module._resolve_storage_root(hermes_home=tmp_path / "profile") == (tmp_path / "profile" / "memorii")
 
     file_root = tmp_path / "profile" / "memorii"
     file_root.parent.mkdir()
@@ -105,7 +118,10 @@ def test_default_storage_root_is_profile_local_and_invalid_roots_fail(bridge_mod
         bridge_module._resolve_storage_root(hermes_home=None)
 
 
-def test_unconfigured_profile_fails_closed_before_canonical_startup(bridge_module, tmp_path: Path) -> None:
+def test_unconfigured_profile_fails_closed_before_canonical_startup(
+    bridge_module, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(bridge_module.importlib.metadata, "entry_points", lambda *, group: ())
     provider = bridge_module.MemoriiHermesMemoryProvider()
 
     with pytest.raises(RuntimeError, match="no memorii.hermes.provider_service factory is installed"):
@@ -115,9 +131,166 @@ def test_unconfigured_profile_fails_closed_before_canonical_startup(bridge_modul
         provider.prefetch("what changed")
 
 
+def test_first_party_factory_rejects_missing_authority_before_service_construction(
+    bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
+
+    called = False
+
+    def should_not_build(*args, **kwargs):
+        nonlocal called
+        del args, kwargs
+        called = True
+        raise AssertionError("service construction must follow authority validation")
+
+    monkeypatch.setattr("memorii.integrations.hermes_factory.build_provider_memory_service_from_env", should_not_build)
+    context = bridge_module.HermesProviderServiceContext(
+        storage_root=tmp_path / "memorii",
+        hermes_home=tmp_path,
+        session_id="session:one",
+        user_id="user:one",
+        agent_identity=None,
+        agent_workspace=None,
+        parent_session_id=None,
+    )
+
+    with pytest.raises(Exception, match="identity is absent"):
+        build_local_level2_runtime_binding(context)
+    assert called is False
+
+
+def test_first_party_factory_initializes_after_authority_validation_without_openai_call(
+    bridge_module, tmp_path: Path
+) -> None:
+    from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
+    from memorii.integrations.hermes_local_authority import (
+        LocalLevel2AuthorityError,
+        authorize_local_level2,
+    )
+
+    authorize_local_level2(hermes_home=tmp_path)
+    context = bridge_module.HermesProviderServiceContext(
+        storage_root=tmp_path / "memorii",
+        hermes_home=tmp_path,
+        session_id="session:one",
+        user_id="user:one",
+        agent_identity=None,
+        agent_workspace=None,
+        parent_session_id=None,
+    )
+
+    binding = build_local_level2_runtime_binding(context)
+
+    assert isinstance(binding, bridge_module.HermesProviderRuntimeBinding)
+    with pytest.raises(ValueError, match="operator identity is substituted"):
+        binding.issue_ingress(
+            bridge_module.HermesIngressRequest(
+                hook="sync_turn",
+                session_id="session:one",
+                user_id="user:one",
+                agent_identity=None,
+                turn_author=None,
+                received_at=datetime.now(UTC),
+            )
+        )
+    ingress = binding.issue_ingress(
+        bridge_module.HermesIngressRequest(
+            hook="sync_turn",
+            session_id="session:one",
+            user_id=binding.absent_author_id,
+            agent_identity=None,
+            turn_author=None,
+            received_at=datetime.now(UTC),
+        )
+    )
+    assert ingress.provider_identity == "hermes"
+    assert ingress.principal_handle.author_id == binding.absent_author_id
+    assert binding.absent_author_id.startswith("memorii:hermes:operator:")
+    with pytest.raises(LocalLevel2AuthorityError, match="already bound"):
+        build_local_level2_runtime_binding(
+            bridge_module.HermesProviderServiceContext(
+                storage_root=tmp_path / "memorii",
+                hermes_home=tmp_path,
+                session_id="session:two",
+                user_id="user:two",
+                agent_identity=None,
+                agent_workspace=None,
+                parent_session_id=None,
+            )
+        )
+
+
+def test_bridge_rejects_changed_raw_author_before_turn_admission(
+    bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
+    from memorii.integrations.hermes_local_authority import authorize_local_level2
+
+    authorize_local_level2(hermes_home=tmp_path)
+    monkeypatch.setattr(
+        bridge_module.importlib.metadata,
+        "entry_points",
+        lambda *, group: (_FactoryEntryPoint(build_local_level2_runtime_binding),),
+    )
+    provider = bridge_module.MemoriiHermesMemoryProvider()
+    provider.initialize("session:one", hermes_home=tmp_path, user_id="raw:user:one")
+
+    with pytest.raises(ValueError, match="author identity changed"):
+        provider.on_turn_start(1, "hello", author_id="raw:user:two")
+    with pytest.raises(ValueError, match="author identity changed"):
+        provider.sync_turn(
+            "hello",
+            "acknowledged",
+            session_id="session:one",
+            messages=[
+                {"role": "user", "content": "hello"},
+                {"role": "assistant", "content": "acknowledged"},
+            ],
+            turn_author={"id": "raw:user:two"},
+        )
+
+
+def test_bridge_without_initial_raw_user_rejects_author_bearing_callbacks(
+    bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
+    from memorii.integrations.hermes_local_authority import authorize_local_level2
+
+    authorize_local_level2(hermes_home=tmp_path)
+    monkeypatch.setattr(
+        bridge_module.importlib.metadata,
+        "entry_points",
+        lambda *, group: (_FactoryEntryPoint(build_local_level2_runtime_binding),),
+    )
+    provider = bridge_module.MemoriiHermesMemoryProvider()
+    provider.initialize("session:one", hermes_home=tmp_path)
+    before = tuple(provider._provider._service._memory_plane.list_records())
+
+    with pytest.raises(ValueError, match="author identity changed"):
+        provider.on_turn_start(1, "hello", author_id="raw:user:one")
+    with pytest.raises(ValueError, match="author identity changed"):
+        provider.sync_turn(
+            "hello",
+            "acknowledged",
+            session_id="session:one",
+            messages=[
+                {"role": "user", "content": "hello"},
+                {"role": "assistant", "content": "acknowledged"},
+            ],
+            turn_author={"id": "raw:user:one"},
+        )
+    assert tuple(provider._provider._service._memory_plane.list_records()) == before
+
+
 class _FactoryEntryPoint:
-    def __init__(self, value: object) -> None:
+    def __init__(
+        self,
+        value: object,
+        definition: str = "memorii.integrations.hermes_factory:build_local_level2_runtime_binding",
+    ) -> None:
         self._value = value
+        self.value = definition
 
     def load(self) -> object:
         return self._value
@@ -175,193 +348,3 @@ def test_factory_context_is_profile_scoped_and_rejects_the_wrong_service_type(
     assert contexts[0].session_id == "session:one"
     assert contexts[0].user_id == "user:alice"
     assert contexts[0].parent_session_id == "parent:one"
-
-
-def test_configured_factory_starts_the_canonical_adapter_and_reopens_recall(
-    bridge_module, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    from tests.integration.test_observation_ledger_activation import _provider_factory, _seed_provider
-    from tests.unit.core.semantic_ingestion.test_semantic_provider_composition import _host_ingress
-
-    authority_root = tmp_path / "authority"
-    authority_root.mkdir()
-    build_service, _, _ = _provider_factory(
-        authority_root, monkeypatch, normalization=True, complete_registry=True
-    )
-
-    issued_requests = []
-    services = []
-    reject_ingress = [False]
-
-    def factory(context):
-        service = build_service(
-            MemoryPlaneService(record_store=JsonlMemoryPlaneStore(context.storage_root / "memory-plane"))
-        )
-        _seed_provider(service)
-        if service._memory_plane.get_record("semantic:atlas-owner") is None:
-            service.seed_committed_record(
-                ProviderStoredRecord(
-                    memory_id="semantic:atlas-owner",
-                    domain=MemoryDomain.SEMANTIC,
-                    text="Atlas migration owner is Alice.",
-                    status="committed",
-                    session_id=context.session_id,
-                    user_id=context.user_id,
-                )
-            )
-        services.append(service)
-        def issue_ingress(request):
-            issued_requests.append(request)
-            return object() if reject_ingress[0] else _host_ingress()
-
-        return bridge_module.HermesProviderRuntimeBinding(service=service, issue_ingress=issue_ingress)
-
-    monkeypatch.setattr(
-        bridge_module.importlib.metadata,
-        "entry_points",
-        lambda *, group: (_FactoryEntryPoint(factory),),
-    )
-    first = bridge_module.MemoriiHermesMemoryProvider()
-    first.initialize("session:one", hermes_home=tmp_path / "profile", user_id="user:alice")
-
-    assert "Atlas migration owner is Alice." in first.prefetch("Who owns Atlas?")
-    completed_messages = [
-        {"role": "user", "content": "The Zephyr deployment owner is Bob."},
-        {"role": "assistant", "content": "I will remember that Bob owns Zephyr deployment."},
-    ]
-    first.sync_turn(
-        "The Zephyr deployment owner is Bob.",
-        "I will remember that Bob owns Zephyr deployment.",
-        messages=completed_messages,
-        turn_author={"id": "user:alice"},
-    )
-    first.sync_turn(
-        "The Zephyr deployment owner is Bob.",
-        "I will remember that Bob owns Zephyr deployment.",
-        messages=completed_messages,
-        turn_author={"id": "user:alice"},
-    )
-
-    later_messages = [*completed_messages, *completed_messages]
-    first.sync_turn(
-        "The Zephyr deployment owner is Bob.",
-        "I will remember that Bob owns Zephyr deployment.",
-        messages=later_messages,
-        turn_author={"id": "user:alice"},
-    )
-    first.sync_turn(
-        "The Zephyr deployment owner is Bob.",
-        "I will remember that Bob owns Zephyr deployment.",
-        messages=later_messages,
-        turn_author={"id": "user:alice"},
-    )
-
-    assert len(services[0]._memory_plane.list_records(source_kind="semantic_ingestion_source")) == 4
-    assert [request.hook for request in issued_requests] == [
-        "sync_turn",
-        "sync_turn",
-        "sync_turn",
-        "sync_turn",
-    ]
-    assert issued_requests[0].session_id == "session:one"
-    assert issued_requests[0].user_id == "user:alice"
-    assert issued_requests[0].turn_author == {"id": "user:alice"}
-
-    first.on_turn_start(2, "Who owns Atlas?", author_id="user:bob")
-    assert "Atlas migration owner is Alice." not in first.prefetch("Who owns Atlas?")
-
-    captured_user_ids = []
-    prefetch_started = threading.Event()
-    release_prefetch = threading.Event()
-
-    def blocking_prefetch(query, *, session_id, user_id):
-        del query, session_id
-        prefetch_started.set()
-        assert release_prefetch.wait(timeout=5)
-        captured_user_ids.append(user_id)
-        return ""
-
-    monkeypatch.setattr(first._provider, "prefetch", blocking_prefetch)
-    first.on_turn_start(3, "Alice turn", author_id="user:alice")
-    alice_context = contextvars.copy_context()
-    worker = threading.Thread(
-        target=lambda: alice_context.run(first.prefetch, "Alice query")
-    )
-    worker.start()
-    assert prefetch_started.wait(timeout=5)
-    first.on_turn_start(4, "Bob turn", author_id="user:bob")
-    release_prefetch.set()
-    worker.join(timeout=5)
-    assert not worker.is_alive()
-    assert captured_user_ids == ["user:alice"]
-
-    assert first.on_pre_compress(completed_messages) == ""
-    first.on_memory_write("upsert", "memory", "Atlas is active.")
-    first.on_delegation("verify Atlas", "Atlas verified", child_session_id="session:child")
-    first.on_session_end(completed_messages)
-    first.on_session_switch(
-        "session:two",
-        parent_session_id="session:one",
-        reset=False,
-        rewound=False,
-        user_id="user:bob",
-    )
-    first.on_memory_write("upsert", "memory", "Zephyr is active for Bob.")
-
-    assert [request.hook for request in issued_requests] == [
-        "sync_turn",
-        "sync_turn",
-        "sync_turn",
-        "sync_turn",
-        "pre_compress",
-        "memory_write",
-        "delegation",
-        "session_end",
-        "memory_write",
-    ]
-    assert issued_requests[6].session_id == "session:child"
-    assert all(request.user_id == "user:bob" for request in issued_requests[4:])
-
-    durable_records = services[0]._memory_plane.list_records(
-        source_kind="semantic_ingestion_source"
-    )
-    records_by_text = {record.text: record for record in durable_records}
-    assert records_by_text["Atlas is active."].content["source_admission"]["source_kind"] == (
-        "explicit_memory_write"
-    )
-    switched = records_by_text["Zephyr is active for Bob."]
-    assert switched.session_id == "session:two"
-    assert switched.user_id == "user:bob"
-    assert switched.content["source_admission"]["source_kind"] == "explicit_memory_write"
-    assert {
-        record.content["source_admission"]["source_kind"]
-        for record in durable_records
-    } >= {
-        "conversation_turn",
-        "explicit_memory_write",
-    }
-
-    source_count = len(services[0]._memory_plane.list_records(source_kind="semantic_ingestion_source"))
-    reject_ingress[0] = True
-    with pytest.raises(TypeError, match="must return AuthenticatedHostIngress"):
-        first.on_memory_write("upsert", "memory", "must not persist")
-    assert len(services[0]._memory_plane.list_records(source_kind="semantic_ingestion_source")) == source_count
-    assert all(
-        record.text != "must not persist"
-        for record in services[0]._memory_plane.list_records(
-            source_kind="semantic_ingestion_source"
-        )
-    )
-
-    first.shutdown()
-    reopened = bridge_module.MemoriiHermesMemoryProvider()
-    reopened.initialize("session:one", hermes_home=tmp_path / "profile", user_id="user:alice")
-
-    assert "Atlas migration owner is Alice." in reopened.prefetch("Who owns Atlas?")
-    reopened_records = services[-1]._memory_plane.list_records(
-        source_kind="semantic_ingestion_source"
-    )
-    assert len(reopened_records) == len(durable_records)
-    assert {record.memory_id for record in reopened_records} == {
-        record.memory_id for record in durable_records
-    }

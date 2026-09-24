@@ -6,7 +6,7 @@ remaining analysis contracts migrate; it avoids a second representation.
 """
 
 from memorii.core.semantic_ingestion.contracts import (
-    BootstrapDeclaredSegmentLanguageRoute,
+    BootstrapFreeformSegmentLanguageRoute,
     PreparedSegment,
     PreparedSource,
     SegmentLanguageRoute,
@@ -18,7 +18,7 @@ from memorii.core.semantic_ingestion.contracts import (
 __all__ = [
     "PreparedSegment",
     "PreparedSource",
-    "BootstrapDeclaredSegmentLanguageRoute",
+    "BootstrapFreeformSegmentLanguageRoute",
     "SegmentLanguageRoute",
     "SegmentLanguageRouteSet",
     "TextPreparationPolicy",

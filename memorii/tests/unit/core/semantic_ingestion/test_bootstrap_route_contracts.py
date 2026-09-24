@@ -1,23 +1,21 @@
 from hashlib import sha256
 
 import pytest
-from memorii.core.memory_evolution.bootstrap_profile import BootstrapSegmentGrammarProof
 from memorii.core.semantic_ingestion.contracts import (
     AnalyzerManifest,
     BootstrapAnalysisProvenanceV1,
     BootstrapAnalysisRouteBinding,
     BootstrapAnalysisRouteBindingSet,
     BootstrapAnalysisRouteProjection,
-    BootstrapDeclaredSegmentLanguageRoute,
     BootstrapLinguisticAnalysisRequestV3,
     BootstrapSegmentAnalysisInputV3,
-    PreparedSegment,
     PreparedSource,
-    SegmentLanguageRouteSet,
     SourceSpanReference,
     contract_digest,
 )
-from tests.fixtures.semantic_ingestion.clean_room_request_fixture import build_prepared_source_authority
+from tests.fixtures.semantic_ingestion.source_normalization_fixture_builder import (
+    build_bootstrap_freeform_prepared_source,
+)
 
 
 def _hex(label: str) -> str:
@@ -25,65 +23,16 @@ def _hex(label: str) -> str:
 
 
 def _bootstrap_prepared() -> PreparedSource:
-    prepared = build_prepared_source_authority(
-        source_id="source:bootstrap", source_digest=_hex("source"), source_text="Atlas owner is Bob."
-    )
-    old = prepared.segment_language_routes.routes[0]
-    proof = BootstrapSegmentGrammarProof.create(
-        source_id=prepared.source_id,
-        segment_id=old.segment_id,
-        language_evidence_tuple=("en", "authenticated_host_declaration", "trusted", "agrees"),
-        bootstrap_language_evidence_digest=_hex("language-evidence"),
-        normalized_segment_digest=old.segment_text_content_digest,
-        corpus_case_id="supported-atlas",
-    )
-    route = BootstrapDeclaredSegmentLanguageRoute.create(
-        schema_id="memorii.semantic_ingestion.bootstrap_declared_segment_language_route",
-        schema_version=1,
-        source_id=prepared.source_id,
-        source_digest=prepared.source_digest,
-        segment_id=old.segment_id,
-        parent_projection_segment_id=old.parent_projection_segment_id,
-        segment_text_artifact_id=old.segment_text_artifact_id,
-        segment_text_artifact_digest=old.segment_text_artifact_digest,
-        segment_text_content_digest=old.segment_text_content_digest,
-        declared_language="en",
-        language_evidence_kind="authenticated_host_declaration",
-        language_evidence_trust="trusted",
-        governance_agreement="agrees",
-        bootstrap_language_evidence_digest=proof.bootstrap_language_evidence_digest,
-        bootstrap_profile_manifest_digest=_hex("profile"),
-        preparation_policy_fingerprint=prepared.preparation_policy.policy_fingerprint,
-        component_root_digest=_hex("components"),
-        corpus_case_id=proof.corpus_case_id,
-        normalized_segment_digest=proof.normalized_segment_digest,
-        grammar_proof_digest=proof.proof_digest,
-        decision="selected",
-    )
-    segment = prepared.segments[0].model_copy(update={"language_route": route})
-    body = {
-        name: getattr(prepared, name)
-        for name in PreparedSource.model_fields
-        if name != "preparation_fingerprint"
-    }
-    body.update(
-        segments=(PreparedSegment.model_validate(segment.model_dump(mode="python")),),
-        segment_language_routes=SegmentLanguageRouteSet.create(
-            source_id=prepared.source_id, source_digest=prepared.source_digest, routes=(route,)
-        ),
-        grammar_proofs=(proof,),
-    )
-    return PreparedSource(
-        **body,
-        preparation_fingerprint=contract_digest(
-            b"memorii.semantic-ingestion.prepared-source.v1", body
-        ),
+    return build_bootstrap_freeform_prepared_source(
+        source_id="source:bootstrap",
+        source_digest=_hex("source"),
+        source_text="Atlas owner is Bob.",
     )
 
 
 def test_bootstrap_route_and_proof_are_an_exact_ordered_prepared_source_bijection() -> None:
     prepared = _bootstrap_prepared()
-    assert prepared.grammar_proofs[0].proof_digest == prepared.segment_language_routes.routes[0].grammar_proof_digest
+    assert prepared.segment_proofs[0].route_digest == prepared.segment_language_routes.routes[0].route_digest
 
 
 def test_bootstrap_analysis_projection_requires_the_declared_route_and_host_binding() -> None:
@@ -219,10 +168,10 @@ def test_bootstrap_v3_lane_requests_reject_a_swapped_host_manifest() -> None:
         )
 
 
-@pytest.mark.parametrize("field", ("segment_id", "normalized_segment_digest", "proof_digest"))
+@pytest.mark.parametrize("field", ("segment_id", "raw_segment_digest", "proof_digest"))
 def test_bootstrap_route_proof_mutations_reject_prepared_source(field: str) -> None:
     prepared = _bootstrap_prepared()
-    proof = prepared.grammar_proofs[0]
+    proof = prepared.segment_proofs[0]
     changed = "other-segment" if field == "segment_id" else _hex("mutated-" + field)
     mutated = proof.model_copy(update={field: changed})
     body = {
@@ -230,8 +179,8 @@ def test_bootstrap_route_proof_mutations_reject_prepared_source(field: str) -> N
         for name in PreparedSource.model_fields
         if name != "preparation_fingerprint"
     }
-    body["grammar_proofs"] = (mutated,)
-    with pytest.raises(ValueError, match="(grammar proof|grammar proofs)"):
+    body["segment_proofs"] = (mutated,)
+    with pytest.raises(ValueError, match="freeform.*proof"):
         PreparedSource(
             **body,
             preparation_fingerprint=contract_digest(

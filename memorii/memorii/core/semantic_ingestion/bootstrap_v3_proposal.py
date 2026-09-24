@@ -9,10 +9,12 @@ algebra.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from hashlib import sha256
 
 from memorii.core.memory_evolution.ingestion_contracts import encode_typed_value
+from memorii.core.memory_evolution.models import ClaimValueType
 from memorii.core.semantic_ingestion.contracts import (
     BootstrapNormalizedProposalV3,
     BootstrapProposalActionRecordSelectorV3,
@@ -55,6 +57,8 @@ from memorii.core.semantic_ingestion.proposal_adapter import (
 BootstrapV3ProposalTransport = Callable[
     [BootstrapSemanticProposalRequestV3], tuple[ProviderSemanticProposal, bytes] | None
 ]
+
+logger = logging.getLogger(__name__)
 
 
 def normalize_bootstrap_provider_proposal(
@@ -124,7 +128,9 @@ def normalize_bootstrap_provider_proposal(
         if isinstance(value, ProviderEntityObject):
             return BootstrapProposalEntityObjectV3.create(mention_digest=entity(value.entity_ref))
         literal = BootstrapProposalTypedLiteralV3.create(
-            literal_type=value.literal_type, canonical_value=value.canonical_value, unit=value.unit
+            literal_type=ClaimValueType(value.literal_type),
+            canonical_value=value.canonical_value,
+            unit=value.unit,
         )
         return BootstrapProposalLiteralObjectV3.create(value=literal)
 
@@ -375,6 +381,7 @@ class SealedBootstrapV3ProposalProducer:
                 projection_quote_verifier=self._projection_quote_verifier,
             )
         except ValueError:
+            logger.warning("bootstrap_v3_proposal_sealing_rejected", exc_info=True)
             return None
 
 

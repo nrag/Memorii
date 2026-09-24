@@ -130,8 +130,11 @@ class GovernedSourceAdmissionService:
         )
         writer_coordinate = _source_admission_writer_coordinate(self._memory_plane)
         index = _index_record(
-            delivery_identity=delivery_identity, required=required, operation_fence=operation_fence,
-            writer_coordinate=writer_coordinate, timestamp=source.timestamp,
+            delivery_identity=delivery_identity,
+            required=required,
+            operation_fence=operation_fence,
+            writer_coordinate=writer_coordinate,
+            timestamp=source.timestamp,
         )
         selection_status = (
             "disabled"
@@ -244,39 +247,57 @@ class GovernedSourceAdmissionService:
             raise ValueError("authenticated scope coverage is incomplete")
         source_digest = source_admission_source_digest(source)
         operation_fence = OperationFenceBinding.create(
-            operation_id=operation_id, source_id=source.memory_id, source_digest=source_digest,
+            operation_id=operation_id,
+            source_id=source.memory_id,
+            source_digest=source_digest,
             delivery_identity=delivery_identity,
         )
         writer_coordinate = _source_admission_writer_coordinate(self._memory_plane)
         index = _index_record(
-            delivery_identity=delivery_identity, required=required, operation_fence=operation_fence,
-            writer_coordinate=writer_coordinate, timestamp=source.timestamp,
+            delivery_identity=delivery_identity,
+            required=required,
+            operation_fence=operation_fence,
+            writer_coordinate=writer_coordinate,
+            timestamp=source.timestamp,
         )
-        selection_status = "disabled" if outcome_kind == "disabled" else (
-            "selected" if selection_digest is not None else "unavailable"
+        selection_status = (
+            "disabled"
+            if outcome_kind == "disabled"
+            else ("selected" if selection_digest is not None else "unavailable")
         )
         verification_status = "verified" if verification_digest is not None else "unavailable"
-        selection = _profile_evidence_record(index, "semantic_ingestion_profile_selection", {"status": selection_status})
+        selection = _profile_evidence_record(
+            index, "semantic_ingestion_profile_selection", {"status": selection_status}
+        )
         verification = _profile_evidence_record(
             index, "semantic_ingestion_profile_verification", {"status": verification_status}
         )
         fact = GovernedSourceAdmissionFact(
-            source_id=source.memory_id, source_digest=source_digest,
+            source_id=source.memory_id,
+            source_digest=source_digest,
             delivery_principal_binding_digest=delivery_identity.delivery_principal_binding_digest,
             delivery_key_digest=delivery_identity.delivery_key_digest,
             required_scope_set_digest=required.required_scope_set_digest,
             admission_index_digest=_index_digest(index),
         )
         typed_outcome = _make_outcome(
-            kind=outcome_kind, reason=outcome_reason, fact=fact, normalized_input=normalized_input,
+            kind=outcome_kind,
+            reason=outcome_reason,
+            fact=fact,
+            normalized_input=normalized_input,
             selection_digest=selection_digest or _index_digest(selection),
             verification_digest=verification_digest or _index_digest(verification),
             matched_corpus_case_id=matched_corpus_case_id,
         )
-        outcome = _profile_evidence_record(index, "semantic_ingestion_profile_outcome", typed_outcome.model_dump(mode="json"))
+        outcome = _profile_evidence_record(
+            index, "semantic_ingestion_profile_outcome", typed_outcome.model_dump(mode="json")
+        )
         accepted = SourceAdmissionAccepted(
-            source_id=source.memory_id, source_digest=source_digest, delivery_identity=delivery_identity,
-            required_outcome_scopes=required, admission_index_digest=_index_digest(index),
+            source_id=source.memory_id,
+            source_digest=source_digest,
+            delivery_identity=delivery_identity,
+            required_outcome_scopes=required,
+            admission_index_digest=_index_digest(index),
             operation_fence_binding=operation_fence,
             observation=_admitted_observation(
                 source=source,
@@ -372,7 +393,8 @@ class GovernedSourceAdmissionService:
                         return SemanticIngestionOutcomeLookupResponse()
                     if lifecycle.to_kind == "committed_terminal":
                         decoded = ProfileCommittedTerminal(
-                            kind="committed_terminal", coordinate=decoded.coordinate,
+                            kind="committed_terminal",
+                            coordinate=decoded.coordinate,
                             source_admission=decoded.source_admission,
                             terminal_result_digest=lifecycle.terminal_digest,
                             operation_fence_binding_digest=fence.binding_digest,
@@ -386,14 +408,16 @@ class GovernedSourceAdmissionService:
                             if lifecycle.reason_code != "retry_budget_exhausted"
                             else "extractor_abstained"
                         )
-                        decoded = ProfileInputOutcome.model_validate({
-                            "kind": lifecycle.to_kind,
-                            "coordinate": decoded.coordinate,
-                            "source_admission": decoded.source_admission,
-                            "reason": reason,
-                            "input_normalized_digest": normalized_input_digest(source.text.encode("utf-8")),
-                            "matched_corpus_case_id": None,
-                        })
+                        decoded = ProfileInputOutcome.model_validate(
+                            {
+                                "kind": lifecycle.to_kind,
+                                "coordinate": decoded.coordinate,
+                                "source_admission": decoded.source_admission,
+                                "reason": reason,
+                                "input_normalized_digest": normalized_input_digest(source.text.encode("utf-8")),
+                                "matched_corpus_case_id": None,
+                            }
+                        )
                     else:
                         return SemanticIngestionOutcomeLookupResponse()
                 elif state == "planned" and isinstance(generation, int):
@@ -405,7 +429,8 @@ class GovernedSourceAdmissionService:
                     ):
                         return SemanticIngestionOutcomeLookupResponse()
                     decoded = ProfileAcceptedCandidate(
-                        kind="accepted_candidate", coordinate=decoded.coordinate,
+                        kind="accepted_candidate",
+                        coordinate=decoded.coordinate,
                         source_admission=decoded.source_admission,
                         candidate_digest=lifecycle.candidate_digest,
                         operation_fence_binding_digest=fence.binding_digest,
@@ -435,30 +460,22 @@ class GovernedSourceAdmissionService:
             return None
         content = index.content
         if (
-            content.get("principal_binding_digest")
-            != authenticated_ingress.delivery_principal_binding.binding_digest
-            or content.get("delivery_key_digest")
-            != request.delivery_identity.delivery_key_digest
+            content.get("principal_binding_digest") != authenticated_ingress.delivery_principal_binding.binding_digest
+            or content.get("delivery_key_digest") != request.delivery_identity.delivery_key_digest
             or content.get("tenant_partition_id")
             != authenticated_ingress.delivery_principal_binding.tenant_partition_id
         ):
             return None
         required = tuple(content.get("required_scopes", ()))
-        if not set(required).issubset(
-            authenticated_ingress.current_authorized_scopes.scopes
-        ):
+        if not set(required).issubset(authenticated_ingress.current_authorized_scopes.scopes):
             return None
         try:
-            fence = OperationFenceBinding.model_validate(
-                content.get("operation_fence_binding")
-            )
+            fence = OperationFenceBinding.model_validate(content.get("operation_fence_binding"))
         except ValueError:
             return None
         retained = self._memory_plane.get_record(fence.source_id)
         try:
-            retained_digest = (
-                source_admission_source_digest(retained) if retained is not None else None
-            )
+            retained_digest = source_admission_source_digest(retained) if retained is not None else None
         except ValueError:
             return None
         if (
@@ -474,13 +491,66 @@ class GovernedSourceAdmissionService:
             return None
         return retained
 
+    def recover_pending_admission(
+        self,
+        *,
+        operation_fence: OperationFenceBinding,
+        authenticated_ingress: AuthenticatedIngressContext,
+    ) -> SourceAdmissionAccepted | None:
+        """Rebuild the typed pending handoff input from atomically retained records."""
+
+        from memorii.core.memory_evolution.record_projection import (
+            source_observation_from_record,
+        )
+
+        delivery_identity = operation_fence.delivery_identity
+        retained = self.replay_retained_source(
+            SemanticIngestionSourceReplayRequest(delivery_identity=delivery_identity),
+            authenticated_ingress=authenticated_ingress,
+        )
+        if retained is None:
+            return None
+        index = self._memory_plane.get_record(_index_id(delivery_identity.delivery_key_digest))
+        if index is None or index.source_kind != "semantic_ingestion_admission_index":
+            return None
+        try:
+            retained_fence = OperationFenceBinding.model_validate(index.content["operation_fence_binding"])
+            required = RequiredOutcomeScopeSet.create(
+                tenant_partition_id=index.content["tenant_partition_id"],
+                scopes=index.content["required_scopes"],
+            )
+            observation = source_observation_from_record(retained)
+        except (KeyError, TypeError, ValueError):
+            return None
+        if (
+            retained_fence != operation_fence
+            or required != authenticated_ingress.required_outcome_scopes
+            or observation.source_id != operation_fence.source_id
+            or observation.source_digest != operation_fence.source_digest
+            or observation.delivery_key_digest != delivery_identity.delivery_key_digest
+        ):
+            return None
+        return SourceAdmissionAccepted(
+            source_id=operation_fence.source_id,
+            source_digest=operation_fence.source_digest,
+            delivery_identity=delivery_identity,
+            required_outcome_scopes=required,
+            admission_index_digest=_index_digest(index),
+            operation_fence_binding=operation_fence,
+            observation=observation,
+        )
+
     def _terminal_result(
-        self, *, fence: OperationFenceBinding, generation: int,
+        self,
+        *,
+        fence: OperationFenceBinding,
+        generation: int,
     ) -> SemanticTerminalOutcome | None:
         from memorii.core.semantic_ingestion.contracts import (
             SemanticTerminalOutcome,
             decode_semantic_contract,
         )
+
         manifest = self._memory_plane.get_record(
             f"semantic_ingestion:generation:{fence.operation_fence_id}:{generation}:manifest"
         )
@@ -489,7 +559,9 @@ class GovernedSourceAdmissionService:
         members = manifest.content.get("members")
         if not isinstance(members, (list, tuple)):
             return None
-        source_results = tuple(value for value in members if isinstance(value, dict) and value.get("kind") == "source_result")
+        source_results = tuple(
+            value for value in members if isinstance(value, dict) and value.get("kind") == "source_result"
+        )
         if len(source_results) != 1:
             return None
         payload = source_results[0].get("canonical_payload")
@@ -511,17 +583,13 @@ class GovernedSourceAdmissionService:
             manifest = self._memory_plane.get_record(
                 f"semantic_ingestion:generation:{fence.operation_fence_id}:{candidate_generation}:manifest"
             )
-            if (
-                manifest is None
-                or manifest.source_kind != "semantic_ingestion_generation_manifest"
-            ):
+            if manifest is None or manifest.source_kind != "semantic_ingestion_generation_manifest":
                 return None
             members = manifest.content.get("members")
             if not isinstance(members, (list, tuple)):
                 return None
             transitions = tuple(
-                value for value in members
-                if isinstance(value, dict) and value.get("kind") == "lifecycle"
+                value for value in members if isinstance(value, dict) and value.get("kind") == "lifecycle"
             )
             if not transitions:
                 continue
@@ -531,9 +599,7 @@ class GovernedSourceAdmissionService:
             if not isinstance(payload, str):
                 return None
             try:
-                lifecycle = decode_semantic_contract(
-                    payload.encode("utf-8"), SemanticLifecycleTransition
-                )
+                lifecycle = decode_semantic_contract(payload.encode("utf-8"), SemanticLifecycleTransition)
             except (ValueError, TypeError):
                 return None
             return lifecycle if lifecycle.operation_id == fence.operation_id else None
@@ -549,7 +615,9 @@ def source_admission_source_digest(source: CanonicalMemoryRecord) -> str:
         if not isinstance(key, str):
             raise ValueError("Step-1 source record has no delivery key")
         return step_one_source_digest(
-            source_id=source.memory_id, delivery_key_digest=key, original_text=source.text,
+            source_id=source.memory_id,
+            delivery_key_digest=key,
+            original_text=source.text,
         )
     return sha256(source_admission_source_bytes(source)).hexdigest()
 
@@ -568,9 +636,15 @@ def _admitted_observation(
         source_type_from_record,
     )
 
-    if isinstance(source.content.get("source_admission"), dict) and "step_one_material_ctv" in source.content["source_admission"]:
+    if (
+        isinstance(source.content.get("source_admission"), dict)
+        and "step_one_material_ctv" in source.content["source_admission"]
+    ):
         observation = source_observation_from_record(source)
-        if observation.source_digest != source_digest or observation.delivery_key_digest != delivery_identity.delivery_key_digest:
+        if (
+            observation.source_digest != source_digest
+            or observation.delivery_key_digest != delivery_identity.delivery_key_digest
+        ):
             raise ValueError("Step-1 admission observation does not bind its delivery")
         return observation.model_copy(update={"bootstrap_language_evidence": bootstrap_language_evidence})
 

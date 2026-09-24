@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.ClaimProjection.v1","implementation_source_digest":"ca7f6bdb44eae89f6efef51fcebf89b7bf563dcea5fb9de25d20a7e8d826f575","role":"decoder","schema_id":"ClaimProjection","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.ClaimProjection.v1","implementation_source_digest":"0baec00ab25bad9b2aa1eeb76651281ecc8df5089af3b0453fe3dcf0915b10f7","role":"decoder","schema_id":"ClaimProjection","schema_version":"1","typed_root_kind":"model"}

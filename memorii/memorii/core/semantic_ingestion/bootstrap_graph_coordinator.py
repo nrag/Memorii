@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -45,6 +46,8 @@ from memorii.core.semantic_ingestion.contracts import (
     decode_bootstrap_graph_atomic_member_payload_v3,
 )
 from memorii.core.semantic_ingestion.event_replay import SemanticEventReplayError
+
+logger = logging.getLogger(__name__)
 
 
 class BootstrapGraphPlanCompilerPortV3(Protocol):
@@ -576,6 +579,7 @@ class BootstrapGraphDependentCoordinatorV3:
             except SemanticEventReplayError:
                 raise
             except (PreplanningStoreError, ValueError):
+                logger.warning("bootstrap_graph_group_commit_storage_retry", exc_info=True)
                 reason = "storage_retry"
                 return self._post_effect_retry(
                     request=request, epoch=epoch, attempt=attempt,
