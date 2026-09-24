@@ -12,7 +12,8 @@
 - Canonical inputs: Windows Docker observation at branch head `10b67a5781e2eeaab656b1ee2b6eacd7a274a928`; pinned Hermes image `nousresearch/hermes-agent@sha256:eaa1c0b93eea54dadb8b072ffaffd569f93af444eacc2f3a`
 - Published correction revisions:
   `e21e4886ffc292e941b5af2ada28ccd9f5eb469b` (primary-context binding) and
-  `f5e903d8f1c1a01fc8e7db7098fa882234e08394` (Windows Docker profile bytes)
+  `f5e903d8f1c1a01fc8e7db7098fa882234e08394` (Windows Docker profile bytes), and
+  `826c9ee5875c8b2d99ccdd8a316b89fad0cc7af2` (Bootstrap decoder-source bytes)
 - Expected outputs: confirmed host delivery root cause, smallest production-path correction, focused regression proof, rebuilt Windows Docker verification
 
 ## Objective
@@ -363,8 +364,8 @@ The generalized Bootstrap decoder-source correction is bound as follows:
 
 ```yaml
 base_revision: fa0763952a142a34ee6a04e4e65ef95d6649c77a
-reviewed_revision: working-tree correction manifest a79bc92231f4a6664668710d3cbde8e160a60bedd243259149602129e5d8ae2b
-tested_revision: working-tree correction manifest a79bc92231f4a6664668710d3cbde8e160a60bedd243259149602129e5d8ae2b
+reviewed_revision: 826c9ee5875c8b2d99ccdd8a316b89fad0cc7af2, candidate manifest a79bc92231f4a6664668710d3cbde8e160a60bedd243259149602129e5d8ae2b
+tested_revision: 826c9ee5875c8b2d99ccdd8a316b89fad0cc7af2, candidate manifest a79bc92231f4a6664668710d3cbde8e160a60bedd243259149602129e5d8ae2b
 changed_surface_inventory_complete: true
 scope_delta_resolved: true
 authority_chains_complete: true
@@ -402,10 +403,10 @@ pinned-source and runtime evidence must be returned from that container.
 
 ## Next Action
 
-Publish the reviewed generalized Bootstrap decoder-source correction, then
-rebuild the Windows image without cache, re-authorize the existing Level 2
-volume, and repeat one Hermes conversation, inspection, later-session recall,
-and restart test.
+Rebuild the Windows image from published revision
+`826c9ee5875c8b2d99ccdd8a316b89fad0cc7af2` without cache, re-authorize the
+existing Level 2 volume, and repeat one Hermes conversation, inspection,
+later-session recall, and restart test.
 
 ## Outcome And Retrospective
 
