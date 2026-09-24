@@ -115,7 +115,12 @@ class ProjectAssertionProviderProposalAdapter:
             raw = json.loads(response_text)
             parsed = _HintResponse.model_validate(raw)
         except (json.JSONDecodeError, ValidationError):
-            return None
+            # The provider returned bytes, but they do not form a usable
+            # source-grounded proposal.  Represent that closed validation
+            # outcome as an abstention so the admitted source reaches the
+            # normal evidence-only terminal.  ``None`` remains reserved for
+            # transport/egress unavailability, which is retryable.
+            return ProviderSemanticProposal(abstained=True)
         if not parsed.candidates:
             return ProviderSemanticProposal(abstained=True)
         known = {item.predicate_id for item in request.predicate_catalog.predicates}
@@ -126,7 +131,7 @@ class ProjectAssertionProviderProposalAdapter:
         ids: set[str] = set()
         for hint in parsed.candidates:
             if not self._quotes_are_exact(request=request, hint=hint):
-                return None
+                return ProviderSemanticProposal(abstained=True)
             identity = {
                 "source_id": request.segment.source_id,
                 "segment_id": request.segment.segment_id,
@@ -140,7 +145,7 @@ class ProjectAssertionProviderProposalAdapter:
             if hint.predicate_id == "project_owner":
                 produced_ids.add(person_id)
             if ids.intersection(produced_ids) or len(produced_ids) != (3 if hint.predicate_id == "project_owner" else 2):
-                return None
+                return ProviderSemanticProposal(abstained=True)
             ids.update(produced_ids)
             mentions.append(ProviderMention(
                 local_id=project_id, mention_quote=hint.subject_quote,
@@ -155,7 +160,7 @@ class ProjectAssertionProviderProposalAdapter:
             else:
                 literal_type, canonical = self._literal(hint)
                 if canonical is None:
-                    return None
+                    return ProviderSemanticProposal(abstained=True)
                 object_value = ProviderLiteralObject(literal_type=literal_type, canonical_value=canonical)
             facts.append(ProviderFact(
                 local_id=fact_id, predicate_id=hint.predicate_id,

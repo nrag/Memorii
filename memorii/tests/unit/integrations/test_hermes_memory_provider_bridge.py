@@ -627,7 +627,7 @@ def test_bridge_primary_cli_initialization_admits_a_completed_turn(
     assert any(record.visibility.value == "runtime_context" for record in records)
 
 
-def test_bridge_exact_redelivery_at_later_callback_times_reuses_one_completed_turn_operation(
+def test_bridge_separates_equal_text_positions_and_redelivery_reuses_the_second_operation(
     bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from memorii.core.semantic_ingestion.openai_responses_project_assertions import OpenAIResponsesApiClient
@@ -635,18 +635,21 @@ def test_bridge_exact_redelivery_at_later_callback_times_reuses_one_completed_tu
     from memorii.integrations.hermes_local_authority import authorize_local_level2
 
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
-    monkeypatch.setattr(
-        OpenAIResponsesApiClient,
-        "complete",
-        lambda _client, **_kwargs: (
+    calls = 0
+
+    def response(_client: object, **_kwargs: object) -> str:
+        nonlocal calls
+        calls += 1
+        return (
             '{"abstained":false,"candidates":[{'
             '"predicate_id":"project_owner",'
             '"assertion_quote":"Mars Venus 001 project owner is Ada.",'
             '"subject_quote":"Mars Venus 001",'
             '"predicate_anchor_quote":"owner",'
             '"value_quote":"Ada"}]}'
-        ),
-    )
+        )
+
+    monkeypatch.setattr(OpenAIResponsesApiClient, "complete", response)
     authorize_local_level2(hermes_home=tmp_path)
     monkeypatch.setattr(
         bridge_module.importlib.metadata,
@@ -663,7 +666,7 @@ def test_bridge_exact_redelivery_at_later_callback_times_reuses_one_completed_tu
         agent_context="primary",
         agent_workspace="hermes",
     )
-    messages = [
+    first_messages = [
         {
             "role": "user",
             "content": "Mars Venus 001 project owner is Ada.",
@@ -675,10 +678,24 @@ def test_bridge_exact_redelivery_at_later_callback_times_reuses_one_completed_tu
             "timestamp": "2026-09-24T21:00:01Z",
         },
     ]
+    later_messages = [
+        *first_messages,
+        {
+            "role": "user",
+            "content": "Mars Venus 001 project owner is Ada.",
+            "timestamp": "2026-09-24T21:10:00Z",
+        },
+        {
+            "role": "assistant",
+            "content": "I will remember that.",
+            "timestamp": "2026-09-24T21:10:01Z",
+        },
+    ]
 
     callback_times = iter((
         datetime(2026, 9, 24, 21, 5, tzinfo=UTC),
         datetime(2026, 9, 24, 21, 15, tzinfo=UTC),
+        datetime(2026, 9, 24, 21, 25, tzinfo=UTC),
     ))
 
     class _CallbackClock:
@@ -689,7 +706,11 @@ def test_bridge_exact_redelivery_at_later_callback_times_reuses_one_completed_tu
 
     monkeypatch.setattr(bridge_module, "datetime", _CallbackClock)
 
-    provider.sync_turn("Mars Venus 001 project owner is Ada.", "I will remember that.", messages=messages)
+    provider.sync_turn(
+        "Mars Venus 001 project owner is Ada.",
+        "I will remember that.",
+        messages=first_messages,
+    )
     runtime = provider._completed_turn_runtime
     assert runtime is not None
     runtime.wait_for_idle()
@@ -697,9 +718,20 @@ def test_bridge_exact_redelivery_at_later_callback_times_reuses_one_completed_tu
     # Authority freshness has separate coverage. This assertion isolates the
     # persisted delivery identity after the first operation has committed.
     runtime._require_current_authority = lambda: None
-    provider.sync_turn("Mars Venus 001 project owner is Ada.", "I will remember that.", messages=messages)
+    provider.sync_turn(
+        "Mars Venus 001 project owner is Ada.",
+        "I will remember that.",
+        messages=later_messages,
+    )
+    runtime.wait_for_idle()
+    provider.sync_turn(
+        "Mars Venus 001 project owner is Ada.",
+        "I will remember that.",
+        messages=later_messages,
+    )
     runtime.wait_for_idle()
 
     records = provider._provider._service._memory_plane.list_records()
-    assert len([record for record in records if record.source_kind == "semantic_ingestion_source"]) == 2
-    assert len([record for record in records if record.visibility.value == "runtime_context"]) == 1
+    assert calls == 2
+    assert len([record for record in records if record.source_kind == "semantic_ingestion_source"]) == 4
+    assert len([record for record in records if record.visibility.value == "runtime_context"]) == 2

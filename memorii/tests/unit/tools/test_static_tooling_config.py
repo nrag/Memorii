@@ -586,7 +586,7 @@ def test_hermes_level2_product_gate_is_exact_and_required_by_semantic_ingestion(
     count_command = next(
         step["run"] for step in steps if step["name"] == "Verify exact Hermes product collection count"
     )
-    assert '"4 tests collected in "*' in count_command
+    assert '"5 tests collected in "*' in count_command
     assert count_command.count("tests/integration/test_hermes_bootstrap_v3_product.py") == 1
 
     aggregate = config["jobs"]["semantic-ingestion"]

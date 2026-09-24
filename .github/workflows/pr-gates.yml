@@ -695,7 +695,7 @@ jobs:
           observed="$(pytest --collect-only -q \
             tests/integration/test_hermes_bootstrap_v3_product.py \
             -p no:cacheprovider | tail -n 1)"
-          [[ "$observed" == "4 tests collected in "* ]]
+          [[ "$observed" == "5 tests collected in "* ]]
 
       - name: Run Hermes Level 2 product closure
         working-directory: memorii

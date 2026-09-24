@@ -102,13 +102,20 @@ def test_proposal_identity_uses_semantic_contract_not_provider_manifest() -> Non
     assert revised.facts[0].local_id != proposal.facts[0].local_id
 
 
-def test_adapter_rejects_malformed_duplicate_and_ambiguous_hints() -> None:
+def test_adapter_converts_malformed_duplicate_and_ambiguous_hints_to_abstention() -> None:
     text = "Atlas owner is Bob."
     owner = {"predicate_id": "project_owner", "assertion_quote": text, "subject_quote": "Atlas", "predicate_anchor_quote": "owner", "value_quote": "Bob"}
     adapter = _adapter(text)
-    assert adapter.from_response(request=_request(text), response_text="not json") is None
-    assert adapter.from_response(request=_request(text), response_text=_response(owner, owner)) is None
-    assert _adapter(text, ambiguous=True).from_response(request=_request(text), response_text=_response(owner)) is None
+    for response in (
+        "not json",
+        _response(owner, owner),
+        _response(owner),
+    ):
+        candidate = (
+            _adapter(text, ambiguous=True) if response == _response(owner) else adapter
+        ).from_response(request=_request(text), response_text=response)
+        assert candidate is not None
+        assert candidate.abstained is True
 
 
 def test_adapter_enforces_eight_candidate_limit_locally() -> None:
@@ -120,7 +127,9 @@ def test_adapter_enforces_eight_candidate_limit_locally() -> None:
         "predicate_anchor_quote": "status",
         "value_quote": f"active{i}",
     } for i in range(9))
-    assert _adapter(text).from_response(request=_request(text), response_text=_response(*candidates)) is None
+    proposal = _adapter(text).from_response(request=_request(text), response_text=_response(*candidates))
+    assert proposal is not None
+    assert proposal.abstained is True
 
 
 class _Client:

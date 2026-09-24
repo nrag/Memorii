@@ -2,10 +2,11 @@
 
 ## Status and purpose
 
-The active governing split is: Section 8 of
-`semantic_ingestion_architecture.md` defines Bootstrap V3 runtime composition,
-and Section 9 defines free-form admission before its existing proposal
-transport. This trial adds neither a second runtime nor a second coordinator.
+`semantic_ingestion_architecture.md` defines the framework-neutral Bootstrap V3
+runtime and semantic transaction contracts. This document is the governing
+Level 2 extension for Hermes composition, local authorization, completed-turn
+admission, and free-form project-assertion extraction. It adds neither a second
+runtime nor a second coordinator.
 
 This is the Level 2 design for testing Memorii as the memory provider of a
 local Hermes command-line session in Windows Docker. It uses the normal
@@ -54,11 +55,11 @@ a semantic runtime profile, a trust domain, or an alternate writer/read path.
 `local_level2_operator` is only an installation-bound host authorization mode
 that supplies the same required Bootstrap V3 host material before production
 signing. Every paragraph after this correction through `## Eligible free-form
-facts` is historical and non-normative. Section 8 of
-`docs/design/semantic_ingestion_architecture.md` owns runtime composition,
-local authorization, completed-turn admission, recovery, and scoped read;
-Section 9 owns current-release free-form admission. The Level 2 rollout uses a
-new clean data volume for the selected image digest.
+facts` is historical and non-normative. The active correction and the
+requirements, contracts, and acceptance matrix in this document own Hermes
+composition, local authorization, completed-turn admission, recovery, scoped
+read, and current-release free-form admission. The Level 2 rollout uses a new
+clean data volume for the selected image digest.
 
 The first-party factory must verify the existing `VerifiedBootstrapProfile`,
 then have `HermesBootstrapV3LocalAuthorizationAdapter` verify the local sidecar
@@ -75,8 +76,8 @@ typed local-authorization use that binds the sidecar digest, Bootstrap profile
 verification digest, and resource-policy digest. The `local_level2` execution
 class is persisted as operation provenance only; it never changes fact meaning
 or selects a different core pipeline. Completed turn admission, retry/fencing,
-restart, and protected recall use the existing Bootstrap V3 contracts as
-specified in Section 8.
+restart, and protected recall use the existing framework-neutral Bootstrap V3
+contracts and the active Hermes contracts in this document.
 
 The profile coordinate is `("memorii.project_assertions", 1)`. It names the
 bounded project-assertion ontology and proposal contract, not a model vendor.
@@ -129,7 +130,7 @@ explicit local operator authorization -> normal provider factory
 This means a local Docker test exercises the same factory, ingress,
 source-bound egress, validation, writer, storage, recovery, and protected-read
 path as a normal deployment. It does not represent production-certified
-authority. Section 3.25 defines the local authorization as an explicit,
+authority. This document defines the local authorization as an explicit,
 installation-bound configuration record with authority kind
 `local_level2_operator`, execution class `local_level2`, the fixed profile
 coordinate, fixed model, exact component/prompt/predicate/egress digests,

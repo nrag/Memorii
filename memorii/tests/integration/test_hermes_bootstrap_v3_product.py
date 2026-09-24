@@ -138,6 +138,118 @@ def test_installed_hermes_abstained_turn_is_terminal_and_does_not_block_reopen(
     assert len(calls) == 2
 
 
+def test_installed_hermes_rejected_candidates_do_not_commit_or_block_a_later_valid_turn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from memorii.core.semantic_ingestion.openai_responses_project_assertions import (
+        OpenAIResponsesApiClient,
+    )
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    responses = iter(
+        (
+            '{"abstained":false,"candidates":[{'
+            '"predicate_id":"unknown_relation",'
+            '"assertion_quote":"Atlas coordinator is Ada.",'
+            '"subject_quote":"Atlas",'
+            '"predicate_anchor_quote":"coordinator",'
+            '"value_quote":"Ada"}]}',
+            '{"abstained":false,"candidates":[{'
+            '"predicate_id":"project_owner",'
+            '"assertion_quote":"A sentence absent from the source.",'
+            '"subject_quote":"Atlas",'
+            '"predicate_anchor_quote":"owner",'
+            '"value_quote":"Ada"}]}',
+            '{"abstained":false,"candidates":[{'
+            '"predicate_id":"project_owner",'
+            '"assertion_quote":"Atlas owner is Ada",'
+            '"subject_quote":"Atlas",'
+            '"predicate_anchor_quote":"owner",'
+            '"value_quote":"Ada"}]}',
+            _response(None, source_segment="Mars Venus 001 project owner is Ada."),
+        )
+    )
+    calls = 0
+
+    def response(_client: object, **_kwargs: object) -> str:
+        nonlocal calls
+        calls += 1
+        return next(responses)
+
+    monkeypatch.setattr(OpenAIResponsesApiClient, "complete", response)
+    authorize_local_level2(hermes_home=tmp_path)
+    binding = build_local_level2_runtime_binding(_context(tmp_path, session_id="session:validation"))
+    runtime = binding.completed_turn_runtime
+    assert runtime is not None
+    runtime.wait_for_idle()
+
+    invalid_turns = (
+        "Atlas coordinator is Ada.",
+        "Atlas owner is Ada.",
+        "Atlas owner is Ada and Atlas owner is Ada",
+    )
+    for index, user_content in enumerate(invalid_turns):
+        runtime.sync_completed_turn(
+            user_content=user_content,
+            assistant_content="I will remember that.",
+            messages=[
+                {
+                    "role": "user",
+                    "content": user_content,
+                    "timestamp": f"2026-09-24T20:0{index}:00Z",
+                },
+                {
+                    "role": "assistant",
+                    "content": "I will remember that.",
+                    "timestamp": f"2026-09-24T20:0{index}:01Z",
+                },
+            ],
+            session_id=f"session:invalid:{index}",
+            authenticated_author_id=binding.absent_author_id,
+            received_at=datetime.now(UTC),
+        )
+        runtime.wait_for_idle()
+        assert not any(
+            record.visibility.value == "runtime_context"
+            for record in binding.service._memory_plane.list_records()
+        )
+
+    runtime.sync_completed_turn(
+        user_content="Mars Venus 001 project owner is Ada.",
+        assistant_content="I will remember that.",
+        messages=[
+            {
+                "role": "user",
+                "content": "Mars Venus 001 project owner is Ada.",
+                "timestamp": "2026-09-24T20:10:00Z",
+            },
+            {
+                "role": "assistant",
+                "content": "I will remember that.",
+                "timestamp": "2026-09-24T20:10:01Z",
+            },
+        ],
+        session_id="session:valid",
+        authenticated_author_id=binding.absent_author_id,
+        received_at=datetime.now(UTC),
+    )
+    runtime.wait_for_idle()
+
+    inspection = inspect_local_memory(hermes_home=tmp_path)
+    assert calls == 4
+    assert inspection["operation_terminal_counts_by_outcome"] == {
+        "evidence_only": 3,
+        "fully_committed": 1,
+    }
+    assert inspection["retrieval_visible_record_count"] == 1
+    assert "Mars Venus 001 project owner is Ada." in runtime.prefetch(
+        query="Who owns Mars Venus 001?",
+        session_id="session:recall",
+        authenticated_author_id=binding.absent_author_id,
+        now=datetime.now(UTC),
+    )
+
+
 def test_installed_hermes_completed_turn_commits_and_recalls_after_reopen(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
