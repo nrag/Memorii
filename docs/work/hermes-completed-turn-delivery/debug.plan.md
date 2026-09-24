@@ -127,6 +127,15 @@ Hermes' normal primary workspace metadata.
     Failed admitted work must schedule one recovery sweep; successful recovery
     clears retained signals, while a failed sweep remains visible and does not
     schedule another sweep.
+11. **Confirmed ninth root cause: repeated Level 2 authorization invalidates
+    an initialized local capability checkpoint.** The rebuild instructions
+    reissued `local-level2.json` in the existing home. Its new authorization
+    digest no longer matches the six persisted bootstrap records, so capability
+    initialization raises `capability initial freshness authority is
+    unavailable`, which the provider exposes as `local Level 2 semantic runtime
+    construction failed`. The immediate unreleased-product recovery is a clean
+    Memorii root with one authorization; authorization renewal over retained
+    semantic state requires a separate design rather than an implicit rewrite.
 
 ## Experiments
 
@@ -227,6 +236,12 @@ Hermes' normal primary workspace metadata.
   The current probe injects one post-admission `_run_semantic_ingestion`
   failure before the serialized session boundary, then requires recovery,
   persisted reopen, and later recall.
+- A local authorize -> initialize -> reauthorize -> initialize reproduction
+  produces the Windows state exactly: six Memory Plane records, write revision
+  four, then `capability initial freshness authority is unavailable` chained
+  under `local Level 2 semantic runtime construction failed`. This confirms the
+  user's new empty inspection is caused by reauthorization of retained
+  bootstrap state, not transcript delivery.
 
 ## Decision Log
 
@@ -503,6 +518,25 @@ passed after recovery remediation with `46 passed in 202.89s`. Scoped Ruff and
   `_recover_pending` caller proof. It re-ran the runtime suite with `15
   passed`, resolved the prior verification finding, approved the correction,
   and reported `remaining_validated_p1_p2: []`.
+- The live Windows retry exposed Hermes persistence metadata that the earlier
+  simulated manager input omitted. Pinned Hermes 0.21.4 source proves
+  `turn_finalizer` persists before external-memory sync and
+  `sync_flushed_message_markers` mutates each live row with `_db_persisted` and
+  optional `_row_id`. The bounded correction accepts and discards exactly
+  those two markers for every supported role while unknown fields remain
+  denied and are named in the diagnostic.
+- Frozen persisted-transcript manifest:
+  `hermes-persisted-transcript-correction-manifest.json`, SHA-256
+  `8ecbf2bf565cc3b703c777717f62412b8b06d84508e3b12d62dd43b8bb1fea63`.
+  Correctness and test reviewers independently verified all three member
+  hashes and the complete inventory, re-ran the marker-bearing runtime suite
+  with `15 passed`, approved the delta, and reported
+  `remaining_validated_p1_p2: []`.
+- The complete runtime and bridge suites passed with `46 passed in 142.08s`.
+  The installed Hermes Docker proof, now carrying `_db_persisted` and `_row_id`
+  on user, assistant, and tool rows, passed ingestion, recovery, session
+  boundary, reopen, and recall with `1 passed, 10 deselected in 372.27s`.
+  Scoped Ruff and diff integrity passed.
 
 The transcript and lifecycle correction is bound as follows:
 
@@ -549,8 +583,9 @@ pinned-source and runtime evidence must be returned from that container.
 
 ## Next Action
 
-Publish the approved correction to `semantic_ingestion_m5`, then run the live
-Windows Hermes conversation, inspection, restart, and recall trial.
+Publish the persisted-transcript correction, rebuild the Windows image without
+reauthorizing its current clean home, then run conversation, inspection,
+restart, and recall.
 
 ## Outcome And Retrospective
 

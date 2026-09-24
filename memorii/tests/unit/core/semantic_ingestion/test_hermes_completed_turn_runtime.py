@@ -96,6 +96,8 @@ def test_full_transcript_canonicalization_discards_known_hermes_message_carriers
                 "display_metadata": {"channel": "cli"},
                 "platform_message_id": "platform:user:1",
                 "api_content": [{"type": "input_text", "text": "Find Atlas"}],
+                "_db_persisted": True,
+                "_row_id": 41,
             },
             {
                 "role": "assistant",
@@ -110,6 +112,8 @@ def test_full_transcript_canonicalization_discards_known_hermes_message_carriers
                 "codex_reasoning_items": [],
                 "codex_message_items": [],
                 "api_content": [{"type": "output_text", "text": "Atlas is found."}],
+                "_db_persisted": True,
+                "_row_id": 42,
             },
         ],
         user_content="Find Atlas",

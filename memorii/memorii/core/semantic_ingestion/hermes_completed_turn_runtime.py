@@ -311,26 +311,29 @@ def _canonicalize_message(value: object) -> dict[str, object]:
     role = value.get("role")
     if role not in {"system", "developer", "user", "assistant", "tool"}:
         raise ValueError("Hermes transcript role is unsupported")
+    persistence_fields = {"timestamp", "_db_persisted", "_row_id"}
     allowed_fields = {
-        "system": {"role", "content"},
-        "developer": {"role", "content"},
+        "system": {"role", "content", *persistence_fields},
+        "developer": {"role", "content", *persistence_fields},
         "user": {
-            "role", "content", "timestamp", "display_kind", "display_metadata",
+            "role", "content", *persistence_fields, "display_kind", "display_metadata",
             "platform_message_id", "api_content",
         },
         "assistant": {
-            "role", "content", "reasoning", "finish_reason", "timestamp",
+            "role", "content", *persistence_fields, "reasoning", "finish_reason",
             "reasoning_content", "reasoning_details", "anthropic_content_blocks",
             "bedrock_content_blocks", "codex_reasoning_items", "codex_message_items",
             "api_content", "tool_calls",
         },
         "tool": {
-            "role", "content", "tool_call_id", "name", "tool_name", "timestamp",
+            "role", "content", *persistence_fields, "tool_call_id", "name", "tool_name",
             "_tool_output_risk", "effect_disposition",
         },
     }
-    if set(value) - allowed_fields[role]:
-        raise ValueError("Hermes transcript message is not a closed object")
+    unexpected_fields = set(value) - allowed_fields[role]
+    if unexpected_fields:
+        fields = ", ".join(sorted(unexpected_fields))
+        raise ValueError(f"Hermes transcript {role} message has unsupported fields: {fields}")
     if role in {"system", "developer", "user"}:
         content = _canonical_text(value.get("content"))
         return {"role": role, "content": content}
