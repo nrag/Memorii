@@ -346,6 +346,7 @@ def test_semantic_ingestion_history_gate_is_isolated_and_required() -> None:
     assert job["name"] == "Semantic Ingestion History Reconciliation"
     assert job["runs-on"] == "ubuntu-latest"
     assert job["timeout-minutes"] == "5"
+    assert job["steps"][0]["with"]["fetch-depth"] == "0"
     assert [step["name"] for step in job["steps"]] == [
         "Checkout",
         "Set up Python",
