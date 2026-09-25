@@ -75,7 +75,7 @@ forbidden because the old M5 side predates reviewed Level 2 corrections.
 | H1 | PR #121 omitted post-PR #120 M5 product changes | `e42cc905..63658193` differs only in three WorkPlan/evidence files | M5 product tree was transplanted | disproved |
 | H2 | PR #121 incorporated M5 content but lost its ancestry | `e42cc905` parent is `d0c96305`; neither final branch is ancestor of the other; normal merge has 225 conflicts | Explains the misleading unmerged branch and conflict family | confirmed |
 | H3 | A normal merge can safely repair history | merge simulation has 225 conflicts across generated contracts, runtime code, tests, Docker, workflows, and evidence | A content merge risks restoring stale state | disproved |
-| H4 | An ancestry-only merge can record incorporation without changing product bytes | exact parent/tree and reachability verifier passed at `7015a0b5` | preserves main tree while recording M5 as ancestry | confirmed |
+| H4 | An ancestry-only merge can record incorporation without changing product bytes | exact parent/tree and reachability verifier passed at `c102fedb` | preserves main tree while recording M5 as ancestry | confirmed |
 
 ## Experiment Log
 
@@ -104,9 +104,9 @@ forbidden because the old M5 side predates reviewed Level 2 corrections.
 | Surface | Purpose | Required evidence | State |
 | --- | --- | --- | --- |
 | Git merge commit | record both current main and M5 as parents while retaining main tree | exact parent order and tree equality | complete: `a74ebcb0` |
-| `tools/verify_semantic_ingestion_history.py` and `tools/semantic_ingestion_history_reconciliation.json` | durable causal and verification record | verifier, reachability checks, and mutation self-tests | complete at `7015a0b5` |
-| `.github/workflows/pr-gates.yml` | execute verifier on every PR and make the aggregate gate fail closed | isolated `python3.12 -I` job required by `Unit Tests` | complete at `7015a0b5` |
-| `memorii/tests/unit/tools/test_static_tooling_config.py` | prove workflow job and aggregate dependency remain exact | two focused static workflow tests | complete at `7015a0b5` |
+| `tools/verify_semantic_ingestion_history.py` and `tools/semantic_ingestion_history_reconciliation.json` | durable causal and verification record | verifier, reachability checks, and mutation self-tests | complete at `c102fedb` |
+| `.github/workflows/pr-gates.yml` | execute verifier on every PR and make the aggregate gate fail closed | isolated `python3.12 -I` job required by `Unit Tests` | complete at `c102fedb` |
+| `memorii/tests/unit/tools/test_static_tooling_config.py` | prove workflow job and aggregate dependency remain exact | two focused static workflow tests | complete at `c102fedb` |
 | GitHub PR | review and integrate ancestry repair | exact-head checks and mergeability | pending |
 
 ## Root Cause
@@ -128,6 +128,11 @@ remaining_blocks_approval:
 level_2_disposition: under-review
 ```
 
+Correctness and test review evaluated clean candidate
+`02dec70609e41c2eb977b77927b442d5f495b614`; specification inspection's only
+requested correction is this closure-evidence update. GitHub CI has not run for
+this branch and is not claimed here.
+
 ## Verification Evidence
 
 The durable record is `tools/semantic_ingestion_history_reconciliation.json`;
@@ -148,10 +153,10 @@ It also rejects representative parent, tree, and equivalence substitutions with
   tools/verify_semantic_ingestion_history.py` exited 0.
 - `git diff --no-ext-diff --check` exited 0 before the child commit.
 
-At remediation candidate `7015a0b51147ca0923396b7fb2dd3d36a120f6fd`:
+At remediation candidate `c102fedb9c2396195a2f9f2f4e56791011d86c5e`:
 
 - `python3 -I tools/verify_semantic_ingestion_history.py
-  --repo . --self-test` exited 0. Its target was `7015a0b5`; it verified that
+  --repo . --self-test` exited 0. Its target was `c102fedb`; it verified that
   `a74ebcb0`, both ordered parents, and review anchor `c6e7e6a7` are ancestors
   of that target. It rejected valid alternate parent/merge, tree, nonempty
   equivalence, transplant, and target substitutions at their decisive checks.
@@ -164,7 +169,7 @@ At remediation candidate `7015a0b51147ca0923396b7fb2dd3d36a120f6fd`:
   memorii/tests/unit/tools/test_static_tooling_config.py` exited 0 from the
   repository root. The focused pytest parses the
   workflow with PyYAML and confirms the required command and aggregate wiring.
-- `git diff --no-ext-diff --check` exited 0 at `7015a0b5`.
+- `git diff --no-ext-diff --check` exited 0 at `c102fedb`.
 
 ## Identity Impact
 
@@ -176,10 +181,10 @@ or harness behavior.
 
 ```yaml
 base_revision: 2eefb39e7c80ab609961f3db78fbc16401f9d675
-reviewed_revision: pending independent review
-tested_revision: 7015a0b51147ca0923396b7fb2dd3d36a120f6fd
-tested_tree_digest: dd8ca0a5835b5429aa9784d8b163cdb5c73bc775
-tree_state: clean after 7015a0b5
+reviewed_revision: 02dec70609e41c2eb977b77927b442d5f495b614; correctness/test reviewed this clean candidate and spec inspection requested only this closure-evidence correction
+tested_revision: c102fedb9c2396195a2f9f2f4e56791011d86c5e
+tested_tree_digest: c5cea63b1aa1e5d83286cff1441cde7848c3b198
+tree_state: clean after c102fedb; later commits are WorkPlan-only evidence updates
 changed_surface_inventory_complete: true
 scope_delta_resolved: true
 authority_chains_complete: not_applicable; no product authority chain changed
