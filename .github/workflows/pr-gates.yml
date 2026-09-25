@@ -10,6 +10,27 @@ permissions:
   contents: read
 
 jobs:
+  semantic-ingestion-history-reconciliation:
+    name: Semantic Ingestion History Reconciliation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Verify semantic-ingestion history
+        run: >-
+          python3.12 -I tools/verify_semantic_ingestion_history.py
+          --repo . --self-test
+
   equal-version-replay-decision:
     name: Equal Version Replay Decision
     runs-on: ubuntu-latest
@@ -294,11 +315,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     if: always()
-    needs: [equal-version-replay-decision, static-analysis, package-smoke, provider-compatibility, scoped-context-integration, observation-ledger-activation, unit-test-shards, unit-timing-inventory, semantic-terminal-persistence, semantic-terminal-persistence-timing-inventory]
+    needs: [semantic-ingestion-history-reconciliation, equal-version-replay-decision, static-analysis, package-smoke, provider-compatibility, scoped-context-integration, observation-ledger-activation, unit-test-shards, unit-timing-inventory, semantic-terminal-persistence, semantic-terminal-persistence-timing-inventory]
 
     steps:
       - name: Require every unit-test dependency
         env:
+          SEMANTIC_INGESTION_HISTORY_RESULT: ${{ needs.semantic-ingestion-history-reconciliation.result }}
           REPLAY_DECISION_RESULT: ${{ needs.equal-version-replay-decision.result }}
           STATIC_RESULT: ${{ needs.static-analysis.result }}
           PACKAGE_RESULT: ${{ needs.package-smoke.result }}
@@ -310,7 +332,8 @@ jobs:
           TERMINAL_RESULT: ${{ needs.semantic-terminal-persistence.result }}
           TERMINAL_TIMING_RESULT: ${{ needs.semantic-terminal-persistence-timing-inventory.result }}
         run: >-
-          test "$REPLAY_DECISION_RESULT" = success
+          test "$SEMANTIC_INGESTION_HISTORY_RESULT" = success
+          && test "$REPLAY_DECISION_RESULT" = success
           && test "$STATIC_RESULT" = success
           && test "$PACKAGE_RESULT" = success
           && test "$COMPATIBILITY_RESULT" = success

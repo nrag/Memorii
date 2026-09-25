@@ -266,6 +266,11 @@ def test_pr_workflow_structurally_runs_complete_matrix_and_exact_pinned_checker(
     assert replay_steps[2]["run"] == "python3.12 -m pip install 'pytest>=8,<10'"
     assert "python3.12 -m pytest -W error" in replay_steps[3]["run"]
     assert "memorii/tests/unit/tools/test_equal_version_replay_decision.py" in replay_steps[3]["run"]
+    assert "semantic-ingestion-history-reconciliation" in unit_job["needs"]
+    assert unit_job["steps"][0]["env"]["SEMANTIC_INGESTION_HISTORY_RESULT"] == (
+        "${{ needs.semantic-ingestion-history-reconciliation.result }}"
+    )
+    assert 'test "$SEMANTIC_INGESTION_HISTORY_RESULT" = success' in unit_job["steps"][0]["run"]
     assert "equal-version-replay-decision" in unit_job["needs"]
     assert unit_job["steps"][0]["env"]["REPLAY_DECISION_RESULT"] == "${{ needs.equal-version-replay-decision.result }}"
     scenario_job = jobs["semantic-ingestion-scenario"]
@@ -284,6 +289,7 @@ def test_pr_workflow_structurally_runs_complete_matrix_and_exact_pinned_checker(
     assert scenario_job["timeout-minutes"] == "15"
     assert unit_job["name"] == "Unit Tests"
     assert unit_job["needs"] == [
+        "semantic-ingestion-history-reconciliation",
         "equal-version-replay-decision",
         "static-analysis",
         "package-smoke",
