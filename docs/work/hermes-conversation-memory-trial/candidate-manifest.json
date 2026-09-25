@@ -1,1892 +1,1892 @@
 {
   "base_revision": "d0c96305397f03c1e4a09e548f0fbd62602b3f95",
   "branch": "codex/hermes-level2",
-  "candidate_revision": "ef187110",
+  "candidate_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
   "changed_file_count": 300,
-  "changed_files_sha256": "eaa90709e703d7f5ccf78b8f9a4c2de6ecf1e1e71cc09808bc2bac26b40b5c7a",
+  "changed_files_sha256": "5150ebd50f091e466243bab4edda88aeac732262cdec56aebd9c8bca48e92541",
   "exclusions": [
     "docs/work/**",
     "local caches, environments, and build outputs"
   ],
   "files": [
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": ".dockerignore",
       "sha256": "e4aa63494e89b7b0bdd9a1f4a9d668713a035f4a2b1dcb0ff81bd5bd243d9021",
       "size": 86,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": ".gitattributes",
       "sha256": "0d9c8dbe29bea40c20b9cfacd061d708d5996456dee20b0e0aabbf8969a31ab8",
       "size": 302,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": ".github/workflows/pr-gates.yml",
       "sha256": "2f74442da9995cba926882cd04e1ecd040fc0be820ca2b140f0b8b8933f18eee",
       "size": 41953,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "Dockerfile.memorii",
       "sha256": "1956456e7c688154f57f6d38b92f852dae6bd4de801af63897a88a4adc88f43d",
       "size": 815,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "README.md",
       "sha256": "cab3dd1afc3c62a789cf5b09cf9999ba4ee304f1abecfc8850e412e5a15077bb",
       "size": 14118,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "docs/design/hermes_conversation_memory_trial.md",
       "sha256": "dfec6c301976da68ea29054aab786d89a7d41c99ed7415f2ebdfea86b690ee46",
       "size": 33944,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "docs/design/semantic_ingestion/traceability_golden_vectors/run_scenario_ingress.py",
       "sha256": "9a533d1c8b3619fd03c38e87a0eaf1fa324bc90114c451f2a4774c65fd186f52",
       "size": 14173,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "docs/design/semantic_ingestion_canonical_evidence/production-entrypoint-bindings-v1.json",
       "sha256": "0eff91c28d5b9971a51fb72bb8eeb63a574eb7538d260ed91cf962b7c4bd3e87",
       "size": 40341,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/__init__.py",
       "sha256": "ac16342f8e47785ef3faf692810a5329a9f36287af401f2b7765b1bdd7163b0d",
       "size": 16852,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/admission.py",
       "sha256": "b6df36117744cf49c6082dd7c62e4045963928692573fbd2189884717def0398",
       "size": 35639,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/atomic_store.py",
       "sha256": "80f3bc441ee6d68c266162b1bc18b75f414ddbbcfc6f15bd06a4043af4e45176",
       "size": 930723,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/bootstrap_graph_planning.py",
       "sha256": "c5319901743f588f12699117c3d60473c7cc42413e3b9fd898306abeafceae47",
       "size": 52788,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/bootstrap_profile.py",
       "sha256": "ace467cbe99634f14014473ad8130b3d1daba0e2261a879f9111b67709878a69",
       "size": 35962,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/capability_monitoring.py",
       "sha256": "a8de2834a1c47a29c40d9bd2b68ed1af77d56215f2a9cd876b6bc9f14e679294",
       "size": 64192,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_activation_configuration.py",
       "sha256": "e8d9938841f216f0718863fdad2be06c6ea3cb36d05ccf1e31e17a5fd98cc9c9",
       "size": 22837,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder-source-manifest.json",
       "sha256": "f56ceff612d5992b1897cc1c1764602c4afab44ed5425f972349ad36794d79b1",
       "size": 2024070,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/AcceptedClaimIdentity/1.json",
       "sha256": "bf026aa4ce7547fdba5ce6dcc0b840fc07b0a696ecb351525fbdf65507665cf3",
       "size": 278,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/AcceptedTemporalEvidence/1.json",
       "sha256": "72a8ea18fd620ee7c28ed2828611d9dfe756fd518ecf06fa4519cd010b8dda82",
       "size": 284,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ActionRevision/1.json",
       "sha256": "62f725316728af4bfd1dea6880cac620c39ee70756fc63c4864fdfb3d13d34d1",
       "size": 264,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ActionRevisionStreamRecord/1.json",
       "sha256": "7e78310f36b6670c37fd08ad34f908323fd1fa3c506d570e29105f3685d5635b",
       "size": 288,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ActiveTemporalProjectionPointer/1.json",
       "sha256": "0cc7c014f080ebfa51f8b1d670f10bbe6a2df85e7ade098d3bb22a8fa7ee685d",
       "size": 298,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ActiveTrustProjectionPointer/1.json",
       "sha256": "756f5bddf8b5edfd9a233aca94570cf839f59458039671023a0cfe6f688a3907",
       "size": 292,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/AliasRevision/1.json",
       "sha256": "de1a26d15929ed0e77fddadee415e1fd209c9f4f8bf99d28e0b0b3aca9101d76",
       "size": 262,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/AliasRevisionStreamRecord/1.json",
       "sha256": "60e7562fdda4e4c885f21cb076495ebed8a30991ea6249927fc134c39fe841b9",
       "size": 286,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/AuthenticatedDocumentTimeReference/1.json",
       "sha256": "84e1fcfe5026925404720f3517e74b25608ea4130b286501abb60cd1d754ec26",
       "size": 304,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/AuthenticatedEventTimeReference/1.json",
       "sha256": "9cbfb812079d125549e6116467724310c95e6e36a135236357a1696f9ce14bfc",
       "size": 298,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/AuthenticatedGraphObservationContext/1.json",
       "sha256": "92a497fcf16b6ac4a67d29d8a70c024145ed31face16f7fe622bc176fdd197b4",
       "size": 308,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/AuthenticatedSourceIntervalEvidence/1.json",
       "sha256": "3fcde464647214b46babe93b293583b7369c79fa44db813a828bb8136b13f259",
       "size": 306,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/BootstrapGraphNativeProjectionPublicationReceiptV3/1.json",
       "sha256": "694ca0075011ade7a0ea9ff7838d92b434b03a4e478c10b3518efa4a71aa0bb8",
       "size": 336,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/BootstrapGraphNativeReplayAuthorityEvidenceV3/1.json",
       "sha256": "682a1821759124e642d4d5086caa2c2b869abda09cad5ffe4e39964dc95c4840",
       "size": 326,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/BootstrapGraphNativeReplayCheckpointEvidenceV3/1.json",
       "sha256": "30646b4613f0f650ab75bb427e5785de9f495cf2626c312c156c7c956df149c0",
       "size": 328,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/CanonicalEntityRevisionRef/1.json",
       "sha256": "1bbc578b5c67fda5bca5ba22ba88f58165311f3096c98892793483a7e23e6c38",
       "size": 288,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/CanonicalOperationIntroductionRecord/1.json",
       "sha256": "4eac1620fe3aac6aadd083d12409d8ee553e325d1b000f549f62589919f36a9b",
       "size": 308,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/CanonicalOperationTerminalOutcomeRecord/1.json",
       "sha256": "c98716fd61879b92abcaabf87b070da39872c12076f2ff13e18233a6b29a6f74",
       "size": 314,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/CanonicalSourceIntroductionRecord/1.json",
       "sha256": "54b1aef5afe209ffa9445e4ee5d0c16ffb4ecfc556cb85769e951360d3d75381",
       "size": 302,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/CanonicalSourceTerminalOutcomeCore/1.json",
       "sha256": "54cd553d0e7346cdd3a8acc5d9c5ab90b163e075103e6b1b0bc582c60c74b4d1",
       "size": 304,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/CanonicalSourceTerminalOutcomeRecord/1.json",
       "sha256": "84a8110fff9dbd79769cd2342da4942b27ea28d6e29d8c2124f5c879866e0851",
       "size": 308,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/CitationRecord/1.json",
       "sha256": "fb010aa663b38e6389a711faf94fa8f2fde39c9971ae40bdb3297e2ffb0f0c38",
       "size": 264,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/CitationStreamRecord/1.json",
       "sha256": "57e03403f7759b1dec11094d8ff7eed3cf59deb5d51894ecc7b094b030d5f725",
       "size": 276,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ClaimAssertion/1.json",
       "sha256": "ed1d9cbd3b32cf496432435c739067de8746d32ef7855551a65a00ab5a77873d",
       "size": 264,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ClaimAssertionStreamRecord/1.json",
       "sha256": "9048eceb95031721871d165676a52b660e6364a104d2b9dc955a17c9edd191f9",
       "size": 288,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ClaimProjection/1.json",
       "sha256": "b101cde6da2f972054120bfc1e2651877d1ede05c59c5d4e5471643df9a709bd",
       "size": 266,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/CommittedMemoryRecordSnapshot/1.json",
       "sha256": "93a85c07d78732b77b9d9a3f19e7497185c08e4252e2666626cae28afd22bf92",
       "size": 294,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/CompiledIdentityLineageTransition/1.json",
       "sha256": "d6bb1fa19fdba71f062b354d84082e585321ea2ee2da13128f63ca681630d2c7",
       "size": 302,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/EntityRevision/1.json",
       "sha256": "d60ba8762c62590888fe524df62d8f37695d227970eb9ce83ad34b312bb3c1e6",
       "size": 264,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/EntityRevisionStreamRecord/1.json",
       "sha256": "080d7387c4106522cba92a63b4ef33f7ace5918981e768a744ed01f6f2382ca8",
       "size": 288,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/EnvelopeFieldTextArtifactMappingProof/1.json",
       "sha256": "a3376a3763e537edf09b9fd376e757a8b2c1078a54a136d9eb5963bfc25646fe",
       "size": 310,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/EventBatchLogPosition/1.json",
       "sha256": "dc64f1a6e4be9338be6618d1ee9863acc415df52dc1c115ee356dfa947c414ff",
       "size": 278,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/EventProvenance/1.json",
       "sha256": "163ccf322dc8a617c49aed121abf7dcc690c5a1138cce08824926c9cf886fe77",
       "size": 266,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/GovernanceCarrierArtifact/1.json",
       "sha256": "bfbb6a64d99895acf5a76c909a732577bdc587da11d9cded1a557970ae4a5b31",
       "size": 286,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/GraphObservationAuthorizationDecision/1.json",
       "sha256": "e8128441c48786473187ea153b19c5a4ff4ff50e9744b5d9bb9301fc8e2dd8c6",
       "size": 310,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/GraphObservationCohortPreimage/1.json",
       "sha256": "18af24d9ef5218ea77ecea874eab60eac5aec38e368fb22952f835514fa505ae",
       "size": 296,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/GraphObservationCohortSelector/1.json",
       "sha256": "2b80ab6cedca34f391fc06d249106210ed0aa6b115350edd29359dfc6d657a89",
       "size": 296,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/GraphObservationCursorPayload/1.json",
       "sha256": "4ab96bca00191dd3eab2884bcfb1b4677561e3ad998f7e765cdc71af1453df51",
       "size": 294,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/GraphObservationFailure/1.json",
       "sha256": "9fa4806e9c7d132bb48ea6b247f44b50efc4a50a7e33dd547b386b02372fd06b",
       "size": 282,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/GraphObservationPage/1.json",
       "sha256": "5c92b1832b89b7e91fceaa1673b03f4b60f26cb68c84ff86f8b8be51101e9e4a",
       "size": 276,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/GraphObservationPagePolicySnapshot/1.json",
       "sha256": "52742ab280b1e494e0e6e9fa966ba0422a25ba00deff9d4b94bc5350a51892f3",
       "size": 304,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/GraphObservationRecordKey/1.json",
       "sha256": "34a93a90610cb913cb76f4a8d88b0b25469cbca30012463560f02c795527fdd6",
       "size": 286,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/GraphObservationRequest/1.json",
       "sha256": "6269a55e3a0cc64e4f1125102f1ac5c6e3732a8fbfaccb02c4ca3aba77dfb303",
       "size": 282,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/GraphObservationRequestCoordinates/1.json",
       "sha256": "98647747d3aa7308fa2c3cf832e92979a4d2ee2cdc941de6968e09c123dab6dc",
       "size": 304,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/GraphRecordMutation/1.json",
       "sha256": "d9d1ae8cce3fa4dc620b039e3ed0673f8c918fc0a79a5be88afe34dfa982e585",
       "size": 274,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/GraphRecordObservationSnapshot/1.json",
       "sha256": "3716cd9574e339955553c61b81698a65c0ea7b56307803da33251cab5f002648",
       "size": 296,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/GraphRevisionDelta/1.json",
       "sha256": "0465928ca3a9f0dc8e3315cc131baa1772d8b60cb7ea9236dc002c88bc7cd917",
       "size": 272,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/GroundedMentionRef/1.json",
       "sha256": "9b396274fad15f478ce9af7e840bea9f5f514ba6b7bb8da1751a1988a3b2c125",
       "size": 272,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/IdentityLineageRecord/1.json",
       "sha256": "bc803d07753ed17c13c5a190ffb69a87546364e0c4100baa770d8b8b4527fbe5",
       "size": 278,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/IdentityTransitionStreamRecord/1.json",
       "sha256": "e709264a878257114025623b53f737a80c27abb93fc6d160e15e8ca3854fda23",
       "size": 296,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ImmutableAssertionEntityRef/1.json",
       "sha256": "20a56c6c59980308ab634ce71408f64e64543c9ddfe468ba53df546f92e20c29",
       "size": 290,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/IngestionObservationDelta/1.json",
       "sha256": "01a67091b3df5960f8e625ab160b976192a7729778d643fcc8cc7daa185d0965",
       "size": 286,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/IngestionObservationRecordMutation/1.json",
       "sha256": "ee28bdfc92e34402e4da1cc216cd9a17fe13b87d30c5401b1a91c7747c763b97",
       "size": 304,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/IngestionObservationReplayCheckpoint/1.json",
       "sha256": "7b4e0652bf770f9f999c1d0c1e974d9bd5357fa97febca799ff303979c082b85",
       "size": 308,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/IngestionTimeAttestationCursorPayload/1.json",
       "sha256": "5cc1ddd7d3e201c05f0f429efdf410146a914098acafa39c498ba5e80423fba2",
       "size": 310,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/IngestionTimeAttestationPage/1.json",
       "sha256": "8916f7ef79ba9d57360852cc06590eaf1820d5c08e685d6b41e7dae2a0d1b56d",
       "size": 292,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/IngestionTimeAttestationRequest/1.json",
       "sha256": "63114f0ab2c4392bb7fc5aed95c5f974e7b48d18237fb90fe97c8e7ecbec8302",
       "size": 298,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/IngestionTimeAttestationRequestCoordinates/1.json",
       "sha256": "dc2efd7ae1b0603f23f082bc0f88ba0bb20daef1798b50584ac7c5e3a2cb12f0",
       "size": 320,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/IngestionTimeObservationSnapshot/1.json",
       "sha256": "6906c67c4ce2d69e905dc0cf15c783de7c1b7991f024c7952f14b9b2d9eed0ec",
       "size": 300,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/LineageEntityIdentity/1.json",
       "sha256": "90468e473f48b6603b3604bb4d9971426197f9867fcc0478161f754e1cba4d03",
       "size": 278,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/LineageEvidenceReference/1.json",
       "sha256": "5f84002e9124dc5a5359de49dc94adc075533d07da619b54d620c765a5f87bcb",
       "size": 284,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/LineageReferenceDisposition/1.json",
       "sha256": "116030829002ab86f59b6e6f3637e06da1ad94432849b23b7ecfe5b48791ad4e",
       "size": 290,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/LineageReverseReference/1.json",
       "sha256": "0cbec5c7d7c4c4b73de5b08497464809569730f92122664d304d1a12cb922f98",
       "size": 282,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/MemoryEventMetadata/1.json",
       "sha256": "515f4ebe7570a34deef3dfec2c8fa4bc78ecacaa8b07d3bafc9ac1a78f3d4924",
       "size": 274,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/MemoryScope/1.json",
       "sha256": "022d7676949419aee7df9415560717b4aace2dc48680002871b7933f3c747b04",
       "size": 258,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/MessageAdmissionCarrierSet/1.json",
       "sha256": "c641571cbb39467ab3ce8d6230822216192f1bbc4c74a27bfdb5c876877282b9",
       "size": 288,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/MessageAdmissionIdentity/1.json",
       "sha256": "6d1114295b3bfc69803e98ea054a6ddabb5ee77dc555adc1722b19d53d725f60",
       "size": 284,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ObservationCheckpointBundle/1.json",
       "sha256": "64cf4458e6cfb63cdaa7bb531af3d6d4edcfdbb5fd8b6fdc094ed8c159aa772a",
       "size": 290,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ObservationCheckpointLifecycle/1.json",
       "sha256": "13dd582320df8d4de6024bddc023ccf8c642b086b0fe6d4241d40645aa5d9818",
       "size": 296,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ObservationCheckpointPublicationReceipt/1.json",
       "sha256": "fa1748a8c4c917d86853f7994236312a55ff7b85dbf9240541101bd4c5442e4c",
       "size": 314,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ObservationCheckpointSigningPreimage/1.json",
       "sha256": "68247922e48cef715998b9b1d5c9b7794365b3c160433e03686965a800c192e9",
       "size": 308,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ObservationGroupResultLocator/1.json",
       "sha256": "8d6d6f441627749ca3b6e3a947021f798639502818db26e1bb75d8b3764c503e",
       "size": 294,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ObservationGroupSemanticPayload/1.json",
       "sha256": "db3fab70c319ad2408aef53877a52e5ee8a53603be7d43a9d2ad53349f3f75cd",
       "size": 298,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ObservationLedgerActivation/1.json",
       "sha256": "a0b94ffed9344dcffb232b3823e2f46d6725431dadc95c77baf5f49e7c0b3e52",
       "size": 290,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ObservationLedgerEntry/1.json",
       "sha256": "d6a181883d3fa327defdee8122366901f109925bc9a5873d955935acdafd04f5",
       "size": 280,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ObservationLedgerHead/1.json",
       "sha256": "6c0693a60123f7108b0bbe9c39d603a3185b8b0f58ed6faf89643d0203b41f6e",
       "size": 278,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ObservationReplayState/1.json",
       "sha256": "fd1de0280ed88839cd926e18bcd2a3c882a313b76722c80dab10f3136bb676d0",
       "size": 280,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ObservationSourceResultLocator/1.json",
       "sha256": "2ff09965bf460d96a95960b750c485f1679e5e43793e3b8fefb4c5d8a106369b",
       "size": 296,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ObservationSourceSemanticPayload/1.json",
       "sha256": "826f4860efad3380b8dd6bc0f31382a995c4ce800bb8c88c65578481a6145e02",
       "size": 300,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ObservedActionRevision/1.json",
       "sha256": "57a957ba16366992cbc997d080ee02e736d0f7d03d6a110fc8d78e8b71328d63",
       "size": 280,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ObservedActionRoleBinding/1.json",
       "sha256": "a706ab97ab34a48029eab5788ecdfc9bc1ed801ea748cb28ccdaa88dde343434",
       "size": 286,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ObservedAliasRevision/1.json",
       "sha256": "23a6105314a1f220c9c83ec0a40df80a100afef5cbdb3c561b9b750642c8719b",
       "size": 278,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ObservedAssertionEntityReference/1.json",
       "sha256": "7ae3cb008293855b5eb8250cf4cc72205fa49edf44237008362b4fb0ffb222d7",
       "size": 300,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ObservedAuthenticatedReferenceEffectiveTime/1.json",
       "sha256": "39a47b7c9a1a10f436d4cf126660c33bd7e078347799a93d6b1191f896e2c3e4",
       "size": 322,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ObservedCertifiedTextEffectiveTime/1.json",
       "sha256": "bf7724978834c565e8f407c767546831c1267bd252d05f2b4b400ed071b49c1e",
       "size": 304,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ObservedCitationRecord/1.json",
       "sha256": "6960161a303244734a1d0ce587b539f2d41aace9ba35ebdd19c0ffff25ce4d45",
       "size": 280,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ObservedClaimAssertion/1.json",
       "sha256": "cda52a98ef0071390e56d4b82fb18bcd0269a12a9fce527adad809d3ea8aecb5",
       "size": 280,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ObservedEntityReference/1.json",
       "sha256": "cf20e674c2a50a1b0e6d84bb04379823e39c0d7f756777edf31ab8331f2e9d05",
       "size": 282,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ObservedEntityRevision/1.json",
       "sha256": "ea384a943d30ec637b0a19f0abb8c16a4dc2aa30ca997c110f4eccbfad7e1292",
       "size": 280,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ObservedIdentityTransition/1.json",
       "sha256": "b5b6b752d9238bc8b20443b7dc432352382b7d3f35e130dfc9fd32dbec3bf2a7",
       "size": 288,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ObservedOperationIntroduction/1.json",
       "sha256": "2944bf332b2a6b1a608ea6757b1b02478dd25049370eeca719168d54d26c159d",
       "size": 294,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ObservedOperationTerminalOutcome/1.json",
       "sha256": "e3ac94446298954a3135d99aeaacaf5644f5447ccd36eb380e02344b1440f7c5",
       "size": 300,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ObservedProvenanceRecord/1.json",
       "sha256": "4b4876700eb12a75385be92369c9cdb92c523044db4397ba577f249482d3f82e",
       "size": 284,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ObservedReferenceDisposition/1.json",
       "sha256": "640f56dcc2d97fa30d6d5b831a81b809f2192b3d3951f8da8a621a6e9ba6c08f",
       "size": 292,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ObservedRelation/1.json",
       "sha256": "e9c32d0563c017b2bdb62dff402e38c87b2e7bc6c6f1d2c5303ad5ac0ec2b83e",
       "size": 268,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ObservedSourceIntroduction/1.json",
       "sha256": "c90625bcf05e3f6225d3435584612a13e24cc2a573793122ce9f132c79d48437",
       "size": 288,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ObservedSourceOutcomeConsistencyAssessment/1.json",
       "sha256": "779cffecfa2d5629cf231acf2b2180fa10c9356e2966e70aa7b59ea50f71d0a1",
       "size": 320,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ObservedSourceTerminalOutcome/1.json",
       "sha256": "70397478316d16a9bcd2f800dff6916ff9effbcc1be228f31c1958f6984d50c4",
       "size": 294,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ObservedSystemRecordedEffectiveTime/1.json",
       "sha256": "49b961a155ac141a3f7ec2c831e187e184482a43d01103f7a9605c33371ebe90",
       "size": 306,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ObservedTemporalClaimProjection/1.json",
       "sha256": "2eed751a58d99ce31f15082617890c0860ad98d1741cac0cdf233d6d6a2f4ac1",
       "size": 298,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ObservedTemporalTransition/1.json",
       "sha256": "da5e24b6d8a1cad659e9623caeeff03ec68021d9c376cac6e3b7c52e37f6d2ac",
       "size": 288,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ObservedTrustClaimProjection/1.json",
       "sha256": "fb35b9f8d97379618bc822d9ee888b396233e3259854aff19ae852e5daa7561c",
       "size": 292,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ObservedTypeEvidence/1.json",
       "sha256": "459fea768e51a837375602fe8d20893f8f0466780a704d89626f129ea4b865a6",
       "size": 276,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/OperationIntroductionStreamRecord/1.json",
       "sha256": "15a2469adc5b95441469bf83ca769851114b452ca5403410e5d9f0854fa94057",
       "size": 302,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/OperationTemporalAttachmentBinding/1.json",
       "sha256": "90a7922fd9611d1ecf099f57353fd07b89a1bd3049c2476bf5f6e996c64fe0ae",
       "size": 304,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/OperationTemporalDecisionBinding/1.json",
       "sha256": "d0609d9773d0adee184a506790f162970c3a9dc5ffccd196c4020008db8c46f5",
       "size": 300,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/OperationTerminalOutcomeStreamRecord/1.json",
       "sha256": "d6caf8dde84d52e9d6450a4ede0ec39ed7e26464568125e7d4b108b78a838a82",
       "size": 308,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/PredicateStateRule/1.json",
       "sha256": "8b2d3553b7cc37431971128a7f3fe5d8d337fedb6532940d5459c0b049da070a",
       "size": 272,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/PredicateTrustRule/1.json",
       "sha256": "2340b264d2f2fd897c3d97fdbe7684bc7cde6bc7b436a57088622f1f70505d2d",
       "size": 272,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ProjectionEvidenceRecord/1.json",
       "sha256": "ddbfa5e70d411558b8dfe43adab4ccd257af997c583c2674f70a4dfc8efb400f",
       "size": 284,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ProjectionHistoryReplayBinding/1.json",
       "sha256": "32c948e972c6c4afddab6793a682a9972cffb0d929e5ffe8fd73f3139bd5b2e2",
       "size": 296,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ProjectionObservationIdentity/1.json",
       "sha256": "f500fc5a4ce8b2e73ffadcfcd983ceafcd4566924e793cabc2a186ef49d9d701",
       "size": 294,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ProjectionTextSpan/1.json",
       "sha256": "419c10368c3abeaecf1bfea1f78fab80d23a891288b2fbf1e017b1db87b83488",
       "size": 272,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ProvenanceRecord/1.json",
       "sha256": "79ad24fec5f9cf28b90c09831df35d8d0c0067879c8bd3a6e627385aefb5cf5a",
       "size": 268,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ProvenanceStreamRecord/1.json",
       "sha256": "c835f45cfbc6d01a21e81fbec718043f2a8fa6067f25d68db770948ca420045c",
       "size": 280,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ReferenceDispositionRecord/1.json",
       "sha256": "79da19e2225a9b381d500fa46b8543c46b9294359664f43a1815d830403cffb3",
       "size": 288,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ReferenceDispositionStreamRecord/1.json",
       "sha256": "b0f52ef48b1ef476299115e5a3d1893b7351f30a58fe0a7a02484fb556e45bca",
       "size": 300,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ReferenceEdgeLedgerEntry/1.json",
       "sha256": "72ad7ea4db174796be04c9f551c8e4b1d3fb864e20404b7354fc4d34f0ede8e5",
       "size": 284,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ReferenceTarget/1.json",
       "sha256": "6c20d51d5683205aea618cc790b01b9473241e64251cf9dc1ea1015bbb27d4c4",
       "size": 266,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/RelationRevision/1.json",
       "sha256": "3c363d4844bcd81dfbfb347b0ba66751bcb5cc8da96bb2d52be7f43f7c0e52c2",
       "size": 268,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/RelationStreamRecord/1.json",
       "sha256": "474b05e8b2ae6310d7c424c2411f23eb2899f72b41dfd1510b93a81d214878c6",
       "size": 276,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/RequiredOutcomeScopeSet/1.json",
       "sha256": "6d4aa2fc6b3d9646fdde1cfdbcba61466954cbceb143808fcefb23139c5c1be3",
       "size": 282,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/ResolvedGraphObservationCohort/1.json",
       "sha256": "46c8207784b688a533d9e81a6b042c65e95df40a45cf4738bac070b903fecfeb",
       "size": 296,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/RetainedSourceTextArtifact/1.json",
       "sha256": "3a7133c42cd68357ec41699461a07b083ee7c180ca0cf671f36c04936ee21882",
       "size": 288,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/RetainedSourceTextSpan/1.json",
       "sha256": "c4c1c1892598800b3a03b088d364539d086d2cb70540d29d7d5e694599583209",
       "size": 280,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/SegmentGovernanceBinding/1.json",
       "sha256": "49b95149416e458c07a6651f99fb0166faacacfb3d52860363b69f326bb56a37",
       "size": 284,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/SegmentGovernanceCarrierSet/1.json",
       "sha256": "ab3462f84a9d94cdd07f3ce50e6447360a3a1227f0bb095b5d35df302917fc31",
       "size": 290,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/SegmentLocalTextArtifact/1.json",
       "sha256": "3c85150ea3f8bf2b6796c39c4a818d85ac169492fe2103cd03acce40ae98e112",
       "size": 284,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/SegmentLocalTextSpan/1.json",
       "sha256": "80b2e3f0df30ad07769cac81c5fe8ac4a9a00cfa8e4f0fd172f2ebd8fb41a1ab",
       "size": 276,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/SemanticAssertionKey/1.json",
       "sha256": "26e76af63bf53444393240c28f4187d3eb5eb0bfe6d6286f2fadce5aa0466bfa",
       "size": 276,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/SemanticClaimSlotKey/1.json",
       "sha256": "19e536a57adf594653814d387fc9f5fd5ed87f9cc27c8d71aeac06e424ca8472",
       "size": 276,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/SemanticClaimValueKey/1.json",
       "sha256": "9341620b953f5dbc0c4a8aa780c34c220cdcb73aa50ec214c359ec95d96cca0c",
       "size": 278,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/SemanticConflictReplayBinding/1.json",
       "sha256": "40b5668f4de7670e201d69c3b46b598de6bdbfd80fa21a9b7f5a8f2cfe351b2d",
       "size": 294,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/SemanticEventBinding/1.json",
       "sha256": "6b8eb0070d9a9addf8cbd692caeaab0e8b41fe9f278a4fde32b30a52ed13e54f",
       "size": 276,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/SemanticGraphDelta/1.json",
       "sha256": "bb90cc7918cafa17cc84d4ac1e64bc3087d25403a47a8136a28f599b99a022c6",
       "size": 272,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/SemanticMaterializedMemoryRecord/1.json",
       "sha256": "0d603e3324dd3eafdbd018f3eabf0f27ffde541b7a5c901a22162e159cb9c402",
       "size": 300,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/SemanticMemoryEvent/1.json",
       "sha256": "b7425351216c7f77bcce0f04d176d6e82ed7cda4747b6f146896b48d396d7f7d",
       "size": 274,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/SemanticMemoryEventBatch/1.json",
       "sha256": "4e24b342dba48389ad2fa70b2698a50d1bd59d137843c87883a5f5528a6315d2",
       "size": 284,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/SemanticMemoryEventPayload/1.json",
       "sha256": "cfa32c21bb26b34a1b10b15d3abc869b948d8e8ece2eef27e869bfbe4ebee155",
       "size": 288,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/SemanticProjectionTextArtifact/1.json",
       "sha256": "b7336ef8a0cea7b5da3d3fa585c815af78c035664d9c133a64407d43aab4ac3c",
       "size": 296,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/SemanticReplayAuthorityAggregate/1.json",
       "sha256": "43e7ae55f2919fdb6aa3a4bfd2beb773a6145fab0b0beb7367d990fadaf72060",
       "size": 300,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/SemanticReplayAuthorityMemberBinding/1.json",
       "sha256": "101a4b77ad97c7d3623bef859e039b8464a369336a839ed728ff3335b2451ca1",
       "size": 308,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/SemanticReplayCheckpoint/1.json",
       "sha256": "80ddcdb2c767f4a198e71988dc596d1af942ee83dd0fbe1bb1e88b45a8ccc990",
       "size": 284,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/SemanticReplayCheckpointBundle/1.json",
       "sha256": "5f68db437cea75bc10c65098a93180dcdf1c1ffe11dc145a21e8437d9e3c2b49",
       "size": 296,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/SemanticReplayState/1.json",
       "sha256": "9832d5116fcb19dcb665373daa1e55c74bdd38d169eaec230c55dc21d4d43f68",
       "size": 274,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/SemanticTerminalBindingSet/1.json",
       "sha256": "e7caac5468cf25f1ea635471fe7510e072ffd27d1d6bd7c42f21d0c5fe800da9",
       "size": 288,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/SnapshotGraphRecord/1.json",
       "sha256": "49ce7428b67f164bcd1512696aa75869ba88aa67050ce40d4a4539f8a2757355",
       "size": 274,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/SourceAuthority/1.json",
       "sha256": "9517e183cd74e5452b2d6f499273bb56acfe6360a606c8b500fd85a4c60dbd17",
       "size": 266,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/SourceAuthorityEvidence/1.json",
       "sha256": "5eb503ec37839ab766ccad7cad5ca331a6a367b3e165305854251174d5e0a62e",
       "size": 282,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/SourceFinalizationObservationDelta/1.json",
       "sha256": "e1f987dc0f7dbbebfd921d5f5b5adcfc2d71a7cc6094dec36064bad0060ba354",
       "size": 304,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/SourceIntroductionStreamRecord/1.json",
       "sha256": "53903cb2c85c8beed637c76042cb7e03342fe9f036c9d3602acf64ebf5e044a7",
       "size": 296,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/SourceObservationIntent/1.json",
       "sha256": "d42c6303eaabbb7ba7f41b42256eb5462604dc9a9abf22803512dda56745220e",
       "size": 282,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/SourceRetentionTimeAttestation/1.json",
       "sha256": "431b7b5bc43fd68c3c624bf5e50c11058bc5bf8336c0b99993a80fb07e673f83",
       "size": 296,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/SourceSpan/1.json",
       "sha256": "df36aff4ea0865f887181eab91b230384ec00bc7f374c6a0fcada09fd54024d0",
       "size": 256,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/SourceSpanReference/1.json",
       "sha256": "9688e5aa6906edbdc491ceb5d7dc008d56e5fd244266aa944e21dcac09985da5",
       "size": 274,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/SourceTerminalOutcomeStreamRecord/1.json",
       "sha256": "9ed1c79498b5973e28d944e5392a925beb01d783456c451530a3ddbf41b0f301",
       "size": 302,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/TemporalClaimProjectionStreamRecord/1.json",
       "sha256": "7b4105ae2f8f9c1f0c082e67593032da8436e25820dd486b96ed331420408e7c",
       "size": 306,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/TemporalEvidenceCandidate/1.json",
       "sha256": "f4a0528c4a7a8642f1730be21628fa9b167d3f344260aa6813df3dfa30b59d00",
       "size": 286,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/TemporalEvidenceDecisionClosure/1.json",
       "sha256": "e19c8d84b1d5fbf6cf9fa7c45ff0b3edb68d894742a35aa8b9063b46a69da3ae",
       "size": 298,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/TemporalPolicyMigrationCertificate/1.json",
       "sha256": "ac940a0cdab83d528353c4df3c2a5fefd51c5b39914d0d2d732f1340321ae8c7",
       "size": 304,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/TemporalProjectionCommitCertificate/1.json",
       "sha256": "4241fb2300104d125907586636cb32c6bda39474911f27ba78e6f3d0ff43bba6",
       "size": 306,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/TemporalProjectionGeneration/1.json",
       "sha256": "fd3f697bc6d1aa6da1112401ee3e3464beed522d28ca88944faf9ae2ab854edf",
       "size": 292,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/TemporalProjectionHistoryEntry/1.json",
       "sha256": "7e8f70e23250ec7e081da1a4a8c6360d83012719d9b84870f54a10a7cb543552",
       "size": 296,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/TemporalProjectionPublication/1.json",
       "sha256": "32a49353136d7f4353bc7083e5f868fad11d38327dc0771e8818ed5e005c6c2b",
       "size": 294,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/TemporalProjectionRecord/1.json",
       "sha256": "94b4de7be6a9d6c2fa4cd419c1a1486b3bc2af3c3751d338f6a14e3e15452738",
       "size": 284,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/TemporalTransitionRecord/1.json",
       "sha256": "4d1a5be36575773e9433566e435c137f08f3e2a3752318383532e0c98bc4b118",
       "size": 284,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/TemporalTransitionStreamRecord/1.json",
       "sha256": "59ff9a6d480d871a2f4df42eaf8dd0fed071ecbecfc613628910008ccf5a8fdd",
       "size": 296,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/TimeInterval/1.json",
       "sha256": "d04d98a9a4905c4591f9077202873dc018b38b76edc8a3d4dfe9061f020f8453",
       "size": 260,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/TransactionGroupCommitTimeAttestation/1.json",
       "sha256": "a19f2250cfee8a6b1994af8a52b703a94079e8062ce45aa4442b3c064608f3be",
       "size": 310,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/TrustClaimProjectionStreamRecord/1.json",
       "sha256": "c1b4b454db28b988e0cf77c681472e25cf7f747b8fb7d0e26e7b6837219b1e30",
       "size": 300,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/TrustDecayStep/1.json",
       "sha256": "fa4e8469f91d28c2624cd45b2c4228437fd95e45504bb3d81f7d6907d4322bb8",
       "size": 264,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/TrustPolicyMigrationCertificate/1.json",
       "sha256": "59f81ea370ea888545b3f1e818a3c56d0799b2f2fb21e27cb03a4d3565bbd7ed",
       "size": 298,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/TrustProjectionCommitCertificate/1.json",
       "sha256": "81858a0b4e41c8b0b10a7641765062d8685a58ecba7779cca5b4fbcdfb829f45",
       "size": 300,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/TrustProjectionGeneration/1.json",
       "sha256": "6e6ca3d6cac3b32b9f996ff3a7d0c2848b84fdc5369f1c0a807096d651f7cc06",
       "size": 286,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/TrustProjectionHistoryEntry/1.json",
       "sha256": "699545e8a9d7c723233985999f21785bffa79fe3856d663318c14828935585e4",
       "size": 290,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/TrustProjectionPublication/1.json",
       "sha256": "e6567dbc770df3d26b720893755edaa4fc27b8df5efd609ca3bee12737d48924",
       "size": 288,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/TrustProjectionRecord/1.json",
       "sha256": "68cff94da796b082e4cd6098029fa4d857a702872ae089322ab876aadffd9f30",
       "size": 278,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/TypeEvidence/1.json",
       "sha256": "0d513120f08d37b2ba941e08877b446683f4c2a8d3e86b53c8bba00b5b1864a7",
       "size": 260,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/TypeEvidenceStreamRecord/1.json",
       "sha256": "e570ac32fb98bc1b93a9973e29771a2250c5071a805a6b34bf9cc3021ce27997",
       "size": 284,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/TypedLiteral/1.json",
       "sha256": "ccec1364a89a504583391c5f68ccc78c86de564e3cdc0eef1cb95b70a3fc6d74",
       "size": 260,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/decoder/VerbatimTextArtifactMappingProof/1.json",
       "sha256": "8dafcd0663f18d8b3eb495b4d6107c681829de8dfe1f92660ec10ecfdf4f37e9",
       "size": 300,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/publication-manifest.json",
       "sha256": "f1ff1ff4a560ecb38fb21340997f59b520ea5ab14feccb89e862dc493d11b081",
       "size": 191553,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/observation_registry_sources/registry.json",
       "sha256": "8d5426ea310cc958a517845a3a2aced487e93693e9dc0d55d2f8a17e4c03f644",
       "size": 12441,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/record_projection.py",
       "sha256": "998ac68c14018c36e6522ed2fc8479e2fc583b0d237c736b4851ff61ffdb9e1a",
       "size": 18347,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/resources/bootstrap_freeform_admission_policy.json",
       "sha256": "309bfcf61a4c0ee34543a37d537b164358d9c3c8dbe4665386b6cd7299a4fd86",
       "size": 713,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/semantic_analysis/source_contracts.py",
       "sha256": "c49483580dc129f875bb94ee89138feef13e101f2171113e01d8bf805b67ab68",
       "size": 750,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/source_admission.py",
       "sha256": "9a00bcd13d89116a34c0765a66ad25e4b46215184478f032df7b75be970dad69",
       "size": 35548,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/memory_evolution/writer_admission.py",
       "sha256": "de0433b024423a0cff077f8f05589fa1fd4dee8d9932e7e9e3250622dcd154ea",
       "size": 229628,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/provider/ingestion.py",
       "sha256": "d53975ad0500fbb71b7088b17b5f913c3bde4f26a2a40c01a2b52b96848b994d",
       "size": 91341,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/provider/service.py",
       "sha256": "2fa47de097f8eb5bf2dce056c7df5e82d18ec46e41a8eee4b44ca61811a9690f",
       "size": 93832,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/semantic_ingestion/bootstrap_graph_artifact_assembler.py",
       "sha256": "8ed15f568c35050865958df76cee631d528466af614c6c39b24f478fd8e02fca",
       "size": 98286,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/semantic_ingestion/bootstrap_graph_builtin.py",
       "sha256": "346417faecdc613e50852c9c666495c967e6bb6d9c91be3e5fa791390c0aa592",
       "size": 41163,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/semantic_ingestion/bootstrap_graph_coordinator.py",
       "sha256": "4d1c41868b5a31bb5c9b6e4bfe049f7fdca1102a2359a78d3ed9f87df40bab56",
       "size": 67606,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/semantic_ingestion/bootstrap_graph_terminal_preparation.py",
       "sha256": "af48a5ce077f443c15b2601c6ba653987b494391293a59ef2b9eaedefbf581b2",
       "size": 37329,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/semantic_ingestion/bootstrap_native_reducer.py",
       "sha256": "cc416d80a285954ec1097f53726ca42c847176aa8bec0e0a80d7538d0988350d",
       "size": 13197,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/semantic_ingestion/bootstrap_v3_proposal.py",
       "sha256": "86c5ec165f382b8ff7f946d8c93b82574ed82b6ddcd66b30c96682e121b353e6",
       "size": 21303,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/semantic_ingestion/capability.py",
       "sha256": "5653f306f0577077fe75ec81a4b5c6a6c417ed41e9d81fbb2236d19993f1cce9",
       "size": 27141,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/semantic_ingestion/contracts.py",
       "sha256": "412c5d4b0779802741555cb6bb2bba24017df1857ee84d366c48169172c1fb46",
       "size": 762639,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/semantic_ingestion/current_bootstrap_v3_authority.py",
       "sha256": "7833fd021d1ef1f79836f3fa71fcf263f9d93f019733d838e396d89de9834d22",
       "size": 39764,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/semantic_ingestion/current_bootstrap_v3_dynamic_authority.py",
       "sha256": "f3845007a54f7c67bd9f4df1ce655dad267f81d6a51fbb349bb2076161b2f969",
       "size": 15514,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/semantic_ingestion/current_bootstrap_v3_lanes.py",
       "sha256": "cef38f5487e5ff9180476b348a9bcf36fc8d7e5debe998fca54f72fa0317e651",
       "size": 7259,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/semantic_ingestion/current_bootstrap_v3_materializer.py",
       "sha256": "e094ed830d56c630f2e4ce41f6036263112a7ef21c546149c4fa5072e0c5741a",
       "size": 14724,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/semantic_ingestion/hermes_completed_turn_admission.py",
       "sha256": "59590b4e10ff26c156297b1e709b9e2212d1fdb6d2089f895cd04a9bf2c789ea",
       "size": 15636,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/semantic_ingestion/hermes_completed_turn_runtime.py",
       "sha256": "74ba8a494316a90d693db20b647ecd34d3297542400938a2e437d6a71f8540be",
       "size": 21169,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/semantic_ingestion/local_analyzer.py",
       "sha256": "3a619351dd5437b4ebd5ed438e5944bbc189f8bc990d76c4ef5c7af16c5cbf91",
       "size": 17535,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/semantic_ingestion/openai_responses_project_assertions.py",
       "sha256": "14f21b029be3e8f304f8c48a68ef3a0f8034657d42eff6b0fec72896eefa4325",
       "size": 3972,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/semantic_ingestion/persistence.py",
       "sha256": "e252441ba0f45447891e3e04481a5cd7a87c2759e7573259158723ec9c39c33e",
       "size": 45827,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/semantic_ingestion/production_authority.py",
       "sha256": "554e66840b225bd61910d479f7d59bc4a661e2da13381572b41fdd575205e77b",
       "size": 20154,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/semantic_ingestion/project_assertions.py",
       "sha256": "d09d7d85884d3d4576cdf544bad971bd37cf68165ccb6421f3308320095a462a",
       "size": 9032,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/semantic_ingestion/project_assertions_profile.py",
       "sha256": "22d2c356aa18e8ffbd435eeaf7190b2ead3c2398d3b298106e0658f0616315af",
       "size": 12255,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/semantic_ingestion/resources/project_assertions.component_fingerprints.v1.json",
       "sha256": "1c5dd00b143f1f7eed0e09cba159c9e6b3c8c530e09ab8324357b4a04bc0dc48",
       "size": 1957,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/semantic_ingestion/resources/project_assertions.egress_policy.v1.json",
       "sha256": "e125fcf15ea0c7abcbde7b10f74d20fff9fd6bcbd4ea9daba6b3f424d586fac4",
       "size": 125,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/semantic_ingestion/resources/project_assertions.manifest.v1.json",
       "sha256": "d2a61d5e82406059e565e3646de344393f54a8141681638bef2f4f6026f89169",
       "size": 871,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/semantic_ingestion/resources/project_assertions.output_schema.v1.json",
       "sha256": "6579e7f0c2d1d8b4fcbbaa1b5a08dda062f0531e9c7ddd268c88bd2f21825454",
       "size": 705,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/semantic_ingestion/resources/project_assertions.predicate_catalog.v1.json",
       "sha256": "fdf079380d9ca5dca84f5bcea684f9b51d9f5621ce6b9d6f54e37ec5e72a585a",
       "size": 637,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/semantic_ingestion/resources/project_assertions.prompt.v1.json",
       "sha256": "798a966fc37d22c82bb4017fdeca0db0765b08a868f369f1c42a49ca6e7e7258",
       "size": 312,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/semantic_ingestion/source_authority_retention.py",
       "sha256": "f7991b50899a0705b88c8595617ae8ed3e55efb6d24ad85acab594d467b5fadf",
       "size": 2702,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/semantic_ingestion/source_normalization_authority.py",
       "sha256": "1f681fd9b4148e68ff2403769bbec70b8ffb5f47e30deb39f636cbe15e9e2669",
       "size": 8674,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/semantic_ingestion/source_normalization_execution.py",
       "sha256": "6951e833b59ce05d7ea2a390de019209973d62d5d10fde00eea26ad978a49eae",
       "size": 28680,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/semantic_ingestion/source_normalization_host.py",
       "sha256": "77fb2e7a99e88e4d720487a9aa542fd5c3f6b86d9ad8a27f0823e4339de3bd64",
       "size": 7936,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/semantic_ingestion/source_normalization_repository.py",
       "sha256": "c0ee9e76b87e7d2d3c14c329e1cffad2a790049be6575bef68fe0e311b5bd796",
       "size": 16783,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/semantic_ingestion/source_normalization_stage.py",
       "sha256": "7d2cdc075ac9b117d9c76598d59d63e4acbcfb4a7678d996db37f6e64580cb0a",
       "size": 32457,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/core/semantic_ingestion/source_preparation.py",
       "sha256": "a733d9c0161191ad2059ee90ebcf4ae29d6fca0881c26ae66df260b8de1504d7",
       "size": 22946,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/integrations/hermes_factory.py",
       "sha256": "55fb461bee68948ed39f9af0f8a242a77106e2200a2bdfaebbf45374de15b7f6",
       "size": 15174,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/integrations/hermes_local_authority.py",
       "sha256": "51075ccd249e0320cb1d90629b38b4cc1168d04c26c172efad383700a3b362b1",
       "size": 22472,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/integrations/hermes_memory_provider.py",
       "sha256": "caba748b7cc93ea72fbd3fed7af1bdb8e286e2a3c528865e5e912858d737fcbd",
       "size": 17649,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/integrations/hermes_runtime_binding.py",
       "sha256": "5534dd5e46e580f8051adbace6ff8e2d83624211c6da080bfdb10beeb75cafb3",
       "size": 744,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/memorii/tools/test_shards.py",
       "sha256": "0fb4c5530163ad359faefdf4ee86c49dcd09dedc4751d11bbaff8e3f0ff84b9c",
       "size": 13699,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/pyproject.toml",
       "sha256": "6dad3273f258cc774c356ccc0370304a2ba9e45a1ceaa2196baea8f4985aa29e",
       "size": 4556,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/acceptance/semantic_ingestion/test_sia_requirements.py",
       "sha256": "a26e0a88497ef67cd29f44496f20247edcdfa7c44bab7bb95a8d30aaba36cd78",
       "size": 135603,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/ci/deterministic-job-owners.json",
       "sha256": "305214fa5f581d997ab8f74ac2824c163c5a2605c36e8bea82eccb5278528dd9",
       "size": 4931,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/ci/unit-shards.json",
       "sha256": "ecac03f74c476ad5ef2640c0d885512de151bfe9bfd64b3776da9959fb5f2882",
       "size": 1509,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/ci/unit-test-durations.json",
       "sha256": "cc236c32d3ce828561cb910d4b4752504062d99e7c2ca41547e6f01704941e2c",
       "size": 643031,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/fixtures/semantic_ingestion/bootstrap_graph_v3_fixture.py",
       "sha256": "8cf679eaebe367c88ce78e37473bb3b9ab5c450185091966b3a193306fbb319f",
       "size": 71370,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/fixtures/semantic_ingestion/clean_room_request_fixture.py",
       "sha256": "5bee137f5a760e6d00091d24523ad455eaa44c6be7a3c2c302f6f63cd1940bb4",
       "size": 18368,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/fixtures/semantic_ingestion/current_terminal/manifest.json",
       "sha256": "5236d3199ea14a42be04a230501cbd31431b7305455d63936bab6714d2c523c5",
       "size": 1257,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/fixtures/semantic_ingestion/current_terminal/memory-records.json.gz",
       "sha256": "75afc6e8cb35a1cc983c17373cff872fdff62c9b64f0a1996c2df641dada8f59",
       "size": 705608,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/fixtures/semantic_ingestion/current_terminal/publication-intent.ctv.gz",
       "sha256": "8ee40995570879fd3ecc535f69a7c30e0a927f3a2734b0a4820d5dccc6b020e9",
       "size": 2097,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/fixtures/semantic_ingestion/current_terminal/publication-request.ctv.gz",
       "sha256": "91fa232f13bd478b20714e93eca5d1bd8143b2373828329625046f58ae18eaa2",
       "size": 83721,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/fixtures/semantic_ingestion/current_terminal/terminal-reload.ctv.gz",
       "sha256": "a97423b2ef06686e965a008e8035ddb19cdb3c4ba7f7f87fa403d715c35e238d",
       "size": 6759,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/fixtures/semantic_ingestion/current_terminal_fixture.py",
       "sha256": "7f3c8f0e1658584c26a838109ea660545583a8d4b652aaf408839b72ca5875d5",
       "size": 1070,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/fixtures/semantic_ingestion/host_bootstrap_authority.py",
       "sha256": "729f30cc9c5bfb970b00d44f53cf491e6b1d5aadacb4034db06da7d195a1f00c",
       "size": 3817,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/fixtures/semantic_ingestion/scenario_fixture_authority.py",
       "sha256": "1829a9df728780a08ce58c639d80e1190320801b125da7aae1561a446649f9ca",
       "size": 66624,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/fixtures/semantic_ingestion/semantic_terminal_fixture.py",
       "sha256": "09b4f11e2efb0b4135894afef46d4718d06970528b2a5a30258d654a5f1043bf",
       "size": 39501,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/fixtures/semantic_ingestion/source_normalization_fixture_builder.py",
       "sha256": "1beb3bb2961e009fb23e1fa4d4db349a099166e60d436611a9eef0834bc8c6e7",
       "size": 55773,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/integration/test_hermes_bootstrap_v3_product.py",
       "sha256": "0b118c1e8a7d2173750c6fd9b549e60ebddc4296cf74765e2db819c8a462d50f",
       "size": 31670,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/integration/test_observation_ledger_activation.py",
       "sha256": "968a4e1b2b958d87d614e7d6c287ee1ca5c46afc8101fa28cd0797ead49c4743",
       "size": 72202,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/integration/test_observation_terminal_intent.py",
       "sha256": "cdd5d9f824571522b10d21f012a6c90b876679be784b4ce199fd001411dd83c7",
       "size": 7154,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/unit/core/benchmark/test_memory_evolution_architecture.py",
       "sha256": "59e66abfdac158d2a8cbf931ed71d9fe56373d15bb0963e867a6e6ebbd943202",
       "size": 31464,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/unit/core/memory_evolution/test_local_level2_observation_activation.py",
       "sha256": "bebc8daa1f974ef9adebf38f4826890144e88148fa0837a2c38a0d0b7bdff819",
       "size": 5171,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/unit/core/semantic_ingestion/test_bootstrap_recovery_replay_v3.py",
       "sha256": "89587271c3e9cb3b42a8776302cbbf87dd8d9dab961d5fe51ed3bc7d8665b167",
       "size": 4849,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/unit/core/semantic_ingestion/test_bootstrap_route_contracts.py",
       "sha256": "74bc55726d5022e687997752215426bfde2c08e13716b8226613673ae1d0820b",
       "size": 9204,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/unit/core/semantic_ingestion/test_bootstrap_source_admission.py",
       "sha256": "f80d0035aa97fd3d808a3cc947bbe83a6b8951a5b3255985a01a72e233b9bf02",
       "size": 49218,
@@ -1900,210 +1900,210 @@
       "status": "D"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/unit/core/semantic_ingestion/test_bootstrap_v3_native_lane_contracts.py",
       "sha256": "0900531942309f2ec19c767053195eb2919cf040608c953fda8d1b346b46c525",
       "size": 5461,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/unit/core/semantic_ingestion/test_bootstrap_v3_payload_contracts.py",
       "sha256": "7e36412226edd211dba374a7edb1bad7d577e1c20a5da1f0a5649f474671c610",
       "size": 2458,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/unit/core/semantic_ingestion/test_bootstrap_v3_recovery_reopen.py",
       "sha256": "eeac6ba075cfd95df0dd4f4ba59c0ed2834a31094eacc6f037b6129429712611",
       "size": 16096,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/unit/core/semantic_ingestion/test_current_bootstrap_profile.py",
       "sha256": "d074efe231445d36d379c7cc3b9bb04f7fd00b80f080abaa1b1d54cf1ba720fe",
       "size": 1251,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/unit/core/semantic_ingestion/test_current_bootstrap_v3_authority.py",
       "sha256": "bf3677ac708c9a050b10a820b5fa55ba11c0f04b3fa60a613cc2fc09076adcfe",
       "size": 4704,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/unit/core/semantic_ingestion/test_current_bootstrap_v3_materializer.py",
       "sha256": "a10dc9b83f8d9439c54f0e8037d223c7f25bf3cbfce72a2a9cdce735a2e8bac6",
       "size": 3226,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/unit/core/semantic_ingestion/test_hermes_completed_turn_admission.py",
       "sha256": "b0c53e52e7ebe74c797aaafa5b6c1bfd10140b9e1cc635c68289f9f734b22b01",
       "size": 9331,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/unit/core/semantic_ingestion/test_hermes_completed_turn_runtime.py",
       "sha256": "032f0b344966a9f02b53fd33bfe00500c7f6b02d08fb80bf1b8c6a0b5b40502a",
       "size": 12110,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/unit/core/semantic_ingestion/test_historical_terminal_compatibility.py",
       "sha256": "eddb204bc84f509f7fe4f3714600dd10579c60458e3e3796618e22172f7d044c",
       "size": 1367,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/unit/core/semantic_ingestion/test_historical_terminal_persisted_reload.py",
       "sha256": "cfccbdd496dfa41321fb1c2abab02aea6da0a266245d198d58c51f7e7c77f122",
       "size": 5552,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/unit/core/semantic_ingestion/test_ingestion_time_clock.py",
       "sha256": "013dfcb729ad193818ea9197584931864956146e115d3031edf3ea6089bda199",
       "size": 16121,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/unit/core/semantic_ingestion/test_prepared_source_parent_closure.py",
       "sha256": "68fb7410d62892c1af204981166441202a34e770df2ac1da99fadb5cae14dcb6",
       "size": 23463,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/unit/core/semantic_ingestion/test_project_assertions.py",
       "sha256": "11222e795af0c97afa18be41f01fb19454b78380b61ea86c3a58ddb0a54ec867",
       "size": 8584,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/unit/core/semantic_ingestion/test_project_assertions_profile.py",
       "sha256": "66453cf358663912eda085f9cb7824c26863302a91ed7f563aca8b1aafb510d1",
       "size": 1027,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/unit/core/semantic_ingestion/test_semantic_provider_composition.py",
       "sha256": "7b4f2563558cd9670746b641aad1a5693364f228ac9618e4f2637b3e8f156d52",
       "size": 117852,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/unit/core/semantic_ingestion/test_semantic_terminal_persistence.py",
       "sha256": "03674d9c7a69968221e8c3e6c809d625d11f6eac15cc602ab871211eb00ef759",
       "size": 407698,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/unit/core/test_conflict_clarification.py",
       "sha256": "27c16caa6f11f087739bbd88e3831399269f78754cb7e7cb8b60f640450138a7",
       "size": 64007,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/unit/core/test_provider_service.py",
       "sha256": "fff7f9485d05ba8f40fbf06c41e5c121b261deefd3ec4ccd5562f06b5dd01520",
       "size": 37898,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/unit/integrations/test_hermes_local_authority.py",
       "sha256": "c74ef3986b2ce3cbe0e0578ab9e3f35eb9792417a0354ce30248dbb0f0f5c8f5",
       "size": 6493,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/unit/integrations/test_hermes_memory_provider_bridge.py",
       "sha256": "93b0c53e780655bc6982e5761fe9b7ad3c668a85b24f1d7fba64161eb082b3e8",
       "size": 28176,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/unit/tools/test_prepare_memorii_docker_context.py",
       "sha256": "5f46a0b89f4e8f3bad6c70f07be3f8e1e1a3f3124c47c37e1434864f642262c9",
       "size": 23863,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/unit/tools/test_scenario_public_ingress_runner.py",
       "sha256": "7b194394c93ca24f080e34fc32feae52853d194703f92f398af9dd6b75da060d",
       "size": 18472,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/unit/tools/test_setup_hermes_development.py",
       "sha256": "6a97318a7acff9dba51296528a817e4b013144c0e179cd5cb86281f2781572d1",
       "size": 4721,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/unit/tools/test_static_tooling_config.py",
-      "sha256": "05996d898a602f1b6ca57f5f9ce7591b5f6af61541bbce240170fe7d181773ef",
+      "sha256": "35eda3d990afd67d0546f20c8848b8bc29ad4e76806da96da4baec085af73253",
       "size": 33586,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "memorii/tests/unit/tools/test_test_shards.py",
       "sha256": "781e56bb732f452af2d786dde117841437130e75553c014508f52ccab3a6b92b",
       "size": 13218,
       "status": "M"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "tools/hermes_development_connector/pyproject.toml",
       "sha256": "c57023e8b9fad41ffdf578c0c1d07632b2ad8578abaa1b303169cb2211dd8b55",
       "size": 345,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "tools/hermes_development_connector/src/memorii_hermes_development/__init__.py",
       "sha256": "6b141799a53d2c7f564ca0adb155b4d53503fba2403792ee421ba794e0049935",
       "size": 4803,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "tools/hermes_development_connector/src/memorii_hermes_development/inspect.py",
       "sha256": "2c813b75b2049b49bcb1b7c9e987c1541bff812d17acb0f0e9c72158dd60e1c6",
       "size": 4166,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "tools/prepare_memorii_docker_context.py",
       "sha256": "4c88a38d8510fb5e1ecfecad7a1971765c9fdcec201b6ec2b6b8cf956858badf",
       "size": 9614,
       "status": "A"
     },
     {
-      "content_revision": "ef187110",
+      "content_revision": "c13e10ef3760ed382589ad0be4191215d39b4681",
       "path": "tools/setup_hermes_development.py",
       "sha256": "5dba70899a2103ddc815a3e3463c925cfd2fa92606aee357e459031ff09c5f27",
       "size": 4763,

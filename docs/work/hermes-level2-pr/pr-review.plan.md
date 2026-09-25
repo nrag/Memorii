@@ -8,7 +8,7 @@
 - Created: 2026-09-24
 - Last updated: 2026-09-24
 - Base revision: `d0c96305397f03c1e4a09e548f0fbd62602b3f95`
-- Candidate product revision: `ef187110ca53d10cab6e4bfa0f3c7f65149a475b`
+- Candidate product revision: `c13e10ef3760ed382589ad0be4191215d39b4681`
 - Head branch: `codex/hermes-level2`
 - Pull request: `https://github.com/nrag/Memorii/pull/121`
 - Parent WorkPlan: `docs/work/hermes-conversation-memory-trial/implementation.plan.md`
@@ -56,6 +56,7 @@ hostile-storage matrices, and shipped-product compatibility.
   by the revision-bound preflight.
 - Candidate manifest v2 includes the deleted legacy preparation test and all
   300 non-work changed paths.
+- GitHub run `36103164026` completed the broader candidate gates but exposed one stale static-tooling assertion that still expected file sharding. Product revision `c13e10ef` updates that assertion to the configured node sharding; the exact focused test and Ruff pass locally.
 
 ## Acceptance Gate Inventory
 
@@ -82,5 +83,5 @@ hostile-storage matrices, and shipped-product compatibility.
 
 ## Next Action
 
-Commit and push the frozen evidence for product revision `ef187110`, request
+Commit and push the frozen evidence for product revision `c13e10ef`, request
 final independent delta review, then require green GitHub checks before merge.

@@ -233,11 +233,12 @@ fingerprints when required, and linked WorkPlans/evidence.
   Docker-context preparation tests pass (`16 passed, 1 skipped` without a
   local Docker daemon), and direct local Level 2 factory construction reaches
   an initialized `ProviderMemoryService`.
-- Product candidate `ef187110` has 300 non-work changed paths with digest
-  `eaa90709e703d7f5ccf78b8f9a4c2de6ecf1e1e71cc09808bc2bac26b40b5c7a`.
+- GitHub run `36103164026` exposed one remaining stale test expectation: the static tooling contract asserted file sharding after the Level 2 gate moved to node sharding. Revision `c13e10ef` corrects the assertion; the focused test and Ruff pass locally.
+- Product candidate `c13e10ef` has 300 non-work changed paths with digest
+  `5150ebd50f091e466243bab4edda88aeac732262cdec56aebd9c8bca48e92541`.
   The installed-package candidate pins 1,821 package files and 1,909 total
   proof inputs with SHA-256
-  `d717f470ac0d19f2405b16a78a6d2be0564fa5ba223ec0744e70e2b024d50bbc`.
+  `1ee5bd1831e1e591bae8bc9cbce6a6fd7f9921f4c3ae8207a90169832f5521a5`.
 
 ## Review Findings
 
@@ -246,5 +247,5 @@ loop. No reviewer finding is dismissed or deferred within Level 2.
 
 ## Next Action
 
-Commit and push the frozen evidence for product revision `ef187110`, request
+Commit and push the frozen evidence for product revision `c13e10ef`, request
 independent delta review, then require the replacement GitHub run to pass.

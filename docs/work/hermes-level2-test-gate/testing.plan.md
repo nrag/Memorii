@@ -8,7 +8,7 @@
 - Created: 2026-09-24
 - Last updated: 2026-09-24
 - Parent WorkPlan: `docs/work/hermes-conversation-memory-trial/implementation.plan.md`
-- Candidate product revision: `ef187110ca53d10cab6e4bfa0f3c7f65149a475b`
+- Candidate product revision: `c13e10ef3760ed382589ad0be4191215d39b4681`
 - Canonical inputs: `.github/workflows/pr-gates.yml`; `memorii/tests/integration/test_hermes_bootstrap_v3_product.py`; `memorii/tests/ci/unit-shards.json`; `memorii/tests/ci/unit-test-durations.json`
 
 ## Objective
@@ -66,6 +66,7 @@ production-shaped equal-text bridge regression.
 - Exact unit shard 3 exercised all 962 assigned tests and passed in 2,297.89
   seconds. The focused expired-claim, three lost-ack boundaries, three
   reused-commit production roots, and two clarification reopen cases all pass.
+- GitHub run `36103164026` reached unit shard 2 with 900 passing tests and one stale assertion for the old file assignment scope. Revision `c13e10ef` aligns that assertion with node assignment; the exact regression passes locally.
 
 ## Blockers And Limits
 
