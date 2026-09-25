@@ -8,7 +8,7 @@
 - Created: 2026-09-24
 - Last updated: 2026-09-24
 - Parent WorkPlan: `docs/work/hermes-conversation-memory-trial/implementation.plan.md`
-- Candidate product revision: `f98df596`
+- Candidate product revision: `a85d2980f144da210a0f743826c81d47e58380da`
 - Canonical inputs: `.github/workflows/pr-gates.yml`; `memorii/tests/integration/test_hermes_bootstrap_v3_product.py`; `memorii/tests/ci/unit-shards.json`; `memorii/tests/ci/unit-test-durations.json`
 
 ## Objective
@@ -35,14 +35,17 @@ execution, and independent test review pass for one frozen product revision.
 | startup recovers admitted work | same module | same gate | implemented |
 | rejected unknown, ungrounded, duplicate, and malformed candidates terminate evidence-only and do not block a later valid turn | same module | same gate | implemented; isolated pass |
 | equal text at distinct transcript positions is distinct; redelivery at the same position is idempotent | bridge unit module | duration-balanced unit shards | implemented; isolated pass |
+| installed first-party Hermes loader persists, reopens, recalls, inspects, shuts down, and denies missing authority | Docker context module | `hermes-installed-image-lifecycle` -> `semantic-ingestion` | implemented; isolated pass |
 
 ## Runtime And Ownership Budget
 
 The dedicated product gate has a 3,000-second runtime budget, 600-second
-headroom, and a 60-minute timeout. The workflow asserts exactly five collected
-product scenarios. The broad unit owner collects 4,507 tests across six
-balanced shards. Changed Hermes nodes have explicit timing records, including
-826.52 seconds for the production-shaped equal-text bridge regression.
+headroom, and a 60-minute timeout. The installed-image gate has a 2,400-second
+runtime budget, 1,200-second headroom, and a 60-minute timeout. The workflow
+asserts exactly five collected product scenarios. The broad unit owner collects
+4,508 tests across six balanced shards under the 1,200-second target. Changed
+Hermes nodes have explicit timing records, including 826.52 seconds for the
+production-shaped equal-text bridge regression.
 
 ## Evidence Log
 
@@ -50,8 +53,10 @@ balanced shards. Changed Hermes nodes have explicit timing records, including
 - Rejected-candidate product regression: 1 passed in 835.55 seconds.
 - Equal-text bridge regression: 1 passed in 826.52 seconds.
 - Project assertion adapter/profile focus: 9 passed in 18.85 seconds.
-- Unit shard verification: 4,507 collected across six balanced shards.
-- Static tooling contract: 19 passed in 118.03 seconds.
+- Installed default-image Hermes `MemoryManager` lifecycle: 1 passed in 1867.18 seconds.
+- Completed-turn close and post-close admission: 1 passed in 397.02 seconds.
+- Unit shard verification: 4,508 collected across six balanced shards; maximum estimated shard 1,065.711 seconds.
+- Static tooling contract: 19 passed in 140.18 seconds.
 - Ruff passed for `memorii` and `tests`; configured Pyright reported 0 errors.
 - GitHub execution of the complete five-scenario job remains the final gate.
 
@@ -63,5 +68,5 @@ That job must pass at the pushed evidence head before merge.
 
 ## Next Action
 
-Push the evidence-only head and verify the required `hermes-level2-product`
-and `semantic-ingestion` GitHub checks.
+Push the evidence-only head and verify the required `hermes-level2-product`,
+`hermes-installed-image-lifecycle`, and `semantic-ingestion` GitHub checks.

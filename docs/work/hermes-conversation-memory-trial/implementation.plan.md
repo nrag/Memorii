@@ -6,7 +6,7 @@
 - Status: under-review
 - Coordinator: `/root`
 - Base revision: `d0c96305397f03c1e4a09e548f0fbd62602b3f95`
-- Candidate product revision: `f98df596`
+- Candidate product revision: `a85d2980f144da210a0f743826c81d47e58380da`
 - Last updated: 2026-09-24
 - Parent: `docs/work/hermes-conversation-memory-trial/design.plan.md`
 - Governing design: `docs/design/hermes_conversation_memory_trial.md`
@@ -73,21 +73,23 @@ product candidate.
 - Equal-version replay vectors: 30 passed.
 - CTV compiler parity: 259 passed.
 - Static tooling contract: 19 passed.
-- Unit owner: 4,507 collected across six balanced shards.
+- Unit owner: 4,508 collected across six balanced shards under the 1,200-second target.
 - Hermes product module: exactly 5 scenarios collected.
 - Invalid-candidate product regression: 1 passed in 835.55 seconds.
 - Equal-text bridge replay regression: 1 passed in 826.52 seconds.
+- Completed-turn close and post-close regression: 1 passed in 397.02 seconds.
+- Installed default-image Hermes `MemoryManager` lifecycle: 1 passed in 1867.18 seconds.
 - Project assertion adapter/profile focus: 9 passed in 18.85 seconds.
 - Production entrypoint preflight validates all five caller counts as exactly 1.
-- Candidate manifest v2 validates 277 changed paths and includes the deleted
+- Candidate manifest v2 validates 282 changed paths and includes the deleted
   legacy Bootstrap preparation test.
 
 ## Candidate Freeze
 
-- Candidate product revision: `f98df596`
-- Candidate manifest SHA-256: `42572ba96dad9bd1cf86cdb92d86022fed770c387dcd63cff0a2d6fcde07a511`
-- Candidate file count: 277
-- Changed-files digest: `77b4a1784e86706098ce4c91ac6fa2c01de016621387b9c78369892cf141ecd8`
+- Candidate product revision: `a85d2980f144da210a0f743826c81d47e58380da`
+- Candidate manifest SHA-256: `3fabbf4b1a89869cde59ba22f0a29c4e8e339028603c24cb7fec60b5b816e35b`
+- Candidate file count: 282
+- Changed-files digest: `dfce2f3184add0855d5913b7162e509bf0b94403b16f7dae86a63d703a45fb93`
 - Manifest scope: every changed product, design, generated, Docker, workflow,
   and test path outside `docs/work/`
 - Deletion coverage: `memorii/tests/unit/core/semantic_ingestion/test_bootstrap_text_preparation_producer.py`
@@ -125,5 +127,5 @@ level_2_candidate_disposition: under_review
 
 ## Next Action
 
-Commit the evidence-only head, run final independent delta review, push the
-branch, and require green checks before merge.
+Commit and push the evidence-only head, run final independent delta review,
+and require green checks before merge.

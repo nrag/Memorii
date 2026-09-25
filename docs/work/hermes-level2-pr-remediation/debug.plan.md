@@ -178,5 +178,6 @@ loop. No reviewer finding is dismissed or deferred within Level 2.
 
 ## Next Action
 
-Have the coordinator freeze the changed candidate and request independent delta
+Commit and push the evidence-only head for candidate
+`a85d2980f144da210a0f743826c81d47e58380da`, then request independent delta
 review.
