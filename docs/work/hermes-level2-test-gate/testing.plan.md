@@ -8,7 +8,7 @@
 - Created: 2026-09-24
 - Last updated: 2026-09-24
 - Parent WorkPlan: `docs/work/hermes-conversation-memory-trial/implementation.plan.md`
-- Candidate product revision: `c98f0180035d28d7a573931b085048487f1a3b04`
+- Candidate product revision: `ef187110ca53d10cab6e4bfa0f3c7f65149a475b`
 - Canonical inputs: `.github/workflows/pr-gates.yml`; `memorii/tests/integration/test_hermes_bootstrap_v3_product.py`; `memorii/tests/ci/unit-shards.json`; `memorii/tests/ci/unit-test-durations.json`
 
 ## Objective

@@ -8,7 +8,7 @@
 - Created: 2026-09-24
 - Last updated: 2026-09-24
 - Base revision: `d0c96305397f03c1e4a09e548f0fbd62602b3f95`
-- Candidate product revision: `c98f0180035d28d7a573931b085048487f1a3b04`
+- Candidate product revision: `ef187110ca53d10cab6e4bfa0f3c7f65149a475b`
 - Head branch: `codex/hermes-level2`
 - Pull request: `https://github.com/nrag/Memorii/pull/121`
 - Parent WorkPlan: `docs/work/hermes-conversation-memory-trial/implementation.plan.md`
@@ -82,5 +82,5 @@ hostile-storage matrices, and shipped-product compatibility.
 
 ## Next Action
 
-Commit and push the frozen evidence for product revision `c98f0180`, request
+Commit and push the frozen evidence for product revision `ef187110`, request
 final independent delta review, then require green GitHub checks before merge.
