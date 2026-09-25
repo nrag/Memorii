@@ -29,8 +29,11 @@ Complete only when:
 - a deterministic verifier binds the reviewed target to the reconciliation merge
   and both parents, and rejects substituted parent, tree, source-transplant,
   target, and equivalence identity;
-- the complete PR diff contains only the reconciliation WorkPlan, JSON record,
-  verifier, required PR workflow gate, and focused static workflow contract test;
+- the base-to-head PR diff is restricted to five surfaces: the reconciliation
+  WorkPlan; `tools/semantic_ingestion_history_reconciliation.json`;
+  `tools/verify_semantic_ingestion_history.py`; the PR workflow gate and its
+  `Unit Tests` aggregate wiring; and the focused static workflow regression
+  test. The ancestry merge itself changes zero product bytes;
 - targeted independent spec, correctness, and test review report no required
   findings;
 - exact-head required GitHub checks pass and the reconciliation PR is merged.
