@@ -6,7 +6,7 @@
 - Status: under-review
 - Coordinator: `/root`
 - Base revision: `d0c96305397f03c1e4a09e548f0fbd62602b3f95`
-- Candidate product revision: `d8a193ffb9fe405a4229e0932e22ed97853817cc`
+- Candidate product revision: `c98f0180035d28d7a573931b085048487f1a3b04`
 - Last updated: 2026-09-24
 - Parent: `docs/work/hermes-conversation-memory-trial/design.plan.md`
 - Governing design: `docs/design/hermes_conversation_memory_trial.md`
@@ -73,7 +73,7 @@ product candidate.
 - Equal-version replay vectors: 30 passed.
 - CTV compiler parity: 259 passed.
 - Static tooling contract: 19 passed.
-- Unit owner: 4,508 collected across six balanced shards under the 1,200-second target.
+- Unit owner: 4,509 collected across six node-balanced shards under the 1,200-second target; maximum estimated shard 826.520 seconds.
 - Hermes product module: exactly 5 scenarios collected.
 - Invalid-candidate product regression: 1 passed in 835.55 seconds.
 - Equal-text bridge replay regression: 1 passed in 826.52 seconds.
@@ -81,15 +81,15 @@ product candidate.
 - Installed default-image Hermes `MemoryManager` lifecycle: 1 passed in 1867.18 seconds.
 - Project assertion adapter/profile focus: 9 passed in 18.85 seconds.
 - Production entrypoint preflight validates all five caller counts as exactly 1.
-- Candidate manifest v2 validates 283 changed paths and includes the deleted
+- Candidate manifest v2 validates 300 changed paths and includes the deleted
   legacy Bootstrap preparation test.
 
 ## Candidate Freeze
 
-- Candidate product revision: `d8a193ffb9fe405a4229e0932e22ed97853817cc`
-- Candidate manifest SHA-256: `eb1cb103a012d2a435dafe0a180b11cc2e05a7256733895f8eb8d4c8a81cf928`
-- Candidate file count: 283
-- Changed-files digest: `f124cc4e502dae9c9425522d561da46847af6f6057e2f48749480a3013af128f`
+- Candidate product revision: `c98f0180035d28d7a573931b085048487f1a3b04`
+- Candidate manifest SHA-256: `496a44311cc2c6a575a4f5129aa53c7af647f447bfffc61cfb08d05f388039f1`
+- Candidate file count: 300
+- Changed-files digest: `665311ef0e705d0df6e2391068f8c55f610536feefad7445cfec0e34ff621b29`
 - Manifest scope: every changed product, design, generated, Docker, workflow,
   and test path outside `docs/work/`
 - Deletion coverage: `memorii/tests/unit/core/semantic_ingestion/test_bootstrap_text_preparation_producer.py`
@@ -107,7 +107,7 @@ control data.
 
 The final candidate pins Hermes `v2026.9.21` by RepoDigest
 `sha256:6bece0644e29a347e5ae17db43c36938c86f171c6f5e0cef18aa2075d331f3a3`.
-The current candidate image is `sha256:d1525f997595fa3feb7085f66aa52174ff8065f42159a40f735920872c1265cf`. Hermes v0.21.4 reports Memorii installed, available, and active, and installed metadata exposes exactly the `memorii` provider and `installed` service factory. The required GitHub product job remains before merge.
+The prior candidate image is `sha256:d1525f997595fa3feb7085f66aa52174ff8065f42159a40f735920872c1265cf`. Hermes v0.21.4 reports Memorii installed, available, and active, and installed metadata exposes exactly the `memorii` provider and `installed` service factory. Fresh current-revision GitHub product and installed-image proof remain before merge.
 
 ## Review State
 

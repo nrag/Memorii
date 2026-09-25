@@ -8,7 +8,7 @@
 - Created: 2026-09-24
 - Last updated: 2026-09-24
 - Base revision: `d0c96305397f03c1e4a09e548f0fbd62602b3f95`
-- Candidate product revision: `d8a193ffb9fe405a4229e0932e22ed97853817cc`
+- Candidate product revision: `c98f0180035d28d7a573931b085048487f1a3b04`
 - Head branch: `codex/hermes-level2`
 - Pull request: `https://github.com/nrag/Memorii/pull/121`
 - Parent WorkPlan: `docs/work/hermes-conversation-memory-trial/implementation.plan.md`
@@ -55,7 +55,7 @@ hostile-storage matrices, and shipped-product compatibility.
   and source hashes are recorded in the canonical binding ledger and validated
   by the revision-bound preflight.
 - Candidate manifest v2 includes the deleted legacy preparation test and all
-  286 non-work changed paths.
+  300 non-work changed paths.
 
 ## Acceptance Gate Inventory
 
@@ -63,7 +63,7 @@ hostile-storage matrices, and shipped-product compatibility.
 | --- | --- | --- |
 | Ruff | full `memorii tests` run, no cache | passed locally |
 | configured Pyright | 0 errors, 0 warnings | passed locally |
-| unit collection and shard plan | 4,508 collected; six balanced shards under the 1,200-second target | passed locally |
+| unit collection and shard plan | 4,509 collected; six node-balanced shards, maximum estimate 826.520 seconds under the 1,200-second target | passed locally |
 | frozen replay vectors | 30 passed | passed locally |
 | CTV compiler parity | 259 passed | passed locally |
 | static tooling contract | 19 passed | passed locally |
@@ -74,7 +74,7 @@ hostile-storage matrices, and shipped-product compatibility.
 | completed-turn close and post-close regression | 1 passed in 397.02s | passed locally |
 | installed Hermes `MemoryManager` lifecycle | 1 passed in 1867.18s | passed locally; required PR job |
 | entrypoint/preflight validator | every production caller count is 1 | passed locally |
-| candidate manifest validator | 286 paths; deletion included | passed locally |
+| candidate manifest validator | 300 paths; deletion included | passed locally |
 | CI failure-family remediation | unit shard 3: 962 passed; lost-ack recovery: 3 passed; reused-commit graph roots: 3 passed; clarification reopen: 2 passed | passed locally |
 | pinned installed image | Hermes `v0.21.4` (`2026.9.21`), base RepoDigest `sha256:6bece0644e29a347e5ae17db43c36938c86f171c6f5e0cef18aa2075d331f3a3`, candidate image `sha256:d1525f997595fa3feb7085f66aa52174ff8065f42159a40f735920872c1265cf`; Hermes reports Memorii installed, available, and active | passed locally |
 | independent spec/correctness/test delta review | final evidence revision | pending |
@@ -82,5 +82,5 @@ hostile-storage matrices, and shipped-product compatibility.
 
 ## Next Action
 
-Commit and push the frozen evidence for product revision `d8a193ff`, request
+Commit and push the frozen evidence for product revision `c98f0180`, request
 final independent delta review, then require green GitHub checks before merge.

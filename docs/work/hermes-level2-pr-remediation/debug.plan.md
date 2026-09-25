@@ -225,8 +225,8 @@ fingerprints when required, and linked WorkPlans/evidence.
 - Exact CI unit shard 3 passes all 962 assigned tests in 2,297.89 seconds.
   Full changed-surface Ruff, configured Pyright, identity hygiene, diff check,
   and the 4,508-test shard-plan verifier pass.
-- Product candidate `d8a193ff` has 286 non-work changed paths with digest
-  `f124cc4e502dae9c9425522d561da46847af6f6057e2f48749480a3013af128f`.
+- Product candidate `c98f0180` has 300 non-work changed paths with digest
+  `665311ef0e705d0df6e2391068f8c55f610536feefad7445cfec0e34ff621b29`.
   The installed-package candidate pins 1,821 package files and 1,909 total
   proof inputs with SHA-256
   `3e87da44f59f7bcdc26cd6348212e178d10fb904ea12bd3156464b07f0fbaf27`.
@@ -238,5 +238,5 @@ loop. No reviewer finding is dismissed or deferred within Level 2.
 
 ## Next Action
 
-Commit and push the frozen evidence for product revision `d8a193ff`, request
+Commit and push the frozen evidence for product revision `c98f0180`, request
 independent delta review, then require the replacement GitHub run to pass.
