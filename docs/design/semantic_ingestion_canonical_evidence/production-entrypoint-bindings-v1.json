@@ -428,7 +428,7 @@
       "mapper_preflight": {
         "identity": "hermes_level2_completed_turn_binding_preflight_2026_09_24",
         "mapped_on": "2026-09-24",
-        "baseline_revision": "2f6b5e5230d01dbb176aaa8a4bf111af83a12f0d",
+        "baseline_revision": "1aef762d8d52db9ac9c112dfb67beb76d9b66f88",
         "artifact": "docs/work/hermes-level2-pr/production-entrypoint-preflight.json"
       },
       "composition_roots": [
@@ -445,7 +445,7 @@
         "rg -n 'renew_or_abort_bootstrap_v3_recovery' memorii/memorii/core/semantic_ingestion/source_normalization_repository.py memorii/memorii/core/memory_evolution/atomic_store.py",
         "rg -n 'class SemanticGovernedWritePolicy|def validate' memorii/memorii/core/memory_evolution/writer_admission.py"
       ],
-      "exact_callsite_and_authority": "The installed Hermes entry point constructs MemoriiHermesMemoryProvider. initialize resolves exactly one memorii.hermes.provider_service factory and passes HermesProviderServiceContext. build_local_level2_runtime_binding validates the primary CLI context, installation-bound local Level 2 authorization, exact Bootstrap V3 project-assertions resource digests, operator binding, and current authority before constructing ProviderMemoryService and HermesCompletedTurnRuntime. sync_turn forwards the persisted completed transcript and stable message timestamps to sync_completed_turn, which derives the full transcript digest and turn ordinal, atomically admits the user/assistant source pair plus pending operation, and queues one worker. The worker reacquires current authority, loads the exact handoff, executes the canonical provider ingestion coordinator and Bootstrap V3 graph transaction, and requires its persisted terminal marker. prefetch waits for the worker, revalidates authority, issues a scoped read grant, and returns only runtime_context semantic projections.",
+      "exact_callsite_and_authority": "The installed Hermes entry point constructs MemoriiHermesMemoryProvider. initialize resolves exactly one memorii.hermes.provider_service factory and passes HermesProviderServiceContext. build_local_level2_runtime_binding validates the primary CLI context, installation-bound local Level 2 authorization, exact Bootstrap V3 project-assertions resource digests, operator binding, and current authority before constructing ProviderMemoryService and HermesCompletedTurnRuntime. sync_turn forwards the persisted completed transcript and stable message timestamps to sync_completed_turn, which derives the full transcript digest and turn ordinal, atomically admits the user/assistant source pair plus pending operation, and queues one worker. The worker reacquires current authority, loads the exact handoff, executes the canonical provider ingestion coordinator and Bootstrap V3 graph transaction, and requires its persisted terminal marker. prefetch waits for the worker, revalidates authority, issues a scoped read grant, and returns only runtime_context semantic projections. Provider shutdown closes admission, drains admitted work, stops and joins the completed-turn worker, then clears provider state while preserving any worker failure for the caller.",
       "current_owner_chain": [
         "Hermes MemoryManager entry-point loader",
         "MemoriiHermesMemoryProvider.initialize",
@@ -482,7 +482,7 @@
         "fresh ScopedMemoryContextReadGrant for the semantic project-task namespace"
       ],
       "durable_or_no_write_outcome": "A valid eligible turn atomically retains two transcript sources and their admission ledgers, then commits the canonical Bootstrap V3 graph/event/observation terminal and one runtime_context claim projection. Abstained or invalid model output reaches an evidence-only terminal with no graph or retrieval-visible projection. Exact replay reloads the same operation. Startup recovery renews only the exact retained operation/control pair under a newer writer state revision; substitution or unavailable authority fails closed.",
-      "fallback_or_fail_closed_behavior": "There is no legacy lifecycle fallback while the completed-turn runtime is active. Missing, duplicate, malformed, expired, moved-home, non-primary, or substituted local authority prevents initialization or ingestion. Worker failure is surfaced by wait_for_idle and blocks prefetch; no partial semantic projection is returned.",
+      "fallback_or_fail_closed_behavior": "There is no legacy lifecycle fallback while the completed-turn runtime is active. Missing, duplicate, malformed, expired, moved-home, non-primary, or substituted local authority prevents initialization or ingestion. Worker failure is surfaced by wait_for_idle, blocks prefetch, and remains visible during close after the worker is stopped; no partial semantic projection is returned.",
       "current_caller_counts": {
         "installed_hermes_provider_entrypoint": 1,
         "installed_hermes_service_factory_entrypoint": 1,

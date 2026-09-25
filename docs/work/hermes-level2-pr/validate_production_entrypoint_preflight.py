@@ -116,6 +116,7 @@ def main() -> None:
             "def sync_completed_turn(",
             "def _process(",
             "def prefetch(",
+            "def close(",
         ),
     }
     for relative, symbols in required_symbols.items():
