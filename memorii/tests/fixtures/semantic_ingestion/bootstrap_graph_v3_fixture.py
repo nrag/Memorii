@@ -38,6 +38,7 @@ from memorii.core.memory_evolution.graph_records import (
     canonical_graph_codec_manifest,
     graph_digest,
 )
+from memorii.core.memory_evolution.ingestion_contracts import encode_typed_value
 from memorii.core.memory_evolution.transaction_coordinator import GraphReadSetToken
 from memorii.core.semantic_ingestion.bootstrap_graph_host import (
     BootstrapGraphAuthorityRequestV3,
@@ -83,6 +84,7 @@ from memorii.core.semantic_ingestion.contracts import (
     GraphDependentExecutionPolicyReferenceV3,
     GraphSemanticSnapshotBundleV3,
     PreparedSource,
+    canonical_contract_value,
     contract_digest,
     decode_bootstrap_graph_atomic_member_payload_v3,
     decode_semantic_contract,
@@ -831,7 +833,10 @@ def build_bootstrap_graph_terminal_host_authority_v3(
         segment_governance_carriers=source.segment_governance_carriers,
         message_admission_carriers=source.message_admission_carriers,
         governance_carrier_artifact=artifact,
-        capability_bindings=capability_bindings,
+        capability_bindings=tuple(sorted(
+            capability_bindings,
+            key=lambda value: encode_typed_value(canonical_contract_value(value)),
+        )),
         required_outcome_scopes=artifact.required_outcome_scopes,
         operation_fence_binding=operation_fence_binding,
     )

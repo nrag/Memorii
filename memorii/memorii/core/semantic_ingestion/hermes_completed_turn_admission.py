@@ -40,11 +40,8 @@ from memorii.core.memory_evolution.source_governance import (
 from memorii.core.memory_evolution.writer_admission import SemanticWriterCommitBinding
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.provider.models import ProviderEvent, ProviderOperation
-from memorii.core.semantic_ingestion.contracts import (
-    AuthenticatedSourceIntervalEvidence,
-    SourceAuthority,
-    SourceAuthorityEvidence,
-    TimeInterval,
+from memorii.core.semantic_ingestion.source_authority_retention import (
+    retain_source_authority_evidence,
 )
 
 _CHILD_KINDS = ("hermes-completed-turn-user", "hermes-completed-turn-assistant")
@@ -350,7 +347,7 @@ def _prepare_governed_child_source(
         user_id=request.authenticated_author_id,
         agent_id=request.authenticated_agent_id,
     )
-    source = _retain_source_authority_evidence(
+    source = retain_source_authority_evidence(
         source=source,
         source_id=source_id,
         source_digest=source_digest,
@@ -359,55 +356,6 @@ def _prepare_governed_child_source(
     if source_admission_source_digest(source) != source_digest:
         raise ValueError("completed Hermes turn Step-1 source digest is substituted")
     return _PreparedGovernedChild(event=event, request=normalized, source=source)
-
-
-def _retain_source_authority_evidence(
-    *,
-    source: CanonicalMemoryRecord,
-    source_id: str,
-    source_digest: str,
-    ingress: AuthenticatedIngressContext,
-) -> CanonicalMemoryRecord:
-    """Seal the typed source authority needed to resume after process loss."""
-
-    metadata = ingress.semantic_source_authority
-    if metadata is None:
-        raise ValueError("completed Hermes turn source authority is unavailable")
-    authority = SourceAuthorityEvidence.create(
-        source_id=source_id,
-        source_digest=source_digest,
-        authority=SourceAuthority(
-            authority_class=metadata.authority_class,
-            authenticated_provenance_class=metadata.authenticated_provenance_class,
-            governing_principal_id=metadata.governing_principal_id,
-            policy_revision=metadata.policy_revision,
-        ),
-        provenance_digest=metadata.provenance_digest,
-    )
-    interval_metadata = ingress.semantic_source_interval
-    interval = None
-    if interval_metadata is not None:
-        if interval_metadata.policy_revision != metadata.policy_revision:
-            raise ValueError("completed Hermes turn source interval policy is substituted")
-        interval = AuthenticatedSourceIntervalEvidence.create(
-            source_id=source_id,
-            source_digest=source_digest,
-            interval=TimeInterval(
-                start=interval_metadata.start,
-                end=interval_metadata.end,
-            ),
-            authority_basis=interval_metadata.authority_basis,
-            provenance_digest=interval_metadata.provenance_digest,
-            policy_revision=interval_metadata.policy_revision,
-            source_authority_evidence_digest=authority.evidence_digest,
-        )
-    content = dict(source.content)
-    admission = dict(content.get("source_admission", {}))
-    admission["retained_source_authority_evidence"] = authority.model_dump(mode="json")
-    admission["retained_source_interval_evidence"] = None if interval is None else interval.model_dump(mode="json")
-    admission["retained_authenticated_ingress"] = ingress.model_dump(mode="json")
-    content["source_admission"] = admission
-    return source.model_copy(update={"content": content})
 
 
 def canonical_transcript_digest(

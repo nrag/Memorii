@@ -106,6 +106,9 @@ from memorii.core.semantic_ingestion.persistence import (
     SemanticIngestionLeaseSession,
     SemanticTerminalPersistenceService,
 )
+from memorii.core.semantic_ingestion.source_authority_retention import (
+    retain_source_authority_evidence,
+)
 from memorii.core.semantic_ingestion.source_normalization_execution import (
     SourceNormalizationNonCommit,
 )
@@ -567,6 +570,12 @@ class ProviderIngestionCoordinator:
                         session_id=delivery_event.session_id,
                         task_id=delivery_event.task_id,
                         user_id=delivery_event.user_id,
+                    )
+                    governed_source = retain_source_authority_evidence(
+                        source=governed_source,
+                        source_id=source_id,
+                        source_digest=source_digest,
+                        ingress=authenticated_ingress,
                     )
                     bootstrap_language_evidence = request.bootstrap_language_evidence
                     projection = step_one_material.semantic_text_projection

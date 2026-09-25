@@ -299,7 +299,9 @@ class BootstrapGraphArtifactAssemblerV3:
             or set(entry_by_group) != set(group_ids)
             or host_authority.operation_fence_binding.binding_digest
             != attempt.operation_fence_binding_digest
-            or tuple(item.binding_digest for item in host_authority.capability_bindings)
+            or tuple(sorted(
+                item.binding_digest for item in host_authority.capability_bindings
+            ))
             != attempt.capability_binding_digests
             or any(
                 (entry.source_id, entry.source_digest, entry.preparation_fingerprint)

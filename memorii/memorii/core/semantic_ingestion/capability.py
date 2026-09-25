@@ -331,7 +331,7 @@ class BuiltInLocalHostSemanticIngestionCapability:
     capability_status_activation: HostCapabilityStatusActivation | None = None
     source_normalization_host_bundle_builder: SourceNormalizationHostBundleBuilder | None = None
     bootstrap_graph_host_bundle_builder: BootstrapGraphHostBundleBuilder | None = None
-    bootstrap_recovery_operation_lease_duration: timedelta = timedelta(seconds=60)
+    bootstrap_recovery_operation_lease_duration: timedelta = timedelta(minutes=2)
     typed_value_registry_configuration: ProtectedTypedValueRegistryConfiguration | None = None
     verified_typed_value_registry_history: ProtectedTypedValueRegistryHistory | None = None
     observation_activation_target_configuration: ObservationActivationTargetConfigurationVariant | None = None

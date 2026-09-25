@@ -19,6 +19,7 @@ from memorii.core.memory_evolution.bootstrap_graph_planning import (
 )
 from memorii.core.memory_evolution.capability_monitoring import CapabilityStatus
 from memorii.core.memory_evolution.graph_planning import GraphPlanningState
+from memorii.core.memory_evolution.ingestion_contracts import encode_typed_value
 from memorii.core.memory_evolution.transaction_coordinator import GraphReadSetToken, SealedGraphStateSnapshot
 from memorii.core.semantic_ingestion.bootstrap_graph_coordinator import BootstrapGraphDependentCoordinatorV3
 from memorii.core.semantic_ingestion.bootstrap_graph_host import (
@@ -67,6 +68,7 @@ from memorii.core.semantic_ingestion.contracts import (
     GraphDependentExecutionPolicyReferenceV3,
     GraphSemanticSnapshotBundleV3,
     OperationCapabilityExecutionBinding,
+    canonical_contract_value,
     contract_digest,
     decode_bootstrap_graph_atomic_member_payload_v3,
 )
@@ -660,7 +662,12 @@ class _BuiltInBootstrapGraphExecutionBuilderV3:
             segment_governance_carriers=source.segment_governance_carriers,
             message_admission_carriers=source.message_admission_carriers,
             governance_carrier_artifact=artifact,
-            capability_bindings=capability_bindings,
+            capability_bindings=tuple(sorted(
+                capability_bindings,
+                key=lambda value: encode_typed_value(
+                    canonical_contract_value(value)
+                ),
+            )),
             required_outcome_scopes=artifact.required_outcome_scopes,
             operation_fence_binding=request.operation_fence_binding,
         )

@@ -262,9 +262,9 @@ class BootstrapGraphDependentCoordinatorV3:
                         source_dependency_group_digests=tuple(
                             item.group_id for item in request.source_dependency_groups
                         ),
-                        capability_binding_digests=tuple(
+                        capability_binding_digests=tuple(sorted(
                             item.binding_digest for item in self._host.capability_bindings
-                        ),
+                        )),
                         reservation_use_authorization_digests=tuple(sorted({
                             item.reservation_use_authority.authority_digest
                             for item in authorizations.authorizations
@@ -425,7 +425,7 @@ class BootstrapGraphDependentCoordinatorV3:
             return self._unavailable(request, "authorization_unavailable")
         authority = BootstrapGraphArtifactAssemblerV3.initial_attempt_authority(authorizations=authorizations, plan=compilation.plan, request_digest=request.request_digest, control_epoch_digest=epoch.epoch_digest)
         attempt_counters = BootstrapGraphArtifactAssemblerV3._observed_counters(inputs=compilation.attempt_construction_inputs, operation_fence_binding=bindings[1], publication_generation=plan_reload.checkpoint_receipt.successor_generation.operation_generation + 1, plan=compilation.plan, attempts=1, reservations=len(authorizations.authorizations), lineage_entries=0)
-        attempt = BootstrapGraphArtifactAssemblerV3.build_initial_attempt(inputs=compilation.attempt_construction_inputs, authority=authority, plan=compilation.plan, source_dependency_group_digests=tuple(item.group_id for item in request.source_dependency_groups), capability_binding_digests=tuple(item.binding_digest for item in self._host.capability_bindings), reservation_use_authorization_digests=tuple(sorted({item.reservation_use_authority.authority_digest for item in authorizations.authorizations})), operation_lease_binding_digest=bindings[0].binding_digest, operation_fence_binding_digest=bindings[1].binding_digest, writer_commit_binding_digest=bindings[2].binding_digest, observed_counters_digest=attempt_counters.counters_digest)
+        attempt = BootstrapGraphArtifactAssemblerV3.build_initial_attempt(inputs=compilation.attempt_construction_inputs, authority=authority, plan=compilation.plan, source_dependency_group_digests=tuple(item.group_id for item in request.source_dependency_groups), capability_binding_digests=tuple(sorted(item.binding_digest for item in self._host.capability_bindings)), reservation_use_authorization_digests=tuple(sorted({item.reservation_use_authority.authority_digest for item in authorizations.authorizations})), operation_lease_binding_digest=bindings[0].binding_digest, operation_fence_binding_digest=bindings[1].binding_digest, writer_commit_binding_digest=bindings[2].binding_digest, observed_counters_digest=attempt_counters.counters_digest)
         attempt_reload = self._plans.publish_and_reload(request=BootstrapGraphArtifactAssemblerV3.build_attempt_checkpoint(attempt=attempt, inputs=compilation.attempt_construction_inputs, compilation=compilation, authority=authority, plan=compilation.plan, authorizations=authorizations, operation_lease_binding=bindings[0], operation_fence_binding=bindings[1], writer_commit_binding=bindings[2], predecessor_generation=plan_reload.checkpoint_receipt.successor_generation, preparation_fingerprint=epoch.preparation_fingerprint), delivery_principal_binding_digest=request.delivery_principal_binding_digest, required_outcome_scopes=request.required_outcome_scopes, control_epoch=epoch)
         lineage = BootstrapGraphArtifactAssemblerV3.build_initial_lineage(attempt=attempt, plan=compilation.plan, authorizations=authorizations, source_id=epoch.source_id, source_digest=epoch.source_digest, preparation_fingerprint=epoch.preparation_fingerprint)
         lineage_reload = self._plans.publish_and_reload(request=BootstrapGraphArtifactAssemblerV3.build_authorized_lineage_checkpoint(attempt=attempt, authorizations=authorizations, lineage=lineage.entries, plan=compilation.plan, compilation=compilation, inputs=compilation.attempt_construction_inputs, preparation_fingerprint=epoch.preparation_fingerprint, pre_execution_identity_closure=BootstrapGraphArtifactAssemblerV3.build_pre_execution_identity_closure(compilation=compilation, attempt=attempt, plan=compilation.plan, lineage=lineage, host_authority=self._host), operation_lease_binding=bindings[0], operation_fence_binding=bindings[1], writer_commit_binding=bindings[2], predecessor_generation=attempt_reload.checkpoint_receipt.successor_generation), delivery_principal_binding_digest=request.delivery_principal_binding_digest, required_outcome_scopes=request.required_outcome_scopes, control_epoch=epoch)
@@ -863,9 +863,9 @@ class BootstrapGraphDependentCoordinatorV3:
             inputs=compilation.attempt_construction_inputs,
             authority=authority,
             plan=compilation.plan,
-            capability_binding_digests=tuple(
+            capability_binding_digests=tuple(sorted(
                 item.binding_digest for item in self._host.capability_bindings
-            ),
+            )),
             reservation_use_authorization_digests=tuple(sorted({
                 item.reservation_use_authority.authority_digest
                 for item in authorizations.authorizations

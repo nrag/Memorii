@@ -1089,7 +1089,7 @@ class SemanticIngestionAtomicStore:
         writer_admission: SemanticWriterAdmissionStore,
         *,
         max_lease_recoveries: int = 1,
-        bootstrap_recovery_operation_lease_duration: timedelta = timedelta(seconds=60),
+        bootstrap_recovery_operation_lease_duration: timedelta = timedelta(minutes=2),
         activation_max_rescans: int = 3,
         now_provider=lambda: datetime.now(UTC),
         ingestion_time_clock: IngestionTimeClock | None = None,
