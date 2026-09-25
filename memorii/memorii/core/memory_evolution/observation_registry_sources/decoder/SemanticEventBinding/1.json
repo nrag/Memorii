@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.SemanticEventBinding.v1","implementation_source_digest":"cf48498a9859bc391463628a28ea379be8ad0cef77f3a77a27d3a13383c99f67","role":"decoder","schema_id":"SemanticEventBinding","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.SemanticEventBinding.v1","implementation_source_digest":"55eb6eb563e6f5984da34cbb5bb2077c985f8bf0ece5e7e7b00a3eb232db8384","role":"decoder","schema_id":"SemanticEventBinding","schema_version":"1","typed_root_kind":"model"}

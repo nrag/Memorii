@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.RelationStreamRecord.v1","implementation_source_digest":"cdf557da6c820d302becf6c71a8fb42926d542efcd4d4dbe331d5a0fb2cd2406","role":"decoder","schema_id":"RelationStreamRecord","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.RelationStreamRecord.v1","implementation_source_digest":"6363edbec551d826795a256350507baf3f95fb2b9740d671abba2cb2dd64eef8","role":"decoder","schema_id":"RelationStreamRecord","schema_version":"1","typed_root_kind":"model"}

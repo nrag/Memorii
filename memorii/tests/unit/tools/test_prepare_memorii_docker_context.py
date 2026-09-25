@@ -216,7 +216,11 @@ def test_docker_build_normalizes_windows_crlf_bootstrap_context(tmp_path: Path) 
     resources = source_root / _RESOURCE_DIRECTORY
     manifest = json.loads((resources / "project_assertions.manifest.v1.json").read_text())
     decoder_paths = _decoder_paths(source_root)
+    profile_paths = _profile_paths(source_root)
+    profile_path_set = set(profile_paths)
     for path in decoder_paths:
+        if path in profile_path_set:
+            continue
         _as_crlf(path)
     preflight_environment = dict(os.environ)
     preflight_environment["PYTHONPATH"] = str(source_root)
@@ -252,7 +256,6 @@ def test_docker_build_normalizes_windows_crlf_bootstrap_context(tmp_path: Path) 
     )
     assert preflight.returncode == 0, preflight.stdout + preflight.stderr
 
-    profile_paths = _profile_paths(source_root)
     for path in profile_paths:
         _as_crlf(path)
     schema_name = "project_assertions.output_schema.v1.json"
