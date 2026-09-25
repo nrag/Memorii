@@ -50,6 +50,11 @@ class _RecoverySweep:
     pass
 
 
+@dataclass(frozen=True)
+class _StopWorker:
+    pass
+
+
 class HermesCompletedTurnRuntime:
     """Run one authenticated, complete Hermes turn through existing V3 owners."""
 
@@ -73,10 +78,12 @@ class HermesCompletedTurnRuntime:
         self._project_task_id = project_task_id
         self._authenticated_agent_id = authenticated_agent_id
         self._authenticated_author_id = authenticated_author_id
-        self._work: queue.Queue[_CompletedTurnWork | _RecoverySweep] = queue.Queue()
+        self._work: queue.Queue[_CompletedTurnWork | _RecoverySweep | _StopWorker] = queue.Queue()
         self._condition = threading.Condition()
         self._outstanding = 0
         self._failures: list[BaseException] = []
+        self._closed = False
+        self._stopped = False
         self._worker = threading.Thread(
             target=self._worker_loop,
             name="memorii-hermes-semantic-worker",
@@ -95,6 +102,9 @@ class HermesCompletedTurnRuntime:
         authenticated_author_id: str | None,
         received_at: datetime,
     ) -> None:
+        with self._condition:
+            if self._closed:
+                raise RuntimeError("Hermes semantic worker is closed")
         author = authenticated_author_id.strip() if isinstance(authenticated_author_id, str) else ""
         if author != self._authenticated_author_id or received_at.tzinfo is None:
             raise ValueError("Hermes completed-turn authentication is incomplete")
@@ -138,12 +148,17 @@ class HermesCompletedTurnRuntime:
 
     def _enqueue(self, work: _CompletedTurnWork | _RecoverySweep) -> None:
         with self._condition:
+            if self._closed:
+                raise RuntimeError("Hermes semantic worker is closed")
             self._outstanding += 1
         self._work.put(work)
 
     def _worker_loop(self) -> None:
         while True:
             work = self._work.get()
+            if isinstance(work, _StopWorker):
+                self._work.task_done()
+                return
             try:
                 if isinstance(work, _RecoverySweep):
                     self._recover_pending()
@@ -167,6 +182,22 @@ class HermesCompletedTurnRuntime:
                     self._outstanding -= 1
                     self._condition.notify_all()
                 self._work.task_done()
+
+    def close(self, *, timeout: float = 1200.0) -> None:
+        """Drain admitted work, stop the daemon, and reject future ingress."""
+        with self._condition:
+            if self._stopped:
+                return
+            self._closed = True
+        try:
+            self.wait_for_idle(timeout=timeout)
+        finally:
+            self._work.put(_StopWorker())
+            self._worker.join(timeout=timeout)
+            if self._worker.is_alive():
+                raise TimeoutError("Hermes semantic worker did not stop")
+            with self._condition:
+                self._stopped = True
 
     def _recover_pending(self) -> None:
         """Resume retained V3 work after the prior claim's short lease expires."""

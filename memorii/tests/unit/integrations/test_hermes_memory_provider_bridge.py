@@ -53,7 +53,7 @@ def test_pinned_hermes_image_and_first_party_factory_match_the_level2_abi() -> N
     root = Path(__file__).parents[4]
     dockerfile = (root / "Dockerfile.memorii").read_text()
 
-    assert "ARG HERMES_IMAGE=nousresearch/hermes-agent:v2026.9.21" in dockerfile
+    assert "ARG HERMES_IMAGE=nousresearch/hermes-agent@sha256:6bece0644e29a347e5ae17db43c36938c86f171c6f5e0cef18aa2075d331f3a3" in dockerfile
     assert "FROM ${HERMES_IMAGE}" in dockerfile
     assert (
         "memorii.integrations.hermes_factory:build_local_level2_runtime_binding"
@@ -188,14 +188,14 @@ def test_shutdown_drains_completed_runtime_before_clearing_provider_state(bridge
     provider._agent_identity = "profile:primary"
     provider._issue_ingress = lambda _request: object()
 
-    def wait_for_idle() -> None:
+    def close() -> None:
         assert provider._provider is legacy
-        calls.append("drained")
+        calls.append("closed")
 
-    provider._completed_turn_runtime = SimpleNamespace(wait_for_idle=wait_for_idle)
+    provider._completed_turn_runtime = SimpleNamespace(close=close)
     provider.shutdown()
 
-    assert calls == ["drained"]
+    assert calls == ["closed"]
     assert provider._provider is None
     assert provider._completed_turn_runtime is None
     assert provider._issue_ingress is None
@@ -208,10 +208,10 @@ def test_shutdown_propagates_worker_failure_and_still_clears_provider_state(brid
     provider._provider = object()
     provider._issue_ingress = lambda _request: object()
 
-    def failed_wait_for_idle() -> None:
+    def failed_close() -> None:
         raise RuntimeError("semantic worker failed")
 
-    provider._completed_turn_runtime = SimpleNamespace(wait_for_idle=failed_wait_for_idle)
+    provider._completed_turn_runtime = SimpleNamespace(close=failed_close)
 
     with pytest.raises(RuntimeError, match="semantic worker failed"):
         provider.shutdown()
@@ -715,9 +715,16 @@ def test_bridge_separates_equal_text_positions_and_redelivery_reuses_the_second_
     assert runtime is not None
     runtime.wait_for_idle()
 
-    # Authority freshness has separate coverage. This assertion isolates the
-    # persisted delivery identity after the first operation has committed.
-    runtime._require_current_authority = lambda: None
+    authority_checks = 0
+    require_current_authority = runtime._require_current_authority
+
+    def count_current_authority() -> None:
+        nonlocal authority_checks
+        authority_checks += 1
+        require_current_authority()
+
+    runtime._require_current_authority = count_current_authority
+
     provider.sync_turn(
         "Mars Venus 001 project owner is Ada.",
         "I will remember that.",
@@ -733,5 +740,6 @@ def test_bridge_separates_equal_text_positions_and_redelivery_reuses_the_second_
 
     records = provider._provider._service._memory_plane.list_records()
     assert calls == 2
+    assert authority_checks >= 2
     assert len([record for record in records if record.source_kind == "semantic_ingestion_source"]) == 4
     assert len([record for record in records if record.visibility.value == "runtime_context"]) == 2

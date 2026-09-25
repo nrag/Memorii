@@ -61,6 +61,9 @@ def load_config(path: Path) -> ShardConfig:
 
 def load_durations(path: Path) -> dict[str, float]:
     payload = _load_json_object(path)
+    unknown = set(payload).difference({"schema_version", "tests", "exit_status", "shard_index", "plan_digest"})
+    if unknown:
+        raise ValueError(f"unknown timing manifest fields: {sorted(unknown)}")
     if payload.get("schema_version") != 1:
         raise ValueError("unsupported timing manifest schema_version")
     tests = payload.get("tests")

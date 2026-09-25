@@ -137,6 +137,27 @@ def test_installed_hermes_abstained_turn_is_terminal_and_does_not_block_reopen(
     )
     assert len(calls) == 2
 
+    # The installed factory owns a real worker. Closing it must terminate that
+    # worker and reject a later completed-turn callback before it can write.
+    reopened_runtime = reopened.completed_turn_runtime
+    reopened_runtime.close(timeout=5.0)
+    assert not reopened_runtime._worker.is_alive()
+    write_revision = inspect_local_memory(hermes_home=tmp_path)["write_revision"]
+    with pytest.raises(RuntimeError, match="closed"):
+        reopened_runtime.sync_completed_turn(
+            user_content="Mars Venus 001 project owner is Ada.",
+            assistant_content="I will remember that.",
+            messages=[
+                {"role": "user", "content": "Mars Venus 001 project owner is Ada.", "timestamp": "2026-09-24T20:02:00Z"},
+                {"role": "assistant", "content": "I will remember that.", "timestamp": "2026-09-24T20:02:01Z"},
+            ],
+            session_id="session:reopened",
+            authenticated_author_id=reopened.absent_author_id,
+            received_at=datetime.now(UTC),
+        )
+    assert inspect_local_memory(hermes_home=tmp_path)["write_revision"] == write_revision
+    runtime.close(timeout=5.0)
+
 
 def test_installed_hermes_rejected_candidates_do_not_commit_or_block_a_later_valid_turn(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -166,6 +187,18 @@ def test_installed_hermes_rejected_candidates_do_not_commit_or_block_a_later_val
             '"subject_quote":"Atlas",'
             '"predicate_anchor_quote":"owner",'
             '"value_quote":"Ada"}]}',
+            '{"abstained":false,"candidates":[',
+            '{"abstained":false,"candidates":[{'
+            '"predicate_id":"project_owner",'
+            '"assertion_quote":"Atlas owner is Ada.",'
+            '"subject_quote":"Atlas",'
+            '"predicate_anchor_quote":"owner",'
+            '"value_quote":"Ada"},{'
+            '"predicate_id":"project_owner",'
+            '"assertion_quote":"Atlas owner is Ada.",'
+            '"subject_quote":"Atlas",'
+            '"predicate_anchor_quote":"owner",'
+            '"value_quote":"Ada"}]}',
             _response(None, source_segment="Mars Venus 001 project owner is Ada."),
         )
     )
@@ -187,6 +220,8 @@ def test_installed_hermes_rejected_candidates_do_not_commit_or_block_a_later_val
         "Atlas coordinator is Ada.",
         "Atlas owner is Ada.",
         "Atlas owner is Ada and Atlas owner is Ada",
+        "Atlas owner is Ada.",
+        "Atlas owner is Ada.",
     )
     for index, user_content in enumerate(invalid_turns):
         runtime.sync_completed_turn(
@@ -236,9 +271,9 @@ def test_installed_hermes_rejected_candidates_do_not_commit_or_block_a_later_val
     runtime.wait_for_idle()
 
     inspection = inspect_local_memory(hermes_home=tmp_path)
-    assert calls == 4
+    assert calls == 6
     assert inspection["operation_terminal_counts_by_outcome"] == {
-        "evidence_only": 3,
+        "evidence_only": 5,
         "fully_committed": 1,
     }
     assert inspection["retrieval_visible_record_count"] == 1

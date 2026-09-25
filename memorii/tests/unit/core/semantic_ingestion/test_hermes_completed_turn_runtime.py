@@ -19,9 +19,23 @@ def _worker_runtime() -> HermesCompletedTurnRuntime:
     runtime._condition = threading.Condition()
     runtime._outstanding = 0
     runtime._failures = []
+    runtime._closed = False
+    runtime._stopped = False
     runtime._worker = threading.Thread(target=runtime._worker_loop, daemon=True)
     runtime._worker.start()
     return runtime
+
+
+def test_close_stops_worker_and_rejects_post_close_enqueue() -> None:
+    runtime = _worker_runtime()
+    runtime._recover_pending = lambda: None
+
+    runtime.close(timeout=1.0)
+
+    assert not runtime._worker.is_alive()
+    assert runtime._outstanding == 0
+    with pytest.raises(RuntimeError, match="closed"):
+        runtime._enqueue(_CompletedTurnWork(admitted=object(), ingress=object()))
 
 
 def test_post_admission_failure_recovers_before_idle_and_clears_failure() -> None:

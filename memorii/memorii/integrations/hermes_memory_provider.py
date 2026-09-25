@@ -301,7 +301,12 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
 
     def shutdown(self) -> None:
         try:
-            self._wait_for_completed_runtime()
+            runtime = self._completed_turn_runtime
+            close = getattr(runtime, "close", None) if runtime is not None else None
+            if runtime is not None and not callable(close):
+                raise TypeError("Memorii completed-turn runtime is invalid")
+            if close is not None:
+                close()
         finally:
             self._provider = None
             self._session_id = ""

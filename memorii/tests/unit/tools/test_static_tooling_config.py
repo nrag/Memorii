@@ -598,6 +598,22 @@ def test_hermes_level2_product_gate_is_exact_and_required_by_semantic_ingestion(
     assert require_step["env"]["HERMES_LEVEL2_RESULT"] == "${{ needs.hermes-level2-product.result }}"
     assert 'test "$HERMES_LEVEL2_RESULT" = success' in require_step["run"]
 
+    installed_job = config["jobs"]["hermes-installed-image-lifecycle"]
+    assert installed_job["timeout-minutes"] == "60"
+    assert installed_job["env"]["MEMORII_RUN_DOCKER_TESTS"] == "1"
+    installed_command = next(
+        step["run"]
+        for step in installed_job["steps"]
+        if step["name"] == "Build default Docker image and exercise installed Hermes lifecycle"
+    )
+    assert "test_docker_build_normalizes_windows_crlf_bootstrap_context" in installed_command
+    assert "--build-arg" not in installed_command
+    assert "hermes-installed-image-lifecycle" in aggregate["needs"]
+    assert require_step["env"]["HERMES_INSTALLED_IMAGE_RESULT"] == (
+        "${{ needs.hermes-installed-image-lifecycle.result }}"
+    )
+    assert 'test "$HERMES_INSTALLED_IMAGE_RESULT" = success' in require_step["run"]
+
 
 def test_projection_history_job_is_exact_and_disjoint_from_broad_unit_shards() -> None:
     config = _workflow_config("pr-gates.yml")
@@ -637,6 +653,7 @@ def test_projection_history_job_is_exact_and_disjoint_from_broad_unit_shards() -
         "SCENARIO_RESULT": "semantic-ingestion-scenario",
         "ACCEPTANCE_RESULT": "semantic-ingestion-acceptance",
         "HERMES_LEVEL2_RESULT": "hermes-level2-product",
+        "HERMES_INSTALLED_IMAGE_RESULT": "hermes-installed-image-lifecycle",
         "PROJECTION_HISTORY_RESULT": "semantic-projection-history",
         "BOOTSTRAP_GRAPH_RESULT": "bootstrap-graph-transaction-boundary-aggregate",
         "ACCEPTANCE_RUNTIME_RESULT": "acceptance-authority-runtime",

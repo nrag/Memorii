@@ -1,6 +1,5 @@
-# The Windows Level 2 trial ran Hermes v0.21.4 (2026.9.21). Pass a verified
-# immutable RepoDigest through HERMES_IMAGE when one is available.
-ARG HERMES_IMAGE=nousresearch/hermes-agent:v2026.9.21
+# The Level 2 path is tested against this exact Hermes image.
+ARG HERMES_IMAGE=nousresearch/hermes-agent@sha256:6bece0644e29a347e5ae17db43c36938c86f171c6f5e0cef18aa2075d331f3a3
 FROM ${HERMES_IMAGE}
 
 USER root

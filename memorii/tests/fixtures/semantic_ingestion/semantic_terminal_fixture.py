@@ -85,7 +85,6 @@ from memorii.core.semantic_ingestion.contracts import (
     SourceAuthority,
     SourceAuthorityEvidence,
     TemporalPolicySnapshot,
-    TextPreparationPolicy,
     TextPreparationRequest,
     TimeInterval,
     TrustDecayStep,
@@ -102,11 +101,11 @@ from memorii.core.semantic_ingestion.source_preparation import (
 from memorii.core.semantic_ingestion.temporal_evidence_resolution import TemporalEvidenceResolver
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
 from pydantic import BaseModel
-from tests.fixtures.semantic_ingestion.clean_room_request_fixture import (
-    build_prepared_source_authority,
-)
 from tests.fixtures.semantic_ingestion.host_bootstrap_authority import (
     build_test_host_verified_bootstrap_release_evidence,
+)
+from tests.fixtures.semantic_ingestion.source_normalization_fixture_builder import (
+    build_bootstrap_freeform_prepared_source,
 )
 
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
@@ -252,22 +251,11 @@ def reopen_terminal_persistence_store(root: Path) -> SemanticIngestionAtomicStor
 def _prepared_source_authority(
     source_id: str, source_digest: str, source_text: str
 ):
-    """Build one immutable Step-2 authority for identical fixture inputs."""
-    policy = TextPreparationPolicy.create(
-        max_segment_characters=max(1, len(source_text)),
-        supported_languages=("en",),
-        segmentation_algorithm=(
-            "memorii.semantic-ingestion.safe-sentence-first-paragraph-bounded.v1"
-        ),
-        context_window_algorithm=(
-            "memorii.semantic-ingestion.owned-partition-whole-boundary-context.v1"
-        ),
-    )
-    return build_prepared_source_authority(
+    """Build the current Bootstrap V3 freeform authority for terminal tests."""
+    return build_bootstrap_freeform_prepared_source(
         source_id=source_id,
         source_digest=source_digest,
         source_text=source_text,
-        preparation_policy=policy,
     )
 
 

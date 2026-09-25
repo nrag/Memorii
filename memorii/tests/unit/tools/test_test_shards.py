@@ -36,7 +36,6 @@ def test_duration_balancing_is_deterministic_complete_and_disjoint() -> None:
         shard_count=2,
         assignment_scope="node",
     )
-
     validate_plan(first, nodeids)
     assert first == second
     assert first.measured_count == 3
@@ -46,6 +45,18 @@ def test_duration_balancing_is_deterministic_complete_and_disjoint() -> None:
         for shard in first.nodeids
     )
 
+
+def test_current_hermes_runtime_nodes_have_loaded_durations() -> None:
+    durations = load_durations(
+        PROJECT_ROOT / "tests" / "ci" / "unit-test-durations.json"
+    )
+
+    assert durations[
+        "tests/unit/core/semantic_ingestion/test_hermes_completed_turn_runtime.py::test_close_stops_worker_and_rejects_post_close_enqueue"
+    ] == 0.003
+    assert durations[
+        "tests/unit/integrations/test_hermes_memory_provider_bridge.py::test_bridge_separates_equal_text_positions_and_redelivery_reuses_the_second_operation"
+    ] == 826.52
 
 def test_shard_command_executes_exact_nodes_without_file_expansion(tmp_path: Path) -> None:
     nodeids = (
@@ -173,6 +184,13 @@ def test_config_and_manifest_fail_closed_for_invalid_shapes(tmp_path: Path) -> N
     manifest = tmp_path / "durations.json"
     manifest.write_text(json.dumps({"schema_version": 1, "tests": {"node": -1}}), encoding="utf-8")
     with pytest.raises(ValueError, match="invalid duration"):
+        load_durations(manifest)
+
+    manifest.write_text(
+        json.dumps({"schema_version": 1, "tests": {}, "stray_duration": 1.0}),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="unknown timing manifest fields"):
         load_durations(manifest)
 
 
