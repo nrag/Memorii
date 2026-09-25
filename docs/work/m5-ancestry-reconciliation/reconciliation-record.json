@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "kind": "git_ancestry_reconciliation",
+  "reconciliation_merge_commit": "a74ebcb0db7d808ab0010cfe893c1e1b76aa6bbe",
+  "expected_ordered_parents": [
+    "2eefb39e7c80ab609961f3db78fbc16401f9d675",
+    "63658193b8a4c296b553bb6c3e7fd89392566b2a"
+  ],
+  "expected_tree": "228736f174b4723cc95a3599eb84c040f045c1c9",
+  "source_transplant_commit": "e42cc905c8c583ee99f83777cce25026e6c11041",
+  "m5_head": "63658193b8a4c296b553bb6c3e7fd89392566b2a",
+  "equivalence": {
+    "left_commit": "e42cc905c8c583ee99f83777cce25026e6c11041",
+    "right_commit": "63658193b8a4c296b553bb6c3e7fd89392566b2a",
+    "expected_name_status": [
+      {
+        "status": "M",
+        "path": "docs/work/hermes-conversation-memory-trial/candidate-manifest.json"
+      },
+      {
+        "status": "M",
+        "path": "docs/work/hermes-conversation-memory-trial/implementation.plan.md"
+      },
+      {
+        "status": "M",
+        "path": "docs/work/hermes-conversation-memory-trial/milestones/startup-admission.plan.md"
+      }
+    ]
+  }
+}
