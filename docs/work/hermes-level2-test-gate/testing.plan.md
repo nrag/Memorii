@@ -8,7 +8,7 @@
 - Created: 2026-09-24
 - Last updated: 2026-09-24
 - Parent WorkPlan: `docs/work/hermes-conversation-memory-trial/implementation.plan.md`
-- Candidate product revision: `7ab912c53bb5dd32b20e277e35e64bb3b87690b9`
+- Candidate product revision: `d8a193ffb9fe405a4229e0932e22ed97853817cc`
 - Canonical inputs: `.github/workflows/pr-gates.yml`; `memorii/tests/integration/test_hermes_bootstrap_v3_product.py`; `memorii/tests/ci/unit-shards.json`; `memorii/tests/ci/unit-test-durations.json`
 
 ## Objective
@@ -63,6 +63,9 @@ production-shaped equal-text bridge regression.
   shard 2 exercised all 740 assigned tests; all recovery cases passed. Its one
   local benchmark identity failure passed separately with the CI source
   revision binding, leaving no product failure in the shard.
+- Exact unit shard 3 exercised all 962 assigned tests and passed in 2,297.89
+  seconds. The focused expired-claim, three lost-ack boundaries, three
+  reused-commit production roots, and two clarification reopen cases all pass.
 
 ## Blockers And Limits
 
@@ -72,5 +75,5 @@ That job must pass at the pushed evidence head before merge.
 
 ## Next Action
 
-Push the frozen evidence head and verify the required `hermes-level2-product`,
+Push the replacement frozen evidence head and verify the required `hermes-level2-product`,
 `hermes-installed-image-lifecycle`, and `semantic-ingestion` GitHub checks.

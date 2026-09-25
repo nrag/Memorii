@@ -6,7 +6,7 @@
 - Status: under-review
 - Coordinator: `/root`
 - Base revision: `d0c96305397f03c1e4a09e548f0fbd62602b3f95`
-- Candidate product revision: `7ab912c53bb5dd32b20e277e35e64bb3b87690b9`
+- Candidate product revision: `d8a193ffb9fe405a4229e0932e22ed97853817cc`
 - Last updated: 2026-09-24
 - Parent: `docs/work/hermes-conversation-memory-trial/design.plan.md`
 - Governing design: `docs/design/hermes_conversation_memory_trial.md`
@@ -86,10 +86,10 @@ product candidate.
 
 ## Candidate Freeze
 
-- Candidate product revision: `7ab912c53bb5dd32b20e277e35e64bb3b87690b9`
-- Candidate manifest SHA-256: `9a9527890e8452075a8e08c356440797789a83a7582d4a239faab31adfaa0b2c`
+- Candidate product revision: `d8a193ffb9fe405a4229e0932e22ed97853817cc`
+- Candidate manifest SHA-256: `eb1cb103a012d2a435dafe0a180b11cc2e05a7256733895f8eb8d4c8a81cf928`
 - Candidate file count: 283
-- Changed-files digest: `07b038e380be0fc1ae46e99c1faf5122ab8e7762ba413b897cd466b752e0371d`
+- Changed-files digest: `f124cc4e502dae9c9425522d561da46847af6f6057e2f48749480a3013af128f`
 - Manifest scope: every changed product, design, generated, Docker, workflow,
   and test path outside `docs/work/`
 - Deletion coverage: `memorii/tests/unit/core/semantic_ingestion/test_bootstrap_text_preparation_producer.py`

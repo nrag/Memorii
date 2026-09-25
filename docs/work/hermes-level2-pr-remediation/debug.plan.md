@@ -60,6 +60,18 @@ receives `None` for the generic `works_for` fixture.
 5. **Alternative CI hypothesis: test environment drift.** Python 3.11 or shard
    ordering changes analysis behavior. The same failure reproduces locally on
    Python 3.12, weakening this hypothesis.
+6. **Confirmed: recovery authority was host-specific.** Generic provider
+   admission did not retain the authenticated source authority and ingress
+   required by startup reconciliation; only completed Hermes-turn admission
+   retained them. A process reopen therefore failed before the durable V3
+   recovery probe.
+7. **Confirmed: capability order was not canonical at every construction
+   boundary.** The current profile's bindings exposed host-order tuples that
+   downstream attempt and execution-manifest contracts require in canonical
+   typed-value order.
+8. **Confirmed: the recovery operation lease expired with the claim.** A claim
+   takeover at its exact 60-second expiry also found the underlying operation
+   lease expired, making the supported reclaim path unavailable.
 
 ## Scope And Constraints
 
@@ -198,6 +210,26 @@ fingerprints when required, and linked WorkPlans/evidence.
   CI's explicit revision binding. Ruff passes for the changed test, and shard
   verification still collects 4,508 tests with a 1,065.711-second maximum
   estimate under the 1,200-second target.
+- The shared source-authority retention owner now seals the same typed
+  authority, interval, and authenticated ingress for generic provider and
+  completed Hermes-turn admission. The three JSONL lost-ack boundaries pass
+  after reopen (`3 passed in 151.43s`), and Hermes admission siblings pass
+  (`9 passed in 16.57s`).
+- Capability bindings and their digest vectors are canonicalized at the host,
+  attempt, pre-execution, and fixture boundaries. The independent two-process
+  canary passes (`1 passed in 239.90s`) and reused-commit direct, factory, and
+  Hermes roots pass (`3 passed in 617.26s`).
+- The operation lease now outlives the 60-second recovery claim, so expired
+  claim takeover remains possible (`1 passed in 18.35s`). Clarification memory
+  and fresh-process regressions pass (`2 passed in 663.97s`).
+- Exact CI unit shard 3 passes all 962 assigned tests in 2,297.89 seconds.
+  Full changed-surface Ruff, configured Pyright, identity hygiene, diff check,
+  and the 4,508-test shard-plan verifier pass.
+- Product candidate `d8a193ff` has 286 non-work changed paths with digest
+  `f124cc4e502dae9c9425522d561da46847af6f6057e2f48749480a3013af128f`.
+  The installed-package candidate pins 1,821 package files and 1,909 total
+  proof inputs with SHA-256
+  `3e87da44f59f7bcdc26cd6348212e178d10fb904ea12bd3156464b07f0fbaf27`.
 
 ## Review Findings
 
@@ -206,5 +238,5 @@ loop. No reviewer finding is dismissed or deferred within Level 2.
 
 ## Next Action
 
-Commit and push the frozen evidence for product revision `7ab912c5`, request
+Commit and push the frozen evidence for product revision `d8a193ff`, request
 independent delta review, then require the replacement GitHub run to pass.
