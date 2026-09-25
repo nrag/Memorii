@@ -88,7 +88,7 @@ product candidate.
 
 - Candidate product revision: `a13f58ae4092f2e7ab5afaac2f0b08402e8dc1d7`
 - Candidate manifest SHA-256: `d8b5d4419ceebb85b90799dcb9a3afbe937ad9b1fb5ef296c3c669af6f230ded`
-- Candidate file count: 300
+- Candidate file count: 301
 - Changed-files digest: `af02487f0c0a5b7f449e9d9e005b62ca8a4423a598cfc1f6ff7c70134885d636`
 - Manifest scope: every changed product, design, generated, Docker, workflow,
   and test path outside `docs/work/`
