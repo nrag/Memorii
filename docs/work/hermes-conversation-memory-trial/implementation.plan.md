@@ -6,7 +6,7 @@
 - Status: under-review
 - Coordinator: `/root`
 - Base revision: `d0c96305397f03c1e4a09e548f0fbd62602b3f95`
-- Candidate product revision: `a85d2980f144da210a0f743826c81d47e58380da`
+- Candidate product revision: `7ab912c53bb5dd32b20e277e35e64bb3b87690b9`
 - Last updated: 2026-09-24
 - Parent: `docs/work/hermes-conversation-memory-trial/design.plan.md`
 - Governing design: `docs/design/hermes_conversation_memory_trial.md`
@@ -81,15 +81,15 @@ product candidate.
 - Installed default-image Hermes `MemoryManager` lifecycle: 1 passed in 1867.18 seconds.
 - Project assertion adapter/profile focus: 9 passed in 18.85 seconds.
 - Production entrypoint preflight validates all five caller counts as exactly 1.
-- Candidate manifest v2 validates 282 changed paths and includes the deleted
+- Candidate manifest v2 validates 283 changed paths and includes the deleted
   legacy Bootstrap preparation test.
 
 ## Candidate Freeze
 
-- Candidate product revision: `a85d2980f144da210a0f743826c81d47e58380da`
-- Candidate manifest SHA-256: `3fabbf4b1a89869cde59ba22f0a29c4e8e339028603c24cb7fec60b5b816e35b`
-- Candidate file count: 282
-- Changed-files digest: `dfce2f3184add0855d5913b7162e509bf0b94403b16f7dae86a63d703a45fb93`
+- Candidate product revision: `7ab912c53bb5dd32b20e277e35e64bb3b87690b9`
+- Candidate manifest SHA-256: `9a9527890e8452075a8e08c356440797789a83a7582d4a239faab31adfaa0b2c`
+- Candidate file count: 283
+- Changed-files digest: `07b038e380be0fc1ae46e99c1faf5122ab8e7762ba413b897cd466b752e0371d`
 - Manifest scope: every changed product, design, generated, Docker, workflow,
   and test path outside `docs/work/`
 - Deletion coverage: `memorii/tests/unit/core/semantic_ingestion/test_bootstrap_text_preparation_producer.py`
@@ -127,5 +127,5 @@ level_2_candidate_disposition: under_review
 
 ## Next Action
 
-Commit and push the evidence-only head, run final independent delta review,
+Commit and push the frozen evidence head, run final independent delta review,
 and require green checks before merge.

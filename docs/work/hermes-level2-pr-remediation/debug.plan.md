@@ -206,5 +206,5 @@ loop. No reviewer finding is dismissed or deferred within Level 2.
 
 ## Next Action
 
-Commit the corrected recovery contract, freeze and review the resulting
-candidate revision, then require the replacement GitHub run to pass.
+Commit and push the frozen evidence for product revision `7ab912c5`, request
+independent delta review, then require the replacement GitHub run to pass.
