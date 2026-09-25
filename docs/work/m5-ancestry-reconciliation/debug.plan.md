@@ -237,7 +237,7 @@ acceptance_gate_inventory:
   - exact-head GitHub checks
 github_run_urls:
   - https://github.com/nrag/Memorii/actions/runs/36111613542
-pr_head_sha: 0e3a0423fa587036abd6ac1b3216623feb3f510c
+pr_head_sha: pending push
 pr_base_sha: 2eefb39e7c80ab609961f3db78fbc16401f9d675
 merge_base_sha: 2eefb39e7c80ab609961f3db78fbc16401f9d675
 required_checks_green: false; run 36111613542 failed before the history verifier could resolve its ancestry merge
