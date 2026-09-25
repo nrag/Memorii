@@ -67,6 +67,7 @@ hostile-storage matrices, and shipped-product compatibility.
 | frozen replay vectors | 30 passed | passed locally |
 | CTV compiler parity | 259 passed | passed locally |
 | static tooling contract | 19 passed | passed locally |
+| installed-wheel package proof | 19 focused tests; 58 registry vectors; real-wheel preparation and installed rejection proof | passed locally |
 | Hermes product collection | exactly 5 scenarios | passed locally |
 | rejected-candidate product regression | 1 passed in 835.55s | passed locally |
 | equal-text bridge replay regression | 1 passed in 826.52s | passed locally |

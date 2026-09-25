@@ -127,6 +127,13 @@ fingerprints when required, and linked WorkPlans/evidence.
   smoke: entry point discovery, initialization, completed turn, persistence,
   reopen/prefetch, CLI inspect, and absent-authority zero-write denial. Only
   the Responses transport is replaced by a deterministic fake.
+- **Package-smoke proof identity:** GitHub run `36084066597` failed before the
+  installed proof with `proof_candidate_member_changed` because its bounded
+  release-preparation candidate still pinned pre-Level-2 package and workflow
+  bytes. The candidate now pins all 1,820 current package files and the
+  existing scoped proof inputs at product revision `a85d2980`; independent
+  registry construction and the 58-vector manifest were regenerated against
+  the current 181-entry publication.
 
 ## Evidence Log
 
@@ -170,6 +177,13 @@ fingerprints when required, and linked WorkPlans/evidence.
 - Unit shard verification after recording the 826.52-second equal-text test:
   4,508 tests across six file shards, maximum estimated shard 1,065.711
   seconds under the 1,200-second target.
+- Package-smoke focused tests: `19 passed in 22.89s`; regenerated independent
+  registry parity reports 181 entries and 1,269 roles with 58 vector cases and
+  no failures. The installed real-wheel proof then passed with 21
+  distributions, 5,705 installed files, 1,819 package files, valid signature
+  acceptance, all signature/authority mutation rejections, and retained target
+  resolution. The installed-payload rejection driver also passed all five
+  mutations.
 
 ## Review Findings
 
@@ -178,6 +192,6 @@ loop. No reviewer finding is dismissed or deferred within Level 2.
 
 ## Next Action
 
-Commit and push the evidence-only head for candidate
-`a85d2980f144da210a0f743826c81d47e58380da`, then request independent delta
-review.
+Commit and push the refreshed evidence-only head for candidate
+`a85d2980f144da210a0f743826c81d47e58380da`, request independent delta review,
+and require the replacement GitHub run to pass.
