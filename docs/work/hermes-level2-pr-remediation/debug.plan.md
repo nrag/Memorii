@@ -184,6 +184,20 @@ fingerprints when required, and linked WorkPlans/evidence.
   acceptance, all signature/authority mutation rejections, and retained target
   resolution. The installed-payload rejection driver also passed all five
   mutations.
+- Replacement GitHub run `36085078058` exposed a stale recovery regression:
+  an abstained provider response now completes the source as `evidence_only`,
+  so the durable recovery index is `found` and carries an exact replay of the
+  abstained normalization. The test still expected the pre-terminal `claimed`
+  state and no replay. The assertions and timing node now describe the current
+  Bootstrap V3 contract; production behavior is unchanged.
+- Corrected recovery module: `4 passed in 82.56s`. Exact unit shard 2 then
+  exercised all 740 assigned tests: the corrected recovery cases passed and
+  the only local failure was the unrelated benchmark source-revision lookup in
+  this isolated sandbox (`739 passed`). That benchmark test passed separately
+  with `MEMORII_SOURCE_REVISION=bb4b2c7a...` (`1 passed in 24.75s`), matching
+  CI's explicit revision binding. Ruff passes for the changed test, and shard
+  verification still collects 4,508 tests with a 1,065.711-second maximum
+  estimate under the 1,200-second target.
 
 ## Review Findings
 
@@ -192,6 +206,5 @@ loop. No reviewer finding is dismissed or deferred within Level 2.
 
 ## Next Action
 
-Commit and push the refreshed evidence-only head for candidate
-`a85d2980f144da210a0f743826c81d47e58380da`, request independent delta review,
-and require the replacement GitHub run to pass.
+Commit the corrected recovery contract, freeze and review the resulting
+candidate revision, then require the replacement GitHub run to pass.

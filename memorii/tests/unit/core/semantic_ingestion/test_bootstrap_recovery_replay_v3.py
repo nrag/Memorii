@@ -79,10 +79,10 @@ def test_reload_bootstrap_recovery_replay_v3_is_exact_and_rejects_foreign_key(
 
 
 @pytest.mark.parametrize("durable", (False, True))
-def test_abstained_v3_proposal_remains_claimed_and_has_no_recovery_replay(
+def test_abstained_v3_proposal_terminalizes_with_exact_recovery_replay(
     tmp_path, durable: bool,
 ) -> None:
-    """An abstained host proposal must not fabricate a graph recovery record."""
+    """An abstained proposal closes evidence-only with an exact recovery replay."""
     builder, _calls = _v3_normalization_host_builder()
     plane = MemoryPlaneService(
         record_store=JsonlMemoryPlaneStore(tmp_path / "plane") if durable else None
@@ -101,7 +101,13 @@ def test_abstained_v3_proposal_remains_claimed_and_has_no_recovery_replay(
     index = plane.list_records(
         source_kind="semantic_ingestion_bootstrap_v3_recovery_index"
     )[0]
-    assert index.content["state"] == "claimed"
-    assert service._semantic_atomic_store.reload_bootstrap_recovery_replay_v3(
+    assert index.content["state"] == "found"
+    replay = service._semantic_atomic_store.reload_bootstrap_recovery_replay_v3(
         recovery_key_digest=index.content["recovery_key_digest"]
-    ) is None
+    )
+    assert replay is not None
+    assert replay.source_normalization_result.result_digest == index.content["result_digest"]
+    proposals = replay.source_normalization_request.proposal_run.proposal_payload.normalized_proposals
+    assert proposals
+    assert all(proposal.status == "abstained" for proposal in proposals)
+    assert all(not proposal.operation_members for proposal in proposals)
