@@ -13,6 +13,20 @@ ROOT = Path(__file__).resolve().parents[3]
 RECORD_PATH = Path(__file__).with_name("reconciliation-record.json")
 _COMMIT_LENGTH = 40
 _TREE_LENGTH = 40
+_PERMITTED_EQUIVALENCE_ROWS = [
+    {
+        "status": "M",
+        "path": "docs/work/hermes-conversation-memory-trial/candidate-manifest.json",
+    },
+    {
+        "status": "M",
+        "path": "docs/work/hermes-conversation-memory-trial/implementation.plan.md",
+    },
+    {
+        "status": "M",
+        "path": "docs/work/hermes-conversation-memory-trial/milestones/startup-admission.plan.md",
+    },
+]
 
 
 class VerificationError(ValueError):
@@ -46,10 +60,29 @@ def _commit(repository: Path, revision: str) -> str:
     return resolved
 
 
+def _revision(repository: Path, revision: str) -> str:
+    _require(isinstance(revision, str) and revision, "target revision must be text")
+    return _git(repository, "rev-parse", f"{revision}^{{commit}}")
+
+
 def _tree(repository: Path, revision: str) -> str:
     tree = _git(repository, "rev-parse", f"{revision}^{{tree}}")
     _require(len(tree) == _TREE_LENGTH and all(character in "0123456789abcdef" for character in tree), "invalid Git tree identity")
     return tree
+
+
+def _is_ancestor(repository: Path, ancestor: str, descendant: str) -> bool:
+    completed = subprocess.run(
+        ("git", "-C", str(repository), "merge-base", "--is-ancestor", ancestor, descendant),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode not in {0, 1}:
+        raise VerificationError(
+            "git merge-base --is-ancestor failed: " + completed.stderr.strip()
+        )
+    return completed.returncode == 0
 
 
 def _load_record(path: Path) -> dict[str, object]:
@@ -61,12 +94,13 @@ def _load_record(path: Path) -> dict[str, object]:
         "reconciliation_merge_commit",
         "expected_ordered_parents",
         "expected_tree",
+        "review_anchor_commit",
         "source_transplant_commit",
         "m5_head",
         "equivalence",
     }
     _require(set(value) == expected, "record has unknown or missing fields")
-    _require(value["schema_version"] == 1, "unsupported record schema")
+    _require(value["schema_version"] == 2, "unsupported record schema")
     _require(value["kind"] == "git_ancestry_reconciliation", "wrong record kind")
     return value
 
@@ -83,7 +117,9 @@ def _name_status(repository: Path, left: str, right: str) -> list[dict[str, str]
     return rows
 
 
-def verify_record(repository: Path, record: dict[str, object]) -> dict[str, object]:
+def verify_record(
+    repository: Path, record: dict[str, object], target_revision: str = "HEAD"
+) -> dict[str, object]:
     merge = _commit(repository, record["reconciliation_merge_commit"])
     parents = record["expected_ordered_parents"]
     _require(isinstance(parents, list) and len(parents) == 2, "record must name exactly two ordered parents")
@@ -96,50 +132,109 @@ def verify_record(repository: Path, record: dict[str, object]) -> dict[str, obje
     _require(_tree(repository, merge) == expected_tree, "merge tree differs from recorded tree")
     _require(_tree(repository, expected_parents[0]) == expected_tree, "merge tree differs from first-parent tree")
 
+    source_transplant = _commit(repository, record["source_transplant_commit"])
+    _require(
+        _is_ancestor(repository, source_transplant, expected_parents[0]),
+        "source transplant is not ancestor of first merge parent",
+    )
+    target = _revision(repository, target_revision)
+    _require(
+        _is_ancestor(repository, merge, target),
+        "reconciliation merge is not ancestor of review target",
+    )
+    _require(
+        all(_is_ancestor(repository, parent, target) for parent in expected_parents),
+        "merge parent is not ancestor of review target",
+    )
+    review_anchor = _commit(repository, record["review_anchor_commit"])
+    _require(
+        _is_ancestor(repository, review_anchor, target),
+        "review anchor is not ancestor of review target",
+    )
+
     equivalence = record["equivalence"]
     _require(isinstance(equivalence, dict) and set(equivalence) == {"left_commit", "right_commit", "expected_name_status"}, "invalid equivalence record")
     left = _commit(repository, equivalence["left_commit"])
     right = _commit(repository, equivalence["right_commit"])
-    _require(left == _commit(repository, record["source_transplant_commit"]), "equivalence left side differs from transplant")
+    _require(left == source_transplant, "equivalence left side differs from transplant")
     _require(right == _commit(repository, record["m5_head"]), "equivalence right side differs from M5 head")
     expected_rows = equivalence["expected_name_status"]
     _require(isinstance(expected_rows, list) and expected_rows, "equivalence rows must be nonempty")
     _require(all(isinstance(row, dict) and set(row) == {"status", "path"} for row in expected_rows), "invalid equivalence row")
-    _require(_name_status(repository, left, right) == expected_rows, "transplant and M5 head differ outside recorded evidence files")
-    return {"merge": merge, "parents": actual_parents, "tree": expected_tree, "equivalence_rows": len(expected_rows)}
+    _require(expected_rows == _PERMITTED_EQUIVALENCE_ROWS, "equivalence rows differ from permitted evidence paths")
+    _require(_name_status(repository, left, right) == _PERMITTED_EQUIVALENCE_ROWS, "transplant and M5 head differ outside recorded evidence files")
+    return {
+        "merge": merge,
+        "parents": actual_parents,
+        "review_target": target,
+        "tree": expected_tree,
+        "equivalence_rows": len(expected_rows),
+    }
 
 
-def _expect_rejection(repository: Path, record: dict[str, object], label: str) -> None:
+def _expect_rejection(
+    repository: Path,
+    record: dict[str, object],
+    label: str,
+    expected_message: str,
+    target_revision: str = "HEAD",
+) -> None:
     try:
-        verify_record(repository, record)
-    except VerificationError:
+        verify_record(repository, record, target_revision)
+    except VerificationError as error:
+        _require(expected_message in str(error), f"self-test rejected {label} at wrong boundary: {error}")
         return
     raise VerificationError(f"self-test accepted {label} substitution")
 
 
 def self_test(repository: Path, record: dict[str, object]) -> None:
     mutated_parent = copy.deepcopy(record)
-    mutated_parent["expected_ordered_parents"][1] = mutated_parent["expected_ordered_parents"][0]
-    _expect_rejection(repository, mutated_parent, "parent")
+    mutated_parent["reconciliation_merge_commit"] = record["review_anchor_commit"]
+    _expect_rejection(repository, mutated_parent, "parent", "merge parents differ from recorded order")
 
     mutated_tree = copy.deepcopy(record)
-    mutated_tree["expected_tree"] = "0" * _TREE_LENGTH
-    _expect_rejection(repository, mutated_tree, "tree")
+    mutated_tree["expected_tree"] = _tree(repository, record["m5_head"])
+    _expect_rejection(repository, mutated_tree, "tree", "merge tree differs from recorded tree")
 
     mutated_equivalence = copy.deepcopy(record)
-    mutated_equivalence["equivalence"]["expected_name_status"] = []
-    _expect_rejection(repository, mutated_equivalence, "equivalence")
+    mutated_equivalence["equivalence"]["expected_name_status"] = [
+        {"status": "M", "path": "docs/work/hermes-conversation-memory-trial/unrecorded.json"}
+    ]
+    _expect_rejection(
+        repository,
+        mutated_equivalence,
+        "equivalence",
+        "equivalence rows differ from permitted evidence paths",
+    )
+
+    mutated_transplant = copy.deepcopy(record)
+    mutated_transplant["source_transplant_commit"] = record["m5_head"]
+    _expect_rejection(
+        repository,
+        mutated_transplant,
+        "source transplant ancestry",
+        "source transplant is not ancestor of first merge parent",
+    )
+
+    _expect_rejection(
+        repository,
+        copy.deepcopy(record),
+        "review target reachability",
+        "reconciliation merge is not ancestor of review target",
+        record["expected_ordered_parents"][0],
+    )
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", type=Path, default=ROOT)
     parser.add_argument("--record", type=Path, default=RECORD_PATH)
+    parser.add_argument("--target", default="HEAD")
     parser.add_argument("--self-test", action="store_true")
     arguments = parser.parse_args()
     try:
         record = _load_record(arguments.record)
-        result = verify_record(arguments.repo.resolve(), record)
+        result = verify_record(arguments.repo.resolve(), record, arguments.target)
         if arguments.self_test:
             self_test(arguments.repo.resolve(), record)
             result["self_test"] = "passed"

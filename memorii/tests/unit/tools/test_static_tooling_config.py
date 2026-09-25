@@ -227,6 +227,7 @@ def test_pr_unit_gate_is_complete_duration_balanced_and_timeout_bounded() -> Non
     assert umbrella["name"] == "Unit Tests"
     assert umbrella["if"] == "always()"
     assert umbrella["needs"] == [
+        "m5-ancestry-reconciliation",
         "equal-version-replay-decision",
         "static-analysis",
         "package-smoke",
@@ -238,6 +239,11 @@ def test_pr_unit_gate_is_complete_duration_balanced_and_timeout_bounded() -> Non
         "semantic-terminal-persistence",
         "semantic-terminal-persistence-timing-inventory",
     ]
+    require_step = umbrella["steps"][0]
+    assert require_step["env"]["M5_ANCESTRY_RESULT"] == "${{ needs.m5-ancestry-reconciliation.result }}"
+    assert 'test "$M5_ANCESTRY_RESULT" = success' in require_step["run"]
+
+
     umbrella_run = umbrella["steps"][0]
     expected_results = {
         "REPLAY_DECISION_RESULT": "equal-version-replay-decision",
@@ -331,6 +337,29 @@ def test_pr_unit_gate_is_complete_duration_balanced_and_timeout_bounded() -> Non
     scoped_run = next(step for step in scoped_context["steps"] if step["name"] == "Run scoped-context composition roots")
     assert "tests/integration/test_scoped_context_production_binding.py" in scoped_run["run"]
     assert "-W error" in scoped_run["run"]
+
+
+def test_m5_ancestry_reconciliation_gate_is_isolated_and_required() -> None:
+    config = _workflow_config("pr-gates.yml")
+    job = config["jobs"]["m5-ancestry-reconciliation"]
+
+    assert job["name"] == "M5 Ancestry Reconciliation"
+    assert job["runs-on"] == "ubuntu-latest"
+    assert job["timeout-minutes"] == "5"
+    assert [step["name"] for step in job["steps"]] == [
+        "Checkout",
+        "Set up Python",
+        "Verify M5 ancestry reconciliation",
+    ]
+    assert job["steps"][1]["with"]["python-version"] == "3.12"
+    assert job["steps"][2]["run"].split() == [
+        "python3.12",
+        "-I",
+        "docs/work/m5-ancestry-reconciliation/verify_reconciliation.py",
+        "--repo",
+        ".",
+        "--self-test",
+    ]
 
 
 def test_terminal_persistence_job_is_exact_node_balanced_and_disjoint() -> None:

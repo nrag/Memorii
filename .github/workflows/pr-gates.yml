@@ -10,6 +10,25 @@ permissions:
   contents: read
 
 jobs:
+  m5-ancestry-reconciliation:
+    name: M5 Ancestry Reconciliation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Verify M5 ancestry reconciliation
+        run: >-
+          python3.12 -I docs/work/m5-ancestry-reconciliation/verify_reconciliation.py
+          --repo . --self-test
+
   equal-version-replay-decision:
     name: Equal Version Replay Decision
     runs-on: ubuntu-latest
@@ -294,11 +313,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     if: always()
-    needs: [equal-version-replay-decision, static-analysis, package-smoke, provider-compatibility, scoped-context-integration, observation-ledger-activation, unit-test-shards, unit-timing-inventory, semantic-terminal-persistence, semantic-terminal-persistence-timing-inventory]
+    needs: [m5-ancestry-reconciliation, equal-version-replay-decision, static-analysis, package-smoke, provider-compatibility, scoped-context-integration, observation-ledger-activation, unit-test-shards, unit-timing-inventory, semantic-terminal-persistence, semantic-terminal-persistence-timing-inventory]
 
     steps:
       - name: Require every unit-test dependency
         env:
+          M5_ANCESTRY_RESULT: ${{ needs.m5-ancestry-reconciliation.result }}
           REPLAY_DECISION_RESULT: ${{ needs.equal-version-replay-decision.result }}
           STATIC_RESULT: ${{ needs.static-analysis.result }}
           PACKAGE_RESULT: ${{ needs.package-smoke.result }}
@@ -310,7 +330,8 @@ jobs:
           TERMINAL_RESULT: ${{ needs.semantic-terminal-persistence.result }}
           TERMINAL_TIMING_RESULT: ${{ needs.semantic-terminal-persistence-timing-inventory.result }}
         run: >-
-          test "$REPLAY_DECISION_RESULT" = success
+          test "$M5_ANCESTRY_RESULT" = success
+          && test "$REPLAY_DECISION_RESULT" = success
           && test "$STATIC_RESULT" = success
           && test "$PACKAGE_RESULT" = success
           && test "$COMPATIBILITY_RESULT" = success
