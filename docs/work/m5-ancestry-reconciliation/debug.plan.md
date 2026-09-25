@@ -117,8 +117,59 @@ The durable record is `reconciliation-record.json`; `verify_reconciliation.py`
 must verify the actual merge's ordered parents, its tree identity, equality with
 the first-parent tree, and the exact three-file transplant/M5 equivalence fact.
 It also rejects representative parent, tree, and equivalence substitutions with
-`--self-test`. The verification commands and their exit status are recorded
-after the verifier is added to this WorkPlan's child documentation commit.
+`--self-test`.
+
+- Documentation/verifier child commit: `cfa5dcbb792134a45976d8d64218cfc76e45f859`.
+- `python3 docs/work/m5-ancestry-reconciliation/verify_reconciliation.py`
+  exited 0 and reported merge `a74ebcb0`, its ordered parents, first-parent
+  tree `228736f174b4723cc95a3599eb84c040f045c1c9`, and three equivalence rows.
+- `python3 docs/work/m5-ancestry-reconciliation/verify_reconciliation.py --self-test`
+  exited 0 and proved that substituted second-parent, tree, and equivalence-row
+  values are rejected.
+- `/Users/nandaraghunathan/Code/Memorii/Memorii/.venv/bin/ruff check
+  docs/work/m5-ancestry-reconciliation/verify_reconciliation.py` exited 0.
+- `git diff --no-ext-diff --check` exited 0 before the child commit.
+
+```yaml
+base_revision: 2eefb39e7c80ab609961f3db78fbc16401f9d675
+reviewed_revision: pending independent review
+tested_revision: cfa5dcbb792134a45976d8d64218cfc76e45f859
+tested_tree_digest: 918859e107e3d9330496d21b376a827d5a0bb70d
+tree_state: clean after cfa5dcbb
+changed_surface_inventory_complete: true
+scope_delta_resolved: true
+authority_chains_complete: not_applicable; no product authority chain changed
+required_local_jobs:
+  - reconciliation verifier
+  - reconciliation verifier self-test
+  - Ruff
+  - git diff check
+passed_local_jobs:
+  - reconciliation verifier
+  - reconciliation verifier self-test
+  - Ruff
+  - git diff check
+known_local_failures: []
+failure_exclusions: []
+workflow_identities: []
+ci_event: pending PR creation
+ci_executed_sha: pending PR creation
+ci_executed_ref: pending PR creation
+remaining_validated_p1_p2: []
+remaining_blocks_approval:
+  - independent closure review
+  - exact-head GitHub checks
+remaining_changes_required: []
+local_ci_parity: not_applicable; this documentation-only repair has no dedicated local CI job
+acceptance_gate_inventory:
+  - targeted independent review
+  - exact-head GitHub checks
+github_run_urls: []
+pr_head_sha: pending PR creation
+pr_base_sha: 2eefb39e7c80ab609961f3db78fbc16401f9d675
+merge_base_sha: 2eefb39e7c80ab609961f3db78fbc16401f9d675
+required_checks_green: pending PR creation
+```
 
 ## Next Action
 
