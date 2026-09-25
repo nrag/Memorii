@@ -10,9 +10,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from memorii.core.memory_evolution.ingestion_contracts import AuthenticatedHostIngress
-from memorii.core.memory_evolution.ingestion_contracts import encode_typed_value
 from memorii.core.memory_evolution.atomic_store import PreplanningOperationControl
+from memorii.core.memory_evolution.ingestion_contracts import (
+    AuthenticatedHostIngress,
+    encode_typed_value,
+)
 from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.provider.models import ProviderOperation
 from memorii.core.provider.service import ProviderMemoryService
@@ -20,9 +22,7 @@ from tests.fixtures.semantic_ingestion.scenario_fixture_authority import (
     build_scenario_test_provider_service,
     scenario_protected_ambiguity_shape,
 )
-
 from validate_scenario_first import render, validate
-
 
 ROOT = Path(__file__).parents[4]
 _PUBLIC_SCOPE = ("scenario-user", "scenario-session", "scenario-task")
@@ -130,6 +130,7 @@ def _persisted_projection(service: ProviderMemoryService, *, operation_id: str) 
 
     statuses = []
     group_counts = []
+    fully_abstained = False
     source_id = controls[0].operation_fence.source_id
     for record in records:
         if record.source_kind != "semantic_ingestion_bootstrap_graph_v3_manifest":
@@ -137,6 +138,19 @@ def _persisted_projection(service: ProviderMemoryService, *, operation_id: str) 
         if record.content.get("semantic_ingestion_kind") != "bootstrap_graph_v3_terminal_manifest":
             continue
         for member in record.content.get("members", ()):
+            if member.get("kind") == "bootstrap_graph_coordinator_request":
+                decoded = decode_typed_value(member["canonical_payload"].encode("utf-8"))
+                proposals = (
+                    decoded["payload"]["normalization_replay"]
+                    ["source_normalization_request"]["proposal_run"]
+                    ["proposal_payload"]["normalized_proposals"]
+                )
+                fully_abstained = bool(proposals) and all(
+                    proposal["status"] == "abstained"
+                    and not proposal["operation_members"]
+                    for proposal in proposals
+                )
+                continue
             if member.get("kind") != "bootstrap_graph_canonical_source_result":
                 continue
             decoded = decode_typed_value(member["canonical_payload"].encode("utf-8"))
@@ -172,6 +186,10 @@ def _persisted_projection(service: ProviderMemoryService, *, operation_id: str) 
         )
         analysis_count = candidate_count
         sealed_count = 0
+    elif final_status == "evidence_only" and fully_abstained:
+        final_status = "abstained"
+        reason_codes = ("extractor_abstained",)
+        status_by_final["abstained"] = "abstained"
     return {
         "operation_record_count": len(operation_records),
         "record_digests": sorted(_sha(_canonical(record)) for record in operation_records),

@@ -1,5 +1,5 @@
 {
-  "assignment_scope": "file",
+  "assignment_scope": "node",
   "pytest_args": [
     "tests/unit",
     "--ignore=tests/unit/tools/test_generation_closure_exactness.py",

@@ -192,21 +192,21 @@ def test_scenario_runner_uses_one_protected_ambiguity_event_without_effects() ->
         ),
         ("Atlas owner is Alice.", "accepted", None),
         (
-            "Atlas owner is Alice. Atlas owner is Bob.x",
+            "Atlas owner is Alice.\x01",
             None,
-            "unsupported_grammar",
+            "prohibited_residue",
         ),
         (
-            "Atlas owner is Alice.xAtlas owner is Bob.",
+            "Atlas owner is Ali\u0301ce.",
             None,
-            "unsupported_grammar",
+            "normalization_mismatch",
         ),
     ),
 )
-def test_provider_ingress_partitions_each_child_without_a_whole_source_corpus_row(
+def test_provider_ingress_enforces_freeform_admission_policy_per_child(
     content: str, expected_terminal: str | None, expected_reason: str | None,
 ) -> None:
-    """Only sealed child literals, never a synthetic combined literal, select V1."""
+    """Each prepared child must independently satisfy the installed free-form policy."""
 
     runner = _runner_module()
     operation_id = "scenario-child-corpus-" + hashlib.sha256(content.encode()).hexdigest()[:16]

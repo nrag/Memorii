@@ -232,9 +232,23 @@ def build_minimal_bootstrap_graph_plan_compilation_v3(
         or authority.capability_registry_snapshot != capability_registry
     ):
         raise ValueError("bootstrap graph plan fixture authority is substituted")
-    if not request.source_dependency_groups:
-        raise ValueError("bootstrap graph plan fixture requires a complete dependency group")
     groups = request.source_dependency_groups
+    if not groups:
+        normalization = request.normalization_replay.source_normalization_request
+        proposals = normalization.proposal_run.proposal_payload.normalized_proposals
+        fully_abstained = (
+            bool(proposals)
+            and all(
+                proposal.status == "abstained" and not proposal.operation_members
+                for proposal in proposals
+            )
+            and not normalization.source_alignment.operation_alignments
+            and not operation_inputs
+        )
+        if not fully_abstained:
+            raise ValueError(
+                "bootstrap graph plan fixture requires a complete dependency group"
+            )
     epoch = control_epoch or request.initial_control_epoch
     required_operation_ids = tuple(
         sorted(

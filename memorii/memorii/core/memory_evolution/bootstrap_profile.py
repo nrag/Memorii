@@ -616,7 +616,19 @@ class ProfileUnavailable(BootstrapOutcomeBase):
 
 class ProfileInputOutcome(BootstrapOutcomeBase):
     kind: Literal["unsupported_input", "abstained"]
-    reason: Literal["missing_language_declaration", "untrusted_language", "language_mismatch", "non_english_language", "mixed_residue", "unsupported_grammar", "extractor_abstained"]
+    reason: Literal[
+        "missing_language_declaration",
+        "untrusted_language",
+        "language_mismatch",
+        "non_english_language",
+        "empty_segment",
+        "normalization_mismatch",
+        "prohibited_residue",
+        "segment_limit",
+        "mixed_residue",
+        "unsupported_grammar",
+        "extractor_abstained",
+    ]
     input_normalized_digest: str = _DIGEST
     matched_corpus_case_id: str | None = None
 

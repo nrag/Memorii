@@ -9007,8 +9007,8 @@ def test_jsonl_terminal_wire_remains_legacy_and_excludes_semantic_transaction_me
     terminal_wire = encode_semantic_contract(terminal)
     # The golden moved with the M4 terminal carrier contract; the wire shape
     # assertions below still pin the legacy exclusion boundary.
-    assert terminal.terminal_digest == "d708ae30ed670efde8e915c4e1df9eebf6fea96db5132bf15a53b23e2cefa68f"
-    assert sha256(terminal_wire).hexdigest() == "1e49afc814884d703346237de95686a17c4d60925e25363e12042b5707ffc25e"
+    assert terminal.terminal_digest == "c576a76f937176580bf0852f51a3149d0b3217c43b51972a401364e9aa3514fc"
+    assert sha256(terminal_wire).hexdigest() == "55fff695f3f5f155c6661b377e42bfeed35370049c24d8f9aa1abf87572d6e52"
     assert decode_semantic_contract(terminal_wire, SemanticTerminalOutcome) == terminal
     for forbidden in ("plan_lineage", "execution_manifest"):
         with pytest.raises(ValueError):

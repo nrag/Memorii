@@ -126,6 +126,28 @@ def validate_timing_evidence(
     return merge_timing_manifests(paths)
 
 
+def validate_refreshed_plan_capacity(
+    *,
+    nodeids: tuple[str, ...],
+    durations: dict[str, float],
+    config: ShardConfig,
+) -> ShardPlan:
+    """Reject timing evidence that cannot produce a plan within the configured budget."""
+
+    refreshed = build_plan(
+        nodeids,
+        durations,
+        config.shard_count,
+        assignment_scope=config.assignment_scope,
+    )
+    validate_plan(refreshed, nodeids)
+    if refreshed.measured_count != len(nodeids):
+        raise ValueError("refreshed timing evidence does not cover every collected test")
+    if max(refreshed.estimated_seconds) > config.target_seconds:
+        raise ValueError("refreshed shard runtime exceeds target_seconds")
+    return refreshed
+
+
 def collect_nodeids(pytest_args: tuple[str, ...], *, cwd: Path) -> tuple[str, ...]:
     result = subprocess.run(
         [sys.executable, "-m", "pytest", *pytest_args, "--collect-only", "-q", "-p", "no:cacheprovider"],
@@ -290,6 +312,11 @@ def main(argv: list[str] | None = None) -> int:
             expected_shard_count=config.shard_count,
             expected_plan_digest=plan_digest(plan),
             expected_nodeids=nodeids,
+        )
+        validate_refreshed_plan_capacity(
+            nodeids=nodeids,
+            durations=merged,
+            config=config,
         )
         args.output.write_text(
             json.dumps({"schema_version": 1, "tests": merged}, indent=2, sort_keys=True) + "\n",

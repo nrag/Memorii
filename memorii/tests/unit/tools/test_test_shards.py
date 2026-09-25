@@ -15,6 +15,7 @@ from memorii.tools.test_shards import (
     plan_digest,
     shard_pytest_command,
     validate_plan,
+    validate_refreshed_plan_capacity,
     validate_timing_evidence,
 )
 
@@ -364,3 +365,39 @@ def test_timing_evidence_requires_every_disjoint_shard_and_current_plan(tmp_path
             expected_plan_digest=digest,
             expected_nodeids=nodeids,
         )
+
+
+def test_refreshed_timing_evidence_must_fit_the_configured_target(tmp_path: Path) -> None:
+    timing_manifest = tmp_path / "durations.json"
+    timing_manifest.write_text(
+        json.dumps({"schema_version": 1, "tests": {"tests/a.py::one": 1.0}}),
+        encoding="utf-8",
+    )
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps({
+            "assignment_scope": "node",
+            "pytest_args": ["tests"],
+            "schema_version": 1,
+            "shard_count": 2,
+            "target_seconds": 7,
+            "timing_manifest": timing_manifest.name,
+        }),
+        encoding="utf-8",
+    )
+    config = load_config(config_path)
+    nodeids = ("tests/a.py::one", "tests/b.py::two")
+
+    with pytest.raises(ValueError, match="refreshed shard runtime exceeds target_seconds"):
+        validate_refreshed_plan_capacity(
+            nodeids=nodeids,
+            durations={nodeid: 8.0 for nodeid in nodeids},
+            config=config,
+        )
+
+    refreshed = validate_refreshed_plan_capacity(
+        nodeids=nodeids,
+        durations={nodeid: 7.0 for nodeid in nodeids},
+        config=config,
+    )
+    assert refreshed.estimated_seconds == (7.0, 7.0)

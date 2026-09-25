@@ -15,7 +15,9 @@ from memorii.core.semantic_ingestion.contracts import (
     encode_semantic_contract,
     rebuild_bootstrap_graph_effect_contracts,
 )
-from tests.unit.core.semantic_ingestion.test_historical_terminal_persisted_reload import _fixture_bytes
+from tests.fixtures.semantic_ingestion.current_terminal_fixture import (
+    current_terminal_fixture_bytes,
+)
 
 
 def _fields(value, exclude):
@@ -24,11 +26,21 @@ def _fields(value, exclude):
 
 def _request(version: int):
     rebuild_bootstrap_graph_effect_contracts()
-    old = decode_semantic_contract(_fixture_bytes("publication-request.ctv"), BootstrapGraphTerminalPublicationRequestV3)
+    old = decode_semantic_contract(
+        current_terminal_fixture_bytes("publication-request.ctv"),
+        BootstrapGraphTerminalPublicationRequestV3,
+    )
     canonical_input = old.canonical_source_result_input
     source = canonical_input.completed_canonical_source_result
     handoff_core = old.handoff_core
-    member_intents = old.publication_intent.member_intents
+    member_intents = tuple(
+        member
+        for member in old.publication_intent.member_intents
+        if member.kind not in {
+            "bootstrap_graph_source_finalization_observation_delta",
+            "source_observation_intent",
+        }
+    )
     if version == 3:
         groups = tuple(item.group_commit_reload.persisted_result.result_digest
                        for item in old.ordered_group_result_constructions)
@@ -74,7 +86,17 @@ def _request(version: int):
     handoff = BootstrapGraphTerminalPersistenceHandoffV3.create(core=handoff_core, publication_intent=publication)
     values = _fields(old, {"publication_request_digest", "schema_version"})
     values.update(publication_intent=publication, handoff=handoff, handoff_core=handoff_core, canonical_source_result_input=canonical_input)
-    values.update({"source_observation_intent": intent} if version == 3 else {"source_finalization_observation_delta": delta})
+    values.update(
+        {
+            "source_finalization_observation_delta": None,
+            "source_observation_intent": intent,
+        }
+        if version == 3
+        else {
+            "source_finalization_observation_delta": delta,
+            "source_observation_intent": None,
+        }
+    )
     return BootstrapGraphTerminalPublicationRequestV3.create(**values), delta
 
 
@@ -98,7 +120,10 @@ def test_terminal_intent_rejects_preassigned_delta_and_missing_ledger_receipt():
             **_fields(request, {"publication_request_digest", "schema_version"}),
             "source_finalization_observation_delta": delta,
         })
-    old = decode_semantic_contract(_fixture_bytes("terminal-reload.ctv"), BootstrapGraphTerminalReloadV3)
+    old = decode_semantic_contract(
+        current_terminal_fixture_bytes("terminal-reload.ctv"),
+        BootstrapGraphTerminalReloadV3,
+    )
     body = {**_fields(old, {"reload_digest", "schema_version"}), "terminal_member_schema_version": 3, "source_finalization_observation_delta": delta}
     with pytest.raises(ValueError):
         BootstrapGraphTerminalReloadV3.create(**body)
