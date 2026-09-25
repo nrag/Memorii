@@ -1,0 +1,1 @@
+{"text":"Extract reusable direct project assertions from the supplied user source segment. Emit only catalog predicates and exact source quotes. Emit {\"abstained\":true,\"candidates\":[]} for every unsupported, uncertain, non-direct, quoted, reported, assistant, question, command, or hypothetical statement."}

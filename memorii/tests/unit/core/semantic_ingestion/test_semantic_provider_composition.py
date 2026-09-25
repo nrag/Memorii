@@ -27,16 +27,11 @@ from memorii.core.memory_evolution.atomic_store import (
     SemanticIngestionAtomicStore,
 )
 from memorii.core.memory_evolution.bootstrap_profile import (
-    BOOTSTRAP_COORDINATE,
-    BootstrapGrammarCorpusCase,
-    BootstrapProfileReleaseMetadata,
+    BootstrapProfileReleaseBuilder,
+    BootstrapProfileReleaseVerifier,
     CurrentBootstrapReleaseAssertion,
     HostVerifiedBootstrapMaterial,
-    build_bootstrap_profile_artifacts,
-    build_bootstrap_trust_anchor,
-    serialize_bootstrap_profile_artifacts,
     verify_bootstrap_profile,
-    verify_bootstrap_release,
 )
 from memorii.core.memory_evolution.conflict_integrity import (
     ConflictIntegrityError,
@@ -210,147 +205,21 @@ def _base_ingress() -> AuthenticatedIngressContext:
     )
 
 
-def _bootstrap_cases() -> tuple[BootstrapGrammarCorpusCase, ...]:
-    values = (
-        (
-            "01-supported-atlas",
-            "en",
-            "authenticated_host_declaration",
-            "trusted",
-            "agrees",
-            b"Atlas owner is Bob.",
-            "supported_form",
-            None,
-        ),
-        (
-            "02-supported-receipt",
-            "en",
-            "authenticated_host_declaration",
-            "trusted",
-            "agrees",
-            b"Receipt is confirmed.",
-            "supported_form",
-            None,
-        ),
-        (
-            "03-unsupported-mixed",
-            "en",
-            "authenticated_host_declaration",
-            "trusted",
-            "agrees",
-            b"Atlas is Bob. trailing",
-            "unsupported_form",
-            "mixed_residue",
-        ),
-        (
-            "04-unsupported-grammar",
-            "en",
-            "authenticated_host_declaration",
-            "trusted",
-            "agrees",
-            b"unstructured",
-            "unsupported_form",
-            "unsupported_grammar",
-        ),
-        (
-            "05-abstain-extractor",
-            "en",
-            "authenticated_host_declaration",
-            "trusted",
-            "agrees",
-            b"",
-            "abstain_form",
-            "extractor_abstained",
-        ),
-        (
-            "06-abstain-mismatch",
-            "en",
-            "mismatched",
-            "mismatched",
-            "disagrees",
-            b"mismatch",
-            "abstain_form",
-            "language_mismatch",
-        ),
-        (
-            "07-abstain-missing",
-            None,
-            "missing",
-            "missing",
-            "missing",
-            b"missing",
-            "abstain_form",
-            "missing_language_declaration",
-        ),
-        (
-            "08-abstain-non-english",
-            "fr",
-            "authenticated_host_declaration",
-            "trusted",
-            "agrees",
-            b"bonjour",
-            "abstain_form",
-            "non_english_language",
-        ),
-        (
-            "09-abstain-untrusted",
-            None,
-            "untrusted",
-            "untrusted",
-            "missing",
-            b"untrusted",
-            "abstain_form",
-            "untrusted_language",
-        ),
-    )
-    return tuple(
-        BootstrapGrammarCorpusCase.model_validate(
-            {
-                "case_id": case_id,
-                "declared_language": language,
-                "language_evidence_kind": evidence_kind,
-                "language_evidence_trust": trust,
-                "governance_agreement": agreement,
-                "normalized_segment_bytes": source,
-                "disposition": disposition,
-                "expected_reason": reason,
-            }
-        )
-        for case_id, language, evidence_kind, trust, agreement, source, disposition, reason in values
-    )
-
-
-class _TrustRoot:
-    def __init__(self, digest: str) -> None:
-        self.digest = digest
-
-    def verify_active_release(self, metadata: BootstrapProfileReleaseMetadata) -> bool:
-        return metadata.bootstrap_profile_trust_anchor_digest == self.digest
-
-
 class _TestHostBootstrapCapability:
     def __init__(self, *, resolver=None, trust_domain="production") -> None:
-        artifacts = build_bootstrap_profile_artifacts(_bootstrap_cases())
-        self._anchor = build_bootstrap_trust_anchor(artifacts)
-        self._metadata = BootstrapProfileReleaseMetadata(
-            coordinate=BOOTSTRAP_COORDINATE,
-            bootstrap_profile_trust_anchor_digest=self._anchor.trust_anchor_digest,
-            signed_release_digest="1" * 64,
+        release = BootstrapProfileReleaseBuilder.build(enabled=True)
+        self._payloads = release.payloads
+        self._profile = BootstrapProfileReleaseVerifier.verify(
+            payloads=release.payloads, enabled=True
         )
-        self._payloads = serialize_bootstrap_profile_artifacts(artifacts)
         self._resolver = resolver or _Resolver()
-        self._root = _TrustRoot(self._anchor.trust_anchor_digest)
         self._trust_domain = trust_domain
 
     def load_verified_bootstrap_material(self):
-        if not verify_bootstrap_release(provider=self._root, metadata=self._metadata, anchor=self._anchor):
-            return None
         return HostVerifiedBootstrapMaterial(
-            release_metadata=self._metadata,
-            trust_anchor=self._anchor,
             artifact_payloads=self._payloads,
             release_evidence=build_test_host_verified_bootstrap_release_evidence(
-                metadata=self._metadata,
+                profile=self._profile,
                 external_root_digest="2" * 64,
                 active_lifecycle_snapshot_digest="3" * 64,
                 verified_at=datetime(2026, 1, 1, tzinfo=UTC),
@@ -918,6 +787,7 @@ def _v3_normalization_host_builder(
         proposal_factory=lambda _source, _request: proposal_value,
         retry_policy_fingerprint="a" * 64,
     )
+    monotonic_ticks = iter(range(1, 10_000))
 
     def proposal(_request):
         calls["proposal"] += 1
@@ -983,7 +853,7 @@ def _v3_normalization_host_builder(
     return SourceNormalizationHostBundleBuilder(
         authority_provider=authority_provider,
         resolve_quote=quotes.resolve, projection_quote_verifier=quotes,
-        server_time=lambda: TEST_NOW, monotonic_tick=lambda: 1,
+        server_time=lambda: TEST_NOW, monotonic_tick=lambda: next(monotonic_ticks),
         bootstrap_v3_proposal_transport=proposal,
         bootstrap_v3_stanza=lambda request: linguistic(request, "stanza"),
         bootstrap_v3_spacy=lambda request: linguistic(request, "spacy"),
@@ -1505,9 +1375,13 @@ def test_builtin_capability_trust_domains_cannot_cross_any_default_root(tmp_path
     """A validly rebuilt scenario release is still never production authority."""
 
     scenario = build_scenario_test_host_capability()
-    original = scenario.bootstrap_material_presentation.material.release_evidence
+    material = scenario.bootstrap_material_presentation.material
+    original = material.release_evidence
+    profile = BootstrapProfileReleaseVerifier.verify(
+        payloads=material.artifact_payloads, enabled=material.profile_enabled
+    )
     rebuilt_evidence = build_test_host_verified_bootstrap_release_evidence(
-        metadata=scenario.bootstrap_material_presentation.material.release_metadata,
+        profile=profile,
         external_root_digest=original.external_root_digest,
         active_lifecycle_snapshot_digest=original.active_lifecycle_snapshot_digest,
         verified_at=original.verified_at + timedelta(seconds=1),
@@ -1522,9 +1396,7 @@ def test_builtin_capability_trust_domains_cannot_cross_any_default_root(tmp_path
             )
         ),
     )
-    assert verify_bootstrap_profile(
-        scenario.bootstrap_material_presentation.material
-    ).release_evidence == rebuilt_evidence
+    assert scenario.bootstrap_material_presentation.material.release_evidence == rebuilt_evidence
 
     roots = (
         ProviderMemoryService(
@@ -1576,7 +1448,9 @@ def test_normal_provider_root_missing_bootstrap_authority_is_evidence_only(
     entry_points = ()
     ingress = _host_ingress()
     if failure == "swapped_root":
-        capability._root = _TrustRoot("0" * 64)
+        capability._payloads = capability._payloads.model_copy(
+            update={"profile_manifest": b"substituted"}
+        )
         entry_points = (_InstalledCapabilityEntryPoint(capability),)
     elif failure == "missing_ingress":
         entry_points = (_InstalledCapabilityEntryPoint(capability),)

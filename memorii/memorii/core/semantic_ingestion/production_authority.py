@@ -484,8 +484,7 @@ def _material_digest(material: HostVerifiedBootstrapMaterial) -> str:
     return sha256(
         encode_typed_value(
             {
-                "release_metadata": material.release_metadata.model_dump(mode="python"),
-                "trust_anchor": material.trust_anchor.model_dump(mode="python"),
+                "artifact_payloads": material.artifact_payloads.model_dump(mode="python"),
                 "release_evidence": material.release_evidence.model_dump(mode="python"),
                 "profile_enabled": material.profile_enabled,
                 "trust_domain": material.trust_domain,

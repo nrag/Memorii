@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from hashlib import sha256
 from typing import Literal, Protocol
 
@@ -26,9 +26,9 @@ from memorii.core.memory_evolution.conflict_integrity import (
 )
 from memorii.core.memory_evolution.ingestion_contracts import SemanticWriterCommitBinding
 from memorii.core.memory_evolution.observation_activation_configuration import (
-    ObservationActivationTargetConfiguration,
     ObservationActivationTargetConfigurationError,
-    VerifiedObservationActivationTarget,
+    ObservationActivationTargetConfigurationVariant,
+    VerifiedObservationActivationTargetVariant,
     resolve_verified_observation_activation_target,
 )
 from memorii.core.memory_evolution.typed_value_registry_configuration import (
@@ -150,7 +150,7 @@ class AuthorizedSemanticIngestionRuntime:
     writer_admission: SemanticWriterAdmissionStore | None = None
     atomic_store: SemanticIngestionAtomicStore | None = None
     typed_value_registry_history: ProtectedTypedValueRegistryHistory | None = None
-    observation_activation_target: VerifiedObservationActivationTarget | None = None
+    observation_activation_target: VerifiedObservationActivationTargetVariant | None = None
     bootstrap_profile: VerifiedBootstrapProfile | None = None
     now_provider: Callable[[], datetime] | None = None
     _conflict_authority_administration_grant: (
@@ -305,6 +305,14 @@ class HostSemanticWriterActivation(Protocol):
     ) -> None: ...
 
 
+class HostCapabilityStatusActivation(Protocol):
+    """Host-owned initialization of a monitored semantic capability."""
+
+    def initialize_capability_status(
+        self, *, writers: SemanticWriterAdmissionStore, now_provider: Callable[[], datetime]
+    ) -> None: ...
+
+
 @dataclass(frozen=True)
 class BuiltInLocalHostSemanticIngestionCapability:
     """Deterministic local host composition over externally verified V1 authority.
@@ -320,10 +328,13 @@ class BuiltInLocalHostSemanticIngestionCapability:
     policy_provider: SemanticPipelinePolicyProvider
     current_bootstrap_release_verifier: CurrentBootstrapReleaseVerifier | None
     initial_writer_activation: HostSemanticWriterActivation | None = None
+    capability_status_activation: HostCapabilityStatusActivation | None = None
     source_normalization_host_bundle_builder: SourceNormalizationHostBundleBuilder | None = None
     bootstrap_graph_host_bundle_builder: BootstrapGraphHostBundleBuilder | None = None
+    bootstrap_recovery_operation_lease_duration: timedelta = timedelta(minutes=2)
     typed_value_registry_configuration: ProtectedTypedValueRegistryConfiguration | None = None
-    observation_activation_target_configuration: ObservationActivationTargetConfiguration | None = None
+    verified_typed_value_registry_history: ProtectedTypedValueRegistryHistory | None = None
+    observation_activation_target_configuration: ObservationActivationTargetConfigurationVariant | None = None
 
     def load_bootstrap_material_presentation(self) -> HostBootstrapMaterialPresentation:
         return self.bootstrap_material_presentation
@@ -343,13 +354,13 @@ class BuiltInLocalHostSemanticIngestionCapability:
             or not self.authorization_bytes
             or verified_material != self.bootstrap_material_presentation.material
         ):
-            return None
+            raise ValueError("built-in local semantic runtime presentation is unavailable")
         try:
             material_profile = verify_bootstrap_profile(verified_material)
-        except ValueError:
-            return None
+        except ValueError as exc:
+            raise ValueError("built-in local semantic runtime profile is invalid") from exc
         if material_profile != bootstrap_profile or not material_profile.enabled:
-            return None
+            raise ValueError("built-in local semantic runtime profile binding is unavailable")
         from memorii.core.memory_evolution.writer_admission import (
             SemanticWriterAdmissionStore,
             bounded_preplanning_ownership_manifest,
@@ -359,13 +370,11 @@ class BuiltInLocalHostSemanticIngestionCapability:
 
         if not isinstance(memory_plane, MemoryPlaneService):
             raise TypeError("built-in semantic runtime requires a memory plane service")
-        typed_value_registry_history = (
-            verify_configured_typed_value_registry_history(
+        typed_value_registry_history = self.verified_typed_value_registry_history
+        if typed_value_registry_history is None and self.typed_value_registry_configuration is not None:
+            typed_value_registry_history = verify_configured_typed_value_registry_history(
                 self.typed_value_registry_configuration
             )
-            if self.typed_value_registry_configuration is not None
-            else None
-        )
         observation_activation_target = None
         if self.observation_activation_target_configuration is not None:
             if typed_value_registry_history is None:
@@ -381,16 +390,24 @@ class BuiltInLocalHostSemanticIngestionCapability:
             observation_activation_target=observation_activation_target,
         )
         if (
-            verified_material.trust_domain == "scenario_test"
-            and verified_material.release_evidence.trust_domain == "scenario_test"
+            verified_material.trust_domain in {"scenario_test", "local_level2"}
+            and verified_material.release_evidence.trust_domain in {"scenario_test", "local_level2"}
             and memory_plane.get_record(writer_admission_memory_id()) is None
         ):
             # The no-auto-create writer contract leaves a fresh store unbound;
             # the scenario test domain owns creating the evidence-only epoch
             # that its runtime builds either upgrade or retain.
             writers.create_initial_evidence_only(
-                admission_id="scenario-semantic-writer",
-                writer_implementation_fingerprint="scenario-local-semantic-runtime",
+                admission_id=(
+                    "local-level2-semantic-writer"
+                    if verified_material.trust_domain == "local_level2"
+                    else "scenario-semantic-writer"
+                ),
+                writer_implementation_fingerprint=(
+                    "memorii-bootstrap-v3-local-level2"
+                    if verified_material.trust_domain == "local_level2"
+                    else "scenario-local-semantic-runtime"
+                ),
                 graph_schema_fingerprint="memorii-semantic-graph-v1",
             )
         if self.initial_writer_activation is not None:
@@ -398,8 +415,17 @@ class BuiltInLocalHostSemanticIngestionCapability:
                 verified_material.trust_domain != "scenario_test"
                 or verified_material.release_evidence.trust_domain != "scenario_test"
             ):
-                return None
+                raise ValueError("initial writer activation trust domain is unavailable")
             self.initial_writer_activation.activate_initial_writer(
+                writers=writers, now_provider=now_provider
+            )
+        if self.capability_status_activation is not None:
+            if (
+                verified_material.trust_domain != "local_level2"
+                or verified_material.release_evidence.trust_domain != "local_level2"
+            ):
+                raise ValueError("local capability status trust domain is unavailable")
+            self.capability_status_activation.initialize_capability_status(
                 writers=writers, now_provider=now_provider
             )
         store = SemanticIngestionAtomicStore(
@@ -424,6 +450,7 @@ class BuiltInLocalHostSemanticIngestionCapability:
             current_bootstrap_release_verifier=self.current_bootstrap_release_verifier,
             typed_value_registry_history=typed_value_registry_history,
             observation_activation_target=observation_activation_target,
+            bootstrap_recovery_operation_lease_duration=self.bootstrap_recovery_operation_lease_duration,
         )
         host_bundle = (
             None
@@ -465,7 +492,7 @@ def build_authorized_local_semantic_runtime(
     source_normalization_host_bundle: SourceNormalizationHostBundle | None = None,
     bootstrap_graph_host_bundle: BootstrapGraphHostBundle | None = None,
     typed_value_registry_history: ProtectedTypedValueRegistryHistory | None = None,
-    observation_activation_target: VerifiedObservationActivationTarget | None = None,
+    observation_activation_target: VerifiedObservationActivationTargetVariant | None = None,
 ) -> AuthorizedSemanticIngestionRuntime:
     """Build the ordinary zero-egress production semantic ingestion composition."""
 

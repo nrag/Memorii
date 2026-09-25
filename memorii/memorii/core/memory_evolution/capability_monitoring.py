@@ -240,6 +240,7 @@ class CapabilityMonitoringPolicy(BaseModel):
     family_wise_alpha_budget: str
     sequential_test_manifest: SequentialTestManifest
     breach_action: Literal["evidence_only"]
+    activation_mode: Literal["continuous", "verified_installation"] = "continuous"
     policy_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
@@ -248,7 +249,7 @@ class CapabilityMonitoringPolicy(BaseModel):
     def _valid(self) -> CapabilityMonitoringPolicy:
         gates = self.metric_gates
         if (
-            not gates
+            (not gates and self.activation_mode != "verified_installation")
             or gates != tuple(sorted(gates, key=lambda gate: gate.metric_id))
             or len({gate.metric_id for gate in gates}) != len(gates)
             or not 0 < _decimal(self.family_wise_alpha_budget) <= 1
@@ -266,6 +267,8 @@ class CapabilityMonitoringPolicy(BaseModel):
             )
         ):
             raise ValueError("capability monitoring policy is invalid")
+        if self.activation_mode == "verified_installation" and gates:
+            raise ValueError("verified installation monitoring has no traffic metric gates")
         if self.policy_digest != _digest(
             b"memorii.semantic-ingestion.capability-monitoring-policy.v1", self, "policy_digest"
         ):
@@ -1240,6 +1243,8 @@ class CapabilityMonitor:
             freshness, reason = "stale", "traffic_pause_expired"
         elif outage_expired:
             freshness, reason = "stale", "label_pipeline_outage_expired"
+        elif policy.activation_mode == "verified_installation":
+            freshness, reason = "fresh", "verified_installation"
         elif not labels_fresh or len(eligible) < policy.minimum_labeled_clusters_per_window:
             freshness, reason = "stale", "independent_labels_stale_or_insufficient"
         elif not canary_fresh:

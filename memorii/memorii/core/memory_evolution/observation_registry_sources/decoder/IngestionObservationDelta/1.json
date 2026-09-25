@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.IngestionObservationDelta.v1","implementation_source_digest":"6dbfaa7d0222863aa10f4a6852a4fee4b88877a4abd660f30a81697d98cf422d","role":"decoder","schema_id":"IngestionObservationDelta","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.IngestionObservationDelta.v1","implementation_source_digest":"2d238bfe8f1e4f424884de73031c8af5fdb0bbe233e86e736df0876b6f0e52b5","role":"decoder","schema_id":"IngestionObservationDelta","schema_version":"1","typed_root_kind":"model"}

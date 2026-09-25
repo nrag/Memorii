@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.SegmentGovernanceBinding.v1","implementation_source_digest":"d4c17f05484036816e026a2d6b22e66089eaf5a2b7505bd1a3060681a6693c75","role":"decoder","schema_id":"SegmentGovernanceBinding","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.SegmentGovernanceBinding.v1","implementation_source_digest":"1086cba5cef8eb1dc3cd488be0f4628b8cd5eda71fb5c9d91352993960504cb4","role":"decoder","schema_id":"SegmentGovernanceBinding","schema_version":"1","typed_root_kind":"model"}

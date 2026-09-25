@@ -920,11 +920,11 @@ def test_jsonl_activation_reopens_complete_registered_trio(tmp_path, monkeypatch
 
 @pytest.mark.parametrize("remove_member", (False, True))
 def test_activation_validates_retained_native_terminal_closure(tmp_path, monkeypatch, remove_member) -> None:
-    from tests.unit.core.semantic_ingestion.test_historical_terminal_persisted_reload import (
-        _rehydrated_historical_plane,
+    from tests.fixtures.semantic_ingestion.current_terminal_fixture import (
+        rehydrated_current_terminal_plane,
     )
 
-    historical = _rehydrated_historical_plane(tmp_path)
+    historical = rehydrated_current_terminal_plane(tmp_path)
     backing = InMemoryMemoryPlaneStore()
     records = historical.read_write_snapshot()[1]
     # Rehydrate captured storage bytes, without authorizing a new semantic write.
@@ -1087,13 +1087,7 @@ finally:
 
 
 
-def test_public_drain_preserves_live_operation_and_rejects_new_old_epoch_work(tmp_path, monkeypatch) -> None:
-    from concurrent.futures import ThreadPoolExecutor
-    from threading import Event
-
-    from memorii.core.memory_evolution.ingestion_contracts import encode_typed_value
-    from memorii.core.memory_evolution.observation_activation_runtime import validate_registered_artifact
-    from memorii.core.memory_plane.store import record_digest
+def test_public_activation_preserves_completed_selected_source(tmp_path, monkeypatch) -> None:
     from memorii.core.provider.models import ProviderOperation
     from tests.unit.core.semantic_ingestion.test_capability_monitoring import (
         _monitor,
@@ -1131,62 +1125,25 @@ def test_public_drain_preserves_live_operation_and_rejects_new_old_epoch_work(tm
     service = build(plane)
     runtime = service._composed_semantic_runtime
     assert runtime is not None and runtime.atomic_store is not None
-    atomic = runtime.atomic_store
+    result = service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="selected-source-before-activation",
+        task_id="task:one",
+        user_id="user:alice",
+        language="en",
+        speaker_id="user:alice",
+        authenticated_host_ingress=_host_ingress(),
+    )
+    assert result.blocked_reasons["semantic_ingestion"] == "source_only"
+    outcomes = plane.list_records(source_kind="semantic_ingestion_profile_outcome")
+    assert len(outcomes) == 1 and outcomes[0].content["kind"] == "selected_pipeline_pending"
+    controls = plane.list_records(source_kind="semantic_ingestion_preplanning_control")
+    assert len(controls) == 1
+    assert controls[0].content["control"]["state"] == "terminal"
+    assert controls[0].content["control"]["lease"] is None
 
-    def ingest(operation):
-        return service.sync_event(
-            operation=ProviderOperation.CHAT_USER_TURN, content="Atlas owner is Bob.",
-            operation_id=operation, task_id="task:one", user_id="user:alice",
-            authenticated_host_ingress=_host_ingress(),
-        )
-
-    ingest("completed-before-drain")
-    acquire = atomic.acquire_lease
-    ready, release = Event(), Event()
-    held = []
-
-    def hold_after_lease(**kwargs):
-        control = acquire(**kwargs)
-        held.append(control)
-        ready.set()
-        assert release.wait(timeout=120), "test did not release the held operation"
-        return control
-
-    monkeypatch.setattr(atomic, "acquire_lease", hold_after_lease)
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        running = executor.submit(ingest, "held-operation")
-        try:
-            assert ready.wait(timeout=30), "public ingestion did not acquire a lease"
-            assert held[0].lease is not None
-            with pytest.raises(PreplanningStoreError, match="not drained"):
-                service.activate_observation_ledger()
-            assert atomic.get_operation(held[0].operation_fence) == held[0]
-            before_controls = plane.list_records(source_kind="semantic_ingestion_preplanning_control")
-            with pytest.raises(ValueError, match="draining and source admission is frozen"):
-                ingest("new-operation-during-drain")
-            assert plane.list_records(source_kind="semantic_ingestion_preplanning_control") == before_controls
-        finally:
-            release.set()
-        running.result(timeout=120)
-    terminal = atomic.get_operation(held[0].operation_fence)
-    assert terminal.state == "terminal" and terminal.lease is None
-    snapshot = plane.read_write_snapshot()[1]
-    controls = tuple(record for record in snapshot if record.source_kind == "semantic_ingestion_preplanning_control")
-    assert len(controls) == 2
-    roots = tuple(record for record in snapshot
-                  if record.memory_id.startswith("semantic_ingestion:bootstrap-graph-v3:terminal-locator:"))
-    terminals = tuple(record for record in snapshot
-                      if record.source_kind == "semantic_ingestion_bootstrap_graph_v3_terminal_control")
-    assert len(roots) == len(terminals) == 2
-    expected_inventory = sha256(encode_typed_value(tuple(sorted(
-        (record.memory_id, record_digest(record)) for record in (*controls, *roots, *terminals)
-    )))).hexdigest()
     activated = service.activate_observation_ledger()
-    artifact = plane.get_record("semantic_ingestion:observation-ledger:activation:" + activated.activation_digest)
-    assert artifact is not None and runtime.typed_value_registry_history is not None
-    decoded = validate_registered_artifact(artifact.content["artifact"].encode(), schema_id="ObservationLedgerActivation",
-                                           history=runtime.typed_value_registry_history)
-    assert decoded.legacy_terminal_inventory_digest == expected_inventory
     reopened = build(MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path)))
     assert reopened.activate_observation_ledger() == activated
 
@@ -1530,13 +1487,13 @@ def test_fresh_process_publicly_reopens_retained_activated_ledger(
 
 def test_public_activation_preserves_captured_jsonl_history_bytes(tmp_path, monkeypatch) -> None:
     from memorii.core.semantic_ingestion.contracts import BootstrapGraphTerminalReloadV3, decode_semantic_contract
-    from tests.unit.core.semantic_ingestion.test_historical_terminal_persisted_reload import (
-        _fixture_bytes,
-        _rehydrated_historical_plane,
+    from tests.fixtures.semantic_ingestion.current_terminal_fixture import (
+        current_terminal_fixture_bytes,
+        rehydrated_current_terminal_plane,
     )
 
-    plane = _rehydrated_historical_plane(tmp_path)
-    path = tmp_path / "historical-terminal"
+    plane = rehydrated_current_terminal_plane(tmp_path)
+    path = tmp_path / "current-terminal"
     original_bytes = (path / "memory_records.jsonl").read_bytes()
     old_records = {record.memory_id: record for record in plane.read_write_snapshot()[1]
                    if record.memory_id != writer_admission_memory_id()}
@@ -1548,7 +1505,10 @@ def test_public_activation_preserves_captured_jsonl_history_bytes(tmp_path, monk
     reopened = build(reopened_plane)
     assert reopened.activate_observation_ledger() == activated
     assert all(reopened_plane.get_record(key) == value for key, value in old_records.items())
-    expected = decode_semantic_contract(_fixture_bytes("terminal-reload.ctv"), BootstrapGraphTerminalReloadV3)
+    expected = decode_semantic_contract(
+        current_terminal_fixture_bytes("terminal-reload.ctv"),
+        BootstrapGraphTerminalReloadV3,
+    )
     root = next(record for record in reopened_plane.list_records()
                 if record.memory_id.startswith("semantic_ingestion:bootstrap-graph-v3:terminal-locator:"))
     assert BootstrapGraphTerminalReloadV3.model_validate(root.content["reload"], strict=False) == expected

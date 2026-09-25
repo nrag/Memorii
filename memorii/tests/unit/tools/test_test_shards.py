@@ -15,6 +15,7 @@ from memorii.tools.test_shards import (
     plan_digest,
     shard_pytest_command,
     validate_plan,
+    validate_refreshed_plan_capacity,
     validate_timing_evidence,
 )
 
@@ -36,7 +37,6 @@ def test_duration_balancing_is_deterministic_complete_and_disjoint() -> None:
         shard_count=2,
         assignment_scope="node",
     )
-
     validate_plan(first, nodeids)
     assert first == second
     assert first.measured_count == 3
@@ -46,6 +46,18 @@ def test_duration_balancing_is_deterministic_complete_and_disjoint() -> None:
         for shard in first.nodeids
     )
 
+
+def test_current_hermes_runtime_nodes_have_loaded_durations() -> None:
+    durations = load_durations(
+        PROJECT_ROOT / "tests" / "ci" / "unit-test-durations.json"
+    )
+
+    assert durations[
+        "tests/unit/core/semantic_ingestion/test_hermes_completed_turn_runtime.py::test_close_stops_worker_and_rejects_post_close_enqueue"
+    ] == 0.003
+    assert durations[
+        "tests/unit/integrations/test_hermes_memory_provider_bridge.py::test_bridge_separates_equal_text_positions_and_redelivery_reuses_the_second_operation"
+    ] == 826.52
 
 def test_shard_command_executes_exact_nodes_without_file_expansion(tmp_path: Path) -> None:
     nodeids = (
@@ -173,6 +185,13 @@ def test_config_and_manifest_fail_closed_for_invalid_shapes(tmp_path: Path) -> N
     manifest = tmp_path / "durations.json"
     manifest.write_text(json.dumps({"schema_version": 1, "tests": {"node": -1}}), encoding="utf-8")
     with pytest.raises(ValueError, match="invalid duration"):
+        load_durations(manifest)
+
+    manifest.write_text(
+        json.dumps({"schema_version": 1, "tests": {}, "stray_duration": 1.0}),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="unknown timing manifest fields"):
         load_durations(manifest)
 
 
@@ -346,3 +365,39 @@ def test_timing_evidence_requires_every_disjoint_shard_and_current_plan(tmp_path
             expected_plan_digest=digest,
             expected_nodeids=nodeids,
         )
+
+
+def test_refreshed_timing_evidence_must_fit_the_configured_target(tmp_path: Path) -> None:
+    timing_manifest = tmp_path / "durations.json"
+    timing_manifest.write_text(
+        json.dumps({"schema_version": 1, "tests": {"tests/a.py::one": 1.0}}),
+        encoding="utf-8",
+    )
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps({
+            "assignment_scope": "node",
+            "pytest_args": ["tests"],
+            "schema_version": 1,
+            "shard_count": 2,
+            "target_seconds": 7,
+            "timing_manifest": timing_manifest.name,
+        }),
+        encoding="utf-8",
+    )
+    config = load_config(config_path)
+    nodeids = ("tests/a.py::one", "tests/b.py::two")
+
+    with pytest.raises(ValueError, match="refreshed shard runtime exceeds target_seconds"):
+        validate_refreshed_plan_capacity(
+            nodeids=nodeids,
+            durations={nodeid: 8.0 for nodeid in nodeids},
+            config=config,
+        )
+
+    refreshed = validate_refreshed_plan_capacity(
+        nodeids=nodeids,
+        durations={nodeid: 7.0 for nodeid in nodeids},
+        config=config,
+    )
+    assert refreshed.estimated_seconds == (7.0, 7.0)

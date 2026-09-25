@@ -73,6 +73,10 @@ _SemanticLifecycleReason = Literal[
     "untrusted_language",
     "language_mismatch",
     "non_english_language",
+    "empty_segment",
+    "normalization_mismatch",
+    "prohibited_residue",
+    "segment_limit",
     "mixed_residue",
     "unsupported_grammar",
     "extractor_abstained",
@@ -754,6 +758,10 @@ class SemanticTerminalPersistenceService:
                 "untrusted_language",
                 "language_mismatch",
                 "non_english_language",
+                "empty_segment",
+                "normalization_mismatch",
+                "prohibited_residue",
+                "segment_limit",
                 "mixed_residue",
                 "unsupported_grammar",
             }
@@ -767,6 +775,14 @@ class SemanticTerminalPersistenceService:
                 reason_code = "language_mismatch"
             elif raw_reason == "non_english_language":
                 reason_code = "non_english_language"
+            elif raw_reason == "empty_segment":
+                reason_code = "empty_segment"
+            elif raw_reason == "normalization_mismatch":
+                reason_code = "normalization_mismatch"
+            elif raw_reason == "prohibited_residue":
+                reason_code = "prohibited_residue"
+            elif raw_reason == "segment_limit":
+                reason_code = "segment_limit"
             elif raw_reason == "mixed_residue":
                 reason_code = "mixed_residue"
             elif raw_reason == "unsupported_grammar":

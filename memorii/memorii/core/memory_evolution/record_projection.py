@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import base64
+from collections.abc import Iterable
 from hashlib import sha256
 from typing import TYPE_CHECKING
 
 from memorii.core.memory_evolution.admission import source_admission_source_digest
-from memorii.core.memory_evolution.ingestion_contracts import decode_typed_value
+from memorii.core.memory_evolution.ingestion_contracts import decode_typed_value, encode_typed_value
 from memorii.core.memory_evolution.models import (
     ClaimLifecycleState,
     ClaimState,
@@ -243,6 +244,120 @@ def record_from_claim_state(*, state: ClaimState, source_candidate_id: str) -> C
         supersedes_memory_ids=[f"mem:evolution:claim:{claim_id}" for claim_id in state.supersedes_claim_ids],
         conflict_with_memory_ids=[f"mem:evolution:claim:{claim_id}" for claim_id in state.conflict_with_claim_ids],
     )
+
+
+def runtime_context_records_from_committed_claims(
+    *,
+    source_record: CanonicalMemoryRecord,
+    expected_source_id: str,
+    expected_source_digest: str,
+    transaction_group_id: str,
+    claims: Iterable[object],
+) -> tuple[CanonicalMemoryRecord, ...]:
+    """Project committed V3 claims into host-readable memory records.
+
+    The graph commit is the authority for a claim.  This projection only
+    renders that already accepted state and carries the admitted source scope;
+    it never examines transcript text or invokes an extractor.
+    """
+    if (
+        source_record.memory_id != expected_source_id
+        or source_admission_source_digest(source_record) != expected_source_digest
+    ):
+        raise ValueError("committed runtime projection source fence is substituted")
+    # Decode the retained Step-1 closure before using its authenticated scope.
+    source_observation_from_record(source_record)
+
+    from memorii.core.semantic_ingestion.contracts import ClaimAssertion
+
+    projected: list[CanonicalMemoryRecord] = []
+    for value in claims:
+        if not isinstance(value, ClaimAssertion):
+            continue
+        claim = value
+        if claim.claim_identity is None:
+            # Legacy carriers do not contain the closed identity/authority
+            # join required for a runtime-visible projection.
+            continue
+        authority = claim.source_authority_evidence
+        if (
+            authority is None
+            or authority.source_id != expected_source_id
+            or authority.source_digest != expected_source_digest
+        ):
+            raise ValueError("committed runtime projection claim authority is substituted")
+        key = claim.claim_identity.assertion_key_at_recording
+        subject = claim.claim_identity.subject_assertion_ref.logical_entity_id_at_assertion
+        if key.value.object_kind == "entity":
+            object_value = claim.claim_identity.object_assertion_ref
+            if object_value is None:
+                raise ValueError("committed runtime projection entity value is absent")
+            rendered_object = object_value.logical_entity_id_at_assertion
+        else:
+            rendered_object = key.value.canonical_literal_value
+            if rendered_object is None:
+                raise ValueError("committed runtime projection literal value is absent")
+        projection_key = (
+            expected_source_id,
+            expected_source_digest,
+            transaction_group_id,
+            claim.claim_assertion_id,
+            claim.record_digest,
+            authority.evidence_digest,
+        )
+        projection_digest = sha256(
+            b"memorii.bootstrap-v3.runtime-context-claim.v1\0"
+            + encode_typed_value(projection_key)
+        ).hexdigest()
+        interval = claim.valid_interval
+        projected.append(CanonicalMemoryRecord(
+            memory_id="mem:bootstrap-v3:runtime-claim:" + projection_digest,
+            domain=domain_for_predicate(key.slot.predicate_id),
+            # The retained source text is authenticated by the same source
+            # digest as the claim.  Keeping it alongside the canonical IDs
+            # makes a lexical host query resolve an otherwise opaque entity
+            # identifier without re-running extraction.
+            text=(
+                f"{source_record.text}\n"
+                f"{subject} {key.slot.predicate_id} is {rendered_object}"
+            ),
+            content={
+                "runtime_context_projection_kind": "bootstrap_v3_claim_assertion",
+                "claim_assertion_id": claim.claim_assertion_id,
+                "claim_assertion_record_digest": claim.record_digest,
+                "claim_statement_digest": claim.statement_digest,
+                "transaction_group_id": transaction_group_id,
+                "source_id": expected_source_id,
+                "source_digest": expected_source_digest,
+                "source_authority_evidence": authority.model_dump(mode="json"),
+                "claim_identity": claim.claim_identity.model_dump(mode="json"),
+                "temporal_decision_closure_digest": claim.temporal_evidence.decision_closure.closure_digest,
+            },
+            status=CommitStatus.COMMITTED,
+            validity_status=TemporalValidityStatus.ACTIVE,
+            source_kind="memory_evolution",
+            timestamp=source_record.timestamp,
+            valid_from=None if interval is None else interval.start,
+            valid_to=None if interval is None else interval.end,
+            # Reusable project assertions span Hermes sessions. The original
+            # transcript session remains sealed in the source provenance.
+            session_id=None,
+            task_id=source_record.task_id,
+            user_id=source_record.user_id,
+            agent_id=source_record.agent_id,
+            language=source_record.language,
+            # The admitted source remains internal control data.  Retaining
+            # its ID in the runtime dependency list would make every read
+            # fail closed because control records cannot be released to a
+            # host context.  The sealed source and authority evidence remain
+            # in the projection payload above.
+            source_record_ids=[],
+            source_candidate_id=claim.operation_id,
+        ))
+    records = tuple(sorted(projected, key=lambda record: record.memory_id))
+    if len({record.memory_id for record in records}) != len(records):
+        raise ValueError("committed runtime projection identity is not unique")
+    return records
 
 
 def record_from_contradiction_set(contradiction_set: ContradictionSet) -> CanonicalMemoryRecord:

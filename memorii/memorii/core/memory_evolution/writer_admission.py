@@ -29,7 +29,10 @@ from memorii.core.memory_evolution.ingestion_contracts import (
 )
 from memorii.core.memory_evolution.observation_activation_configuration import (
     ObservationActivationTargetConfigurationError,
+    VerifiedLocalLevel2ObservationActivationTarget,
     VerifiedObservationActivationTarget,
+    VerifiedObservationActivationTargetVariant,
+    revalidate_verified_observation_activation_target,
 )
 from memorii.core.memory_evolution.typed_value_artifact_reader import (
     ProtectedTypedValueArtifactReaderLimits,
@@ -259,7 +262,7 @@ class SemanticWriterAdmissionStore:
         *,
         now_provider=lambda: datetime.now(UTC),
         typed_value_registry_history: ProtectedTypedValueRegistryHistory | None = None,
-        observation_activation_target: VerifiedObservationActivationTarget | None = None,
+        observation_activation_target: VerifiedObservationActivationTargetVariant | None = None,
     ) -> None:
         if not _is_ledger_activation_predecessor_manifest(manifest):
             raise SemanticWriterAdmissionError("unsupported semantic ownership manifest")
@@ -267,7 +270,10 @@ class SemanticWriterAdmissionStore:
         if typed_value_registry_history is not None and type(typed_value_registry_history) is not ProtectedTypedValueRegistryHistory:
             raise TypedValueRegistryConfigurationError("typed value registry history is invalid")
         if observation_activation_target is not None and (
-            type(observation_activation_target) is not VerifiedObservationActivationTarget
+            type(observation_activation_target) not in (
+                VerifiedObservationActivationTarget,
+                VerifiedLocalLevel2ObservationActivationTarget,
+            )
             or typed_value_registry_history is None
             or not any(publication is observation_activation_target.publication for publication in typed_value_registry_history.publications)
         ):
@@ -850,6 +856,18 @@ class SemanticWriterAdmissionStore:
     ) -> SemanticWriterWriteAuthorization:
         if capability not in self._atomic_owners:
             raise SemanticWriterAdmissionError("semantic atomic writer is not registered")
+        if self._observation_activation_target is not None:
+            history = self._typed_value_registry_history
+            if history is None:
+                raise SemanticWriterAdmissionError("observation ledger registry authority is not configured")
+            try:
+                revalidate_verified_observation_activation_target(
+                    self._observation_activation_target, history
+                )
+            except ObservationActivationTargetConfigurationError as exc:
+                raise SemanticWriterAdmissionError(
+                    "observation ledger activation target authority is unavailable"
+                ) from exc
         record = self.require_current(binding)
         admission, manifest = writer_admission_from_record(record)
         return SemanticWriterWriteAuthorization(
@@ -1237,7 +1255,7 @@ class SemanticGovernedWritePolicy:
             raise SemanticWriterAdmissionError("governed semantic control binding is corrupt") from exc
         if binding != self._admissions.commit_binding(current_admission):
             raise SemanticWriterAdmissionError("governed semantic control binding is mismatched")
-        if _is_bootstrap_handoff_write(governed, controls[0], binding):
+        if _is_bootstrap_handoff_write(governed, controls[0], binding, current=current):
             return
         control_body = controls[0].content["control"]
         operation_fence = OperationFenceBinding.model_validate(control_body["operation_fence"])
@@ -1265,6 +1283,8 @@ class SemanticGovernedWritePolicy:
             current_generation, prior_control, operation_fence, operation_namespace
         )
         if len(governed) == 1 and controls[0].memory_id == control_id:
+            return
+        if _is_bootstrap_v3_claim_lease_renewal_write(governed, current):
             return
         if _is_bootstrap_v3_ready_claim_write(governed, current):
             return
@@ -2869,7 +2889,7 @@ def _is_bootstrap_authority_terminal_write(records: list[CanonicalMemoryRecord])
 def _is_bootstrap_v3_recovery_claim_write(
     records: list[CanonicalMemoryRecord], current: tuple[CanonicalMemoryRecord, ...]
 ) -> bool:
-    """Permit a live renewal or an expired ready-snapshot reclaim only."""
+    """Permit a bounded provider attempt, live renewal, or expired reclaim."""
     from memorii.core.semantic_ingestion.contracts import BootstrapRecoveryClaimV3
 
     if len(records) != 1:
@@ -2884,12 +2904,31 @@ def _is_bootstrap_v3_recovery_claim_write(
     if before.get("state") != "claimed" or after.get("state") != "claimed":
         return False
     claim_names = set(BootstrapRecoveryClaimV3.model_fields)
-    if set(after) != set(before) or not claim_names.issubset(after):
+    if not claim_names.issubset(after):
         return False
     try:
         old = BootstrapRecoveryClaimV3.model_validate_json(json.dumps({name: before[name] for name in claim_names}))
         new = BootstrapRecoveryClaimV3.model_validate_json(json.dumps({name: after[name] for name in claim_names}))
     except (KeyError, TypeError, ValueError):
+        return False
+    before_attempts = before.get("provider_attempt_count", 0)
+    after_attempts = after.get("provider_attempt_count")
+    provider_attempt = (
+        type(before_attempts) is int
+        and type(after_attempts) is int
+        and 0 <= before_attempts < 2
+        and after_attempts == before_attempts + 1
+        and after_attempts <= 2
+        and set(after) == set(before) | {"provider_attempt_count"}
+        and all(
+            after[name] == before[name]
+            for name in set(before) - {"provider_attempt_count"}
+        )
+        and new == old
+    )
+    if provider_attempt:
+        return True
+    if set(after) != set(before):
         return False
     # A live renewal retains its nonce and advances exactly once.  An expired
     # claim may mint a new nonce only against the same sealed ready snapshot;
@@ -3059,6 +3098,8 @@ def _is_bootstrap_handoff_write(
     records: list[CanonicalMemoryRecord],
     control: CanonicalMemoryRecord,
     binding: SemanticWriterCommitBinding,
+    *,
+    current: tuple[CanonicalMemoryRecord, ...] | None = None,
 ) -> bool:
     """Recognize the one marker-plus-recovery bootstrap bridge atomically."""
     markers = [record for record in records if record.source_kind == "semantic_ingestion_bootstrap_handoff_marker"]
@@ -3072,7 +3113,23 @@ def _is_bootstrap_handoff_write(
         for record in records
         if record.source_kind.startswith("semantic_ingestion_preplanning")
     ]
-    if len(markers) != 1 or len(recoveries) != 1 or len(preplanning) != 4 or len(records) != 6:
+    existing_control = None
+    if current is not None:
+        existing_control = next(
+            (record for record in current if record.memory_id == control.memory_id), None
+        )
+    initial_publication = len(preplanning) == 4 and len(records) == 6
+    admitted_control = (
+        len(preplanning) == 1
+        and len(records) == 3
+        and existing_control is not None
+        and existing_control.content == control.content
+    )
+    if (
+        len(markers) != 1
+        or len(recoveries) != 1
+        or not (initial_publication or admitted_control)
+    ):
         return False
     marker = markers[0]
     value = marker.content.get("marker")
@@ -3185,35 +3242,51 @@ def _validate_atomic_admission_records(
         for record in records
         if record.source_kind == "semantic_ingestion_source_retention_attestation"
     ]
-    if len(sources) != 1 or len(indexes) != 1 or {record.source_kind for record in profiles} != profile_kinds:
+    source_count = len(sources)
+    if (
+        source_count not in {1, 2}
+        or len(indexes) != source_count
+        or len(profiles) != 3 * source_count
+        or any(sum(record.source_kind == kind for record in profiles) != source_count for kind in profile_kinds)
+    ):
         raise SemanticWriterAdmissionError("atomic admission generation membership is incomplete")
     # The five retained Step-1 records, plus the optional seal member a
     # seal-minting store writes in the same admission CAS. The member's
     # registered artifact is verified by the atomic store; this authorization
     # boundary pins only its identity, shape and fence binding.
-    if len(records) not in (5, 6) or len(seals) > 1 or sources[0].memory_id != fence.source_id:
+    if (
+        len(records) not in (5 * source_count, 6 * source_count)
+        or len(seals) not in {0, source_count}
+        or not any(source.memory_id == fence.source_id for source in sources)
+    ):
         raise SemanticWriterAdmissionError("atomic admission source binding is mismatched")
     if seals:
-        seal = seals[0]
+        for seal in seals:
+            if (
+                seal.domain != MemoryDomain.EXECUTION
+                or seal.visibility != MemoryRecordVisibility.INTERNAL_CONTROL
+                or seal.status != CommitStatus.COMMITTED
+                or set(seal.content) != {"semantic_ingestion_kind", "artifact"}
+                or seal.content.get("semantic_ingestion_kind") != "source_retention_attestation"
+                or not isinstance(seal.content.get("artifact"), str)
+            ):
+                raise SemanticWriterAdmissionError("atomic admission seal member is malformed")
+    source_ids = {source.memory_id for source in sources}
+    indexed_source_ids: set[str] = set()
+    for index in indexes:
+        try:
+            index_fence = OperationFenceBinding.model_validate(index.content.get("operation_fence_binding"))
+        except (TypeError, ValueError) as exc:
+            raise SemanticWriterAdmissionError("atomic admission index fence is malformed") from exc
         if (
-            len(records) != 6
-            or seal.memory_id
-            != f"semantic_ingestion:admission:{fence.delivery_key_digest}:retention_attestation"
-            or seal.domain != MemoryDomain.EXECUTION
-            or seal.visibility != MemoryRecordVisibility.INTERNAL_CONTROL
-            or seal.status != CommitStatus.COMMITTED
-            or set(seal.content) != {"semantic_ingestion_kind", "artifact"}
-            or seal.content.get("semantic_ingestion_kind") != "source_retention_attestation"
-            or not isinstance(seal.content.get("artifact"), str)
+            index_fence.source_id not in source_ids
+            or index.content.get("admitted_writer_epoch") != binding.expected_writer_epoch
+            or index.content.get("writer_admission_digest") != binding.admission_digest
         ):
-            raise SemanticWriterAdmissionError("atomic admission seal member is malformed")
-    index = indexes[0]
-    if (
-        index.content.get("operation_fence_binding") != fence.model_dump(mode="json")
-        or index.content.get("admitted_writer_epoch") != binding.expected_writer_epoch
-        or index.content.get("writer_admission_digest") != binding.admission_digest
-    ):
-        raise SemanticWriterAdmissionError("atomic admission index binding is mismatched")
+            raise SemanticWriterAdmissionError("atomic admission index binding is mismatched")
+        indexed_source_ids.add(index_fence.source_id)
+    if indexed_source_ids != source_ids:
+        raise SemanticWriterAdmissionError("atomic admission indexes must cover every source")
 
 
 def _is_atomic_admission_only_write(
@@ -3618,7 +3691,7 @@ def _is_observation_activation_write(
     successor_manifest: SemanticRecordOwnershipManifest,
     history: ProtectedTypedValueRegistryHistory | None,
     *, current_record: CanonicalMemoryRecord,
-    target: VerifiedObservationActivationTarget | None,
+    target: VerifiedObservationActivationTargetVariant | None,
 ) -> bool:
     from memorii.core.memory_evolution.observation_ledger_contracts import (
         ObservationLedgerActivation,
@@ -4434,7 +4507,7 @@ def _is_activated_observation_ledger_write(
     current: tuple[CanonicalMemoryRecord, ...],
     *,
     history: ProtectedTypedValueRegistryHistory | None,
-    target: VerifiedObservationActivationTarget | None,
+    target: VerifiedObservationActivationTargetVariant | None,
     limits: ProtectedTypedValueArtifactReaderLimits,
     snapshot_validator: ActivatedObservationSnapshotValidator | None,
 ) -> bool:
@@ -4583,7 +4656,7 @@ def _is_activated_observation_ledger_write(
 def _new_activated_observation_artifact_proofs(
     *,
     history: ProtectedTypedValueRegistryHistory,
-    target: VerifiedObservationActivationTarget,
+    target: VerifiedObservationActivationTargetVariant,
     limits: ProtectedTypedValueArtifactReaderLimits,
 ) -> ActivatedObservationArtifactProofContext:
     """Create the one ephemeral proof context for a governed-write validation."""
@@ -4710,7 +4783,7 @@ def _is_activated_preterminal_write(
             or source_admissions[0].content.get("writer_admission_digest") != binding.admission_digest
         ):
             return False
-        if _is_bootstrap_handoff_write(governed, controls[0], binding):
+        if _is_bootstrap_handoff_write(governed, controls[0], binding, current=current):
             return True
         namespace = controls[0].content["control"].get("persistence_namespace_id") or operation_fence.operation_id
         control_id = f"semantic_ingestion:operation:{namespace}"
@@ -4729,11 +4802,121 @@ def _is_activated_preterminal_write(
         _validate_initial_preplanning_generation(generation, prior_control, operation_fence, namespace)
         return (
             (len(governed) == 1 and controls[0].memory_id == control_id)
+            or _is_bootstrap_v3_claim_lease_renewal_write(governed, current)
             or _is_bootstrap_v3_ready_claim_write(governed, current)
             or _is_bootstrap_v3_publish_consume_write(governed, current)
             or _is_bootstrap_graph_v3_checkpoint_write(governed, current)
         )
     except (KeyError, StopIteration, TypeError, ValueError, SemanticWriterAdmissionError):
+        return False
+
+
+def _is_bootstrap_v3_claim_lease_renewal_write(
+    records: list[CanonicalMemoryRecord],
+    current: tuple[CanonicalMemoryRecord, ...],
+) -> bool:
+    """Recognize one claim renewal coupled to its renewable operation lease."""
+    from memorii.core.semantic_ingestion.contracts import BootstrapRecoveryClaimV3
+
+    if len(records) != 2:
+        return False
+    control = next(
+        (
+            record
+            for record in records
+            if record.content.get("semantic_ingestion_kind")
+            == "preplanning_operation_control"
+        ),
+        None,
+    )
+    index = next(
+        (
+            record
+            for record in records
+            if record.source_kind
+            == "semantic_ingestion_bootstrap_v3_recovery_index"
+        ),
+        None,
+    )
+    if control is None or index is None:
+        return False
+    prior_control_record = next(
+        (record for record in current if record.memory_id == control.memory_id), None
+    )
+    prior_index = next(
+        (record for record in current if record.memory_id == index.memory_id), None
+    )
+    if prior_control_record is None or prior_index is None:
+        return False
+    try:
+        before = prior_index.content
+        after = index.content
+        claim_names = set(BootstrapRecoveryClaimV3.model_fields)
+        old_claim = BootstrapRecoveryClaimV3.model_validate_json(
+            json.dumps({name: before[name] for name in claim_names})
+        )
+        new_claim = BootstrapRecoveryClaimV3.model_validate_json(
+            json.dumps({name: after[name] for name in claim_names})
+        )
+        prior_control = prior_control_record.content["control"]
+        next_control = control.content["control"]
+        prior_lease = prior_control["lease"]
+        next_lease = next_control["lease"]
+        old_ready = old_claim.control_snapshot.control_record
+        new_ready = new_claim.control_snapshot.control_record
+        changed_claim_fields = {
+            "claim_digest",
+            "control_snapshot",
+            "issued_server_time",
+            "expires_server_time",
+            "issued_monotonic_tick",
+            "expires_monotonic_tick",
+            "renewal_count",
+        }
+        changed_ready_fields = {
+            "control_record_digest",
+            "operation_lease_binding",
+            "progress_digest",
+        }
+        return (
+            before.get("state") == after.get("state") == "claimed"
+            and set(after) == set(before)
+            and all(
+                after[name] == before[name]
+                for name in set(before) - changed_claim_fields
+            )
+            and new_claim.claim_nonce == old_claim.claim_nonce
+            and new_claim.recovery_key_digest == old_claim.recovery_key_digest
+            and new_claim.renewal_count == old_claim.renewal_count + 1
+            and new_claim.renewal_count <= new_claim.max_claim_renewals
+            and new_claim.expires_server_time > new_claim.issued_server_time
+            and new_claim.expires_monotonic_tick > new_claim.issued_monotonic_tick
+            and all(
+                next_control[name] == prior_control[name]
+                for name in set(prior_control) - {"lease", "state_revision"}
+            )
+            and next_control["state_revision"] == prior_control["state_revision"] + 1
+            and all(
+                next_lease[name] == prior_lease[name]
+                for name in set(prior_lease) - {"expires_at"}
+            )
+            # The authoritative monotonic claim clock advances on every
+            # renewal.  A valid provider may renew twice in one wall-clock
+            # instant, so the wall-clock lease must not regress but need not
+            # be strictly later.
+            and next_lease["expires_at"] >= prior_lease["expires_at"]
+            and all(
+                getattr(new_ready, name) == getattr(old_ready, name)
+                for name in type(new_ready).model_fields
+                if name not in changed_ready_fields
+            )
+            and new_ready.operation_lease_binding.lease_expires_at
+            == datetime.fromisoformat(next_lease["expires_at"])
+            and new_ready.operation_lease_binding.state_revision
+            == next_control["state_revision"]
+            and new_ready.progress_digest != old_ready.progress_digest
+        )
+    except (KeyError, TypeError, ValueError):
         return False
 
 

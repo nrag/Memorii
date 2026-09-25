@@ -15,7 +15,6 @@ from memorii.core.semantic_ingestion.contracts import (
 )
 
 _FIXTURES = (
-    ("publication-request.ctv.gz", BootstrapGraphTerminalPublicationRequestV3),
     ("publication-intent.ctv.gz", BootstrapGraphTerminalPublicationIntentV3),
     ("terminal-reload.ctv.gz", BootstrapGraphTerminalReloadV3),
 )
@@ -33,3 +32,8 @@ def test_historical_terminal_contract_reencodes_byte_identically(
     decoded = decode_semantic_contract(raw, contract_type)
     assert encode_semantic_contract(decoded) == raw
 
+
+def test_retired_terminal_request_route_shape_is_rejected() -> None:
+    raw = gzip.decompress((_FIXTURE_ROOT / "publication-request.ctv.gz").read_bytes())
+    with pytest.raises(ValueError, match="validation failed"):
+        decode_semantic_contract(raw, BootstrapGraphTerminalPublicationRequestV3)

@@ -15,18 +15,18 @@ from threading import RLock
 from typing import Protocol
 
 from memorii.core.memory_evolution.bootstrap_profile import (
-    BootstrapSegmentGrammarProof,
     VerifiedBootstrapProfile,
     classify_bootstrap_input,
 )
 from memorii.core.memory_evolution.semantic_analysis.source_contracts import (
-    BootstrapDeclaredSegmentLanguageRoute,
+    BootstrapFreeformSegmentLanguageRoute,
     PreparedSegment,
     PreparedSource,
     SegmentLanguageRouteSet,
     TextPreparationRequest,
 )
 from memorii.core.semantic_ingestion.contracts import (
+    BootstrapFreeformSegmentProof,
     ProjectionTextSpan,
     SegmentLocalTextSpan,
     SourceSpanReference,
@@ -122,13 +122,7 @@ class BootstrapTextPreparationProducer:
         ingress: object,
         projection: object,
     ) -> tuple[str, str | None, str | None]:
-        """Classify a retained projection using the same child partition as Step-2.
-
-        A multi-child source has no synthetic whole-source grammar row.  It is
-        eligible only when every sealed child independently selects an exact
-        corpus literal.  The producer repeats this partition and emits the
-        corresponding route/proof for every child before any writer handoff.
-        """
+        """Classify a retained projection using its exact Step-2 partition."""
         parents = tuple(getattr(projection, "segments", ()))
         if not parents:
             return "unsupported_input", "unsupported_grammar", None
@@ -145,28 +139,14 @@ class BootstrapTextPreparationProducer:
         if not children:
             return "unsupported_input", "unsupported_grammar", None
 
-        # Keep the legacy one-segment classification byte-for-byte intact.
-        if len(children) == 1 and len(parents) == 1:
-            return classify_bootstrap_input(
-                profile=profile,
-                ingress=ingress,
-                normalized_segment=children[0].encode("utf-8"),
-            )
-
-        matched_case_ids: list[str] = []
         for child in children:
             outcome, reason, case_id = classify_bootstrap_input(
                 profile=profile,
                 ingress=ingress,
-                normalized_segment=child.strip().encode("utf-8"),
+                normalized_segment=child.encode("utf-8"),
             )
             if outcome != "selected_pipeline_pending":
                 return outcome, reason, case_id
-            if case_id is None:
-                raise ValueError("selected bootstrap child has no corpus case")
-            matched_case_ids.append(case_id)
-        # The Step-1 outcome schema deliberately records one corpus case only.
-        # The complete ordered child-case binding is persisted in Step-2 proofs.
         return "selected_pipeline_pending", None, None
 
     def __call__(self, request: TextPreparationRequest) -> PreparedSource:
@@ -206,24 +186,32 @@ class BootstrapTextPreparationProducer:
 
         prepared_segments: list[PreparedSegment] = []
         routes = []
-        proofs: list[BootstrapSegmentGrammarProof] = []
+        proofs: list[BootstrapFreeformSegmentProof] = []
         sentence_spans: list[SourceSpanReference] = []
         token_spans: list[SourceSpanReference] = []
         admissions_by_binding = {
             identity.segment_governance_binding_digest: identity
             for identity in admissions.identities
         }
+        child_index = 0
         for parent in projection.segments:
             parent_text = parent.semantic_text
             child_ranges = self._safe_ranges(parent_text, request.policy.max_segment_characters)
             for start, end in child_ranges:
                 child_text = parent_text[start:end]
-                normalized_child_text = child_text.strip()
-                corpus_case = self._matching_case(normalized_child_text, evidence)
-                if corpus_case is None or corpus_case.disposition != "supported_form":
-                    raise ValueError("bootstrap text preparation input is nonpromoting")
+                if child_index >= profile.artifacts.freeform_admission_policy.max_child_segments:
+                    raise ValueError("bootstrap text preparation exceeds freeform child cap")
+                # The Step-1 observation owns the authenticated language
+                # evidence.  Do not treat the observation itself as host
+                # ingress: it deliberately has no mutable ingress fields.
+                outcome, reason, _ = classify_bootstrap_input(
+                    profile=profile,
+                    ingress=evidence,
+                    normalized_segment=child_text.encode("utf-8"),
+                )
+                if outcome != "selected_pipeline_pending":
+                    raise ValueError(f"bootstrap freeform preparation input is nonpromoting: {reason}")
                 span_digest = sha256(child_text.encode("utf-8")).hexdigest()
-                normalized_digest = sha256(normalized_child_text.encode("utf-8")).hexdigest()
                 segment_id = self._segment_id(observation.source_id, parent.segment_id, start, end)
                 owned_projection = ProjectionTextSpan.create(
                     artifact=projection.projection_text_artifact,
@@ -237,36 +225,71 @@ class BootstrapTextPreparationProducer:
                     end=end,
                     substring_digest=span_digest,
                 )
-                proof = BootstrapSegmentGrammarProof.create(
-                    source_id=observation.source_id,
-                    segment_id=segment_id,
-                    language_evidence_tuple=("en", "authenticated_host_declaration", "trusted", "agrees"),
-                    bootstrap_language_evidence_digest=evidence.evidence_digest,
-                    corpus_case_id=corpus_case.case_id,
-                    normalized_segment_digest=normalized_digest,
-                )
-                route = BootstrapDeclaredSegmentLanguageRoute.create(
-                    schema_id="memorii.semantic_ingestion.bootstrap_declared_segment_language_route",
+                policy = profile.artifacts.freeform_admission_policy
+                raw_prefix = projection.projection_text[: parent.projection_span.start + start]
+                route = BootstrapFreeformSegmentLanguageRoute.create(
+                    schema_id="memorii.semantic_ingestion.bootstrap_freeform_segment_language_route",
                     schema_version=1,
                     source_id=observation.source_id,
                     source_digest=observation.source_digest,
-                    segment_id=segment_id,
+                    semantic_projection_id=projection.projection_text_artifact.artifact_id,
+                    semantic_projection_digest=projection.projection_digest,
                     parent_projection_segment_id=parent.segment_id,
+                    segment_id=segment_id,
                     segment_text_artifact_id=parent.segment_text_artifact.artifact_id,
                     segment_text_artifact_digest=parent.segment_text_artifact.artifact_digest,
                     segment_text_content_digest=parent.segment_text_artifact.content_digest,
-                    declared_language="en",
-                    language_evidence_kind="authenticated_host_declaration",
-                    language_evidence_trust="trusted",
-                    governance_agreement="agrees",
-                    bootstrap_language_evidence_digest=evidence.evidence_digest,
-                    bootstrap_profile_manifest_digest=manifest.profile_digest,
-                    preparation_policy_fingerprint=request.policy.policy_fingerprint,
+                    prepared_segment_index=child_index,
+                    unicode_scalar_start=parent.projection_span.start + start,
+                    unicode_scalar_end=parent.projection_span.start + end,
+                    utf8_byte_start=len(raw_prefix.encode("utf-8")),
+                    utf8_byte_end=len((raw_prefix + child_text).encode("utf-8")),
+                    raw_segment_digest=span_digest,
+                    profile_coordinate="memorii.bootstrap_local_english_rule@current",
+                    profile_digest=manifest.profile_digest,
+                    capability_manifest_coordinate="memorii.bootstrap_grammar_capability_manifest@current",
+                    capability_manifest_digest=profile.artifacts.grammar_capability_manifest.manifest_digest,
+                    freeform_policy_coordinate="memorii.bootstrap_freeform_admission_policy@1",
+                    freeform_policy_digest=policy.policy_digest,
+                    component_root_coordinate="memorii.bootstrap_component_root@1",
                     component_root_digest=manifest.component_root_digest,
-                    corpus_case_id=corpus_case.case_id,
-                    normalized_segment_digest=normalized_digest,
-                    grammar_proof_digest=proof.proof_digest,
-                    decision="selected",
+                    resource_policy_coordinate="memorii.text_preparation_policy@1",
+                    resource_policy_digest=request.policy.policy_fingerprint,
+                    declared_language="en",
+                    trusted_language_evidence_digest=evidence.evidence_digest,
+                )
+                proof = BootstrapFreeformSegmentProof.create(
+                    schema_id="memorii.semantic_ingestion.bootstrap_freeform_segment_proof",
+                    schema_version=1,
+                    segment_id=route.segment_id,
+                    raw_segment_bytes=child_text.encode("utf-8"),
+                    source_id=observation.source_id,
+                    source_digest=observation.source_digest,
+                    semantic_projection_id=projection.projection_text_artifact.artifact_id,
+                    semantic_projection_digest=projection.projection_digest,
+                    parent_projection_segment_id=route.parent_projection_segment_id,
+                    prepared_segment_index=route.prepared_segment_index,
+                    segment_text_artifact_id=route.segment_text_artifact_id,
+                    segment_text_artifact_digest=route.segment_text_artifact_digest,
+                    segment_text_content_digest=route.segment_text_content_digest,
+                    unicode_scalar_start=route.unicode_scalar_start,
+                    unicode_scalar_end=route.unicode_scalar_end,
+                    utf8_byte_start=route.utf8_byte_start,
+                    utf8_byte_end=route.utf8_byte_end,
+                    raw_segment_digest=route.raw_segment_digest,
+                    profile_coordinate=route.profile_coordinate,
+                    profile_digest=route.profile_digest,
+                    capability_manifest_coordinate=route.capability_manifest_coordinate,
+                    capability_manifest_digest=route.capability_manifest_digest,
+                    freeform_policy_coordinate=route.freeform_policy_coordinate,
+                    freeform_policy_digest=route.freeform_policy_digest,
+                    component_root_coordinate=route.component_root_coordinate,
+                    component_root_digest=route.component_root_digest,
+                    resource_policy_coordinate=route.resource_policy_coordinate,
+                    resource_policy_digest=route.resource_policy_digest,
+                    declared_language=route.declared_language,
+                    trusted_language_evidence_digest=route.trusted_language_evidence_digest,
+                    route_digest=route.route_digest,
                 )
                 span = self._span(
                     observation.source_id, projection.projection_digest, parent, owned_projection,
@@ -295,6 +318,7 @@ class BootstrapTextPreparationProducer:
                 ))
                 routes.append(route)
                 proofs.append(proof)
+                child_index += 1
 
         body = {
             "source_id": observation.source_id,
@@ -312,7 +336,7 @@ class BootstrapTextPreparationProducer:
             "sentence_spans": tuple(sentence_spans),
             "segments": tuple(prepared_segments),
             "token_spans": tuple(token_spans),
-            "grammar_proofs": tuple(proofs),
+            "segment_proofs": tuple(proofs),
             "preparation_policy": request.policy,
             "status": "complete",
             "diagnostics": (),
@@ -356,18 +380,6 @@ class BootstrapTextPreparationProducer:
             cursor = boundary + 1
         ranges.append((cursor, end))
         return tuple(ranges)
-
-    def _matching_case(self, text: str, evidence: object):
-        for case in self._profile.artifacts.grammar_corpus.cases:
-            if (
-                case.normalized_segment_bytes == text.encode("utf-8")
-                and case.declared_language == evidence.language_declaration
-                and case.language_evidence_kind == evidence.language_evidence_kind
-                and case.language_evidence_trust == evidence.language_evidence_trust
-                and case.governance_agreement == evidence.language_governance_agreement
-            ):
-                return case
-        return None
 
     @staticmethod
     def _segment_id(source_id: str, parent_id: str, start: int, end: int) -> str:

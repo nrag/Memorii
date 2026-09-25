@@ -8,12 +8,8 @@ from importlib.metadata import version
 from pathlib import Path
 
 import pytest
-from memorii.core.memory_evolution import bootstrap_profile
-from memorii.core.memory_evolution.atomic_store import SemanticIngestionAtomicStore
 from memorii.core.memory_evolution.writer_admission import (
     SemanticWriterAdmissionError,
-    SemanticWriterAdmissionStore,
-    bounded_preplanning_ownership_manifest,
 )
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
@@ -22,11 +18,11 @@ from memorii.core.provider.models import ProviderOperation
 from memorii.core.semantic_ingestion.bootstrap_graph_host import BootstrapGraphHostBundleBuilder
 from memorii.core.semantic_ingestion.contracts import (
     BootstrapGraphTerminalPublicationRequestV3,
-    BootstrapGraphTerminalReloadV3,
     ProviderEntityObject,
     ProviderFact,
     ProviderMention,
     ProviderSemanticProposal,
+    SemanticContractCodecError,
     decode_semantic_contract,
 )
 from tests.fixtures.semantic_ingestion.bootstrap_graph_v3_fixture import (
@@ -65,46 +61,26 @@ def _rehydrated_historical_plane(tmp_path: Path) -> MemoryPlaneService:
     return MemoryPlaneService(record_store=backend)
 
 
-def test_historical_terminal_reloads_from_captured_records_without_write(
+def test_pre_bootstrap_v3_terminal_fixture_is_rejected_without_write(
     tmp_path: Path,
 ) -> None:
-    request = decode_semantic_contract(
-        _fixture_bytes("publication-request.ctv"),
-        BootstrapGraphTerminalPublicationRequestV3,
-    )
-    expected = decode_semantic_contract(
-        _fixture_bytes("terminal-reload.ctv"), BootstrapGraphTerminalReloadV3,
-    )
-    # Restore the immutable current-record snapshot through the backend's
-    # batch rehydration path, rather than attempting an unauthorized write.
+    # The captured route uses the retired declared-language shape. Bootstrap V3
+    # accepts only the current freeform authority and must leave storage intact.
     plane = _rehydrated_historical_plane(tmp_path)
-    writers = SemanticWriterAdmissionStore(
-        plane, bounded_preplanning_ownership_manifest(),
-    )
-    atomic = SemanticIngestionAtomicStore(plane, writers)
     before = plane.read_snapshot()
-
-    reload = atomic.reload_bootstrap_graph_terminal_by_request_v3(
-        request=request.coordinator_request,
-    )
-
-    assert reload == expected
-    assert reload is not None
-    assert reload.terminal_member_schema_version == 1
-    assert reload.source_finalization_observation_delta is None
+    with pytest.raises(SemanticContractCodecError, match="validation failed"):
+        decode_semantic_contract(
+            _fixture_bytes("publication-request.ctv"),
+            BootstrapGraphTerminalPublicationRequestV3,
+        )
     assert plane.read_snapshot() == before
 
 
-@pytest.mark.parametrize("unique_distribution", [True, False])
 def test_public_root_requires_historical_writer_cutover_without_executor_or_write(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, unique_distribution: bool,
+    tmp_path: Path,
 ) -> None:
-    # Reconstruct the captured package inventory, retaining real version and
-    # component-byte verification. Duplicate metadata exercises its rejection.
+    # Current Bootstrap V3 owns installed metadata verification internally.
     assert version("memorii") == "0.1.0"
-    monkeypatch.setattr(bootstrap_profile, "packages_distributions", lambda: {
-        "memorii": ["memorii"] if unique_distribution else ["memorii", "memorii"],
-    })
     plane = _rehydrated_historical_plane(tmp_path)
     proposal = ProviderSemanticProposal(
         mentions=(
@@ -147,10 +123,9 @@ def test_public_root_requires_historical_writer_cutover_without_executor_or_writ
         if record.memory_id.endswith(":outcome") and "verification_digest" in record.content
     )
     assert service._bootstrap_profile is not None
-    if unique_distribution:
-        assert service._bootstrap_profile.verification_digest == expected_verification
-    else:
-        assert service._bootstrap_profile.verification_digest != expected_verification
+    # The captured terminal predates the current Bootstrap V3 authority. It is
+    # readable history, but its verification digest cannot authorize a writer.
+    assert service._bootstrap_profile.verification_digest != expected_verification
     with pytest.raises(
         SemanticWriterAdmissionError, match="semantic writer manifest is mismatched"
     ):

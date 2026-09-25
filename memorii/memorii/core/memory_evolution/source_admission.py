@@ -660,6 +660,7 @@ def build_admitted_source_record(
     session_id: str | None = None,
     task_id: str | None = None,
     user_id: str | None = None,
+    agent_id: str | None = None,
 ) -> CanonicalMemoryRecord:
     """Create the exact raw record which atomic admission publishes verbatim."""
     if not isinstance(retained_at, datetime):
@@ -687,7 +688,8 @@ def build_admitted_source_record(
     return CanonicalMemoryRecord(
         memory_id=source_id, domain=MemoryDomain.TRANSCRIPT, text=request.original_text, content=content,
         status=CommitStatus.COMMITTED, source_kind="semantic_ingestion_source", timestamp=retained_at,
-        session_id=session_id, task_id=task_id, user_id=user_id, language=request.declared_language or "und",
+        session_id=session_id, task_id=task_id, user_id=user_id, agent_id=agent_id,
+        language=request.declared_language or "und",
         is_raw_event=True, visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
     )
 

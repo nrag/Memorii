@@ -1,0 +1,30 @@
+{
+  "source_revision": "a9b9813f9719bc15bb1a685725f2b577609a508e",
+  "source": "Level 2 PR worktree; real direct provider sync; synthetic fixture authority",
+  "files": [
+    {
+      "path": "publication-request.ctv.gz",
+      "sha256": "91fa232f13bd478b20714e93eca5d1bd8143b2373828329625046f58ae18eaa2",
+      "uncompressed_sha256": "1085e0d1e8e9c474cf73fc879fcaa04ce851dc641317520f70e4efc53b740d86",
+      "uncompressed_bytes": 949589
+    },
+    {
+      "path": "publication-intent.ctv.gz",
+      "sha256": "8ee40995570879fd3ecc535f69a7c30e0a927f3a2734b0a4820d5dccc6b020e9",
+      "uncompressed_sha256": "d90f7a30b1063e5c1008c56922d07818585f1a28dc8210187cfda4b74fec3b69",
+      "uncompressed_bytes": 5660
+    },
+    {
+      "path": "terminal-reload.ctv.gz",
+      "sha256": "a97423b2ef06686e965a008e8035ddb19cdb3c4ba7f7f87fa403d715c35e238d",
+      "uncompressed_sha256": "1347f376abdecf585051484a03fe7922aa329c01b894485c7e8fb57a232284d9",
+      "uncompressed_bytes": 57467
+    },
+    {
+      "path": "memory-records.json.gz",
+      "sha256": "75afc6e8cb35a1cc983c17373cff872fdff62c9b64f0a1996c2df641dada8f59",
+      "uncompressed_sha256": "8fb9fcc853d9cc80683701b98059aa619930d02a41f027354d3325676c4028c6",
+      "uncompressed_bytes": 9023929
+    }
+  ]
+}

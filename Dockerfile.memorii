@@ -1,0 +1,16 @@
+# The Level 2 path is tested against this exact Hermes image.
+ARG HERMES_IMAGE=nousresearch/hermes-agent@sha256:6bece0644e29a347e5ae17db43c36938c86f171c6f5e0cef18aa2075d331f3a3
+FROM ${HERMES_IMAGE}
+
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential python3-dev pkg-config libicu-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY . /opt/memorii-src
+RUN python3 /opt/memorii-src/tools/prepare_memorii_docker_context.py \
+        --source-root /opt/memorii-src/memorii \
+    && uv pip install --python /opt/hermes/.venv/bin/python \
+        --editable '/opt/memorii-src/memorii[live]' \
+    && /opt/hermes/.venv/bin/python -c \
+        'from memorii.core.semantic_ingestion.project_assertions_profile import load_project_assertions_bundle; load_project_assertions_bundle()'

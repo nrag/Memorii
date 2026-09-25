@@ -13,11 +13,11 @@ from hmac import compare_digest, digest
 from typing import Literal
 
 from memorii.core.memory_evolution.bootstrap_profile import (
-    BootstrapProfileReleaseMetadata,
     HostBootstrapMaterialPresentation,
     HostBootstrapMaterialVerifier,
     HostVerifiedBootstrapMaterial,
     HostVerifiedBootstrapReleaseEvidence,
+    VerifiedBootstrapProfile,
 )
 from memorii.core.memory_evolution.ingestion_contracts import encode_typed_value
 
@@ -26,16 +26,16 @@ _TEST_HOST_VERIFIER_SECRET = b"memorii-semantic-ingestion-test-host-verifier-v1"
 
 def build_test_host_verified_bootstrap_release_evidence(
     *,
-    metadata: BootstrapProfileReleaseMetadata,
+    profile: VerifiedBootstrapProfile,
     external_root_digest: str,
     active_lifecycle_snapshot_digest: str,
     verified_at: datetime,
-    trust_domain: Literal["production", "scenario_test"] = "production",
+    trust_domain: Literal["production", "local_level2", "scenario_test"] = "production",
 ) -> HostVerifiedBootstrapReleaseEvidence:
     body = {
-        "coordinate": metadata.coordinate.model_dump(mode="python"),
-        "signed_release_digest": metadata.signed_release_digest,
-        "bootstrap_anchor_digest": metadata.bootstrap_profile_trust_anchor_digest,
+        "coordinate": profile.coordinate.model_dump(mode="python"),
+        "signed_release_digest": profile.verification_digest,
+        "bootstrap_anchor_digest": profile.artifacts.profile_manifest.component_root_digest,
         "external_root_digest": external_root_digest,
         "active_lifecycle_snapshot_digest": active_lifecycle_snapshot_digest,
         "lifecycle_state": "active",
@@ -54,8 +54,6 @@ def build_test_host_verified_bootstrap_release_evidence(
 def _proof_payload(material: HostVerifiedBootstrapMaterial) -> bytes:
     return encode_typed_value(
         {
-            "release_metadata": material.release_metadata.model_dump(mode="python"),
-            "trust_anchor": material.trust_anchor.model_dump(mode="python"),
             "artifact_payloads": material.artifact_payloads.model_dump(mode="python"),
             "release_evidence": material.release_evidence.model_dump(mode="python"),
             "profile_enabled": material.profile_enabled,
@@ -80,7 +78,7 @@ class DeterministicTestHostBootstrapMaterialVerifier(HostBootstrapMaterialVerifi
         self,
         *,
         presentation: HostBootstrapMaterialPresentation,
-        required_trust_domain: Literal["production", "scenario_test"],
+        required_trust_domain: Literal["production", "local_level2", "scenario_test"],
         server_time: datetime,
     ) -> HostVerifiedBootstrapMaterial | None:
         del server_time

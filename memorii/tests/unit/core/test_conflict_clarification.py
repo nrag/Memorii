@@ -934,6 +934,9 @@ def _exercise_public_accepted_clarification_race(
     normalization, normalization_calls = _v3_normalization_host_builder(
         proposal=proposal
     )
+    abstaining_normalization, _initial_normalization_calls = (
+        _v3_normalization_host_builder()
+    )
     plane_path = tmp_path / "plane"
     plane = (
         MemoryPlaneService(record_store=JsonlMemoryPlaneStore(plane_path))
@@ -1005,7 +1008,7 @@ def _exercise_public_accepted_clarification_race(
         host_bootstrap_material_verifier=(
             DeterministicTestHostBootstrapMaterialVerifier()
         ),
-        source_normalization_host_bundle_builder=normalization,
+        source_normalization_host_bundle_builder=abstaining_normalization,
     )
     initialize_graph_fixture_capability_monitor(service)
     host = _host_ingress()
@@ -1032,6 +1035,13 @@ def _exercise_public_accepted_clarification_race(
     assert len(clarification_sources) == 1
     source.bind(service, memory_id=clarification_sources[0].memory_id)
     atomic = service._semantic_atomic_store
+    runtime = service._provider_ingestion._semantic_runtime
+    assert runtime is not None
+    object.__setattr__(
+        runtime,
+        "source_normalization_host_bundle",
+        normalization.build(atomic_store=atomic),
+    )
     atomic._semantic_integrity_linearization = None
     real_group_commit = atomic.commit_or_reload_bootstrap_graph_group_v3
 

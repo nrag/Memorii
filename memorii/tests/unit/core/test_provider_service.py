@@ -16,6 +16,7 @@ from memorii.core.memory_evolution import (
     RetrievalPurpose,
     StructuredQueryAnalyzer,
 )
+from memorii.core.memory_evolution.bootstrap_profile import BootstrapProfileReleaseVerifier
 from memorii.core.memory_evolution.capability_monitoring import (
     CapabilityEvidenceWindow,
     CapabilityMonitorTickResult,
@@ -78,10 +79,13 @@ def _build_production_scoped_provider_service(
 ) -> ProviderMemoryService:
     scenario_capability = build_scenario_test_host_capability()
     scenario_material = scenario_capability.bootstrap_material_presentation.material
+    profile = BootstrapProfileReleaseVerifier.verify(
+        payloads=scenario_material.artifact_payloads, enabled=scenario_material.profile_enabled
+    )
     production_material = replace(
         scenario_material,
         release_evidence=build_test_host_verified_bootstrap_release_evidence(
-            metadata=scenario_material.release_metadata,
+            profile=profile,
             external_root_digest=scenario_material.release_evidence.external_root_digest,
             active_lifecycle_snapshot_digest=(
                 scenario_material.release_evidence.active_lifecycle_snapshot_digest

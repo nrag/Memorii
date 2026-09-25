@@ -6,9 +6,16 @@ import json
 from dataclasses import replace
 from datetime import timedelta
 
+import pytest
 from memorii.core.memory_evolution.ingestion_contracts import encode_typed_value
+from memorii.core.memory_evolution.writer_admission import SemanticWriterAdmissionError
+from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
-from memorii.core.memory_plane.store import JsonlMemoryPlaneStore
+from memorii.core.memory_plane.store import (
+    JsonlMemoryPlaneStore,
+    MemoryPlanePrecondition,
+    MemoryPlaneWriteAuthorization,
+)
 from memorii.core.provider.models import ProviderOperation
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.semantic_ingestion.contracts import (
@@ -75,12 +82,17 @@ def _service(*, storage, builder) -> ProviderMemoryService:
     )
 
 
-def _sync(service: ProviderMemoryService):
+def _sync(
+    service: ProviderMemoryService,
+    *,
+    operation_id: str = "bootstrap-v3-jsonl-lost-ack",
+    task_id: str = "task:one",
+):
     return service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="Atlas owner is Bob.",
-        operation_id="bootstrap-v3-jsonl-lost-ack",
-        task_id="task:one",
+        operation_id=operation_id,
+        task_id=task_id,
         user_id="user:alice",
         authenticated_host_ingress=_host_ingress(),
     )
@@ -213,6 +225,70 @@ def test_jsonl_live_claim_denies_second_probe_and_stale_renewal(tmp_path) -> Non
     )
     assert isinstance(stale_fence, BootstrapRecoveryUnavailableV3)
     assert stale_fence.reason == "stale_predecessor"
+
+
+def test_recovery_renewal_rejects_a_control_substituted_from_another_operation(
+    tmp_path, monkeypatch
+) -> None:
+    """A renewal cannot pair one claim with another operation's control."""
+    service, repository = _pending_claim_service(tmp_path)
+    claim = _pending_claim(service)
+    _sync(service, operation_id="bootstrap-v3-other-operation", task_id="task:two")
+    foreign_control = next(
+        record
+        for record in service._memory_plane.list_records(
+            source_kind="semantic_ingestion_preplanning_control"
+        )
+        if record.content["control"]["operation_fence"]["operation_id"]
+        == "bootstrap-v3-other-operation"
+    )
+
+    captured_records: tuple[CanonicalMemoryRecord, ...] | None = None
+    captured_preconditions: tuple[MemoryPlanePrecondition, ...] | None = None
+    captured_authorization: MemoryPlaneWriteAuthorization | None = None
+    original = service._memory_plane.conditionally_write_records
+
+    class _RenewalCaptured(Exception):
+        pass
+
+    def capture_renewal(
+        records: tuple[CanonicalMemoryRecord, ...],
+        *,
+        preconditions: tuple[MemoryPlanePrecondition, ...] = (),
+        authorization: MemoryPlaneWriteAuthorization | None = None,
+    ) -> int:
+        nonlocal captured_records, captured_preconditions, captured_authorization
+        if (
+            len(records) == 2
+            and records[1].source_kind
+            == "semantic_ingestion_bootstrap_v3_recovery_index"
+        ):
+            captured_records = records
+            captured_preconditions = preconditions
+            captured_authorization = authorization
+            raise _RenewalCaptured
+        return original(
+            records, preconditions=preconditions, authorization=authorization
+        )
+
+    monkeypatch.setattr(
+        service._memory_plane, "conditionally_write_records", capture_renewal
+    )
+    with pytest.raises(_RenewalCaptured):
+        repository.renew_or_abort(
+            claim=claim, server_time=TEST_NOW, monotonic_tick=2
+        )
+
+    assert captured_records is not None
+    assert captured_preconditions is not None
+    before = service._memory_plane.read_write_snapshot()
+    with pytest.raises(SemanticWriterAdmissionError):
+        original(
+            (foreign_control, captured_records[1]),
+            preconditions=captured_preconditions,
+            authorization=captured_authorization,
+        )
+    assert service._memory_plane.read_write_snapshot() == before
 
 
 def test_jsonl_expired_claim_reclaims_ready_control_with_a_new_nonce(tmp_path) -> None:

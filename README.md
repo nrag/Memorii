@@ -152,23 +152,25 @@ ID so replay remains idempotent.
 
 ### Hermes External Memory Provider
 
-Install Memorii into the same Python environment used by Hermes, then select
-the pip-discovered external provider:
+Use the first-party Docker image with a persistent Hermes home:
 
 ```bash
-python -m pip install -e /path/to/Memorii/memorii
-hermes config set memory.provider memorii
-hermes memory status
+docker build -f Dockerfile.memorii -t hermes-memorii .
+docker volume create hermes-memorii-data
+docker run -d --name hermes-memorii -e HERMES_HOME=/opt/data \
+  -v hermes-memorii-data:/opt/data hermes-memorii tail -f /dev/null
+docker exec hermes-memorii /opt/hermes/.venv/bin/memorii-hermes authorize-local-level2 \
+  --hermes-home /opt/data --acknowledge-openai-egress
+docker exec hermes-memorii /opt/hermes/.venv/bin/hermes config set memory.provider memorii
+docker exec hermes-memorii /opt/hermes/.venv/bin/hermes memory status
+docker exec hermes-memorii /opt/hermes/.venv/bin/memorii-hermes inspect --hermes-home /opt/data
+docker restart hermes-memorii
 ```
 
-This makes the provider discoverable, but semantic activation also requires
-one verified deployment-owned `memorii.hermes.provider_service` factory. That
-factory returns a `HermesProviderRuntimeBinding`: a configured
-`ProviderMemoryService` and the host-owned issuer of authenticated ingress for
-each mutating Hermes hook. Memorii supplies the profile/session/user evidence
-to that issuer, then activates and recovers the returned service in process.
-Current production signing and factory configuration are not shipped with
-Memorii, so an ordinary install alone cannot run a semantic-memory trial.
+Authorization creates the profile-local Level 2 sidecar and explicitly
+acknowledges model egress. `inspect` reports persisted sources, terminal
+outcomes, graph changes, and retrieval projections. Restart reopens the same
+`/opt/data/memorii` store.
 
 Hermes passes the active profile's `hermes_home` to the provider. A configured
 factory receives `<hermes_home>/memorii` as its storage root; the Hermes home
@@ -179,8 +181,8 @@ existing Memorii state on restart. To disable the integration, select another
 `memory.provider` (or remove that configuration) and restart; this leaves the
 local `<hermes_home>/memorii` directory untouched.
 
-After a verified factory is installed, `hermes memory status` should report
-the `memorii` provider and its factory should accept the profile-local root.
+After authorization, `hermes memory status` should report the `memorii`
+provider as available.
 Hermes normally supplies completed transcript messages, which makes replay IDs
 stable and distinguishes equal text at different transcript positions. If a
 host omits messages, Memorii deterministically hashes the session and turn

@@ -78,6 +78,7 @@ class SourceNormalizationHostBundleBuilder:
     bootstrap_v3_linguistic_request: Callable[[BootstrapSemanticProposalRequestV3, str], BootstrapLinguisticAnalysisRequestV3] | None = None
     bootstrap_v3_predicate_request: Callable[[BootstrapSemanticProposalRequestV3], BootstrapPredicateEventDetectionRequestV3] | None = None
     bootstrap_v3_temporal_request: Callable[[BootstrapSemanticProposalRequestV3], BootstrapTemporalResolutionRequestV3] | None = None
+    authorization_is_current: Callable[[], bool] | None = None
 
     def build(self, *, atomic_store: SemanticIngestionAtomicStore) -> SourceNormalizationHostBundle:
         """Build the only concrete path from host authority to atomic reload."""
@@ -89,6 +90,9 @@ class SourceNormalizationHostBundleBuilder:
         )
         if bind_publication_lease is not None:
             bind_publication_lease(atomic_store.current_source_normalization_lease)
+        bind_runtime_store = getattr(self.authority_provider, "bind_runtime_store", None)
+        if bind_runtime_store is not None:
+            bind_runtime_store(atomic_store)
         repository = AtomicStoreSourceNormalizationRepository(atomic_store=atomic_store)
         recovery_repository = AtomicStoreBootstrapRecoveryClaimRepository(atomic_store=atomic_store)
         trusted_time = InjectedSourceNormalizationTrustedTime(
@@ -106,6 +110,7 @@ class SourceNormalizationHostBundleBuilder:
                 bootstrap_v3_proposal_producer=v3_proposal,
                 bootstrap_v3_evidence_producer=v3_evidence,
                 bootstrap_v3_interpreter=v3_interpreter,
+                authorization_is_current=self.authorization_is_current,
             ),
         )
 

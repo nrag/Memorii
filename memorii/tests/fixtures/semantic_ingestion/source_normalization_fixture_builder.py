@@ -36,7 +36,8 @@ from memorii.core.semantic_ingestion.contracts import (
     BootstrapAnalysisRouteBinding,
     BootstrapAnalysisRouteBindingSet,
     BootstrapAnalysisRouteProjection,
-    BootstrapDeclaredSegmentLanguageRoute,
+    BootstrapFreeformSegmentLanguageRoute,
+    BootstrapFreeformSegmentProof,
     BootstrapGraphPreExecutionManifestIdentityClosureV3,
     BootstrapLinguisticAnalysisRequestV3,
     BootstrapPredicateEventDetectionRequestV3,
@@ -354,54 +355,81 @@ def build_manifest_bound_prepared_source(*, source_id: str, source_digest: str, 
     return PreparedSource(**body, preparation_fingerprint=contract_digest(b"memorii.semantic-ingestion.prepared-source.v1", body))
 
 
-def build_bootstrap_declared_prepared_source(
+def build_bootstrap_freeform_prepared_source(
     *, source_id: str, source_digest: str, source_text: str
 ) -> PreparedSource:
-    """Build a real bootstrap-route source without turning it into a generic route.
+    """Build a real current-release Bootstrap V3 free-form source.
 
     This is deliberately test-only input construction.  Runtime code receives
     the resulting immutable ``PreparedSource`` exactly as it would after the
-    verified bootstrap preparation producer has selected a corpus form.
+    verified bootstrap preparation producer has admitted one child.
     """
-    from memorii.core.memory_evolution.bootstrap_profile import BootstrapSegmentGrammarProof
     from memorii.core.semantic_ingestion.contracts import PreparedSegment
 
     prepared = build_manifest_bound_prepared_source(
         source_id=source_id, source_digest=source_digest, source_text=source_text
     )
     old = prepared.segment_language_routes.routes[0]
-    proof = BootstrapSegmentGrammarProof.create(
-        source_id=prepared.source_id,
-        segment_id=old.segment_id,
-        language_evidence_tuple=("en", "authenticated_host_declaration", "trusted", "agrees"),
-        bootstrap_language_evidence_digest=_fixture_digest("bootstrap-language", source_id),
-        normalized_segment_digest=old.segment_text_content_digest,
-        corpus_case_id="fixture-supported-form",
-    )
-    route = BootstrapDeclaredSegmentLanguageRoute.create(
-        schema_id="memorii.semantic_ingestion.bootstrap_declared_segment_language_route",
+    segment = prepared.segments[0]
+    raw = prepared.semantic_text[
+        segment.owned_projection_span.start : segment.owned_projection_span.end
+    ].encode("utf-8")
+    route = BootstrapFreeformSegmentLanguageRoute.create(
+        schema_id="memorii.semantic_ingestion.bootstrap_freeform_segment_language_route",
         schema_version=1,
         source_id=prepared.source_id,
         source_digest=prepared.source_digest,
         segment_id=old.segment_id,
+        semantic_projection_id=prepared.semantic_text_projection.projection_text_artifact.artifact_id,
+        semantic_projection_digest=prepared.semantic_text_projection.projection_digest,
         parent_projection_segment_id=old.parent_projection_segment_id,
         segment_text_artifact_id=old.segment_text_artifact_id,
         segment_text_artifact_digest=old.segment_text_artifact_digest,
         segment_text_content_digest=old.segment_text_content_digest,
         declared_language="en",
-        language_evidence_kind="authenticated_host_declaration",
-        language_evidence_trust="trusted",
-        governance_agreement="agrees",
-        bootstrap_language_evidence_digest=proof.bootstrap_language_evidence_digest,
-        bootstrap_profile_manifest_digest=_fixture_digest("bootstrap-profile"),
-        preparation_policy_fingerprint=prepared.preparation_policy.policy_fingerprint,
+        prepared_segment_index=0,
+        unicode_scalar_start=segment.owned_projection_span.start,
+        unicode_scalar_end=segment.owned_projection_span.end,
+        utf8_byte_start=len(prepared.semantic_text[:segment.owned_projection_span.start].encode("utf-8")),
+        utf8_byte_end=len(prepared.semantic_text[:segment.owned_projection_span.end].encode("utf-8")),
+        raw_segment_digest=sha256(raw).hexdigest(),
+        profile_coordinate="fixture.bootstrap@current",
+        profile_digest=_fixture_digest("bootstrap-profile"),
+        capability_manifest_coordinate="fixture.capability@current",
+        capability_manifest_digest=_fixture_digest("bootstrap-capability"),
+        freeform_policy_coordinate="fixture.freeform-policy@1",
+        freeform_policy_digest=_fixture_digest("bootstrap-freeform-policy"),
+        component_root_coordinate="fixture.component-root@1",
         component_root_digest=_fixture_digest("bootstrap-components"),
-        corpus_case_id=proof.corpus_case_id,
-        normalized_segment_digest=proof.normalized_segment_digest,
-        grammar_proof_digest=proof.proof_digest,
-        decision="selected",
+        resource_policy_coordinate="fixture.text-preparation@1",
+        resource_policy_digest=prepared.preparation_policy.policy_fingerprint,
+        trusted_language_evidence_digest=_fixture_digest("bootstrap-language", source_id),
     )
-    segment = prepared.segments[0].model_copy(update={"language_route": route})
+    proof = BootstrapFreeformSegmentProof.create(
+        schema_id="memorii.semantic_ingestion.bootstrap_freeform_segment_proof", schema_version=1,
+        segment_id=route.segment_id, raw_segment_bytes=raw, source_id=route.source_id,
+        source_digest=route.source_digest, semantic_projection_id=route.semantic_projection_id,
+        semantic_projection_digest=route.semantic_projection_digest,
+        parent_projection_segment_id=route.parent_projection_segment_id,
+        prepared_segment_index=route.prepared_segment_index,
+        segment_text_artifact_id=route.segment_text_artifact_id,
+        segment_text_artifact_digest=route.segment_text_artifact_digest,
+        segment_text_content_digest=route.segment_text_content_digest,
+        unicode_scalar_start=route.unicode_scalar_start, unicode_scalar_end=route.unicode_scalar_end,
+        utf8_byte_start=route.utf8_byte_start, utf8_byte_end=route.utf8_byte_end,
+        raw_segment_digest=route.raw_segment_digest, profile_coordinate=route.profile_coordinate,
+        profile_digest=route.profile_digest, capability_manifest_coordinate=route.capability_manifest_coordinate,
+        capability_manifest_digest=route.capability_manifest_digest,
+        freeform_policy_coordinate=route.freeform_policy_coordinate,
+        freeform_policy_digest=route.freeform_policy_digest,
+        component_root_coordinate=route.component_root_coordinate,
+        component_root_digest=route.component_root_digest,
+        resource_policy_coordinate=route.resource_policy_coordinate,
+        resource_policy_digest=route.resource_policy_digest, declared_language=route.declared_language,
+        trusted_language_evidence_digest=route.trusted_language_evidence_digest,
+        route_digest=route.route_digest,
+    )
+    segment = segment.model_copy(update={"language_route": route})
     body = {
         name: getattr(prepared, name)
         for name in PreparedSource.model_fields
@@ -412,7 +440,7 @@ def build_bootstrap_declared_prepared_source(
         segment_language_routes=SegmentLanguageRouteSet.create(
             source_id=prepared.source_id, source_digest=prepared.source_digest, routes=(route,)
         ),
-        grammar_proofs=(proof,),
+        segment_proofs=(proof,),
     )
     return PreparedSource(
         **body,
@@ -438,7 +466,7 @@ class BootstrapV3FixtureAuthority:
 
 
 def build_bootstrap_v3_fixture_authority(*, source: PreparedSource) -> BootstrapV3FixtureAuthority:
-    """Issue one complete V3 runtime authority from a declared prepared source.
+    """Issue one complete V3 runtime authority from a free-form prepared source.
 
     The helper has no V2 recovery/request bridge: callers receive the exact
     V3 proposal request and factories consumed by the configured host bundle.
@@ -453,12 +481,12 @@ def build_bootstrap_v3_fixture_authority(*, source: PreparedSource) -> Bootstrap
     if len(routes_by_segment) != len(source.segment_language_routes.routes) or set(
         routes_by_segment
     ) != {segment.segment_id for segment in source.segments}:
-        raise ValueError("bootstrap V3 fixture requires one declared route per segment")
+        raise ValueError("bootstrap V3 fixture requires one freeform route per segment")
     if not all(
-        isinstance(route, BootstrapDeclaredSegmentLanguageRoute)
+        isinstance(route, BootstrapFreeformSegmentLanguageRoute)
         for route in routes_by_segment.values()
     ):
-        raise ValueError("bootstrap V3 fixture requires declared bootstrap routes")
+        raise ValueError("bootstrap V3 fixture requires current Bootstrap routes")
     base = build_clean_room_proposal_catalogs(
         source_id=source.source_id,
         source_digest=source.source_digest,
@@ -666,10 +694,6 @@ def build_source_normalization_authority_bundle(
         **authority_body,
         authority_digest=contract_digest(b"memorii.semantic-ingestion.proposal-run-production-authority.v1", authority_body),
     )
-    resources = tuple(
-        route.resource_binding for route in source.segment_language_routes.routes
-        if getattr(route, "resource_binding", None) is not None
-    )
     bootstrap_routes = bootstrap_analysis_routes or BootstrapAnalysisRouteBindingSet(
         source_id=source.source_id,
         source_digest=source.source_digest,
@@ -685,6 +709,12 @@ def build_source_normalization_authority_bundle(
             },
         ),
     )
+    resources = tuple(
+        sorted(
+            {binding.resource_binding for binding in bootstrap_routes.bindings},
+            key=lambda binding: binding.resource_binding_digest,
+        )
+    )
     derivation_body = {
         "source_id": source.source_id, "source_digest": source.source_digest,
         "preparation_fingerprint": source.preparation_fingerprint,
@@ -698,25 +728,25 @@ def build_source_normalization_authority_bundle(
         "graph_dependent_execution_policy": graph_dependent_execution_policy,
         "bootstrap_planning_policy_authority": BootstrapPlanningPolicyAuthority(
             predicate_registry_fingerprint=_fixture_digest("predicate-registry", source.source_id),
-            predicate_state_rule=PredicateStateRule(
+            predicate_state_rules=(PredicateStateRule(
                 predicate_id=planning_predicate_id, cardinality="single",
                 conflict_behavior="compete_within_slot",
                 qualifier_partition_fields=(),
                 value_identity_policy_id="memorii.fixture.entity-value.v1",
                 policy_fingerprint=_fixture_digest("predicate-state", source.source_id),
-            ),
+            ),),
             action_policy_fingerprint=_fixture_digest("action-policy", source.source_id),
             authority_digest=contract_digest(
                 b"memorii.semantic-ingestion.bootstrap-planning-policy-authority.v3",
                 {
                     "predicate_registry_fingerprint": _fixture_digest("predicate-registry", source.source_id),
-                    "predicate_state_rule": PredicateStateRule(
+                    "predicate_state_rules": (PredicateStateRule(
                         predicate_id=planning_predicate_id, cardinality="single",
                         conflict_behavior="compete_within_slot",
                         qualifier_partition_fields=(),
                         value_identity_policy_id="memorii.fixture.entity-value.v1",
                         policy_fingerprint=_fixture_digest("predicate-state", source.source_id),
-                    ),
+                    ),),
                     "action_policy_fingerprint": _fixture_digest("action-policy", source.source_id),
                 },
             ),
@@ -923,7 +953,7 @@ class DynamicSourceNormalizationAuthorityProvider:
 
         source = invocation.source
         if all(
-            isinstance(route, BootstrapDeclaredSegmentLanguageRoute)
+            isinstance(route, BootstrapFreeformSegmentLanguageRoute)
             for route in source.segment_language_routes.routes
         ):
             v3 = build_bootstrap_v3_fixture_authority(source=source)
@@ -1084,7 +1114,7 @@ __all__ = [
     "SourceBackedQuoteAuthority", "SourceNormalizationPublicationFixture",
     "DynamicSourceNormalizationAuthorityProvider", "DynamicSourceNormalizationProposalMaterials",
     "build_manifest_bound_prepared_source", "build_source_normalization_authority_bundle",
-    "build_bootstrap_declared_prepared_source", "build_bootstrap_v3_fixture_authority",
+    "build_bootstrap_freeform_prepared_source", "build_bootstrap_v3_fixture_authority",
     "BootstrapV3FixtureAuthority",
     "build_normal_fact_language_policies",
     "build_source_normalization_publication_fixture",

@@ -61,6 +61,9 @@ def load_config(path: Path) -> ShardConfig:
 
 def load_durations(path: Path) -> dict[str, float]:
     payload = _load_json_object(path)
+    unknown = set(payload).difference({"schema_version", "tests", "exit_status", "shard_index", "plan_digest"})
+    if unknown:
+        raise ValueError(f"unknown timing manifest fields: {sorted(unknown)}")
     if payload.get("schema_version") != 1:
         raise ValueError("unsupported timing manifest schema_version")
     tests = payload.get("tests")
@@ -121,6 +124,28 @@ def validate_timing_evidence(
         extra = sorted(seen_nodeids - set(expected_nodeids))
         raise ValueError(f"timing evidence coverage mismatch: missing={missing[:3]} extra={extra[:3]}")
     return merge_timing_manifests(paths)
+
+
+def validate_refreshed_plan_capacity(
+    *,
+    nodeids: tuple[str, ...],
+    durations: dict[str, float],
+    config: ShardConfig,
+) -> ShardPlan:
+    """Reject timing evidence that cannot produce a plan within the configured budget."""
+
+    refreshed = build_plan(
+        nodeids,
+        durations,
+        config.shard_count,
+        assignment_scope=config.assignment_scope,
+    )
+    validate_plan(refreshed, nodeids)
+    if refreshed.measured_count != len(nodeids):
+        raise ValueError("refreshed timing evidence does not cover every collected test")
+    if max(refreshed.estimated_seconds) > config.target_seconds:
+        raise ValueError("refreshed shard runtime exceeds target_seconds")
+    return refreshed
 
 
 def collect_nodeids(pytest_args: tuple[str, ...], *, cwd: Path) -> tuple[str, ...]:
@@ -287,6 +312,11 @@ def main(argv: list[str] | None = None) -> int:
             expected_shard_count=config.shard_count,
             expected_plan_digest=plan_digest(plan),
             expected_nodeids=nodeids,
+        )
+        validate_refreshed_plan_capacity(
+            nodeids=nodeids,
+            durations=merged,
+            config=config,
         )
         args.output.write_text(
             json.dumps({"schema_version": 1, "tests": merged}, indent=2, sort_keys=True) + "\n",

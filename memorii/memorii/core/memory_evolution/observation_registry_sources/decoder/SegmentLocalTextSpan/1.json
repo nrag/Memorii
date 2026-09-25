@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.SegmentLocalTextSpan.v1","implementation_source_digest":"894ed8707439f78c3d946cacb9af94437689c7cb39feeb51150967bee838b24c","role":"decoder","schema_id":"SegmentLocalTextSpan","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.SegmentLocalTextSpan.v1","implementation_source_digest":"ef5dfffd35f2b3409e1a075e7b7a60e2e8e10d85452744bd78fbc6bc958a57e6","role":"decoder","schema_id":"SegmentLocalTextSpan","schema_version":"1","typed_root_kind":"model"}

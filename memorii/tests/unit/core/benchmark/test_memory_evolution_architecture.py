@@ -37,12 +37,16 @@ DYNAMIC_IMPORT_OWNERS = {
         "optional external rank_bm25 dependency",
     ),
     PACKAGE_ROOT / "memory_evolution" / "bootstrap_profile.py": (
-        frozenset({"importlib", "importlib.metadata.EntryPoint.load"}),
+        frozenset({"importlib.metadata.EntryPoint.load"}),
         "installed host capability discovery and post-verification manifest-bound component loading",
     ),
     PACKAGE_ROOT / "memory_evolution" / "observation_activation_package.py": (
         frozenset({"importlib.metadata"}),
         "installed distribution metadata, RECORD, and package-byte verification for the observation activation payload",
+    ),
+    PACKAGE_ROOT / "semantic_ingestion" / "project_assertions_profile.py": (
+        frozenset({"importlib", "importlib.metadata", "importlib.resources"}),
+        "installed Memorii package resource and distribution-byte verification for the project assertion profile",
     ),
     SOURCE_ROOT / "tools" / "semantic_ingestion_activation_target_release.py": (
         frozenset({"importlib"}),

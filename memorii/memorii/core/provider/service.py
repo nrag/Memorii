@@ -327,6 +327,7 @@ class ProviderMemoryService:
         _host_construction: object | None = None,
     ) -> None:
         self._memory_plane = memory_plane or MemoryPlaneService()
+        self._bootstrap_release_evidence = None
         self._scoped_read_authority = scoped_read_authority
         self._canonical_evidence_requested = canonical_evidence_enabled
         verified_material = None
@@ -404,14 +405,18 @@ class ProviderMemoryService:
         ):
             try:
                 presentation = host_bootstrap_capability.load_bootstrap_material_presentation()
+                required_bootstrap_domain = (
+                    "local_level2"
+                    if getattr(host_bootstrap_capability, "execution_class", None)
+                    == "local_level2"
+                    else "scenario_test"
+                    if _host_construction is self._SCENARIO_TEST_CONSTRUCTION
+                    else "production"
+                )
                 verified_material = (
                     host_bootstrap_material_verifier.verify(
                         presentation=presentation,
-                        required_trust_domain=(
-                            "scenario_test"
-                            if _host_construction is self._SCENARIO_TEST_CONSTRUCTION
-                            else "production"
-                        ),
+                        required_trust_domain=required_bootstrap_domain,
                         server_time=(now_provider or (lambda: datetime.now(UTC)))(),
                     )
                     if presentation is not None
@@ -420,7 +425,10 @@ class ProviderMemoryService:
             except (ImportError, OSError, RuntimeError, TypeError, ValueError):
                 verified_material = None
         required_domain = (
-            "scenario_test"
+            "local_level2"
+            if getattr(host_bootstrap_capability, "execution_class", None)
+            == "local_level2"
+            else "scenario_test"
             if _host_construction is self._SCENARIO_TEST_CONSTRUCTION
             else "production"
         )
@@ -448,6 +456,7 @@ class ProviderMemoryService:
             )
             try:
                 self._bootstrap_profile = verify_bootstrap_profile(verified_material)
+                self._bootstrap_release_evidence = verified_material.release_evidence
                 # The canonical-evidence substitution is the default for every
                 # verified runtime; an explicit request is the only way off
                 # (parity proofs and rollback).
@@ -561,6 +570,13 @@ class ProviderMemoryService:
             except (TypedValueRegistryConfigurationError, ObservationActivationTargetConfigurationError):
                 raise
             except (ImportError, OSError, RuntimeError, TypeError, ValueError) as exc:
+                if getattr(host_bootstrap_capability, "execution_class", None) == "local_level2":
+                    # A verified local activation target must never be silently
+                    # reduced to a source-only provider.  Preserve the causal
+                    # construction error for the sole installed Level 2 root.
+                    raise ObservationActivationTargetConfigurationError(
+                        "local Level 2 semantic runtime construction failed"
+                    ) from exc
                 if isinstance(host_bootstrap_capability, BuiltInLocalHostSemanticIngestionCapability) and host_bootstrap_capability.observation_activation_target_configuration is not None:
                     raise ObservationActivationTargetConfigurationError("configured activation target runtime construction failed") from exc
                 semantic_runtime = None
@@ -663,6 +679,7 @@ class ProviderMemoryService:
             memory_plane=self._memory_plane,
             admission_service=self._semantic_ingestion_admission,
             bootstrap_profile=self._bootstrap_profile,
+            bootstrap_release_evidence=self._bootstrap_release_evidence,
             bootstrap_unavailable_reason=self._bootstrap_unavailable_reason,
             atomic_store=self._semantic_atomic_store,
             writer_admission=self._semantic_writer_admission,

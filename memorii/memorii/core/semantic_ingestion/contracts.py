@@ -16,14 +16,19 @@ from hashlib import sha256
 from itertools import groupby
 from typing import TYPE_CHECKING, Annotated, ClassVar, Literal, Protocol, TypeAlias, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    model_serializer,
+    model_validator,
+)
 
 from memorii.core.memory_evolution.atomic_store import (
     AtomicGenerationRequest,
     OperationLeaseBinding,
     generation_request_digest,
 )
-from memorii.core.memory_evolution.bootstrap_profile import BootstrapSegmentGrammarProof
 from memorii.core.memory_evolution.graph_records import (
     CanonicalGraphRecordCodecEntry,
     GraphReadSet,
@@ -1057,7 +1062,12 @@ class TemporalEvidenceDecisionClosure(BaseModel):
     @model_validator(mode="after")
     def validate_closure(self) -> TemporalEvidenceDecisionClosure:
         for candidate in self.candidates:
-            TemporalEvidenceCandidate.model_validate(candidate.model_dump(mode="python"))
+            # Pydantic has already materialized every nested candidate before
+            # this model validator runs.  Reconstructing it here recursively
+            # revalidates the complete replay payload for every enclosing
+            # projection artifact.  Invoke the candidate's closed digest and
+            # shape check directly instead.
+            candidate.validate_digest()
         ids = tuple(candidate.candidate_id for candidate in self.candidates)
         if ids != tuple(sorted(set(ids))):
             raise ValueError("temporal candidates must be ordered by candidate ID")
@@ -1826,6 +1836,10 @@ class SemanticLifecycleTransition(BaseModel):
             "untrusted_language",
             "language_mismatch",
             "non_english_language",
+            "empty_segment",
+            "normalization_mismatch",
+            "prohibited_residue",
+            "segment_limit",
             "mixed_residue",
             "unsupported_grammar",
             "extractor_abstained",
@@ -1923,6 +1937,10 @@ class SemanticLifecycleTransition(BaseModel):
             "untrusted_language",
             "language_mismatch",
             "non_english_language",
+            "empty_segment",
+            "normalization_mismatch",
+            "prohibited_residue",
+            "segment_limit",
             "mixed_residue",
             "unsupported_grammar",
             "extractor_abstained",
@@ -2668,54 +2686,133 @@ class SegmentLanguageRoute(BaseModel):
         )
 
 
-class BootstrapDeclaredSegmentLanguageRoute(BaseModel):
-    """Closed V1 local-English route; it is intentionally not a classifier route."""
+class BootstrapFreeformSegmentLanguageRoute(BaseModel):
+    """The single current-release route for a policy-admitted child."""
 
-    schema_id: Literal["memorii.semantic_ingestion.bootstrap_declared_segment_language_route"]
+    schema_id: Literal["memorii.semantic_ingestion.bootstrap_freeform_segment_language_route"]
     schema_version: Literal[1]
     source_id: str = Field(min_length=1)
     source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    segment_id: str = Field(min_length=1)
+    semantic_projection_id: str = Field(min_length=1)
+    semantic_projection_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     parent_projection_segment_id: str = Field(min_length=1)
+    segment_id: str = Field(min_length=1)
     segment_text_artifact_id: str = Field(min_length=1)
     segment_text_artifact_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     segment_text_content_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    declared_language: Literal["en"]
-    language_evidence_kind: Literal["authenticated_host_declaration"]
-    language_evidence_trust: Literal["trusted"]
-    governance_agreement: Literal["agrees"]
-    bootstrap_language_evidence_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    bootstrap_profile_manifest_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    preparation_policy_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    prepared_segment_index: int = Field(ge=0)
+    unicode_scalar_start: int = Field(ge=0)
+    unicode_scalar_end: int = Field(ge=1)
+    utf8_byte_start: int = Field(ge=0)
+    utf8_byte_end: int = Field(ge=1)
+    raw_segment_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    profile_coordinate: str = Field(min_length=1)
+    profile_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    capability_manifest_coordinate: str = Field(min_length=1)
+    capability_manifest_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    freeform_policy_coordinate: str = Field(min_length=1)
+    freeform_policy_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    component_root_coordinate: str = Field(min_length=1)
     component_root_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    corpus_case_id: str = Field(min_length=1)
-    normalized_segment_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    grammar_proof_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    decision: Literal["selected"]
+    resource_policy_coordinate: str = Field(min_length=1)
+    resource_policy_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    declared_language: Literal["en"]
+    trusted_language_evidence_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     route_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     @model_validator(mode="after")
-    def validate_route(self) -> BootstrapDeclaredSegmentLanguageRoute:
+    def validate_route(self) -> BootstrapFreeformSegmentLanguageRoute:
+        if self.unicode_scalar_end <= self.unicode_scalar_start:
+            raise ValueError("freeform route scalar range must be nonempty")
+        if self.utf8_byte_end <= self.utf8_byte_start:
+            raise ValueError("freeform route UTF-8 range must be nonempty")
         body = self.model_dump(mode="python", exclude={"route_digest"})
         if self.route_digest != contract_digest(
-            b"memorii.semantic_ingestion.bootstrap_declared_segment_language_route.v1", body
+            b"bootstrap_freeform_segment_language_route.v1", body
         ):
-            raise ValueError("bootstrap declared segment language route digest mismatch")
+            raise ValueError("bootstrap freeform segment language route digest mismatch")
         return self
 
     @classmethod
-    def create(cls, **values: object) -> BootstrapDeclaredSegmentLanguageRoute:
+    def create(cls, **values: object) -> BootstrapFreeformSegmentLanguageRoute:
         return cls(
             **values,
             route_digest=contract_digest(
-                b"memorii.semantic_ingestion.bootstrap_declared_segment_language_route.v1", values
+                b"bootstrap_freeform_segment_language_route.v1", values
             ),
         )
 
+class BootstrapFreeformSegmentProof(BaseModel):
+    """One sealed source-byte proof for exactly one current-release child."""
 
-LanguageRoute = SegmentLanguageRoute | BootstrapDeclaredSegmentLanguageRoute
+    schema_id: Literal["memorii.semantic_ingestion.bootstrap_freeform_segment_proof"]
+    schema_version: Literal[1]
+    segment_id: str = Field(min_length=1)
+    raw_segment_bytes: bytes = Field(min_length=1)
+    source_id: str = Field(min_length=1)
+    source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    semantic_projection_id: str = Field(min_length=1)
+    semantic_projection_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    parent_projection_segment_id: str = Field(min_length=1)
+    prepared_segment_index: int = Field(ge=0)
+    segment_text_artifact_id: str = Field(min_length=1)
+    segment_text_artifact_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    segment_text_content_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    unicode_scalar_start: int = Field(ge=0)
+    unicode_scalar_end: int = Field(ge=1)
+    utf8_byte_start: int = Field(ge=0)
+    utf8_byte_end: int = Field(ge=1)
+    raw_segment_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    profile_coordinate: str = Field(min_length=1)
+    profile_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    capability_manifest_coordinate: str = Field(min_length=1)
+    capability_manifest_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    freeform_policy_coordinate: str = Field(min_length=1)
+    freeform_policy_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    component_root_coordinate: str = Field(min_length=1)
+    component_root_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    resource_policy_coordinate: str = Field(min_length=1)
+    resource_policy_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    declared_language: Literal["en"]
+    trusted_language_evidence_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    route_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    proof_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    @model_validator(mode="after")
+    def validate_proof(self) -> BootstrapFreeformSegmentProof:
+        if sha256(self.raw_segment_bytes).hexdigest() != self.raw_segment_digest or (
+            len(self.raw_segment_bytes) != self.utf8_byte_end - self.utf8_byte_start
+        ):
+            raise ValueError("freeform proof does not bind its exact raw bytes")
+        try:
+            text = self.raw_segment_bytes.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValueError("freeform proof has invalid UTF-8") from exc
+        if len(text) != self.unicode_scalar_end - self.unicode_scalar_start:
+            raise ValueError("freeform proof scalar range does not equal raw bytes")
+        body = self.model_dump(mode="python", exclude={"proof_digest"})
+        if self.proof_digest != contract_digest(
+            b"bootstrap_freeform_segment_proof.v1", body
+        ):
+            raise ValueError("bootstrap freeform segment proof digest mismatch")
+        return self
+
+    @classmethod
+    def create(cls, **values: object) -> BootstrapFreeformSegmentProof:
+        return cls(
+            **values,
+            proof_digest=contract_digest(b"bootstrap_freeform_segment_proof.v1", values),
+        )
+
+
+LanguageRoute = (
+    SegmentLanguageRoute
+    | BootstrapFreeformSegmentLanguageRoute
+)
 
 
 class SegmentLanguageRouteSet(BaseModel):
@@ -4965,6 +5062,19 @@ class PreparedSegment(BaseModel):
             raise ValueError("prepared segment owned and context spans must preserve coordinates")
         route = self.language_route
         artifact = self.context_segment_span.artifact
+        if isinstance(route, BootstrapFreeformSegmentLanguageRoute):
+            if (
+                route.segment_id != self.segment_id
+                or route.parent_projection_segment_id != self.parent_projection_segment_id
+                or route.semantic_projection_digest != self.context_projection_span.artifact.artifact_digest
+                or route.unicode_scalar_start != self.owned_projection_span.start
+                or route.unicode_scalar_end != self.owned_projection_span.end
+                or route.segment_text_artifact_id != artifact.artifact_id
+                or route.segment_text_artifact_digest != artifact.artifact_digest
+                or route.segment_text_content_digest != artifact.content_digest
+            ):
+                raise ValueError("prepared segment freeform route must bind exact child coordinates and local artifact")
+            return self
         if (
             route.segment_id != self.segment_id
             or route.parent_projection_segment_id != self.parent_projection_segment_id
@@ -5173,7 +5283,7 @@ class PreparedSource(BaseModel):
     sentence_spans: tuple[SourceSpanReference, ...]
     segments: tuple[PreparedSegment, ...]
     token_spans: tuple[SourceSpanReference, ...]
-    grammar_proofs: tuple[BootstrapSegmentGrammarProof, ...]
+    segment_proofs: tuple[BootstrapFreeformSegmentProof, ...]
     preparation_policy: TextPreparationPolicy
     preparation_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     status: Literal["complete", "unsupported", "failed"]
@@ -5203,36 +5313,54 @@ class PreparedSource(BaseModel):
             raise ValueError("prepared source governance artifact must contain its exact carriers")
         ids = tuple(segment.segment_id for segment in self.segments)
         parents = tuple(segment.parent_projection_segment_id for segment in self.segments)
+        route_ids = tuple(route.segment_id for route in self.segment_language_routes.routes)
         if (
             not ids
             or len(set(ids)) != len(ids)
-            or tuple(route.segment_id for route in self.segment_language_routes.routes) != ids
+            or route_ids != ids
         ):
             raise ValueError("prepared source routes must be an ordered segment bijection")
         if tuple(route.parent_projection_segment_id for route in self.segment_language_routes.routes) != parents:
             raise ValueError("prepared source routes must copy child parent coordinates")
-        bootstrap_routes = tuple(
+        freeform_routes = tuple(
             route
             for route in self.segment_language_routes.routes
-            if isinstance(route, BootstrapDeclaredSegmentLanguageRoute)
+            if isinstance(route, BootstrapFreeformSegmentLanguageRoute)
         )
-        if bootstrap_routes:
+        if freeform_routes:
+            freeform_proofs = self.segment_proofs
             if (
-                tuple(proof.segment_id for proof in self.grammar_proofs)
-                != tuple(route.segment_id for route in bootstrap_routes)
-                or len(bootstrap_routes) != len(self.segment_language_routes.routes)
+                len(freeform_routes) != len(self.segment_language_routes.routes)
+                or len(freeform_proofs) != len(self.segment_proofs)
+                or tuple(proof.segment_id for proof in freeform_proofs)
+                != tuple(route.segment_id for route in freeform_routes)
                 or any(
-                    proof.source_id != self.source_id
-                    or proof.normalized_segment_digest != route.normalized_segment_digest
-                    or proof.proof_digest != route.grammar_proof_digest
-                    or proof.bootstrap_language_evidence_digest != route.bootstrap_language_evidence_digest
-                    for proof, route in zip(self.grammar_proofs, bootstrap_routes, strict=True)
+                    any(
+                        getattr(proof, field) != getattr(route, field)
+                        for field in (
+                            "segment_id", "source_id", "source_digest", "semantic_projection_id",
+                            "semantic_projection_digest", "parent_projection_segment_id",
+                            "segment_text_artifact_id", "segment_text_artifact_digest",
+                            "segment_text_content_digest",
+                            "prepared_segment_index", "unicode_scalar_start", "unicode_scalar_end",
+                            "utf8_byte_start", "utf8_byte_end", "raw_segment_digest",
+                            "profile_coordinate", "profile_digest", "capability_manifest_coordinate",
+                            "capability_manifest_digest", "freeform_policy_coordinate",
+                            "freeform_policy_digest", "component_root_coordinate", "component_root_digest",
+                            "resource_policy_coordinate", "resource_policy_digest", "declared_language",
+                            "trusted_language_evidence_digest", "route_digest",
+                        )
+                    )
+                    for proof, route in zip(freeform_proofs, freeform_routes, strict=True)
                 )
             ):
-                raise ValueError("prepared source bootstrap grammar proofs must be ordered route bijection")
-        elif self.grammar_proofs:
+                raise ValueError("prepared source freeform proofs must be an ordered route bijection")
+        if not freeform_routes and self.segment_proofs:
             raise ValueError("non-bootstrap prepared source cannot carry grammar proofs")
-        route_by_artifact = {route.segment_text_artifact_digest: route for route in self.segment_language_routes.routes}
+        route_by_artifact = {
+            route.segment_text_artifact_digest: route
+            for route in self.segment_language_routes.routes
+        }
         for span in (*self.sentence_spans, *self.token_spans):
             route = route_by_artifact.get(span.segment_local_span.artifact.artifact_digest)
             if route is None:
@@ -5289,6 +5417,25 @@ class PreparedSource(BaseModel):
                     != parent.semantic_text[child.owned_segment_span.start : child.owned_segment_span.end]
                 ):
                     raise ValueError("prepared source children must partition exact parent projection coordinates")
+                if freeform_routes:
+                    route = next(
+                        item for item in freeform_routes if item.segment_id == child.segment_id
+                    )
+                    raw = self.semantic_text[
+                        child.owned_projection_span.start : child.owned_projection_span.end
+                    ]
+                    prefix = self.semantic_text[: child.owned_projection_span.start]
+                    if (
+                        route.semantic_projection_id
+                        != self.semantic_text_projection.projection_text_artifact.artifact_id
+                        or route.semantic_projection_digest != self.semantic_text_projection.projection_digest
+                        or route.unicode_scalar_start != child.owned_projection_span.start
+                        or route.unicode_scalar_end != child.owned_projection_span.end
+                        or route.utf8_byte_start != len(prefix.encode("utf-8"))
+                        or route.utf8_byte_end != len((prefix + raw).encode("utf-8"))
+                        or route.raw_segment_digest != sha256(raw.encode("utf-8")).hexdigest()
+                    ):
+                        raise ValueError("prepared source freeform route does not bind its exact child")
                 cursor = child.owned_projection_span.end
             if cursor != parent.projection_span.end:
                 raise ValueError("prepared source children must completely partition their parent projection span")
@@ -6589,10 +6736,11 @@ class LinguisticAnalysisRequest(_ContentAddressedContract):
 
     @model_validator(mode="after")
     def validate_request(self) -> LinguisticAnalysisRequest:
-        binding = self.segment.language_route.resource_binding
+        route = self.segment.language_route
+        binding = route.resource_binding if isinstance(route, SegmentLanguageRoute) else None
         if (
             binding is None
-            or self.segment.language_route.decision != "selected"
+            or route.decision != "selected"
             or self.analyzer_manifest.manifest_digest
             != (
                 binding.stanza_analyzer_manifest_digest
@@ -6614,10 +6762,11 @@ class PredicateEventDetectionRequest(_ContentAddressedContract):
 
     @model_validator(mode="after")
     def validate_request(self) -> PredicateEventDetectionRequest:
-        binding = self.segment.language_route.resource_binding
+        route = self.segment.language_route
+        binding = route.resource_binding if isinstance(route, SegmentLanguageRoute) else None
         if (
             binding is None
-            or self.segment.language_route.decision != "selected"
+            or route.decision != "selected"
             or self.predicate_event_manifest.manifest_digest != binding.predicate_event_manifest_digest
             or self.predicate_event_manifest.language != self.segment.language_route.selected_language
         ):
@@ -6635,10 +6784,11 @@ class TemporalResolutionRequest(_ContentAddressedContract):
 
     @model_validator(mode="after")
     def validate_request(self) -> TemporalResolutionRequest:
-        binding = self.segment.language_route.resource_binding
+        route = self.segment.language_route
+        binding = route.resource_binding if isinstance(route, SegmentLanguageRoute) else None
         if (
             binding is None
-            or self.segment.language_route.decision != "selected"
+            or route.decision != "selected"
             or self.resolver_manifest.manifest_digest != binding.temporal_resolver_manifest_digest
         ):
             raise ValueError("temporal request manifest must match selected route")
@@ -6818,7 +6968,7 @@ def _validate_selected_lane_outcomes(
         route = route_by_segment.get(outcome.segment_id)
         if route is None or outcome.segment_language_route_digest != route.route_digest:
             raise ValueError("analysis lane outcome must bind an exact route")
-        if route.decision != "selected":
+        if not isinstance(route, SegmentLanguageRoute) or route.decision != "selected":
             if outcome.status != "evidence_only":
                 raise ValueError("blocked route lane outcome must be evidence-only")
             continue
@@ -7314,7 +7464,7 @@ class TemporalResolution(_ContentAddressedContract):
 
 SourceSemanticContext.model_rebuild()
 SegmentLanguageRoute.model_rebuild()
-BootstrapDeclaredSegmentLanguageRoute.model_rebuild()
+BootstrapFreeformSegmentLanguageRoute.model_rebuild()
 
 
 
@@ -7650,14 +7800,14 @@ class BootstrapAnalysisProvenanceV1(BaseModel):
 
 
 class BootstrapAnalysisRouteProjection(_ContentAddressedContract):
-    """Ephemeral join of a declared bootstrap route and host lane authority.
+    """Ephemeral join of the current Bootstrap V3 route and host lane authority.
 
     This is deliberately not a ``SegmentLanguageRoute``.  It exists only while
     materializing proposal and local-analysis requests; durable artifacts carry
     the flattened provenance below instead.
     """
 
-    bootstrap_route: BootstrapDeclaredSegmentLanguageRoute
+    bootstrap_route: BootstrapFreeformSegmentLanguageRoute
     binding: BootstrapAnalysisRouteBinding
     bootstrap_analysis_provenance: BootstrapAnalysisProvenanceV1
     projection_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -9504,8 +9654,17 @@ class BootstrapSemanticReductionAuthorityMemberV3(_BootstrapV3Contract):
         policy_bytes = encode_typed_value(canonical_contract_value(self.execution_policy))
         registry_bytes = encode_typed_value(canonical_contract_value(self.capability_registry))
         core = self.normalization_request_core
+        fully_abstained = (
+            bool(core.proposal_payload.normalized_proposals)
+            and all(
+                proposal.status == "abstained" and not proposal.operation_members
+                for proposal in core.proposal_payload.normalized_proposals
+            )
+            and not core.source_alignment.operation_alignments
+            and not core.source_alignment.source_dependency_groups
+        )
         if (
-            not self.operation_inputs
+            (not self.operation_inputs and not fully_abstained)
             or tuple(
                 (item.dependency_group.group_id, item.operation_id)
                 for item in self.operation_inputs
@@ -10118,7 +10277,7 @@ class BootstrapTransactionGroupPlanV3(_BootstrapV3Contract):
     @model_validator(mode="after")
     def validate_plan_members(self) -> BootstrapTransactionGroupPlanV3:
         ids = tuple(member.transaction_group_id for member in self.group_members)
-        if not ids or self.canonical_group_order != ids or ids != tuple(sorted(set(ids))):
+        if self.canonical_group_order != ids or ids != tuple(sorted(set(ids))):
             raise ValueError("bootstrap graph plan membership is invalid")
         return self
 
@@ -10207,8 +10366,7 @@ class BootstrapInitialAttemptAuthorityV3(_BootstrapV3Contract):
             item.authorization_digest for item in self.planning_authorizations
         )
         if (
-            not group_ids
-            or group_ids != tuple(sorted(set(group_ids)))
+            group_ids != tuple(sorted(set(group_ids)))
             or len(set(authorization_digests)) != len(authorization_digests)
         ):
             raise ValueError("bootstrap initial authorizations are invalid")
@@ -10382,7 +10540,7 @@ class BootstrapSourcePlanLineageV3(_BootstrapV3Contract):
 
     @model_validator(mode="after")
     def validate_lineage(self) -> BootstrapSourcePlanLineageV3:
-        if not self.entries or tuple(item.lineage_ordinal for item in self.entries) != tuple(range(len(self.entries))):
+        if tuple(item.lineage_ordinal for item in self.entries) != tuple(range(len(self.entries))):
             raise ValueError("bootstrap graph lineage order is invalid")
         latest_by_group: dict[str, str] = {}
         for entry in self.entries:
@@ -10961,12 +11119,10 @@ class BootstrapGraphTargetMaterializationPlanV3(_BootstrapV3Contract):
         bindings = self.observation_mention_bindings
         expected_mentions = None
         if bindings and isinstance(self.operation_seed, BootstrapNativeFactPlanningSeedV3):
-            if self.operation_seed.fact.object.kind != "entity":
-                raise ValueError("native target plan observation authority is invalid")
-            expected_mentions = {
-                self.operation_seed.fact.subject_mention_digest,
-                self.operation_seed.fact.object.mention_digest,
-            }
+            fact = self.operation_seed.fact
+            expected_mentions = {fact.subject_mention_digest}
+            if fact.object.kind == "entity":
+                expected_mentions.add(fact.object.mention_digest)
         if (
             bindings != tuple(sorted(bindings, key=lambda item: item.binding_digest))
             or len({item.mention_digest for item in bindings}) != len(bindings)
@@ -11083,12 +11239,9 @@ class BootstrapNativeFactEffectV3(_BootstrapV3Contract):
         bindings = self.observation_mention_bindings
         expected_mentions = None
         if bindings:
-            if self.fact.object.kind != "entity":
-                raise ValueError("native fact observation authority is invalid")
-            expected_mentions = {
-                self.fact.subject_mention_digest,
-                self.fact.object.mention_digest,
-            }
+            expected_mentions = {self.fact.subject_mention_digest}
+            if self.fact.object.kind == "entity":
+                expected_mentions.add(self.fact.object.mention_digest)
         if (
             bindings != tuple(sorted(bindings, key=lambda item: item.binding_digest))
             or len({item.mention_digest for item in bindings}) != len(bindings)
@@ -11939,10 +12092,19 @@ class BootstrapGraphTerminalPublicationIntentV3(_BootstrapV3Contract):
             required.add("source_observation_intent")
         repeated = {"bootstrap_source_plan_lineage_entry", "transaction_group_result"}
         present = set(kinds)
+        allowed_member_sets = (
+            required,
+            required - {"transaction_group_result"},
+            required
+            - {
+                "bootstrap_source_plan_lineage_entry",
+                "transaction_group_result",
+            },
+        )
         if (
             not kinds or tuple(sorted(kinds, key=order.__getitem__)) != kinds
             or len(ids) != len(set(ids))
-            or present not in (required, required - {"transaction_group_result"})
+            or present not in allowed_member_sets
             or any(kinds.count(kind) != 1 for kind in present - repeated)
             or self.expected_operation_generation != self.expected_artifact_generation
             or self.locator_digest != contract_digest(
@@ -12197,6 +12359,33 @@ class BootstrapGraphTerminalPublicationRequestV3(_BootstrapV3Contract):
 
     @model_validator(mode="after")
     def validate_terminal_request(self) -> BootstrapGraphTerminalPublicationRequestV3:
+        plan_group_ids = tuple(
+            item.transaction_group_id for item in self.final_plan.group_members
+        )
+        lineage_group_ids = tuple(
+            item[0] for item in self.complete_lineage.latest_entry_by_group
+        )
+        request_group_ids = tuple(
+            item.group_id for item in self.coordinator_request.source_dependency_groups
+        )
+        operation_ids = tuple(
+            sorted(
+                operation.operation_id
+                for group in self.final_plan.group_members
+                for operation in group.operation_plans
+            )
+        )
+        proposals = (
+            self.coordinator_request.normalization_replay.source_normalization_request
+            .proposal_run.proposal_payload.normalized_proposals
+        )
+        fully_abstained = (
+            bool(proposals)
+            and all(
+                proposal.status == "abstained" and not proposal.operation_members
+                for proposal in proposals
+            )
+        )
         if (
             self.control_epoch.epoch_digest != self.publication_intent.control_epoch_digest
             or self.operation_fence_binding != self.handoff_core.operation_fence_binding
@@ -12218,6 +12407,11 @@ class BootstrapGraphTerminalPublicationRequestV3(_BootstrapV3Contract):
             or self.predecessor_generation.operation_id != self.operation_fence_binding.operation_id
             or self.predecessor_generation.request_digest != self.coordinator_request.request_digest
             or self.predecessor_generation.control_epoch_digest != self.control_epoch.epoch_digest
+            or plan_group_ids != lineage_group_ids
+            or plan_group_ids != request_group_ids
+            or (not plan_group_ids and not fully_abstained)
+            or self.canonical_source_result_input.completed_canonical_source_result.operation_ids
+            != operation_ids
         ):
             raise ValueError("bootstrap graph terminal publication request is invalid")
         expected_group_result_digests = tuple(
@@ -13916,7 +14110,8 @@ _CONTRACT_KINDS: dict[type[BaseModel], str] = {
     GovernanceCarrierArtifact: "governance_carrier_artifact",
     SegmentLanguageResourceBinding: "segment_language_resource_binding",
     SegmentLanguageRoute: "segment_language_route",
-    BootstrapDeclaredSegmentLanguageRoute: "bootstrap_declared_segment_language_route",
+    BootstrapFreeformSegmentLanguageRoute: "bootstrap_freeform_segment_language_route",
+    BootstrapFreeformSegmentProof: "bootstrap_freeform_segment_proof",
     SegmentLanguageRouteSet: "segment_language_route_set",
     TextPreparationPolicy: "text_preparation_policy",
     TextPreparationRequest: "text_preparation_request",
@@ -14386,13 +14581,26 @@ def decode_semantic_contract(
 
 
 def restore_closed_wire_enums(value: object) -> object:
-    """Restore the one strict enum lowered by the generic CTV codec."""
+    """Restore strict enums lowered by the generic CTV codec."""
     if isinstance(value, dict):
+        bootstrap_typed_literal = (
+            value.get("schema_version") == 3
+            and set(value)
+            == {
+                "schema_version",
+                "literal_type",
+                "canonical_value",
+                "unit",
+                "literal_digest",
+            }
+        )
         return {
             key: SourceModality(item)
             if key == "modality" and isinstance(item, str)
             else ClaimValueType(item)
             if key == "object_literal_type" and isinstance(item, str)
+            else ClaimValueType(item)
+            if bootstrap_typed_literal and key == "literal_type" and isinstance(item, str)
             else ExtractionTriggerMode(item)
             if key == "trigger_mode" and isinstance(item, str)
             else restore_closed_wire_enums(item)
@@ -14454,7 +14662,8 @@ __all__ = [
     "LanguageCandidate",
     "SegmentLanguageResourceBinding",
     "SegmentLanguageRoute",
-    "BootstrapDeclaredSegmentLanguageRoute",
+    "BootstrapFreeformSegmentLanguageRoute",
+    "BootstrapFreeformSegmentProof",
     "SegmentLanguageRouteSet",
     "SourceSemanticContext",
     "SemanticProjectionSegment",

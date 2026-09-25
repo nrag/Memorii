@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta, timezone
 from hashlib import sha256
+from unittest.mock import patch
 
 import pytest
 from memorii.core.memory_evolution.admission import (
@@ -27,6 +28,7 @@ from memorii.core.memory_evolution.delivery_coordinate_migration import (
 from memorii.core.memory_evolution.ingestion_contracts import (
     AuthenticatedHostIngress,
     DeliveryIdentity,
+    DeliveryPrincipalBinding,
     encode_typed_value,
 )
 from memorii.core.memory_evolution.ingestion_time_clock import IngestionTimeClock
@@ -40,9 +42,11 @@ from memorii.core.memory_evolution.writer_admission import (
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.provider.ingestion import ProviderIngestionCoordinator
 from memorii.core.provider.models import ProviderOperation
-from tests.unit.core.semantic_ingestion.test_bootstrap_source_admission import (
-    _binding,
-    _service_with_capability,
+from tests.fixtures.semantic_ingestion.host_bootstrap_authority import (
+    DeterministicTestHostBootstrapMaterialVerifier,
+)
+from tests.unit.core.semantic_ingestion.test_semantic_provider_composition import (
+    _InstalledCapabilityEntryPoint,
     _TestHostBootstrapCapability,
 )
 
@@ -51,6 +55,33 @@ CALLER_EVENT_TIME = datetime(2020, 1, 1, 9, 30, tzinfo=UTC)
 LATER_CALLER_EVENT_TIME = datetime(2021, 7, 7, 8, 0, tzinfo=UTC)
 ZERO_OFFSET_TZ = timezone(timedelta(0))
 NON_UTC_TZ = timezone(timedelta(hours=2))
+
+
+def _binding() -> DeliveryPrincipalBinding:
+    return DeliveryPrincipalBinding.create(
+        principal_subject_id="principal:alice",
+        tenant_partition_id="tenant:one",
+        provider_identity="provider:test",
+    )
+
+
+def _service_with_capability(
+    capability: _TestHostBootstrapCapability,
+    *,
+    memory_plane: MemoryPlaneService | None = None,
+    clock: IngestionTimeClock | None = None,
+):
+    with patch(
+        "memorii.core.memory_evolution.bootstrap_profile.entry_points",
+        return_value=(_InstalledCapabilityEntryPoint(capability),),
+    ):
+        from memorii.core.provider.service import ProviderMemoryService
+
+        return ProviderMemoryService(
+            memory_plane=memory_plane,
+            clock=clock,
+            host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        )
 
 
 def _host_ingress() -> AuthenticatedHostIngress:

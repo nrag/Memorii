@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.MessageAdmissionIdentity.v1","implementation_source_digest":"96c057d2be5a13547d6393085837cce9c93ef3b512ac5bc3a9589a58be28248e","role":"decoder","schema_id":"MessageAdmissionIdentity","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.MessageAdmissionIdentity.v1","implementation_source_digest":"7161c7fdc389de00123f212dc4389aa4f36cc91fcd009c7c56227d5d744fb5e2","role":"decoder","schema_id":"MessageAdmissionIdentity","schema_version":"1","typed_root_kind":"model"}

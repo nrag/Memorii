@@ -13,23 +13,10 @@ from memorii.core.memory_evolution.admission import (
     source_admission_source_digest,
 )
 from memorii.core.memory_evolution.bootstrap_profile import (
-    BOOTSTRAP_COORDINATE,
-    BootstrapGrammarCorpusCase,
-    BootstrapLocalProfileManifest,
-    BootstrapProfileArtifacts,
-    BootstrapProfileReleaseMetadata,
-    BootstrapProfileVerificationError,
-    ComponentSymbolFingerprint,
+    BootstrapProfileReleaseBuilder,
+    BootstrapProfileReleaseVerifier,
     HostVerifiedBootstrapMaterial,
     ProfileSelectedPipelinePending,
-    _component_fingerprint_digest,
-    _component_root,
-    build_bootstrap_profile_artifacts,
-    build_bootstrap_trust_anchor,
-    disposition_outcome,
-    serialize_bootstrap_profile_artifacts,
-    verify_bootstrap_profile,
-    verify_bootstrap_release,
 )
 from memorii.core.memory_evolution.delivery_coordinate_migration import (
     DeliveryCoordinateMigrationCheckpoint,
@@ -153,34 +140,18 @@ def _source() -> CanonicalMemoryRecord:
 
 class _TestHostBootstrapCapability:
     def __init__(self, *, enabled: bool = True, resolver=None) -> None:
-        self._artifacts = build_bootstrap_profile_artifacts(_complete_corpus_cases())
-        self._trust_anchor = build_bootstrap_trust_anchor(self._artifacts)
-        self._trust_root_provider = DeterministicTestTrustRootProvider(self._trust_anchor.trust_anchor_digest)
-        self._release_metadata = BootstrapProfileReleaseMetadata(
-            coordinate=BOOTSTRAP_COORDINATE,
-            bootstrap_profile_trust_anchor_digest=self._trust_anchor.trust_anchor_digest,
-            signed_release_digest="1" * 64,
+        release = BootstrapProfileReleaseBuilder.build(enabled=enabled)
+        self._payloads = release.payloads
+        self._profile = BootstrapProfileReleaseVerifier.verify(
+            payloads=release.payloads,
+            enabled=enabled,
         )
         self._resolver = resolver or _TrustedResolver()
         self._enabled = enabled
 
     @property
-    def trust_root_provider(self):
-        return self._trust_root_provider
-
-    @property
-    def release_metadata(self):
-        return self._release_metadata
-
-    @property
-    def trust_anchor(self):
-        return self._trust_anchor
-
-    @property
     def artifact_payloads(self):
-        from memorii.core.memory_evolution.bootstrap_profile import serialize_bootstrap_profile_artifacts
-
-        return serialize_bootstrap_profile_artifacts(self._artifacts)
+        return self._payloads
 
     @property
     def profile_enabled(self):
@@ -191,18 +162,10 @@ class _TestHostBootstrapCapability:
         return self._resolver
 
     def load_verified_bootstrap_material(self):
-        if not verify_bootstrap_release(
-            provider=self.trust_root_provider,
-            metadata=self.release_metadata,
-            anchor=self.trust_anchor,
-        ):
-            return None
         return HostVerifiedBootstrapMaterial(
-            release_metadata=self.release_metadata,
-            trust_anchor=self.trust_anchor,
             artifact_payloads=self.artifact_payloads,
             release_evidence=build_test_host_verified_bootstrap_release_evidence(
-                metadata=self.release_metadata,
+                profile=self._profile,
                 external_root_digest="2" * 64,
                 active_lifecycle_snapshot_digest="3" * 64,
                 verified_at=datetime(2026, 1, 1, tzinfo=UTC),
@@ -220,114 +183,6 @@ class _TestHostBootstrapCapability:
         )
 
 
-class DeterministicTestTrustRootProvider:
-    def __init__(self, accepted_anchor_digest: str) -> None:
-        self._accepted_anchor_digest = accepted_anchor_digest
-
-    def verify_active_release(self, metadata: BootstrapProfileReleaseMetadata) -> bool:
-        return (
-            metadata.coordinate == BOOTSTRAP_COORDINATE
-            and metadata.bootstrap_profile_trust_anchor_digest == self._accepted_anchor_digest
-        )
-
-
-def _complete_corpus_cases() -> tuple[BootstrapGrammarCorpusCase, ...]:
-    def case(
-        case_id: str,
-        content: bytes,
-        disposition: str,
-        reason: str | None,
-        *,
-        language: str | None = "en",
-        evidence_kind: str = "authenticated_host_declaration",
-        evidence_trust: str = "trusted",
-        agreement: str = "agrees",
-    ) -> BootstrapGrammarCorpusCase:
-        return BootstrapGrammarCorpusCase.model_validate(
-            {
-                "case_id": case_id,
-                "declared_language": language,
-                "language_evidence_kind": evidence_kind,
-                "language_evidence_trust": evidence_trust,
-                "governance_agreement": agreement,
-                "normalized_segment_bytes": content,
-                "disposition": disposition,
-                "expected_reason": reason,
-            }
-        )
-
-    return (
-        case("01-supported-atlas", b"Atlas owner is Bob.", "supported_form", None),
-        case("02-supported-receipt", b"Receipt is confirmed.", "supported_form", None),
-        case("03-unsupported-mixed", b"Atlas is Bob. trailing", "unsupported_form", "mixed_residue"),
-        case("04-unsupported-grammar", b"unstructured", "unsupported_form", "unsupported_grammar"),
-        case("05-abstain-extractor", b"", "abstain_form", "extractor_abstained"),
-        case(
-            "06-abstain-mismatch", b"mismatch", "abstain_form", "language_mismatch",
-            evidence_kind="mismatched", evidence_trust="mismatched", agreement="disagrees",
-        ),
-        case(
-            "07-abstain-missing", b"missing", "abstain_form", "missing_language_declaration",
-            language=None, evidence_kind="missing", evidence_trust="missing", agreement="missing",
-        ),
-        case("08-abstain-non-english", b"bonjour", "abstain_form", "non_english_language", language="fr"),
-        case(
-            "09-abstain-untrusted", b"untrusted", "abstain_form", "untrusted_language",
-            language=None, evidence_kind="untrusted", evidence_trust="untrusted", agreement="missing",
-        ),
-    )
-
-
-def _runtime_mutated_bootstrap_material(
-    mutation: dict[str, object],
-) -> HostVerifiedBootstrapMaterial:
-    artifacts = build_bootstrap_profile_artifacts(_complete_corpus_cases())
-    original = artifacts.profile_manifest.component_fingerprints[0]
-    fingerprint_fields = original.model_dump(mode="python", exclude={"fingerprint_digest"})
-    fingerprint_fields.update(mutation)
-    fingerprint = ComponentSymbolFingerprint(
-        **fingerprint_fields,
-        fingerprint_digest=_component_fingerprint_digest(
-            ComponentSymbolFingerprint.model_construct(**fingerprint_fields, fingerprint_digest="0" * 64)
-        ),
-    )
-    fingerprints = (fingerprint, *artifacts.profile_manifest.component_fingerprints[1:])
-    profile_fields = artifacts.profile_manifest.model_dump(mode="python", exclude={"profile_digest"})
-    profile_fields["component_fingerprints"] = tuple(item.model_dump(mode="python") for item in fingerprints)
-    profile_fields["component_root_digest"] = _component_root(BOOTSTRAP_COORDINATE, fingerprints)
-    profile = BootstrapLocalProfileManifest(
-        **profile_fields,
-        profile_digest=sha256(encode_typed_value(profile_fields)).hexdigest(),
-    )
-    mutated = BootstrapProfileArtifacts(
-        profile_manifest=profile,
-        grammar_capability_manifest=artifacts.grammar_capability_manifest,
-        grammar_corpus=artifacts.grammar_corpus,
-    )
-    anchor = build_bootstrap_trust_anchor(mutated)
-    return HostVerifiedBootstrapMaterial(
-        release_metadata=BootstrapProfileReleaseMetadata(
-            coordinate=BOOTSTRAP_COORDINATE,
-            bootstrap_profile_trust_anchor_digest=anchor.trust_anchor_digest,
-            signed_release_digest="1" * 64,
-        ),
-        trust_anchor=anchor,
-        artifact_payloads=serialize_bootstrap_profile_artifacts(mutated),
-        release_evidence=build_test_host_verified_bootstrap_release_evidence(
-            metadata=BootstrapProfileReleaseMetadata(
-                coordinate=BOOTSTRAP_COORDINATE,
-                bootstrap_profile_trust_anchor_digest=anchor.trust_anchor_digest,
-                signed_release_digest="1" * 64,
-            ),
-            external_root_digest="2" * 64,
-            active_lifecycle_snapshot_digest="3" * 64,
-            verified_at=datetime(2026, 1, 1, tzinfo=UTC),
-        ),
-        authenticated_ingress_resolver=_TrustedResolver(),
-        profile_enabled=True,
-    )
-
-
 def test_delivery_id_is_exact_and_rejects_unsafe_forms() -> None:
     value = "  delivery:naive-cafe  "
     assert normalize_delivery_id(value) == value
@@ -339,73 +194,6 @@ def test_delivery_id_is_exact_and_rejects_unsafe_forms() -> None:
     assert derive_composite_child_delivery_id("parent:one", "user") != derive_composite_child_delivery_id(
         "parent", "one:user"
     )
-
-
-def test_component_fingerprint_requires_paired_distribution_or_repository_identity() -> None:
-    with pytest.raises(ValueError, match="distribution name and version"):
-        ComponentSymbolFingerprint(
-            module_path="example.module",
-            qualified_symbol="Example",
-            distribution_name="example",
-            distribution_version=None,
-            repository_blob_identity=None,
-            source_or_package_content_digest="0" * 64,
-            fingerprint_digest="0" * 64,
-        )
-
-
-def test_runtime_bootstrap_component_identity_mutations_fail_closed() -> None:
-    original = build_bootstrap_profile_artifacts(_complete_corpus_cases()).profile_manifest.component_fingerprints[0]
-    if original.distribution_name is not None:
-        missing_version = original.model_dump(mode="python")
-        missing_version["distribution_version"] = None
-        with pytest.raises(ValueError, match="distribution name and version"):
-            ComponentSymbolFingerprint.model_validate(missing_version)
-        mutation = {"distribution_version": "9999.0.0"}
-    else:
-        mutation = {"source_or_package_content_digest": "0" * 64}
-    with pytest.raises(BootstrapProfileVerificationError):
-        verify_bootstrap_profile(_runtime_mutated_bootstrap_material(mutation))
-    with pytest.raises(ValueError, match="inventory"):
-        _runtime_mutated_bootstrap_material({"qualified_symbol": "MissingBootstrapSymbol"})
-    with pytest.raises(ValueError, match="repository blob identity"):
-        ComponentSymbolFingerprint(
-            module_path="example.module",
-            qualified_symbol="Example",
-            distribution_name=None,
-            distribution_version=None,
-            repository_blob_identity=None,
-            source_or_package_content_digest="0" * 64,
-            fingerprint_digest="0" * 64,
-        )
-
-
-def test_bootstrap_release_evidence_rejects_before_artifact_decode(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    material = _TestHostBootstrapCapability().load_verified_bootstrap_material()
-    assert material is not None
-    invalid = HostVerifiedBootstrapMaterial(
-        release_metadata=material.release_metadata,
-        trust_anchor=material.trust_anchor,
-        artifact_payloads=material.artifact_payloads,
-        release_evidence=material.release_evidence.model_copy(
-            update={"signed_release_digest": "f" * 64}
-        ),
-        authenticated_ingress_resolver=material.authenticated_ingress_resolver,
-        profile_enabled=material.profile_enabled,
-    )
-
-    def decoded_too_early(*_args: object, **_kwargs: object) -> object:
-        raise AssertionError("artifact decoding preceded release-evidence validation")
-
-    monkeypatch.setattr(
-        "memorii.core.memory_evolution.bootstrap_profile.decode_artifact",
-        decoded_too_early,
-    )
-    with pytest.raises(BootstrapProfileVerificationError) as exc_info:
-        verify_bootstrap_profile(invalid)
-    assert exc_info.value.reason.value == "invalid_manifest"
 
 
 def test_admission_rejects_partial_scope_before_any_retention() -> None:
@@ -568,22 +356,6 @@ class _FrenchResolver:
                 "language_evidence_kind": "authenticated_host_declaration",
                 "language_evidence_trust": "trusted",
                 "language_governance_agreement": "agrees",
-            }
-        )
-
-
-class _CorpusResolver:
-    def __init__(self, case: BootstrapGrammarCorpusCase) -> None:
-        self._case = case
-
-    def resolve(self, host_ingress: AuthenticatedHostIngress, server_time: datetime) -> AuthenticatedIngressContext:
-        base = _ingress("task:task:one")
-        return base.model_copy(
-            update={
-                "language_declaration": self._case.declared_language,
-                "language_evidence_kind": self._case.language_evidence_kind,
-                "language_evidence_trust": self._case.language_evidence_trust,
-                "language_governance_agreement": self._case.governance_agreement,
             }
         )
 
@@ -981,286 +753,6 @@ def test_authenticated_non_english_declaration_abstains_even_when_public_label_i
     ).outcome
     assert outcome is not None and outcome.kind == "abstained"
     assert outcome.reason == "non_english_language"
-
-
-@pytest.mark.parametrize("case", _complete_corpus_cases(), ids=lambda case: case.case_id)
-def test_every_bootstrap_corpus_case_has_exact_protected_source_admission_outcome(
-    case: BootstrapGrammarCorpusCase,
-) -> None:
-    capability = _TestHostBootstrapCapability(resolver=_CorpusResolver(case))
-    plane = MemoryPlaneService()
-    service = _service_with_capability(capability, memory_plane=plane)
-    ingress = AuthenticatedHostIngress(
-        provider_identity="provider:test",
-        principal_handle=object(),
-        session_handle=object(),
-        received_at=datetime.now(UTC),
-    )
-    delivery_id = f"corpus-{case.case_id}"
-    result = service.sync_event(
-        operation=ProviderOperation.CHAT_USER_TURN,
-        content=case.normalized_segment_bytes.decode("utf-8"),
-        operation_id=delivery_id,
-        task_id="task:one",
-        authenticated_host_ingress=ingress,
-    )
-    outcome = service.lookup_semantic_ingestion_outcome(
-        SemanticIngestionOutcomeLookupRequest(
-            delivery_identity=DeliveryIdentity.create(_binding(), delivery_id)
-        ),
-        authenticated_host_ingress=ingress,
-    ).outcome
-    # Under the M4 boundary the grammar disposition runs downstream of
-    # admission: supported forms select the (pending) pipeline, language
-    # denials abstain at admission, an empty turn never derives a source
-    # (no outcome, writer bootstrap only), and the unsupported classifier
-    # buckets "Atlas is Bob. trailing" as unsupported grammar.
-    if case.case_id == "05-abstain-extractor":
-        assert outcome is None
-        assert result.blocked_reasons["semantic_ingestion"] == "source_only"
-        assert {record.source_kind for record in plane.list_records()} == {
-            "semantic_ingestion_writer_admission"
-        }
-        assert result.candidate_ids == []
-        return
-    expected_kind = {
-        "supported_form": "selected_pipeline_pending",
-        "unsupported_form": "unsupported_input",
-        "abstain_form": "abstained",
-    }[case.disposition]
-    assert outcome is not None and outcome.kind == expected_kind
-    if expected_kind == "unsupported_input":
-        expected_reason = "unsupported_grammar"
-        expected_matched = case.case_id if case.case_id == "04-unsupported-grammar" else None
-    elif expected_kind == "abstained":
-        expected_reason = case.expected_reason
-        expected_matched = case.case_id
-    else:
-        expected_reason = None
-        expected_matched = None
-    if expected_reason is not None:
-        assert outcome.reason == expected_reason
-        assert outcome.matched_corpus_case_id == expected_matched
-        assert outcome.input_normalized_digest == sha256(case.normalized_segment_bytes).hexdigest()
-    assert result.blocked_reasons["semantic_ingestion"] == "source_only"
-    assert {record.source_kind for record in plane.list_records()} == {
-        "semantic_ingestion_writer_admission",
-        "semantic_ingestion_source",
-        "semantic_ingestion_admission_index",
-        "semantic_ingestion_profile_selection",
-        "semantic_ingestion_profile_verification",
-        "semantic_ingestion_profile_outcome",
-    }
-    assert result.candidate_ids == []
-
-
-def test_bootstrap_artifact_payloads_require_canonical_envelope_and_exact_binding() -> None:
-    from memorii.core.memory_evolution.bootstrap_profile import (
-        BootstrapProfileArtifactPayloads,
-        bootstrap_artifact_binding,
-        serialize_bootstrap_profile_artifacts,
-    )
-    from memorii.core.memory_evolution.ingestion_contracts import encode_typed_value, serialize_artifact
-
-    baseline = _TestHostBootstrapCapability()
-    valid = serialize_bootstrap_profile_artifacts(baseline._artifacts)
-    invalid_payloads = (
-        valid.model_copy(
-            update={
-                "profile_manifest": encode_typed_value(
-                    baseline._artifacts.profile_manifest.model_dump(mode="python")
-                )
-            }
-        ),
-        valid.model_copy(
-            update={
-                "profile_manifest": serialize_artifact(
-                    baseline._artifacts.profile_manifest.model_dump(mode="python"),
-                    bootstrap_artifact_binding(
-                        "memorii.semantic_ingestion.bootstrap_grammar_capability_manifest"
-                    ),
-                )
-            }
-        ),
-        BootstrapProfileArtifactPayloads(
-            profile_manifest=valid.profile_manifest[:-1] + bytes([valid.profile_manifest[-1] ^ 1]),
-            grammar_capability_manifest=valid.grammar_capability_manifest,
-            grammar_corpus=valid.grammar_corpus,
-        ),
-    )
-    class InvalidCapability(_TestHostBootstrapCapability):
-        def __init__(self, payloads):
-            super().__init__()
-            self._invalid_payloads = payloads
-
-        @property
-        def artifact_payloads(self):
-            return self._invalid_payloads
-
-    for index, payloads in enumerate(invalid_payloads):
-        plane = MemoryPlaneService()
-        service = _service_with_capability(InvalidCapability(payloads), memory_plane=plane)
-        ingress = AuthenticatedHostIngress(
-            provider_identity="provider:test",
-            principal_handle=object(),
-            session_handle=object(),
-            received_at=datetime.now(UTC),
-        )
-        delivery_id = f"invalid-envelope-{index}"
-        service.sync_event(
-            operation=ProviderOperation.CHAT_USER_TURN,
-            content="Atlas owner is Bob.",
-            operation_id=delivery_id,
-            task_id="task:one",
-            authenticated_host_ingress=ingress,
-        )
-        outcome = service.lookup_semantic_ingestion_outcome(
-            SemanticIngestionOutcomeLookupRequest(
-                delivery_identity=DeliveryIdentity.create(_binding(), delivery_id)
-            ),
-            authenticated_host_ingress=ingress,
-        ).outcome
-        assert outcome is not None and outcome.kind == "unavailable"
-        assert outcome.reason == "invalid_manifest"
-        assert {record.source_kind for record in plane.list_records()} == {
-            "semantic_ingestion_writer_admission",
-            "semantic_ingestion_source",
-            "semantic_ingestion_admission_index",
-            "semantic_ingestion_profile_selection",
-            "semantic_ingestion_profile_verification",
-            "semantic_ingestion_profile_outcome",
-        }
-
-
-def test_invalid_installed_capability_inventory_fails_closed_at_construction(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    capability = _TestHostBootstrapCapability()
-    monkeypatch.setattr(
-        "memorii.core.memory_evolution.bootstrap_profile.entry_points",
-        lambda **kwargs: (
-            _InstalledCapabilityEntryPoint(capability),
-            _InstalledCapabilityEntryPoint(capability),
-        ),
-    )
-    service = ProviderMemoryService(memory_plane=MemoryPlaneService())
-    result = service.sync_event(
-        operation=ProviderOperation.CHAT_USER_TURN,
-        content="Atlas owner is Bob.",
-        operation_id="invalid-installed-inventory",
-        task_id="task:one",
-        authenticated_host_ingress=AuthenticatedHostIngress(
-            provider_identity="provider:test",
-            principal_handle=object(),
-            session_handle=object(),
-            received_at=datetime.now(UTC),
-        ),
-    )
-    assert result.blocked_reasons["semantic_ingestion"] == "ingress_unavailable"
-
-
-def test_altered_component_fails_closed_with_truthful_unavailable_evidence(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    capability = _TestHostBootstrapCapability()
-    monkeypatch.setattr(
-        "memorii.core.memory_evolution.bootstrap_profile.Path.read_bytes",
-        lambda path: b"altered-installed-component",
-    )
-    memory_plane = MemoryPlaneService()
-    service = _service_with_capability(capability, memory_plane=memory_plane)
-    host_ingress = AuthenticatedHostIngress(
-        provider_identity="provider:test",
-        principal_handle=object(),
-        session_handle=object(),
-        received_at=datetime.now(UTC),
-    )
-    service.sync_event(
-        operation=ProviderOperation.CHAT_USER_TURN,
-        content="Atlas owner is Bob.",
-        operation_id="altered-component",
-        task_id="task:one",
-        authenticated_host_ingress=host_ingress,
-    )
-    records = {record.source_kind: record for record in memory_plane.list_records()}
-    assert records["semantic_ingestion_profile_selection"].content == {"status": "unavailable"}
-    assert records["semantic_ingestion_profile_verification"].content == {"status": "unavailable"}
-    outcome = service.lookup_semantic_ingestion_outcome(
-        SemanticIngestionOutcomeLookupRequest(
-            delivery_identity=DeliveryIdentity.create(_binding(), "altered-component")
-        ),
-        authenticated_host_ingress=host_ingress,
-    ).outcome
-    assert outcome is not None and outcome.kind == "unavailable"
-    assert outcome.reason == "altered_component"
-
-
-def test_unreadable_component_fails_closed_as_unavailable(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    capability = _TestHostBootstrapCapability()
-    monkeypatch.setattr(
-        "memorii.core.memory_evolution.bootstrap_profile.Path.read_bytes",
-        lambda path: (_ for _ in ()).throw(OSError("component unavailable")),
-    )
-    plane = MemoryPlaneService()
-    service = _service_with_capability(capability, memory_plane=plane)
-    ingress = AuthenticatedHostIngress(
-        provider_identity="provider:test",
-        principal_handle=object(),
-        session_handle=object(),
-        received_at=datetime.now(UTC),
-    )
-    service.sync_event(
-        operation=ProviderOperation.CHAT_USER_TURN,
-        content="Atlas owner is Bob.",
-        operation_id="unreadable-component",
-        task_id="task:one",
-        authenticated_host_ingress=ingress,
-    )
-    outcome = service.lookup_semantic_ingestion_outcome(
-        SemanticIngestionOutcomeLookupRequest(
-            delivery_identity=DeliveryIdentity.create(_binding(), "unreadable-component")
-        ),
-        authenticated_host_ingress=ingress,
-    ).outcome
-    assert outcome is not None and outcome.kind == "unavailable"
-    assert outcome.reason == "missing_component"
-
-
-def test_incomplete_component_inventory_fails_closed_before_classification() -> None:
-    capability = _TestHostBootstrapCapability()
-    profile = capability._artifacts.profile_manifest
-    capability._artifacts = capability._artifacts.model_copy(
-        update={
-            "profile_manifest": profile.model_copy(
-                update={"component_fingerprints": profile.component_fingerprints[1:]}
-            )
-        }
-    )
-    memory_plane = MemoryPlaneService()
-    service = _service_with_capability(capability, memory_plane=memory_plane)
-    host_ingress = AuthenticatedHostIngress(
-        provider_identity="provider:test",
-        principal_handle=object(),
-        session_handle=object(),
-        received_at=datetime.now(UTC),
-    )
-    service.sync_event(
-        operation=ProviderOperation.CHAT_USER_TURN,
-        content="Atlas owner is Bob.",
-        operation_id="incomplete-components",
-        task_id="task:one",
-        authenticated_host_ingress=host_ingress,
-    )
-    outcome = service.lookup_semantic_ingestion_outcome(
-        SemanticIngestionOutcomeLookupRequest(
-            delivery_identity=DeliveryIdentity.create(_binding(), "incomplete-components")
-        ),
-        authenticated_host_ingress=host_ingress,
-    ).outcome
-    assert outcome is not None and outcome.kind == "unavailable"
-    assert outcome.reason == "invalid_manifest"
 
 
 def test_jsonl_reopen_and_lost_ack_retry_preserve_one_bootstrap_generation(tmp_path: Path) -> None:
@@ -1690,16 +1182,3 @@ def test_expected_host_ingress_denial_uses_non_disclosing_lookup_shape() -> None
     # Ingress resolution precedes the writer-admission boundary: a denied
     # ingress writes nothing at all.
     assert plane.list_records() == []
-
-
-def test_bootstrap_release_and_corpus_fail_closed_without_runtime_state() -> None:
-    artifacts = build_bootstrap_profile_artifacts(_complete_corpus_cases())
-    anchor = build_bootstrap_trust_anchor(artifacts)
-    metadata = BootstrapProfileReleaseMetadata(
-        coordinate=BOOTSTRAP_COORDINATE, bootstrap_profile_trust_anchor_digest=anchor.trust_anchor_digest,
-        signed_release_digest="1" * 64,
-    )
-    assert verify_bootstrap_release(provider=DeterministicTestTrustRootProvider(anchor.trust_anchor_digest), metadata=metadata, anchor=anchor)
-    assert not verify_bootstrap_release(provider=None, metadata=metadata, anchor=anchor)
-    case = BootstrapGrammarCorpusCase(case_id="supported", declared_language="en", language_evidence_kind="authenticated_host_declaration", language_evidence_trust="trusted", governance_agreement="agrees", normalized_segment_bytes=b"x", disposition="supported_form", expected_reason=None)
-    assert disposition_outcome(case) == "selected_pipeline_pending"

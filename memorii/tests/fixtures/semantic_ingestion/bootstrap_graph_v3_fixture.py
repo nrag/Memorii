@@ -38,6 +38,7 @@ from memorii.core.memory_evolution.graph_records import (
     canonical_graph_codec_manifest,
     graph_digest,
 )
+from memorii.core.memory_evolution.ingestion_contracts import encode_typed_value
 from memorii.core.memory_evolution.transaction_coordinator import GraphReadSetToken
 from memorii.core.semantic_ingestion.bootstrap_graph_host import (
     BootstrapGraphAuthorityRequestV3,
@@ -83,6 +84,7 @@ from memorii.core.semantic_ingestion.contracts import (
     GraphDependentExecutionPolicyReferenceV3,
     GraphSemanticSnapshotBundleV3,
     PreparedSource,
+    canonical_contract_value,
     contract_digest,
     decode_bootstrap_graph_atomic_member_payload_v3,
     decode_semantic_contract,
@@ -230,9 +232,23 @@ def build_minimal_bootstrap_graph_plan_compilation_v3(
         or authority.capability_registry_snapshot != capability_registry
     ):
         raise ValueError("bootstrap graph plan fixture authority is substituted")
-    if not request.source_dependency_groups:
-        raise ValueError("bootstrap graph plan fixture requires a complete dependency group")
     groups = request.source_dependency_groups
+    if not groups:
+        normalization = request.normalization_replay.source_normalization_request
+        proposals = normalization.proposal_run.proposal_payload.normalized_proposals
+        fully_abstained = (
+            bool(proposals)
+            and all(
+                proposal.status == "abstained" and not proposal.operation_members
+                for proposal in proposals
+            )
+            and not normalization.source_alignment.operation_alignments
+            and not operation_inputs
+        )
+        if not fully_abstained:
+            raise ValueError(
+                "bootstrap graph plan fixture requires a complete dependency group"
+            )
     epoch = control_epoch or request.initial_control_epoch
     required_operation_ids = tuple(
         sorted(
@@ -831,7 +847,10 @@ def build_bootstrap_graph_terminal_host_authority_v3(
         segment_governance_carriers=source.segment_governance_carriers,
         message_admission_carriers=source.message_admission_carriers,
         governance_carrier_artifact=artifact,
-        capability_bindings=capability_bindings,
+        capability_bindings=tuple(sorted(
+            capability_bindings,
+            key=lambda value: encode_typed_value(canonical_contract_value(value)),
+        )),
         required_outcome_scopes=artifact.required_outcome_scopes,
         operation_fence_binding=operation_fence_binding,
     )

@@ -15,13 +15,9 @@ from memorii.core.memory_evolution.admission import (
 )
 from memorii.core.memory_evolution.atomic_store import SemanticIngestionAtomicStore
 from memorii.core.memory_evolution.bootstrap_profile import (
-    BOOTSTRAP_COORDINATE,
-    BootstrapGrammarCorpusCase,
-    BootstrapProfileReleaseMetadata,
+    BootstrapProfileReleaseBuilder,
+    BootstrapProfileReleaseVerifier,
     HostVerifiedBootstrapMaterial,
-    build_bootstrap_profile_artifacts,
-    build_bootstrap_trust_anchor,
-    serialize_bootstrap_profile_artifacts,
     verify_bootstrap_profile,
 )
 from memorii.core.memory_evolution.conflict_attention import (
@@ -89,7 +85,6 @@ from memorii.core.semantic_ingestion.contracts import (
     SourceAuthority,
     SourceAuthorityEvidence,
     TemporalPolicySnapshot,
-    TextPreparationPolicy,
     TextPreparationRequest,
     TimeInterval,
     TrustDecayStep,
@@ -106,11 +101,11 @@ from memorii.core.semantic_ingestion.source_preparation import (
 from memorii.core.semantic_ingestion.temporal_evidence_resolution import TemporalEvidenceResolver
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
 from pydantic import BaseModel
-from tests.fixtures.semantic_ingestion.clean_room_request_fixture import (
-    build_prepared_source_authority,
-)
 from tests.fixtures.semantic_ingestion.host_bootstrap_authority import (
     build_test_host_verified_bootstrap_release_evidence,
+)
+from tests.fixtures.semantic_ingestion.source_normalization_fixture_builder import (
+    build_bootstrap_freeform_prepared_source,
 )
 
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
@@ -256,22 +251,11 @@ def reopen_terminal_persistence_store(root: Path) -> SemanticIngestionAtomicStor
 def _prepared_source_authority(
     source_id: str, source_digest: str, source_text: str
 ):
-    """Build one immutable Step-2 authority for identical fixture inputs."""
-    policy = TextPreparationPolicy.create(
-        max_segment_characters=max(1, len(source_text)),
-        supported_languages=("en",),
-        segmentation_algorithm=(
-            "memorii.semantic-ingestion.safe-sentence-first-paragraph-bounded.v1"
-        ),
-        context_window_algorithm=(
-            "memorii.semantic-ingestion.owned-partition-whole-boundary-context.v1"
-        ),
-    )
-    return build_prepared_source_authority(
+    """Build the current Bootstrap V3 freeform authority for terminal tests."""
+    return build_bootstrap_freeform_prepared_source(
         source_id=source_id,
         source_digest=source_digest,
         source_text=source_text,
-        preparation_policy=policy,
     )
 
 
@@ -316,63 +300,13 @@ def _conflict_digest(domain: bytes, value: object) -> str:
 
 
 def _bootstrap_profile_for_test_runtime():
-    def case(
-        case_id: str,
-        content: bytes,
-        disposition: str,
-        reason: str | None,
-        *,
-        language: str | None = "en",
-        evidence_kind: str = "authenticated_host_declaration",
-        evidence_trust: str = "trusted",
-        agreement: str = "agrees",
-    ) -> BootstrapGrammarCorpusCase:
-        return BootstrapGrammarCorpusCase.model_validate(
-            {
-                "case_id": case_id,
-                "declared_language": language,
-                "language_evidence_kind": evidence_kind,
-                "language_evidence_trust": evidence_trust,
-                "governance_agreement": agreement,
-                "normalized_segment_bytes": content,
-                "disposition": disposition,
-                "expected_reason": reason,
-            }
-        )
-
-    artifacts = build_bootstrap_profile_artifacts(
-        (
-            case("01-supported", b"Atlas owner is Bob.", "supported_form", None),
-            case("02-mixed", b"Atlas is Bob. trailing", "unsupported_form", "mixed_residue"),
-            case("03-grammar", b"unstructured", "unsupported_form", "unsupported_grammar"),
-            case("04-extractor", b"", "abstain_form", "extractor_abstained"),
-            case("05-language", b"mismatch", "abstain_form", "language_mismatch", evidence_kind="mismatched", evidence_trust="mismatched", agreement="disagrees"),
-            case("06-missing", b"missing", "abstain_form", "missing_language_declaration", language=None, evidence_kind="missing", evidence_trust="missing", agreement="missing"),
-            case("07-untrusted", b"untrusted", "abstain_form", "untrusted_language", language=None, evidence_kind="untrusted", evidence_trust="untrusted", agreement="missing"),
-            case("08-non-english", b"bonjour", "abstain_form", "non_english_language", language="fr"),
-        )
-    )
-    anchor = build_bootstrap_trust_anchor(artifacts)
-
-    class _TrustRoot:
-        def verify_active_release(self, metadata: BootstrapProfileReleaseMetadata) -> bool:
-            return metadata.bootstrap_profile_trust_anchor_digest == anchor.trust_anchor_digest
-
+    release = BootstrapProfileReleaseBuilder.build(enabled=True)
+    profile = BootstrapProfileReleaseVerifier.verify(payloads=release.payloads, enabled=True)
     return verify_bootstrap_profile(
         HostVerifiedBootstrapMaterial(
-            release_metadata=BootstrapProfileReleaseMetadata(
-                coordinate=BOOTSTRAP_COORDINATE,
-                bootstrap_profile_trust_anchor_digest=anchor.trust_anchor_digest,
-                signed_release_digest="1" * 64,
-            ),
-            trust_anchor=anchor,
-            artifact_payloads=serialize_bootstrap_profile_artifacts(artifacts),
+            artifact_payloads=release.payloads,
             release_evidence=build_test_host_verified_bootstrap_release_evidence(
-                metadata=BootstrapProfileReleaseMetadata(
-                    coordinate=BOOTSTRAP_COORDINATE,
-                    bootstrap_profile_trust_anchor_digest=anchor.trust_anchor_digest,
-                    signed_release_digest="1" * 64,
-                ),
+                profile=profile,
                 external_root_digest="2" * 64,
                 active_lifecycle_snapshot_digest="3" * 64,
                 verified_at=NOW,
