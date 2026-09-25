@@ -76,6 +76,7 @@ forbidden because the old M5 side predates reviewed Level 2 corrections.
 | H2 | PR #121 incorporated M5 content but lost its ancestry | `e42cc905` parent is `d0c96305`; neither final branch is ancestor of the other; normal merge has 225 conflicts | Explains the misleading unmerged branch and conflict family | confirmed |
 | H3 | A normal merge can safely repair history | merge simulation has 225 conflicts across generated contracts, runtime code, tests, Docker, workflows, and evidence | A content merge risks restoring stale state | disproved |
 | H4 | An ancestry-only merge can record incorporation without changing product bytes | exact parent/tree and reachability verifier passed at `c102fedb` | preserves main tree while recording M5 as ancestry | confirmed |
+| H5 | The dependency-free CI verifier can resolve its recorded ancestors from a default checkout | CI run `36111613542`, job `107996126288`, failed resolving `a74ebcb0` after `actions/checkout` defaulted to depth 1 | A complete Git history fetch is required for ancestry proof | confirmed |
 
 ## Experiment Log
 
@@ -98,6 +99,10 @@ forbidden because the old M5 side predates reviewed Level 2 corrections.
 7. Added the dependency-free `Semantic Ingestion History Reconciliation` PR job and made the
    `Unit Tests` aggregate require it. Focused static workflow coverage verifies
    the isolated Python command and aggregate dependency.
+8. CI run `36111613542` at `8807ad87` failed in job `107996126288`: the default
+   depth-1 checkout could not resolve ancestry merge `a74ebcb0`. Set this job's
+   checkout to `fetch-depth: 0` and extended the focused static check to require
+   that complete-history fetch.
 
 ## Changed Surface And Verification
 
@@ -105,8 +110,8 @@ forbidden because the old M5 side predates reviewed Level 2 corrections.
 | --- | --- | --- | --- |
 | Git merge commit | record both current main and M5 as parents while retaining main tree | exact parent order and tree equality | complete: `a74ebcb0` |
 | `tools/verify_semantic_ingestion_history.py` and `tools/semantic_ingestion_history_reconciliation.json` | durable causal and verification record | verifier, reachability checks, and mutation self-tests | complete at `c102fedb` |
-| `.github/workflows/pr-gates.yml` | execute verifier on every PR and make the aggregate gate fail closed | isolated `python3.12 -I` job required by `Unit Tests` | complete at `c102fedb` |
-| `memorii/tests/unit/tools/test_static_tooling_config.py` | prove workflow job and aggregate dependency remain exact | two focused static workflow tests | complete at `c102fedb` |
+| `.github/workflows/pr-gates.yml` | execute verifier on every PR and make the aggregate gate fail closed | isolated `python3.12 -I` job with complete history, required by `Unit Tests` | local fix complete at `0e3a0423`; exact-head CI pending |
+| `memorii/tests/unit/tools/test_static_tooling_config.py` | prove workflow job, complete-history checkout, and aggregate dependency remain exact | two focused static workflow tests | local fix complete at `0e3a0423`; exact-head CI pending |
 | GitHub PR | review and integrate ancestry repair | exact-head checks and mergeability | pending |
 
 ## Root Cause
@@ -123,15 +128,16 @@ line as incorporated.
 ```yaml
 remaining_validated_p1_p2: []
 remaining_blocks_approval:
-  - independent closure review
-  - exact-head GitHub checks
+  - independent closure review after shallow-checkout remediation
+  - exact-head GitHub checks after shallow-checkout remediation
 level_2_disposition: under-review
 ```
 
 Correctness and test review evaluated clean candidate
 `02dec70609e41c2eb977b77927b442d5f495b614`; specification inspection's only
-requested correction is this closure-evidence update. GitHub CI has not run for
-this branch and is not claimed here.
+requested correction is this closure-evidence update. GitHub CI run `36111613542`
+at `8807ad87` failed in the ancestry verifier because the job had only a shallow
+checkout; green CI is not claimed.
 
 ## Verification Evidence
 
@@ -171,6 +177,18 @@ At remediation candidate `c102fedb9c2396195a2f9f2f4e56791011d86c5e`:
   workflow with PyYAML and confirms the required command and aggregate wiring.
 - `git diff --no-ext-diff --check` exited 0 at `c102fedb`.
 
+The first exact-head CI attempt was GitHub run `36111613542`, job
+`107996126288`, at `8807ad87`. It failed before the verifier could prove
+ancestry because the checkout did not contain merge `a74ebcb0`. This is the
+reproduced operational defect fixed by `fetch-depth: 0`; no green CI result is
+claimed until a new exact-head run completes.
+
+At shallow-checkout remediation candidate
+`0e3a0423fa587036abd6ac1b3216623feb3f510c`, the verifier self-test, the two
+focused workflow-contract tests, Ruff, identity hygiene, and `git diff --check`
+passed locally. The workflow now sets `fetch-depth: 0` only for the ancestry
+job's checkout. It has not yet run in GitHub CI.
+
 ## Identity Impact
 
 No behavioral, persisted, protocol, public API, or production-entrypoint
@@ -181,10 +199,10 @@ or harness behavior.
 
 ```yaml
 base_revision: 2eefb39e7c80ab609961f3db78fbc16401f9d675
-reviewed_revision: 02dec70609e41c2eb977b77927b442d5f495b614; correctness/test reviewed this clean candidate and spec inspection requested only this closure-evidence correction
-tested_revision: c102fedb9c2396195a2f9f2f4e56791011d86c5e
-tested_tree_digest: c5cea63b1aa1e5d83286cff1441cde7848c3b198
-tree_state: clean after c102fedb; later commits are WorkPlan-only evidence updates
+reviewed_revision: 02dec70609e41c2eb977b77927b442d5f495b614; correctness/test reviewed this clean candidate and spec inspection requested only the closure-evidence correction; 0e3a0423 requires a new focused closure review
+tested_revision: 0e3a0423fa587036abd6ac1b3216623feb3f510c
+tested_tree_digest: a35e546a4b21ce61601f6b57c948d1cb9d89ec51
+tree_state: clean after 0e3a0423; later commits are WorkPlan-only evidence updates
 changed_surface_inventory_complete: true
 scope_delta_resolved: true
 authority_chains_complete: not_applicable; no product authority chain changed
@@ -203,28 +221,29 @@ passed_local_jobs:
 known_local_failures: []
 failure_exclusions: []
 workflow_identities: []
-ci_event: pending PR creation
-ci_executed_sha: pending PR creation
-ci_executed_ref: pending PR creation
+ci_event: pull_request
+ci_executed_sha: 8807ad87a834bcd81d6b1abf992c7f91de0a2051
+ci_executed_ref: codex/m5-ancestry-reconciliation
 remaining_validated_p1_p2: []
 remaining_blocks_approval:
-  - independent closure review
-  - exact-head GitHub checks
+  - independent closure review after shallow-checkout remediation
+  - exact-head GitHub checks after shallow-checkout remediation
 remaining_changes_required: []
-local_ci_parity: focused static proof covers the dependency-free PR command; exact GitHub event remains pending
+local_ci_parity: focused static proof covers the dependency-free PR command and complete-history checkout; the recorded exact-head CI failed because its checkout was shallow
 acceptance_gate_inventory:
   - Semantic Ingestion History Reconciliation PR gate
   - Unit Tests aggregate dependency
   - targeted independent review
   - exact-head GitHub checks
-github_run_urls: []
-pr_head_sha: pending PR creation
+github_run_urls:
+  - https://github.com/nrag/Memorii/actions/runs/36111613542
+pr_head_sha: 0e3a0423fa587036abd6ac1b3216623feb3f510c
 pr_base_sha: 2eefb39e7c80ab609961f3db78fbc16401f9d675
 merge_base_sha: 2eefb39e7c80ab609961f3db78fbc16401f9d675
-required_checks_green: pending PR creation
+required_checks_green: false; run 36111613542 failed before the history verifier could resolve its ancestry merge
 ```
 
 ## Next Action
 
-Run independent closure review and exact-head CI for the ancestry-only merge and
-its reconciliation evidence.
+Push the complete-history checkout remediation and obtain an exact-head GitHub
+CI run for the ancestry-only merge and its reconciliation evidence.
