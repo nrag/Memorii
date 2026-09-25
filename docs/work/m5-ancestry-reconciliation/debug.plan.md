@@ -29,11 +29,13 @@ Complete only when:
 - a deterministic verifier binds the reviewed target to the reconciliation merge
   and both parents, and rejects substituted parent, tree, source-transplant,
   target, and equivalence identity;
-- the base-to-head PR diff is restricted to five surfaces: the reconciliation
+- the base-to-head PR diff is restricted to six surfaces: the reconciliation
   WorkPlan; `tools/semantic_ingestion_history_reconciliation.json`;
   `tools/verify_semantic_ingestion_history.py`; the PR workflow gate and its
-  `Unit Tests` aggregate wiring; and the focused static workflow regression
-  test. The ancestry merge itself changes zero product bytes;
+  `Unit Tests` aggregate wiring; the focused static workflow regression test;
+  and the canonical release-proof candidate manifest and digest under
+  `docs/work/semantic_ingestion/observation-ledger/release-preparation/`.
+  The ancestry merge itself changes zero product bytes;
 - targeted independent spec, correctness, and test review report no required
   findings;
 - exact-head required GitHub checks pass and the reconciliation PR is merged.
@@ -78,6 +80,7 @@ forbidden because the old M5 side predates reviewed Level 2 corrections.
 | H4 | An ancestry-only merge can record incorporation without changing product bytes | exact parent/tree and reachability verifier passed at `c102fedb` | preserves main tree while recording M5 as ancestry | confirmed |
 | H5 | The dependency-free CI verifier can resolve its recorded ancestors from a default checkout | CI run `36111613542`, job `107996126288`, failed resolving `a74ebcb0` after `actions/checkout` defaulted to depth 1 | A complete Git history fetch is required for ancestry proof | confirmed |
 | H6 | Existing structural workflow contracts automatically accept the new aggregate dependency | CI run `36112189195`, job `107997943020`, failed because `test_ctv_binding_authority_pr_gate.py` still asserted the prior exact `Unit Tests` dependency list | Every exact workflow contract must be updated when the aggregate changes | confirmed |
+| H7 | The package proof candidate automatically absorbs an intentional PR workflow change | CI run `36113313507`, job `108001486988`, rejected the stale `.github/workflows/pr-gates.yml` digest with `proof_candidate_member_changed` | The release-proof candidate is an explicit generated input and must be refreshed when its pinned workflow member changes | confirmed |
 
 ## Experiment Log
 
@@ -108,6 +111,12 @@ forbidden because the old M5 side predates reviewed Level 2 corrections.
    workflow contract had the prior exact `Unit Tests` dependency list. Added the
    semantic-ingestion-history dependency, its environment binding, and its
    success assertion to that sibling structural contract.
+10. CI run `36113313507`, job `108001486988` (Package Smoke), then rejected the
+    intentional workflow change before installed execution with
+    `proof_candidate_member_changed:.github/workflows/pr-gates.yml`. The
+    deterministic refresh checked all 1,909 pinned members, found that sole
+    mismatch, updated that member from repository bytes, and regenerated
+    `candidate.sha256`; no opaque digest was edited by hand.
 
 ## Changed Surface And Verification
 
@@ -118,6 +127,7 @@ forbidden because the old M5 side predates reviewed Level 2 corrections.
 | `.github/workflows/pr-gates.yml` | execute verifier on every PR and make the aggregate gate fail closed | isolated `python3.12 -I` job with complete history, required by `Unit Tests` | local fix complete at `0e3a0423`; exact-head CI pending |
 | `memorii/tests/unit/tools/test_static_tooling_config.py` | prove workflow job, complete-history checkout, and aggregate dependency remain exact | two focused static workflow tests | local fix complete at `0e3a0423`; exact-head CI pending |
 | `memorii/tests/unit/tools/test_ctv_binding_authority_pr_gate.py` | prove the complete exact `Unit Tests` aggregate structure includes the history gate | whole module plus required dependency, environment, and success assertions | local fix complete at `e8edaf0e`; exact-head CI pending |
+| release-preparation `candidate.json` and `candidate.sha256` | bind Package Smoke's installed proof to the changed PR workflow bytes | deterministic 1,909-member audit, release-proof digest validation, and installed proof/rejections | local fix complete at `51f9ccd5`; exact-head CI pending |
 | GitHub PR | review and integrate ancestry repair | exact-head checks and mergeability | pending |
 
 ## Root Cause
@@ -203,6 +213,30 @@ At CTV workflow-contract remediation candidate
 tests, verifier self-test, Ruff, identity hygiene, and `git diff --check`
 passed locally. No GitHub run for this revision is claimed.
 
+At package-proof remediation candidate
+`51f9ccd52363ca8e1a2088ea1cc65f57403fd9f1`, the canonical release-proof
+candidate refresh found exactly one changed member, `.github/workflows/pr-gates.yml`,
+and rewrote both the member digest and the enclosing `candidate.sha256` from
+repository bytes. The exact Package Smoke integration tests passed (`19 passed`),
+the current wheel built and prepared successfully, `run_installed_proof.py`
+reported `LOCAL_REAL_WHEEL_PREPARATION_VERIFIED`, and all five installed
+rejection mutations were rejected. The local environment used Python 3.12;
+GitHub's Python 3.11 Package Smoke remains required before approval.
+
+Commands recorded for that local Package Smoke reproduction, from `memorii/`,
+were `/Users/nandaraghunathan/Code/Memorii/Memorii/.venv/bin/python -W error
+-m pytest tests/integration/test_observation_activation_bootstrap.py
+tests/integration/test_observation_activation_release_tools.py -p
+no:cacheprovider -q`, `/Users/nandaraghunathan/Code/Memorii/Memorii/.venv/bin/python
+-m pip wheel . --no-deps --wheel-dir <temporary>/memorii-wheel`,
+`.../prepare_candidate.py <temporary>/memorii-wheel <temporary>/memorii-prepared
+--acquire`, `.../run_installed_proof.py <temporary>/memorii-prepared
+<temporary>/memorii-preparation-proof`, and
+`.../check_installed_rejections.py <temporary>/memorii-prepared
+<temporary>/memorii-preparation-proof`. The candidate-refresh command hashed
+every declared member, rejected any mismatch set other than the sole workflow
+path, then serialized the manifest and its SHA-256 from the resulting bytes.
+
 ## Identity Impact
 
 No behavioral, persisted, protocol, public API, or production-entrypoint
@@ -213,10 +247,10 @@ or harness behavior.
 
 ```yaml
 base_revision: 2eefb39e7c80ab609961f3db78fbc16401f9d675
-reviewed_revision: 02dec70609e41c2eb977b77927b442d5f495b614; correctness/test reviewed this clean candidate and spec inspection requested only the closure-evidence correction; e8edaf0e requires a new focused closure review
-tested_revision: e8edaf0e5402fd9f390460ebb380425a76402126
-tested_tree_digest: 1f06f03c8b346c4de6524074103abaa0236cfd1e
-tree_state: clean after e8edaf0e; later commits are WorkPlan-only evidence updates
+reviewed_revision: 02dec70609e41c2eb977b77927b442d5f495b614; correctness/test reviewed this clean candidate and spec inspection requested only the closure-evidence correction; the workflow-contract and package-proof remediations require focused closure review
+tested_revision: 51f9ccd52363ca8e1a2088ea1cc65f57403fd9f1
+tested_tree_digest: 5097c39eacd1aca2940218f6a20a584315a668df
+tree_state: clean after 51f9ccd5; the subsequent commit is WorkPlan-only evidence
 changed_surface_inventory_complete: true
 scope_delta_resolved: true
 authority_chains_complete: not_applicable; no product authority chain changed
@@ -226,24 +260,26 @@ required_local_jobs:
   - Ruff
   - git diff check
   - focused workflow contract test
+  - Package Smoke installed proof and rejection checks
 passed_local_jobs:
   - reconciliation verifier
   - reconciliation verifier self-test
   - Ruff
   - git diff check
   - focused workflow contract test
+  - Package Smoke installed proof and rejection checks
 known_local_failures: []
 failure_exclusions: []
 workflow_identities: []
 ci_event: pull_request
-ci_executed_sha: 8807ad87a834bcd81d6b1abf992c7f91de0a2051
+ci_executed_sha: ce3a1fee63626effd006550ea9e821ec6937c987
 ci_executed_ref: codex/m5-ancestry-reconciliation
 remaining_validated_p1_p2: []
 remaining_blocks_approval:
   - independent closure review after CI contract remediation
   - exact-head GitHub checks after CI contract remediation
 remaining_changes_required: []
-local_ci_parity: focused static proof covers the dependency-free PR command and complete-history checkout; the recorded exact-head CI failed because its checkout was shallow
+local_ci_parity: focused static proof covers the dependency-free PR command and complete-history checkout; Package Smoke's release-proof candidate audit, current-wheel preparation, installed proof, and installed rejection checks passed locally under Python 3.12
 acceptance_gate_inventory:
   - Semantic Ingestion History Reconciliation PR gate
   - Unit Tests aggregate dependency
@@ -252,13 +288,14 @@ acceptance_gate_inventory:
 github_run_urls:
   - https://github.com/nrag/Memorii/actions/runs/36111613542
   - https://github.com/nrag/Memorii/actions/runs/36112189195
+  - https://github.com/nrag/Memorii/actions/runs/36113313507
 pr_head_sha: pending push
 pr_base_sha: 2eefb39e7c80ab609961f3db78fbc16401f9d675
 merge_base_sha: 2eefb39e7c80ab609961f3db78fbc16401f9d675
-required_checks_green: false; run 36111613542 failed on shallow history and run 36112189195 failed on a stale exact workflow contract
+required_checks_green: false; run 36111613542 failed on shallow history, run 36112189195 failed on a stale exact workflow contract, and run 36113313507 failed on the stale release-proof workflow digest
 ```
 
 ## Next Action
 
-Push the CI contract remediations and obtain an exact-head GitHub CI run for the
-ancestry-only merge and its reconciliation evidence.
+Push the CI and release-proof remediations and obtain an exact-head GitHub CI
+run for the ancestry-only merge and its reconciliation evidence.
