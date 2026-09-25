@@ -234,11 +234,12 @@ fingerprints when required, and linked WorkPlans/evidence.
   local Docker daemon), and direct local Level 2 factory construction reaches
   an initialized `ProviderMemoryService`.
 - GitHub run `36103164026` exposed one remaining stale test expectation: the static tooling contract asserted file sharding after the Level 2 gate moved to node sharding. Revision `c13e10ef` corrects the assertion; the focused test and Ruff pass locally.
-- Product candidate `c13e10ef` has 300 non-work changed paths with digest
-  `5150ebd50f091e466243bab4edda88aeac732262cdec56aebd9c8bca48e92541`.
+- Final test review found the developer command guide still described four file-based shards. Revision `a13f58ae` documents all six node-balanced shards and adds a regression that binds the documented commands to the checked-in assignment scope and count.
+- Product candidate `a13f58ae` has 301 non-work changed paths with digest
+  `af02487f0c0a5b7f449e9d9e005b62ca8a4423a598cfc1f6ff7c70134885d636`.
   The installed-package candidate pins 1,821 package files and 1,909 total
   proof inputs with SHA-256
-  `1ee5bd1831e1e591bae8bc9cbce6a6fd7f9921f4c3ae8207a90169832f5521a5`.
+  `2eff390677e8d78178ce83f60b24dedb3aa5ffa148dfa6cb530659cc234d2920`.
 
 ## Review Findings
 
@@ -247,5 +248,5 @@ loop. No reviewer finding is dismissed or deferred within Level 2.
 
 ## Next Action
 
-Commit and push the frozen evidence for product revision `c13e10ef`, request
+Commit and push the frozen evidence for product revision `a13f58ae`, request
 independent delta review, then require the replacement GitHub run to pass.

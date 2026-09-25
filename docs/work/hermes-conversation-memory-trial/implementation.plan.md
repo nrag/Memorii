@@ -6,7 +6,7 @@
 - Status: under-review
 - Coordinator: `/root`
 - Base revision: `d0c96305397f03c1e4a09e548f0fbd62602b3f95`
-- Candidate product revision: `c13e10ef3760ed382589ad0be4191215d39b4681`
+- Candidate product revision: `a13f58ae4092f2e7ab5afaac2f0b08402e8dc1d7`
 - Last updated: 2026-09-24
 - Parent: `docs/work/hermes-conversation-memory-trial/design.plan.md`
 - Governing design: `docs/design/hermes_conversation_memory_trial.md`
@@ -81,15 +81,15 @@ product candidate.
 - Installed default-image Hermes `MemoryManager` lifecycle: 1 passed in 1867.18 seconds.
 - Project assertion adapter/profile focus: 9 passed in 18.85 seconds.
 - Production entrypoint preflight validates all five caller counts as exactly 1.
-- Candidate manifest v2 validates 300 changed paths and includes the deleted
+- Candidate manifest v2 validates 301 changed paths and includes the deleted
   legacy Bootstrap preparation test.
 
 ## Candidate Freeze
 
-- Candidate product revision: `c13e10ef3760ed382589ad0be4191215d39b4681`
-- Candidate manifest SHA-256: `6dcf0894869b8628b83a609f3e29a0e0d1439baf56dc3c34dc96463a757fb282`
+- Candidate product revision: `a13f58ae4092f2e7ab5afaac2f0b08402e8dc1d7`
+- Candidate manifest SHA-256: `d8b5d4419ceebb85b90799dcb9a3afbe937ad9b1fb5ef296c3c669af6f230ded`
 - Candidate file count: 300
-- Changed-files digest: `5150ebd50f091e466243bab4edda88aeac732262cdec56aebd9c8bca48e92541`
+- Changed-files digest: `af02487f0c0a5b7f449e9d9e005b62ca8a4423a598cfc1f6ff7c70134885d636`
 - Manifest scope: every changed product, design, generated, Docker, workflow,
   and test path outside `docs/work/`
 - Deletion coverage: `memorii/tests/unit/core/semantic_ingestion/test_bootstrap_text_preparation_producer.py`

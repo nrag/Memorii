@@ -8,7 +8,7 @@
 - Created: 2026-09-24
 - Last updated: 2026-09-24
 - Parent WorkPlan: `docs/work/hermes-conversation-memory-trial/implementation.plan.md`
-- Candidate product revision: `c13e10ef3760ed382589ad0be4191215d39b4681`
+- Candidate product revision: `a13f58ae4092f2e7ab5afaac2f0b08402e8dc1d7`
 - Canonical inputs: `.github/workflows/pr-gates.yml`; `memorii/tests/integration/test_hermes_bootstrap_v3_product.py`; `memorii/tests/ci/unit-shards.json`; `memorii/tests/ci/unit-test-durations.json`
 
 ## Objective
@@ -67,6 +67,7 @@ production-shaped equal-text bridge regression.
   seconds. The focused expired-claim, three lost-ack boundaries, three
   reused-commit production roots, and two clarification reopen cases all pass.
 - GitHub run `36103164026` reached unit shard 2 with 900 passing tests and one stale assertion for the old file assignment scope. Revision `c13e10ef` aligns that assertion with node assignment; the exact regression passes locally.
+- Final test review found the developer guide listed only four shard runs. Revision `a13f58ae` lists all six node-balanced runs and adds a config-to-documentation assertion; the focused regression and Ruff pass locally.
 
 ## Blockers And Limits
 
