@@ -10,7 +10,7 @@
 - Parent WorkPlan: `docs/work/hermes-conversation-memory-trial/implementation.plan.md`
 - Related WorkPlans: `docs/work/hermes-level2-pr/pr-review.plan.md`; `docs/work/hermes-level2-test-gate/testing.plan.md`
 - Canonical inputs: merge commit `d0c96305397f03c1e4a09e548f0fbd62602b3f95`; M5 merged head `410ce4a817903a6670e268061b22744d7c7d806b`; M5 descendant head `63658193b8a4c296b553bb6c3e7fd89392566b2a`; Level 2 transplant `e42cc905c8c583ee99f83777cce25026e6c11041`; current main `2eefb39e7c80ab609961f3db78fbc16401f9d675`
-- Expected outputs: ancestry-preserving reconciliation merge, durable causal/equivalence evidence, green required checks, and independent closure review
+- Expected outputs: ancestry-preserving reconciliation merge, durable causal/equivalence evidence, a dependency-free PR gate, green required checks, and independent closure review
 
 ## Objective
 
@@ -26,8 +26,11 @@ Complete only when:
 - the M5 post-PR history and the Level 2 transplant are causally accounted for;
 - the repair commit has current `main` and `63658193` as parents while retaining
   the current `main` tree exactly;
-- a deterministic verifier rejects missing or substituted parent/tree identity;
-- the complete PR diff contains only the reconciliation record and its verifier;
+- a deterministic verifier binds the reviewed target to the reconciliation merge
+  and both parents, and rejects substituted parent, tree, source-transplant,
+  target, and equivalence identity;
+- the complete PR diff contains only the reconciliation WorkPlan, JSON record,
+  verifier, required PR workflow gate, and focused static workflow contract test;
 - targeted independent spec, correctness, and test review report no required
   findings;
 - exact-head required GitHub checks pass and the reconciliation PR is merged.
@@ -51,8 +54,9 @@ incorporated before later Level 2 corrections.
 
 ## Scope And Invariants
 
-Included: Git ancestry reconciliation, exact parent/tree verification, durable
-explanation, PR checks, and branch supersession evidence.
+Included: Git ancestry reconciliation, exact parent/tree and reachability
+verification, durable explanation, a dependency-free PR check, focused static
+workflow coverage, and branch supersession evidence.
 
 Excluded: changing product behavior, replaying M5 patches over newer Level 2
 code, rewriting published history, deleting the M5 branch, or altering release
@@ -68,7 +72,7 @@ forbidden because the old M5 side predates reviewed Level 2 corrections.
 | H1 | PR #121 omitted post-PR #120 M5 product changes | `e42cc905..63658193` differs only in three WorkPlan/evidence files | M5 product tree was transplanted | disproved |
 | H2 | PR #121 incorporated M5 content but lost its ancestry | `e42cc905` parent is `d0c96305`; neither final branch is ancestor of the other; normal merge has 225 conflicts | Explains the misleading unmerged branch and conflict family | confirmed |
 | H3 | A normal merge can safely repair history | merge simulation has 225 conflicts across generated contracts, runtime code, tests, Docker, workflows, and evidence | A content merge risks restoring stale state | disproved |
-| H4 | An ancestry-only merge can record incorporation without changing product bytes | Git `ours` merge semantics retain first-parent tree while adding the M5 parent | Must be proven by exact parent and tree verifier | active |
+| H4 | An ancestry-only merge can record incorporation without changing product bytes | exact parent/tree and reachability verifier passed at `7015a0b5` | preserves main tree while recording M5 as ancestry | confirmed |
 
 ## Experiment Log
 
@@ -83,13 +87,23 @@ forbidden because the old M5 side predates reviewed Level 2 corrections.
    with ordered parents `2eefb39e7c80ab609961f3db78fbc16401f9d675` and
    `63658193b8a4c296b553bb6c3e7fd89392566b2a`. Its tree is
    `228736f174b4723cc95a3599eb84c040f045c1c9`, exactly the first-parent tree.
+6. Review found that the original record did not bind the repair to a reviewed
+   target and allowed the record to redefine the equivalence paths. The verifier
+   now requires the source transplant to precede the first parent; the merge and
+   both parents to precede the invocation target; and a stable review anchor to
+   precede that target. It constrains the three permitted evidence rows in code.
+7. Added the dependency-free `M5 Ancestry Reconciliation` PR job and made the
+   `Unit Tests` aggregate require it. Focused static workflow coverage verifies
+   the isolated Python command and aggregate dependency.
 
 ## Changed Surface And Verification
 
 | Surface | Purpose | Required evidence | State |
 | --- | --- | --- | --- |
 | Git merge commit | record both current main and M5 as parents while retaining main tree | exact parent order and tree equality | complete: `a74ebcb0` |
-| `docs/work/m5-ancestry-reconciliation/` | durable causal and verification record | verifier positive and mutation self-tests | in progress |
+| `docs/work/m5-ancestry-reconciliation/` | durable causal and verification record | verifier, reachability checks, and mutation self-tests | complete at `7015a0b5` |
+| `.github/workflows/pr-gates.yml` | execute verifier on every PR and make the aggregate gate fail closed | isolated `python3.12 -I` job required by `Unit Tests` | complete at `7015a0b5` |
+| `memorii/tests/unit/tools/test_static_tooling_config.py` | prove workflow job and aggregate dependency remain exact | two focused static workflow tests | complete at `7015a0b5` |
 | GitHub PR | review and integrate ancestry repair | exact-head checks and mergeability | pending |
 
 ## Root Cause
@@ -130,12 +144,37 @@ It also rejects representative parent, tree, and equivalence substitutions with
   docs/work/m5-ancestry-reconciliation/verify_reconciliation.py` exited 0.
 - `git diff --no-ext-diff --check` exited 0 before the child commit.
 
+At remediation candidate `7015a0b51147ca0923396b7fb2dd3d36a120f6fd`:
+
+- `python3 -I docs/work/m5-ancestry-reconciliation/verify_reconciliation.py
+  --repo . --self-test` exited 0. Its target was `7015a0b5`; it verified that
+  `a74ebcb0`, both ordered parents, and review anchor `c6e7e6a7` are ancestors
+  of that target. It rejected valid alternate parent/merge, tree, nonempty
+  equivalence, transplant, and target substitutions at their decisive checks.
+- `PYTHONPATH=. /Users/nandaraghunathan/Code/Memorii/Memorii/.venv/bin/python
+  -m pytest -W error tests/unit/tools/test_static_tooling_config.py::test_pr_unit_gate_is_complete_duration_balanced_and_timeout_bounded
+  tests/unit/tools/test_static_tooling_config.py::test_m5_ancestry_reconciliation_gate_is_isolated_and_required
+  -p no:cacheprovider -q` exited 0: `2 passed`.
+- `/Users/nandaraghunathan/Code/Memorii/Memorii/.venv/bin/ruff check --no-cache
+  docs/work/m5-ancestry-reconciliation/verify_reconciliation.py
+  memorii/tests/unit/tools/test_static_tooling_config.py` exited 0 from the
+  repository root. The focused pytest parses the
+  workflow with PyYAML and confirms the required command and aggregate wiring.
+- `git diff --no-ext-diff --check` exited 0 at `7015a0b5`.
+
+## Identity Impact
+
+No behavioral, persisted, protocol, public API, or production-entrypoint
+identifier changes. `m5-ancestry-reconciliation` is a WorkPlan, evidence
+directory, verifier path, and CI job name that describes a bounded repository
+governance operation; it does not enter product data or harness behavior.
+
 ```yaml
 base_revision: 2eefb39e7c80ab609961f3db78fbc16401f9d675
 reviewed_revision: pending independent review
-tested_revision: cfa5dcbb792134a45976d8d64218cfc76e45f859
-tested_tree_digest: 918859e107e3d9330496d21b376a827d5a0bb70d
-tree_state: clean after cfa5dcbb
+tested_revision: 7015a0b51147ca0923396b7fb2dd3d36a120f6fd
+tested_tree_digest: dd8ca0a5835b5429aa9784d8b163cdb5c73bc775
+tree_state: clean after 7015a0b5
 changed_surface_inventory_complete: true
 scope_delta_resolved: true
 authority_chains_complete: not_applicable; no product authority chain changed
@@ -144,11 +183,13 @@ required_local_jobs:
   - reconciliation verifier self-test
   - Ruff
   - git diff check
+  - focused workflow contract test
 passed_local_jobs:
   - reconciliation verifier
   - reconciliation verifier self-test
   - Ruff
   - git diff check
+  - focused workflow contract test
 known_local_failures: []
 failure_exclusions: []
 workflow_identities: []
@@ -160,8 +201,10 @@ remaining_blocks_approval:
   - independent closure review
   - exact-head GitHub checks
 remaining_changes_required: []
-local_ci_parity: not_applicable; this documentation-only repair has no dedicated local CI job
+local_ci_parity: focused static proof covers the dependency-free PR command; exact GitHub event remains pending
 acceptance_gate_inventory:
+  - M5 Ancestry Reconciliation PR gate
+  - Unit Tests aggregate dependency
   - targeted independent review
   - exact-head GitHub checks
 github_run_urls: []
