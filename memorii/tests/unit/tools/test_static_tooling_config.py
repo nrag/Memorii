@@ -377,6 +377,11 @@ def test_terminal_persistence_job_is_exact_node_balanced_and_disjoint() -> None:
         )
     )
     assert broad_config["assignment_scope"] == "node"
+    documentation = (PROJECT_ROOT.parent / "docs" / "development" / "static_tooling.md").read_text(encoding="utf-8")
+    documented_command = "python -m memorii.tools.test_shards run --config tests/ci/unit-shards.json --index"
+    assert documentation.count(documented_command) == broad_config["shard_count"]
+    for shard_index in range(broad_config["shard_count"]):
+        assert f"{documented_command} {shard_index}" in documentation
     assert f"--ignore={terminal_path}" in broad_config["pytest_args"]
     assert (
         "--ignore=tests/unit/core/semantic_ingestion/test_provider_compatibility.py"
