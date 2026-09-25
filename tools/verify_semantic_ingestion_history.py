@@ -1,4 +1,4 @@
-"""Verify that the M5 ancestry repair preserved the reviewed main tree."""
+"""Verify that incorporated semantic-ingestion history preserved the main tree."""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ from pathlib import Path
 import subprocess
 
 
-ROOT = Path(__file__).resolve().parents[3]
-RECORD_PATH = Path(__file__).with_name("reconciliation-record.json")
+ROOT = Path(__file__).resolve().parent.parent
+RECORD_PATH = Path(__file__).with_name("semantic_ingestion_history_reconciliation.json")
 _COMMIT_LENGTH = 40
 _TREE_LENGTH = 40
 _PERMITTED_EQUIVALENCE_ROWS = [
@@ -96,7 +96,7 @@ def _load_record(path: Path) -> dict[str, object]:
         "expected_tree",
         "review_anchor_commit",
         "source_transplant_commit",
-        "m5_head",
+        "incorporated_history_head",
         "equivalence",
     }
     _require(set(value) == expected, "record has unknown or missing fields")
@@ -124,7 +124,8 @@ def verify_record(
     parents = record["expected_ordered_parents"]
     _require(isinstance(parents, list) and len(parents) == 2, "record must name exactly two ordered parents")
     expected_parents = [_commit(repository, parent) for parent in parents]
-    _require(expected_parents[1] == _commit(repository, record["m5_head"]), "M5 head must be second merge parent")
+    history_head = _commit(repository, record["incorporated_history_head"])
+    _require(expected_parents[1] == history_head, "incorporated history must be second merge parent")
     actual_parents = _git(repository, "show", "-s", "--format=%P", merge).split()
     _require(actual_parents == expected_parents, "merge parents differ from recorded order")
     expected_tree = record["expected_tree"]
@@ -157,12 +158,12 @@ def verify_record(
     left = _commit(repository, equivalence["left_commit"])
     right = _commit(repository, equivalence["right_commit"])
     _require(left == source_transplant, "equivalence left side differs from transplant")
-    _require(right == _commit(repository, record["m5_head"]), "equivalence right side differs from M5 head")
+    _require(right == history_head, "equivalence right side differs from incorporated history")
     expected_rows = equivalence["expected_name_status"]
     _require(isinstance(expected_rows, list) and expected_rows, "equivalence rows must be nonempty")
     _require(all(isinstance(row, dict) and set(row) == {"status", "path"} for row in expected_rows), "invalid equivalence row")
     _require(expected_rows == _PERMITTED_EQUIVALENCE_ROWS, "equivalence rows differ from permitted evidence paths")
-    _require(_name_status(repository, left, right) == _PERMITTED_EQUIVALENCE_ROWS, "transplant and M5 head differ outside recorded evidence files")
+    _require(_name_status(repository, left, right) == _PERMITTED_EQUIVALENCE_ROWS, "transplant and incorporated history differ outside recorded evidence files")
     return {
         "merge": merge,
         "parents": actual_parents,
@@ -193,7 +194,7 @@ def self_test(repository: Path, record: dict[str, object]) -> None:
     _expect_rejection(repository, mutated_parent, "parent", "merge parents differ from recorded order")
 
     mutated_tree = copy.deepcopy(record)
-    mutated_tree["expected_tree"] = _tree(repository, record["m5_head"])
+    mutated_tree["expected_tree"] = _tree(repository, record["incorporated_history_head"])
     _expect_rejection(repository, mutated_tree, "tree", "merge tree differs from recorded tree")
 
     mutated_equivalence = copy.deepcopy(record)
@@ -208,7 +209,7 @@ def self_test(repository: Path, record: dict[str, object]) -> None:
     )
 
     mutated_transplant = copy.deepcopy(record)
-    mutated_transplant["source_transplant_commit"] = record["m5_head"]
+    mutated_transplant["source_transplant_commit"] = record["incorporated_history_head"]
     _expect_rejection(
         repository,
         mutated_transplant,
@@ -239,7 +240,7 @@ def main() -> None:
             self_test(arguments.repo.resolve(), record)
             result["self_test"] = "passed"
     except (OSError, TypeError, json.JSONDecodeError, VerificationError) as error:
-        parser.exit(1, f"ancestry reconciliation verification failed: {error}\n")
+        parser.exit(1, f"semantic-ingestion history verification failed: {error}\n")
     print(json.dumps(result, sort_keys=True))
 
 

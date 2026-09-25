@@ -92,7 +92,7 @@ forbidden because the old M5 side predates reviewed Level 2 corrections.
    now requires the source transplant to precede the first parent; the merge and
    both parents to precede the invocation target; and a stable review anchor to
    precede that target. It constrains the three permitted evidence rows in code.
-7. Added the dependency-free `M5 Ancestry Reconciliation` PR job and made the
+7. Added the dependency-free `Semantic Ingestion History Reconciliation` PR job and made the
    `Unit Tests` aggregate require it. Focused static workflow coverage verifies
    the isolated Python command and aggregate dependency.
 
@@ -101,7 +101,7 @@ forbidden because the old M5 side predates reviewed Level 2 corrections.
 | Surface | Purpose | Required evidence | State |
 | --- | --- | --- | --- |
 | Git merge commit | record both current main and M5 as parents while retaining main tree | exact parent order and tree equality | complete: `a74ebcb0` |
-| `docs/work/m5-ancestry-reconciliation/` | durable causal and verification record | verifier, reachability checks, and mutation self-tests | complete at `7015a0b5` |
+| `tools/verify_semantic_ingestion_history.py` and `tools/semantic_ingestion_history_reconciliation.json` | durable causal and verification record | verifier, reachability checks, and mutation self-tests | complete at `7015a0b5` |
 | `.github/workflows/pr-gates.yml` | execute verifier on every PR and make the aggregate gate fail closed | isolated `python3.12 -I` job required by `Unit Tests` | complete at `7015a0b5` |
 | `memorii/tests/unit/tools/test_static_tooling_config.py` | prove workflow job and aggregate dependency remain exact | two focused static workflow tests | complete at `7015a0b5` |
 | GitHub PR | review and integrate ancestry repair | exact-head checks and mergeability | pending |
@@ -127,36 +127,37 @@ level_2_disposition: under-review
 
 ## Verification Evidence
 
-The durable record is `reconciliation-record.json`; `verify_reconciliation.py`
+The durable record is `tools/semantic_ingestion_history_reconciliation.json`;
+`tools/verify_semantic_ingestion_history.py`
 must verify the actual merge's ordered parents, its tree identity, equality with
 the first-parent tree, and the exact three-file transplant/M5 equivalence fact.
 It also rejects representative parent, tree, and equivalence substitutions with
 `--self-test`.
 
 - Documentation/verifier child commit: `cfa5dcbb792134a45976d8d64218cfc76e45f859`.
-- `python3 docs/work/m5-ancestry-reconciliation/verify_reconciliation.py`
+- `python3 tools/verify_semantic_ingestion_history.py`
   exited 0 and reported merge `a74ebcb0`, its ordered parents, first-parent
   tree `228736f174b4723cc95a3599eb84c040f045c1c9`, and three equivalence rows.
-- `python3 docs/work/m5-ancestry-reconciliation/verify_reconciliation.py --self-test`
+- `python3 tools/verify_semantic_ingestion_history.py --self-test`
   exited 0 and proved that substituted second-parent, tree, and equivalence-row
   values are rejected.
 - `/Users/nandaraghunathan/Code/Memorii/Memorii/.venv/bin/ruff check
-  docs/work/m5-ancestry-reconciliation/verify_reconciliation.py` exited 0.
+  tools/verify_semantic_ingestion_history.py` exited 0.
 - `git diff --no-ext-diff --check` exited 0 before the child commit.
 
 At remediation candidate `7015a0b51147ca0923396b7fb2dd3d36a120f6fd`:
 
-- `python3 -I docs/work/m5-ancestry-reconciliation/verify_reconciliation.py
+- `python3 -I tools/verify_semantic_ingestion_history.py
   --repo . --self-test` exited 0. Its target was `7015a0b5`; it verified that
   `a74ebcb0`, both ordered parents, and review anchor `c6e7e6a7` are ancestors
   of that target. It rejected valid alternate parent/merge, tree, nonempty
   equivalence, transplant, and target substitutions at their decisive checks.
-- `PYTHONPATH=. /Users/nandaraghunathan/Code/Memorii/Memorii/.venv/bin/python
+- `PYTHONPATH=/Users/nandaraghunathan/.codex/worktrees/m5-ancestry-repair/Memorii/memorii /Users/nandaraghunathan/Code/Memorii/Memorii/.venv/bin/python
   -m pytest -W error tests/unit/tools/test_static_tooling_config.py::test_pr_unit_gate_is_complete_duration_balanced_and_timeout_bounded
-  tests/unit/tools/test_static_tooling_config.py::test_m5_ancestry_reconciliation_gate_is_isolated_and_required
+  tests/unit/tools/test_static_tooling_config.py::test_semantic_ingestion_history_gate_is_isolated_and_required
   -p no:cacheprovider -q` exited 0: `2 passed`.
 - `/Users/nandaraghunathan/Code/Memorii/Memorii/.venv/bin/ruff check --no-cache
-  docs/work/m5-ancestry-reconciliation/verify_reconciliation.py
+  tools/verify_semantic_ingestion_history.py
   memorii/tests/unit/tools/test_static_tooling_config.py` exited 0 from the
   repository root. The focused pytest parses the
   workflow with PyYAML and confirms the required command and aggregate wiring.
@@ -165,9 +166,10 @@ At remediation candidate `7015a0b51147ca0923396b7fb2dd3d36a120f6fd`:
 ## Identity Impact
 
 No behavioral, persisted, protocol, public API, or production-entrypoint
-identifier changes. `m5-ancestry-reconciliation` is a WorkPlan, evidence
-directory, verifier path, and CI job name that describes a bounded repository
-governance operation; it does not enter product data or harness behavior.
+identifier changes. The historical WorkPlan retains the incident coordinate for
+traceability. The durable verifier, record, CI job, environment key, and test
+identifier use semantic-ingestion-history names and do not enter product data
+or harness behavior.
 
 ```yaml
 base_revision: 2eefb39e7c80ab609961f3db78fbc16401f9d675
@@ -203,7 +205,7 @@ remaining_blocks_approval:
 remaining_changes_required: []
 local_ci_parity: focused static proof covers the dependency-free PR command; exact GitHub event remains pending
 acceptance_gate_inventory:
-  - M5 Ancestry Reconciliation PR gate
+  - Semantic Ingestion History Reconciliation PR gate
   - Unit Tests aggregate dependency
   - targeted independent review
   - exact-head GitHub checks
