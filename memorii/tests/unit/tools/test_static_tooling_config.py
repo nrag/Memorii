@@ -376,7 +376,7 @@ def test_terminal_persistence_job_is_exact_node_balanced_and_disjoint() -> None:
             encoding="utf-8"
         )
     )
-    assert broad_config["assignment_scope"] == "file"
+    assert broad_config["assignment_scope"] == "node"
     assert f"--ignore={terminal_path}" in broad_config["pytest_args"]
     assert (
         "--ignore=tests/unit/core/semantic_ingestion/test_provider_compatibility.py"
