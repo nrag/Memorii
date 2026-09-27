@@ -20,6 +20,9 @@ from memorii.core.semantic_ingestion.catalog_capture_pin import (
 )
 from memorii.core.semantic_ingestion.contracts import (
     ProjectionTextSpan,
+    ProviderCorrection,
+    ProviderEntityObject,
+    ProviderRetraction,
     ProviderSemanticProposal,
     RetainedSourceTextArtifact,
     RetainedSourceTextSpan,
@@ -41,7 +44,9 @@ from memorii.core.semantic_ingestion.hermes_completed_turn_runtime import (
     _canonicalize_completed_messages,
     _CapturedTurnHandle,
     _CompletedTurnWork,
+    _default_catalog_fact_only_proposal_schema,
     _json_arrays_to_tuples,
+    _validate_default_catalog_argument_shape,
 )
 from memorii.core.semantic_ingestion.reports_to_capability import validate_reports_to_tool_proposal
 from tests.fixtures.semantic_ingestion.default_catalog_proposals import (
@@ -98,8 +103,7 @@ def _active_capture_runtime() -> HermesCompletedTurnRuntime:
     return runtime
 
 
-def _real_source_span(*, source_id: str) -> SourceSpanReference:
-    text = "Alice reports to Bob."
+def _real_source_span(*, source_id: str, text: str = "Alice reports to Bob.") -> SourceSpanReference:
     digest = sha256(text.encode()).hexdigest()
     retained = RetainedSourceTextArtifact.create(
         artifact_id="retained-reports", content_digest=digest, unicode_scalar_length=len(text),
@@ -418,6 +422,138 @@ def test_default_catalog_dispatch_advertises_corpus_and_validates_before_normali
         )
 
 
+@pytest.mark.parametrize("operation", ("correction", "retraction"))
+def test_default_catalog_tool_accepts_closed_lifecycle_operations(operation: str) -> None:
+    fixture = build_default_catalog_proposal(
+        next(row for row in load_default_catalog_acceptance_corpus().rows if row.relation_id == "project_owned_by")
+    )
+    if operation == "correction":
+        replacement_object_quote = "Organization replacement"
+        replacement_source = (
+            f"Correction: {fixture.subject_quote} {fixture.predicate_anchor_quote} "
+            f"{replacement_object_quote}."
+        )
+        corrected_subject = fixture.subject.model_copy(update={"local_id": "corrected_subject"})
+        corrected_object = fixture.object.model_copy(update={"local_id": "corrected_object"})
+        replacement_subject = fixture.subject.model_copy(update={
+            "local_id": "replacement_subject", "mention_context_quote": replacement_source,
+        })
+        replacement_object = fixture.object.model_copy(update={
+            "local_id": "replacement_object", "mention_quote": replacement_object_quote,
+            "mention_context_quote": replacement_source,
+        })
+        corrected = fixture.fact.model_copy(update={
+            "local_id": "corrected", "subject_entity_ref": corrected_subject.local_id,
+            "object": ProviderEntityObject(entity_ref=corrected_object.local_id),
+        })
+        replacement = fixture.fact.model_copy(update={
+            "local_id": "replacement", "assertion_quote": replacement_source,
+            "subject_entity_ref": replacement_subject.local_id,
+            "object": ProviderEntityObject(entity_ref=replacement_object.local_id),
+        })
+        proposal = ProviderSemanticProposal(
+            abstained=False,
+            mentions=(corrected_subject, corrected_object, replacement_subject, replacement_object),
+            corrections=(ProviderCorrection(
+                local_id="correction", corrected_fact=corrected,
+                replacement_fact=replacement,
+                assertion_quote=replacement_source, correction_anchor_quote="Correction",
+            ),),
+        )
+        arguments = {
+            "schema_version": 1,
+            "correction": {
+                "assertion_quote": replacement_source, "correction_anchor_quote": "Correction",
+                "corrected": {
+                    "source_quote": fixture.source, "subject_quote": fixture.subject_quote,
+                    "predicate_anchor_quote": fixture.predicate_anchor_quote,
+                    "object_quote": fixture.object_quote,
+                },
+                "replacement": {
+                    "source_quote": replacement_source, "subject_quote": fixture.subject_quote,
+                    "predicate_anchor_quote": fixture.predicate_anchor_quote,
+                    "object_quote": replacement_object_quote,
+                },
+            },
+        }
+    else:
+        corrected = fixture.fact.model_copy(update={"local_id": "corrected"})
+        proposal = ProviderSemanticProposal(
+            abstained=False, mentions=fixture.proposal().mentions,
+            retractions=(ProviderRetraction(
+                local_id="retraction", retracted_fact=corrected,
+                assertion_quote=fixture.source, retraction_anchor_quote=fixture.predicate_anchor_quote,
+            ),),
+        )
+        arguments = {
+            "schema_version": 1, "source_quote": fixture.source,
+            "subject_quote": fixture.subject_quote,
+            "predicate_anchor_quote": fixture.predicate_anchor_quote,
+            "object_quote": fixture.object_quote,
+        }
+    tool_proposal = proposal.model_dump(mode="json")
+
+    _validate_default_catalog_argument_shape(tool_proposal)
+    HermesCompletedTurnRuntime._validate_default_catalog_tool_proposal(
+        proposal=proposal, arguments=arguments,
+    )
+    assert not list(Draft202012Validator(_default_catalog_fact_only_proposal_schema()).iter_errors(tool_proposal))
+
+
+def test_default_catalog_tool_accepts_a_literal_replacement_with_independent_grounding() -> None:
+    fixture = build_default_catalog_proposal(
+        next(row for row in load_default_catalog_acceptance_corpus().rows if row.relation_id == "work_item_due_on")
+    )
+    replacement_quote = "2027-10-03"
+    replacement_source = (
+        f"Correction: {fixture.subject_quote} {fixture.predicate_anchor_quote} {replacement_quote}."
+    )
+    corrected_subject = fixture.subject.model_copy(update={"local_id": "corrected_subject"})
+    replacement_subject = fixture.subject.model_copy(update={
+        "local_id": "replacement_subject", "mention_context_quote": replacement_source,
+    })
+    corrected = fixture.fact.model_copy(update={
+        "local_id": "corrected", "subject_entity_ref": corrected_subject.local_id,
+    })
+    replacement = fixture.fact.model_copy(update={
+        "local_id": "replacement", "assertion_quote": replacement_source,
+        "subject_entity_ref": replacement_subject.local_id,
+        "object": fixture.fact.object.model_copy(update={
+            "canonical_value": '{"source_calendar":"gregorian","value":"2027-10-03"}',
+        }),
+    })
+    proposal = ProviderSemanticProposal(
+        abstained=False, mentions=(corrected_subject, replacement_subject),
+        corrections=(ProviderCorrection(
+            local_id="correction", corrected_fact=corrected, replacement_fact=replacement,
+            assertion_quote=replacement_source, correction_anchor_quote="Correction",
+        ),),
+    )
+    arguments = {
+        "schema_version": 1,
+        "correction": {
+            "assertion_quote": replacement_source, "correction_anchor_quote": "Correction",
+            "corrected": {
+                "source_quote": fixture.source, "subject_quote": fixture.subject_quote,
+                "predicate_anchor_quote": fixture.predicate_anchor_quote,
+                "object_quote": fixture.object_quote,
+            },
+            "replacement": {
+                "source_quote": replacement_source, "subject_quote": fixture.subject_quote,
+                "predicate_anchor_quote": fixture.predicate_anchor_quote,
+                "object_quote": replacement_quote,
+            },
+        },
+    }
+    tool_proposal = proposal.model_dump(mode="json")
+
+    _validate_default_catalog_argument_shape(tool_proposal)
+    HermesCompletedTurnRuntime._validate_default_catalog_tool_proposal(
+        proposal=proposal, arguments=arguments,
+    )
+    assert not list(Draft202012Validator(_default_catalog_fact_only_proposal_schema()).iter_errors(tool_proposal))
+
+
 def test_default_catalog_handle_tool_call_validates_before_preparation_and_submission() -> None:
     runtime = _active_capture_runtime()
     active = runtime._active_turn
@@ -431,8 +567,13 @@ def test_default_catalog_handle_tool_call_validates_before_preparation_and_submi
     runtime._structured_authority_request = StructuredSubmissionAuthorityRequest.model_construct()
     runtime._structured_tool_is_current = lambda: True
     runtime._load_active_prepared_source = lambda _active: preparations.append("prepare") or object()
-    runtime._resolve_sentence_span = lambda **_kwargs: _real_source_span(
-        source_id=active.ledger.source_id
+    first_span = _real_source_span(source_id=active.ledger.source_id, text="first span")
+    second_span = _real_source_span(source_id=active.ledger.source_id, text="second span")
+    high_span, low_span = sorted(
+        (first_span, second_span), key=lambda span: span.reference_digest, reverse=True,
+    )
+    runtime._resolve_sentence_span = lambda **kwargs: (
+        low_span if str(kwargs["source_quote"]).startswith("Correction:") else high_span
     )
     runtime._service = SimpleNamespace(
         load_captured_turn_catalog_pin=lambda **_kwargs: pin,
@@ -495,6 +636,80 @@ def test_default_catalog_handle_tool_call_validates_before_preparation_and_submi
 
     assert runtime.handle_tool_call(tool_name="memorii_submit_fact", arguments=entity)["status"] == "committed"
     assert runtime.handle_tool_call(tool_name="memorii_submit_fact", arguments=literal)["status"] == "committed"
+    lifecycle_fact = {**entity["proposal"]["facts"][0], "local_id": "corrected"}
+    replacement_source = "Correction: Atlas project has work item Ship docs."
+    replacement_fact = {
+        **lifecycle_fact,
+        "local_id": "replacement", "assertion_quote": replacement_source,
+        "subject_entity_ref": "replacement_project",
+        "object": {"kind": "entity", "entity_ref": "replacement_work"},
+    }
+    correction = {
+        "schema_version": 1,
+        "correction": {
+            "assertion_quote": replacement_source, "correction_anchor_quote": "Correction",
+            "corrected": {
+                "source_quote": entity["source_quote"], "subject_quote": "Atlas project",
+                "predicate_anchor_quote": "has work item", "object_quote": "Fix bug",
+            },
+            "replacement": {
+                "source_quote": replacement_source, "subject_quote": "Atlas project",
+                "predicate_anchor_quote": "has work item", "object_quote": "Ship docs",
+            },
+        },
+        "proposal": {
+            **entity["proposal"],
+            "mentions": [
+                {**entity["proposal"]["mentions"][0], "local_id": "corrected_project"},
+                {**entity["proposal"]["mentions"][1], "local_id": "corrected_work"},
+                {**entity["proposal"]["mentions"][0], "local_id": "replacement_project", "mention_context_quote": replacement_source},
+                {"local_id": "replacement_work", "mention_quote": "Ship docs", "mention_context_quote": replacement_source, "proposed_type": "WorkItem"},
+            ],
+            "facts": [],
+            "corrections": [{
+                "kind": "correction", "local_id": "correction",
+                "corrected_fact": {**lifecycle_fact, "subject_entity_ref": "corrected_project", "object": {"kind": "entity", "entity_ref": "corrected_work"}},
+                "replacement_fact": replacement_fact,
+                "assertion_quote": replacement_source, "correction_anchor_quote": "Correction",
+            }],
+        },
+    }
+    assert runtime.handle_tool_call(
+        tool_name="memorii_submit_fact", arguments=correction,
+    )["status"] == "committed"
+    assert submissions[-1].proposal.corrections[0].corrected_fact.predicate_id == "project_has_work_item"
+    assert tuple(span.reference_digest for span in submissions[-1].exact_source_spans) == (
+        low_span.reference_digest, high_span.reference_digest,
+    )
+    before_invalid_correction = (len(preparations), len(submissions))
+    invalid_correction = {
+        **correction,
+        "correction": {
+            **correction["correction"],
+            "corrected": {**correction["correction"]["corrected"], "extra": "reject"},
+        },
+    }
+    assert runtime.handle_tool_call(
+        tool_name="memorii_submit_fact", arguments=invalid_correction,
+    ) == {"status": "rejected"}
+    assert (len(preparations), len(submissions)) == before_invalid_correction
+    retraction = {
+        **entity,
+        "proposal": {
+            **entity["proposal"],
+            "facts": [],
+            "retractions": [{
+                "kind": "retraction", "local_id": "retraction",
+                "retracted_fact": lifecycle_fact,
+                "assertion_quote": entity["source_quote"],
+                "retraction_anchor_quote": entity["predicate_anchor_quote"],
+            }],
+        },
+    }
+    assert runtime.handle_tool_call(
+        tool_name="memorii_submit_fact", arguments=retraction,
+    )["status"] == "committed"
+    assert submissions[-1].proposal.retractions[0].retracted_fact.predicate_id == "project_has_work_item"
     before = (len(preparations), len(submissions))
     ungrounded_literal = dict(literal)
     ungrounded_literal["proposal"] = {
@@ -607,7 +822,7 @@ def test_default_catalog_handle_tool_call_validates_before_preparation_and_submi
     assert runtime.handle_tool_call(tool_name="memorii_submit_fact", arguments=wrong) == {
         "status": "rejected"
     }
-    assert (len(preparations), len(submissions)) == (5, 5)
+    assert (len(preparations), len(submissions)) == (7, 7)
     assert all(request.captured_pin is not None for request in submissions)
 
 

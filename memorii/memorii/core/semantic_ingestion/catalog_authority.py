@@ -381,6 +381,7 @@ class CatalogCapabilityImplementation(BaseModel):
         "default_catalog_runtime_rows", "load_default_catalog_acceptance_corpus",
         "validate_default_catalog_literal_grounding",
         "validate_default_catalog_provider_fact",
+        "validate_default_catalog_provider_lifecycle_proposal",
         "validate_default_catalog_provider_proposal",
         "reports_to_output_schema", "validate_reports_to_tool_proposal",
         "ReportsToProviderProposalAdapter",

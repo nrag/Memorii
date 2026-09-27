@@ -105,6 +105,7 @@ class DefaultCatalogCorpusRow(BaseModel):
     evidence: Literal["D", "A", "E"]
     lifecycle: Literal["M", "C", "H"]
     read_form: Literal["set", "current", "history"]
+    read_derivation_policy: Literal["none", "symmetric_view"]
     meaning: str = Field(min_length=1)
     coverage: tuple[str, ...]
     requires_private_denial: bool
@@ -114,6 +115,10 @@ class DefaultCatalogCorpusRow(BaseModel):
 
     @model_validator(mode="after")
     def validate_row(self) -> DefaultCatalogCorpusRow:
+        if self.read_derivation_policy != (
+            "symmetric_view" if self.relation_id in {"partner_of", "sibling_of"} else "none"
+        ):
+            raise ValueError("default catalog read derivation policy is invalid")
         if self.coverage != tuple(sorted(set(self.coverage))):
             raise ValueError("default catalog coverage codes are not canonical")
         if not self.coverage:

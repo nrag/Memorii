@@ -48,15 +48,18 @@ from memorii.core.semantic_ingestion.catalog_capture_pin import (
 from memorii.core.semantic_ingestion.contracts import (
     PreparedSource,
     ProviderEntityObject,
+    ProviderFact,
+    ProviderMention,
     ProviderSemanticProposal,
     TextPreparationRequest,
     VerbatimTextArtifactMappingProof,
 )
+from memorii.core.semantic_ingestion.default_catalog_corpus import DefaultCatalogCorpusRow
 from memorii.core.semantic_ingestion.default_catalog_runtime import (
     DEFAULT_CATALOG_LITERAL_TYPES,
     default_catalog_runtime_rows,
     validate_default_catalog_literal_grounding,
-    validate_default_catalog_provider_proposal,
+    validate_default_catalog_provider_lifecycle_proposal,
 )
 from memorii.core.semantic_ingestion.hermes_captured_turn import (
     HermesCapturedTurnCompletion,
@@ -175,7 +178,7 @@ _REPORTS_TO_FACT_ONLY_PROPOSAL_SCHEMA: dict[str, object] = {
 
 
 def _default_catalog_fact_only_proposal_schema() -> dict[str, object]:
-    """Project the verified corpus inventory into the provider transport schema."""
+    """Project default predicates and their closed lifecycle grammar to transport."""
     schema = deepcopy(_FACT_ONLY_PROPOSAL_SCHEMA)
     properties = schema["properties"]
     assert isinstance(properties, dict)
@@ -204,6 +207,27 @@ def _default_catalog_fact_only_proposal_schema() -> dict[str, object]:
     literal_properties["literal_type"] = {
         "enum": sorted(item.value for item in DEFAULT_CATALOG_LITERAL_TYPES.values()),
     }
+    # Corrections and retractions remain normal Bootstrap V3 operations.  They
+    # use the same fact contract as an assertion and never introduce a second
+    # writer or an untyped lifecycle payload.
+    fact_schema = deepcopy(items)
+    properties["facts"] = {"type": "array", "minItems": 0, "maxItems": 1, "items": fact_schema}
+    mentions = properties["mentions"]
+    assert isinstance(mentions, dict)
+    mentions["maxItems"] = 4
+    properties["corrections"] = {
+        "type": "array", "minItems": 0, "maxItems": 1,
+        "items": {"type": "object", "additionalProperties": False,
+                  "required": ["kind", "local_id", "corrected_fact", "replacement_fact", "assertion_quote", "correction_anchor_quote"],
+                  "properties": {"kind": {"const": "correction"}, "local_id": {"type": "string", "minLength": 1}, "corrected_fact": deepcopy(fact_schema), "replacement_fact": deepcopy(fact_schema), "assertion_quote": {"type": "string", "minLength": 1}, "correction_anchor_quote": {"type": "string", "minLength": 1}}},
+    }
+    properties["retractions"] = {
+        "type": "array", "minItems": 0, "maxItems": 1,
+        "items": {"type": "object", "additionalProperties": False,
+                  "required": ["kind", "local_id", "retracted_fact", "assertion_quote", "retraction_anchor_quote"],
+                  "properties": {"kind": {"const": "retraction"}, "local_id": {"type": "string", "minLength": 1}, "retracted_fact": deepcopy(fact_schema), "assertion_quote": {"type": "string", "minLength": 1}, "retraction_anchor_quote": {"type": "string", "minLength": 1}}},
+    }
+    schema.pop("allOf", None)
     return schema
 
 
@@ -335,28 +359,17 @@ class HermesCompletedTurnRuntime:
             proposal_schema = _FACT_ONLY_PROPOSAL_SCHEMA
         if dispatch not in {"seed", "reports_to", "default_catalog"}:
             return []
+        parameters = (
+            _default_catalog_tool_parameters(proposal_schema)
+            if dispatch == "default_catalog"
+            else _ordinary_fact_tool_parameters(proposal_schema)
+        )
         return [{
             "type": "function",
             "function": {
                 "name": "memorii_submit_fact",
                 "description": "Submit one quote-grounded fact from the current user turn.",
-                "parameters": {
-                    "type": "object",
-                    "additionalProperties": False,
-                    "required": [
-                        "schema_version", "source_quote", "subject_quote",
-                        "predicate_anchor_quote", "object_quote", "proposal",
-                    ],
-                    "properties": {
-                        "schema_version": {"type": "integer", "const": 1},
-                        "source_quote": {"type": "string", "minLength": 1},
-                        "source_quote_start": {"type": "integer", "minimum": 0},
-                        "subject_quote": {"type": "string", "minLength": 1},
-                        "predicate_anchor_quote": {"type": "string", "minLength": 1},
-                        "object_quote": {"type": "string", "minLength": 1},
-                        "proposal": proposal_schema,
-                    },
-                },
+                "parameters": parameters,
             },
         }]
 
@@ -436,18 +449,32 @@ class HermesCompletedTurnRuntime:
         reports_to: bool = False,
         default_catalog: bool = False,
     ) -> StructuredFactSubmissionRequest:
-        allowed = {
+        ordinary_allowed = {
             "schema_version", "source_quote", "source_quote_start", "subject_quote",
             "predicate_anchor_quote", "object_quote", "proposal",
         }
+        proposal_value = arguments.get("proposal")
+        is_default_correction = (
+            default_catalog
+            and type(proposal_value) is dict
+            and type(proposal_value.get("corrections")) is list
+            and bool(proposal_value["corrections"])
+        )
+        allowed = {"schema_version", "proposal", "correction"} if is_default_correction else ordinary_allowed
         if (
             set(arguments) - allowed
             or type(arguments.get("schema_version")) is not int
             or arguments["schema_version"] != 1
         ):
             raise ValueError("structured tool arguments are not closed")
-        required = allowed - {"source_quote_start"}
-        if set(arguments) < required or any(not isinstance(arguments[name], str) or not arguments[name] for name in required - {"schema_version", "proposal"}):
+        required = allowed - ({"source_quote_start"} if not is_default_correction else set())
+        if set(arguments) < required or (
+            not is_default_correction
+            and any(
+                not isinstance(arguments[name], str) or not arguments[name]
+                for name in required - {"schema_version", "proposal"}
+            )
+        ):
             raise ValueError("structured tool arguments are incomplete")
         source_start = arguments.get("source_quote_start")
         if source_start is not None and (type(source_start) is not int or source_start < 0):
@@ -455,7 +482,10 @@ class HermesCompletedTurnRuntime:
         proposal_value = arguments["proposal"]
         if type(proposal_value) is not dict:
             raise ValueError("structured tool proposal is invalid")
-        _validate_fact_only_argument_shape(proposal_value)
+        if default_catalog:
+            _validate_default_catalog_argument_shape(proposal_value)
+        else:
+            _validate_fact_only_argument_shape(proposal_value)
         # Hermes function arguments arrive from JSON, while the typed proposal
         # contract deliberately models ordered collections as tuples.
         proposal = ProviderSemanticProposal.model_validate(_json_arrays_to_tuples(proposal_value))
@@ -472,16 +502,28 @@ class HermesCompletedTurnRuntime:
                 proposal=proposal, arguments=arguments
             )
         prepared = self._load_active_prepared_source(active)
-        source_span = self._resolve_sentence_span(
-            prepared=prepared, source_quote=arguments["source_quote"], source_quote_start=source_start,
+        source_coordinates = _default_catalog_source_coordinates(
+            proposal=proposal, arguments=arguments,
+        ) if default_catalog and proposal.corrections else ((arguments["source_quote"], source_start),)
+        resolved_spans = tuple(
+            self._resolve_sentence_span(
+                prepared=prepared, source_quote=source_quote, source_quote_start=quote_start,
+            )
+            for source_quote, quote_start in source_coordinates
         )
+        by_digest = {span.reference_digest: span for span in resolved_spans}
+        if len(by_digest) != len(resolved_spans) and any(
+            by_digest[span.reference_digest] != span for span in resolved_spans
+        ):
+            raise ValueError("default catalog correction source spans conflict")
+        source_spans = tuple(by_digest[digest] for digest in sorted(by_digest))
         raw = encode_typed_value(arguments)
         assert self._structured_authority_request is not None
         return StructuredFactSubmissionRequest(
             source_id=active.ledger.source_id,
             source_digest=active.ledger.source_digest,
             authority_request=self._structured_authority_request,
-            exact_source_spans=(source_span,),
+            exact_source_spans=source_spans,
             raw_proposal_artifact=raw,
             raw_proposal_artifact_digest=sha256(raw).hexdigest(),
             protocol_version="memorii.hermes.structured-fact-tool.v1",
@@ -503,39 +545,52 @@ class HermesCompletedTurnRuntime:
                 proposal=proposal, arguments=arguments
             )
             return
-        row = validate_default_catalog_provider_proposal(proposal)
-        fact = proposal.facts[0]
+        row = validate_default_catalog_provider_lifecycle_proposal(proposal)
+        if proposal.corrections:
+            _validate_default_catalog_correction_grounding(
+                proposal=proposal, arguments=arguments, row=row,
+            )
+            return
         source_quote = arguments["source_quote"]
-        if (
-            not isinstance(source_quote, str)
-            or fact.assertion_quote != source_quote
+        if not isinstance(source_quote, str):
+            raise ValueError("default catalog assertion quotes do not match")
+        facts = _default_catalog_lifecycle_facts(proposal)
+        if any(
+            fact.assertion_quote != source_quote
             or fact.predicate_anchor_quote != arguments["predicate_anchor_quote"]
+            for fact in facts
         ):
             raise ValueError("default catalog assertion quotes do not match")
+        if proposal.corrections and proposal.corrections[0].assertion_quote != source_quote:
+            raise ValueError("default catalog correction quote does not match")
+        if proposal.retractions and proposal.retractions[0].assertion_quote != source_quote:
+            raise ValueError("default catalog retraction quote does not match")
+        anchors = _default_catalog_lifecycle_anchors(proposal)
         mentions = {mention.local_id: mention for mention in proposal.mentions}
-        subject = mentions[fact.subject_entity_ref]
-        if (
-            subject.mention_quote != arguments["subject_quote"]
-            or subject.mention_context_quote != source_quote
-        ):
-            raise ValueError("default catalog subject grounding is invalid")
-        if isinstance(fact.object, ProviderEntityObject):
-            object_mention = mentions[fact.object.entity_ref]
+        for fact in facts:
+            subject = mentions[fact.subject_entity_ref]
             if (
-                object_mention.mention_quote != arguments["object_quote"]
-                or object_mention.mention_context_quote != source_quote
+                subject.mention_quote != arguments["subject_quote"]
+                or subject.mention_context_quote != source_quote
             ):
-                raise ValueError("default catalog object grounding is invalid")
-        else:
-            object_quote = arguments["object_quote"]
-            if not isinstance(object_quote, str):
-                raise ValueError("default catalog object grounding is invalid")
-            validate_default_catalog_literal_grounding(
-                row=row, value=fact.object, object_quote=object_quote,
-            )
+                raise ValueError("default catalog subject grounding is invalid")
+            if isinstance(fact.object, ProviderEntityObject):
+                object_mention = mentions[fact.object.entity_ref]
+                if (
+                    object_mention.mention_quote != arguments["object_quote"]
+                    or object_mention.mention_context_quote != source_quote
+                ):
+                    raise ValueError("default catalog object grounding is invalid")
+            else:
+                object_quote = arguments["object_quote"]
+                if not isinstance(object_quote, str):
+                    raise ValueError("default catalog object grounding is invalid")
+                validate_default_catalog_literal_grounding(
+                    row=row, value=fact.object, object_quote=object_quote,
+                )
         for quote in (
             arguments["subject_quote"], arguments["predicate_anchor_quote"],
-            arguments["object_quote"], *fact.temporal_qualifier_quotes,
+            arguments["object_quote"], *anchors,
         ):
             if not isinstance(quote, str) or source_quote.count(quote) != 1:
                 raise ValueError("default catalog quote is absent or ambiguous")
@@ -1222,6 +1277,250 @@ def _validate_fact_only_argument_shape(proposal: dict[str, object]) -> None:
     expected_object_fields = {"kind", "entity_ref"} if obj["kind"] == "entity" else {"kind", "literal_type", "canonical_value", "unit"}
     if set(obj) != expected_object_fields:
         raise ValueError("structured tool object grammar is invalid")
+
+
+def _default_catalog_lifecycle_facts(proposal: ProviderSemanticProposal) -> tuple[ProviderFact, ...]:
+    if proposal.corrections:
+        correction = proposal.corrections[0]
+        return (correction.corrected_fact, correction.replacement_fact)
+    if proposal.retractions:
+        return (proposal.retractions[0].retracted_fact,)
+    return proposal.facts
+
+
+def _ordinary_fact_tool_parameters(proposal_schema: dict[str, object]) -> dict[str, object]:
+    return {
+        "type": "object", "additionalProperties": False,
+        "required": [
+            "schema_version", "source_quote", "subject_quote",
+            "predicate_anchor_quote", "object_quote", "proposal",
+        ],
+        "properties": {
+            "schema_version": {"type": "integer", "const": 1},
+            "source_quote": {"type": "string", "minLength": 1},
+            "source_quote_start": {"type": "integer", "minimum": 0},
+            "subject_quote": {"type": "string", "minLength": 1},
+            "predicate_anchor_quote": {"type": "string", "minLength": 1},
+            "object_quote": {"type": "string", "minLength": 1},
+            "proposal": proposal_schema,
+        },
+    }
+
+
+def _default_catalog_tool_parameters(proposal_schema: dict[str, object]) -> dict[str, object]:
+    ordinary = _ordinary_fact_tool_parameters(proposal_schema)
+    properties = ordinary["properties"]
+    assert isinstance(properties, dict)
+    properties["correction"] = {
+        "type": "object", "additionalProperties": False,
+        "required": ["assertion_quote", "correction_anchor_quote", "corrected", "replacement"],
+        "properties": {
+            "assertion_quote": {"type": "string", "minLength": 1},
+            "correction_anchor_quote": {"type": "string", "minLength": 1},
+            "corrected": _default_catalog_fact_grounding_schema(),
+            "replacement": _default_catalog_fact_grounding_schema(),
+        },
+    }
+    ordinary["required"] = ["schema_version", "proposal"]
+    ordinary["oneOf"] = [
+        {"required": ["source_quote", "subject_quote", "predicate_anchor_quote", "object_quote"]},
+        {"required": ["correction"]},
+    ]
+    return ordinary
+
+
+def _default_catalog_fact_grounding_schema() -> dict[str, object]:
+    return {
+        "type": "object", "additionalProperties": False,
+        "required": ["source_quote", "subject_quote", "predicate_anchor_quote", "object_quote"],
+        "properties": {
+            "source_quote": {"type": "string", "minLength": 1},
+            "source_quote_start": {"type": "integer", "minimum": 0},
+            "subject_quote": {"type": "string", "minLength": 1},
+            "predicate_anchor_quote": {"type": "string", "minLength": 1},
+            "object_quote": {"type": "string", "minLength": 1},
+        },
+    }
+
+
+def _default_catalog_source_coordinates(
+    *, proposal: ProviderSemanticProposal, arguments: dict[str, object],
+) -> tuple[tuple[str, int | None], ...]:
+    if not proposal.corrections:
+        raise ValueError("default catalog correction source coordinates are absent")
+    correction = arguments.get("correction")
+    if type(correction) is not dict:
+        raise ValueError("default catalog correction grounding is absent")
+    result: list[tuple[str, int | None]] = []
+    for role in ("corrected", "replacement"):
+        grounding = correction.get(role)
+        if type(grounding) is not dict or set(grounding) - {
+            "source_quote", "source_quote_start", "subject_quote",
+            "predicate_anchor_quote", "object_quote",
+        } or not {
+            "source_quote", "subject_quote", "predicate_anchor_quote", "object_quote",
+        }.issubset(grounding):
+            raise ValueError("default catalog correction grounding is invalid")
+        source_quote = grounding.get("source_quote")
+        source_start = grounding.get("source_quote_start")
+        if not isinstance(source_quote, str) or not source_quote:
+            raise ValueError("default catalog correction source quote is invalid")
+        if source_start is not None and (type(source_start) is not int or source_start < 0):
+            raise ValueError("default catalog correction source quote offset is invalid")
+        coordinate = (source_quote, source_start)
+        if coordinate not in result:
+            result.append(coordinate)
+    return tuple(result)
+
+
+def _validate_default_catalog_correction_grounding(
+    *, proposal: ProviderSemanticProposal, arguments: dict[str, object], row: object,
+) -> None:
+    correction_body = arguments.get("correction")
+    if type(correction_body) is not dict or set(correction_body) != {
+        "assertion_quote", "correction_anchor_quote", "corrected", "replacement",
+    }:
+        raise ValueError("default catalog correction envelope is invalid")
+    correction = proposal.corrections[0]
+    if (
+        correction.assertion_quote != correction_body["assertion_quote"]
+        or correction.correction_anchor_quote != correction_body["correction_anchor_quote"]
+    ):
+        raise ValueError("default catalog correction evidence does not match")
+    facts = (correction.corrected_fact, correction.replacement_fact)
+    mentions = {mention.local_id: mention for mention in proposal.mentions}
+    for fact, role in zip(facts, ("corrected", "replacement"), strict=True):
+        grounding = correction_body[role]
+        if type(grounding) is not dict:
+            raise ValueError("default catalog correction grounding is invalid")
+        _validate_default_catalog_fact_grounding(
+            row=row, fact=fact, mentions=mentions, grounding=grounding,
+        )
+    sources = _default_catalog_source_coordinates(proposal=proposal, arguments=arguments)
+    if not any(
+        correction.assertion_quote in source and correction.correction_anchor_quote in source
+        for source, _ in sources
+    ):
+        raise ValueError("default catalog correction anchor is not source grounded")
+
+
+def _validate_default_catalog_fact_grounding(
+    *, row: DefaultCatalogCorpusRow, fact: ProviderFact,
+    mentions: dict[str, ProviderMention], grounding: dict[str, object],
+) -> None:
+    source_quote = grounding.get("source_quote")
+    subject_quote = grounding.get("subject_quote")
+    predicate_anchor_quote = grounding.get("predicate_anchor_quote")
+    object_quote = grounding.get("object_quote")
+    if not all(isinstance(value, str) and value for value in (
+        source_quote, subject_quote, predicate_anchor_quote, object_quote,
+    )):
+        raise ValueError("default catalog correction grounding is invalid")
+    if fact.assertion_quote != source_quote or fact.predicate_anchor_quote != predicate_anchor_quote:
+        raise ValueError("default catalog correction fact evidence does not match")
+    subject = mentions[fact.subject_entity_ref]
+    if (
+        subject.mention_quote != subject_quote
+        or subject.mention_context_quote != source_quote
+    ):
+        raise ValueError("default catalog correction subject grounding is invalid")
+    if isinstance(fact.object, ProviderEntityObject):
+        object_mention = mentions[fact.object.entity_ref]
+        if (
+            object_mention.mention_quote != object_quote
+            or object_mention.mention_context_quote != source_quote
+        ):
+            raise ValueError("default catalog correction object grounding is invalid")
+    else:
+        validate_default_catalog_literal_grounding(
+            row=row, value=fact.object, object_quote=object_quote,
+        )
+    for quote in (subject_quote, predicate_anchor_quote, object_quote, *fact.temporal_qualifier_quotes):
+        if source_quote.count(quote) != 1:
+            raise ValueError("default catalog correction quote is absent or ambiguous")
+
+
+def _default_catalog_lifecycle_anchors(proposal: ProviderSemanticProposal) -> tuple[str, ...]:
+    facts = _default_catalog_lifecycle_facts(proposal)
+    operation_anchors: tuple[str, ...]
+    if proposal.corrections:
+        operation_anchors = (proposal.corrections[0].correction_anchor_quote,)
+    elif proposal.retractions:
+        operation_anchors = (proposal.retractions[0].retraction_anchor_quote,)
+    else:
+        operation_anchors = ()
+    return (*operation_anchors, *(quote for fact in facts for quote in fact.temporal_qualifier_quotes))
+
+
+def _validate_default_catalog_argument_shape(proposal: dict[str, object]) -> None:
+    """Validate JSON shape before typed decoding of default lifecycle operations."""
+    required = {
+        "abstained", "mentions", "facts", "corrections", "retractions",
+        "action_states", "identity_operations",
+    }
+    if set(proposal) != required or proposal.get("abstained") is not False:
+        raise ValueError("default catalog proposal is not closed")
+    if (
+        type(proposal["mentions"]) is not list
+        or not 1 <= len(proposal["mentions"]) <= 4
+        or type(proposal["facts"]) is not list
+        or type(proposal["corrections"]) is not list
+        or type(proposal["retractions"]) is not list
+        or proposal["action_states"] != []
+        or proposal["identity_operations"] != []
+    ):
+        raise ValueError("default catalog lifecycle cardinality is invalid")
+    facts = proposal["facts"]
+    corrections = proposal["corrections"]
+    retractions = proposal["retractions"]
+    if len(corrections) + len(retractions) > 1 or (facts and (corrections or retractions)):
+        raise ValueError("default catalog lifecycle operation shape is invalid")
+    if not facts and not corrections and not retractions:
+        raise ValueError("default catalog lifecycle operation is absent")
+    if len(facts) > 1 or len(corrections) > 1 or len(retractions) > 1:
+        raise ValueError("default catalog lifecycle cardinality is invalid")
+    for mention in proposal["mentions"]:
+        if type(mention) is not dict or set(mention) != {
+            "local_id", "mention_quote", "mention_context_quote", "proposed_type",
+        }:
+            raise ValueError("default catalog mention grammar is invalid")
+    if corrections:
+        correction = corrections[0]
+        if type(correction) is not dict or set(correction) != {
+            "kind", "local_id", "corrected_fact", "replacement_fact", "assertion_quote", "correction_anchor_quote",
+        } or correction.get("kind") != "correction":
+            raise ValueError("default catalog correction grammar is invalid")
+        nested_facts: list[object] = [
+            correction["corrected_fact"], correction["replacement_fact"],
+        ]
+    elif retractions:
+        retraction = retractions[0]
+        if type(retraction) is not dict or set(retraction) != {
+            "kind", "local_id", "retracted_fact", "assertion_quote", "retraction_anchor_quote",
+        } or retraction.get("kind") != "retraction":
+            raise ValueError("default catalog retraction grammar is invalid")
+        nested_facts = [retraction["retracted_fact"]]
+    else:
+        nested_facts = []
+    for fact in [*facts, *nested_facts]:
+        _validate_default_catalog_fact_shape(fact)
+
+
+def _validate_default_catalog_fact_shape(fact: object) -> None:
+    fields = {
+        "kind", "local_id", "predicate_id", "subject_entity_ref", "object", "assertion_quote",
+        "predicate_anchor_quote", "polarity", "commitment", "attributed_to_entity_ref", "temporal_qualifier_quotes",
+    }
+    if type(fact) is not dict or set(fact) != fields or fact.get("kind") != "fact":
+        raise ValueError("default catalog fact grammar is invalid")
+    object_value = fact["object"]
+    if type(object_value) is not dict or object_value.get("kind") not in {"entity", "literal"}:
+        raise ValueError("default catalog object grammar is invalid")
+    expected = {"kind", "entity_ref"} if object_value["kind"] == "entity" else {
+        "kind", "literal_type", "canonical_value", "unit",
+    }
+    if set(object_value) != expected:
+        raise ValueError("default catalog object grammar is invalid")
 
 
 def _canonicalize_message(value: object) -> dict[str, object]:

@@ -21,6 +21,8 @@ _LITERAL_POLICIES = {
     "opportunity_stage": ("StatusText", "opportunity_stage"),
 }
 
+_SYMMETRIC_READ_RELATIONS = frozenset({"partner_of", "sibling_of"})
+
 
 def _type_ids(value: str) -> tuple[str, ...]:
     normalized = value.replace(", or ", ", ").replace(" or ", ", ")
@@ -107,6 +109,9 @@ def _ledger_rows(markdown: str) -> list[dict[str, object]]:
             "evidence": columns[3],
             "lifecycle": lifecycle,
             "read_form": read_form,
+            "read_derivation_policy": (
+                "symmetric_view" if relation_id in _SYMMETRIC_READ_RELATIONS else "none"
+            ),
             "meaning": columns[5],
             "coverage": tuple(sorted(columns[6].split(","))),
             "requires_private_denial": columns[2] == "P",

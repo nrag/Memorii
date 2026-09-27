@@ -30,6 +30,15 @@ def test_packaged_default_catalog_corpus_has_exact_inventory_and_coverage() -> N
         EXPECTED_SEMANTIC_COVERAGE_CODES
     )
     assert corpus.user_context_coverage == ("H8",)
+    assert {
+        row.relation_id for row in corpus.rows
+        if row.read_derivation_policy == "symmetric_view"
+    } == {"partner_of", "sibling_of"}
+    assert all(
+        row.read_derivation_policy == "none"
+        for row in corpus.rows
+        if row.relation_id not in {"partner_of", "sibling_of"}
+    )
     assert sum(row.requires_private_denial for row in corpus.rows) == 25
     literals = {row.relation_id: row.value_policy_id for row in corpus.rows if row.value_policy_id}
     assert literals == {
@@ -134,6 +143,23 @@ def test_default_catalog_corpus_rejects_unknown_typed_endpoint() -> None:
     unsigned.pop("corpus_digest")
 
     with pytest.raises(ValueError, match="unknown entity type"):
+        DefaultCatalogAcceptanceCorpus.model_validate({
+            **unsigned,
+            "corpus_digest": contract_digest(
+                b"memorii.learned-ontology.default-acceptance-corpus.v1", unsigned
+            ),
+        })
+
+
+def test_default_catalog_corpus_rejects_an_unregistered_symmetric_read_policy() -> None:
+    body = _body()
+    rows = list(body["rows"])
+    index = next(index for index, row in enumerate(rows) if row["relation_id"] == "member_of")
+    rows[index] = {**rows[index], "read_derivation_policy": "symmetric_view"}
+    unsigned = {**body, "rows": rows}
+    unsigned.pop("corpus_digest")
+
+    with pytest.raises(ValueError, match="derivation"):
         DefaultCatalogAcceptanceCorpus.model_validate({
             **unsigned,
             "corpus_digest": contract_digest(

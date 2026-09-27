@@ -16,6 +16,8 @@ from types import ModuleType, SimpleNamespace
 import pytest
 from memorii.core.memory_evolution.atomic_store import StructuredSubmissionGrantRevokedError
 from memorii.core.semantic_ingestion.default_catalog_corpus import (
+    EXPECTED_DEFAULT_RELATION_IDS,
+    DefaultCatalogCorpusRow,
     load_default_catalog_acceptance_corpus,
 )
 from tests.fixtures.semantic_ingestion.default_catalog_proposals import (
@@ -944,6 +946,130 @@ def test_installed_default_catalog_money_relation_commits_reads_and_revokes(
             outcome.retryable
             for outcome in provider._provider._service.reconcile_memory_evolution()
         )
+    finally:
+        provider.shutdown()
+
+
+_INSTALLED_DEFAULT_CATALOG_ROWS = tuple(
+    sorted(load_default_catalog_acceptance_corpus().rows, key=lambda row: row.relation_id)
+)
+
+
+def test_installed_default_catalog_matrix_inventory_matches_normative_corpus() -> None:
+    """Keep the opt-in installed matrix locked to the frozen corpus."""
+    corpus = load_default_catalog_acceptance_corpus()
+
+    assert tuple(row.relation_id for row in _INSTALLED_DEFAULT_CATALOG_ROWS) == tuple(
+        sorted(EXPECTED_DEFAULT_RELATION_IDS)
+    )
+    assert {
+        row.relation_id for row in _INSTALLED_DEFAULT_CATALOG_ROWS
+        if row.requires_private_denial
+    } == {row.relation_id for row in corpus.rows if row.scope == "P"}
+
+
+@pytest.mark.default_catalog_installed
+@pytest.mark.parametrize(
+    "row", _INSTALLED_DEFAULT_CATALOG_ROWS, ids=lambda row: row.relation_id,
+)
+def test_installed_default_catalog_every_row_commits_recalls_and_denies(
+    bridge_module,
+    row: DefaultCatalogCorpusRow,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exercise one canonical default row through an isolated installed root."""
+    from time import monotonic
+
+    from memorii.core.semantic_ingestion.openai_responses_project_assertions import (
+        OpenAIResponsesApiClient,
+    )
+    from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
+    from memorii.integrations.hermes_local_authority import (
+        authorize_local_level2,
+        authorize_local_structured_tool,
+    )
+
+    fixture = build_default_catalog_proposal(row)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(
+        OpenAIResponsesApiClient,
+        "complete",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("network")),
+    )
+    authorize_local_level2(hermes_home=tmp_path)
+    authorize_local_structured_tool(hermes_home=tmp_path)
+    monkeypatch.setattr(
+        bridge_module.importlib.metadata,
+        "entry_points",
+        lambda *, group: (_FactoryEntryPoint(build_local_level2_runtime_binding),),
+    )
+    provider = bridge_module.MemoriiHermesMemoryProvider()
+    provider.initialize(
+        f"session:default-catalog:{row.relation_id}",
+        hermes_home=tmp_path,
+        user_id="raw:user:one",
+        agent_identity="profile:primary",
+        platform="cli",
+        agent_context="primary",
+        agent_workspace="hermes",
+    )
+    try:
+        provider.on_turn_start(1, fixture.source)
+        schemas = provider.get_tool_schemas()
+        predicate_ids = (
+            schemas[0]["function"]["parameters"]["properties"]["proposal"]
+            ["properties"]["facts"]["items"]["properties"]["predicate_id"]["enum"]
+        )
+        assert row.relation_id in predicate_ids
+
+        started = monotonic()
+        result = provider.handle_tool_call("memorii_submit_fact", fixture.tool_arguments())
+        print(
+            f"installed-default-catalog-row={row.relation_id} "
+            f"elapsed_seconds={monotonic() - started:.3f}",
+            flush=True,
+        )
+        assert result["status"] == "committed"
+
+        records = tuple(provider._provider._service._memory_plane.list_records())
+        bindings = [
+            record.content["binding"]
+            for record in records
+            if record.source_kind == "semantic_ingestion_structured_claim_catalog_binding"
+        ]
+        assert len(bindings) == 1
+        assert bindings[0]["schema_version"] == 2
+        assert bindings[0]["selected_version_id"] == "default-catalog-v1"
+        assert fixture.object_quote in provider.prefetch(fixture.subject_quote)
+
+        before_bindings = len(bindings)
+        before_projections = sum(
+            record.content.get("runtime_context_projection_kind")
+            == "bootstrap_v3_claim_assertion"
+            for record in records
+        )
+        rejected = provider.handle_tool_call(
+            "memorii_submit_fact", fixture.misleading_tool_arguments(),
+        )
+        assert rejected["status"] in {"rejected", "unavailable"}
+        after = tuple(provider._provider._service._memory_plane.list_records())
+        assert sum(
+            record.source_kind == "semantic_ingestion_structured_claim_catalog_binding"
+            for record in after
+        ) == before_bindings
+        assert sum(
+            record.content.get("runtime_context_projection_kind")
+            == "bootstrap_v3_claim_assertion"
+            for record in after
+        ) == before_projections
+
+        if row.requires_private_denial:
+            provider.revoke_structured_grant("fact")
+            assert provider.prefetch(fixture.subject_quote) == ""
+
+        outcomes = provider._provider._service.reconcile_memory_evolution()
+        assert not any(outcome.retryable for outcome in outcomes)
     finally:
         provider.shutdown()
 

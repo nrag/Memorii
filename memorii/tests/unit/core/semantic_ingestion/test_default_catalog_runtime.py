@@ -7,10 +7,12 @@ import json
 import pytest
 from memorii.core.memory_evolution.models import ClaimValueType, EntityType
 from memorii.core.semantic_ingestion.contracts import (
+    ProviderCorrection,
     ProviderEntityObject,
     ProviderFact,
     ProviderLiteralObject,
     ProviderMention,
+    ProviderRetraction,
     ProviderSemanticProposal,
 )
 from memorii.core.semantic_ingestion.default_catalog_corpus import (
@@ -23,6 +25,7 @@ from memorii.core.semantic_ingestion.default_catalog_runtime import (
     default_catalog_runtime_rows,
     validate_default_catalog_literal_grounding,
     validate_default_catalog_provider_fact,
+    validate_default_catalog_provider_lifecycle_proposal,
     validate_default_catalog_provider_proposal,
 )
 from memorii.core.semantic_ingestion.default_catalog_values import (
@@ -229,4 +232,73 @@ def test_provider_proposal_validation_runs_before_normalization_and_requires_exa
             proposal.model_copy(update={
                 "facts": (fact.model_copy(update={"commitment": "believed"}),),
             })
+        )
+
+
+@pytest.mark.parametrize("relation_id", ("project_owned_by", "work_item_due_on", "decision_supersedes"))
+def test_default_lifecycle_validator_accepts_retraction_and_correction_for_m_c_h_rows(
+    relation_id: str,
+) -> None:
+    fixture = build_default_catalog_proposal(default_catalog_runtime_rows()[relation_id])
+    proposal = fixture.proposal()
+    fact = fixture.fact
+    corrected = fact.model_copy(update={"local_id": "corrected"})
+    replacement = fact.model_copy(update={"local_id": "replacement"})
+    correction = ProviderSemanticProposal(
+        abstained=False,
+        mentions=proposal.mentions,
+        corrections=(ProviderCorrection(
+            local_id="correction", corrected_fact=corrected, replacement_fact=replacement,
+            assertion_quote=fixture.source, correction_anchor_quote=fixture.predicate_anchor_quote,
+        ),),
+    )
+    retraction = ProviderSemanticProposal(
+        abstained=False,
+        mentions=proposal.mentions,
+        retractions=(ProviderRetraction(
+            local_id="retraction", retracted_fact=corrected,
+            assertion_quote=fixture.source, retraction_anchor_quote=fixture.predicate_anchor_quote,
+        ),),
+    )
+
+    assert validate_default_catalog_provider_lifecycle_proposal(correction) == fixture.row
+    assert validate_default_catalog_provider_lifecycle_proposal(retraction) == fixture.row
+
+
+def test_default_lifecycle_validator_rejects_cross_predicate_and_preference_shapes() -> None:
+    fixture = build_default_catalog_proposal(default_catalog_runtime_rows()["partner_of"])
+    other = fixture.fact.model_copy(update={"predicate_id": "parent_of", "local_id": "replacement"})
+    correction = ProviderSemanticProposal(
+        abstained=False,
+        mentions=fixture.proposal().mentions,
+        corrections=(ProviderCorrection(
+            local_id="correction",
+            corrected_fact=fixture.fact.model_copy(update={"local_id": "corrected"}),
+            replacement_fact=other,
+            assertion_quote=fixture.source, correction_anchor_quote=fixture.predicate_anchor_quote,
+        ),),
+    )
+    with pytest.raises(ValueError, match="predicate"):
+        validate_default_catalog_provider_lifecycle_proposal(correction)
+
+    preference = fixture.fact.model_copy(update={"predicate_id": "preference"})
+    with pytest.raises(ValueError, match="authority"):
+        validate_default_catalog_provider_lifecycle_proposal(
+            ProviderSemanticProposal(
+                abstained=False, mentions=fixture.proposal().mentions, facts=(preference,),
+            )
+        )
+    with pytest.raises(ValueError, match="authority"):
+        validate_default_catalog_provider_lifecycle_proposal(
+            ProviderSemanticProposal(
+                abstained=False, mentions=fixture.proposal().mentions,
+                corrections=(ProviderCorrection(
+                    local_id="preference_correction", corrected_fact=preference.model_copy(
+                        update={"local_id": "corrected_preference"}
+                    ), replacement_fact=preference.model_copy(
+                        update={"local_id": "replacement_preference"}
+                    ), assertion_quote=fixture.source,
+                    correction_anchor_quote=fixture.predicate_anchor_quote,
+                ),),
+            )
         )

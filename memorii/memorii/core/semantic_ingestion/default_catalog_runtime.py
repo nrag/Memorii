@@ -167,6 +167,54 @@ def validate_default_catalog_provider_proposal(
     return validate_default_catalog_provider_fact(fact=fact, mentions=mentions)
 
 
+def validate_default_catalog_provider_lifecycle_proposal(
+    proposal: ProviderSemanticProposal,
+) -> DefaultCatalogCorpusRow:
+    """Validate one asserted default relation or its closed lifecycle operation."""
+    if proposal.abstained or proposal.action_states or proposal.identity_operations:
+        raise ValueError("default catalog proposal contains an unsupported operation")
+    if len(proposal.corrections) + len(proposal.retractions) > 1:
+        raise ValueError("default catalog proposal has multiple lifecycle operations")
+    if proposal.corrections:
+        if proposal.facts or len(proposal.corrections) != 1:
+            raise ValueError("default catalog correction shape is invalid")
+        correction = proposal.corrections[0]
+        return _validate_lifecycle_facts(
+            facts=(correction.corrected_fact, correction.replacement_fact),
+            mentions=proposal.mentions,
+        )
+    if proposal.retractions:
+        if proposal.facts or len(proposal.retractions) != 1:
+            raise ValueError("default catalog retraction shape is invalid")
+        return _validate_lifecycle_facts(
+            facts=(proposal.retractions[0].retracted_fact,), mentions=proposal.mentions,
+        )
+    return validate_default_catalog_provider_proposal(proposal)
+
+
+def _validate_lifecycle_facts(
+    *, facts: tuple[ProviderFact, ...], mentions: tuple[ProviderMention, ...],
+) -> DefaultCatalogCorpusRow:
+    if any(
+        fact.commitment != "asserted"
+        or fact.attributed_to_entity_ref is not None
+        or fact.polarity != "positive"
+        for fact in facts
+    ):
+        raise ValueError("default catalog lifecycle fact commitment is invalid")
+    by_id = {mention.local_id: mention for mention in mentions}
+    rows = tuple(validate_default_catalog_provider_fact(fact=fact, mentions=by_id) for fact in facts)
+    if len({row.relation_id for row in rows}) != 1:
+        raise ValueError("default catalog lifecycle operation crosses predicates")
+    referenced = {fact.subject_entity_ref for fact in facts}
+    referenced.update(
+        fact.object.entity_ref for fact in facts if not isinstance(fact.object, ProviderLiteralObject)
+    )
+    if set(by_id) != referenced:
+        raise ValueError("default catalog lifecycle proposal mention set is not exact")
+    return rows[0]
+
+
 def validate_default_catalog_literal_grounding(
     *, row: DefaultCatalogCorpusRow, value: ProviderLiteralObject, object_quote: str,
 ) -> None:
@@ -198,5 +246,6 @@ __all__ = [
     "default_catalog_runtime_rows",
     "validate_default_catalog_provider_fact",
     "validate_default_catalog_literal_grounding",
+    "validate_default_catalog_provider_lifecycle_proposal",
     "validate_default_catalog_provider_proposal",
 ]

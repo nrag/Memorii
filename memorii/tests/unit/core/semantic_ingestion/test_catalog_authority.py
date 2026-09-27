@@ -323,6 +323,7 @@ def test_seed_genesis_is_an_explicit_retry_safe_startup_action() -> None:
 
 def test_generated_default_catalog_release_selects_the_complete_verified_inventory() -> None:
     from memorii.core.semantic_ingestion.default_catalog_package import (
+        _read_descriptor,
         load_packaged_default_catalog_release,
     )
 
@@ -345,6 +346,11 @@ def test_generated_default_catalog_release_selects_the_complete_verified_invento
     assert len(release.child_version.predicate_ids) == 56
     assert "reports_to" in release.child_version.predicate_ids
     assert len(release.runtime_bundle.members) == 7
+    proposal_adapter, _ = _read_descriptor("default_catalog.proposal_adapter.v1.json")
+    assert proposal_adapter.implementation is not None
+    assert proposal_adapter.implementation.symbol == (
+        "validate_default_catalog_provider_lifecycle_proposal"
+    )
 
 
 def test_default_catalog_policy_capabilities_cover_every_corpus_relation() -> None:

@@ -37,7 +37,7 @@ from memorii.core.semantic_ingestion.default_catalog_values import (
 _DESCRIPTORS: tuple[tuple[str, Literal["prompt_schema", "tool_grammar", "proposal_adapter", "state_policy", "trust_policy", "temporal_policy", "protected_reader"], str, str], ...] = (
     ("prompt_schema", "prompt_schema", "memorii.core.semantic_ingestion.default_catalog_corpus", "load_default_catalog_acceptance_corpus"),
     ("tool_grammar", "tool_grammar", "memorii.core.semantic_ingestion.default_catalog_runtime", "default_catalog_runtime_rows"),
-    ("proposal_adapter", "proposal_adapter", "memorii.core.semantic_ingestion.default_catalog_runtime", "validate_default_catalog_provider_proposal"),
+    ("proposal_adapter", "proposal_adapter", "memorii.core.semantic_ingestion.default_catalog_runtime", "validate_default_catalog_provider_lifecycle_proposal"),
     ("state_policy", "state_policy", "memorii.core.semantic_ingestion.default_catalog_capability", "selected_default_catalog_state_rules"),
     ("trust_policy", "trust_policy", "memorii.core.semantic_ingestion.default_catalog_capability", "selected_default_catalog_trust_rules"),
     ("temporal_policy", "temporal_policy", "memorii.core.semantic_ingestion.default_catalog_capability", "selected_default_catalog_temporal_rules"),
