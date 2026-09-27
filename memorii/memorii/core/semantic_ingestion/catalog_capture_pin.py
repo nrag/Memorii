@@ -16,8 +16,10 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.semantic_ingestion.catalog_authority import (
+    AgentLocalCatalogAuthorityScope,
+    AuthenticatedPrincipalAgent,
+    CatalogAuthorityCoordinate,
     CatalogAuthorityError,
-    CatalogAuthorityScope,
     CatalogChildVersionV2,
     CatalogSelectionPointer,
     CatalogVersion,
@@ -30,6 +32,7 @@ from memorii.core.semantic_ingestion.catalog_authority import (
 )
 from memorii.core.semantic_ingestion.contracts import contract_digest
 from memorii.core.semantic_ingestion.hermes_captured_turn import HermesCapturedTurnLedger
+from memorii.core.semantic_ingestion.learned_relation import OntologyCatalogVersion
 from memorii.core.semantic_ingestion.project_assertions_profile import load_project_assertions_bundle
 
 _DIGEST = r"^[0-9a-f]{64}$"
@@ -43,7 +46,7 @@ class SeedCatalogPackageIndexEntry(BaseModel):
     """Exact old-profile package coordinate for the persisted seed version."""
 
     schema_version: Literal[1]
-    catalog_scope: CatalogAuthorityScope
+    catalog_scope: CatalogAuthorityCoordinate
     catalog_digest: str = Field(pattern=_DIGEST)
     seed_version_digest: str = Field(pattern=_DIGEST)
     profile_manifest_digest: str = Field(pattern=_DIGEST)
@@ -115,7 +118,7 @@ class VerifiedCatalogBundle(BaseModel):
     """One exact package closure selected by a persisted version coordinate."""
 
     catalog: ResolvedCatalogAuthority
-    version: CatalogVersion | CatalogChildVersionV2
+    version: CatalogVersion | CatalogChildVersionV2 | OntologyCatalogVersion
     runtime_bundle_digest: str = Field(pattern=_DIGEST)
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -146,8 +149,15 @@ class PackageIndexedCatalogBundleLocator:
         self._default_release_authority_loader = default_release_authority_loader
 
     def locate_selected(
-        self, records: Sequence[CanonicalMemoryRecord], *, scope: CatalogAuthorityScope,
-    ) -> tuple[VerifiedCatalogBundle, CatalogSelectionPointer]:
+        self, records: Sequence[CanonicalMemoryRecord], *, scope: CatalogAuthorityCoordinate,
+        authenticated: AuthenticatedPrincipalAgent | None = None,
+    ) -> tuple[VerifiedCatalogBundle, CatalogSelectionPointer | BaseModel]:
+        if isinstance(scope, AgentLocalCatalogAuthorityScope):
+            if authenticated is None:
+                raise CatalogAuthorityError("agent-local catalog owner is required")
+            return self._locate_selected_learned(
+                records, scope=scope, authenticated=authenticated,
+            )
         by_id = {record.memory_id: record for record in records}
         pointer_record = by_id.get(catalog_selection_pointer_memory_id(scope))
         if pointer_record is None:
@@ -176,7 +186,16 @@ class PackageIndexedCatalogBundleLocator:
 
     def locate_historical(
         self, records: Sequence[CanonicalMemoryRecord], *, version_id: str, version_digest: str,
+        scope: AgentLocalCatalogAuthorityScope | None = None,
+        authenticated: AuthenticatedPrincipalAgent | None = None,
     ) -> VerifiedCatalogBundle:
+        if scope is not None:
+            if authenticated is None:
+                raise CatalogAuthorityError("agent-local catalog owner is required")
+            return self._locate_historical_learned(
+                records, scope=scope, authenticated=authenticated,
+                version_id=version_id, version_digest=version_digest,
+            )
         seed = SeedCatalogBundleLocator().locate()
         if version_id == seed.version.version_id and version_digest == seed.version.version_digest:
             self._require_persisted_version(records, seed.version)
@@ -217,6 +236,70 @@ class PackageIndexedCatalogBundleLocator:
             catalog=seed_catalog,
             version=version,
             runtime_bundle_digest=release.runtime_bundle_digest,
+        )
+
+    @staticmethod
+    def _locate_selected_learned(
+        records: Sequence[CanonicalMemoryRecord], *, scope: AgentLocalCatalogAuthorityScope,
+        authenticated: AuthenticatedPrincipalAgent,
+    ) -> tuple[VerifiedCatalogBundle, BaseModel]:
+        from memorii.core.semantic_ingestion.learned_relation import (
+            LearnedRelationError,
+            learned_runtime_bundle_digest,
+            locate_selected_learned_catalog,
+        )
+
+        try:
+            version, pointer = locate_selected_learned_catalog(
+                tuple(records), scope=scope, authenticated=authenticated,
+            )
+        except LearnedRelationError as exc:
+            raise CatalogAuthorityError("agent-local catalog selection is unavailable") from exc
+        catalog = ResolvedCatalogAuthority(
+            catalog_scope=scope,
+            catalog_digest=version.catalog_digest,
+            genesis_selection_digest=contract_digest(
+                b"memorii.learned-ontology.agent-local-catalog-selection.v1",
+                {"catalog_scope": scope.model_dump(mode="python"), "pointer_digest": pointer.pointer_digest},
+            ),
+        )
+        return (
+            VerifiedCatalogBundle(
+                catalog=catalog, version=version,
+                runtime_bundle_digest=learned_runtime_bundle_digest(version),
+            ),
+            pointer,
+        )
+
+    @staticmethod
+    def _locate_historical_learned(
+        records: Sequence[CanonicalMemoryRecord], *, scope: AgentLocalCatalogAuthorityScope,
+        authenticated: AuthenticatedPrincipalAgent, version_id: str, version_digest: str,
+    ) -> VerifiedCatalogBundle:
+        from memorii.core.semantic_ingestion.learned_relation import (
+            LearnedRelationError,
+            learned_runtime_bundle_digest,
+            locate_historical_learned_catalog,
+        )
+
+        try:
+            version = locate_historical_learned_catalog(
+                tuple(records), scope=scope, authenticated=authenticated,
+                version_id=version_id, version_digest=version_digest,
+            )
+        except LearnedRelationError as exc:
+            raise CatalogAuthorityError("agent-local catalog version is unavailable") from exc
+        return VerifiedCatalogBundle(
+            catalog=ResolvedCatalogAuthority(
+                catalog_scope=scope,
+                catalog_digest=version.catalog_digest,
+                genesis_selection_digest=contract_digest(
+                    b"memorii.learned-ontology.agent-local-catalog-version.v1",
+                    {"catalog_scope": scope.model_dump(mode="python"), "version_digest": version.version_digest},
+                ),
+            ),
+            version=version,
+            runtime_bundle_digest=learned_runtime_bundle_digest(version),
         )
 
     @staticmethod
@@ -271,7 +354,7 @@ class CatalogCapturedTurnPin(BaseModel):
     capture_id: str = Field(min_length=1)
     source_id: str = Field(min_length=1)
     source_digest: str = Field(pattern=_DIGEST)
-    catalog_scope: CatalogAuthorityScope
+    catalog_scope: CatalogAuthorityCoordinate
     catalog_digest: str = Field(pattern=_DIGEST)
     selected_version_id: str = Field(min_length=1)
     selected_version_digest: str = Field(pattern=_DIGEST)
@@ -332,6 +415,11 @@ class CatalogCapturedTurnPin(BaseModel):
         cls, *, ledger: HermesCapturedTurnLedger, bundle: VerifiedCatalogBundle,
         selection_pointer_digest: str,
     ) -> CatalogCapturedTurnPin:
+        if isinstance(bundle.catalog.catalog_scope, AgentLocalCatalogAuthorityScope) and (
+            ledger.principal_id != bundle.catalog.catalog_scope.principal_id
+            or ledger.agent_id != bundle.catalog.catalog_scope.agent_id
+        ):
+            raise CatalogAuthorityError("agent-local catalog owner is required")
         body = {
             "schema_version": 1, "capture_id": ledger.capture_id, "source_id": ledger.source_id,
             "source_digest": ledger.source_digest,
@@ -347,7 +435,7 @@ class CatalogCapturedTurnPin(BaseModel):
 class CatalogRuntimeCoordinate(BaseModel):
     """Typed, capture-derived runtime catalog identity; never a caller choice."""
 
-    catalog_scope: CatalogAuthorityScope
+    catalog_scope: CatalogAuthorityCoordinate
     catalog_digest: str = Field(pattern=_DIGEST)
     selected_version_id: str = Field(min_length=1)
     selected_version_digest: str = Field(pattern=_DIGEST)

@@ -110,6 +110,27 @@ class CatalogAuthorityScope(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+class AgentLocalCatalogAuthorityScope(BaseModel):
+    """Canonical private catalog coordinate for one authenticated agent owner.
+
+    It lives beside the base coordinate because changing serialized base scope
+    bytes would invalidate existing catalog versions and release manifests.
+    """
+
+    schema_version: Literal[1] = 1
+    kind: Literal["agent_local"] = "agent_local"
+    principal_id: str = Field(min_length=1)
+    agent_id: str = Field(min_length=1)
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+# The base scope has persisted since the original three-predicate catalog.
+# Keep it as its own model and use this coordinate union at new boundaries so
+# serialized base records remain byte-for-byte compatible.
+CatalogAuthorityCoordinate = CatalogAuthorityScope | AgentLocalCatalogAuthorityScope
+
+
 class AuthenticatedPrincipalAgent(BaseModel):
     """Host-resolved identities; adapters never choose catalog ownership strings."""
 
@@ -146,7 +167,7 @@ class CatalogOwnerVisibilityGrant(BaseModel):
 
     grant_id: str = Field(min_length=1)
     grant_version: int = Field(ge=1)
-    catalog_scope: CatalogAuthorityScope
+    catalog_scope: CatalogAuthorityCoordinate
     authenticated: AuthenticatedPrincipalAgent
     purpose: Literal["visibility_status"]
 
@@ -156,7 +177,7 @@ class CatalogOwnerVisibilityGrant(BaseModel):
 class ResolvedCatalogAuthority(BaseModel):
     """Core-selected immutable effective catalog coordinate for a new operation."""
 
-    catalog_scope: CatalogAuthorityScope
+    catalog_scope: CatalogAuthorityCoordinate
     catalog_digest: str = Field(pattern=_DIGEST)
     genesis_selection_digest: str = Field(pattern=_DIGEST)
 
@@ -766,8 +787,15 @@ def catalog_version_memory_id(version: CatalogVersion | CatalogChildVersionV2) -
     return "semantic_ingestion:catalog-version:" + version.version_digest
 
 
-def catalog_selection_pointer_memory_id(scope: CatalogAuthorityScope) -> str:
-    return "semantic_ingestion:catalog-selection:" + scope.kind
+def catalog_selection_pointer_memory_id(scope: CatalogAuthorityCoordinate) -> str:
+    """Return a stable control-record coordinate without cross-agent aliasing."""
+    if isinstance(scope, CatalogAuthorityScope):
+        # Preserve the original persisted base pointer coordinate.
+        return "semantic_ingestion:catalog-selection:" + scope.kind
+    return "semantic_ingestion:catalog-selection:agent-local:" + contract_digest(
+        b"memorii.learned-ontology.agent-local-catalog-scope.v1",
+        scope.model_dump(mode="python"),
+    )
 
 
 class ResolvedStructuredSubmissionAuthority(BaseModel):
@@ -1275,6 +1303,7 @@ def _catalog_selection_pointer_record(
 
 
 __all__ = [
+    "AgentLocalCatalogAuthorityScope",
     "AuthenticatedPrincipalAgent",
     "CatalogAuthorityError",
     "CatalogAuthorityScope",
