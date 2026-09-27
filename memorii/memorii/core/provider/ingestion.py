@@ -1766,6 +1766,7 @@ class ProviderIngestionCoordinator:
                     attempt_count=0,
                 ), None
             if graph_bundle is not None:
+                replay = None
                 try:
                     replay = self._atomic_store.reload_bootstrap_recovery_replay_v3(
                         recovery_key_digest=recovery.recovery_key_digest,
@@ -1845,8 +1846,11 @@ class ProviderIngestionCoordinator:
                     ), None
                 try:
                     control = self._atomic_store.get_operation(operation_fence)
-                    graph_result = (
-                        graph_bundle.execute(
+                    graph_result = self._execute_bootstrap_graph_with_expired_lease_retry(
+                        operation_fence=operation_fence,
+                        initial_control=control,
+                        replay=replay,
+                        execute=lambda current: graph_bundle.execute(
                             request=BootstrapGraphAuthorityRequestV3(
                                 normalization_replay=replay,
                                 prepared_source=prepared_source,
@@ -1854,12 +1858,10 @@ class ProviderIngestionCoordinator:
                                     prepared_source.governance_carrier_artifact.required_outcome_scopes
                                 ),
                                 operation_fence_binding=operation_fence,
-                                operation_lease_binding=self._atomic_store.lease_binding(control),
-                                writer_commit_binding=control.writer_binding,
+                                operation_lease_binding=self._atomic_store.lease_binding(current),
+                                writer_commit_binding=current.writer_binding,
                             )
-                        )
-                        if replay is not None
-                        else None
+                        ),
                     )
                 except SemanticEventReplayError:
                     raise
@@ -1995,6 +1997,7 @@ class ProviderIngestionCoordinator:
                 ), None
             # The recovery claim is the sole live lease for this V3
             # normalization-to-graph transaction.
+            replay = None
             try:
                 replay = self._atomic_store.reload_bootstrap_recovery_replay_v3(
                     recovery_key_digest=recovery_key.recovery_key_digest,
@@ -2005,8 +2008,11 @@ class ProviderIngestionCoordinator:
                     ),
                 )
                 control = self._atomic_store.get_operation(operation_fence)
-                graph_result = (
-                    graph_bundle.execute(
+                graph_result = self._execute_bootstrap_graph_with_expired_lease_retry(
+                    operation_fence=operation_fence,
+                    initial_control=control,
+                    replay=replay,
+                    execute=lambda current: graph_bundle.execute(
                         request=BootstrapGraphAuthorityRequestV3(
                             normalization_replay=replay,
                             prepared_source=prepared_source,
@@ -2014,12 +2020,10 @@ class ProviderIngestionCoordinator:
                                 prepared_source.governance_carrier_artifact.required_outcome_scopes
                             ),
                             operation_fence_binding=operation_fence,
-                            operation_lease_binding=self._atomic_store.lease_binding(control),
-                            writer_commit_binding=control.writer_binding,
+                            operation_lease_binding=self._atomic_store.lease_binding(current),
+                            writer_commit_binding=current.writer_binding,
                         )
-                    )
-                    if replay is not None
-                    else None
+                    ),
                 )
             except SemanticEventReplayError:
                 raise
@@ -2068,6 +2072,56 @@ class ProviderIngestionCoordinator:
             temporal_closures=(),
             attempt_count=0,
         ), None
+
+    def _reclaim_expired_bootstrap_graph_lease(
+        self,
+        *,
+        operation_fence: OperationFenceBinding,
+    ) -> PreplanningOperationControl | None:
+        """Re-enter a retained graph checkpoint only after its recovery lease expires."""
+        control = self._atomic_store.get_operation(operation_fence)
+        lease = control.lease
+        if lease is None or lease.expires_at > self._now_provider():
+            return None
+        reclaimed = self._atomic_store.acquire_lease(
+            operation_fence=operation_fence,
+            writer_binding=control.writer_binding,
+            execution_token="bootstrap-v3-graph-retry:" + operation_fence.operation_fence_id,
+            owner_id="bootstrap-v3-recovery",
+            duration=lease.renewal_interval * 2,
+        )
+        if reclaimed.state in {"terminal", "lease_recovery_exhausted"} or reclaimed.lease is None:
+            return None
+        return reclaimed
+
+    def _execute_bootstrap_graph_with_expired_lease_retry(
+        self,
+        *,
+        operation_fence: OperationFenceBinding,
+        initial_control: PreplanningOperationControl,
+        replay: object | None,
+        execute: Callable[[PreplanningOperationControl], object],
+    ) -> object | None:
+        """Retry one graph execution only from verified replay and reclaimed authority."""
+        if replay is None:
+            return None
+        try:
+            result = execute(initial_control)
+        except StructuredSubmissionGrantRevokedError:
+            raise
+        except (AttributeError, TypeError, ValueError, PreplanningStoreError):
+            result = None
+        if result is not None:
+            return result
+        reclaimed = self._reclaim_expired_bootstrap_graph_lease(operation_fence=operation_fence)
+        if reclaimed is None:
+            return None
+        try:
+            return execute(reclaimed)
+        except StructuredSubmissionGrantRevokedError:
+            raise
+        except (AttributeError, TypeError, ValueError, PreplanningStoreError):
+            return None
 
     def _load_admitted_observation(self, fence: OperationFenceBinding) -> SourceObservation:
         """Reload the immutable source record before a learned stage or replay."""

@@ -29,6 +29,7 @@ from memorii.core.memory_evolution.admission import (
 from memorii.core.memory_evolution.atomic_store import (
     AtomicGenerationMember,
     BootstrapWriterHandoffMarkerV3,
+    PreplanningLease,
     PreplanningOperationControl,
     PreplanningStoreError,
     SemanticAuthorizationAuthorityRecord,
@@ -120,6 +121,7 @@ from memorii.core.memory_plane.store import (
 )
 from memorii.core.provider.factory import build_provider_memory_service_from_env
 from memorii.core.provider.ingestion import (
+    ProviderIngestionCoordinator,
     RetainedStructuredSubmission,
     StructuredFactSubmissionRequest,
     StructuredFactSubmissionStatusRequest,
@@ -4027,3 +4029,84 @@ def test_explicit_activation_checks_current_deployment_authorization_before_atom
                     trigger()
                 activate.assert_not_called()
                 assert plane.read_write_snapshot() == before
+
+
+def test_expired_bootstrap_graph_lease_is_reclaimed_with_its_existing_duration() -> None:
+    now = TEST_NOW
+    fence = SimpleNamespace(operation_fence_id="fence", operation_id="operation")
+    writer = SimpleNamespace(binding_digest="writer")
+    expired = PreplanningLease(
+        owner_id="bootstrap-v3-recovery",
+        execution_token="original-execution",
+        ownership_epoch=1,
+        acquired_at=now - timedelta(minutes=20),
+        expires_at=now - timedelta(minutes=5),
+        renewal_interval=timedelta(minutes=7, seconds=30),
+    )
+    control = SimpleNamespace(state="planned", lease=expired, writer_binding=writer)
+    refreshed_writer = SimpleNamespace(binding_digest="fresh-writer")
+    reclaimed = SimpleNamespace(
+        state="planned",
+        lease=expired.model_copy(update={"ownership_epoch": 2}),
+        writer_binding=refreshed_writer,
+    )
+
+    class AtomicStore:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        def get_operation(self, observed_fence: object) -> object:
+            assert observed_fence is fence
+            return control
+
+        def acquire_lease(self, **kwargs: object) -> object:
+            self.calls.append(kwargs)
+            return reclaimed
+
+    atomic = AtomicStore()
+    coordinator = object.__new__(ProviderIngestionCoordinator)
+    coordinator._atomic_store = atomic
+    coordinator._now_provider = lambda: now
+
+    execution_controls: list[object] = []
+
+    def execute(observed_control: object) -> object | None:
+        execution_controls.append(observed_control)
+        if observed_control is control:
+            raise PreplanningStoreError("bootstrap graph lease is stale or expired")
+        return "durable-result"
+
+    result = coordinator._execute_bootstrap_graph_with_expired_lease_retry(
+        operation_fence=fence,
+        initial_control=control,
+        replay=object(),
+        execute=execute,
+    )
+
+    assert result == "durable-result"
+    assert execution_controls == [control, reclaimed]
+    assert execution_controls[1].lease.ownership_epoch == 2
+    assert execution_controls[1].writer_binding is refreshed_writer
+    assert atomic.calls == [{
+        "operation_fence": fence,
+        "writer_binding": writer,
+        "execution_token": "bootstrap-v3-graph-retry:fence",
+        "owner_id": "bootstrap-v3-recovery",
+        "duration": timedelta(minutes=15),
+    }]
+
+    control.lease = expired.model_copy(update={"expires_at": now + timedelta(seconds=1)})
+    assert coordinator._reclaim_expired_bootstrap_graph_lease(operation_fence=fence) is None
+    assert len(atomic.calls) == 1
+
+    control.lease = expired
+    with pytest.raises(StructuredSubmissionGrantRevokedError):
+        coordinator._execute_bootstrap_graph_with_expired_lease_retry(
+            operation_fence=fence,
+            initial_control=control,
+            replay=object(),
+            execute=lambda _control: (_ for _ in ()).throw(
+                StructuredSubmissionGrantRevokedError("structured submission grant is revoked")
+            ),
+        )
+    assert len(atomic.calls) == 1
