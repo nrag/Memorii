@@ -224,6 +224,10 @@ from memorii.domain.enums import (
     MemoryDomain,
     MemoryRecordVisibility,
 )
+from memorii.integrations.authenticated_source import (
+    AuthenticatedSourceAdapter,
+    AuthenticatedSourceSubmission,
+)
 from memorii.integrations.hermes_provider import HermesMemoryProvider
 from tests.fixtures.semantic_ingestion.clean_room_request_fixture import (
     build_prepared_independent_source_analysis,
@@ -547,6 +551,39 @@ class _SwitchingIngressResolver:
         if self.reject:
             raise AuthenticatedIngressResolutionError("rejected")
         return self._accepted.resolve(host_ingress, server_time)
+
+
+class _CoverageStatusResolver(_Resolver):
+    def resolve(self, host_ingress: AuthenticatedHostIngress, server_time: datetime):
+        if host_ingress.provider_identity == "invalid":
+            raise AuthenticatedIngressResolutionError("rejected")
+        ingress = super().resolve(host_ingress, server_time)
+        if host_ingress.provider_identity == "other-agent":
+            return ingress.model_copy(
+                update={"authenticated_agent_id": "agent:other"}
+            )
+        if host_ingress.provider_identity == "other-principal":
+            return ingress.model_copy(
+                update={
+                    "delivery_principal_binding": DeliveryPrincipalBinding.create(
+                        principal_subject_id="principal:bob",
+                        tenant_partition_id="tenant:one",
+                        provider_identity="provider:test",
+                    )
+                }
+            )
+        if host_ingress.provider_identity == "other-scope":
+            scopes = RequiredOutcomeScopeSet.create(
+                tenant_partition_id="tenant:one",
+                scopes={"task:task:other", "user:user:alice"},
+            )
+            return ingress.model_copy(
+                update={
+                    "required_outcome_scopes": scopes,
+                    "current_authorized_scopes": scopes,
+                }
+            )
+        return ingress
 
 
 class _AuthorizedCapability(_TestHostBootstrapCapability):
@@ -1743,6 +1780,234 @@ def test_configured_ontology_observer_runs_after_source_admission_and_retries_on
     assert recurrence.independent_lineage_count == 1
     assert recurrence.proposal_eligible is False
     assert observer.calls == 1
+
+
+def test_observer_outage_retries_live_and_during_service_jsonl_reopen(
+    tmp_path: Path,
+) -> None:
+    binding = ObserverBindingIdentity(
+        binding_version="observer:v1",
+        provider="host",
+        model="recovering-model",
+        prompt_version="ontology-observe:v1",
+        transport="in_process",
+        egress_policy_digest="5" * 64,
+        output_schema_digest="6" * 64,
+    )
+    signature = RelationGapSignature.create(
+        normalized_relation_meaning="project owner",
+        subject_type_id="Project",
+        object_type_id="Person",
+        domain_id="organization",
+        evidence_rule_id="direct_assertion:v1",
+    )
+
+    class Observer:
+        def __init__(self, *, unavailable: bool) -> None:
+            self.unavailable = unavailable
+            self.calls = 0
+
+        @property
+        def binding(self):
+            return binding
+
+        def observe(self, _request):
+            self.calls += 1
+            if self.unavailable:
+                raise OSError("observer transport unavailable")
+            return OntologyObservationResult.create(
+                semantic_outcome=CoverageSemanticOutcome.UNSUPPORTED_RELATION,
+                source_span=CoverageSourceSpan(start=0, end=18),
+                source_quote="Atlas owner is Bob",
+                signature=signature,
+            )
+
+    storage_path = tmp_path / "memory-plane"
+    builder, _ = _v3_normalization_host_builder(proposal=_bob_owner_proposal())
+
+    def build_service(observer: Observer) -> ProviderMemoryService:
+        return ProviderMemoryService._from_scenario_test_host(
+            memory_plane=MemoryPlaneService(
+                record_store=JsonlMemoryPlaneStore(storage_path)
+            ),
+            now_provider=lambda: TEST_NOW,
+            host_bootstrap_capability=_built_in_local_capability(scenario_test=True),
+            host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+            source_normalization_host_bundle_builder=builder,
+            bootstrap_graph_host_bundle_builder=_deterministic_graph_bundle_builder(),
+            ontology_observer_capability=observer,
+            ontology_signature_validator=lambda candidate: candidate == signature,
+            ontology_observer_authorizer=lambda _ingress, candidate: candidate == binding,
+        )
+
+    observer = Observer(unavailable=True)
+    service = build_service(observer)
+
+    def sync(operation_id: str) -> None:
+        service.sync_event(
+            operation=ProviderOperation.CHAT_USER_TURN,
+            content="Atlas owner is Bob.",
+            operation_id=operation_id,
+            task_id="task:one",
+            user_id="user:alice",
+            authenticated_host_ingress=_host_ingress(),
+        )
+
+    sync("observer-live-retry")
+    first = CoverageObservationRepository(service._memory_plane).all()[0]
+    assert first.processing_state == DiscoveryProcessingState.UNAVAILABLE
+    assert first.attempt_count == 1
+
+    observer.unavailable = False
+    sync("observer-live-retry")
+    live_recovered = CoverageObservationRepository(service._memory_plane).load(
+        first.observation_id
+    )
+    assert live_recovered is not None
+    assert live_recovered.processing_state == DiscoveryProcessingState.CLASSIFIED
+    assert live_recovered.attempt_count == 2
+    assert observer.calls == 2
+
+    observer.unavailable = True
+    sync("observer-restart-retry")
+    before_reopen = CoverageObservationRepository(service._memory_plane).all()
+    unavailable = next(
+        item
+        for item in before_reopen
+        if item.processing_state == DiscoveryProcessingState.UNAVAILABLE
+    )
+    source_ids = {item.source_id for item in before_reopen}
+
+    reopened_observer = Observer(unavailable=False)
+    reopened = build_service(reopened_observer)
+    after_reopen = CoverageObservationRepository(reopened._memory_plane).all()
+    recovered = next(
+        item for item in after_reopen if item.observation_id == unavailable.observation_id
+    )
+    assert recovered.processing_state == DiscoveryProcessingState.CLASSIFIED
+    assert recovered.attempt_count == 2
+    assert reopened_observer.calls == 1
+    assert {item.source_id for item in after_reopen} == source_ids
+    assert len(after_reopen) == 2
+    assert len(
+        reopened._memory_plane.list_records(
+            source_kind="learned_ontology_verified_coverage_gap_v1"
+        )
+    ) == 2
+    assert len(
+        reopened._memory_plane.list_records(
+            source_kind="learned_ontology_coverage_recurrence_group_v1"
+        )
+    ) == 1
+
+
+def test_framework_neutral_and_hermes_adapters_share_coverage_contract() -> None:
+    builder, _ = _v3_normalization_host_builder(proposal=_bob_owner_proposal())
+    service = ProviderMemoryService._from_scenario_test_host(
+        memory_plane=MemoryPlaneService(),
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=_built_in_local_capability(scenario_test=True),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        source_normalization_host_bundle_builder=builder,
+        bootstrap_graph_host_bundle_builder=_deterministic_graph_bundle_builder(),
+    )
+    generic = AuthenticatedSourceAdapter(service)
+    hermes = HermesMemoryProvider(service)
+    ingress = _host_ingress()
+
+    generic.submit(
+        AuthenticatedSourceSubmission(
+            operation=ProviderOperation.CHAT_USER_TURN,
+            content="Atlas owner is Bob.",
+            operation_id="generic-coverage-source",
+            task_id="task:one",
+            user_id="user:alice",
+        ),
+        authenticated_host_ingress=ingress,
+    )
+    hermes.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="hermes-coverage-source",
+        task_id="task:one",
+        user_id="user:alice",
+        authenticated_host_ingress=ingress,
+    )
+
+    observations = CoverageObservationRepository(service._memory_plane).all()
+    assert len(observations) == 2
+    assert len({item.source_id for item in observations}) == 2
+    assert {
+        (
+            item.principal_id,
+            item.agent_id,
+            item.source_scope_digest,
+            item.catalog_scope,
+            item.catalog_digest,
+            item.processing_state,
+            item.semantic_outcome,
+        )
+        for item in observations
+    } == {
+        (
+            observations[0].principal_id,
+            observations[0].agent_id,
+            observations[0].source_scope_digest,
+            observations[0].catalog_scope,
+            observations[0].catalog_digest,
+            DiscoveryProcessingState.PENDING_NO_CAPABILITY,
+            CoverageSemanticOutcome.NOT_EVALUATED,
+        )
+    }
+
+
+def test_coverage_status_isolated_by_principal_agent_and_scope() -> None:
+    builder, _ = _v3_normalization_host_builder(proposal=_bob_owner_proposal())
+    service = ProviderMemoryService._from_scenario_test_host(
+        memory_plane=MemoryPlaneService(),
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=_built_in_local_capability(scenario_test=True),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        source_normalization_host_bundle_builder=builder,
+        bootstrap_graph_host_bundle_builder=_deterministic_graph_bundle_builder(),
+        authenticated_ingress_resolver=_CoverageStatusResolver(),
+    )
+
+    def host(kind: str) -> AuthenticatedHostIngress:
+        return AuthenticatedHostIngress(
+            provider_identity=kind,
+            principal_handle=object(),
+            session_handle=object(),
+            received_at=TEST_NOW,
+        )
+
+    owner = host("owner")
+    service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="coverage-status-owner",
+        task_id="task:one",
+        user_id="user:alice",
+        authenticated_host_ingress=owner,
+    )
+
+    owner_status = service.list_ontology_coverage_statuses(
+        authenticated_host_ingress=owner
+    )
+    assert owner_status.status == "ok"
+    assert len(owner_status.observations) == 1
+    assert "Atlas owner is Bob" not in owner_status.model_dump_json()
+    for kind in ("other-agent", "other-principal", "other-scope"):
+        status = service.list_ontology_coverage_statuses(
+            authenticated_host_ingress=host(kind)
+        )
+        assert status.status == "ok"
+        assert status.observations == ()
+    denied = service.list_ontology_coverage_statuses(
+        authenticated_host_ingress=host("invalid")
+    )
+    assert denied.status == "denied"
+    assert denied.observations == ()
 
 
 def test_ontology_observer_denied_egress_remains_pending_without_call() -> None:

@@ -199,6 +199,17 @@ Seventeen lifecycle checks and the focused real no-model status root pass.
 Counts remain 3/5 and 5/14. Exactly one next action: freeze and review this
 outage-retry/status correction before the M4 second-adapter conformance proof.
 
+Correctness review approved `8256ec62`; test review requested production
+service/reopen recovery and cross-principal/agent/scope status evidence. The
+new real-root regressions pass together in 70.59 seconds and prove exact live
+retry, JSONL service reconstruction, source-specific recovery authorization,
+no duplicate durable effects and status isolation. A new framework-neutral
+authenticated source adapter and the existing Hermes adapter also reach the
+same core coverage contract with equivalent authority/catalog/pending semantics;
+that conformance case passes in 47.08 seconds. Counts remain 3/5 and 5/14
+pending exact review. Exactly one next action: freeze and review this combined
+M4 closure slice.
+
 Review of `f7ce04a6` found the installed producer accepted a caller-supplied
 digest and was unreachable from normal callbacks. The replacement uses a
 bridge-owned receipt created from an observed user turn, allows inheritance

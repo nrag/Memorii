@@ -237,3 +237,24 @@ provider root returns pending/not-evaluated status in 34.89 seconds. Counts
 remain 3/5 and 5/14. Exactly one next action: freeze this outage-retry/status
 correction and obtain targeted correctness and test approval before the second
 adapter conformance proof.
+
+Targeted correctness review approved exact commit `8256ec62` with
+`remaining_validated_p1_p2: []`. Test review required production-root evidence
+for live and restart outage recovery and isolation mutations for the public
+status. The remediation now drives ordinary `OSError` through exact live
+redelivery and through a newly constructed `ProviderMemoryService` over the
+same JSONL store. It proves the same observation IDs reach classified with an
+incremented attempt count, exactly one gap per source, one recurrence group,
+and no duplicate source or observation. Separate authenticated status calls
+for another agent, principal and scope return no observations; invalid ingress
+is denied while the owner retains its source-text-free status. Those two real
+root tests pass together in 70.59 seconds.
+
+A framework-neutral `AuthenticatedSourceAdapter` now accepts a typed source
+submission plus host-authenticated ingress and calls the same canonical
+provider root as `HermesMemoryProvider`. Their conformance proof persists two
+distinct sources with identical principal, agent, scope, catalog and pending
+semantics, with no adapter-owned catalog authority; it passes in 47.08 seconds.
+Counts remain 3/5 and 5/14 pending exact revision review. Exactly one next
+action: freeze this production-recovery, status-isolation and two-adapter slice
+and obtain targeted correctness and test approval for M4 closure.
