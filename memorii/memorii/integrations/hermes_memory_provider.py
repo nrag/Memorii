@@ -383,12 +383,15 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
                 for (session_id, _), receipt in self._origin_receipts.items()
                 if session_id == self._session_id
             )
-            if not parent_receipts:
+            # Hermes reports only the completed delegation result.  Without a
+            # dispatch-time parent envelope, more than one observed turn is
+            # ambiguous and must not be correlated to whichever finished last.
+            if len(parent_receipts) != 1:
                 return
             child = self._effective_session_id(child_session_id)
             digest = hashlib.sha256(result.encode("utf-8")).hexdigest()
             self._pending_forwarding_receipts[(child, digest)] = issuer(
-                max(parent_receipts, key=lambda receipt: receipt.turn_ordinal),
+                parent_receipts[0],
                 child,
                 digest,
             )

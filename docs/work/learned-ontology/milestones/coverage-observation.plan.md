@@ -144,3 +144,14 @@ affected bridge tests pass in 21.53 seconds; Ruff, compilation and whitespace
 pass. Counts remain 3/5 and 5/14. Exactly one next action: freeze this
 delegation-bound correction and obtain targeted correctness approval before
 recurrence aggregation.
+
+Review of exact commit `bd9c5225` found that a delayed delegation result could
+still select the latest unrelated parent turn because Hermes exposes no
+dispatch-time parent coordinate in this callback. The correction now refuses
+to issue a forwarding receipt whenever the current session has anything other
+than one unambiguous observed parent; it never guesses from turn order. A
+focused delayed-result regression proves the issuer is not called and no
+pending forwarding receipt exists for two possible parents. Five affected
+bridge tests pass in 23.16 seconds; Ruff and whitespace pass. Counts remain
+3/5 and 5/14. Exactly one next action: freeze this ambiguity-denial correction
+and obtain targeted correctness approval before recurrence aggregation.

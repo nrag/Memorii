@@ -136,6 +136,15 @@ malformed receipts fail closed. The source-contract change also refreshed its
 3/5 and 5/14. Exactly one next action: freeze this installed producer and
 obtain targeted correctness approval before recurrence aggregation.
 
+Exact review of `bd9c5225` found a delayed result could bind to the latest
+unrelated parent turn. Hermes supplies no dispatch-time parent coordinate to
+this callback, so the adapter now fails closed whenever more than one observed
+parent is possible and never selects by turn order. A focused regression
+proves no forwarding receipt is issued for that asynchronous ambiguity. Five
+affected bridge checks pass. Counts remain 3/5 and 5/14. Exactly one next
+action: freeze this ambiguity-denial correction and obtain targeted correctness
+approval before recurrence aggregation.
+
 Review of `f7ce04a6` found the installed producer accepted a caller-supplied
 digest and was unreachable from normal callbacks. The replacement uses a
 bridge-owned receipt created from an observed user turn, allows inheritance

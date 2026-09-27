@@ -187,6 +187,37 @@ def test_completed_runtime_lifecycle_hooks_drain_before_read_or_return_without_l
     assert ordering == ["drain", "drain", "drain", "prefetch", "drain", "drain"]
 
 
+def test_completed_runtime_delegation_refuses_ambiguous_parent_turns(bridge_module) -> None:
+    from memorii.integrations.hermes_runtime_binding import (
+        HermesAuthenticatedOriginReceipt,
+    )
+
+    provider = bridge_module.MemoriiHermesMemoryProvider()
+    provider._provider = object()
+    provider._session_id = "session:parent"
+    provider._completed_turn_runtime = SimpleNamespace(wait_for_idle=lambda: None)
+    provider._origin_receipts = {
+        ("session:parent", ordinal): HermesAuthenticatedOriginReceipt.create(
+            session_id="session:parent",
+            turn_ordinal=ordinal,
+            author_id="user:one",
+            source_content_digest=str(ordinal) * 64,
+        )
+        for ordinal in (1, 2)
+    }
+    provider._issue_forwarding_receipt = lambda *_args: (_ for _ in ()).throw(
+        AssertionError("ambiguous parent must not issue a forwarding receipt")
+    )
+
+    provider.on_delegation(
+        "older task",
+        "delayed result",
+        child_session_id="session:child",
+    )
+
+    assert provider._pending_forwarding_receipts == {}
+
+
 @pytest.mark.parametrize(
     "invoke",
     [
