@@ -68,6 +68,7 @@ control -> event evidence -> semantic conflict scope -> atomic projection.
 | Rerun installed shared-mechanics probe at `9d2398df` | If the as-of fix closes the remaining lifecycle defect, both cutoffs pass and execution reaches symmetric reverse reads. | After `2329.86s`, assertion, correction, retraction, current/history, both transaction-time cutoffs, and transcript sync all pass. The first symmetric relation commits, but its reverse protected current read returns `unavailable`; sibling and reopen are not reached. Retained store is pytest run `1201`. |
 | Trace and isolate symmetric reverse reads | If stored authority and projection data are valid, replay of run `1201` and clean one-row installed probes should distinguish durable read logic from the historical live runtime result. | Run `1201` contains 584 records and two verified lifecycle transitions; catalog and endpoint verification pass and direct production snapshot read returns the reverse partner item. Commit `51cdf138` binds fallback endpoint validation to the caller instead of a tautological claim-self check. Focused reader suite passes 7/7. Clean no-key installed one-row probes pass `sibling_of` in `184.48s` and `partner_of` in `181.64s`, each with exact reverse output and zero read-side record growth. The prior live `unavailable` is not reproduced. |
 | Rerun combined installed probe at `af1abbb6` | If isolated symmetric success composes with the lifecycle sequence, both symmetric writes and reads complete before reopen. | After `3027.13s`, the literal lifecycle and first symmetric reverse read pass. A later symmetric submission returns `unavailable`: terminal persistence rejects an expired governed writer lease, graph retry rejects its stale lease, and terminal fallback finds a different execution lease. Isolated rows remain green, so the defect is long-sequence lease continuity rather than ontology or reverse-read semantics. Retained store is pytest run `1205`. |
+| Reclaim an expired graph lease from verified retained replay | If the live graph attempt exhausts its individual recovery lease, exactly one reclaim with the same owner and configured duration can rebuild execution from retained checkpoints without accepting stale authority or changing TTL. | Commit `71432230` initializes replay explicitly, reclaims only an expired `bootstrap-v3-recovery` lease, retries graph execution once with the returned lease/writer binding, and preserves replay and revoked-grant propagation. The deterministic test raises the observed stale-lease error and proves one reclaim plus durable retry; five reachable graph/retained composition cases pass in `151.74s`; Ruff, compileall and diff checks pass. Six full-file failures were reproduced outside the changed branches and remain unrelated existing branch failures. |
 
 ## production_entrypoint_bindings
 
@@ -114,7 +115,8 @@ backends, and the installed rerun proves the entire literal lifecycle plus both
 cutoffs. Commit `51cdf138` closes the reverse endpoint binding and isolated
 installed probes prove both symmetric predicates. The combined reopen rerun
 then exposes governed writer/graph lease expiry during the later sequential
-symmetric write. The combined reopen proof and targeted independent review
+symmetric write. Commit `71432230` adds bounded expired-lease reclaim from
+verified replay. The combined reopen proof and targeted independent review
 remain outstanding, so no milestone or requirement count changes yet.
 
 ## Completion Contract
@@ -128,6 +130,6 @@ Level-2 P1/P2 in this boundary. Hostile-store permutations remain Level 3.
 
 ## One Next Action
 
-Repair writer and graph lease continuity for the legitimate long-running
-sequential installed path using existing renewal and admission contracts, prove
-expiry/recovery deterministically, then restart the combined installed probe.
+Rerun the frozen combined installed lifecycle, both symmetric reverse views,
+zero read-side persistence and JSONL reopen probe at `71432230`, then classify
+the result before targeted independent correctness and test review.
