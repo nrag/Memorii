@@ -506,6 +506,103 @@ def test_installed_no_observer_persists_one_pending_coverage_observation_after_r
     ]
 
 
+def test_installed_ingress_coalesces_authenticated_forwarded_origin(
+    bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from memorii.core.provider.models import ProviderOperation
+    from memorii.core.semantic_ingestion.coverage_observation import (
+        CoverageObservationRepository,
+    )
+    from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
+    from memorii.integrations.hermes_local_authority import authorize_local_level2
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    authorize_local_level2(hermes_home=tmp_path)
+    context = bridge_module.HermesProviderServiceContext(
+        storage_root=tmp_path / "memorii",
+        hermes_home=tmp_path,
+        session_id="session:origin-direct",
+        user_id="raw:user:one",
+        agent_identity="profile:primary",
+        platform="cli",
+        agent_context="primary",
+        agent_workspace="hermes",
+        parent_session_id=None,
+    )
+    binding = build_local_level2_runtime_binding(context)
+    upstream_receipt = "a" * 64
+    observed_at = datetime(2026, 9, 27, 13, tzinfo=UTC)
+
+    with pytest.raises(ValueError, match="upstream origin receipt is invalid"):
+        binding.issue_ingress(
+            bridge_module.HermesIngressRequest(
+                hook="delegation",
+                session_id="session:origin-forwarded",
+                user_id=binding.absent_author_id,
+                agent_identity="profile:primary",
+                turn_author=None,
+                received_at=observed_at,
+                upstream_origin_receipt_digest="A" * 64,
+            )
+        )
+
+    for hook, session_id, content, operation_id in (
+        (
+            "sync_turn",
+            "session:origin-direct",
+            "Atlas owner is Bob.",
+            "installed-origin-direct",
+        ),
+        (
+            "delegation",
+            "session:origin-forwarded",
+            "Bob is the owner of Atlas.",
+            "installed-origin-forwarded",
+        ),
+    ):
+        ingress = binding.issue_ingress(
+            bridge_module.HermesIngressRequest(
+                hook=hook,
+                session_id=session_id,
+                user_id=binding.absent_author_id,
+                agent_identity="profile:primary",
+                turn_author=None,
+                received_at=observed_at,
+                upstream_origin_receipt_digest=upstream_receipt,
+            )
+        )
+        resolved = binding.service._resolve_ingress(ingress)
+        assert resolved is not None
+        assert resolved.origin_lineage_evidence is not None
+        binding.service.sync_event(
+            operation=ProviderOperation.CHAT_USER_TURN,
+            content=content,
+            operation_id=operation_id,
+            session_id=session_id,
+            user_id=binding.absent_author_id,
+            authenticated_host_ingress=ingress,
+            timestamp=observed_at,
+        )
+
+    observations = tuple(
+        observation
+        for record in binding.service._memory_plane.list_records(
+            source_kind="learned_ontology_coverage_observation_v1"
+        )
+        if (
+            observation := CoverageObservationRepository(
+                binding.service._memory_plane
+            ).load(record.memory_id)
+        )
+        is not None
+    )
+    assert len(observations) == 2
+    assert len({observation.source_id for observation in observations}) == 2
+    assert len({observation.session_id for observation in observations}) == 2
+    assert len({observation.origin_lineage_digest for observation in observations}) == 1
+    binding.completed_turn_runtime.close()
+
+
 def test_factory_issues_stable_exact_local_structured_grants() -> None:
     from memorii.core.semantic_ingestion.catalog_authority import (
         AuthenticatedPrincipalAgent,

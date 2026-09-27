@@ -21,6 +21,7 @@ from types import SimpleNamespace
 from memorii.core.memory_evolution.ingestion_contracts import (
     AuthenticatedHostIngress,
     AuthenticatedIngressContext,
+    AuthenticatedOriginLineageEvidence,
     AuthenticatedSemanticEgressGovernance,
     AuthenticatedSemanticSourceAuthority,
     AuthenticatedSemanticSourceInterval,
@@ -353,6 +354,7 @@ class _LocalLevel2IngressEvidence:
     session_id: str
     author_id: str
     agent_id: str
+    origin_lineage_evidence: AuthenticatedOriginLineageEvidence | None = None
 
 
 class _LocalLevel2StructuredSubmissionResolver:
@@ -478,6 +480,10 @@ class _LocalLevel2IngressResolver:
         user_id = getattr(request, "user_id", None)
         received_at = getattr(request, "received_at", None)
         agent_id = getattr(request, "agent_id", None)
+        hook = getattr(request, "hook", None)
+        upstream_origin_receipt_digest = getattr(
+            request, "upstream_origin_receipt_digest", None
+        )
         if agent_id is None:
             agent_id = _canonical_agent_id(getattr(request, "agent_identity", None))
         if not isinstance(session_id, str) or not session_id.strip() or not isinstance(received_at, datetime):
@@ -487,7 +493,42 @@ class _LocalLevel2IngressResolver:
             raise ValueError("Hermes local Level 2 operator identity is substituted")
         if not isinstance(agent_id, str) or not agent_id:
             raise TypeError("Hermes agent identity is invalid")
-        evidence = _LocalLevel2IngressEvidence(session_id=session_id, author_id=author, agent_id=agent_id)
+        origin_lineage_evidence = None
+        if upstream_origin_receipt_digest is not None:
+            if (
+                hook not in {"sync_turn", "delegation"}
+                or not isinstance(upstream_origin_receipt_digest, str)
+                or len(upstream_origin_receipt_digest) != 64
+                or any(
+                    character not in "0123456789abcdef"
+                    for character in upstream_origin_receipt_digest
+                )
+            ):
+                raise ValueError("Hermes upstream origin receipt is invalid")
+            origin_lineage_evidence = AuthenticatedOriginLineageEvidence.create(
+                authority_digest=sha256(
+                    b"memorii.hermes.local-origin-authority.v1\0"
+                    + encode_typed_value(
+                        (self._installation_id, self._operator_id)
+                    )
+                ).hexdigest(),
+                origin_receipt_digest=sha256(
+                    b"memorii.hermes.local-origin-receipt.v1\0"
+                    + encode_typed_value(
+                        (
+                            self._installation_id,
+                            self._operator_id,
+                            upstream_origin_receipt_digest,
+                        )
+                    )
+                ).hexdigest(),
+            )
+        evidence = _LocalLevel2IngressEvidence(
+            session_id=session_id,
+            author_id=author,
+            agent_id=agent_id,
+            origin_lineage_evidence=origin_lineage_evidence,
+        )
         return AuthenticatedHostIngress(
             provider_identity="hermes",
             principal_handle=evidence,
@@ -554,6 +595,7 @@ class _LocalLevel2IngressResolver:
                 provenance_digest=provenance,
                 policy_revision="bootstrap-v3-local-level2",
             ),
+            origin_lineage_evidence=evidence.origin_lineage_evidence,
         )
 
 

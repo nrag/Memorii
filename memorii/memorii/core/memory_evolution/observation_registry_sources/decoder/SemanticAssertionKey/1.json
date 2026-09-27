@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.SemanticAssertionKey.v1","implementation_source_digest":"f0c63a08b17f54afe2853e6de1a2909d1a10b1ceba8fb845348ab9113e91c4b3","role":"decoder","schema_id":"SemanticAssertionKey","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.SemanticAssertionKey.v1","implementation_source_digest":"ecebb6ac8816b70ac104569f0c5a7e9c74e78887354067a23e3f43b9d32f0372","role":"decoder","schema_id":"SemanticAssertionKey","schema_version":"1","typed_root_kind":"model"}

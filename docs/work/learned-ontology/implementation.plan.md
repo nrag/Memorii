@@ -122,9 +122,19 @@ rotation race in the preceding crash-safe slice; the corrected path reloads and
 verifies the winning retained source, reuses its immutable admission tuple, and
 adds the losing catalog observation independently. Focused contract,
 two-thread race, two-adapter coalescing and original crash-safe admission tests
-pass. Counts remain 3/5 and 5/14. Exactly one next action: freeze the corrected
-candidate and obtain targeted correctness approval before recurrence
-aggregation.
+pass. Counts remain 3/5 and 5/14. The targeted review that followed is recorded
+next.
+
+The review approved the catalog-race fix at `a5b9e42e` and identified one new
+integration P2: origin evidence had only a test resolver. The current installed
+delta moves issuance into the first-party Hermes authentication resolver,
+binding the upstream receipt to the verified installation/operator authority.
+An installed factory test proves transformed direct and delegated deliveries
+across two sessions persist separate observations with one verified lineage;
+malformed receipts fail closed. The source-contract change also refreshed its
+184-file generated observation-registry closure reproducibly. Counts remain
+3/5 and 5/14. Exactly one next action: freeze this installed producer and
+obtain targeted correctness approval before recurrence aggregation.
 
 ## Production Boundary And Change Map
 

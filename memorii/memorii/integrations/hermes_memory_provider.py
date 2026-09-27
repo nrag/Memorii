@@ -57,6 +57,7 @@ class HermesIngressRequest:
     agent_identity: object | None
     turn_author: dict[str, Any] | None
     received_at: datetime
+    upstream_origin_receipt_digest: str | None = None
 
 
 class MemoriiHermesMemoryProvider(MemoryProvider):
@@ -408,6 +409,7 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         session_id: str | None = None,
         user_id: str | None = None,
         turn_author: dict[str, Any] | None = None,
+        upstream_origin_receipt_digest: str | None = None,
     ) -> AuthenticatedHostIngress:
         issuer = self._issue_ingress
         if issuer is None:
@@ -420,6 +422,7 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
                 agent_identity=self._agent_identity,
                 turn_author=turn_author,
                 received_at=datetime.now(UTC),
+                upstream_origin_receipt_digest=upstream_origin_receipt_digest,
             )
         )
         if not isinstance(ingress, AuthenticatedHostIngress):
