@@ -5764,6 +5764,7 @@ def projection_records_from_replay_state(
     active_trust: TrustProjectionView | None = None,
     active_temporal_policy: TemporalPolicySnapshot | None = None,
     active_trust_policy: TrustPolicySnapshot | None = None,
+    retired_claim_assertion_ids: frozenset[str] = frozenset(),
 ) -> tuple[
     tuple[TemporalProjectionRecord, ...],
     tuple[TrustProjectionRecord, ...],
@@ -6053,6 +6054,7 @@ def projection_records_from_replay_state(
                 trust_policy_override=active_trust_policy,
                 trust_rule_override=trust_rule,
                 resolved_assertion_keys=resolved_claim_keys,
+                retired_claim_assertion_ids=retired_claim_assertion_ids,
             )
             temporal.append(temporal_record)
             trust.append(trust_record)
@@ -6159,6 +6161,7 @@ def _typed_claim_projection_records(
     trust_policy_override: TrustPolicySnapshot | None = None,
     trust_rule_override: PredicateTrustRule | None = None,
     resolved_assertion_keys: Mapping[str, SemanticAssertionKey] | None = None,
+    retired_claim_assertion_ids: frozenset[str] = frozenset(),
 ) -> tuple[TemporalProjectionRecord, TrustProjectionRecord]:
     claims = tuple(item.record for item in records)
     if not claims or any(not isinstance(record, ClaimAssertion) for record in claims):
@@ -6200,7 +6203,8 @@ def _typed_claim_projection_records(
     eligible = tuple(
         index
         for index, record in enumerate(typed_claims)
-        if record.source_authority_evidence is not None
+        if record.claim_assertion_id not in retired_claim_assertion_ids
+        and record.source_authority_evidence is not None
         and record.source_authority_evidence.authority.authority_class in trust_rule.eligible_authority_classes
     )
     incomparable = set(trust_rule.incomparable_class_pairs)
@@ -6260,7 +6264,7 @@ def _typed_claim_projection_records(
     temporal_contested = contested
     if (temporal_policy_override is None) != (trust_policy_override is None):
         raise ProjectionHistoryError("projection_history_integrity_error")
-    if temporal_policy_override is not None and trust_policy_override is not None:
+    if temporal_policy_override is not None and trust_policy_override is not None and eligible:
         from memorii.core.semantic_ingestion.temporal_evidence_resolution import TemporalEvidenceResolver
 
         candidates = tuple(
@@ -6268,6 +6272,7 @@ def _typed_claim_projection_records(
                 (
                     candidate
                     for claim in typed_claims
+                    if claim.claim_assertion_id not in retired_claim_assertion_ids
                     for candidate in claim.temporal_evidence.decision_closure.candidates
                 ),
                 key=lambda item: item.candidate_id,
@@ -6303,6 +6308,7 @@ def _typed_claim_projection_records(
         candidate_indexes = {
             candidate.candidate_id: index
             for index, claim in enumerate(typed_claims)
+            if claim.claim_assertion_id not in retired_claim_assertion_ids
             for candidate in claim.temporal_evidence.decision_closure.candidates
         }
         resolver_selected = tuple(

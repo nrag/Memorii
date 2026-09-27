@@ -276,7 +276,7 @@ def _current_grants(
     )
 
 
-def _lifecycle_transitions(
+def verified_lifecycle_transitions(
     records: tuple[CanonicalMemoryRecord, ...],
 ) -> tuple[_LifecycleTransition, ...] | None:
     """Decode the immutable native request/reload pairs for lifecycle history.
@@ -287,12 +287,13 @@ def _lifecycle_transitions(
     result.  Neither a free-standing planning record nor an unverified reload
     may change a direct read.
     """
+    from memorii.core.memory_evolution.bootstrap_group_primary import (
+        BootstrapGroupPrimaryVerificationError,
+        decode_verified_bootstrap_graph_group_commit_primary,
+    )
     from memorii.core.semantic_ingestion.contracts import (
-        BootstrapGraphGroupCommitReloadV3,
-        BootstrapGraphGroupCommitRequestV3,
         BootstrapNativeCorrectionEffectV3,
         BootstrapNativeRetractionEffectV3,
-        decode_semantic_contract,
     )
 
     transitions: list[_LifecycleTransition] = []
@@ -301,11 +302,10 @@ def _lifecycle_transitions(
         if record.source_kind != "semantic_ingestion_bootstrap_graph_v3_group_commit_primary":
             continue
         try:
-            request_raw = bytes.fromhex(record.content["request_hex"])
-            reload_raw = bytes.fromhex(record.content["reload_hex"])
-            request = decode_semantic_contract(request_raw, BootstrapGraphGroupCommitRequestV3)
-            reload = decode_semantic_contract(reload_raw, BootstrapGraphGroupCommitReloadV3)
-        except (KeyError, TypeError, ValueError):
+            request, reload = decode_verified_bootstrap_graph_group_commit_primary(
+                record, require_committed_result=True,
+            )
+        except BootstrapGroupPrimaryVerificationError:
             return None
         core = reload.persisted_result.core
         if (
@@ -381,6 +381,9 @@ def _lifecycle_transitions(
                 )
             )
     return tuple(sorted(transitions, key=lambda item: (item.recorded_at, item.transition_id)))
+
+
+_lifecycle_transitions = verified_lifecycle_transitions
 
 
 def _query_projected_claims(

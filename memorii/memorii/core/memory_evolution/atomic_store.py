@@ -16234,6 +16234,7 @@ class SemanticIngestionAtomicStore:
                         next_state=next_replay_state,
                         canonical_event_batch=canonical_event_batch,
                         canonical_graph_delta=canonical_graph_delta,
+                        pending_request=request,
                         writer_commit_binding=request.writer_commit_binding,
                         operation_fences_by_transaction_group={
                             canonical_event_batch.transaction_group_id: request.operation_fence_binding,
@@ -17579,6 +17580,7 @@ class SemanticIngestionAtomicStore:
         next_state,
         canonical_event_batch,
         canonical_graph_delta,
+        pending_request,
         writer_commit_binding,
         operation_fences_by_transaction_group: Mapping[str, OperationFenceBinding],
         complete_read_set_digest: str,
@@ -17617,6 +17619,10 @@ class SemanticIngestionAtomicStore:
                 active_trust=(self._projection_history.active_trust_authority() if current_bindings else None),
                 active_temporal_policy=(policy_bundle.temporal_policy if current_bindings and policy_bundle is not None else None),
                 active_trust_policy=(policy_bundle.trust_policy if current_bindings and policy_bundle is not None else None),
+                retired_claim_assertion_ids=self._retired_projection_claim_ids(
+                    next_state=next_state,
+                    pending_request=pending_request,
+                ),
             )
             conflict_authority = semantic_conflict_authority
             if conflict_authority is None:
@@ -17667,6 +17673,39 @@ class SemanticIngestionAtomicStore:
             self._projection_history.semantic_conflict_replay_binding(pending_records=prepared.records),
             prepared,
         )
+
+    def _retired_projection_claim_ids(self, *, next_state, pending_request) -> frozenset[str]:
+        """Derive immutable lifecycle targets before claim-slot arbitration."""
+        from memorii.core.semantic_ingestion.contracts import (
+            BootstrapNativeCorrectionEffectV3,
+            BootstrapNativeRetractionEffectV3,
+        )
+        from memorii.core.semantic_ingestion.structured_fact_read import verified_lifecycle_transitions
+
+        transitions = verified_lifecycle_transitions(tuple(self._memory_plane.list_records()))
+        if transitions is None:
+            raise PreplanningStoreError("native lifecycle authority is invalid")
+        retired = {claim_id for transition in transitions for claim_id in transition.compared_claim_ids}
+        if pending_request is not None:
+            for item in pending_request.ordered_operation_inputs:
+                effect = item.reduction.effect_materialization.accepted_effect
+                if not isinstance(effect, (BootstrapNativeCorrectionEffectV3, BootstrapNativeRetractionEffectV3)):
+                    continue
+                bindings = effect.corrected_targets if isinstance(effect, BootstrapNativeCorrectionEffectV3) else effect.retracted_targets
+                for binding in bindings:
+                    target = binding.authority.target
+                    if target.record_kind != "claim_assertion" or not target.record_id:
+                        raise PreplanningStoreError("native lifecycle target is invalid")
+                    retired.add(target.record_id)
+        known = {
+            record.claim_assertion_id
+            for materialized in next_state.materialized_records
+            for record in (materialized.record,)
+            if getattr(record, "claim_assertion_id", None) is not None
+        }
+        if not retired <= known:
+            raise PreplanningStoreError("native lifecycle target is absent from replay")
+        return frozenset(retired)
 
     def _semantic_event_authority_updates(
         self,
@@ -17836,6 +17875,7 @@ class SemanticIngestionAtomicStore:
                 next_state=next_state,
                 canonical_event_batch=batch,
                 canonical_graph_delta=graph_delta,
+                pending_request=None,
                 writer_commit_binding=request.writer_commit_binding,
                 operation_fences_by_transaction_group={
                     batch.transaction_group_id: request.operation_fence_binding,
