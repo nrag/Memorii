@@ -715,6 +715,7 @@ def test_primary_can_grant_and_revoke_one_persisted_preference_delegate(
 
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     authorize_local_level2(hermes_home=tmp_path)
+    authorize_local_structured_tool(hermes_home=tmp_path)
     primary_context = SimpleNamespace(
         storage_root=tmp_path / "memorii",
         hermes_home=tmp_path,
@@ -727,6 +728,69 @@ def test_primary_can_grant_and_revoke_one_persisted_preference_delegate(
         parent_session_id=None,
     )
     delegated_agent_id = _canonical_agent_id("profile:delegate")
+    topic_binding = build_local_level2_runtime_binding(primary_context)
+    topic_quote, topic_id = _commit_preference_topic(
+        topic_binding,
+        relation_id="product_provided_by",
+        topic_type=EntityType.PRODUCT_SERVICE,
+    )
+    preference_sentence = preference_candidate_sentence(
+        topic_quote=topic_quote,
+        preference_key="drink",
+        value="tea",
+    )
+    primary = build_local_level2_runtime_binding(primary_context)
+    primary_runtime = primary.completed_turn_runtime
+    primary_runtime.capture_user_turn(
+        session_id="session:primary",
+        turn_ordinal=2,
+        message=preference_sentence,
+        authenticated_author_id=primary.absent_author_id,
+        received_at=datetime.now(UTC),
+    )
+    candidate = primary_runtime.handle_tool_call(
+        tool_name="memorii_create_preference_candidate",
+        arguments={
+            "topic_type": "ProductService",
+            "topic_quote": topic_quote,
+            "canonical_topic_id": topic_id,
+            "preference_key": "drink",
+            "value": "tea",
+            "source_quote": preference_sentence,
+            "source_quote_start": 0,
+        },
+    )
+    assert candidate["status"] == "candidate"
+    primary_runtime.close()
+
+    confirmation = preference_confirmation_sentence(
+        topic_id=topic_id,
+        preference_key="drink",
+        value="tea",
+        source_digest=candidate["source_digest"],
+    )
+    primary = build_local_level2_runtime_binding(primary_context)
+    primary_runtime = primary.completed_turn_runtime
+    primary_runtime.capture_user_turn(
+        session_id="session:primary",
+        turn_ordinal=3,
+        message=confirmation,
+        authenticated_author_id=primary.absent_author_id,
+        received_at=datetime.now(UTC),
+    )
+    assert primary_runtime.handle_tool_call(
+        tool_name="memorii_confirm_preference",
+        arguments={
+            "preference_id": candidate["preference_id"],
+            "preference_key": "drink",
+            "value": "tea",
+            "source_digest": candidate["source_digest"],
+            "approval_quote": confirmation,
+            "approval_quote_start": 0,
+        },
+    )["status"] == "confirmed"
+    primary_runtime.close()
+
     grant_quote = preference_delegation_sentence(
         delegated_agent_id=delegated_agent_id,
         state="active",
@@ -746,7 +810,7 @@ def test_primary_can_grant_and_revoke_one_persisted_preference_delegate(
         build_local_level2_runtime_binding(never_granted_context)
     primary_runtime.capture_user_turn(
         session_id="session:primary",
-        turn_ordinal=1,
+        turn_ordinal=4,
         message=grant_quote,
         authenticated_author_id=primary.absent_author_id,
         received_at=datetime.now(UTC),
@@ -784,10 +848,18 @@ def test_primary_can_grant_and_revoke_one_persisted_preference_delegate(
     names = {schema["function"]["name"] for schema in delegated_runtime.get_tool_schemas()}
     assert "memorii_read_preference" in names
     assert "memorii_submit_fact" not in names
-    assert delegated_runtime.handle_tool_call(
+    delegated_read = delegated_runtime.handle_tool_call(
         tool_name="memorii_read_preference",
         arguments={"view": "current"},
-    ) == {"status": "ok", "preferences": []}
+    )
+    assert delegated_read["status"] == "ok"
+    assert len(delegated_read["preferences"]) == 1
+    delegated_preference = delegated_read["preferences"][0]
+    assert delegated_preference["preference_id"] == candidate["preference_id"]
+    assert delegated_preference["canonical_topic_id"] == topic_id
+    assert delegated_preference["preference_key"] == "drink"
+    assert delegated_preference["value"] == "tea"
+    assert delegated_preference["state"] == "confirmed"
     delegated_runtime.close()
     delegated = build_local_level2_runtime_binding(delegated_context)
     delegated_runtime = delegated.completed_turn_runtime
@@ -821,7 +893,7 @@ def test_primary_can_grant_and_revoke_one_persisted_preference_delegate(
     )
     primary_runtime.capture_user_turn(
         session_id="session:primary",
-        turn_ordinal=2,
+        turn_ordinal=5,
         message=revoke_quote,
         authenticated_author_id=primary.absent_author_id,
         received_at=datetime.now(UTC),
