@@ -63,6 +63,7 @@ control -> event evidence -> semantic conflict scope -> atomic projection.
 | Propagate pending operation authority through projection preparation | If both conflict-resolution passes receive the exact pending group fence and writer binding, a real retained admission/link/control chain will prepare; omitting the map or removing the link will deny. | Commit `f59261b0` passes the real-record regression in both positive and fail-closed forms; 21 focused projection/retained-operation checks pass. Independent review then found its committed-contender group-primary decoder incomplete, so the candidate is not accepted. |
 | Run installed LocalDate lifecycle probe after authority repair | If the admission join was the only defect, correction commits; if lifecycle projection still treats replacement as an independent contradiction, the no-model runtime reaches its deliberately unavailable general resolver. | At `18e72183`, initialization and the initial LocalDate assertion/read pass. Correction fails after `281.99s` in `resolve_semantic_conflicts` with `local Level 2 conflict resolution is unavailable`. This confirms the transition overlay is absent from projection arbitration; the lease error is downstream. |
 | Retire verified lifecycle targets before projection arbitration | If correction/retraction targets are removed from the current candidate set before trust and temporal selection, replacements can win while independent equal-rank claims remain contested and retired evidence stays historical. | Commits `e96ad054` and `e4a80771` implement the shared verified lifecycle reader, committed-plus-pending target reconstruction, pre-arbitration retirement, and deterministic publication refresh. The five affected unit files pass `129 passed in 187.15s`; the publication compiler passes `23 passed`; Ruff, compileall, and diff checks pass. |
+| Run installed lifecycle and symmetric-read probe at `286897d5` | If lifecycle retirement is complete, correction and retraction commit, current/history/as-of reads select the lifecycle-valid value, and symmetric reads survive reopen. | After `1433.57s`, correction and retraction both commit; corrected current, retracted current, complete history states, and pre-correction as-of pass. Pre-retraction as-of incorrectly returns both the superseded original and replacement instead of only the replacement. Symmetric/reopen steps are not reached. The projection contest defect is resolved; historical effective-interval filtering remains defective. |
 
 ## production_entrypoint_bindings
 
@@ -102,9 +103,11 @@ Candidate delta `e96ad054` plus generated publication `e4a80771` now retires
 only exact correction/retraction targets from current arbitration while
 preserving them as `retained_noncurrent`. Independent equal-rank claims remain
 contested, and an all-retired slot has no selected or contested assertion.
-Affected-family and publication checks pass. The installed probe and targeted
-independent review remain outstanding, so no milestone or requirement count
-changes yet.
+Affected-family and publication checks pass. The installed probe at `286897d5`
+proves correction and retraction publication plus current and complete-history
+reads, but exposes an as-of interval bug before reaching symmetric/reopen
+checks. Targeted independent review remains outstanding, so no milestone or
+requirement count changes yet.
 
 ## Completion Contract
 
@@ -117,6 +120,6 @@ Level-2 P1/P2 in this boundary. Hostile-store permutations remain Level 3.
 
 ## One Next Action
 
-Run the frozen installed LocalDate correction/retraction and symmetric-read
-probe at `e4a80771`, then classify the result before targeted independent
-correctness and test review.
+Correct lifecycle history `system_as_of` filtering so a superseded assertion
+ends when its correction is recorded and a replacement ends when retracted,
+then run focused read regressions before restarting the installed probe.
