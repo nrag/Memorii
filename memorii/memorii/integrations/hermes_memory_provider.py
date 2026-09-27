@@ -79,6 +79,7 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         self._absent_author_id = "memorii.hermes.author.absent.v1"
         self._revoke_structured_submission_grant: Callable[[str], None] | None = None
         self._activate_learned_candidate: Callable[[str], object] | None = None
+        self._select_prior_learned_version: Callable[[str], object] | None = None
         self._learned_ontology_runtime: object | None = None
         self._learned_ontology_status: Callable[[], object] | None = None
         self._origin_receipts: dict[
@@ -146,6 +147,7 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         self._absent_author_id = binding.absent_author_id
         self._revoke_structured_submission_grant = binding.revoke_structured_submission_grant
         self._activate_learned_candidate = binding.activate_learned_candidate
+        self._select_prior_learned_version = binding.select_prior_learned_version
         self._learned_ontology_runtime = binding.learned_ontology_runtime
         self._learned_ontology_status = binding.learned_ontology_status
         self._issue_origin_receipt = binding.issue_origin_receipt
@@ -174,6 +176,13 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         if action is None:
             raise RuntimeError("learned ontology activation is unavailable")
         return action(proposal_id)
+
+    def select_prior_learned_version(self, target_version_digest: str) -> object:
+        """Roll back through the factory-bound owner and refresh reader authority."""
+        action = self._select_prior_learned_version
+        if action is None:
+            raise RuntimeError("learned ontology rollback is unavailable")
+        return action(target_version_digest)
 
     def lookup_learned_ontology_status(self) -> object:
         """Return bounded learner control status from the installed root."""

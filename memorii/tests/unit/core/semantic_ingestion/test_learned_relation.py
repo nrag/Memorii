@@ -24,6 +24,8 @@ from memorii.core.semantic_ingestion.learned_relation import (
     AgentLocalCatalogScope,  # noqa: I001
     LearnedRelationError,
     LearnedRelationRuntime,
+    OntologyActivation,
+    OntologyCatalogVersion,
     OntologyChangeProposal,
     OntologyEvidenceReference,
     PairedEvaluation,
@@ -61,6 +63,22 @@ def _proposal() -> OntologyChangeProposal:
     )
 
 
+def _proposal_from_parent(*, parent_catalog_digest: str, source_id: str, source_digit: str) -> OntologyChangeProposal:
+    return OntologyChangeProposal.create(
+        catalog_scope=_SCOPE,
+        parent_catalog_digest=parent_catalog_digest,
+        relation=RelationDeclaration(description="A person mentors another person."),
+        evidence=(
+            OntologyEvidenceReference(
+                source_id=source_id,
+                source_digest=source_digit * 64,
+                origin_lineage_digest="a" * 64,
+                source_scope_digest="b" * 64,
+            ),
+        ),
+    )
+
+
 def _runtime(writer: _ReplayWriter, plane: MemoryPlaneService | None = None) -> LearnedRelationRuntime:
     return LearnedRelationRuntime(
         memory_plane=plane or MemoryPlaneService(), replay_writer=writer,
@@ -89,6 +107,19 @@ def _passing_evaluation() -> PairedEvaluation:
         targeted_positive_committed_and_read=2, parent_regressions=0,
         unsupported_or_misleading_failures=0, scope_or_provenance_failures=0,
         available=True,
+    )
+
+
+def _approve_and_activate(runtime: LearnedRelationRuntime, proposal: OntologyChangeProposal):
+    prepared = runtime.prepare_candidate(proposal)
+    evaluated = runtime.record_evaluation(
+        proposal_id=prepared.proposal_id, evaluation=_passing_evaluation(),
+    )
+    approved = runtime.approve_candidate(
+        proposal_id=evaluated.proposal_id, principal_id="user:one", agent_id="agent:one",
+    )
+    return runtime.activate_candidate(
+        proposal_id=approved.proposal_id, principal_id="user:one", agent_id="agent:one",
     )
 
 
@@ -156,6 +187,116 @@ def test_recovery_finalizes_both_selection_crash_windows_and_replay_receipts() -
     calls = tuple(writer.calls)
     runtime.recover(_SCOPE)
     assert tuple(writer.calls) == calls
+
+
+def test_rollback_only_selects_prior_selected_same_scope_ancestor_without_new_catalog_state() -> None:
+    """Rollback is a pointer move, never a new learned catalog publication."""
+    writer = _ReplayWriter()
+    runtime = _runtime(writer)
+    first = _approve_and_activate(runtime, _proposal_from_parent(
+        parent_catalog_digest="a" * 64, source_id="source:first", source_digit="1",
+    ))
+    second = _approve_and_activate(runtime, _proposal_from_parent(
+        parent_catalog_digest=first.target_version_digest, source_id="source:second", source_digit="2",
+    ))
+    pointer = runtime._load_pointer(_SCOPE)
+    assert pointer is not None and pointer.selected_version_digest == second.target_version_digest
+
+    # An orphan, a sibling, a foreign-scope version, and an ancestor without a
+    # selected activation must never become rollback targets.
+    orphan = OntologyCatalogVersion.create(
+        catalog_scope=_SCOPE, catalog_digest="3" * 64, parent_version_digest=None,
+        relation_ids=("mentors",), introduced_proposal_id=None,
+    )
+    sibling = OntologyCatalogVersion.create(
+        catalog_scope=_SCOPE, catalog_digest="4" * 64,
+        parent_version_digest=first.target_version_digest, relation_ids=("mentors",),
+        introduced_proposal_id=None,
+    )
+    foreign_scope = AgentLocalCatalogScope(principal_id="user:two", agent_id="agent:two")
+    foreign = OntologyCatalogVersion.create(
+        catalog_scope=foreign_scope, catalog_digest="5" * 64, parent_version_digest=None,
+        relation_ids=("mentors",), introduced_proposal_id=None,
+    )
+    for version in (orphan, sibling, foreign):
+        runtime._write_version(version)
+        with pytest.raises(LearnedRelationError, match="selected ancestor"):
+            runtime.select_prior_version(
+                catalog_scope=_SCOPE, target_version_digest=version.version_digest,
+                principal_id="user:one", agent_id="agent:one",
+            )
+
+    first_attempt = runtime._require_attempt(first.attempt_id)
+    for terminal_status in ("prepared", "abandoned"):
+        runtime._replace_attempt(first_attempt, first_attempt.model_copy(update={"status": terminal_status}))
+        with pytest.raises(LearnedRelationError, match="selected history"):
+            runtime.select_prior_version(
+                catalog_scope=_SCOPE, target_version_digest=first.target_version_digest,
+                principal_id="user:one", agent_id="agent:one",
+            )
+        first_attempt = runtime._require_attempt(first.attempt_id)
+    runtime._replace_attempt(first_attempt, first_attempt.model_copy(update={"status": "selected"}))
+
+    before_versions = len(runtime._plane.list_records(source_kind="learned_ontology_catalog_version_v1"))
+    before_proposals = len(runtime._plane.list_records(source_kind="learned_ontology_change_proposal_v1"))
+    stale = OntologyActivation.create(
+        schema_version=1, catalog_scope=_SCOPE, operation="select_prior_version",
+        proposal_id=None, target_version_digest=first.target_version_digest,
+        expected_pointer_digest=pointer.pointer_digest,
+        expected_pointer_sequence=pointer.activation_sequence,
+        authorizing_decision_digest="6" * 64, status="prepared",
+    )
+    runtime._write_attempt(stale)
+    rollback = runtime.select_prior_version(
+        catalog_scope=_SCOPE, target_version_digest=first.target_version_digest,
+        principal_id="user:one", agent_id="agent:one",
+    )
+    assert rollback.status == "selected"
+    with pytest.raises(LearnedRelationError, match="stale"):
+        runtime._select(attempt=stale, expected_pointer=pointer)
+    assert len(runtime._plane.list_records(source_kind="learned_ontology_catalog_version_v1")) == before_versions
+    assert len(runtime._plane.list_records(source_kind="learned_ontology_change_proposal_v1")) == before_proposals
+
+
+@pytest.mark.parametrize("outcome", ["revoked", "deleted"])
+def test_failed_retained_replay_writes_one_durable_receipt_without_retry_effect(outcome: str) -> None:
+    writer = _ReplayWriter(outcome)
+    plane = MemoryPlaneService()
+    runtime = _runtime(writer, plane)
+    _approve_and_activate(runtime, _proposal_from_parent(
+        parent_catalog_digest="a" * 64, source_id=f"source:{outcome}", source_digit="7",
+    ))
+    status = runtime.status(_SCOPE)
+    assert status["replay_outcomes"] == {outcome: 1}
+    assert status["last_error"] == f"replay_{outcome}"
+    assert f"source:{outcome}" not in repr(status)
+    calls = tuple(writer.calls)
+    runtime.recover(_SCOPE)
+    assert tuple(writer.calls) == calls
+    assert len(plane.list_records(source_kind="learned_ontology_replay_operation_v1")) == 1
+
+
+def test_status_is_scope_bounded_and_exposes_only_closed_operational_values() -> None:
+    writer = _ReplayWriter("deleted")
+    runtime = _runtime(writer)
+    selected = _approve_and_activate(runtime, _proposal_from_parent(
+        parent_catalog_digest="a" * 64, source_id="source:private", source_digit="8",
+    ))
+    status = runtime.status(_SCOPE)
+    assert status == {
+        "active_catalog_digest": runtime._require_version(selected.target_version_digest).catalog_digest,
+        "active_version_digest": selected.target_version_digest,
+        "activation_sequence": 1,
+        "candidate_count": 1,
+        "replay_outcomes": {"deleted": 1},
+        "last_error": "replay_deleted",
+    }
+    other = runtime.status(AgentLocalCatalogScope(principal_id="user:two", agent_id="agent:two"))
+    assert other == {
+        "active_catalog_digest": None, "active_version_digest": None,
+        "activation_sequence": None, "candidate_count": 0,
+        "replay_outcomes": {}, "last_error": None,
+    }
 
 
 def test_agent_local_scope_and_automatic_policy_fail_closed_without_calibration() -> None:

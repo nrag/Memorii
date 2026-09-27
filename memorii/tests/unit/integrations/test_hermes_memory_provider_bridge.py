@@ -1152,6 +1152,8 @@ def test_learned_replay_of_a_preselection_capture_reopens_jsonl(
     """The replay control must retain the binding selected for the replay."""
     from memorii.core.semantic_ingestion.learned_relation import (
         AgentLocalCatalogScope,
+        OntologyActivation,
+        OntologyCatalogVersion,
         OntologyChangeProposal,
         OntologyEvidenceReference,
         PairedEvaluation,
@@ -1209,7 +1211,7 @@ def test_learned_replay_of_a_preselection_capture_reopens_jsonl(
         proposal_id=candidate.proposal_id,
         principal_id=scope.principal_id, agent_id=scope.agent_id,
     )
-    provider.activate_learned_candidate(candidate.proposal_id)
+    first_activation = provider.activate_learned_candidate(candidate.proposal_id)
     status = provider.lookup_learned_ontology_status()
     assert status["replay_outcomes"] == {"committed": 1}
     records = tuple(provider._provider._service._memory_plane.list_records())
@@ -1237,6 +1239,49 @@ def test_learned_replay_of_a_preselection_capture_reopens_jsonl(
     )
     assert first_read.status == "ok"
     assert len(first_read.items) == 1
+    # Publish a later selected catalog generation, then roll back through the
+    # installed owner root.  Rollback only moves the selection pointer: the
+    # first fact must still resolve under its original pinned catalog.
+    first_pointer = learned._load_pointer(scope)
+    assert first_pointer is not None
+    successor_version = OntologyCatalogVersion.create(
+        catalog_scope=scope, catalog_digest="8" * 64,
+        parent_version_digest=first_activation.target_version_digest,
+        relation_ids=("mentors",), introduced_proposal_id=None,
+    )
+    learned._write_version(successor_version)
+    successor_attempt = OntologyActivation.create(
+        schema_version=1, catalog_scope=scope, operation="select_prior_version",
+        proposal_id=None, target_version_digest=successor_version.version_digest,
+        expected_pointer_digest=first_pointer.pointer_digest,
+        expected_pointer_sequence=first_pointer.activation_sequence,
+        authorizing_decision_digest="7" * 64, status="prepared",
+    )
+    learned._write_attempt(successor_attempt)
+    learned._select(attempt=successor_attempt, expected_pointer=first_pointer)
+    before_rollback_versions = len(learned._plane.list_records(
+        source_kind="learned_ontology_catalog_version_v1",
+    ))
+    before_rollback_proposals = len(learned._plane.list_records(
+        source_kind="learned_ontology_change_proposal_v1",
+    ))
+    rollback = provider.select_prior_learned_version(first_activation.target_version_digest)
+    assert rollback.status == "selected"
+    assert len(learned._plane.list_records(
+        source_kind="learned_ontology_catalog_version_v1",
+    )) == before_rollback_versions
+    assert len(learned._plane.list_records(
+        source_kind="learned_ontology_change_proposal_v1",
+    )) == before_rollback_proposals
+    assert provider.lookup_learned_ontology_status()["active_version_digest"] == first_activation.target_version_digest
+    assert runtime.read_structured_facts(
+        request=StructuredFactReadRequest(
+            predicate_id="mentors", subject_entity_id=subject_entity_id,
+        ),
+        session_id="session:replay",
+        authenticated_author_id=scope.principal_id,
+        now=datetime.now(UTC),
+    ) == first_read
     provider.shutdown()
 
     reopened = bridge_module.MemoriiHermesMemoryProvider()
@@ -1273,6 +1318,117 @@ def test_learned_replay_of_a_preselection_capture_reopens_jsonl(
     )
     assert reopened_read == first_read
     reopened.shutdown()
+
+
+@pytest.mark.parametrize("outcome", ["deleted", "revoked"])
+def test_installed_learned_replay_skip_receipt_is_durable_and_idempotent(
+    bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, outcome: str,
+) -> None:
+    """The factory root records unavailable retained replay without a fact."""
+    from memorii.core.semantic_ingestion.learned_relation import (
+        AgentLocalCatalogScope,
+        OntologyChangeProposal,
+        OntologyEvidenceReference,
+        PairedEvaluation,
+        RelationDeclaration,
+    )
+    from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
+    from memorii.integrations.hermes_local_authority import (
+        authorize_local_level2,
+        authorize_local_structured_tool,
+    )
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    authorize_local_level2(hermes_home=tmp_path)
+    authorize_local_structured_tool(hermes_home=tmp_path)
+    monkeypatch.setattr(
+        bridge_module.importlib.metadata,
+        "entry_points",
+        lambda *, group: (_FactoryEntryPoint(build_local_level2_runtime_binding),),
+    )
+    provider = bridge_module.MemoriiHermesMemoryProvider()
+    provider.initialize(
+        "session:skipped", hermes_home=tmp_path, user_id="raw:user:one",
+        agent_identity="profile:primary", platform="cli", agent_context="primary",
+        agent_workspace="hermes",
+    )
+    try:
+        runtime = provider._completed_turn_runtime
+        learned = provider._learned_ontology_runtime
+        assert runtime is not None and learned is not None
+        scope = AgentLocalCatalogScope(
+            principal_id=provider._absent_author_id,
+            agent_id=runtime._authenticated_agent_id,
+        )
+        if outcome == "deleted":
+            source_id, source_digest = "retained:missing", "1" * 64
+        else:
+            provider.on_turn_start(1, "Atlas mentors Ada.")
+            active = runtime._active_turn
+            assert active is not None
+            source_id, source_digest = active.ledger.source_id, active.ledger.source_digest
+            # This is the installed runtime's current-authority revocation
+            # boundary.  The ordinary replay root sees it before source/pin
+            # or semantic submission and must leave no fact behind.
+            runtime._structured_tool_is_current = lambda: False
+        candidate = learned.prepare_candidate(OntologyChangeProposal.create(
+            catalog_scope=scope, parent_catalog_digest="a" * 64,
+            relation=RelationDeclaration(description="A person mentors another person."),
+            evidence=(OntologyEvidenceReference(
+                source_id=source_id, source_digest=source_digest,
+                origin_lineage_digest="2" * 64, source_scope_digest="3" * 64,
+            ),),
+        ))
+        candidate = learned.record_evaluation(
+            proposal_id=candidate.proposal_id,
+            evaluation=PairedEvaluation.create(
+                binding_digest="4" * 64, targeted_positive_count=2,
+                targeted_positive_committed_and_read=2, parent_regressions=0,
+                unsupported_or_misleading_failures=0, scope_or_provenance_failures=0,
+                available=True,
+            ),
+        )
+        learned.approve_candidate(
+            proposal_id=candidate.proposal_id,
+            principal_id=scope.principal_id, agent_id=scope.agent_id,
+        )
+        provider.activate_learned_candidate(candidate.proposal_id)
+
+        status = provider.lookup_learned_ontology_status()
+        assert status["active_version_digest"] is not None
+        assert status["activation_sequence"] == 1
+        assert status["candidate_count"] == 1
+        assert status["replay_outcomes"] == {outcome: 1}
+        assert status["last_error"] == f"replay_{outcome}"
+        assert source_id not in repr(status)
+        assert source_digest not in repr(status)
+        records = tuple(provider._provider._service._memory_plane.list_records())
+        assert sum(record.source_kind == "learned_ontology_replay_operation_v1" for record in records) == 1
+        assert not any(
+            record.content.get("runtime_context_projection_kind") == "bootstrap_v3_claim_assertion"
+            for record in records
+        )
+        learned.recover(scope)
+        assert len(learned._plane.list_records(source_kind="learned_ontology_replay_operation_v1")) == 1
+    finally:
+        provider.shutdown()
+
+    reopened = bridge_module.MemoriiHermesMemoryProvider()
+    reopened.initialize(
+        "session:skipped", hermes_home=tmp_path, user_id="raw:user:one",
+        agent_identity="profile:primary", platform="cli", agent_context="primary",
+        agent_workspace="hermes",
+    )
+    try:
+        assert reopened.lookup_learned_ontology_status()["replay_outcomes"] == {outcome: 1}
+        reopened_records = tuple(reopened._provider._service._memory_plane.list_records())
+        assert sum(record.source_kind == "learned_ontology_replay_operation_v1" for record in reopened_records) == 1
+        assert not any(
+            record.content.get("runtime_context_projection_kind") == "bootstrap_v3_claim_assertion"
+            for record in reopened_records
+        )
+    finally:
+        reopened.shutdown()
 
 
 def test_installed_default_catalog_entity_relation_commits_and_recalls(

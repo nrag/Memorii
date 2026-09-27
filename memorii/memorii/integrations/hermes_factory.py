@@ -406,6 +406,21 @@ def _build_local_level2_runtime_binding(
         completed_runtime._structured_authority_request = structured_resolver.issued_authority_request()
         return activation
 
+    def select_prior_learned_version(target_version_digest: str) -> OntologyActivation:
+        """Select a prior version through the installed owner authority."""
+        activation = learned_runtime.select_prior_version(
+            catalog_scope=learned_scope,
+            target_version_digest=target_version_digest,
+            principal_id=operator_id,
+            agent_id=agent_id,
+        )
+        if structured_resolver is None:
+            raise LocalLevel2AuthorityError("local structured tool authority is unavailable")
+        authority = structured_resolver.issued_authority()
+        service.provision_structured_submission_authority(authority=authority)
+        completed_runtime._structured_authority_request = structured_resolver.issued_authority_request()
+        return activation
+
     return HermesProviderRuntimeBinding(
         service=service,
         issue_ingress=ingress_resolver.issue,
@@ -415,6 +430,7 @@ def _build_local_level2_runtime_binding(
             revoke_current_structured_grant if structured_resolver is not None else None
         ),
         activate_learned_candidate=activate_learned_candidate,
+        select_prior_learned_version=select_prior_learned_version,
         learned_ontology_runtime=learned_runtime,
         learned_ontology_status=lambda: learned_runtime.status(learned_scope),
         issue_origin_receipt=ingress_resolver.issue_origin_receipt,

@@ -461,18 +461,27 @@ class LearnedRelationRuntime:
         pointer = self._load_pointer(scope)
         proposals = [self._decode_proposal(record) for record in self._plane.list_records(source_kind=_KIND_PROPOSAL)]
         outcomes: dict[str, int] = {}
+        latest_error: tuple[datetime, str] | None = None
         for record in self._plane.list_records(source_kind=_KIND_REPLAY):
             if record.content.get("scope_key") != self._scope_key(scope):
                 continue
             outcome = record.content.get("outcome")
             if isinstance(outcome, str):
                 outcomes[outcome] = outcomes.get(outcome, 0) + 1
+                # Status is intentionally an operational summary.  The
+                # receipt retains source coordinates for recovery, but public
+                # status exposes only this closed outcome category.
+                if outcome in {"abstained", "revoked", "deleted"} and (
+                    latest_error is None or record.timestamp > latest_error[0]
+                ):
+                    latest_error = (record.timestamp, f"replay_{outcome}")
         return {
             "active_catalog_digest": None if pointer is None else self._require_version(pointer.selected_version_digest).catalog_digest,
+            "active_version_digest": None if pointer is None else pointer.selected_version_digest,
             "activation_sequence": None if pointer is None else pointer.activation_sequence,
             "candidate_count": len([item for item in proposals if item and item.catalog_scope == scope]),
             "replay_outcomes": outcomes,
-            "last_error": None,
+            "last_error": None if latest_error is None else latest_error[1],
         }
 
     def recover(self, scope: AgentLocalCatalogScope) -> None:
@@ -551,6 +560,8 @@ class LearnedRelationRuntime:
             if existing == next_pointer:
                 self._finalize_selected(attempt)
                 return self._require_attempt(attempt.attempt_id)
+            if expected_pointer is not None and existing != expected_pointer:
+                raise LearnedRelationError("activation pointer expectation is stale")
         if expected_pointer is not None and persisted is None:
             raise LearnedRelationError("catalog pointer is unavailable")
         if (expected_pointer is None) != (attempt.expected_pointer_digest is None):

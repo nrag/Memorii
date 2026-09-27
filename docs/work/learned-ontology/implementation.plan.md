@@ -42,17 +42,17 @@ States below are judged at the selected Level-2 manual-testing bar. `Complete` m
 | --- | --- | --- | --- |
 | OLE-01 retained source, observation, candidate, fact separation | coverage-observation | partial: retention, inert observation and recurrence are ready; candidate/activation separation is being completed in M5 | exhaustive isolation and migration matrix |
 | OLE-02 scope, provenance, origin lineage | coverage-observation | partial: scoped observation and lineage coalescing are ready; candidate activation scope proof remains in M5 | hostile lineage and platform breadth |
-| OLE-03 closed additive relation/subtype grammar | learning-activation-replay | partial: fourth-relation typed grammar and verified package exist; activated path open | full compatibility and abuse matrix |
-| OLE-04 evaluation and authorized activation | learning-activation-replay | not started | production rollout gates |
+| OLE-03 closed additive relation/subtype grammar | learning-activation-replay | partial: fourth-relation typed grammar, verified package, activated `mentors(Person, Person)` path and selected-version dispatch are evidenced; final cohort review remains | full compatibility and abuse matrix |
+| OLE-04 evaluation and authorized activation | learning-activation-replay | partial: paired evaluation, owner approval, immutable selected version and owner-bound rollback are evidenced; final cohort review remains | production rollout gates |
 | OLE-05 pinned historical meaning and grant fence | catalog-version-and-fourth-relation | complete for Level 2: selected child pin, native write, historical protected read, restart/status retry and current-grant denial work | exhaustive rollback/tamper families |
-| OLE-06 authorized replay through normal writer | learning-activation-replay | not started | production replay breadth |
-| OLE-07 durable status and recovery | learning-activation-replay | partial: structured terminal restart works; learner recovery open | scale and platform recovery matrices |
+| OLE-06 authorized replay through normal writer | learning-activation-replay | partial: installed retained-source replay commits through the ordinary writer; revoked/deleted replay writes one durable skip receipt with no fact and remains idempotent after recovery/reopen | production replay breadth |
+| OLE-07 durable status and recovery | learning-activation-replay | partial: learner recovery, restart-safe replay receipts, selected rollback and scope-bounded status are evidenced; final cohort review remains | scale and platform recovery matrices |
 | OLE-08 adapter/provider neutrality | coverage-observation | partial: first-party installed structured port works; second adapter open | full adapter certification |
 | OLE-09 broad workplace base | default-catalog-and-home | complete for Level 2: all 53 default relations, twenty personas, typed literals, lifecycle/history/reopen and symmetric reads work through the installed no-key root | exhaustive per-relation certification |
 | OLE-10 single-account home and preference | default-catalog-and-home | complete for Level 2: home catalog plus canonical-topic Preference lifecycle, protected reads and durable delegation work within one signed-in user scope | production migration and compatibility |
 | OLE-11 monitoring, attribution, recurrence | coverage-observation | partial: idempotent observation, core lineage and recurrence are ready; candidate suppression/activation join remains in M5 | scale calibration and abuse resistance |
 | OLE-12 optional model and structured fact port | structured-fact-no-key | complete for Level 2: installed no-key structured submit/read/restart works and absent model remains explicit | provider certification and broad conformance |
-| OLE-13 calibrated/owner-reviewed promotion | learning-activation-replay | not started | production thresholds and rollout evidence |
+| OLE-13 calibrated/owner-reviewed promotion | learning-activation-replay | partial: owner-reviewed activation and the exact automatic-policy boundary are implemented; automatic promotion remains disabled absent a passing calibrated cohort and final review | production thresholds and rollout evidence |
 | OLE-14 useful no-key operation | structured-fact-no-key | complete for Level 2: installed retained source, commit, protected read, retry and restart work without network | broad default and release certification |
 
 | Order | Milestone packet | Observable checkpoint | Dependency | State |
