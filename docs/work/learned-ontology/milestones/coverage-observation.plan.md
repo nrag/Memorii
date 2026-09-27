@@ -111,3 +111,20 @@ complete diff digest
 Counts remain 3/5 milestones and 5/14 requirements. Exactly one next action:
 freeze the installed producer and generated package, then obtain targeted
 correctness approval before recurrence aggregation.
+
+Review of `f7ce04a6` found the factory issuer still accepted a raw digest and
+the public callbacks did not supply it. The replacement removes that input.
+`MemoriiHermesMemoryProvider.on_turn_start` now creates a content-validated
+receipt from the observed immutable user-turn bytes and authenticated author,
+stores it by session/turn coordinate, and lets a later public turn inherit it
+only through an existing parent coordinate. The private factory resolver
+verifies the receipt content and author, binds its authority to installation,
+operator and agent, and otherwise leaves origin evidence absent. The normal
+first-party completed-turn runtime carries the receipt through ingress and
+atomically adds the pending observation to captured-source admission. Its
+public callback test covers two transformed captured turns, forged-receipt
+denial and one shared lineage without disabling the installed runtime or
+calling `sync_event` directly. Four affected bridge tests pass in 20.40
+seconds. Counts remain 3/5 and 5/14. Exactly one next action: freeze this public
+callback correction and obtain targeted correctness approval before recurrence
+aggregation.

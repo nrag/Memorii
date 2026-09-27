@@ -136,6 +136,18 @@ malformed receipts fail closed. The source-contract change also refreshed its
 3/5 and 5/14. Exactly one next action: freeze this installed producer and
 obtain targeted correctness approval before recurrence aggregation.
 
+Review of `f7ce04a6` found the installed producer accepted a caller-supplied
+digest and was unreachable from normal callbacks. The replacement uses a
+bridge-owned receipt created from an observed user turn, allows inheritance
+only by a known parent turn coordinate, verifies it in the private factory
+resolver against installation/operator/agent authority, and carries it through
+the normal completed-turn runtime. Captured-source admission now atomically
+includes its pending coverage observation. The installed public callback proof
+uses two transformed captured turns and rejects a forged receipt; affected
+bridge checks pass. Counts remain 3/5 and 5/14. Exactly one next action: freeze
+the public callback correction and obtain targeted correctness approval before
+recurrence aggregation.
+
 ## Production Boundary And Change Map
 
 `implementation-readiness.md` contains the read-only composition-root preflight and caller counts. Current paths are generic `ProviderMemoryService.sync_event` and the installed Hermes completed-turn root, one fixed three-predicate profile, one shared semantic terminal writer, and one protected-reader core. Ontology observer, catalog registry, activation, learner, and structured-fact port have zero current production callers. No future owner counts as implemented until a mapper finds a real caller and a focused path proof reaches its durable outcome.
@@ -312,7 +324,7 @@ The bounded assertion revealed the first mismatch after JSONL reopen in an exist
 
 2026-09-26 first-milestone coherent review and gate checkpoint: 5 of 6 M1 checkpoints are locally verified, but M1 remains 0/1 accepted and the parent remains 0/6 milestones complete, five OLE rows partial and nine not started. Spec and correctness reviewers found no confirmed Level-2 product P1/P2; the test reviewer identified two required proof gaps, now corrected in code. The generic fixed-authority denial matrix passed through a verified-production root in 37.57 seconds and received targeted delta clearance. The installed no-egress assertion is added to its native commit/read/reopen fixture, whose full final-candidate run is in progress. The authentic schema-2/3 mixed-history final-candidate reruns are also in progress. Whole-package Pyright, Ruff, behavioral identity hygiene, whitespace, 77 focused unit checks, 32 source/catalog checks, terminal shard-plan verification, and a locally built/installable wheel have passed; selected terminal and package integration gates remain. This is local evidence at Python 3.12.14, not GitHub CI parity or Level-3 release evidence. No requirement state changes.
 
-**One next action:** build verified selected-child release and captured-tool runtime dispatch, then prove native `reports_to` commit and protected read within M2.
+**Historical M2 next action (completed):** build verified selected-child release and captured-tool runtime dispatch, then prove native `reports_to` commit and protected read within M2.
 
 ## Outcome And Retrospective
 

@@ -61,6 +61,7 @@ from memorii.integrations.hermes_local_authority import (
     load_local_level2_authority,
     load_local_structured_tool_authority,
 )
+from memorii.integrations.hermes_runtime_binding import HermesAuthenticatedOriginReceipt
 
 _PREFERENCE_TOPIC_TYPES = {
     "ProductService": EntityType.PRODUCT_SERVICE,
@@ -256,10 +257,20 @@ def _build_local_level2_runtime_binding(
     from memorii.integrations.hermes_runtime_binding import HermesProviderRuntimeBinding
 
     def issue_completed_turn_ingress(
-        session_id: str, author_id: str, received_at: datetime
+        session_id: str,
+        author_id: str,
+        received_at: datetime,
+        origin_receipt: HermesAuthenticatedOriginReceipt | None = None,
     ) -> AuthenticatedHostIngress:
         return ingress_resolver.issue(
-            SimpleNamespace(session_id=session_id, user_id=author_id, agent_id=agent_id, received_at=received_at)
+            SimpleNamespace(
+                hook="sync_turn",
+                session_id=session_id,
+                user_id=author_id,
+                agent_id=agent_id,
+                received_at=received_at,
+                upstream_origin_receipt=origin_receipt,
+            )
         )
 
     def require_current_authority() -> None:
@@ -481,9 +492,7 @@ class _LocalLevel2IngressResolver:
         received_at = getattr(request, "received_at", None)
         agent_id = getattr(request, "agent_id", None)
         hook = getattr(request, "hook", None)
-        upstream_origin_receipt_digest = getattr(
-            request, "upstream_origin_receipt_digest", None
-        )
+        upstream_origin_receipt = getattr(request, "upstream_origin_receipt", None)
         if agent_id is None:
             agent_id = _canonical_agent_id(getattr(request, "agent_identity", None))
         if not isinstance(session_id, str) or not session_id.strip() or not isinstance(received_at, datetime):
@@ -494,22 +503,21 @@ class _LocalLevel2IngressResolver:
         if not isinstance(agent_id, str) or not agent_id:
             raise TypeError("Hermes agent identity is invalid")
         origin_lineage_evidence = None
-        if upstream_origin_receipt_digest is not None:
+        if upstream_origin_receipt is not None:
             if (
                 hook not in {"sync_turn", "delegation"}
-                or not isinstance(upstream_origin_receipt_digest, str)
-                or len(upstream_origin_receipt_digest) != 64
-                or any(
-                    character not in "0123456789abcdef"
-                    for character in upstream_origin_receipt_digest
+                or not isinstance(
+                    upstream_origin_receipt, HermesAuthenticatedOriginReceipt
                 )
+                or not upstream_origin_receipt.verify()
+                or upstream_origin_receipt.author_id != author
             ):
                 raise ValueError("Hermes upstream origin receipt is invalid")
             origin_lineage_evidence = AuthenticatedOriginLineageEvidence.create(
                 authority_digest=sha256(
                     b"memorii.hermes.local-origin-authority.v1\0"
                     + encode_typed_value(
-                        (self._installation_id, self._operator_id)
+                        (self._installation_id, self._operator_id, agent_id)
                     )
                 ).hexdigest(),
                 origin_receipt_digest=sha256(
@@ -518,7 +526,11 @@ class _LocalLevel2IngressResolver:
                         (
                             self._installation_id,
                             self._operator_id,
-                            upstream_origin_receipt_digest,
+                            agent_id,
+                            upstream_origin_receipt.session_id,
+                            upstream_origin_receipt.turn_ordinal,
+                            upstream_origin_receipt.source_content_digest,
+                            upstream_origin_receipt.receipt_digest,
                         )
                     )
                 ).hexdigest(),

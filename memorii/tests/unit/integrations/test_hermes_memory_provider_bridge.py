@@ -509,12 +509,14 @@ def test_installed_no_observer_persists_one_pending_coverage_observation_after_r
 def test_installed_ingress_coalesces_authenticated_forwarded_origin(
     bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from memorii.core.provider.models import ProviderOperation
+    from dataclasses import replace
+
     from memorii.core.semantic_ingestion.coverage_observation import (
         CoverageObservationRepository,
     )
     from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
     from memorii.integrations.hermes_local_authority import authorize_local_level2
+    from memorii.integrations.hermes_provider import build_started_hermes_memory_provider
 
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     authorize_local_level2(hermes_home=tmp_path)
@@ -530,9 +532,21 @@ def test_installed_ingress_coalesces_authenticated_forwarded_origin(
         parent_session_id=None,
     )
     binding = build_local_level2_runtime_binding(context)
-    upstream_receipt = "a" * 64
-    observed_at = datetime(2026, 9, 27, 13, tzinfo=UTC)
+    provider = bridge_module.MemoriiHermesMemoryProvider()
+    provider._provider = build_started_hermes_memory_provider(service=binding.service)
+    provider._session_id = "session:origin-direct"
+    provider._default_user_id = binding.absent_author_id
+    provider._turn_user_id.set(binding.absent_author_id)
+    provider._agent_identity = "profile:primary"
+    provider._issue_ingress = binding.issue_ingress
+    provider._completed_turn_runtime = binding.completed_turn_runtime
+    provider._absent_author_id = binding.absent_author_id
+    monkeypatch.setattr(binding.service, "reconcile_memory_evolution", lambda: ())
 
+    direct = "Atlas owner is Bob."
+    forwarded = "Bob is the owner of Atlas."
+    provider.on_turn_start(1, direct, author_id=binding.absent_author_id)
+    receipt = provider._origin_receipts[("session:origin-direct", 1)]
     with pytest.raises(ValueError, match="upstream origin receipt is invalid"):
         binding.issue_ingress(
             bridge_module.HermesIngressRequest(
@@ -541,48 +555,48 @@ def test_installed_ingress_coalesces_authenticated_forwarded_origin(
                 user_id=binding.absent_author_id,
                 agent_identity="profile:primary",
                 turn_author=None,
-                received_at=observed_at,
-                upstream_origin_receipt_digest="A" * 64,
+                received_at=datetime.now(UTC),
+                upstream_origin_receipt=replace(
+                    receipt, receipt_digest="0" * 64
+                ),
             )
         )
 
-    for hook, session_id, content, operation_id in (
-        (
-            "sync_turn",
-            "session:origin-direct",
-            "Atlas owner is Bob.",
-            "installed-origin-direct",
-        ),
-        (
-            "delegation",
-            "session:origin-forwarded",
-            "Bob is the owner of Atlas.",
-            "installed-origin-forwarded",
-        ),
-    ):
-        ingress = binding.issue_ingress(
-            bridge_module.HermesIngressRequest(
-                hook=hook,
-                session_id=session_id,
-                user_id=binding.absent_author_id,
-                agent_identity="profile:primary",
-                turn_author=None,
-                received_at=observed_at,
-                upstream_origin_receipt_digest=upstream_receipt,
-            )
-        )
-        resolved = binding.service._resolve_ingress(ingress)
-        assert resolved is not None
-        assert resolved.origin_lineage_evidence is not None
-        binding.service.sync_event(
-            operation=ProviderOperation.CHAT_USER_TURN,
-            content=content,
-            operation_id=operation_id,
-            session_id=session_id,
-            user_id=binding.absent_author_id,
-            authenticated_host_ingress=ingress,
-            timestamp=observed_at,
-        )
+    first_messages = [
+        {"role": "user", "content": direct, "timestamp": "2026-09-27T13:00:00Z"},
+        {
+            "role": "assistant",
+            "content": "Acknowledged.",
+            "timestamp": "2026-09-27T13:00:01Z",
+        },
+    ]
+    provider.sync_turn(direct, "Acknowledged.", messages=first_messages)
+    provider.on_turn_start(
+        2,
+        forwarded,
+        author_id=binding.absent_author_id,
+        parent_session_id="session:origin-direct",
+        parent_turn_number=1,
+    )
+    second_messages = [
+        *first_messages,
+        {
+            "role": "user",
+            "content": forwarded,
+            "timestamp": "2026-09-27T13:01:00Z",
+        },
+        {
+            "role": "assistant",
+            "content": "Acknowledged again.",
+            "timestamp": "2026-09-27T13:01:01Z",
+        },
+    ]
+    provider.sync_turn(
+        forwarded,
+        "Acknowledged again.",
+        messages=second_messages,
+    )
+    binding.completed_turn_runtime.wait_for_idle()
 
     observations = tuple(
         observation
@@ -597,10 +611,17 @@ def test_installed_ingress_coalesces_authenticated_forwarded_origin(
         is not None
     )
     assert len(observations) == 2
-    assert len({observation.source_id for observation in observations}) == 2
-    assert len({observation.session_id for observation in observations}) == 2
-    assert len({observation.origin_lineage_digest for observation in observations}) == 1
-    binding.completed_turn_runtime.close()
+    by_text = {
+        binding.service._memory_plane.get_record(observation.source_id).text: observation
+        for observation in observations
+    }
+    assert by_text[direct].session_id == "session:origin-direct"
+    assert by_text[forwarded].session_id == "session:origin-direct"
+    assert (
+        by_text[direct].origin_lineage_digest
+        == by_text[forwarded].origin_lineage_digest
+    )
+    provider.shutdown()
 
 
 def test_factory_issues_stable_exact_local_structured_grants() -> None:

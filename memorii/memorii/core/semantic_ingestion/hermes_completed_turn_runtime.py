@@ -55,6 +55,11 @@ from memorii.core.semantic_ingestion.contracts import (
     TextPreparationRequest,
     VerbatimTextArtifactMappingProof,
 )
+from memorii.core.semantic_ingestion.coverage_observation import (
+    coverage_observation_record,
+    delivery_origin_lineage_digest,
+    new_coverage_observation,
+)
 from memorii.core.semantic_ingestion.default_catalog_corpus import DefaultCatalogCorpusRow
 from memorii.core.semantic_ingestion.default_catalog_runtime import (
     DEFAULT_CATALOG_LITERAL_TYPES,
@@ -505,7 +510,7 @@ class HermesCompletedTurnRuntime:
         *,
         service: ProviderMemoryService,
         installation_id: str,
-        issue_host_ingress: Callable[[str, str, datetime], AuthenticatedHostIngress],
+        issue_host_ingress: Callable[..., AuthenticatedHostIngress],
         scoped_read_authority: InProcessScopedReadAuthority,
         require_current_authority: Callable[[], None],
         project_task_id: str,
@@ -1270,6 +1275,7 @@ class HermesCompletedTurnRuntime:
         message: str,
         authenticated_author_id: str,
         received_at: datetime,
+        origin_receipt: object | None = None,
     ) -> None:
         """Synchronously retain the user source before Hermes can dispatch tools."""
         author = authenticated_author_id.strip()
@@ -1300,7 +1306,11 @@ class HermesCompletedTurnRuntime:
                 self._active_turn_ambiguous = True
                 raise ValueError("Hermes overlapping turn context is ambiguous")
 
-        ingress = self._service._preflight_ingress(self._issue_host_ingress(session_id, author, received_at))
+        ingress = self._service._preflight_ingress(
+            self._issue_host_ingress(
+                session_id, author, received_at, origin_receipt
+            )
+        )
         if ingress is None:
             raise ValueError("Hermes turn-start ingress is unavailable")
         runtime = self._service._composed_semantic_runtime
@@ -1345,6 +1355,51 @@ class HermesCompletedTurnRuntime:
             evidence_only=True,
             bootstrap_language_evidence=child.request.bootstrap_language_evidence,
         )
+        selection_repository = (
+            self._service._provider_ingestion._catalog_selection_repository
+        )
+        selected_catalog = (
+            selection_repository.resolve_selected_base()
+            if selection_repository is not None
+            else None
+        )
+        if selected_catalog is not None:
+            lineage = (
+                ingress.origin_lineage_evidence.lineage_digest
+                if ingress.origin_lineage_evidence is not None
+                else delivery_origin_lineage_digest(
+                    principal_binding_digest=(
+                        identity.delivery_principal_binding_digest
+                    ),
+                    normalized_delivery_id_digest=(
+                        identity.normalized_delivery_id.normalized_delivery_id_digest
+                    ),
+                )
+            )
+            observation = new_coverage_observation(
+                source_id=prepared_admission.accepted.source_id,
+                source_digest=prepared_admission.accepted.source_digest,
+                source_span=None,
+                source_scope_digest=(
+                    ingress.required_outcome_scopes.required_scope_set_digest
+                ),
+                origin_lineage_digest=lineage,
+                session_id=session_id,
+                principal_id=author,
+                agent_id=self._authenticated_agent_id,
+                observed_at=received_at,
+                catalog_scope=selected_catalog.catalog_scope,
+                catalog_digest=selected_catalog.catalog_digest,
+                observer_binding=None,
+            )
+            prepared_admission = prepared_admission.model_copy(
+                update={
+                    "records": (
+                        *prepared_admission.records,
+                        coverage_observation_record(observation),
+                    )
+                }
+            )
         prepared_source = runtime.text_preparation_service.prepare(
             TextPreparationRequest(
                 observation=prepared_admission.accepted.observation,
