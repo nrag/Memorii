@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.TrustDecayStep.v1","implementation_source_digest":"f974aeeb0feebc9e3eaa6df99a0cd8ff58658ae0a838cb6f47deb5b791bd6707","role":"decoder","schema_id":"TrustDecayStep","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.TrustDecayStep.v1","implementation_source_digest":"a1aec058fede4becbc1dc69cc6db9857680bcd9e6c309f49f5755cbf338152c0","role":"decoder","schema_id":"TrustDecayStep","schema_version":"1","typed_root_kind":"model"}

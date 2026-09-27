@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.SemanticTerminalBindingSet.v1","implementation_source_digest":"665c67db6fbb64ad8ef4dd4d9269aefc100f152f387ea8343ffc026c2e9e5974","role":"decoder","schema_id":"SemanticTerminalBindingSet","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.SemanticTerminalBindingSet.v1","implementation_source_digest":"3defaea98e85c6eccc0cfe0e22c3d929ddde04eced9a9e573aa9615d4d978994","role":"decoder","schema_id":"SemanticTerminalBindingSet","schema_version":"1","typed_root_kind":"model"}
