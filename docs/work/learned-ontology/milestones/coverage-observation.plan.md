@@ -155,3 +155,11 @@ pending forwarding receipt exists for two possible parents. Five affected
 bridge tests pass in 23.16 seconds; Ruff and whitespace pass. Counts remain
 3/5 and 5/14. Exactly one next action: freeze this ambiguity-denial correction
 and obtain targeted correctness approval before recurrence aggregation.
+
+Targeted correctness review approved exact commit `dd97f372`: the earlier
+false-coalescence defect is resolved, the ambiguity regression is clean, and
+`remaining_validated_p1_p2: []`. Loss of forwarding coalescence when Hermes
+cannot identify one unique parent is an accepted Level-2 fail-closed limitation.
+Counts remain 3/5 and 5/14. Exactly one next action: implement the typed
+recurrence group and prove three independent lineages across two sessions with
+duplicate-lineage suppression.

@@ -145,6 +145,12 @@ affected bridge checks pass. Counts remain 3/5 and 5/14. Exactly one next
 action: freeze this ambiguity-denial correction and obtain targeted correctness
 approval before recurrence aggregation.
 
+Targeted correctness review approved exact commit `dd97f372` with
+`remaining_validated_p1_p2: []`. The installed bridge now has an accepted
+Level-2 fail-closed lineage boundary. Counts remain 3/5 and 5/14. Exactly one
+next action: implement the typed recurrence group and prove the three-lineage/
+two-session threshold with duplicate-lineage suppression.
+
 Review of `f7ce04a6` found the installed producer accepted a caller-supplied
 digest and was unreachable from normal callbacks. The replacement uses a
 bridge-owned receipt created from an observed user turn, allows inheritance
