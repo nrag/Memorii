@@ -214,9 +214,13 @@ from memorii.core.semantic_ingestion.catalog_authority import (
 )
 from memorii.core.semantic_ingestion.catalog_capture_pin import CatalogCapturedTurnPin
 from memorii.core.semantic_ingestion.contracts import ClaimAssertion, ProviderSemanticProposal
-from memorii.core.semantic_ingestion.coverage_observation import CoverageObservationRepository
+from memorii.core.semantic_ingestion.coverage_observation import (
+    CoverageObservationRepository,
+    ObserverBindingIdentity,
+)
 from memorii.core.semantic_ingestion.coverage_observer import (
     CoverageObserverRunner,
+    OntologyObservationResultRepository,
     OntologyObserverCapability,
 )
 from memorii.core.semantic_ingestion.coverage_recurrence import (
@@ -370,6 +374,10 @@ class ProviderMemoryService:
         ontology_observer_capability: OntologyObserverCapability | None = None,
         ontology_signature_validator: Callable[[CoverageGapSignature], bool]
         | None = None,
+        ontology_observer_authorizer: Callable[
+            [AuthenticatedIngressContext, ObserverBindingIdentity], bool
+        ]
+        | None = None,
         _host_construction: object | None = None,
     ) -> None:
         self._memory_plane = memory_plane or MemoryPlaneService()
@@ -377,11 +385,16 @@ class ProviderMemoryService:
         self._scoped_read_authority = scoped_read_authority
         self._structured_submission_authority_resolver = structured_submission_authority_resolver
         self._canonical_evidence_requested = canonical_evidence_enabled
-        if (ontology_observer_capability is None) != (
-            ontology_signature_validator is None
+        observer_configuration = (
+            ontology_observer_capability,
+            ontology_signature_validator,
+            ontology_observer_authorizer,
+        )
+        if any(item is None for item in observer_configuration) and any(
+            item is not None for item in observer_configuration
         ):
             raise ValueError(
-                "ontology observer capability and signature validator must be configured together"
+                "ontology observer capability, signature validator, and authorizer must be configured together"
             )
         verified_material = None
         verified_ingress_resolver = None
@@ -781,6 +794,9 @@ class ProviderMemoryService:
                 recurrence_repository=CoverageRecurrenceRepository(
                     self._memory_plane
                 ),
+                result_repository=OntologyObservationResultRepository(
+                    self._memory_plane
+                ),
                 capability=ontology_observer_capability,
                 signature_validator=ontology_signature_validator,
             )
@@ -802,7 +818,10 @@ class ProviderMemoryService:
             canonical_evidence_arena_factory=self._new_canonical_evidence_arena,
             catalog_selection_repository=self._catalog_selection_repository,
             coverage_observer_runner=coverage_observer_runner,
+            coverage_observer_authorizer=ontology_observer_authorizer,
         )
+        if coverage_observer_runner is not None:
+            self._provider_ingestion.recover_coverage_observations()
         self._capability_monitor = CapabilityMonitor(
             writers=self._semantic_writer_admission,
             now=self._clock.now_utc,

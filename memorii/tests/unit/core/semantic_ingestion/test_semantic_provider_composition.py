@@ -1699,6 +1699,7 @@ def test_configured_ontology_observer_runs_after_source_admission_and_retries_on
         bootstrap_graph_host_bundle_builder=_deterministic_graph_bundle_builder(),
         ontology_observer_capability=observer,
         ontology_signature_validator=lambda candidate: candidate == signature,
+        ontology_observer_authorizer=lambda _ingress, candidate: candidate == binding,
     )
 
     for _ in range(2):
@@ -1730,6 +1731,66 @@ def test_configured_ontology_observer_runs_after_source_admission_and_retries_on
     assert recurrence.independent_lineage_count == 1
     assert recurrence.proposal_eligible is False
     assert observer.calls == 1
+
+
+def test_ontology_observer_denied_egress_remains_pending_without_call() -> None:
+    binding = ObserverBindingIdentity(
+        binding_version="observer:v1",
+        provider="remote",
+        model="fixture-model",
+        prompt_version="ontology-observe:v1",
+        transport="https",
+        egress_policy_digest="5" * 64,
+        output_schema_digest="6" * 64,
+    )
+
+    class Observer:
+        calls = 0
+
+        @property
+        def binding(self):
+            return binding
+
+        def observe(self, _request):
+            self.calls += 1
+            raise AssertionError("denied source reached ontology observer")
+
+    observer = Observer()
+    builder, _ = _v3_normalization_host_builder(proposal=_bob_owner_proposal())
+    service = ProviderMemoryService._from_scenario_test_host(
+        memory_plane=MemoryPlaneService(),
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=_built_in_local_capability(scenario_test=True),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        source_normalization_host_bundle_builder=builder,
+        bootstrap_graph_host_bundle_builder=_deterministic_graph_bundle_builder(),
+        ontology_observer_capability=observer,
+        ontology_signature_validator=lambda _candidate: True,
+        ontology_observer_authorizer=lambda _ingress, _binding: False,
+    )
+
+    service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="provider-ontology-observer-denied",
+        task_id="task:one",
+        user_id="user:alice",
+        authenticated_host_ingress=_host_ingress(),
+    )
+
+    record = service._memory_plane.list_records(
+        source_kind="learned_ontology_coverage_observation_v1"
+    )[0]
+    observation = CoverageObservationRepository(service._memory_plane).load(
+        record.memory_id
+    )
+    assert observation is not None
+    assert (
+        observation.processing_state
+        == DiscoveryProcessingState.PENDING_NO_CAPABILITY
+    )
+    assert observation.semantic_outcome == CoverageSemanticOutcome.NOT_EVALUATED
+    assert observer.calls == 0
 
 
 def _retained_structured_submission(

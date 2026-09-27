@@ -200,3 +200,24 @@ scoped Pyright; provider ingestion retains its seven pre-existing diagnostics.
 Ruff, compilation and whitespace pass. Counts remain 3/5 and 5/14. Exactly one
 next action: freeze this lifecycle/caller slice and obtain targeted correctness
 review before completing M4 status/recovery and adapter conformance.
+
+Targeted correctness review rejected exact commit `34e3ec44` with one Level-2
+P2: separate running, classified, verified-gap and recurrence writes could
+strand ordinary restart recovery, and the provider retried only queued work.
+The correction persists a validated observer result before classification,
+reconstructs missing gap and recurrence projections idempotently, retries a
+running attempt with no durable result after restart, and treats ordinary
+transport `OSError` as durable unavailable. Startup recovery reloads and
+revalidates the retained authenticated ingress and the configured observer
+authorization before source text reaches the capability. The live provider
+also rechecks authorization immediately before the call; denial remains
+`discovery_pending_no_capability/not_evaluated` with zero observer calls.
+Seventeen focused lifecycle tests pass in 11.27 seconds. The authorized
+production-root retry and denied-egress zero-call cases pass together in 89.18
+seconds. Ruff, compilation and whitespace pass; scoped Pyright is clean for the
+new observation/observer owners, while the provider service retains one
+pre-existing unrelated possibly-unbound diagnostic. Counts remain 3/5 and
+5/14. Exactly one next action: freeze this recovery/authorization correction
+and obtain
+targeted correctness and test approval before completing M4 status and
+second-adapter conformance.

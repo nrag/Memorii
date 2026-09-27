@@ -120,6 +120,7 @@ from memorii.core.semantic_ingestion.coverage_observation import (
     CoverageObservation,
     CoverageObservationRepository,
     DiscoveryProcessingState,
+    ObserverBindingIdentity,
     coverage_observation_record,
     delivery_origin_lineage_digest,
     new_coverage_observation,
@@ -476,6 +477,10 @@ class ProviderIngestionCoordinator:
         canonical_evidence_arena_factory: Callable[[], CanonicalEvidenceArena] | None = None,
         catalog_selection_repository: SelectedCatalogAuthorityRepository | None = None,
         coverage_observer_runner: CoverageObserverRunner | None = None,
+        coverage_observer_authorizer: Callable[
+            [AuthenticatedIngressContext, ObserverBindingIdentity], bool
+        ]
+        | None = None,
     ) -> None:
         self._memory_plane = memory_plane
         self._admission_service = admission_service
@@ -491,6 +496,13 @@ class ProviderIngestionCoordinator:
         self._canonical_evidence_arena_factory = canonical_evidence_arena_factory
         self._catalog_selection_repository = catalog_selection_repository
         self._coverage_observer_runner = coverage_observer_runner
+        self._coverage_observer_authorizer = coverage_observer_authorizer
+        if (coverage_observer_runner is None) != (
+            coverage_observer_authorizer is None
+        ):
+            raise ValueError(
+                "coverage observer runner and authorizer must be configured together"
+            )
         self._authorization_repository = SemanticAuthorizationAuthorityRepository(
             atomic_store=atomic_store,
             writer_binding_provider=self._current_writer_binding,
@@ -959,6 +971,11 @@ class ProviderIngestionCoordinator:
                         observer_binding=(
                             self._coverage_observer_runner.binding
                             if self._coverage_observer_runner is not None
+                            and self._coverage_observer_authorizer is not None
+                            and self._coverage_observer_authorizer(
+                                authenticated_ingress,
+                                self._coverage_observer_runner.binding,
+                            )
                             else None
                         ),
                     )
@@ -1075,8 +1092,16 @@ class ProviderIngestionCoordinator:
                     )
                     if (
                         self._coverage_observer_runner is not None
+                        and self._coverage_observer_authorizer is not None
+                        and self._coverage_observer_authorizer(
+                            authenticated_ingress,
+                            self._coverage_observer_runner.binding,
+                        )
                         and coverage_head.processing_state
-                        == DiscoveryProcessingState.QUEUED
+                        in {
+                            DiscoveryProcessingState.QUEUED,
+                            DiscoveryProcessingState.CLASSIFIED,
+                        }
                     ):
                         self._coverage_observer_runner.run(
                             observation=coverage_head,
@@ -2455,6 +2480,35 @@ class ProviderIngestionCoordinator:
         ):
             return None
         return ingress
+
+    def recover_coverage_observations(self) -> None:
+        """Resume observer work only after revalidating retained source authority."""
+
+        if (
+            self._coverage_observer_runner is None
+            or self._coverage_observer_authorizer is None
+        ):
+            return
+
+        def load_authorized_source(source_id: str) -> str | None:
+            source = self._memory_plane.get_record(source_id)
+            if source is None or source.source_kind != "semantic_ingestion_source":
+                return None
+            source_digest = source_admission_source_digest(source)
+            ingress = self._retained_authenticated_ingress(
+                source_id=source_id,
+                source_digest=source_digest,
+            )
+            if ingress is None or not self._coverage_observer_authorizer(
+                ingress,
+                self._coverage_observer_runner.binding,
+            ):
+                return None
+            return source.text
+
+        self._coverage_observer_runner.recover_interrupted(
+            source_loader=load_authorized_source
+        )
 
 
 def _governed_source(

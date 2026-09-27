@@ -175,6 +175,20 @@ test pass. Counts remain 3/5 and 5/14. Exactly one next action: freeze this
 lifecycle/caller slice and obtain targeted correctness review before completing
 M4 status/recovery and adapter conformance.
 
+Review of exact commit `34e3ec44` found a Level-2 P2 in common crash recovery:
+an interruption after running, classification or verified-gap persistence could
+leave the durable projections incomplete forever. The corrected path durably
+records validated observer output before classification, reconstructs missing
+gap/group projections, retries interrupted running work on restart, and records
+ordinary transport failure as unavailable. Observer egress now requires an
+explicit source-specific authorizer at initial binding, immediately before the
+live call, and during restart recovery. Denial sends no source text and retains
+the pending/no-model state. Seventeen focused lifecycle tests pass, and the
+authorized retry plus denied-egress production-root cases pass together in
+89.18 seconds. Targeted review remains. Counts remain 3/5 and 5/14.
+Exactly one next action: freeze and review this recovery/authorization
+correction before completing M4 status and second-adapter conformance.
+
 Review of `f7ce04a6` found the installed producer accepted a caller-supplied
 digest and was unreachable from normal callbacks. The replacement uses a
 bridge-owned receipt created from an observed user turn, allows inheritance

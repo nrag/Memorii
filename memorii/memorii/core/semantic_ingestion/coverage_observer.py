@@ -4,19 +4,28 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from datetime import datetime
 from hashlib import sha256
 from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from memorii.core.memory_plane.models import CanonicalMemoryRecord
+from memorii.core.memory_plane.service import MemoryPlaneService
+from memorii.core.memory_plane.store import (
+    MemoryPlaneRevisionConflictError,
+    RecordAbsentPrecondition,
+)
 from memorii.core.semantic_ingestion.coverage_observation import (
     CoverageObservation,
     CoverageObservationRepository,
     CoverageSemanticOutcome,
     CoverageSourceSpan,
+    DiscoveryProcessingState,
     ObserverBindingIdentity,
     classify_coverage_observation,
     fail_coverage_observation,
+    retry_coverage_observation,
     start_coverage_observation,
 )
 from memorii.core.semantic_ingestion.coverage_recurrence import (
@@ -26,6 +35,12 @@ from memorii.core.semantic_ingestion.coverage_recurrence import (
     VerifiedCoverageGap,
     VerifiedCoverageGapRepository,
     build_coverage_recurrence_group,
+)
+from memorii.domain.enums import (
+    CommitStatus,
+    MemoryDomain,
+    MemoryRecordVisibility,
+    TemporalValidityStatus,
 )
 
 
@@ -152,6 +167,112 @@ class OntologyObserverUnavailableError(OSError):
     """The configured observer transport cannot complete this attempt."""
 
 
+class DurableOntologyObservationResult(BaseModel):
+    record_id: str = Field(min_length=1)
+    observation_id: str = Field(min_length=1)
+    running_observation_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    result: OntologyObservationResult
+    record_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        observation: CoverageObservation,
+        result: OntologyObservationResult,
+    ) -> DurableOntologyObservationResult:
+        if observation.processing_state != DiscoveryProcessingState.RUNNING:
+            raise ValueError("observer result requires a running observation")
+        body = {
+            "observation_id": observation.observation_id,
+            "running_observation_digest": observation.observation_digest,
+            "result": result,
+        }
+        digest = _digest(
+            b"memorii.learned-ontology.durable-observation-result.v1",
+            {
+                **body,
+                "result": result.model_dump(mode="json"),
+            },
+        )
+        return cls(
+            record_id=f"ontology-observer-result:v1:{digest}",
+            record_digest=digest,
+            **body,
+        )
+
+    @model_validator(mode="after")
+    def validate_identity(self) -> DurableOntologyObservationResult:
+        expected = _digest(
+            b"memorii.learned-ontology.durable-observation-result.v1",
+            {
+                "observation_id": self.observation_id,
+                "running_observation_digest": self.running_observation_digest,
+                "result": self.result.model_dump(mode="json"),
+            },
+        )
+        if self.record_digest != expected or self.record_id != (
+            f"ontology-observer-result:v1:{expected}"
+        ):
+            raise ValueError("durable observer result identity mismatch")
+        return self
+
+
+class OntologyObservationResultRepository:
+    _KIND = "learned_ontology_observer_result_v1"
+
+    def __init__(self, memory_plane: MemoryPlaneService) -> None:
+        self._plane = memory_plane
+
+    def load_for_observation(
+        self, observation_id: str
+    ) -> DurableOntologyObservationResult | None:
+        matches: list[DurableOntologyObservationResult] = []
+        for record in self._plane.list_records(source_kind=self._KIND):
+            try:
+                result = DurableOntologyObservationResult.model_validate(
+                    record.content["result"]
+                )
+            except (KeyError, TypeError, ValueError):
+                continue
+            if result.observation_id == observation_id:
+                matches.append(result)
+        if len(matches) > 1:
+            raise ValueError("observation has multiple durable observer results")
+        return matches[0] if matches else None
+
+    def create(
+        self,
+        result: DurableOntologyObservationResult,
+        *,
+        observed_at: datetime,
+    ) -> DurableOntologyObservationResult:
+        record = CanonicalMemoryRecord(
+            memory_id=result.record_id,
+            domain=MemoryDomain.EXECUTION,
+            text=result.result.semantic_outcome.value,
+            content={"kind": self._KIND, "result": result.model_dump(mode="json")},
+            status=CommitStatus.COMMITTED,
+            validity_status=TemporalValidityStatus.ACTIVE,
+            source_kind=self._KIND,
+            timestamp=observed_at,
+            visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+        )
+        try:
+            self._plane.conditionally_write_records(
+                (record,),
+                preconditions=(RecordAbsentPrecondition(memory_id=result.record_id),),
+            )
+        except MemoryPlaneRevisionConflictError:
+            existing = self.load_for_observation(result.observation_id)
+            if existing == result:
+                return result
+            raise
+        return result
+
+
 class CoverageObserverRunResult(BaseModel):
     observation: CoverageObservation
     recurrence_group: CoverageRecurrenceGroup | None = None
@@ -168,12 +289,14 @@ class CoverageObserverRunner:
         observation_repository: CoverageObservationRepository,
         gap_repository: VerifiedCoverageGapRepository,
         recurrence_repository: CoverageRecurrenceRepository,
+        result_repository: OntologyObservationResultRepository,
         capability: OntologyObserverCapability,
         signature_validator: Callable[[CoverageGapSignature], bool],
     ) -> None:
         self._observations = observation_repository
         self._gaps = gap_repository
         self._recurrence = recurrence_repository
+        self._results = result_repository
         self._capability = capability
         self._signature_validator = signature_validator
 
@@ -189,54 +312,53 @@ class CoverageObserverRunner:
         persisted = self._observations.load(observation.observation_id)
         if persisted != observation:
             raise ValueError("ontology observation is not the persisted head")
-        running = start_coverage_observation(observation)
-        self._observations.replace(running, previous=observation)
-        request = OntologyObservationRequest.create(
-            observation=running, source_text=source_text
-        )
-        try:
-            raw_result = self._capability.observe(request)
-        except OntologyObserverUnavailableError as exc:
-            unavailable = fail_coverage_observation(
-                running,
-                failure_signature=_digest(
-                    b"memorii.learned-ontology.observer-unavailable.v1",
-                    type(exc).__name__,
+        head = observation
+        if head.processing_state == DiscoveryProcessingState.QUEUED:
+            running = start_coverage_observation(head)
+            self._observations.replace(running, previous=head)
+            head = running
+        durable_result = self._results.load_for_observation(head.observation_id)
+        if durable_result is None:
+            if head.processing_state != DiscoveryProcessingState.RUNNING:
+                return CoverageObserverRunResult(observation=head)
+            request = OntologyObservationRequest.create(
+                observation=head, source_text=source_text
+            )
+            try:
+                raw_result = self._capability.observe(request)
+            except OSError as exc:
+                unavailable = fail_coverage_observation(
+                    head,
+                    failure_signature=_digest(
+                        b"memorii.learned-ontology.observer-unavailable.v1",
+                        type(exc).__name__,
+                    ),
+                )
+                self._observations.replace(unavailable, previous=head)
+                return CoverageObserverRunResult(observation=unavailable)
+            result = self._validated_result(raw_result, source_text=source_text)
+            durable_result = self._results.create(
+                DurableOntologyObservationResult.create(
+                    observation=head,
+                    result=result,
                 ),
+                observed_at=head.observed_at,
             )
-            self._observations.replace(unavailable, previous=running)
-            return CoverageObserverRunResult(observation=unavailable)
-        try:
-            result = OntologyObservationResult.model_validate(raw_result)
-        except (TypeError, ValueError):
-            result = OntologyObservationResult.create(
-                semantic_outcome=CoverageSemanticOutcome.UNCERTAIN
+        result = durable_result.result
+        if head.processing_state == DiscoveryProcessingState.RUNNING:
+            classified = classify_coverage_observation(
+                head,
+                semantic_outcome=result.semantic_outcome,
+                source_span=result.source_span,
             )
-        if result.source_span is not None:
-            if (
-                result.source_span.end > len(source_text)
-                or source_text[result.source_span.start : result.source_span.end]
-                != result.source_quote
-            ):
-                result = OntologyObservationResult.create(
-                    semantic_outcome=CoverageSemanticOutcome.UNCERTAIN
-                )
-            if result.signature is None or not self._signature_validator(
-                result.signature
-            ):
-                result = OntologyObservationResult.create(
-                    semantic_outcome=CoverageSemanticOutcome.UNCERTAIN
-                )
-        classified = classify_coverage_observation(
-            running,
-            semantic_outcome=result.semantic_outcome,
-            source_span=result.source_span,
-        )
-        self._observations.replace(classified, previous=running)
+            self._observations.replace(classified, previous=head)
+            head = classified
+        elif head.processing_state != DiscoveryProcessingState.CLASSIFIED:
+            return CoverageObserverRunResult(observation=head)
         if result.signature is None:
-            return CoverageObserverRunResult(observation=classified)
+            return CoverageObserverRunResult(observation=head)
         gap = VerifiedCoverageGap.from_observation(
-            classified, signature=result.signature
+            head, signature=result.signature
         )
         self._gaps.create(gap)
         gaps = self._gaps.for_group(
@@ -249,16 +371,72 @@ class CoverageObserverRunner:
         previous = self._recurrence.load(group.group_id)
         self._recurrence.write(group, previous=previous)
         return CoverageObserverRunResult(
-            observation=classified,
+            observation=head,
             recurrence_group=group,
         )
+
+    def recover_interrupted(
+        self, *, source_loader: Callable[[str], str | None]
+    ) -> tuple[CoverageObserverRunResult, ...]:
+        results: list[CoverageObserverRunResult] = []
+        for observation in self._observations.all():
+            if observation.observer_binding != self.binding:
+                continue
+            source_text = source_loader(observation.source_id)
+            if source_text is None:
+                continue
+            head = observation
+            if (
+                head.processing_state == DiscoveryProcessingState.RUNNING
+                and self._results.load_for_observation(head.observation_id) is None
+            ):
+                queued = retry_coverage_observation(
+                    fail_coverage_observation(
+                        head,
+                        failure_signature="interrupted_observer_attempt",
+                    )
+                )
+                self._observations.replace(queued, previous=head)
+                head = queued
+            if head.processing_state in {
+                DiscoveryProcessingState.QUEUED,
+                DiscoveryProcessingState.RUNNING,
+                DiscoveryProcessingState.CLASSIFIED,
+            }:
+                results.append(self.run(observation=head, source_text=source_text))
+        return tuple(results)
+
+    def _validated_result(
+        self, raw_result: object, *, source_text: str
+    ) -> OntologyObservationResult:
+        try:
+            result = OntologyObservationResult.model_validate(raw_result)
+        except (TypeError, ValueError):
+            return OntologyObservationResult.create(
+                semantic_outcome=CoverageSemanticOutcome.UNCERTAIN
+            )
+        if result.source_span is None:
+            return result
+        if (
+            result.source_span.end > len(source_text)
+            or source_text[result.source_span.start : result.source_span.end]
+            != result.source_quote
+            or result.signature is None
+            or not self._signature_validator(result.signature)
+        ):
+            return OntologyObservationResult.create(
+                semantic_outcome=CoverageSemanticOutcome.UNCERTAIN
+            )
+        return result
 
 
 __all__ = [
     "CoverageObserverRunResult",
     "CoverageObserverRunner",
+    "DurableOntologyObservationResult",
     "OntologyObservationRequest",
     "OntologyObservationResult",
     "OntologyObserverCapability",
     "OntologyObserverUnavailableError",
+    "OntologyObservationResultRepository",
 ]

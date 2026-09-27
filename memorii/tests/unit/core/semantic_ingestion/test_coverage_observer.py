@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from unittest.mock import patch
 
+import pytest
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.memory_plane.store import InMemoryMemoryPlaneStore
 from memorii.core.semantic_ingestion.catalog_authority import CatalogAuthorityScope
@@ -14,12 +16,13 @@ from memorii.core.semantic_ingestion.coverage_observation import (
     DiscoveryProcessingState,
     ObserverBindingIdentity,
     new_coverage_observation,
+    start_coverage_observation,
 )
 from memorii.core.semantic_ingestion.coverage_observer import (
     CoverageObserverRunner,
     OntologyObservationRequest,
     OntologyObservationResult,
-    OntologyObserverUnavailableError,
+    OntologyObservationResultRepository,
 )
 from memorii.core.semantic_ingestion.coverage_recurrence import (
     CoverageRecurrenceRepository,
@@ -59,7 +62,7 @@ class _UnavailableObserver:
     binding = _BINDING
 
     def observe(self, request: OntologyObservationRequest) -> object:
-        raise OntologyObserverUnavailableError(request.observation_id)
+        raise OSError(request.observation_id)
 
 
 def _observation(
@@ -92,6 +95,7 @@ def _runner(
         observation_repository=CoverageObservationRepository(plane),
         gap_repository=VerifiedCoverageGapRepository(plane),
         recurrence_repository=CoverageRecurrenceRepository(plane),
+        result_repository=OntologyObservationResultRepository(plane),
         capability=_Observer(result),
         signature_validator=lambda signature: signature == _SIGNATURE,
     )
@@ -171,6 +175,7 @@ def test_provider_outage_is_durable_unavailable_without_gap() -> None:
         observation_repository=repository,
         gap_repository=VerifiedCoverageGapRepository(plane),
         recurrence_repository=CoverageRecurrenceRepository(plane),
+        result_repository=OntologyObservationResultRepository(plane),
         capability=_UnavailableObserver(),
         signature_validator=lambda _signature: True,
     )
@@ -183,3 +188,60 @@ def test_provider_outage_is_durable_unavailable_without_gap() -> None:
     assert result.observation.semantic_outcome == CoverageSemanticOutcome.NOT_EVALUATED
     assert result.observation.downstream_failure_signature is not None
     assert result.recurrence_group is None
+
+
+def test_restart_recovers_running_attempt_without_durable_result() -> None:
+    plane = MemoryPlaneService(record_store=InMemoryMemoryPlaneStore())
+    repository = CoverageObservationRepository(plane)
+    observation = _observation(
+        1, lineage="a" * 64, session_id="session:one"
+    )
+    repository.create(observation)
+    running = start_coverage_observation(observation)
+    repository.replace(running, previous=observation)
+
+    recovered = _runner(plane, _gap_result()).recover_interrupted(
+        source_loader=lambda _source_id: "Alice mentors Bob."
+    )
+
+    assert len(recovered) == 1
+    assert recovered[0].observation.processing_state == DiscoveryProcessingState.CLASSIFIED
+    assert recovered[0].recurrence_group is not None
+    assert recovered[0].recurrence_group.independent_lineage_count == 1
+
+
+@pytest.mark.parametrize("failure_owner", ["gap", "group"])
+def test_retry_rebuilds_incomplete_classified_projections(
+    failure_owner: str,
+) -> None:
+    plane = MemoryPlaneService(record_store=InMemoryMemoryPlaneStore())
+    repository = CoverageObservationRepository(plane)
+    observation = _observation(
+        1, lineage="a" * 64, session_id="session:one"
+    )
+    repository.create(observation)
+    runner = _runner(plane, _gap_result())
+    target = (
+        VerifiedCoverageGapRepository
+        if failure_owner == "gap"
+        else CoverageRecurrenceRepository
+    )
+    method = "create" if failure_owner == "gap" else "write"
+    with (
+        patch.object(target, method, side_effect=OSError("injected crash")),
+        pytest.raises(OSError, match="injected crash"),
+    ):
+        runner.run(
+            observation=observation,
+            source_text="Alice mentors Bob.",
+        )
+
+    classified = repository.load(observation.observation_id)
+    assert classified is not None
+    assert classified.processing_state == DiscoveryProcessingState.CLASSIFIED
+    recovered = runner.run(
+        observation=classified,
+        source_text="Alice mentors Bob.",
+    )
+    assert recovered.recurrence_group is not None
+    assert recovered.recurrence_group.independent_lineage_count == 1

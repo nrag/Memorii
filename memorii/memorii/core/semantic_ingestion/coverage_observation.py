@@ -340,6 +340,14 @@ class CoverageObservationRepository:
         except (KeyError, TypeError, ValueError):
             return None
 
+    def all(self) -> tuple[CoverageObservation, ...]:
+        observations = tuple(
+            observation
+            for record in self._plane.list_records(source_kind=self._KIND)
+            if (observation := self.load(record.memory_id)) is not None
+        )
+        return tuple(sorted(observations, key=lambda item: item.observation_id))
+
     def create(self, observation: CoverageObservation) -> CoverageObservation:
         record = coverage_observation_record(observation)
         try:
