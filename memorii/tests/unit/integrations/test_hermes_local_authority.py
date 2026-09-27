@@ -11,6 +11,7 @@ import memorii.integrations.hermes_local_authority as local_authority
 import pytest
 from memorii.core.memory_evolution.atomic_store import StructuredSubmissionGrantRevokedError
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
+from memorii.core.memory_plane.store import MemoryPlaneRevisionConflictError
 from memorii.core.user_context.preferences import (
     PreferenceReadRequest,
     preference_candidate_sentence,
@@ -18,6 +19,7 @@ from memorii.core.user_context.preferences import (
     preference_confirmation_sentence,
     preference_delegation_sentence,
     preference_topic_id,
+    preference_topic_sentence,
 )
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
 from memorii.integrations.hermes_local_authority import (
@@ -177,9 +179,6 @@ def test_installed_no_key_preference_tools_persist_through_reopen(
         agent_workspace="hermes",
         parent_session_id=None,
     )
-    first = build_local_level2_runtime_binding(context)
-    runtime = first.completed_turn_runtime
-    assert runtime is not None
     topic_quote = "tea"
     topic_id = preference_topic_id("ProductService", topic_quote)
     sentence = preference_candidate_sentence(
@@ -187,14 +186,43 @@ def test_installed_no_key_preference_tools_persist_through_reopen(
         preference_key="drink",
         value="tea",
     )
+    topic_sentence = preference_topic_sentence(topic_type="ProductService", topic_quote=topic_quote)
+    summary = f'Assistant said, "{sentence}"'
+    summary_binding = build_local_level2_runtime_binding(context)
+    runtime = summary_binding.completed_turn_runtime
     runtime.capture_user_turn(
         session_id="session:preference",
         turn_ordinal=1,
+        message=summary,
+        authenticated_author_id=summary_binding.absent_author_id,
+        received_at=datetime.now(UTC),
+    )
+    summary_before = tuple(summary_binding.service._memory_plane.list_records(domains=[MemoryDomain.USER]))
+    assert runtime.handle_tool_call(
+        tool_name="memorii_create_preference_candidate",
+        arguments={
+            "topic_type": "ProductService",
+            "topic_quote": topic_quote,
+            "canonical_topic_id": topic_id,
+            "preference_key": "drink",
+            "value": "tea",
+            "source_quote": summary,
+            "source_quote_start": 0,
+        },
+    ) == {"status": "rejected"}
+    assert tuple(summary_binding.service._memory_plane.list_records(domains=[MemoryDomain.USER])) == summary_before
+    runtime.close()
+
+    first = build_local_level2_runtime_binding(context)
+    runtime = first.completed_turn_runtime
+    assert runtime is not None
+    runtime.capture_user_turn(
+        session_id="session:preference",
+        turn_ordinal=2,
         message=sentence,
         authenticated_author_id=first.absent_author_id,
         received_at=datetime.now(UTC),
     )
-    first_source = runtime._active_turn.ledger
     assert {schema["function"]["name"] for schema in runtime.get_tool_schemas()} >= {
         "memorii_create_preference_candidate",
         "memorii_confirm_preference",
@@ -209,6 +237,53 @@ def test_installed_no_key_preference_tools_persist_through_reopen(
         arguments={"schema_version": 1, "preference": {"value": "tea"}},
     ) == {"status": "rejected"}
     assert tuple(first.service._memory_plane.list_records(domains=[MemoryDomain.USER])) == before_user_records
+    assert runtime.handle_tool_call(
+        tool_name="memorii_create_preference_candidate",
+        arguments={
+            "topic_type": "ProductService",
+            "topic_quote": topic_quote,
+            "canonical_topic_id": topic_id,
+            "preference_key": "drink",
+            "value": "tea",
+            "source_quote": sentence,
+            "source_quote_start": 0,
+        },
+    ) == {"status": "abstained"}
+    assert tuple(first.service._memory_plane.list_records(domains=[MemoryDomain.USER])) == before_user_records
+    runtime.close()
+    topic_binding = build_local_level2_runtime_binding(context)
+    runtime = topic_binding.completed_turn_runtime
+    runtime.capture_user_turn(
+        session_id="session:preference",
+        turn_ordinal=3,
+        message=topic_sentence,
+        authenticated_author_id=topic_binding.absent_author_id,
+        received_at=datetime.now(UTC),
+    )
+    registered = runtime.handle_tool_call(
+        tool_name="memorii_register_preference_topic",
+        arguments={
+            "topic_type": "ProductService",
+            "topic_quote": topic_quote,
+            "approval_quote": topic_sentence,
+            "approval_quote_start": 0,
+        },
+    )
+    assert registered == {"status": "registered", "canonical_topic_id": topic_id}
+    runtime.close()
+    candidate_binding = build_local_level2_runtime_binding(context)
+    runtime = candidate_binding.completed_turn_runtime
+    runtime.capture_user_turn(
+        session_id="session:preference",
+        turn_ordinal=4,
+        message=sentence,
+        authenticated_author_id=candidate_binding.absent_author_id,
+        received_at=datetime.now(UTC),
+    )
+    first_source = runtime._active_turn.ledger
+    before_candidate_records = tuple(
+        candidate_binding.service._memory_plane.list_records(domains=[MemoryDomain.USER])
+    )
     invalid_topic = runtime.handle_tool_call(
         tool_name="memorii_create_preference_candidate",
         arguments={
@@ -222,18 +297,34 @@ def test_installed_no_key_preference_tools_persist_through_reopen(
         },
     )
     assert invalid_topic == {"status": "rejected"}
-    assert tuple(first.service._memory_plane.list_records(domains=[MemoryDomain.USER])) == before_user_records
+    assert tuple(candidate_binding.service._memory_plane.list_records(domains=[MemoryDomain.USER])) == before_candidate_records
+    candidate_arguments = {
+        "topic_type": "ProductService",
+        "topic_quote": topic_quote,
+        "canonical_topic_id": topic_id,
+        "preference_key": "drink",
+        "value": "tea",
+        "source_quote": sentence,
+        "source_quote_start": 0,
+    }
+    original_write = runtime._preference_service._write
+    injected = [False]
+
+    def conflict_once(*args, **kwargs):
+        if not injected[0]:
+            injected[0] = True
+            raise MemoryPlaneRevisionConflictError("injected preference CAS conflict")
+        return original_write(*args, **kwargs)
+
+    runtime._preference_service._write = conflict_once
+    assert runtime.handle_tool_call(
+        tool_name="memorii_create_preference_candidate",
+        arguments=candidate_arguments,
+    ) == {"status": "unavailable"}
+    assert tuple(candidate_binding.service._memory_plane.list_records(domains=[MemoryDomain.USER])) == before_candidate_records
     candidate = runtime.handle_tool_call(
         tool_name="memorii_create_preference_candidate",
-        arguments={
-            "topic_type": "ProductService",
-            "topic_quote": topic_quote,
-            "canonical_topic_id": topic_id,
-            "preference_key": "drink",
-            "value": "tea",
-            "source_quote": sentence,
-            "source_quote_start": 0,
-        },
+        arguments=candidate_arguments,
     )
     assert candidate["status"] == "candidate"
     assert runtime.handle_tool_call(
@@ -274,7 +365,7 @@ def test_installed_no_key_preference_tools_persist_through_reopen(
     )
     runtime.capture_user_turn(
         session_id="session:preference",
-        turn_ordinal=2,
+        turn_ordinal=5,
         message=approval_sentence,
         authenticated_author_id=second.absent_author_id,
         received_at=datetime.now(UTC),
@@ -303,7 +394,7 @@ def test_installed_no_key_preference_tools_persist_through_reopen(
     )
     runtime.capture_user_turn(
         session_id="session:preference",
-        turn_ordinal=3,
+        turn_ordinal=6,
         message=correction_sentence,
         authenticated_author_id=third.absent_author_id,
         received_at=datetime.now(UTC),
@@ -334,7 +425,7 @@ def test_installed_no_key_preference_tools_persist_through_reopen(
     )
     runtime.capture_user_turn(
         session_id="session:preference",
-        turn_ordinal=4,
+        turn_ordinal=7,
         message=correction_approval,
         authenticated_author_id=fourth.absent_author_id,
         received_at=datetime.now(UTC),
@@ -373,7 +464,7 @@ def test_installed_no_key_preference_tools_persist_through_reopen(
     )
     runtime.capture_user_turn(
         session_id="session:preference",
-        turn_ordinal=5,
+        turn_ordinal=8,
         message=revocation_sentence,
         authenticated_author_id=fifth.absent_author_id,
         received_at=datetime.now(UTC),
@@ -404,7 +495,7 @@ def test_installed_no_key_preference_tools_persist_through_reopen(
     assert reopened_runtime is not None
     reopened_runtime.capture_user_turn(
         session_id="session:preference",
-        turn_ordinal=6,
+        turn_ordinal=9,
         message=sentence,
         authenticated_author_id=reopened.absent_author_id,
         received_at=datetime.now(UTC),
@@ -475,6 +566,17 @@ def test_primary_can_grant_and_revoke_one_persisted_preference_delegate(
     )
     primary = build_local_level2_runtime_binding(primary_context)
     primary_runtime = primary.completed_turn_runtime
+    never_granted_context = SimpleNamespace(
+        **{
+            **vars(primary_context),
+            "agent_identity": "profile:never-granted",
+            "agent_context": "delegated",
+            "agent_workspace": "never-granted",
+            "parent_session_id": "session:primary",
+        }
+    )
+    with pytest.raises(LocalLevel2AuthorityError, match="delegation is unavailable"):
+        build_local_level2_runtime_binding(never_granted_context)
     primary_runtime.capture_user_turn(
         session_id="session:primary",
         turn_ordinal=1,
@@ -515,6 +617,10 @@ def test_primary_can_grant_and_revoke_one_persisted_preference_delegate(
     names = {schema["function"]["name"] for schema in delegated_runtime.get_tool_schemas()}
     assert "memorii_read_preference" in names
     assert "memorii_submit_fact" not in names
+    assert delegated_runtime.handle_tool_call(
+        tool_name="memorii_read_preference",
+        arguments={"view": "current"},
+    ) == {"status": "ok", "preferences": []}
     delegated_runtime.close()
     delegated = build_local_level2_runtime_binding(delegated_context)
     delegated_runtime = delegated.completed_turn_runtime
@@ -539,7 +645,6 @@ def test_primary_can_grant_and_revoke_one_persisted_preference_delegate(
             "approval_quote_start": 0,
         },
     ) == {"status": "denied"}
-    delegated_runtime.close()
 
     primary = build_local_level2_runtime_binding(primary_context)
     primary_runtime = primary.completed_turn_runtime
@@ -564,12 +669,160 @@ def test_primary_can_grant_and_revoke_one_persisted_preference_delegate(
         },
     )["status"] == "revoked"
     primary_runtime.close()
+    assert delegated_runtime.handle_tool_call(
+        tool_name="memorii_read_preference",
+        arguments={"view": "current"},
+    ) == {"status": "denied"}
+    delegated_runtime.close()
     with pytest.raises(LocalLevel2AuthorityError, match="delegation is unavailable"):
         build_local_level2_runtime_binding(delegated_context)
     with pytest.raises(LocalLevel2AuthorityError, match="another Hermes user context"):
         build_local_level2_runtime_binding(
             SimpleNamespace(**{**vars(primary_context), "user_id": "raw:user:two"})
         )
+
+
+def test_installed_preference_valid_until_expires_durably_on_read(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    authorize_local_level2(hermes_home=tmp_path)
+    context = SimpleNamespace(
+        storage_root=tmp_path / "memorii",
+        hermes_home=tmp_path,
+        session_id="session:expiry",
+        user_id="raw:user:one",
+        agent_identity="profile:primary",
+        platform="cli",
+        agent_context="primary",
+        agent_workspace="hermes",
+        parent_session_id=None,
+    )
+    topic_quote = "home"
+    topic_sentence = preference_topic_sentence(topic_type="Place", topic_quote=topic_quote)
+    topic_binding = build_local_level2_runtime_binding(context)
+    runtime = topic_binding.completed_turn_runtime
+    runtime.capture_user_turn(
+        session_id="session:expiry",
+        turn_ordinal=1,
+        message=topic_sentence,
+        authenticated_author_id=topic_binding.absent_author_id,
+        received_at=datetime.now(UTC),
+    )
+    topic = runtime.handle_tool_call(
+        tool_name="memorii_register_preference_topic",
+        arguments={
+            "topic_type": "Place",
+            "topic_quote": topic_quote,
+            "approval_quote": topic_sentence,
+            "approval_quote_start": 0,
+        },
+    )
+    runtime.close()
+
+    valid_until = datetime.now(UTC) - timedelta(minutes=1)
+    assertion = preference_candidate_sentence(
+        topic_quote=topic_quote,
+        preference_key="temperature",
+        value="warm",
+        valid_until=valid_until,
+    )
+    candidate_binding = build_local_level2_runtime_binding(context)
+    runtime = candidate_binding.completed_turn_runtime
+    runtime.capture_user_turn(
+        session_id="session:expiry",
+        turn_ordinal=2,
+        message=assertion,
+        authenticated_author_id=candidate_binding.absent_author_id,
+        received_at=datetime.now(UTC),
+    )
+    before = tuple(candidate_binding.service._memory_plane.list_records(domains=[MemoryDomain.USER]))
+    malformed = runtime.handle_tool_call(
+        tool_name="memorii_create_preference_candidate",
+        arguments={
+            "topic_type": "Place",
+            "topic_quote": topic_quote,
+            "canonical_topic_id": topic["canonical_topic_id"],
+            "preference_key": "temperature",
+            "value": "warm",
+            "source_quote": assertion,
+            "source_quote_start": 0,
+            "valid_until": "2026-09-27T12:00:00",
+        },
+    )
+    assert malformed == {"status": "rejected"}
+    assert tuple(candidate_binding.service._memory_plane.list_records(domains=[MemoryDomain.USER])) == before
+    candidate = runtime.handle_tool_call(
+        tool_name="memorii_create_preference_candidate",
+        arguments={
+            "topic_type": "Place",
+            "topic_quote": topic_quote,
+            "canonical_topic_id": topic["canonical_topic_id"],
+            "preference_key": "temperature",
+            "value": "warm",
+            "source_quote": assertion,
+            "source_quote_start": 0,
+            "valid_until": valid_until.isoformat(),
+        },
+    )
+    runtime.close()
+
+    confirmation = preference_confirmation_sentence(
+        topic_id=topic["canonical_topic_id"],
+        preference_key="temperature",
+        value="warm",
+        source_digest=candidate["source_digest"],
+    )
+    confirm_binding = build_local_level2_runtime_binding(context)
+    runtime = confirm_binding.completed_turn_runtime
+    runtime.capture_user_turn(
+        session_id="session:expiry",
+        turn_ordinal=3,
+        message=confirmation,
+        authenticated_author_id=confirm_binding.absent_author_id,
+        received_at=datetime.now(UTC),
+    )
+    assert runtime.handle_tool_call(
+        tool_name="memorii_confirm_preference",
+        arguments={
+            "preference_id": candidate["preference_id"],
+            "preference_key": "temperature",
+            "value": "warm",
+            "source_digest": candidate["source_digest"],
+            "approval_quote": confirmation,
+            "approval_quote_start": 0,
+        },
+    )["status"] == "confirmed"
+    assert runtime.handle_tool_call(
+        tool_name="memorii_read_preference", arguments={"view": "current"}
+    ) == {"status": "ok", "preferences": []}
+    history = runtime.handle_tool_call(
+        tool_name="memorii_read_preference", arguments={"view": "history"}
+    )
+    assert [item["state"] for item in history["preferences"]] == ["expired"]
+    runtime.close()
+
+    reopened = build_local_level2_runtime_binding(context)
+    runtime = reopened.completed_turn_runtime
+    runtime.capture_user_turn(
+        session_id="session:expiry",
+        turn_ordinal=4,
+        message="Read preference history.",
+        authenticated_author_id=reopened.absent_author_id,
+        received_at=datetime.now(UTC),
+    )
+    history = runtime.handle_tool_call(
+        tool_name="memorii_read_preference", arguments={"view": "history"}
+    )
+    assert [item["state"] for item in history["preferences"]] == ["expired"]
+    events = runtime._preference_service.read_events(
+        PreferenceReadRequest(holder_user_id=reopened.absent_author_id, agent_id=runtime._authenticated_agent_id)
+    )
+    assert [event.event_type for event in events].count("expired") == 1
+    runtime.close()
 
 
 def test_structured_tool_artifact_rejects_unknown_field_and_sidecar_refresh(tmp_path: Path) -> None:

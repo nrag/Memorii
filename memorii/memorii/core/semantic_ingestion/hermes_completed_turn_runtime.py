@@ -90,6 +90,7 @@ from memorii.core.user_context.preferences import (
     preference_confirmation_sentence,
     preference_delegation_sentence,
     preference_topic_id,
+    preference_topic_sentence,
 )
 from memorii.domain.enums import MemoryDomain
 
@@ -663,6 +664,7 @@ class HermesCompletedTurnRuntime:
             "memorii_close_preference",
             "memorii_read_preference",
             "memorii_set_preference_delegation",
+            "memorii_register_preference_topic",
         }:
             raise ValueError(f"Memorii does not provide Hermes tool {tool_name!r}")
         if type(arguments) is not dict:
@@ -783,6 +785,37 @@ class HermesCompletedTurnRuntime:
                     "value": preference.value,
                     "source_digest": preference.source_digest,
                 }
+            if tool_name == "memorii_register_preference_topic":
+                allowed = {"topic_type", "topic_quote", "approval_quote", "approval_quote_start"}
+                if set(arguments) != allowed:
+                    raise ValueError("preference topic arguments are not closed")
+                topic_type = arguments.get("topic_type")
+                if topic_type not in {"ProductService", "Asset", "Place"}:
+                    raise ValueError("preference topic type is invalid")
+                topic_quote = _required_string(arguments, "topic_quote")
+                quote = _required_string(arguments, "approval_quote")
+                if quote != preference_topic_sentence(topic_type=topic_type, topic_quote=topic_quote):
+                    raise ValueError("preference topic grammar is invalid")
+                prepared = self._load_active_prepared_source(active)
+                span = self._resolve_sentence_span(
+                    prepared=prepared,
+                    source_quote=quote,
+                    source_quote_start=arguments.get("approval_quote_start"),
+                )
+                proof = span.text_mapping_proof
+                if not isinstance(proof, VerbatimTextArtifactMappingProof):
+                    raise ValueError("preference topic mapping is unavailable")
+                start = proof.retained_span.start + (span.projection_span.start - proof.projection_span.start)
+                topic = service.register_topic(
+                    holder_user_id=self._authenticated_author_id,
+                    acting_agent_id=self._authenticated_agent_id,
+                    topic_type=topic_type,
+                    topic_quote=topic_quote,
+                    evidence=(active.ledger.source_id, active.ledger.source_digest, start, start + len(quote)),
+                )
+                if topic is None:
+                    return {"status": "denied"}
+                return {"status": "registered", "canonical_topic_id": topic.topic_id}
             if tool_name == "memorii_confirm_preference":
                 evidence = self._require_preference_approval_quote(active=active, arguments=arguments, closing=False)
                 preference = service.confirm(
@@ -2451,6 +2484,24 @@ def _preference_tool_schemas() -> list[dict[str, object]]:
     approval_required = ["preference_id", "preference_key", "value", "source_digest"]
     string = {"type": "string", "minLength": 1}
     return [
+        {
+            "type": "function",
+            "function": {
+                "name": "memorii_register_preference_topic",
+                "description": "Register one typed Preference topic from an explicit signed-in user statement.",
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["topic_type", "topic_quote", "approval_quote", "approval_quote_start"],
+                    "properties": {
+                        "topic_type": {"enum": ["ProductService", "Asset", "Place"]},
+                        "topic_quote": string,
+                        "approval_quote": string,
+                        "approval_quote_start": {"type": "integer", "minimum": 0},
+                    },
+                },
+            },
+        },
         {
             "type": "function",
             "function": {

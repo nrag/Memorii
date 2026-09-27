@@ -119,9 +119,15 @@ def _build_local_level2_runtime_binding(
             current_bundle = load_project_assertions_bundle()
             current = load_local_level2_authority(hermes_home=hermes_home)
             current_authorization = local_level2_bootstrap_authorization_from_sidecar(current, now=datetime.now(UTC))
-            return current_authorization == authorization and dict(current_bundle.profile_digests) == dict(
+            current = current_authorization == authorization and dict(current_bundle.profile_digests) == dict(
                 bundle.profile_digests
             )
+            if not current or context_kind != "delegated":
+                return current
+            current_plane = MemoryPlaneService(
+                record_store=JsonlMemoryPlaneStore(storage_root / "memory-plane")
+            )
+            return PreferenceDelegationRepository(current_plane).active(operator_id, agent_id)
         except (OSError, TypeError, ValueError):
             return False
 

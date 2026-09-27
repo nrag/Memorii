@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
+from threading import Barrier, Thread
 
 import pytest
 from memorii.core.memory_plane.service import MemoryPlaneService
@@ -11,6 +12,7 @@ from memorii.core.user_context.preferences import (
     PreferenceReadRequest,
     PreferenceService,
     PreferenceWriteRequest,
+    preference_topic_id,
 )
 
 NOW = datetime(2026, 9, 27, tzinfo=UTC)
@@ -26,7 +28,7 @@ def request(
         authenticated_source_id="source:" + source,
         authenticated_agent_id="agent:a",
         topic_type="ProductService",
-        canonical_topic_id="product:tea",
+        canonical_topic_id=preference_topic_id("ProductService", "tea"),
         preference_key="drink",
         value=value,
         source_id="source:" + source,
@@ -40,7 +42,7 @@ def request(
 
 
 def service(plane: MemoryPlaneService | None = None, *, now=lambda: NOW) -> PreferenceService:
-    return PreferenceService(
+    owner = PreferenceService(
         memory_plane=plane or MemoryPlaneService(),
         policy=PreferenceAccessPolicy(
             holder_authorities=(PreferenceHolderAuthority(holder_user_id="user:a", primary_agent_id="agent:a"),),
@@ -52,6 +54,14 @@ def service(plane: MemoryPlaneService | None = None, *, now=lambda: NOW) -> Pref
         ),
         now=now,
     )
+    assert owner.register_topic(
+        holder_user_id="user:a",
+        acting_agent_id="agent:a",
+        topic_type="ProductService",
+        topic_quote="tea",
+        evidence=("source:topic", sha256(b"topic").hexdigest(), 0, 5),
+    ) is not None
+    return owner
 
 
 def confirm(owner: PreferenceService, candidate, *, agent_id: str = "agent:a", value: str | None = None):
@@ -328,6 +338,45 @@ def test_duplicate_retry_and_competing_candidates_keep_one_current_value() -> No
         (confirmed_first.preference_id, "superseded"),
         (confirmed_second.preference_id, "confirmed"),
     ]
+
+
+def test_concurrent_confirmations_conflict_then_retry_supersedes_atomically() -> None:
+    owner = service()
+    first = owner.create_candidate(request("tea", "concurrent-one"))
+    second = owner.create_candidate(request("coffee", "concurrent-two"))
+    assert first is not None and second is not None
+    original_load_head = owner._load_head
+    barrier = Barrier(2)
+
+    def synchronized_load(logical_key: str):
+        head = original_load_head(logical_key)
+        barrier.wait()
+        return head
+
+    owner._load_head = synchronized_load
+    results: list[object] = []
+
+    def run(candidate) -> None:
+        try:
+            results.append(confirm(owner, candidate))
+        except MemoryPlaneRevisionConflictError as exc:
+            results.append(exc)
+
+    threads = [Thread(target=run, args=(candidate,)) for candidate in (first, second)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    owner._load_head = original_load_head
+    assert sum(item is not None and not isinstance(item, Exception) for item in results) == 1
+    assert sum(isinstance(item, MemoryPlaneRevisionConflictError) for item in results) == 1
+
+    loaded_first = owner.load_preference(first.preference_id)
+    assert loaded_first is not None
+    loser = first if loaded_first.state == "candidate" else second
+    assert confirm(owner, loser) is not None
+    assert len(current(owner)) == 1
+    assert {item.state for item in history(owner)} == {"confirmed", "superseded"}
 
 
 def test_write_authority_and_utc_validation_fail_closed() -> None:
