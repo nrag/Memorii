@@ -84,9 +84,10 @@ from memorii.domain.enums import MemoryDomain
 
 logger = logging.getLogger(__name__)
 
-# Local no-key semantic reconciliation can take several minutes.  Keep the
-# authenticated capture open long enough to join its one completion callback.
-_CAPTURED_TURN_TTL = timedelta(minutes=15)
+# Local no-key semantic reconciliation can run for the complete Level-2
+# Bootstrap V3 recovery window. Keep the authenticated capture available for
+# its tool calls and one completion callback throughout that window.
+_CAPTURED_TURN_TTL = timedelta(minutes=30)
 
 
 def _structured_fact_read_request(arguments: dict[str, object]) -> StructuredFactReadRequest:

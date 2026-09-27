@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from types import SimpleNamespace
 
+import memorii.core.semantic_ingestion.hermes_completed_turn_runtime as hermes_runtime_module
 import pytest
 from jsonschema import Draft202012Validator
 from memorii.core.semantic_ingestion.catalog_authority import (
@@ -102,6 +103,43 @@ def _active_capture_runtime() -> HermesCompletedTurnRuntime:
         resolve_captured_turn_catalog_dispatch=lambda **_kwargs: "seed",
     )
     return runtime
+
+
+def test_captured_turn_tool_access_last_thirty_minutes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert timedelta(minutes=30) == hermes_runtime_module._CAPTURED_TURN_TTL
+    runtime = _active_capture_runtime()
+    captured_at = datetime(2026, 9, 26, tzinfo=UTC)
+    active = runtime._active_turn
+    assert active is not None
+    runtime._active_turn = active.__class__(
+        **(active.__dict__ | {"expires_at": captured_at + timedelta(minutes=30)})
+    )
+    runtime._structured_authority_request = object()
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            assert tz is UTC
+            return captured_at + timedelta(minutes=16)
+
+    monkeypatch.setattr(hermes_runtime_module, "datetime", Clock)
+    assert runtime._acquire_active_tool_turn() is runtime._active_turn
+    assert runtime._active_tool_calls == 1
+    with runtime._condition:
+        runtime._active_tool_calls -= 1
+        runtime._condition.notify_all()
+
+    class ExpiredClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            assert tz is UTC
+            return captured_at + timedelta(minutes=30)
+
+    monkeypatch.setattr(hermes_runtime_module, "datetime", ExpiredClock)
+    assert runtime._acquire_active_tool_turn() is None
+    assert runtime._active_tool_calls == 0
 
 
 def _real_source_span(*, source_id: str, text: str = "Alice reports to Bob.") -> SourceSpanReference:
