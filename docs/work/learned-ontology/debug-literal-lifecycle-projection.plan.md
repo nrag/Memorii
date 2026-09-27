@@ -67,6 +67,7 @@ control -> event evidence -> semantic conflict scope -> atomic projection.
 | Apply transaction-time lifecycle filtering to both read backends | If any `system_as_of` query reconstructs the effective active image while unbounded history remains an audit view, the pre-retraction snapshot returns only the replacement in native projection and persisted claim-state paths. | Commit `cce43a6a` applies the same cutoff rule to both paths. Focused coverage proves original-only before correction, replacement-only after correction and before retraction, and superseded-plus-active unbounded history. `6 passed`; Ruff, compileall, and diff checks pass. |
 | Rerun installed shared-mechanics probe at `9d2398df` | If the as-of fix closes the remaining lifecycle defect, both cutoffs pass and execution reaches symmetric reverse reads. | After `2329.86s`, assertion, correction, retraction, current/history, both transaction-time cutoffs, and transcript sync all pass. The first symmetric relation commits, but its reverse protected current read returns `unavailable`; sibling and reopen are not reached. Retained store is pytest run `1201`. |
 | Trace and isolate symmetric reverse reads | If stored authority and projection data are valid, replay of run `1201` and clean one-row installed probes should distinguish durable read logic from the historical live runtime result. | Run `1201` contains 584 records and two verified lifecycle transitions; catalog and endpoint verification pass and direct production snapshot read returns the reverse partner item. Commit `51cdf138` binds fallback endpoint validation to the caller instead of a tautological claim-self check. Focused reader suite passes 7/7. Clean no-key installed one-row probes pass `sibling_of` in `184.48s` and `partner_of` in `181.64s`, each with exact reverse output and zero read-side record growth. The prior live `unavailable` is not reproduced. |
+| Rerun combined installed probe at `af1abbb6` | If isolated symmetric success composes with the lifecycle sequence, both symmetric writes and reads complete before reopen. | After `3027.13s`, the literal lifecycle and first symmetric reverse read pass. A later symmetric submission returns `unavailable`: terminal persistence rejects an expired governed writer lease, graph retry rejects its stale lease, and terminal fallback finds a different execution lease. Isolated rows remain green, so the defect is long-sequence lease continuity rather than ontology or reverse-read semantics. Retained store is pytest run `1205`. |
 
 ## production_entrypoint_bindings
 
@@ -112,8 +113,9 @@ reads, but exposed an as-of interval bug. Commit `cce43a6a` repairs both read
 backends, and the installed rerun proves the entire literal lifecycle plus both
 cutoffs. Commit `51cdf138` closes the reverse endpoint binding and isolated
 installed probes prove both symmetric predicates. The combined reopen rerun
-and targeted independent review remain outstanding, so no milestone or
-requirement count changes yet.
+then exposes governed writer/graph lease expiry during the later sequential
+symmetric write. The combined reopen proof and targeted independent review
+remain outstanding, so no milestone or requirement count changes yet.
 
 ## Completion Contract
 
@@ -126,6 +128,6 @@ Level-2 P1/P2 in this boundary. Hostile-store permutations remain Level 3.
 
 ## One Next Action
 
-Rerun the frozen combined installed lifecycle, both symmetric reverse views,
-zero read-side persistence and JSONL reopen probe at `51cdf138`, then classify
-the result before targeted independent correctness and test review.
+Repair writer and graph lease continuity for the legitimate long-running
+sequential installed path using existing renewal and admission contracts, prove
+expiry/recovery deterministically, then restart the combined installed probe.
