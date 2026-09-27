@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.GraphObservationRequest.v1","implementation_source_digest":"506214f2dd1ea5278be89f3b8cbe2ffc34e5dedc7eb4403dfaf9911e221c1f3c","role":"decoder","schema_id":"GraphObservationRequest","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.GraphObservationRequest.v1","implementation_source_digest":"9918595265a8953f899977c8971a047a3b1acee1344656da72b2ef0cbfd96e68","role":"decoder","schema_id":"GraphObservationRequest","schema_version":"1","typed_root_kind":"model"}

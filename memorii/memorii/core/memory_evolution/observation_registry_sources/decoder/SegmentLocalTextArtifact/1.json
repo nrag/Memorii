@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.SegmentLocalTextArtifact.v1","implementation_source_digest":"62170fce2a67d19a29e5e44df9e4ae262cb043c200bf124f1bfba44db8107e3f","role":"decoder","schema_id":"SegmentLocalTextArtifact","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.SegmentLocalTextArtifact.v1","implementation_source_digest":"330504b0b85fa123c4c754e634edf1bba6528a8778c8d73b793b8d8b34ebb398","role":"decoder","schema_id":"SegmentLocalTextArtifact","schema_version":"1","typed_root_kind":"model"}

@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.AliasRevisionStreamRecord.v1","implementation_source_digest":"719662387279baa87eaea65eb0785812164c8ccea54b0947e2e3269968ef979a","role":"decoder","schema_id":"AliasRevisionStreamRecord","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.AliasRevisionStreamRecord.v1","implementation_source_digest":"644f50378005eeca051a044afa7a60c99c32ade0ab23424921d1a43d9811f142","role":"decoder","schema_id":"AliasRevisionStreamRecord","schema_version":"1","typed_root_kind":"model"}
