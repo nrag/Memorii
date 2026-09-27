@@ -77,6 +77,10 @@ from memorii.domain.enums import MemoryDomain
 
 logger = logging.getLogger(__name__)
 
+# Local no-key semantic reconciliation can take several minutes.  Keep the
+# authenticated capture open long enough to join its one completion callback.
+_CAPTURED_TURN_TTL = timedelta(minutes=15)
+
 
 def _parse_project_assertions_literal(*, predicate_id: str, value_quote: object) -> tuple[str, str | None]:
     """Use the selected packaged seed's canonical literal parser."""
@@ -736,7 +740,7 @@ class HermesCompletedTurnRuntime:
                 admission=prepared_admission,
                 ledger=ledger,
                 generation=token_hex(16),
-                expires_at=received_at + timedelta(minutes=5),
+                expires_at=received_at + _CAPTURED_TURN_TTL,
             )
 
     def complete_captured_turn(

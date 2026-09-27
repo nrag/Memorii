@@ -718,7 +718,7 @@ class CurrentReleaseBootstrapV3HostMaterialBuilder:
             typed_value_registry_configuration=registry_configuration,
             verified_typed_value_registry_history=verified_registry_history,
             observation_activation_target_configuration=observation_activation_target_configuration,
-            bootstrap_recovery_operation_lease_duration=timedelta(minutes=10),
+            bootstrap_recovery_operation_lease_duration=timedelta(minutes=15),
             capability_status_activation=LocalLevel2MonitoredCapabilityActivation(
                 authorization=authorization, resource_policy=envelope.resource_policy
             ),

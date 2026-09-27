@@ -58,6 +58,8 @@ from memorii.core.semantic_ingestion.contracts import (
     PredicateEventManifest,
     PredicateProposalCatalog,
     PredicateSemanticPolicyBinding,
+    PredicateTemporalRule,
+    PredicateTrustRule,
     PreparedSource,
     PrePlanningSourceIngestionProgress,
     ProviderSemanticProposal,
@@ -1020,7 +1022,9 @@ class DynamicSourceNormalizationAuthorityProvider:
                 expected_artifact_generation=control.artifact_generation,
                 progress=progress,
             )
-            consensus, temporal, trust, registry, execution_policy = _dynamic_fixture_authorities(request)
+            consensus, temporal, trust, registry, execution_policy = (
+                _dynamic_fixture_authorities(request, proposal=proposal)
+            )
             bundle = build_source_normalization_authority_bundle(
                 source=source,
                 publication=publication,
@@ -1095,6 +1099,8 @@ class DynamicSourceNormalizationAuthorityProvider:
 
 def _dynamic_fixture_authorities(
     request: BootstrapSemanticProposalRequestV3,
+    *,
+    proposal: ProviderSemanticProposal,
 ) -> tuple[
     ConsensusPolicyAuthority,
     TemporalPolicySnapshot,
@@ -1122,18 +1128,39 @@ def _dynamic_fixture_authorities(
     interval = TimeInterval(
         start=datetime(2026, 1, 1, tzinfo=UTC), end=datetime(2027, 1, 1, tzinfo=UTC)
     )
-    predicates = {item.predicate_id for item in request.predicate_catalog.predicates}
+    predicates = {
+        item.predicate_id for item in request.predicate_catalog.predicates
+    } | {fact.predicate_id for fact in proposal.facts}
+    temporal_by_predicate = {
+        predicate_id: PredicateTemporalRule(
+            predicate_id=predicate_id,
+            valid_time_requirement="optional",
+            allow_open_end=True,
+        )
+        for predicate_id in predicates
+    }
+    trust_by_predicate = {
+        predicate_id: PredicateTrustRule(
+            predicate_id=predicate_id,
+            eligible_authority_classes=frozenset({"official"}),
+            authority_rank_by_class={"official": 10},
+        )
+        for predicate_id in predicates
+    }
     if "reports_to" in predicates:
         from memorii.core.semantic_ingestion.reports_to_state import (
             reports_to_temporal_rule,
             reports_to_trust_rule,
         )
 
-        temporal_rules = (reports_to_temporal_rule(),)
-        trust_rules = (reports_to_trust_rule(),)
-    else:
-        temporal_rules = ()
-        trust_rules = ()
+        temporal_by_predicate["reports_to"] = reports_to_temporal_rule()
+        trust_by_predicate["reports_to"] = reports_to_trust_rule()
+    temporal_rules = tuple(
+        temporal_by_predicate[predicate_id] for predicate_id in sorted(predicates)
+    )
+    trust_rules = tuple(
+        trust_by_predicate[predicate_id] for predicate_id in sorted(predicates)
+    )
     temporal = TemporalPolicySnapshot.create(
         policy_revision="dynamic-fixture-temporal", system_effective_interval=interval,
         rules=temporal_rules,

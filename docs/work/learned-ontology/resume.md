@@ -106,4 +106,8 @@ The representative native-default slice is independently accepted at tree SHA `7
 
 A reusable installed corpus harness passes at tree SHA `3402d015bb8dfeddb3c9a7bbf0658748b43b218fce8f951bd7b50ac65477aa3b`: one provider commits and recalls an entity and LocalDate row across completed captured turns, then proves a wrong-endpoint tool trigger has zero semantic effect. Runtime `1 passed in 471.96s`; Ruff and whitespace pass.
 
-Exactly one next action: independently review the harness, then execute the remaining corpus rows, misleading cases and private revocations through it before lifecycle probes and H8.
+The reusable harness is independently accepted on pushed commit `b9052820`; the reviewer reproduced it in 456.91 seconds and found no Level-2 P1/P2 or test-only production branch.
+
+The corpus-driven builder now covers all 53 positive proposals and all 53 wrong-endpoint near misses through the real selected validator. A compact installed matrix covers M/C/H, public/private and every value family. The dedicated `obligation_amount` installed path passes in 154.38 seconds after aligning the authenticated captured-turn and local bootstrap-recovery windows at 15 minutes; the exact recovery expiry fails closed and passes in 8.20 seconds. A stale test authority was corrected to seal the predicates in its actual proposal; both recovery-reopen regressions now pass and the complete focused group is 210 passes in 67.97 seconds. Ruff and whitespace are clean. Independent correctness review approved the bounded slice at code/test diff SHA-256 `a6633450d66a306bc7318fce737b8622769db8d926e2d824b16f4d6e843263b9` with no remaining Level-2 P1/P2.
+
+Exactly one next action: run the isolated, sharded installed-row matrix for all 53 relations with every private-row revocation, then add revision/current/history and symmetric-view probes.

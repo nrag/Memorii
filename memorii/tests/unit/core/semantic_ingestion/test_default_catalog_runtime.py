@@ -21,12 +21,16 @@ from memorii.core.semantic_ingestion.default_catalog_runtime import (
     DEFAULT_CATALOG_ENTITY_TYPES,
     DEFAULT_CATALOG_LITERAL_TYPES,
     default_catalog_runtime_rows,
+    validate_default_catalog_literal_grounding,
     validate_default_catalog_provider_fact,
     validate_default_catalog_provider_proposal,
 )
 from memorii.core.semantic_ingestion.default_catalog_values import (
     DEFAULT_CATALOG_VALUE_POLICIES,
     CatalogStatusText,
+)
+from tests.fixtures.semantic_ingestion.default_catalog_proposals import (
+    build_default_catalog_proposal,
 )
 
 
@@ -122,6 +126,29 @@ def test_runtime_registration_exactly_covers_compiled_entity_and_literal_types()
         row.object_value_type for row in corpus.rows if row.object_value_type is not None
     }
     assert set(default_catalog_runtime_rows()) == {row.relation_id for row in corpus.rows}
+
+
+@pytest.mark.parametrize("row", load_default_catalog_acceptance_corpus().rows, ids=lambda row: row.relation_id)
+def test_corpus_generated_proposal_passes_real_validator_and_misleading_endpoint_rejects(row: DefaultCatalogCorpusRow) -> None:
+    fixture = build_default_catalog_proposal(row)
+    assert validate_default_catalog_provider_proposal(fixture.proposal()) == row
+    if isinstance(fixture.fact.object, ProviderLiteralObject):
+        validate_default_catalog_literal_grounding(
+            row=row,
+            value=fixture.fact.object,
+            object_quote=fixture.object_quote,
+        )
+    invalid_type = next(
+        type_id
+        for type_id in ("Animal", "Vehicle", "Subscription", "Recipe")
+        if type_id not in row.subject_type_ids
+    )
+    bad_subject = fixture.subject.model_copy(update={"proposed_type": invalid_type})
+    with pytest.raises(ValueError):
+        validate_default_catalog_provider_fact(
+            fact=fixture.fact,
+            mentions={"subject": bad_subject, **({"object": fixture.object} if fixture.object else {})},
+        )
 
 
 @pytest.mark.parametrize(

@@ -15,6 +15,13 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 from memorii.core.memory_evolution.atomic_store import StructuredSubmissionGrantRevokedError
+from memorii.core.semantic_ingestion.default_catalog_corpus import (
+    load_default_catalog_acceptance_corpus,
+)
+from tests.fixtures.semantic_ingestion.default_catalog_proposals import (
+    DefaultCatalogProposalFixture,
+    build_default_catalog_proposal,
+)
 
 
 @pytest.fixture
@@ -854,82 +861,231 @@ def test_installed_default_catalog_entity_relation_commits_and_recalls(
     assert "Alice" in recalled and "Bob" in recalled
 
 
-def test_installed_default_catalog_reuses_one_runtime_for_entity_and_literal_rows(
+def test_installed_default_catalog_money_relation_commits_reads_and_revokes(
     bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Representative corpus rows retain independent pins on one installed root."""
-    from time import monotonic
-
-    from memorii.core.semantic_ingestion.openai_responses_project_assertions import OpenAIResponsesApiClient
+    """Exercise the private Money row through the installed no-key tool root."""
+    from memorii.core.semantic_ingestion.openai_responses_project_assertions import (
+        OpenAIResponsesApiClient,
+    )
     from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
-    from memorii.integrations.hermes_local_authority import authorize_local_level2, authorize_local_structured_tool
+    from memorii.integrations.hermes_local_authority import (
+        authorize_local_level2,
+        authorize_local_structured_tool,
+    )
 
+    rows = {row.relation_id: row for row in load_default_catalog_acceptance_corpus().rows}
+    fixture = build_default_catalog_proposal(rows["obligation_amount"])
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.setattr(OpenAIResponsesApiClient, "complete", lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("network")))
+    monkeypatch.setattr(
+        OpenAIResponsesApiClient,
+        "complete",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("network")),
+    )
     authorize_local_level2(hermes_home=tmp_path)
     authorize_local_structured_tool(hermes_home=tmp_path)
-    monkeypatch.setattr(bridge_module.importlib.metadata, "entry_points", lambda *, group: (_FactoryEntryPoint(build_local_level2_runtime_binding),))
+    monkeypatch.setattr(
+        bridge_module.importlib.metadata,
+        "entry_points",
+        lambda *, group: (_FactoryEntryPoint(build_local_level2_runtime_binding),),
+    )
     provider = bridge_module.MemoriiHermesMemoryProvider()
-    provider.initialize("session:matrix", hermes_home=tmp_path, user_id="raw:user:one", agent_identity="profile:primary", platform="cli", agent_context="primary", agent_workspace="hermes")
+    provider.initialize(
+        "session:money", hermes_home=tmp_path, user_id="raw:user:one",
+        agent_identity="profile:primary", platform="cli", agent_context="primary",
+        agent_workspace="hermes",
+    )
+    try:
+        provider.on_turn_start(1, fixture.source)
+        schemas = provider.get_tool_schemas()
+        predicate_ids = (
+            schemas[0]["function"]["parameters"]["properties"]["proposal"]
+            ["properties"]["facts"]["items"]["properties"]["predicate_id"]["enum"]
+        )
+        assert "obligation_amount" in predicate_ids
+        result = provider.handle_tool_call("memorii_submit_fact", fixture.tool_arguments())
+        assert result["status"] == "committed"
+
+        records = tuple(provider._provider._service._memory_plane.list_records())
+        bindings = [
+            record.content["binding"]
+            for record in records
+            if record.source_kind == "semantic_ingestion_structured_claim_catalog_binding"
+        ]
+        assert len(bindings) == 1
+        assert bindings[0]["schema_version"] == 2
+        assert bindings[0]["selected_version_id"] == "default-catalog-v1"
+        assert fixture.object_quote in provider.prefetch(fixture.subject_quote)
+
+        before_bindings = len(bindings)
+        before_projections = sum(
+            record.content.get("runtime_context_projection_kind")
+            == "bootstrap_v3_claim_assertion"
+            for record in records
+        )
+        rejected = provider.handle_tool_call(
+            "memorii_submit_fact", fixture.misleading_tool_arguments()
+        )
+        assert rejected["status"] in {"rejected", "unavailable"}
+        after = tuple(provider._provider._service._memory_plane.list_records())
+        assert sum(
+            record.source_kind == "semantic_ingestion_structured_claim_catalog_binding"
+            for record in after
+        ) == before_bindings
+        assert sum(
+            record.content.get("runtime_context_projection_kind")
+            == "bootstrap_v3_claim_assertion"
+            for record in after
+        ) == before_projections
+
+        provider.revoke_structured_grant("fact")
+        assert provider.prefetch(fixture.subject_quote) == ""
+        assert not any(
+            outcome.retryable
+            for outcome in provider._provider._service.reconcile_memory_evolution()
+        )
+    finally:
+        provider.shutdown()
+
+
+def test_installed_default_catalog_reuses_one_runtime_for_compact_corpus_matrix(
+    bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One installed root proves representative corpus mechanics end to end."""
+    from time import monotonic
+
+    from memorii.core.semantic_ingestion.openai_responses_project_assertions import (
+        OpenAIResponsesApiClient,
+    )
+    from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
+    from memorii.integrations.hermes_local_authority import (
+        authorize_local_level2,
+        authorize_local_structured_tool,
+    )
+
+    rows = {row.relation_id: row for row in load_default_catalog_acceptance_corpus().rows}
+    fixtures = tuple(
+        build_default_catalog_proposal(rows[relation_id])
+        for relation_id in (
+            "project_owned_by",      # M, public entity
+            "reports_to",            # M, private entity and grant denial
+            "decision_supersedes",   # H, public entity
+            "event_time",            # C, public TimeInterval
+            "work_item_due_on",      # C, public LocalDate
+            "work_item_status",      # C, public StatusText
+            "obligation_amount",     # C, private Money
+        )
+    )
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(
+        OpenAIResponsesApiClient,
+        "complete",
+        lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("network")),
+    )
+    authorize_local_level2(hermes_home=tmp_path)
+    authorize_local_structured_tool(hermes_home=tmp_path)
+    monkeypatch.setattr(
+        bridge_module.importlib.metadata,
+        "entry_points",
+        lambda *, group: (_FactoryEntryPoint(build_local_level2_runtime_binding),),
+    )
+    provider = bridge_module.MemoriiHermesMemoryProvider()
+    provider.initialize(
+        "session:matrix", hermes_home=tmp_path, user_id="raw:user:one",
+        agent_identity="profile:primary", platform="cli", agent_context="primary",
+        agent_workspace="hermes",
+    )
     transcript: list[dict[str, object]] = []
 
-    def submit(*, ordinal: int, sentence: str, subject: str, subject_type: str, predicate: str, anchor: str, object_quote: str, object_value: dict[str, object], object_type: str | None, complete: bool = True) -> dict[str, object]:
-        provider.on_turn_start(ordinal, sentence)
-        assert predicate in provider.get_tool_schemas()[0]["function"]["parameters"]["properties"]["proposal"]["properties"]["facts"]["items"]["properties"]["predicate_id"]["enum"]
-        mentions = [{"local_id": "subject", "mention_quote": subject, "mention_context_quote": sentence, "proposed_type": subject_type}]
-        if object_type is not None:
-            mentions.append({"local_id": "object", "mention_quote": object_quote, "mention_context_quote": sentence, "proposed_type": object_type})
-        arguments = {"schema_version": 1, "source_quote": sentence, "source_quote_start": 0, "subject_quote": subject, "predicate_anchor_quote": anchor, "object_quote": object_quote, "proposal": {"abstained": False, "mentions": mentions, "facts": [{"kind": "fact", "local_id": predicate, "predicate_id": predicate, "subject_entity_ref": "subject", "object": object_value, "assertion_quote": sentence, "predicate_anchor_quote": anchor, "polarity": "positive", "commitment": "asserted", "attributed_to_entity_ref": None, "temporal_qualifier_quotes": []}], "corrections": [], "retractions": [], "action_states": [], "identity_operations": []}}
+    def submit(
+        *, ordinal: int, fixture: DefaultCatalogProposalFixture, complete: bool = True,
+        arguments: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        provider.on_turn_start(ordinal, fixture.source)
+        predicate_ids = provider.get_tool_schemas()[0]["function"]["parameters"]["properties"]["proposal"]["properties"]["facts"]["items"]["properties"]["predicate_id"]["enum"]
+        assert fixture.row.relation_id in predicate_ids
         started = monotonic()
-        result = provider.handle_tool_call("memorii_submit_fact", arguments)
-        print(f"default-catalog-row={predicate} elapsed_seconds={monotonic() - started:.3f}", flush=True)
+        result = provider.handle_tool_call(
+            "memorii_submit_fact",
+            fixture.tool_arguments() if arguments is None else arguments,
+        )
+        print(
+            f"default-catalog-row={fixture.row.relation_id} "
+            f"elapsed_seconds={monotonic() - started:.3f}",
+            flush=True,
+        )
         if not complete:
             return result
         transcript.extend((
-            {"role": "user", "content": sentence},
+            {"role": "user", "content": fixture.source},
             {
-                "role": "assistant", "content": "Recorded.",
+                "role": "assistant",
+                "content": "Recorded.",
                 "timestamp": datetime.now(UTC).isoformat(),
             },
         ))
         provider.sync_turn(
-            user_content=sentence,
+            user_content=fixture.source,
             assistant_content="Recorded.",
             messages=transcript,
         )
-        # The bridge's public retrieval boundary drains completed-turn work
-        # before the next capture advances the same installed runtime.
-        provider.prefetch(subject)
+        # Retrieval is the public drain before opening the next captured turn.
+        provider.prefetch(fixture.subject_quote)
         return result
 
-    entity = submit(ordinal=1, sentence="Atlas is owned by Ada.", subject="Atlas", subject_type="Project", predicate="project_owned_by", anchor="owned by", object_quote="Ada", object_value={"kind": "entity", "entity_ref": "object"}, object_type="Person")
-    literal = submit(ordinal=2, sentence="Fix bug is due 2026-10-03.", subject="Fix bug", subject_type="WorkItem", predicate="work_item_due_on", anchor="due", object_quote="2026-10-03", object_value={"kind": "literal", "literal_type": "local_date", "canonical_value": "{\"source_calendar\":\"gregorian\",\"value\":\"2026-10-03\"}", "unit": None}, object_type=None)
-    assert entity["status"] == literal["status"] == "committed"
-    records = tuple(provider._provider._service._memory_plane.list_records())
-    bindings = [r.content["binding"] for r in records if r.source_kind == "semantic_ingestion_structured_claim_catalog_binding"]
-    assert len(bindings) == 2 and all(item["schema_version"] == 2 and item["selected_version_id"] == "default-catalog-v1" for item in bindings)
-    assert "Ada" in provider.prefetch("Who owns Atlas?")
-    assert "2026-10-03" in provider.prefetch("When is Fix bug due?")
-    before_bindings = len(bindings)
-    before_projections = sum(
-        record.content.get("runtime_context_projection_kind") == "bootstrap_v3_claim_assertion"
-        for record in records
-    )
-    denied = submit(ordinal=3, sentence="Atlas is owned by Ada.", subject="Atlas", subject_type="Person", predicate="project_owned_by", anchor="owned by", object_quote="Ada", object_value={"kind": "entity", "entity_ref": "object"}, object_type="Person", complete=False)
-    assert denied["status"] in {"rejected", "unavailable"}
-    after = tuple(provider._provider._service._memory_plane.list_records())
-    assert sum(
-        record.source_kind == "semantic_ingestion_structured_claim_catalog_binding"
-        for record in after
-    ) == before_bindings
-    assert sum(
-        record.content.get("runtime_context_projection_kind") == "bootstrap_v3_claim_assertion"
-        for record in after
-    ) == before_projections
-    outcomes = provider._provider._service.reconcile_memory_evolution()
-    print(f"default-catalog-pending-outcomes={outcomes!r}", flush=True)
-    assert not any(outcome.retryable for outcome in outcomes)
-    provider.shutdown()
+    try:
+        results = tuple(
+            submit(ordinal=ordinal, fixture=fixture)
+            for ordinal, fixture in enumerate(fixtures, start=1)
+        )
+        assert all(result["status"] == "committed" for result in results)
+        records = tuple(provider._provider._service._memory_plane.list_records())
+        bindings = [
+            record.content["binding"]
+            for record in records
+            if record.source_kind == "semantic_ingestion_structured_claim_catalog_binding"
+        ]
+        assert len(bindings) == len(fixtures)
+        assert all(
+            binding["schema_version"] == 2
+            and binding["selected_version_id"] == "default-catalog-v1"
+            for binding in bindings
+        )
+        for fixture in fixtures:
+            recalled = provider.prefetch(fixture.subject_quote)
+            assert fixture.object_quote in recalled
+
+        before_bindings = len(bindings)
+        before_projections = sum(
+            record.content.get("runtime_context_projection_kind")
+            == "bootstrap_v3_claim_assertion"
+            for record in records
+        )
+        denied = submit(
+            ordinal=len(fixtures) + 1,
+            fixture=fixtures[0],
+            complete=False,
+            arguments=fixtures[0].misleading_tool_arguments(),
+        )
+        assert denied["status"] in {"rejected", "unavailable"}
+        after = tuple(provider._provider._service._memory_plane.list_records())
+        assert sum(
+            record.source_kind == "semantic_ingestion_structured_claim_catalog_binding"
+            for record in after
+        ) == before_bindings
+        assert sum(
+            record.content.get("runtime_context_projection_kind")
+            == "bootstrap_v3_claim_assertion"
+            for record in after
+        ) == before_projections
+
+        provider.revoke_structured_grant("fact")
+        assert provider.prefetch(fixtures[1].subject_quote) == ""
+        outcomes = provider._provider._service.reconcile_memory_evolution()
+        print(f"default-catalog-pending-outcomes={outcomes!r}", flush=True)
+        assert not any(outcome.retryable for outcome in outcomes)
+    finally:
+        provider.shutdown()
 
 
 def _persist_installed_protected_claim(

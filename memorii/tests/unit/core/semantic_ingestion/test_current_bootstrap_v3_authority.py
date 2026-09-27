@@ -100,6 +100,7 @@ def test_local_level2_capability_initializes_monitored_status_from_installation(
 
     assert runtime is not None
     assert runtime.source_normalization_host_bundle is not None
+    assert runtime.atomic_store._bootstrap_recovery_operation_lease_duration == timedelta(minutes=15)
     status_records = memory_plane.list_records(
         source_kind="semantic_ingestion_capability_status"
     )

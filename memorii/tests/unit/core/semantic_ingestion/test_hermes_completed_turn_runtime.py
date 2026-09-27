@@ -29,6 +29,10 @@ from memorii.core.semantic_ingestion.contracts import (
     SourceSpanReference,
     VerbatimTextArtifactMappingProof,
 )
+from memorii.core.semantic_ingestion.default_catalog_corpus import (
+    DefaultCatalogCorpusRow,
+    load_default_catalog_acceptance_corpus,
+)
 from memorii.core.semantic_ingestion.default_catalog_values import CatalogStatusText
 from memorii.core.semantic_ingestion.hermes_captured_turn import HermesCapturedTurnLedger
 from memorii.core.semantic_ingestion.hermes_completed_turn_runtime import (
@@ -40,6 +44,9 @@ from memorii.core.semantic_ingestion.hermes_completed_turn_runtime import (
     _json_arrays_to_tuples,
 )
 from memorii.core.semantic_ingestion.reports_to_capability import validate_reports_to_tool_proposal
+from tests.fixtures.semantic_ingestion.default_catalog_proposals import (
+    build_default_catalog_proposal,
+)
 from tests.fixtures.semantic_ingestion.scenario_fixture_authority import (
     build_verified_reports_to_scenario_request_catalog,
 )
@@ -602,6 +609,34 @@ def test_default_catalog_handle_tool_call_validates_before_preparation_and_submi
     }
     assert (len(preparations), len(submissions)) == (5, 5)
     assert all(request.captured_pin is not None for request in submissions)
+
+
+@pytest.mark.parametrize(
+    "row",
+    load_default_catalog_acceptance_corpus().rows,
+    ids=lambda row: row.relation_id,
+)
+def test_every_misleading_corpus_proposal_rejects_before_normalization(
+    row: DefaultCatalogCorpusRow,
+) -> None:
+    """Endpoint denial must happen before prepared-source normalization work."""
+    runtime = _active_capture_runtime()
+    active = runtime._active_turn
+    assert active is not None
+    fixture = build_default_catalog_proposal(row)
+    preparations: list[str] = []
+    runtime._load_active_prepared_source = (
+        lambda _active: preparations.append("prepared") or object()
+    )
+
+    with pytest.raises(ValueError):
+        runtime._structured_tool_request(
+            active=active,
+            arguments=fixture.misleading_tool_arguments(),
+            default_catalog=True,
+        )
+
+    assert preparations == []
 
 
 @pytest.mark.parametrize("assertion_quote", [
