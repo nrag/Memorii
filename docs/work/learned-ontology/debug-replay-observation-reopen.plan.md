@@ -38,7 +38,7 @@ retained source -> preplanning observation ledger -> catalog activation -> repla
 
 | Experiment | Prediction | Result |
 | --- | --- | --- |
-| Freeze the smallest retained-before-activation JSONL reproducer and inspect activation inventory records | A replayed control will identify whether its writer binding is activation-lineage or predecessor-lineage. | Added `test_learned_replay_of_a_preselection_capture_reopens_jsonl`; it captures `Atlas mentors Ada.`, activates the candidate with that exact retained source as evidence, then reopens JSONL. The corrected path passed: `1 passed in 470.63s` (2026-09-27). |
+| Freeze the smallest retained-before-activation JSONL reproducer and inspect activation inventory records | A replayed control will identify whether its writer binding is activation-lineage or predecessor-lineage. | Added `test_learned_replay_of_a_preselection_capture_reopens_jsonl`; it captures `Atlas mentors Ada.`, activates the candidate with that exact retained source as evidence, then proves one claim/receipt and an equivalent direct protected read before and after JSONL reopen. The corrected path passed: `1 passed in 386.12s` (2026-09-27). |
 | Compare writer-binding ownership across one replay operation | A single binding fixed at allocation will be used for grant, control, and terminal writes. | `ProviderMemoryService.submit_structured_fact` now snapshots the current binding before retained-operation allocation and passes it through the grant publisher and `ProviderIngestionCoordinator.execute_retained_structured_proposal`; the coordinator no longer fetches a second binding. |
 
 ## Completion Contract
@@ -55,7 +55,9 @@ The deterministic reproducer must fail before and pass after the correction. A n
 ## Evidence And Limits
 
 - `ruff check` and `compileall` pass for the changed surfaces; `git diff --check` passes.
-- The retained-before-selection replay JSONL reproducer passes after the binding correction: `1 passed in 470.63s`.
+- The retained-before-selection replay JSONL reproducer, including pre- and post-reopen direct protected reads, passes after the binding correction: `1 passed in 386.12s`.
+- The independent normal post-selection installed mentors journey also passes after the service/ingestion correction: `1 passed in 492.64s`.
+- The first strengthened replay attempt used the provider tool outside an active captured-turn context after restart and returned `unavailable`. This was a harness-boundary error: that tool endpoint requires an active turn. The proof now uses the public Hermes protected reader root directly before and after restart; the equality assertion remains in place.
 - Scoped Pyright reports ten pre-existing errors in the two provider modules, including unresolved `pydantic`, and no error caused by the binding parameter.
 - The full JSONL reproducer requires several minutes because registered-artifact revalidation dominates the native terminal path.
 - `test_exhausted_activated_control_rejects_terminal_attachment` passes for both locator and terminal-control variants: `2 passed in 10.65s`. It reopens through `activate_observation_ledger()` and exercises the same `_activation_inventory_digest` active-control classification before rejecting malformed attachments. A replay-specific malformed fixture would duplicate that strict branch.
@@ -70,8 +72,13 @@ The correction snapshots one writer binding immediately before allocation and pa
 ## Before/After Evidence
 
 - Before: allocation, grants, and control/terminal used independent current-binding reads; JSONL reopen reported an activation successor or inventory mismatch.
-- After: retained `Atlas mentors Ada.` replay activates and reopens through the installed JSONL root (`1 passed in 470.63s`).
+- After: retained `Atlas mentors Ada.` replay activates, preserves exactly one claim/receipt, and reopens through the installed JSONL root with the same protected read (`1 passed in 386.12s`).
+- Normal control: the installed post-selection mentors journey remains green (`1 passed in 492.64s`).
 - Sibling: malformed terminal locator and terminal-control attachments remain fail-closed (`2 passed in 10.65s`).
+
+## Reopened Read Finding
+
+The persisted claim and receipt were present. The unavailable result came from invoking the provider tool after restart without an active captured-turn handle, which is correctly denied by that tool boundary. `HermesCompletedTurnRuntime.read_structured_facts` is the public protected reader root that authorizes a session without requiring an active tool turn; the regression now uses it on both sides of reopen.
 
 ## One Next Action
 

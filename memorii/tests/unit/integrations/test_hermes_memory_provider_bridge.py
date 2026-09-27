@@ -1157,6 +1157,7 @@ def test_learned_replay_of_a_preselection_capture_reopens_jsonl(
         PairedEvaluation,
         RelationDeclaration,
     )
+    from memorii.core.semantic_ingestion.structured_fact_read import StructuredFactReadRequest
     from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
     from memorii.integrations.hermes_local_authority import (
         authorize_local_level2,
@@ -1211,6 +1212,31 @@ def test_learned_replay_of_a_preselection_capture_reopens_jsonl(
     provider.activate_learned_candidate(candidate.proposal_id)
     status = provider.lookup_learned_ontology_status()
     assert status["replay_outcomes"] == {"committed": 1}
+    records = tuple(provider._provider._service._memory_plane.list_records())
+    claims = tuple(
+        record for record in records
+        if record.content.get("runtime_context_projection_kind")
+        == "bootstrap_v3_claim_assertion"
+    )
+    receipts = tuple(
+        record for record in records
+        if record.source_kind == "learned_ontology_replay_operation_v1"
+    )
+    assert len(claims) == 1
+    assert len(receipts) == 1
+    subject_entity_id = claims[0].content["claim_identity"]["subject_assertion_ref"][
+        "logical_entity_id_at_assertion"
+    ]
+    first_read = runtime.read_structured_facts(
+        request=StructuredFactReadRequest(
+            predicate_id="mentors", subject_entity_id=subject_entity_id,
+        ),
+        session_id="session:replay",
+        authenticated_author_id=scope.principal_id,
+        now=datetime.now(UTC),
+    )
+    assert first_read.status == "ok"
+    assert len(first_read.items) == 1
     provider.shutdown()
 
     reopened = bridge_module.MemoriiHermesMemoryProvider()
@@ -1220,6 +1246,32 @@ def test_learned_replay_of_a_preselection_capture_reopens_jsonl(
         agent_workspace="hermes",
     )
     assert reopened.lookup_learned_ontology_status()["replay_outcomes"] == {"committed": 1}
+    reopened_records = tuple(reopened._provider._service._memory_plane.list_records())
+    reopened_claims = tuple(
+        record for record in reopened_records
+        if record.content.get("runtime_context_projection_kind")
+        == "bootstrap_v3_claim_assertion"
+    )
+    reopened_receipts = tuple(
+        record for record in reopened_records
+        if record.source_kind == "learned_ontology_replay_operation_v1"
+    )
+    assert len(reopened_claims) == 1
+    assert len(reopened_receipts) == 1
+    reopened_subject_entity_id = reopened_claims[0].content["claim_identity"]["subject_assertion_ref"][
+        "logical_entity_id_at_assertion"
+    ]
+    reopened_runtime = reopened._completed_turn_runtime
+    assert reopened_runtime is not None
+    reopened_read = reopened_runtime.read_structured_facts(
+        request=StructuredFactReadRequest(
+            predicate_id="mentors", subject_entity_id=reopened_subject_entity_id,
+        ),
+        session_id="session:replay",
+        authenticated_author_id=scope.principal_id,
+        now=datetime.now(UTC),
+    )
+    assert reopened_read == first_read
     reopened.shutdown()
 
 
