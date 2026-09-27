@@ -65,6 +65,7 @@ control -> event evidence -> semantic conflict scope -> atomic projection.
 | Retire verified lifecycle targets before projection arbitration | If correction/retraction targets are removed from the current candidate set before trust and temporal selection, replacements can win while independent equal-rank claims remain contested and retired evidence stays historical. | Commits `e96ad054` and `e4a80771` implement the shared verified lifecycle reader, committed-plus-pending target reconstruction, pre-arbitration retirement, and deterministic publication refresh. The five affected unit files pass `129 passed in 187.15s`; the publication compiler passes `23 passed`; Ruff, compileall, and diff checks pass. |
 | Run installed lifecycle and symmetric-read probe at `286897d5` | If lifecycle retirement is complete, correction and retraction commit, current/history/as-of reads select the lifecycle-valid value, and symmetric reads survive reopen. | After `1433.57s`, correction and retraction both commit; corrected current, retracted current, complete history states, and pre-correction as-of pass. Pre-retraction as-of incorrectly returns both the superseded original and replacement instead of only the replacement. Symmetric/reopen steps are not reached. The projection contest defect is resolved; historical effective-interval filtering remains defective. |
 | Apply transaction-time lifecycle filtering to both read backends | If any `system_as_of` query reconstructs the effective active image while unbounded history remains an audit view, the pre-retraction snapshot returns only the replacement in native projection and persisted claim-state paths. | Commit `cce43a6a` applies the same cutoff rule to both paths. Focused coverage proves original-only before correction, replacement-only after correction and before retraction, and superseded-plus-active unbounded history. `6 passed`; Ruff, compileall, and diff checks pass. |
+| Rerun installed shared-mechanics probe at `9d2398df` | If the as-of fix closes the remaining lifecycle defect, both cutoffs pass and execution reaches symmetric reverse reads. | After `2329.86s`, assertion, correction, retraction, current/history, both transaction-time cutoffs, and transcript sync all pass. The first symmetric relation commits, but its reverse protected current read returns `unavailable`; sibling and reopen are not reached. Retained store is pytest run `1201`. |
 
 ## production_entrypoint_bindings
 
@@ -106,9 +107,10 @@ preserving them as `retained_noncurrent`. Independent equal-rank claims remain
 contested, and an all-retired slot has no selected or contested assertion.
 Affected-family and publication checks pass. The installed probe at `286897d5`
 proves correction and retraction publication plus current and complete-history
-reads, but exposed an as-of interval bug before reaching symmetric/reopen
-checks. Commit `cce43a6a` repairs and proves both read backends. The installed
-rerun and targeted independent review remain outstanding, so no milestone or
+reads, but exposed an as-of interval bug. Commit `cce43a6a` repairs both read
+backends, and the installed rerun proves the entire literal lifecycle plus both
+cutoffs. The first symmetric reverse read now exposes the next fail-closed
+boundary. Targeted independent review remains outstanding, so no milestone or
 requirement count changes yet.
 
 ## Completion Contract
@@ -122,6 +124,6 @@ Level-2 P1/P2 in this boundary. Hostile-store permutations remain Level 3.
 
 ## One Next Action
 
-Rerun the frozen installed LocalDate correction/retraction, two as-of cutoffs,
-symmetric reverse reads and JSONL reopen probe at `cce43a6a`, then classify the
-result before targeted independent correctness and test review.
+Identify and correct the first committed symmetric relation's reverse-read
+`unavailable` result using the retained run `1201`, prove both symmetric rows
+without read-side persistence, then restart the installed probe.
