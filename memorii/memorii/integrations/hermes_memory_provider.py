@@ -27,7 +27,9 @@ from memorii.core.semantic_ingestion.structured_fact_read import (
 )
 from memorii.integrations.hermes_provider import HermesMemoryProvider, build_started_hermes_memory_provider
 from memorii.integrations.hermes_runtime_binding import (
+    HermesAuthenticatedForwardingReceipt,
     HermesAuthenticatedOriginReceipt,
+    HermesOriginReceipt,
     HermesProviderRuntimeBinding,
 )
 
@@ -60,7 +62,7 @@ class HermesIngressRequest:
     agent_identity: object | None
     turn_author: dict[str, Any] | None
     received_at: datetime
-    upstream_origin_receipt: HermesAuthenticatedOriginReceipt | None = None
+    upstream_origin_receipt: HermesOriginReceipt | None = None
 
 
 class MemoriiHermesMemoryProvider(MemoryProvider):
@@ -79,6 +81,16 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         self._origin_receipts: dict[
             tuple[str, int], HermesAuthenticatedOriginReceipt
         ] = {}
+        self._pending_forwarding_receipts: dict[
+            tuple[str, str], HermesAuthenticatedForwardingReceipt
+        ] = {}
+        self._issue_origin_receipt: Callable[
+            [str, int, str, str], HermesAuthenticatedOriginReceipt
+        ] | None = None
+        self._issue_forwarding_receipt: Callable[
+            [HermesAuthenticatedOriginReceipt, str, str],
+            HermesAuthenticatedForwardingReceipt,
+        ] | None = None
 
     @property
     def name(self) -> str:
@@ -130,6 +142,8 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         self._completed_turn_runtime = binding.completed_turn_runtime
         self._absent_author_id = binding.absent_author_id
         self._revoke_structured_submission_grant = binding.revoke_structured_submission_grant
+        self._issue_origin_receipt = binding.issue_origin_receipt
+        self._issue_forwarding_receipt = binding.issue_forwarding_receipt
 
     def get_tool_schemas(self) -> list[dict[str, object]]:
         runtime = self._completed_turn_runtime
@@ -216,22 +230,21 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
             raise ValueError("Hermes local Level 2 author identity changed")
         self._turn_user_id.set(observed or self._default_user_id)
         session_id = self._effective_session_id("")
-        parent_session_id = _optional_text(kwargs.get("parent_session_id"))
-        parent_turn_number = kwargs.get("parent_turn_number")
-        inherited = (
-            self._origin_receipts.get((parent_session_id, parent_turn_number))
-            if parent_session_id is not None
-            and isinstance(parent_turn_number, int)
-            and not isinstance(parent_turn_number, bool)
-            else None
+        source_digest = hashlib.sha256(message.encode("utf-8")).hexdigest()
+        receipt: HermesOriginReceipt | None = self._pending_forwarding_receipts.pop(
+            (session_id, source_digest), None
         )
-        receipt = inherited or HermesAuthenticatedOriginReceipt.create(
-            session_id=session_id,
-            turn_ordinal=turn_number,
-            author_id=self._absent_author_id,
-            source_content_digest=hashlib.sha256(message.encode("utf-8")).hexdigest(),
-        )
-        self._origin_receipts[(session_id, turn_number)] = receipt
+        if receipt is None and self._issue_origin_receipt is not None:
+            receipt = self._issue_origin_receipt(
+                session_id,
+                turn_number,
+                self._absent_author_id,
+                source_digest,
+            )
+        if isinstance(receipt, HermesAuthenticatedForwardingReceipt):
+            self._origin_receipts[(session_id, turn_number)] = receipt.origin_receipt
+        elif receipt is not None:
+            self._origin_receipts[(session_id, turn_number)] = receipt
         runtime = self._completed_turn_runtime
         if runtime is not None:
             capture = getattr(runtime, "capture_user_turn", None)
@@ -262,6 +275,7 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
             _optional_text(turn_author.get("id")) if turn_author is not None else None
         ) or self._current_user_id()
         runtime = self._completed_turn_runtime
+        del parent_session_id, parent_turn_number
         if runtime is not None:
             if effective_user_id is not None and effective_user_id != self._default_user_id:
                 raise ValueError("Hermes local Level 2 author identity changed")
@@ -295,17 +309,9 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
                 session_id=effective_session_id,
                 user_id=self._absent_author_id,
                 turn_author=turn_author,
-                upstream_origin_receipt=(
-                    self._origin_receipts.get(
-                        (parent_session_id, parent_turn_number)
-                    )
-                    if parent_session_id
-                    and isinstance(parent_turn_number, int)
-                    and not isinstance(parent_turn_number, bool)
-                    else self._latest_origin_receipt(
-                        session_id=effective_session_id,
-                        source_content=user_content,
-                    )
+                upstream_origin_receipt=self._latest_origin_receipt(
+                    session_id=effective_session_id,
+                    source_content=user_content,
                 ),
             ),
         )
@@ -369,17 +375,26 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         if self._completed_turn_runtime is not None:
             self._require_provider()
             self._wait_for_completed_runtime()
+            issuer = self._issue_forwarding_receipt
+            if issuer is None:
+                return
+            parent_receipts = tuple(
+                receipt
+                for (session_id, _), receipt in self._origin_receipts.items()
+                if session_id == self._session_id
+            )
+            if not parent_receipts:
+                return
+            child = self._effective_session_id(child_session_id)
+            digest = hashlib.sha256(result.encode("utf-8")).hexdigest()
+            self._pending_forwarding_receipts[(child, digest)] = issuer(
+                max(parent_receipts, key=lambda receipt: receipt.turn_ordinal),
+                child,
+                digest,
+            )
             return
         effective_session_id = self._effective_session_id(child_session_id)
-        parent_session_id = _optional_text(kwargs.get("parent_session_id"))
-        parent_turn_number = kwargs.get("parent_turn_number")
-        receipt = (
-            self._origin_receipts.get((parent_session_id, parent_turn_number))
-            if parent_session_id is not None
-            and isinstance(parent_turn_number, int)
-            and not isinstance(parent_turn_number, bool)
-            else None
-        )
+        del kwargs
         self._require_provider().on_delegation(
             task,
             result,
@@ -390,7 +405,6 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
                 hook="delegation",
                 session_id=effective_session_id,
                 user_id=self._absent_author_id,
-                upstream_origin_receipt=receipt,
             ),
         )
 
@@ -433,6 +447,9 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
             self._absent_author_id = "memorii.hermes.author.absent.v1"
             self._revoke_structured_submission_grant = None
             self._origin_receipts.clear()
+            self._pending_forwarding_receipts.clear()
+            self._issue_origin_receipt = None
+            self._issue_forwarding_receipt = None
 
     def _wait_for_completed_runtime(self) -> None:
         runtime = self._completed_turn_runtime
@@ -461,7 +478,7 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         session_id: str | None = None,
         user_id: str | None = None,
         turn_author: dict[str, Any] | None = None,
-        upstream_origin_receipt: HermesAuthenticatedOriginReceipt | None = None,
+        upstream_origin_receipt: HermesOriginReceipt | None = None,
     ) -> AuthenticatedHostIngress:
         issuer = self._issue_ingress
         if issuer is None:

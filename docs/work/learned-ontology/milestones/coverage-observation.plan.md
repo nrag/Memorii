@@ -128,3 +128,19 @@ calling `sync_event` directly. Four affected bridge tests pass in 20.40
 seconds. Counts remain 3/5 and 5/14. Exactly one next action: freeze this public
 callback correction and obtain targeted correctness approval before recurrence
 aggregation.
+
+Review of exact commit `bbcec7b1` found a remaining Level-2 P2: arbitrary
+`on_turn_start` parent coordinates could select a locally known receipt without
+proving that the new bytes came from an authenticated forwarding event. The
+replacement ignores those free-form coordinates. The private factory now owns
+an issued-receipt registry; direct receipts must be factory-issued, and a
+forwarding receipt can be minted only by the host delegation hook from the
+current observed origin. It binds the exact child session and result digest,
+and completed-turn ingress rechecks those bytes before admission. The installed
+proof uses separate direct and child sessions, shows their transformed sources
+share one lineage, rejects a forged receipt, and shows unrelated text with the
+same caller-supplied parent coordinates receives a different lineage. Four
+affected bridge tests pass in 21.53 seconds; Ruff, compilation and whitespace
+pass. Counts remain 3/5 and 5/14. Exactly one next action: freeze this
+delegation-bound correction and obtain targeted correctness approval before
+recurrence aggregation.

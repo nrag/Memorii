@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
+from threading import RLock
 from types import SimpleNamespace
 
 from memorii.core.memory_evolution.ingestion_contracts import (
@@ -61,7 +62,11 @@ from memorii.integrations.hermes_local_authority import (
     load_local_level2_authority,
     load_local_structured_tool_authority,
 )
-from memorii.integrations.hermes_runtime_binding import HermesAuthenticatedOriginReceipt
+from memorii.integrations.hermes_runtime_binding import (
+    HermesAuthenticatedForwardingReceipt,
+    HermesAuthenticatedOriginReceipt,
+    HermesOriginReceipt,
+)
 
 _PREFERENCE_TOPIC_TYPES = {
     "ProductService": EntityType.PRODUCT_SERVICE,
@@ -260,8 +265,28 @@ def _build_local_level2_runtime_binding(
         session_id: str,
         author_id: str,
         received_at: datetime,
-        origin_receipt: HermesAuthenticatedOriginReceipt | None = None,
+        origin_receipt: HermesOriginReceipt | None = None,
+        source_content_digest: str | None = None,
     ) -> AuthenticatedHostIngress:
+        if origin_receipt is not None and (
+            not isinstance(source_content_digest, str)
+            or (
+                isinstance(origin_receipt, HermesAuthenticatedOriginReceipt)
+                and (
+                    origin_receipt.session_id != session_id
+                    or origin_receipt.source_content_digest != source_content_digest
+                )
+            )
+            or (
+                isinstance(origin_receipt, HermesAuthenticatedForwardingReceipt)
+                and (
+                    origin_receipt.child_session_id != session_id
+                    or origin_receipt.child_source_content_digest
+                    != source_content_digest
+                )
+            )
+        ):
+            raise ValueError("Hermes origin receipt does not bind the captured source")
         return ingress_resolver.issue(
             SimpleNamespace(
                 hook="sync_turn",
@@ -328,6 +353,8 @@ def _build_local_level2_runtime_binding(
         revoke_structured_submission_grant=(
             revoke_current_structured_grant if structured_resolver is not None else None
         ),
+        issue_origin_receipt=ingress_resolver.issue_origin_receipt,
+        issue_forwarding_receipt=ingress_resolver.issue_forwarding_receipt,
     )
 
 
@@ -485,6 +512,47 @@ class _LocalLevel2IngressResolver:
     def __init__(self, *, installation_id: str, operator_id: str) -> None:
         self._installation_id = installation_id
         self._operator_id = operator_id
+        self._origin_receipt_lock = RLock()
+        self._issued_origin_receipts: dict[str, HermesOriginReceipt] = {}
+
+    def issue_origin_receipt(
+        self,
+        session_id: str,
+        turn_ordinal: int,
+        author_id: str,
+        source_content_digest: str,
+    ) -> HermesAuthenticatedOriginReceipt:
+        if author_id != self._operator_id:
+            raise ValueError("Hermes origin receipt author is substituted")
+        receipt = HermesAuthenticatedOriginReceipt.create(
+            session_id=session_id,
+            turn_ordinal=turn_ordinal,
+            author_id=author_id,
+            source_content_digest=source_content_digest,
+        )
+        with self._origin_receipt_lock:
+            self._issued_origin_receipts[receipt.receipt_digest] = receipt
+        return receipt
+
+    def issue_forwarding_receipt(
+        self,
+        origin_receipt: HermesAuthenticatedOriginReceipt,
+        child_session_id: str,
+        child_source_content_digest: str,
+    ) -> HermesAuthenticatedForwardingReceipt:
+        with self._origin_receipt_lock:
+            if (
+                self._issued_origin_receipts.get(origin_receipt.receipt_digest)
+                != origin_receipt
+            ):
+                raise ValueError("Hermes forwarding origin was not factory-issued")
+            receipt = HermesAuthenticatedForwardingReceipt.create(
+                origin_receipt=origin_receipt,
+                child_session_id=child_session_id,
+                child_source_content_digest=child_source_content_digest,
+            )
+            self._issued_origin_receipts[receipt.receipt_digest] = receipt
+            return receipt
 
     def issue(self, request: object) -> AuthenticatedHostIngress:
         session_id = getattr(request, "session_id", None)
@@ -504,13 +572,36 @@ class _LocalLevel2IngressResolver:
             raise TypeError("Hermes agent identity is invalid")
         origin_lineage_evidence = None
         if upstream_origin_receipt is not None:
+            with self._origin_receipt_lock:
+                issued_receipt = self._issued_origin_receipts.get(
+                    getattr(upstream_origin_receipt, "receipt_digest", "")
+                )
             if (
                 hook not in {"sync_turn", "delegation"}
                 or not isinstance(
-                    upstream_origin_receipt, HermesAuthenticatedOriginReceipt
+                    upstream_origin_receipt,
+                    (HermesAuthenticatedOriginReceipt, HermesAuthenticatedForwardingReceipt),
                 )
                 or not upstream_origin_receipt.verify()
-                or upstream_origin_receipt.author_id != author
+                or issued_receipt != upstream_origin_receipt
+            ):
+                raise ValueError("Hermes upstream origin receipt is invalid")
+            origin_receipt = (
+                upstream_origin_receipt.origin_receipt
+                if isinstance(
+                    upstream_origin_receipt, HermesAuthenticatedForwardingReceipt
+                )
+                else upstream_origin_receipt
+            )
+            if (
+                origin_receipt.author_id != author
+                or (
+                    isinstance(
+                        upstream_origin_receipt,
+                        HermesAuthenticatedForwardingReceipt,
+                    )
+                    and upstream_origin_receipt.child_session_id != session_id
+                )
             ):
                 raise ValueError("Hermes upstream origin receipt is invalid")
             origin_lineage_evidence = AuthenticatedOriginLineageEvidence.create(
@@ -527,10 +618,10 @@ class _LocalLevel2IngressResolver:
                             self._installation_id,
                             self._operator_id,
                             agent_id,
-                            upstream_origin_receipt.session_id,
-                            upstream_origin_receipt.turn_ordinal,
-                            upstream_origin_receipt.source_content_digest,
-                            upstream_origin_receipt.receipt_digest,
+                            origin_receipt.session_id,
+                            origin_receipt.turn_ordinal,
+                            origin_receipt.source_content_digest,
+                            origin_receipt.receipt_digest,
                         )
                     )
                 ).hexdigest(),

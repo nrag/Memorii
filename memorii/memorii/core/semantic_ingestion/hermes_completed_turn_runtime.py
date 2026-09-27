@@ -1308,7 +1308,11 @@ class HermesCompletedTurnRuntime:
 
         ingress = self._service._preflight_ingress(
             self._issue_host_ingress(
-                session_id, author, received_at, origin_receipt
+                session_id,
+                author,
+                received_at,
+                origin_receipt,
+                sha256(message.encode("utf-8")).hexdigest(),
             )
         )
         if ingress is None:

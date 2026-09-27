@@ -541,10 +541,13 @@ def test_installed_ingress_coalesces_authenticated_forwarded_origin(
     provider._issue_ingress = binding.issue_ingress
     provider._completed_turn_runtime = binding.completed_turn_runtime
     provider._absent_author_id = binding.absent_author_id
+    provider._issue_origin_receipt = binding.issue_origin_receipt
+    provider._issue_forwarding_receipt = binding.issue_forwarding_receipt
     monkeypatch.setattr(binding.service, "reconcile_memory_evolution", lambda: ())
 
     direct = "Atlas owner is Bob."
     forwarded = "Bob is the owner of Atlas."
+    unrelated = "The office closes at six."
     provider.on_turn_start(1, direct, author_id=binding.absent_author_id)
     receipt = provider._origin_receipts[("session:origin-direct", 1)]
     with pytest.raises(ValueError, match="upstream origin receipt is invalid"):
@@ -571,15 +574,20 @@ def test_installed_ingress_coalesces_authenticated_forwarded_origin(
         },
     ]
     provider.sync_turn(direct, "Acknowledged.", messages=first_messages)
+    provider.on_delegation(
+        "Restate the ownership fact.",
+        forwarded,
+        child_session_id="session:origin-forwarded",
+    )
+    provider.on_session_switch("session:origin-forwarded")
     provider.on_turn_start(
-        2,
+        1,
         forwarded,
         author_id=binding.absent_author_id,
         parent_session_id="session:origin-direct",
         parent_turn_number=1,
     )
     second_messages = [
-        *first_messages,
         {
             "role": "user",
             "content": forwarded,
@@ -596,6 +604,30 @@ def test_installed_ingress_coalesces_authenticated_forwarded_origin(
         "Acknowledged again.",
         messages=second_messages,
     )
+    provider.on_session_switch("session:unrelated")
+    provider.on_turn_start(
+        1,
+        unrelated,
+        author_id=binding.absent_author_id,
+        parent_session_id="session:origin-direct",
+        parent_turn_number=1,
+    )
+    provider.sync_turn(
+        unrelated,
+        "Noted.",
+        messages=[
+            {
+                "role": "user",
+                "content": unrelated,
+                "timestamp": "2026-09-27T13:02:00Z",
+            },
+            {
+                "role": "assistant",
+                "content": "Noted.",
+                "timestamp": "2026-09-27T13:02:01Z",
+            },
+        ],
+    )
     binding.completed_turn_runtime.wait_for_idle()
 
     observations = tuple(
@@ -610,16 +642,21 @@ def test_installed_ingress_coalesces_authenticated_forwarded_origin(
         )
         is not None
     )
-    assert len(observations) == 2
+    assert len(observations) == 3
     by_text = {
         binding.service._memory_plane.get_record(observation.source_id).text: observation
         for observation in observations
     }
     assert by_text[direct].session_id == "session:origin-direct"
-    assert by_text[forwarded].session_id == "session:origin-direct"
+    assert by_text[forwarded].session_id == "session:origin-forwarded"
+    assert by_text[unrelated].session_id == "session:unrelated"
     assert (
         by_text[direct].origin_lineage_digest
         == by_text[forwarded].origin_lineage_digest
+    )
+    assert (
+        by_text[direct].origin_lineage_digest
+        != by_text[unrelated].origin_lineage_digest
     )
     provider.shutdown()
 

@@ -148,6 +148,17 @@ bridge checks pass. Counts remain 3/5 and 5/14. Exactly one next action: freeze
 the public callback correction and obtain targeted correctness approval before
 recurrence aggregation.
 
+Exact review of `bbcec7b1` found that public parent coordinates could still
+coalesce unrelated text. The current correction removes coordinate-based
+inheritance and makes the private factory the sole issuer and verifier of
+registered direct and forwarding receipts. The delegation hook binds the exact
+child session and result bytes before the completed-turn runtime can reuse the
+origin lineage; arbitrary parent kwargs are ignored. The installed regression
+now proves separate-session transformed forwarding and distinct lineage for an
+unrelated spoof attempt. Four affected bridge checks pass. Counts remain 3/5
+and 5/14. Exactly one next action: freeze this delegation-bound correction and
+obtain targeted correctness approval before recurrence aggregation.
+
 ## Production Boundary And Change Map
 
 `implementation-readiness.md` contains the read-only composition-root preflight and caller counts. Current paths are generic `ProviderMemoryService.sync_event` and the installed Hermes completed-turn root, one fixed three-predicate profile, one shared semantic terminal writer, and one protected-reader core. Ontology observer, catalog registry, activation, learner, and structured-fact port have zero current production callers. No future owner counts as implemented until a mapper finds a real caller and a focused path proof reaches its durable outcome.
