@@ -108,8 +108,11 @@ expiry/retraction, protects current/history reads, permits one durably authorize
 delegate to read the exact confirmed record, and denies never-granted, revoked,
 reopened and second-user callers. The H8 specification, correctness and test
 reviews report no remaining Level-2 P1/P2. M4 coverage observation and recurrence
-is now active. Exactly one next action: freeze the M4 observation/event schema
-and trace-owner map at the real admission, read and correction callsites.
+is now active. Its typed observation repository and trace map pass focused
+construction checks but have no production caller, so counts remain 3/5 and
+5/14. Exactly one next action: atomically bind the no-capability observation to
+real admitted-source, selected-catalog and authenticated origin-lineage
+authority, then prove installed JSONL reopen and zero candidate/fact.
 
 ## Production Boundary And Change Map
 

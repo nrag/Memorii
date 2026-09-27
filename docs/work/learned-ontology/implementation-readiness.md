@@ -29,6 +29,8 @@ The generic `ProviderMemoryService.sync_event` and installed Hermes completed-tu
 
 The read-only preflight searched `sync_event`, `sync_completed_turn`, `retrieve_context`, `reconcile_memory_evolution`, `_PREDICATES`, `predicate_catalog`, `OPENAI_API_KEY`, output schema, state/trust/temporal policy, and the OLE requirement ledger with `rg`; it inspected cited production files and `docs/development/static_tooling.md`. Refresh this map at the active milestone whenever a trigger or authority changes. The failed Spark `code-mapper` invocation returned account error `gpt-5.3-codex-spark model is not supported`; a default-agent read-only fallback produced this map. No model execution or code edit was needed for the preflight.
 
+**M4 construction update (2026-09-27):** `core/semantic_ingestion/coverage_observation.py` now owns the closed `CoverageObservation` schema and INTERNAL_CONTROL repository. Its identity exactly binds source ID/digest, catalog digest and observer binding version or `none`; state validation prevents pending/queued/running/unavailable records from claiming a verified gap. Four focused tests plus Ruff, scoped Pyright and whitespace pass. Production caller count remains zero until the record joins admitted-source publication with selected-catalog and authenticated origin-lineage authority.
+
 ## Initial Changed-Surface And Authority Ledger
 
 | Surface | Owner and planned authority chain | Current state | Required gate before a milestone can close |
