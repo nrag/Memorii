@@ -119,10 +119,12 @@ from memorii.core.semantic_ingestion.contracts import (
 from memorii.core.semantic_ingestion.coverage_observation import (
     CoverageObservation,
     CoverageObservationRepository,
+    DiscoveryProcessingState,
     coverage_observation_record,
     delivery_origin_lineage_digest,
     new_coverage_observation,
 )
+from memorii.core.semantic_ingestion.coverage_observer import CoverageObserverRunner
 from memorii.core.semantic_ingestion.event_replay import SemanticEventReplayError
 from memorii.core.semantic_ingestion.persistence import (
     SemanticAuthorizationReadSetError,
@@ -473,6 +475,7 @@ class ProviderIngestionCoordinator:
         semantic_runtime: AuthorizedSemanticIngestionRuntime | None = None,
         canonical_evidence_arena_factory: Callable[[], CanonicalEvidenceArena] | None = None,
         catalog_selection_repository: SelectedCatalogAuthorityRepository | None = None,
+        coverage_observer_runner: CoverageObserverRunner | None = None,
     ) -> None:
         self._memory_plane = memory_plane
         self._admission_service = admission_service
@@ -487,6 +490,7 @@ class ProviderIngestionCoordinator:
         self._now_provider = clock.now_utc
         self._canonical_evidence_arena_factory = canonical_evidence_arena_factory
         self._catalog_selection_repository = catalog_selection_repository
+        self._coverage_observer_runner = coverage_observer_runner
         self._authorization_repository = SemanticAuthorizationAuthorityRepository(
             atomic_store=atomic_store,
             writer_binding_provider=self._current_writer_binding,
@@ -952,7 +956,11 @@ class ProviderIngestionCoordinator:
                         observed_at=source.timestamp,
                         catalog_scope=selected_catalog.catalog_scope,
                         catalog_digest=selected_catalog.catalog_digest,
-                        observer_binding=None,
+                        observer_binding=(
+                            self._coverage_observer_runner.binding
+                            if self._coverage_observer_runner is not None
+                            else None
+                        ),
                     )
                 coverage_observation = build_coverage_observation(governed_source)
                 initial_coverage_record = (
@@ -1060,9 +1068,20 @@ class ProviderIngestionCoordinator:
                         )
                     )
                 if coverage_observation is not None:
-                    CoverageObservationRepository(self._memory_plane).create(
+                    coverage_head = CoverageObservationRepository(
+                        self._memory_plane
+                    ).create(
                         coverage_observation
                     )
+                    if (
+                        self._coverage_observer_runner is not None
+                        and coverage_head.processing_state
+                        == DiscoveryProcessingState.QUEUED
+                    ):
+                        self._coverage_observer_runner.run(
+                            observation=coverage_head,
+                            source_text=governed_source.text,
+                        )
                 if outcome == "selected_pipeline_pending":
                     handoff_with_lease = self._bootstrap_prepare_and_handoff(
                         prepared_admission=prepared_admission,

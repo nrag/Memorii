@@ -1,0 +1,185 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+
+from memorii.core.memory_plane.service import MemoryPlaneService
+from memorii.core.memory_plane.store import InMemoryMemoryPlaneStore
+from memorii.core.semantic_ingestion.catalog_authority import CatalogAuthorityScope
+from memorii.core.semantic_ingestion.coverage_observation import (
+    CoverageObservation,
+    CoverageObservationRepository,
+    CoverageSemanticOutcome,
+    CoverageSourceSpan,
+    DiscoveryProcessingState,
+    ObserverBindingIdentity,
+    new_coverage_observation,
+)
+from memorii.core.semantic_ingestion.coverage_observer import (
+    CoverageObserverRunner,
+    OntologyObservationRequest,
+    OntologyObservationResult,
+    OntologyObserverUnavailableError,
+)
+from memorii.core.semantic_ingestion.coverage_recurrence import (
+    CoverageRecurrenceRepository,
+    RelationGapSignature,
+    VerifiedCoverageGapRepository,
+)
+
+_BINDING = ObserverBindingIdentity(
+    binding_version="observer:v1",
+    provider="host",
+    model="host-model",
+    prompt_version="ontology-observe:v1",
+    transport="host_callback",
+    egress_policy_digest="5" * 64,
+    output_schema_digest="6" * 64,
+)
+_SIGNATURE = RelationGapSignature.create(
+    normalized_relation_meaning="mentors",
+    subject_type_id="Person",
+    object_type_id="Person",
+    domain_id="organization",
+    evidence_rule_id="direct_assertion:v1",
+)
+
+
+@dataclass
+class _Observer:
+    result: object
+    binding: ObserverBindingIdentity = _BINDING
+
+    def observe(self, request: OntologyObservationRequest) -> object:
+        assert request.source_text == "Alice mentors Bob."
+        return self.result
+
+
+class _UnavailableObserver:
+    binding = _BINDING
+
+    def observe(self, request: OntologyObservationRequest) -> object:
+        raise OntologyObserverUnavailableError(request.observation_id)
+
+
+def _observation(
+    ordinal: int,
+    *,
+    lineage: str,
+    session_id: str,
+) -> CoverageObservation:
+    return new_coverage_observation(
+        source_id=f"semantic_ingestion:source:{ordinal}",
+        source_digest=f"{ordinal:x}" * 64,
+        source_span=None,
+        source_scope_digest="2" * 64,
+        origin_lineage_digest=lineage,
+        session_id=session_id,
+        principal_id="user:one",
+        agent_id="agent:one",
+        observed_at=datetime(2026, 9, 27, tzinfo=UTC)
+        + timedelta(minutes=ordinal),
+        catalog_scope=CatalogAuthorityScope(schema_version=1, kind="base"),
+        catalog_digest="4" * 64,
+        observer_binding=_BINDING,
+    )
+
+
+def _runner(
+    plane: MemoryPlaneService, result: object
+) -> CoverageObserverRunner:
+    return CoverageObserverRunner(
+        observation_repository=CoverageObservationRepository(plane),
+        gap_repository=VerifiedCoverageGapRepository(plane),
+        recurrence_repository=CoverageRecurrenceRepository(plane),
+        capability=_Observer(result),
+        signature_validator=lambda signature: signature == _SIGNATURE,
+    )
+
+
+def _gap_result(*, span: CoverageSourceSpan | None = None) -> OntologyObservationResult:
+    exact = span or CoverageSourceSpan(start=0, end=17)
+    return OntologyObservationResult.create(
+        semantic_outcome=CoverageSemanticOutcome.UNSUPPORTED_RELATION,
+        source_span=exact,
+        source_quote="Alice mentors Bob" if exact.end == 17 else "wrong",
+        signature=_SIGNATURE,
+    )
+
+
+def test_authorized_observer_updates_recurrence_at_exact_threshold() -> None:
+    plane = MemoryPlaneService(record_store=InMemoryMemoryPlaneStore())
+    repository = CoverageObservationRepository(plane)
+    runner = _runner(plane, _gap_result())
+    results = []
+    for observation in (
+        _observation(1, lineage="a" * 64, session_id="session:one"),
+        _observation(2, lineage="b" * 64, session_id="session:one"),
+        _observation(3, lineage="c" * 64, session_id="session:two"),
+    ):
+        repository.create(observation)
+        results.append(
+            runner.run(observation=observation, source_text="Alice mentors Bob.")
+        )
+
+    assert [item.recurrence_group.proposal_eligible for item in results] == [
+        False,
+        False,
+        True,
+    ]
+    assert results[-1].recurrence_group.independent_lineage_count == 3
+    assert results[-1].recurrence_group.distinct_session_count == 2
+    assert not [
+        record
+        for record in plane.list_records()
+        if record.domain.value in {"semantic", "user"}
+    ]
+
+
+def test_invalid_span_or_signature_becomes_uncertain_without_gap() -> None:
+    plane = MemoryPlaneService(record_store=InMemoryMemoryPlaneStore())
+    repository = CoverageObservationRepository(plane)
+    observation = _observation(
+        1, lineage="a" * 64, session_id="session:one"
+    )
+    repository.create(observation)
+
+    result = _runner(
+        plane,
+        _gap_result(span=CoverageSourceSpan(start=0, end=5)),
+    ).run(observation=observation, source_text="Alice mentors Bob.")
+
+    assert result.observation.processing_state == DiscoveryProcessingState.CLASSIFIED
+    assert result.observation.semantic_outcome == CoverageSemanticOutcome.UNCERTAIN
+    assert result.recurrence_group is None
+    assert VerifiedCoverageGapRepository(plane).for_group(
+        catalog_scope=observation.catalog_scope,
+        catalog_digest=observation.catalog_digest,
+        source_scope_digest=observation.source_scope_digest,
+        signature=_SIGNATURE,
+    ) == ()
+
+
+def test_provider_outage_is_durable_unavailable_without_gap() -> None:
+    plane = MemoryPlaneService(record_store=InMemoryMemoryPlaneStore())
+    repository = CoverageObservationRepository(plane)
+    observation = _observation(
+        1, lineage="a" * 64, session_id="session:one"
+    )
+    repository.create(observation)
+    runner = CoverageObserverRunner(
+        observation_repository=repository,
+        gap_repository=VerifiedCoverageGapRepository(plane),
+        recurrence_repository=CoverageRecurrenceRepository(plane),
+        capability=_UnavailableObserver(),
+        signature_validator=lambda _signature: True,
+    )
+
+    result = runner.run(
+        observation=observation, source_text="Alice mentors Bob."
+    )
+
+    assert result.observation.processing_state == DiscoveryProcessingState.UNAVAILABLE
+    assert result.observation.semantic_outcome == CoverageSemanticOutcome.NOT_EVALUATED
+    assert result.observation.downstream_failure_signature is not None
+    assert result.recurrence_group is None

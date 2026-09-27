@@ -186,7 +186,17 @@ from memorii.core.semantic_ingestion.contracts import (
 from memorii.core.semantic_ingestion.coverage_observation import (
     CoverageObservationRepository,
     CoverageSemanticOutcome,
+    CoverageSourceSpan,
     DiscoveryProcessingState,
+    ObserverBindingIdentity,
+)
+from memorii.core.semantic_ingestion.coverage_observer import (
+    OntologyObservationResult,
+)
+from memorii.core.semantic_ingestion.coverage_recurrence import (
+    CoverageRecurrenceGroup,
+    CoverageRecurrenceRepository,
+    RelationGapSignature,
 )
 from memorii.core.semantic_ingestion.egress import (
     ProviderEgressDecision,
@@ -1642,6 +1652,84 @@ def test_authenticated_origin_coalesces_direct_and_forwarded_deliveries() -> Non
     assert {observation.origin_lineage_digest for observation in observations} == {
         resolver.evidence.lineage_digest
     }
+
+
+def test_configured_ontology_observer_runs_after_source_admission_and_retries_once() -> None:
+    binding = ObserverBindingIdentity(
+        binding_version="observer:v1",
+        provider="host",
+        model="fixture-model",
+        prompt_version="ontology-observe:v1",
+        transport="in_process",
+        egress_policy_digest="5" * 64,
+        output_schema_digest="6" * 64,
+    )
+    signature = RelationGapSignature.create(
+        normalized_relation_meaning="project owner",
+        subject_type_id="Project",
+        object_type_id="Person",
+        domain_id="organization",
+        evidence_rule_id="direct_assertion:v1",
+    )
+
+    class Observer:
+        calls = 0
+
+        @property
+        def binding(self):
+            return binding
+
+        def observe(self, _request):
+            self.calls += 1
+            return OntologyObservationResult.create(
+                semantic_outcome=CoverageSemanticOutcome.UNSUPPORTED_RELATION,
+                source_span=CoverageSourceSpan(start=0, end=18),
+                source_quote="Atlas owner is Bob",
+                signature=signature,
+            )
+
+    observer = Observer()
+    builder, _ = _v3_normalization_host_builder(proposal=_bob_owner_proposal())
+    service = ProviderMemoryService._from_scenario_test_host(
+        memory_plane=MemoryPlaneService(),
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=_built_in_local_capability(scenario_test=True),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        source_normalization_host_bundle_builder=builder,
+        bootstrap_graph_host_bundle_builder=_deterministic_graph_bundle_builder(),
+        ontology_observer_capability=observer,
+        ontology_signature_validator=lambda candidate: candidate == signature,
+    )
+
+    for _ in range(2):
+        service.sync_event(
+            operation=ProviderOperation.CHAT_USER_TURN,
+            content="Atlas owner is Bob.",
+            operation_id="provider-ontology-observer",
+            task_id="task:one",
+            user_id="user:alice",
+            authenticated_host_ingress=_host_ingress(),
+        )
+
+    observation_record = service._memory_plane.list_records(
+        source_kind="learned_ontology_coverage_observation_v1"
+    )[0]
+    observation = CoverageObservationRepository(service._memory_plane).load(
+        observation_record.memory_id
+    )
+    assert observation is not None
+    assert observation.processing_state == DiscoveryProcessingState.CLASSIFIED
+    assert observation.semantic_outcome == CoverageSemanticOutcome.UNSUPPORTED_RELATION
+    recurrence_record = service._memory_plane.list_records(
+        source_kind="learned_ontology_coverage_recurrence_group_v1"
+    )[0]
+    recurrence = CoverageRecurrenceRepository(service._memory_plane).load(
+        recurrence_record.memory_id
+    )
+    assert isinstance(recurrence, CoverageRecurrenceGroup)
+    assert recurrence.independent_lineage_count == 1
+    assert recurrence.proposal_eligible is False
+    assert observer.calls == 1
 
 
 def _retained_structured_submission(

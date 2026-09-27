@@ -183,3 +183,20 @@ derived threshold validation, CAS replacement and inert persistence all passed;
 `remaining_validated_p1_p2: []`. Counts remain 3/5 and 5/14. Exactly one next
 action: wire the provider-neutral authorized observer lifecycle and production
 recurrence update while preserving no-capability pending behavior.
+
+The provider-neutral observer slice adds a typed capability/request/result
+boundary and a core runner. Real provider admission now persists the source and
+initial queued observation before calling an explicitly configured observer.
+The runner validates the exact source quote/span and a core signature validator,
+persists classified or unavailable state with CAS, stores each verified gap as
+durable inert evidence, and rebuilds the matching recurrence group. Malformed
+model output becomes `uncertain`; a declared provider outage becomes durable
+`discovery_unavailable`; neither creates a gap. Exact provider retry reloads the
+classified head and does not call the observer twice. With no capability the
+prior `discovery_pending_no_capability/not_evaluated` behavior is unchanged.
+Fourteen focused contract tests pass in 11.16 seconds and the real provider-root
+observer/retry proof passes in 48.52 seconds. New observer/recurrence files pass
+scoped Pyright; provider ingestion retains its seven pre-existing diagnostics.
+Ruff, compilation and whitespace pass. Counts remain 3/5 and 5/14. Exactly one
+next action: freeze this lifecycle/caller slice and obtain targeted correctness
+review before completing M4 status/recovery and adapter conformance.

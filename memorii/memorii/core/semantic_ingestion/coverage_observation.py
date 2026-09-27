@@ -270,6 +270,39 @@ def classify_coverage_observation(
     )
 
 
+def fail_coverage_observation(
+    observation: CoverageObservation,
+    *,
+    failure_signature: str,
+) -> CoverageObservation:
+    if (
+        observation.processing_state != DiscoveryProcessingState.RUNNING
+        or observation.semantic_outcome != CoverageSemanticOutcome.NOT_EVALUATED
+    ):
+        raise ValueError("only a running observation can become unavailable")
+    return _replace_observation(
+        observation,
+        processing_state=DiscoveryProcessingState.UNAVAILABLE,
+        downstream_failure_signature=failure_signature,
+    )
+
+
+def retry_coverage_observation(
+    observation: CoverageObservation,
+) -> CoverageObservation:
+    if (
+        observation.processing_state != DiscoveryProcessingState.UNAVAILABLE
+        or observation.semantic_outcome != CoverageSemanticOutcome.NOT_EVALUATED
+        or observation.observer_binding is None
+    ):
+        raise ValueError("only an unavailable bound observation can retry")
+    return _replace_observation(
+        observation,
+        processing_state=DiscoveryProcessingState.QUEUED,
+        downstream_failure_signature=None,
+    )
+
+
 def _replace_observation(
     observation: CoverageObservation, **changes: object
 ) -> CoverageObservation:
@@ -317,8 +350,9 @@ class CoverageObservationRepository:
             return observation
         except MemoryPlaneRevisionConflictError:
             existing = self.load(observation.observation_id)
-            if existing == observation:
-                assert existing is not None
+            if existing is not None and _same_observation_identity(
+                existing, observation
+            ):
                 return existing
             raise
 
@@ -364,3 +398,23 @@ def coverage_observation_record(observation: CoverageObservation) -> CanonicalMe
         agent_id=observation.agent_id,
         visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
     )
+
+
+def _same_observation_identity(
+    left: CoverageObservation, right: CoverageObservation
+) -> bool:
+    immutable_fields = (
+        "observation_id",
+        "source_id",
+        "source_digest",
+        "source_scope_digest",
+        "origin_lineage_digest",
+        "session_id",
+        "principal_id",
+        "agent_id",
+        "observed_at",
+        "catalog_scope",
+        "catalog_digest",
+        "observer_binding",
+    )
+    return all(getattr(left, field) == getattr(right, field) for field in immutable_fields)

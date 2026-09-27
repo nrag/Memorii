@@ -214,6 +214,16 @@ from memorii.core.semantic_ingestion.catalog_authority import (
 )
 from memorii.core.semantic_ingestion.catalog_capture_pin import CatalogCapturedTurnPin
 from memorii.core.semantic_ingestion.contracts import ClaimAssertion, ProviderSemanticProposal
+from memorii.core.semantic_ingestion.coverage_observation import CoverageObservationRepository
+from memorii.core.semantic_ingestion.coverage_observer import (
+    CoverageObserverRunner,
+    OntologyObserverCapability,
+)
+from memorii.core.semantic_ingestion.coverage_recurrence import (
+    CoverageGapSignature,
+    CoverageRecurrenceRepository,
+    VerifiedCoverageGapRepository,
+)
 from memorii.core.semantic_ingestion.production_authority import (
     VerifiedCapabilityMonitoringAuthority,
     VerifiedProductionHostAuthority,
@@ -357,6 +367,9 @@ class ProviderMemoryService:
             VerifiedCapabilityMonitoringAuthority, ...
         ] = (),
         structured_submission_authority_resolver: StructuredSubmissionAuthorityResolver | None = None,
+        ontology_observer_capability: OntologyObserverCapability | None = None,
+        ontology_signature_validator: Callable[[CoverageGapSignature], bool]
+        | None = None,
         _host_construction: object | None = None,
     ) -> None:
         self._memory_plane = memory_plane or MemoryPlaneService()
@@ -364,6 +377,12 @@ class ProviderMemoryService:
         self._scoped_read_authority = scoped_read_authority
         self._structured_submission_authority_resolver = structured_submission_authority_resolver
         self._canonical_evidence_requested = canonical_evidence_enabled
+        if (ontology_observer_capability is None) != (
+            ontology_signature_validator is None
+        ):
+            raise ValueError(
+                "ontology observer capability and signature validator must be configured together"
+            )
         verified_material = None
         verified_ingress_resolver = None
         monitoring_initializations: tuple[CapabilityEvidenceWindow, ...] = ()
@@ -753,6 +772,22 @@ class ProviderMemoryService:
             )
         if semantic_integrity_lifecycle is not None:
             semantic_integrity_lifecycle.reconcile_pending_recovery()
+        coverage_observer_runner = (
+            CoverageObserverRunner(
+                observation_repository=CoverageObservationRepository(
+                    self._memory_plane
+                ),
+                gap_repository=VerifiedCoverageGapRepository(self._memory_plane),
+                recurrence_repository=CoverageRecurrenceRepository(
+                    self._memory_plane
+                ),
+                capability=ontology_observer_capability,
+                signature_validator=ontology_signature_validator,
+            )
+            if ontology_observer_capability is not None
+            and ontology_signature_validator is not None
+            else None
+        )
         self._provider_ingestion = ProviderIngestionCoordinator(
             memory_plane=self._memory_plane,
             admission_service=self._semantic_ingestion_admission,
@@ -766,6 +801,7 @@ class ProviderMemoryService:
             semantic_runtime=semantic_runtime,
             canonical_evidence_arena_factory=self._new_canonical_evidence_arena,
             catalog_selection_repository=self._catalog_selection_repository,
+            coverage_observer_runner=coverage_observer_runner,
         )
         self._capability_monitor = CapabilityMonitor(
             writers=self._semantic_writer_admission,

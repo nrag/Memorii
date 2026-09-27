@@ -165,6 +165,16 @@ Targeted correctness review approved exact commit `e5c7ce63` with
 action: wire the provider-neutral authorized observer lifecycle and production
 recurrence update while preserving no-capability pending behavior.
 
+The provider-neutral observer runner now executes only after real source
+admission. An explicit binding drives queued/running/classified or unavailable
+state; exact quote/span and core signature validation gate durable verified-gap
+evidence and recurrence updates. Invalid output becomes uncertain, provider
+outage remains unavailable, no capability remains pending, and exact retry does
+not call the observer twice. Fourteen contract tests and one focused real-root
+test pass. Counts remain 3/5 and 5/14. Exactly one next action: freeze this
+lifecycle/caller slice and obtain targeted correctness review before completing
+M4 status/recovery and adapter conformance.
+
 Review of `f7ce04a6` found the installed producer accepted a caller-supplied
 digest and was unreachable from normal callbacks. The replacement uses a
 bridge-owned receipt created from an observed user turn, allows inheritance

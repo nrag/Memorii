@@ -405,6 +405,12 @@ class CoverageRecurrenceRepository:
         *,
         previous: CoverageRecurrenceGroup | None,
     ) -> CoverageRecurrenceGroup:
+        evidence_repository = VerifiedCoverageGapRepository(self._plane)
+        if any(
+            evidence_repository.load(evidence_id) is None
+            for evidence_id in group.evidence_ids
+        ):
+            raise ValueError("recurrence group evidence is not durable")
         record = self._record(group)
         preconditions = (
             (RecordAbsentPrecondition(memory_id=group.group_id),)
@@ -441,6 +447,85 @@ class CoverageRecurrenceRepository:
         )
 
 
+class VerifiedCoverageGapRepository:
+    _KIND = "learned_ontology_verified_coverage_gap_v1"
+
+    def __init__(self, memory_plane: MemoryPlaneService) -> None:
+        self._plane = memory_plane
+
+    def load(self, evidence_id: str) -> VerifiedCoverageGap | None:
+        record = self._plane.get_record(evidence_id)
+        if (
+            record is None
+            or record.domain != MemoryDomain.EXECUTION
+            or record.visibility != MemoryRecordVisibility.INTERNAL_CONTROL
+            or record.source_kind != self._KIND
+        ):
+            return None
+        try:
+            return VerifiedCoverageGap.model_validate(record.content["gap"])
+        except (KeyError, TypeError, ValueError):
+            return None
+
+    def create(self, gap: VerifiedCoverageGap) -> VerifiedCoverageGap:
+        record = self._record(gap)
+        try:
+            self._plane.conditionally_write_records(
+                (record,),
+                preconditions=(
+                    RecordAbsentPrecondition(memory_id=gap.evidence_id),
+                ),
+            )
+        except MemoryPlaneRevisionConflictError:
+            current = self.load(gap.evidence_id)
+            if current == gap:
+                return gap
+            raise
+        return gap
+
+    def for_group(
+        self,
+        *,
+        catalog_scope: CatalogAuthorityScope,
+        catalog_digest: str,
+        source_scope_digest: str,
+        signature: CoverageGapSignature,
+    ) -> tuple[VerifiedCoverageGap, ...]:
+        group_id = recurrence_group_id(
+            catalog_scope=catalog_scope,
+            catalog_digest=catalog_digest,
+            source_scope_digest=source_scope_digest,
+            signature=signature,
+        )
+        gaps: list[VerifiedCoverageGap] = []
+        for record in self._plane.list_records():
+            if record.source_kind != self._KIND:
+                continue
+            gap = self.load(record.memory_id)
+            if gap is not None and recurrence_group_id(
+                catalog_scope=gap.catalog_scope,
+                catalog_digest=gap.catalog_digest,
+                source_scope_digest=gap.source_scope_digest,
+                signature=gap.signature,
+            ) == group_id:
+                gaps.append(gap)
+        return tuple(sorted(gaps, key=lambda gap: gap.evidence_id))
+
+    def _record(self, gap: VerifiedCoverageGap) -> CanonicalMemoryRecord:
+        return CanonicalMemoryRecord(
+            memory_id=gap.evidence_id,
+            domain=MemoryDomain.EXECUTION,
+            text=gap.signature.kind,
+            content={"kind": self._KIND, "gap": gap.model_dump(mode="json")},
+            status=CommitStatus.COMMITTED,
+            validity_status=TemporalValidityStatus.ACTIVE,
+            source_kind=self._KIND,
+            timestamp=gap.observed_at,
+            session_id=gap.session_id,
+            visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+        )
+
+
 __all__ = [
     "CoverageGapSignature",
     "CoverageRecurrenceGroup",
@@ -449,6 +534,7 @@ __all__ = [
     "LineageSessionCoordinate",
     "RelationGapSignature",
     "VerifiedCoverageGap",
+    "VerifiedCoverageGapRepository",
     "build_coverage_recurrence_group",
     "recurrence_group_id",
 ]

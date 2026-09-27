@@ -18,6 +18,7 @@ from memorii.core.semantic_ingestion.coverage_recurrence import (
     CoverageRecurrenceRepository,
     RelationGapSignature,
     VerifiedCoverageGap,
+    VerifiedCoverageGapRepository,
     build_coverage_recurrence_group,
 )
 
@@ -150,24 +151,32 @@ def test_recurrence_rejects_cross_scope_and_semantic_grouping() -> None:
 def test_recurrence_group_persists_inertly_and_updates_with_cas() -> None:
     plane = MemoryPlaneService(record_store=InMemoryMemoryPlaneStore())
     repository = CoverageRecurrenceRepository(plane)
+    evidence_repository = VerifiedCoverageGapRepository(plane)
+    first_gap = _gap(1, lineage="a" * 64, session_id="session:one")
+    second_gap = _gap(2, lineage="b" * 64, session_id="session:two")
     first = build_coverage_recurrence_group(
-        (_gap(1, lineage="a" * 64, session_id="session:one"),)
+        (first_gap,)
     )
     second = build_coverage_recurrence_group(
-        (
-            _gap(1, lineage="a" * 64, session_id="session:one"),
-            _gap(2, lineage="b" * 64, session_id="session:two"),
-        )
+        (first_gap, second_gap)
     )
 
+    evidence_repository.create(first_gap)
     assert repository.write(first, previous=None) == first
     assert repository.write(first, previous=None) == first
+    evidence_repository.create(second_gap)
     assert repository.write(second, previous=first) == second
     assert repository.load(first.group_id) == second
     records = plane.list_records()
-    assert len(records) == 1
-    assert records[0].domain.value == "execution"
-    assert records[0].visibility.value == "internal_control"
+    assert len(records) == 3
+    assert all(record.domain.value == "execution" for record in records)
+    assert all(record.visibility.value == "internal_control" for record in records)
+    assert evidence_repository.for_group(
+        catalog_scope=first.catalog_scope,
+        catalog_digest=first.catalog_digest,
+        source_scope_digest=first.source_scope_digest,
+        signature=first.signature,
+    ) == tuple(sorted((first_gap, second_gap), key=lambda gap: gap.evidence_id))
 
 
 def test_only_classified_bound_exact_span_gaps_enter_recurrence() -> None:
