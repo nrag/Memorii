@@ -238,3 +238,10 @@ an as-of timestamp before correction. The focused reader/runtime suite passes
 `96 in 8.55s`; targeted Ruff and whitespace pass. This is focused and retained
 snapshot evidence. The installed correction/current/history/reopen journey is
 the one next action and no parent count changes yet.
+
+The coordinator reran the installed journey on commit `27bf3e87`: `1 passed in
+696.92s`. The native correction committed and protected current, history, and
+pre-correction transaction-time reads completed through the installed Hermes
+provider with no API key or model transport. This pass predates explicit JSONL
+reopen equality assertions. The one next action is the same journey with those
+reopen assertions added.

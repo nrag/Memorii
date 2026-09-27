@@ -73,6 +73,11 @@ history, and transaction-time as-of state from the native group effect and
 verified immutable claim projections; 96 focused tests pass. The installed
 current/history/reopen journey is running next, so M3 remains active.
 
+The installed entity correction checkpoint passes at commit `27bf3e87`: one
+test in `696.92s` with no API key or model transport. It covers native commit
+and protected current/history/as-of reads. Explicit JSONL reopen equality has
+been added and remains the active M3 gate; counts stay 2/5 and 3/14.
+
 ## Production Boundary And Change Map
 
 `implementation-readiness.md` contains the read-only composition-root preflight and caller counts. Current paths are generic `ProviderMemoryService.sync_event` and the installed Hermes completed-turn root, one fixed three-predicate profile, one shared semantic terminal writer, and one protected-reader core. Ontology observer, catalog registry, activation, learner, and structured-fact port have zero current production callers. No future owner counts as implemented until a mapper finds a real caller and a focused path proof reaches its durable outcome.

@@ -129,3 +129,8 @@ the replacement, history returns both versions, and a pre-correction as-of read
 returns only the original. The focused reader/runtime suite passes 96 tests;
 Ruff and whitespace pass. Counts remain 2/5 and 3/14. Exactly one next action:
 rerun the installed correction/current/history/reopen journey.
+
+Commit `27bf3e87` passes the installed no-key entity correction and protected
+current/history/as-of journey in `696.92s`. The test now adds explicit JSONL
+reopen equality for those three protected views and prefetch. Exactly one next
+action: run that strengthened journey on the frozen tree.

@@ -934,15 +934,50 @@ def test_installed_default_catalog_entity_relation_commits_and_recalls(
         {"predicate_id": "project_owned_by", "subject_entity_id": subject_entity_id, "view": "current"},
     )
     assert current["status"] == "ok"
-    assert any(item["object_value"] != direct_read["items"][0]["object_value"] for item in current["items"])
-    historical = provider.handle_tool_call(
+    assert len(current["items"]) == 1
+    assert current["items"][0]["object_value"] != direct_read["items"][0]["object_value"]
+    history = provider.handle_tool_call(
+        "memorii_read_fact",
+        {"predicate_id": "project_owned_by", "subject_entity_id": subject_entity_id, "view": "history"},
+    )
+    assert history["status"] == "ok"
+    assert sorted(item["lifecycle_state"] for item in history["items"]) == ["active", "superseded"]
+    historical_as_of = provider.handle_tool_call(
         "memorii_read_fact",
         {"predicate_id": "project_owned_by", "subject_entity_id": subject_entity_id, "view": "history", "system_as_of": before_correction},
     )
-    assert historical["status"] == "ok"
+    assert historical_as_of["status"] == "ok"
+    assert len(historical_as_of["items"]) == 1
+    assert historical_as_of["items"][0]["object_value"] == direct_read["items"][0]["object_value"]
+    assert historical_as_of["items"][0]["lifecycle_state"] == "active"
     recalled = provider.prefetch(f"Who owns {subject_quote}?")
     provider.shutdown()
     assert replacement_object_quote in recalled
+
+    reopened = bridge_module.MemoriiHermesMemoryProvider()
+    reopened.initialize(
+        "session:default", hermes_home=tmp_path, user_id="raw:user:one",
+        agent_identity="profile:primary", platform="cli", agent_context="primary",
+        agent_workspace="hermes",
+    )
+    reopened_current = reopened.handle_tool_call(
+        "memorii_read_fact",
+        {"predicate_id": "project_owned_by", "subject_entity_id": subject_entity_id, "view": "current"},
+    )
+    reopened_history = reopened.handle_tool_call(
+        "memorii_read_fact",
+        {"predicate_id": "project_owned_by", "subject_entity_id": subject_entity_id, "view": "history"},
+    )
+    reopened_as_of = reopened.handle_tool_call(
+        "memorii_read_fact",
+        {"predicate_id": "project_owned_by", "subject_entity_id": subject_entity_id,
+         "view": "history", "system_as_of": before_correction},
+    )
+    assert reopened_current == current
+    assert reopened_history == history
+    assert reopened_as_of == historical_as_of
+    assert replacement_object_quote in reopened.prefetch(f"Who owns {subject_quote}?")
+    reopened.shutdown()
 
 
 def test_installed_default_catalog_money_relation_commits_reads_and_revokes(
