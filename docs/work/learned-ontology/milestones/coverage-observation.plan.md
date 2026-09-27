@@ -176,3 +176,10 @@ written. Eleven focused observation/recurrence tests pass in 4.49 seconds;
 scoped Pyright, Ruff, compilation and whitespace pass. Counts remain 3/5 and
 5/14. Exactly one next action: freeze this recurrence slice and obtain targeted
 correctness review before wiring the authorized observer lifecycle.
+
+Targeted correctness review approved exact commit `e5c7ce63`: exact-span gap
+admission, scope/signature isolation, first-session lineage deduplication,
+derived threshold validation, CAS replacement and inert persistence all passed;
+`remaining_validated_p1_p2: []`. Counts remain 3/5 and 5/14. Exactly one next
+action: wire the provider-neutral authorized observer lifecycle and production
+recurrence update while preserving no-capability pending behavior.
