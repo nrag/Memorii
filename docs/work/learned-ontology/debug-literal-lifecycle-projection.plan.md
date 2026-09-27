@@ -51,7 +51,7 @@ control -> event evidence -> semantic conflict scope -> atomic projection.
 | Hypothesis | Mechanism | Evidence | Discriminating experiment | Status |
 | --- | --- | --- | --- | --- |
 | Conflict scope assumes the original capture fence owns a preplanning control and ignores the retained-operation link. | `_derive_semantic_conflict_scope` looks up the admission index by contender source ID, then loads `operation:<original fence id>`; installed retained structured execution stores its control under a distinct linked fence. | All retained snapshot admission indexes have valid source/digest/scope fields, while operation controls exist under distinct structured fences joined by exact retained-source links. The pending group also carries its exact operation fence, and committed contenders can be joined through their immutable group-primary request. | Add a typed transaction-group-to-operation-fence input to conflict scope derivation; validate both direct and retained admission chains and deny missing or substituted links. | confirmed |
-| Literal lifecycle incorrectly remains contested after correction, so conflict authority should never run. | Old and replacement literal values may both remain top candidates if transition application fails. | `work_item_due_on` is a single-cardinality current projection. Equal-rank old and replacement literal candidates therefore form the expected `contested_top`; entity relation siblings use set projection and do not exercise this authority path. | Compare the catalog read form and typed-claim grouping rules. | disproved |
+| A grounded correction remains contested because projection derivation ignores its retained lifecycle transition. | Replay retains old and replacement claim assertions plus a temporal transition. `_typed_claim_projection_records` arbitrates every same-slot claim but does not apply the transition's exact corrected/retracted target IDs first. | The repaired installed run reaches the offline resolver and fails with `local Level 2 conflict resolution is unavailable`. General equal-rank independent claims must remain contested, but this correction already carries exact target authority. `TemporalTransitionRecord` alone lacks target IDs; verified native group request/reload effects retain them. | Reconstruct the complete retired-claim set from verified committed group primaries plus the pending typed group request, pass it into replay projection derivation, and prove only lifecycle-targeted claims become `retained_noncurrent`. Independent equal-rank claims must remain contested. | confirmed |
 | The test's literal correction shape creates a false semantic conflict. | A malformed corrected/replacement literal could bypass lifecycle matching but still reach projection. | Provider validation and native planner accepted the operation far enough to build a group; exact target selection has not yet been inspected for this failed run. | Compare retained corrected target and transition claim IDs with the initial claim and replacement claim IDs. | open |
 
 ## Experiment Ledger
@@ -61,6 +61,7 @@ control -> event evidence -> semantic conflict scope -> atomic projection.
 | Inspect failed snapshot admission/source/control joins | If the leading hypothesis is correct, original index fields validate but control lookup by its fence fails while a retained linked control exists. | Confirmed for all retained source admissions; two structured operation controls exist under distinct fence IDs linked to their captured sources. |
 | Inspect projection grouping and catalog read form | If conflict creation is valid, the literal relation is single-cardinality and equal-rank replacement values become `contested_top`. | Confirmed: `work_item_due_on` uses current/single semantics; the entity sibling uses set semantics. Conflict authority is required. |
 | Propagate pending operation authority through projection preparation | If both conflict-resolution passes receive the exact pending group fence and writer binding, a real retained admission/link/control chain will prepare; omitting the map or removing the link will deny. | Commit `f59261b0` passes the real-record regression in both positive and fail-closed forms; 21 focused projection/retained-operation checks pass. Independent review then found its committed-contender group-primary decoder incomplete, so the candidate is not accepted. |
+| Run installed LocalDate lifecycle probe after authority repair | If the admission join was the only defect, correction commits; if lifecycle projection still treats replacement as an independent contradiction, the no-model runtime reaches its deliberately unavailable general resolver. | At `18e72183`, initialization and the initial LocalDate assertion/read pass. Correction fails after `281.99s` in `resolve_semantic_conflicts` with `local Level 2 conflict resolution is unavailable`. This confirms the transition overlay is absent from projection arbitration; the lease error is downstream. |
 
 ## production_entrypoint_bindings
 
@@ -91,6 +92,11 @@ continue without fabricating a successful delegate run.
 - Level-3 corrupt/duplicate-primary matrices remain deferred. The ordinary
   malformed/missing reload denial is part of the current Level-2 correction.
 
+Delta `b162a667` plus regenerated authority commit `18e72183` resolved the
+committed-primary P2 and received targeted correctness/test approval for the
+installed probe. The probe advanced past that join and exposed the confirmed
+lifecycle-overlay defect above. No milestone or requirement count changes.
+
 ## Completion Contract
 
 At Level 2, the smallest retained-source conflict-scope reproducer must fail
@@ -102,6 +108,6 @@ Level-2 P1/P2 in this boundary. Hostile-store permutations remain Level 3.
 
 ## One Next Action
 
-Complete the committed-contender primary/reload verification remediation, then
-freeze and rerun the targeted correctness and test reviews before the installed
-LocalDate correction/retraction and symmetric-read probe.
+Apply verified committed and pending lifecycle target IDs before typed-claim
+arbitration, preserving ordinary independent-claim contests, then run focused
+correction/retraction projection checks before restarting the installed probe.
