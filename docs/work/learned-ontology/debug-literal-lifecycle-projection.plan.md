@@ -62,6 +62,7 @@ control -> event evidence -> semantic conflict scope -> atomic projection.
 | Inspect projection grouping and catalog read form | If conflict creation is valid, the literal relation is single-cardinality and equal-rank replacement values become `contested_top`. | Confirmed: `work_item_due_on` uses current/single semantics; the entity sibling uses set semantics. Conflict authority is required. |
 | Propagate pending operation authority through projection preparation | If both conflict-resolution passes receive the exact pending group fence and writer binding, a real retained admission/link/control chain will prepare; omitting the map or removing the link will deny. | Commit `f59261b0` passes the real-record regression in both positive and fail-closed forms; 21 focused projection/retained-operation checks pass. Independent review then found its committed-contender group-primary decoder incomplete, so the candidate is not accepted. |
 | Run installed LocalDate lifecycle probe after authority repair | If the admission join was the only defect, correction commits; if lifecycle projection still treats replacement as an independent contradiction, the no-model runtime reaches its deliberately unavailable general resolver. | At `18e72183`, initialization and the initial LocalDate assertion/read pass. Correction fails after `281.99s` in `resolve_semantic_conflicts` with `local Level 2 conflict resolution is unavailable`. This confirms the transition overlay is absent from projection arbitration; the lease error is downstream. |
+| Retire verified lifecycle targets before projection arbitration | If correction/retraction targets are removed from the current candidate set before trust and temporal selection, replacements can win while independent equal-rank claims remain contested and retired evidence stays historical. | Commits `e96ad054` and `e4a80771` implement the shared verified lifecycle reader, committed-plus-pending target reconstruction, pre-arbitration retirement, and deterministic publication refresh. The five affected unit files pass `129 passed in 187.15s`; the publication compiler passes `23 passed`; Ruff, compileall, and diff checks pass. |
 
 ## production_entrypoint_bindings
 
@@ -76,7 +77,7 @@ continue without fabricating a successful delegate run.
 
 | Requirement | Canonical trigger and composition root | Exact callsite and arguments/authority | Owner chain: validation -> write/read -> outcome | Proof and caller count | Status or explicit blocker |
 | --- | --- | --- | --- | --- | --- |
-| Retained LocalDate correction conflict publication | Installed `MemoriiHermesMemoryProvider.handle_tool_call("memorii_submit_fact", correction)` composed by `build_local_level2_runtime_binding` into `HermesCompletedTurnRuntime` and `ProviderMemoryService` | `HermesCompletedTurnRuntime.handle_tool_call` validates captured pin/default-catalog lifecycle grounding and calls `ProviderMemoryService.submit_structured_fact`; that owner allocates the retained operation and calls `execute_retained_structured_proposal`; `SemanticIngestionAtomicStore.commit_or_reload_bootstrap_graph_group_v3` calls `_prepare_native_projection_publication` with `{canonical_event_batch.transaction_group_id: request.operation_fence_binding}` and `request.writer_commit_binding` | captured turn/pin and proposal validation -> retained source admission/link/control -> native group reduction -> projection conflict resolve and prepare -> same group CAS persists primary/reload, projections, replay authority and structured claim binding -> protected current/history/as-of read | `rg` finds one production structured-fact caller, one native group callsite at `atomic_store.py:16232`, and one generic terminal callsite at `atomic_store.py:17834`; 21 focused checks pass. Frozen installed probe `test_installed_default_catalog_literal_retraction_and_symmetric_reads_survive_reopen` is outstanding. | `partial`: pending path is wired; committed-contender primary verification has a confirmed P2 under remediation. |
+| Retained LocalDate correction conflict publication | Installed `MemoriiHermesMemoryProvider.handle_tool_call("memorii_submit_fact", correction)` composed by `build_local_level2_runtime_binding` into `HermesCompletedTurnRuntime` and `ProviderMemoryService` | `HermesCompletedTurnRuntime.handle_tool_call` validates captured pin/default-catalog lifecycle grounding and calls `ProviderMemoryService.submit_structured_fact`; that owner allocates the retained operation and calls `execute_retained_structured_proposal`; `SemanticIngestionAtomicStore.commit_or_reload_bootstrap_graph_group_v3` calls `_prepare_native_projection_publication` with the pending group request, exact operation-fence binding, and writer binding | captured turn/pin and proposal validation -> retained source admission/link/control -> native group reduction -> verified committed and pending lifecycle targets -> projection conflict resolve and prepare -> same group CAS persists primary/reload, projections, replay authority and structured claim binding -> protected current/history/as-of read | `rg` finds one production structured-fact caller, one native group callsite at `atomic_store.py:16232`, and one generic terminal callsite at `atomic_store.py:17873`; 129 affected-family checks and 23 publication checks pass. Frozen installed probe `test_installed_default_catalog_literal_retraction_and_symmetric_reads_survive_reopen` is outstanding. | candidate implemented; installed proof outstanding. |
 | Generic committed terminal conflict publication | `SemanticIngestionAtomicStore` committed terminal replay path | `atomic_store.py:17834` passes `{batch.transaction_group_id: request.operation_fence_binding}` and `request.writer_commit_binding` into the same `_prepare_native_projection_publication` owner | validated terminal group closure -> shared projection resolve/prepare -> replay aggregate/checkpoint CAS | One production caller; same shared owner and focused prepare proof. No separate default-catalog trigger reaches this path in the frozen installed scenario. | implemented supporting root; retained LocalDate closure depends on the native group root above. |
 
 ## Frozen Candidate And Review
@@ -97,6 +98,14 @@ committed-primary P2 and received targeted correctness/test approval for the
 installed probe. The probe advanced past that join and exposed the confirmed
 lifecycle-overlay defect above. No milestone or requirement count changes.
 
+Candidate delta `e96ad054` plus generated publication `e4a80771` now retires
+only exact correction/retraction targets from current arbitration while
+preserving them as `retained_noncurrent`. Independent equal-rank claims remain
+contested, and an all-retired slot has no selected or contested assertion.
+Affected-family and publication checks pass. The installed probe and targeted
+independent review remain outstanding, so no milestone or requirement count
+changes yet.
+
 ## Completion Contract
 
 At Level 2, the smallest retained-source conflict-scope reproducer must fail
@@ -108,6 +117,6 @@ Level-2 P1/P2 in this boundary. Hostile-store permutations remain Level 3.
 
 ## One Next Action
 
-Apply verified committed and pending lifecycle target IDs before typed-claim
-arbitration, preserving ordinary independent-claim contests, then run focused
-correction/retraction projection checks before restarting the installed probe.
+Run the frozen installed LocalDate correction/retraction and symmetric-read
+probe at `e4a80771`, then classify the result before targeted independent
+correctness and test review.
