@@ -1,0 +1,1 @@
+{"capability_id":"reports_to_temporal_policy","catalog_digest":"a0275e9fd7e3fa7426c3481703d09368f7953f9e8696a72d725bcb80e8fcb4bd","implementation":{"module":"memorii.core.semantic_ingestion.reports_to_state","source_sha256":"1ae8408a40b8d5e5a8a4a69d40f70979d2fa464df6c43e6aba164fdc0b1eb371","symbol":"reports_to_temporal_rule"},"schema_version":1,"status":"unavailable"}

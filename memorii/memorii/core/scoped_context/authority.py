@@ -9,6 +9,7 @@ from threading import RLock
 from typing import Protocol
 from uuid import uuid4
 
+from memorii.core.semantic_ingestion.catalog_authority import StructuredFactReadAuthority
 from memorii.domain.enums import MemoryDomain
 
 
@@ -45,6 +46,7 @@ class ResolvedScopedReadGrant:
     authority_epoch: int
     expires_at: datetime
     rows: tuple[ScopedNamespaceGrantRow, ...]
+    structured_fact_read_authorities: tuple[StructuredFactReadAuthority, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -65,16 +67,27 @@ class InProcessScopedReadAuthority:
         self._entries: dict[int, tuple[object, ResolvedScopedReadGrant]] = {}
         self._epoch = 0
 
-    def provision(self, *, host_task_id: str, host_state_id: str, rows: tuple[ScopedNamespaceGrantRow, ...], expires_at: datetime) -> object:
+    def provision(
+        self,
+        *,
+        host_task_id: str,
+        host_state_id: str,
+        rows: tuple[ScopedNamespaceGrantRow, ...],
+        expires_at: datetime,
+        structured_fact_read_authorities: tuple[StructuredFactReadAuthority, ...] = (),
+    ) -> object:
         if (
             not isinstance(host_task_id, str) or not host_task_id.strip()
             or not isinstance(host_state_id, str) or not host_state_id.strip()
             or type(rows) is not tuple or not rows
+            or type(structured_fact_read_authorities) is not tuple
             or expires_at.tzinfo is None or expires_at.utcoffset() != UTC.utcoffset(expires_at)
         ):
             raise ValueError("invalid scoped read grant")
         if len(rows) != len(set(rows)):
             raise ValueError("duplicate scoped namespace grant row")
+        if len(structured_fact_read_authorities) != len(set(structured_fact_read_authorities)):
+            raise ValueError("duplicate structured fact read authority")
         for row in rows:
             if all(getattr(row, field) is None for field in ("task_id", "session_id", "user_id", "agent_id", "execution_node_id", "solver_run_id")) and not row.allowed_record_ids:
                 raise ValueError("all-null grant rows require finite record IDs")
@@ -87,7 +100,13 @@ class InProcessScopedReadAuthority:
         handle = object()
         with self._lock:
             self._epoch += 1
-            self._entries[id(handle)] = (handle, ResolvedScopedReadGrant(str(uuid4()), host_task_id, host_state_id, self._epoch, expires_at, rows))
+            self._entries[id(handle)] = (
+                handle,
+                ResolvedScopedReadGrant(
+                    str(uuid4()), host_task_id, host_state_id, self._epoch, expires_at, rows,
+                    structured_fact_read_authorities,
+                ),
+            )
         return handle
 
     def revoke(self, handle: object) -> None:

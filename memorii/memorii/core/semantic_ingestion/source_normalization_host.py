@@ -56,6 +56,8 @@ class SourceNormalizationHostBundle:
     execution_owner: SourceNormalizationExecutionOwnerProtocol
     recovery_repository: AtomicStoreBootstrapRecoveryClaimRepository
     trusted_time: InjectedSourceNormalizationTrustedTime
+    resolve_quote: SpanResolver | None = None
+    projection_quote_verifier: ProjectionQuoteVerificationAuthority | None = None
 
 
 @dataclass(frozen=True)
@@ -103,6 +105,8 @@ class SourceNormalizationHostBundleBuilder:
             authority_provider=self.authority_provider,
             recovery_repository=recovery_repository,
             trusted_time=trusted_time,
+            resolve_quote=self.resolve_quote,
+            projection_quote_verifier=self.projection_quote_verifier,
             execution_owner=SourceNormalizationExecutionOwner(
                 trusted_time=trusted_time,
                 recovery_repository=recovery_repository,

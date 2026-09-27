@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.CitationStreamRecord.v1","implementation_source_digest":"00e40e8932f58fe51f50365bbe07f66e3c067d634f9fa14bbbe9f84bc1fc510f","role":"decoder","schema_id":"CitationStreamRecord","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.CitationStreamRecord.v1","implementation_source_digest":"fbc7bd8ba576943c8f88876adfbad2d8dbaf08dae34c6705d5b5991e0c7e642a","role":"decoder","schema_id":"CitationStreamRecord","schema_version":"1","typed_root_kind":"model"}

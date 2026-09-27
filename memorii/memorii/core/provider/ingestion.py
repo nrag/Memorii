@@ -9,9 +9,12 @@ from datetime import datetime
 from hashlib import sha256
 from typing import Literal
 
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
 from memorii.core.memory_evolution.admission import (
     GovernedSourceAdmissionService,
     PreparedSourceAdmission,
+    RetainedSourceOperationAccepted,
     SemanticIngestionSourceReplayRequest,
     source_admission_source_digest,
 )
@@ -24,6 +27,7 @@ from memorii.core.memory_evolution.atomic_store import (
     PreplanningOperationControl,
     PreplanningStoreError,
     SemanticIngestionAtomicStore,
+    StructuredSubmissionGrantRevokedError,
 )
 from memorii.core.memory_evolution.bootstrap_profile import (
     BootstrapAdmissionPin,
@@ -35,6 +39,8 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     AuthenticatedIngressContext,
     DeliveryIdentity,
     OperationFenceBinding,
+    decode_typed_value,
+    encode_typed_value,
 )
 from memorii.core.memory_evolution.ingestion_time_clock import IngestionTimeClock
 from memorii.core.memory_evolution.models import SourceObservation
@@ -60,6 +66,7 @@ from memorii.core.semantic_ingestion.authorization import (
     SemanticAuthorizationAuthorityRepository,
 )
 from memorii.core.semantic_ingestion.bootstrap_graph_host import BootstrapGraphAuthorityRequestV3
+from memorii.core.semantic_ingestion.bootstrap_v3_proposal import DirectBootstrapV3ProposalProducer
 from memorii.core.semantic_ingestion.canonical_evidence_arena import (
     CANONICAL_CODEC_REVISION,
     CANONICAL_PROFILE_REVISION,
@@ -70,6 +77,12 @@ from memorii.core.semantic_ingestion.canonical_evidence_arena import (
 from memorii.core.semantic_ingestion.capability import (
     AuthorizedSemanticIngestionRuntime,
 )
+from memorii.core.semantic_ingestion.catalog_authority import (
+    CatalogAuthorityScope,
+    ResolvedStructuredSubmissionAuthority,
+    StructuredSubmissionAuthorityRequest,
+)
+from memorii.core.semantic_ingestion.catalog_capture_pin import CatalogCapturedTurnPin
 from memorii.core.semantic_ingestion.contracts import (
     AuthenticatedSourceIntervalEvidence,
     AuthorizationStageSnapshot,
@@ -87,6 +100,7 @@ from memorii.core.semantic_ingestion.contracts import (
     GovernanceCarrierArtifact,
     MessageAdmissionCarrierSet,
     PreparedSource,
+    ProviderSemanticProposal,
     SegmentGovernanceCarrierSet,
     SemanticArbitrationPolicyBundle,
     SemanticAuthorizationReadSet,
@@ -94,6 +108,7 @@ from memorii.core.semantic_ingestion.contracts import (
     SemanticTerminalOutcome,
     SourceAuthority,
     SourceAuthorityEvidence,
+    SourceSpanReference,
     TextPreparationRequest,
     TimeInterval,
     certified_roundtrip,
@@ -110,6 +125,7 @@ from memorii.core.semantic_ingestion.source_authority_retention import (
     retain_source_authority_evidence,
 )
 from memorii.core.semantic_ingestion.source_normalization_execution import (
+    BootstrapV3ProposalProducer,
     SourceNormalizationNonCommit,
 )
 from memorii.core.semantic_ingestion.source_normalization_stage import (
@@ -127,6 +143,195 @@ from memorii.domain.enums import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class CapturedCatalogPinReference(BaseModel):
+    """Immutable catalog witness supplied only by the captured-turn runtime."""
+
+    capture_id: str = Field(min_length=1)
+    pin_memory_id: str = Field(min_length=1)
+    pin_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    catalog_scope: CatalogAuthorityScope
+    catalog_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    selected_version_id: str = Field(min_length=1)
+    selected_version_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    runtime_bundle_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class RetainedStructuredSubmission(BaseModel):
+    """Closed Section 5 operation tuple plus parser-verified payload bytes."""
+
+    source_id: str = Field(min_length=1)
+    source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    authority: ResolvedStructuredSubmissionAuthority
+    captured_pin: CapturedCatalogPinReference | None = None
+    exact_source_spans: tuple[SourceSpanReference, ...] = Field(min_length=1)
+    raw_proposal_artifact: bytes = Field(min_length=1, max_length=65536)
+    raw_proposal_artifact_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    protocol_version: str = Field(min_length=1)
+    parser_version: str = Field(min_length=1)
+    proposal: ProviderSemanticProposal
+    proposal_bytes: bytes = Field(min_length=1, max_length=65536)
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def validate_payload(self) -> RetainedStructuredSubmission:
+        if self.raw_proposal_artifact_digest != sha256(self.raw_proposal_artifact).hexdigest():
+            raise ValueError("structured raw proposal artifact digest is mismatched")
+        if self.proposal_bytes != encode_typed_value(self.proposal.model_dump(mode="python")):
+            raise ValueError("structured proposal bytes do not match typed proposal")
+        if any(span.source_id != self.source_id for span in self.exact_source_spans):
+            raise ValueError("structured source span does not join retained source")
+        if tuple(span.reference_digest for span in self.exact_source_spans) != tuple(
+            sorted(span.reference_digest for span in self.exact_source_spans)
+        ):
+            raise ValueError("structured source spans are not canonically ordered")
+        if self.captured_pin is not None and (
+            self.captured_pin.catalog_scope != self.authority.catalog.catalog_scope
+            or self.captured_pin.catalog_digest != self.authority.catalog.catalog_digest
+        ):
+            raise ValueError("captured catalog pin does not bind submission authority")
+        return self
+
+    def canonical_envelope(self) -> bytes:
+        return encode_typed_value({
+            "source_id": self.source_id, "source_digest": self.source_digest,
+            "source_grant": self.authority.source_grant.model_dump(mode="python"),
+            "exact_source_spans": tuple(span.model_dump(mode="python") for span in self.exact_source_spans),
+            "authority": self.authority.model_dump(mode="python"),
+            "captured_pin": (
+                self.captured_pin.model_dump(mode="python")
+                if self.captured_pin is not None else None
+            ),
+            "raw_proposal_artifact_digest": self.raw_proposal_artifact_digest,
+            "provider_model_prompt_provenance_digest": self.authority.provider_model_prompt_provenance_digest,
+            "protocol_version": self.protocol_version, "parser_version": self.parser_version,
+        })
+
+
+class StructuredFactSubmissionRequest(BaseModel):
+    """Untrusted typed input before the host authority resolver binds it."""
+
+    source_id: str = Field(min_length=1)
+    source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    authority_request: StructuredSubmissionAuthorityRequest
+    captured_pin: CapturedCatalogPinReference | None = None
+    exact_source_spans: tuple[SourceSpanReference, ...] = Field(min_length=1)
+    raw_proposal_artifact: bytes = Field(min_length=1, max_length=65536)
+    raw_proposal_artifact_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    protocol_version: str = Field(min_length=1)
+    parser_version: str = Field(min_length=1)
+    proposal: ProviderSemanticProposal
+    proposal_bytes: bytes = Field(min_length=1, max_length=65536)
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def validate_payload(self) -> StructuredFactSubmissionRequest:
+        if self.raw_proposal_artifact_digest != sha256(self.raw_proposal_artifact).hexdigest():
+            raise ValueError("structured raw proposal artifact digest is mismatched")
+        if self.proposal_bytes != encode_typed_value(self.proposal.model_dump(mode="python")):
+            raise ValueError("structured proposal bytes do not match typed proposal")
+        if any(span.source_id != self.source_id for span in self.exact_source_spans):
+            raise ValueError("structured source span does not join retained source")
+        if tuple(span.reference_digest for span in self.exact_source_spans) != tuple(
+            sorted(span.reference_digest for span in self.exact_source_spans)
+        ):
+            raise ValueError("structured source spans are not canonically ordered")
+        return self
+
+    def bind_authority(
+        self, *, authority: ResolvedStructuredSubmissionAuthority,
+    ) -> RetainedStructuredSubmission:
+        return RetainedStructuredSubmission(
+            source_id=self.source_id,
+            source_digest=self.source_digest,
+            authority=authority,
+            captured_pin=self.captured_pin,
+            exact_source_spans=self.exact_source_spans,
+            raw_proposal_artifact=self.raw_proposal_artifact,
+            raw_proposal_artifact_digest=self.raw_proposal_artifact_digest,
+            protocol_version=self.protocol_version,
+            parser_version=self.parser_version,
+            proposal=self.proposal,
+            proposal_bytes=self.proposal_bytes,
+        )
+
+
+class StructuredFactSubmissionResponse(BaseModel):
+    """Closed terminal classification for an authenticated structured operation."""
+
+    status: Literal[
+        "denied",
+        "committed", "abstained", "rejected", "unavailable",
+        "authorization_revoked_before_commit",
+    ]
+    operation_id: str | None = None
+    denial_reason: Literal[
+        "ingress_unavailable",
+        "authority_unavailable",
+        "authority_denied",
+        "base_catalog_unavailable",
+        "retained_source_denied",
+        "source_span_denied",
+        "authorization_revoked",
+    ] | None = None
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def validate_status_shape(self) -> StructuredFactSubmissionResponse:
+        if self.status == "denied" and (
+            self.operation_id is not None or self.denial_reason is None
+        ):
+            raise ValueError("structured submission denial shape is invalid")
+        if self.status in {
+            "committed", "abstained", "rejected", "authorization_revoked_before_commit"
+        } and (
+            self.operation_id is None or self.denial_reason is not None
+        ):
+            raise ValueError("structured submission terminal shape is invalid")
+        if self.status == "unavailable" and (
+            self.operation_id is not None or self.denial_reason is not None
+        ):
+            raise ValueError("structured submission unavailable shape is invalid")
+        return self
+
+
+class StructuredFactSubmissionStatusRequest(BaseModel):
+    """Authenticated recovery lookup without proposal or source payload bytes."""
+
+    operation_id: str = Field(min_length=1)
+    authority_request: StructuredSubmissionAuthorityRequest
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class StructuredFactSubmissionStatusResponse(BaseModel):
+    """Closed non-disclosing terminal status for one retained operation."""
+
+    status: Literal["unavailable", "denied", "committed", "abstained", "rejected", "authorization_revoked_before_commit"]
+    operation_id: str | None = None
+    denial_reason: Literal[
+        "ingress_unavailable", "authority_unavailable", "authority_denied",
+        "authorization_revoked",
+    ] | None = None
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def validate_status_shape(self) -> StructuredFactSubmissionStatusResponse:
+        if self.status == "denied" and self.denial_reason is None:
+            raise ValueError("structured status denial shape is invalid")
+        if self.status != "denied" and self.denial_reason is not None:
+            raise ValueError("structured status disclosure shape is invalid")
+        if self.status in {
+            "committed", "abstained", "rejected", "authorization_revoked_before_commit"
+        } and self.operation_id is None:
+            raise ValueError("structured terminal status is missing its operation identity")
+        return self
 
 
 class _SemanticPolicyReadOutage(OSError):
@@ -281,6 +486,125 @@ class ProviderIngestionCoordinator:
             atomic_store=atomic_store,
             writer_binding_provider=self._current_writer_binding,
             authorization_repository=self._authorization_repository,
+        )
+
+    def execute_retained_structured_proposal(
+        self,
+        *,
+        accepted: RetainedSourceOperationAccepted,
+        submission: RetainedStructuredSubmission,
+        authenticated_ingress: AuthenticatedIngressContext,
+        canonical_evidence_arena: CanonicalEvidenceArena,
+        captured_catalog_pin: CatalogCapturedTurnPin | None = None,
+    ) -> SemanticTerminalOutcome | None:
+        """Run one admitted structured proposal through the native V3 terminal.
+
+        This is an internal bridge for a future authenticated structured port.
+        It deliberately has no provider transport and accepts only the fence
+        allocated from the exact immutable envelope.
+        """
+        terminal: SemanticTerminalOutcome | None = None
+        canonical_envelope = submission.canonical_envelope()
+        envelope_digest = sha256(
+            b"memorii.semantic-ingestion.retained-source-envelope.v1\0" + canonical_envelope
+        ).hexdigest()
+        if (
+            envelope_digest != accepted.canonical_envelope_digest
+            or submission.source_id != accepted.source_id
+            or submission.source_digest != accepted.source_digest
+        ):
+            return None
+        try:
+            writer_binding = self._current_writer_binding()
+            if self._atomic_store.classify_captured_turn_source(
+                source_id=accepted.source_id, source_digest=accepted.source_digest,
+            ):
+                self._atomic_store.publish_captured_retained_structured_submission(
+                    accepted=accepted,
+                    canonical_envelope=canonical_envelope,
+                    proposal_bytes=submission.proposal_bytes,
+                    raw_proposal_artifact=submission.raw_proposal_artifact,
+                    writer_binding=writer_binding,
+                )
+            else:
+                self._atomic_store.publish_retained_source_operation(
+                    accepted=accepted, writer_binding=writer_binding
+                )
+                self._atomic_store.publish_retained_structured_submission(
+                    accepted=accepted,
+                    canonical_envelope=canonical_envelope,
+                    proposal_bytes=submission.proposal_bytes,
+                    raw_proposal_artifact=submission.raw_proposal_artifact,
+                    writer_binding=writer_binding,
+                )
+            loaded_submission = self._atomic_store.load_retained_structured_submission(accepted=accepted)
+            if loaded_submission is None:
+                return None
+            loaded_envelope, loaded_proposal_bytes, loaded_raw_artifact = loaded_submission
+            if loaded_envelope != canonical_envelope or loaded_proposal_bytes != submission.proposal_bytes:
+                return None
+            proposal = ProviderSemanticProposal.model_validate(decode_typed_value(loaded_proposal_bytes))
+            handoff_with_lease = self._bootstrap_prepare_and_handoff(
+                prepared_admission=accepted,
+                authenticated_ingress=authenticated_ingress,
+                canonical_evidence_arena=canonical_evidence_arena,
+            )
+            if handoff_with_lease is None:
+                return None
+            handoff, lease = handoff_with_lease
+            try:
+                direct_producer = self._direct_bootstrap_proposal_producer(
+                    proposal=proposal, raw_proposal_artifact=loaded_raw_artifact
+                )
+                if direct_producer is None:
+                    return None
+                terminal, guard = self._run_semantic_ingestion(
+                    operation_id=accepted.operation_fence_binding.operation_id,
+                    observation=self._load_admitted_observation(accepted.operation_fence_binding),
+                    authenticated_ingress=authenticated_ingress,
+                    lease_session=None,
+                    operation_fence=accepted.operation_fence_binding,
+                    bootstrap_handoff=handoff,
+                    canonical_evidence_arena=canonical_evidence_arena,
+                    canonical_evidence_lease=lease,
+                    direct_proposal_producer=direct_producer,
+                    captured_catalog_pin=captured_catalog_pin,
+                )
+            finally:
+                if lease is not None:
+                    lease.release()
+            if "bootstrap_graph_terminal_persisted" not in terminal.reason_codes:
+                self._persist_semantic_terminal(
+                    accepted.operation_fence_binding, terminal, authorization_guard=guard
+                )
+            return terminal
+        except StructuredSubmissionGrantRevokedError:
+            return None
+        except PreplanningStoreError:
+            logger.exception("retained_structured_submission_preplanning_failed")
+            return None
+        except (OSError, ValueError, SemanticAuthorizationReadSetError):
+            logger.exception("retained_structured_submission_execution_failed")
+            return None
+
+    def _direct_bootstrap_proposal_producer(
+        self, *, proposal: ProviderSemanticProposal, raw_proposal_artifact: bytes,
+    ) -> BootstrapV3ProposalProducer | None:
+        runtime = self._semantic_runtime
+        if runtime is None:
+            return None
+        bundle = runtime.source_normalization_host_bundle
+        if (
+            bundle is None
+            or bundle.resolve_quote is None
+            or bundle.projection_quote_verifier is None
+        ):
+            return None
+        return DirectBootstrapV3ProposalProducer(
+            proposal=proposal,
+            raw_proposal_artifact=raw_proposal_artifact,
+            resolve_quote=bundle.resolve_quote,
+            projection_quote_verifier=bundle.projection_quote_verifier,
         )
 
     def ingest(
@@ -570,6 +894,7 @@ class ProviderIngestionCoordinator:
                         session_id=delivery_event.session_id,
                         task_id=delivery_event.task_id,
                         user_id=delivery_event.user_id,
+                        agent_id=authenticated_ingress.authenticated_agent_id,
                     )
                     governed_source = retain_source_authority_evidence(
                         source=governed_source,
@@ -1166,6 +1491,7 @@ class ProviderIngestionCoordinator:
             prepared = runtime.prepared_source_repository.load(
                 source_id=observation.source_id,
                 source_digest=observation.source_digest or "",
+                operation_fence_binding=handoff_marker.operation_fence_binding,
             )
             if prepared is None:
                 return None
@@ -1222,6 +1548,8 @@ class ProviderIngestionCoordinator:
         bootstrap_handoff: BootstrapWriterHandoffResult | None = None,
         canonical_evidence_arena: CanonicalEvidenceArena | None,
         canonical_evidence_lease: CanonicalEvidenceLease | None = None,
+        direct_proposal_producer: BootstrapV3ProposalProducer | None = None,
+        captured_catalog_pin: CatalogCapturedTurnPin | None = None,
     ) -> tuple[SemanticTerminalOutcome, _ProviderAuthorizationReadSet | None]:
         """Invoke semantic ingestion only with a current server-owned policy snapshot.
 
@@ -1335,6 +1663,9 @@ class ProviderIngestionCoordinator:
             prepared_source = prepared_repository.load(
                 source_id=observation.source_id,
                 source_digest=observation.source_digest or "",
+                operation_fence_binding=(
+                    operation_fence if direct_proposal_producer is not None else None
+                ),
             )
         except ValueError:
             prepared_source = None
@@ -1362,6 +1693,10 @@ class ProviderIngestionCoordinator:
                 policy_bundle=policy.arbitration_bundle,
                 authorization_read_set_provider=authorization_guard,
                 operation_fence_binding=operation_fence,
+                catalog_runtime_coordinate=(
+                    captured_catalog_pin.runtime_coordinate()
+                    if captured_catalog_pin is not None else None
+                ),
             )
             if authority is not None
             else None
@@ -1612,12 +1947,15 @@ class ProviderIngestionCoordinator:
                 temporal_closures=(),
                 attempt_count=0,
             ), None
-        normalized = host_bundle.execution_owner.normalize_after_recovery_claim(
-            invocation=invocation,
-            handoff=bootstrap_handoff,
-            recovery_claim=recovery.claim,
-            authority=source_normalization_authority,
-        )
+        normalization_kwargs = {
+            "invocation": invocation,
+            "handoff": bootstrap_handoff,
+            "recovery_claim": recovery.claim,
+            "authority": source_normalization_authority,
+        }
+        if direct_proposal_producer is not None:
+            normalization_kwargs["direct_proposal_producer"] = direct_proposal_producer
+        normalized = host_bundle.execution_owner.normalize_after_recovery_claim(**normalization_kwargs)
         if isinstance(normalized, SourceNormalizationNonCommit):
             return SemanticTerminalOutcome.create(
                 operation_id=operation_id,
@@ -1684,6 +2022,8 @@ class ProviderIngestionCoordinator:
                     else None
                 )
             except SemanticEventReplayError:
+                raise
+            except StructuredSubmissionGrantRevokedError:
                 raise
             except (AttributeError, TypeError, ValueError, PreplanningStoreError):
                 logger.exception("bootstrap_graph_authority_execution_failed")

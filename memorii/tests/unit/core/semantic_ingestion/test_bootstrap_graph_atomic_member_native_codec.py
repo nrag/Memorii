@@ -18,6 +18,7 @@ from memorii.core.semantic_ingestion.contracts import (
     BOOTSTRAP_GRAPH_V3_ATOMIC_MEMBER_CODECS,
     BootstrapGraphOperationReductionV3,
     BootstrapGraphPlanAtomicMemberV3,
+    BootstrapGraphPreGroupNonCommitV3,
     BootstrapNativeGroupCommitTerminalConstructionV3,
     SemanticContractCodecError,
     decode_bootstrap_graph_atomic_member_payload_v3,
@@ -103,9 +104,31 @@ def test_source_finalization_atomic_member_uses_its_native_codec() -> None:
         )
 
 
+def test_pre_group_noncommit_atomic_member_uses_its_native_codec() -> None:
+    noncommit = BootstrapGraphPreGroupNonCommitV3.create(
+        request_digest="1" * 64,
+        operation_fence_binding_digest="2" * 64,
+        operation_lease_binding_digest="3" * 64,
+        writer_commit_binding_digest="4" * 64,
+        control_epoch_digest="5" * 64,
+        reason="authorization_revoked_before_commit",
+    )
+    kind = "bootstrap_graph_pre_group_noncommit"
+    raw = encode_bootstrap_graph_atomic_member_payload_v3(
+        kind=kind, artifact=noncommit,
+    )
+    assert decode_bootstrap_graph_atomic_member_payload_v3(kind=kind, raw=raw) == (
+        noncommit.model_dump(mode="python")
+    )
+    with pytest.raises(SemanticContractCodecError):
+        encode_bootstrap_graph_atomic_member_payload_v3(
+            kind=kind, artifact=_NativeProjection(projection="wrong-artifact"),
+        )
+
+
 def test_each_v3_atomic_member_kind_has_one_qualified_native_codec() -> None:
-    assert len(BOOTSTRAP_GRAPH_V3_ATOMIC_MEMBER_CODECS) == 28
-    assert len(set(BOOTSTRAP_GRAPH_V3_ATOMIC_MEMBER_CODECS.values())) == 28
+    assert len(BOOTSTRAP_GRAPH_V3_ATOMIC_MEMBER_CODECS) == 29
+    assert len(set(BOOTSTRAP_GRAPH_V3_ATOMIC_MEMBER_CODECS.values())) == 29
 
     for kind, codec_key in BOOTSTRAP_GRAPH_V3_ATOMIC_MEMBER_CODECS.items():
         assert codec_key == f"bootstrap_graph_v3/{kind}/native"
@@ -118,6 +141,7 @@ def test_each_v3_atomic_member_kind_has_one_qualified_native_codec() -> None:
             "bootstrap_graph_observed_counters",
             "bootstrap_graph_source_progress",
             "bootstrap_graph_pre_execution_identity_closure",
+            "bootstrap_graph_pre_group_noncommit",
             "bootstrap_graph_source_finalization_observation_delta",
         }:
             continue

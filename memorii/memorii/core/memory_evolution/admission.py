@@ -11,7 +11,7 @@ from datetime import datetime
 from hashlib import sha256
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
 from memorii.core.memory_evolution.bootstrap_profile import (
     BOOTSTRAP_COORDINATE,
@@ -88,11 +88,135 @@ class PreparedSourceAdmission(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+class RetainedSourceOperationRequest(BaseModel):
+    """Opaque immutable input for a new operation over an admitted source.
+
+    The caller supplies canonical bytes, rather than an operation identifier or
+    digest.  The core derives both values after it has joined those bytes to an
+    authenticated retained source.
+    """
+
+    source_id: str = Field(min_length=1)
+    source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    canonical_envelope: bytes = Field(min_length=1, max_length=65536)
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+
+
+class RetainedSourceOperationAccepted(BaseModel):
+    """Authenticated allocation input for a second operation on one source."""
+
+    source_id: str = Field(min_length=1)
+    source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    delivery_identity: DeliveryIdentity
+    required_outcome_scopes: RequiredOutcomeScopeSet
+    source_admission_index_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    canonical_envelope_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    operation_fence_binding: OperationFenceBinding
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def validate_join(self) -> RetainedSourceOperationAccepted:
+        fence = self.operation_fence_binding
+        if (
+            fence.source_id != self.source_id
+            or fence.source_digest != self.source_digest
+            or fence.delivery_identity != self.delivery_identity
+        ):
+            raise ValueError("retained source operation fence does not join source")
+        expected_operation_id = retained_source_operation_id(
+            source_id=self.source_id,
+            source_digest=self.source_digest,
+            delivery_identity=self.delivery_identity,
+            canonical_envelope_digest=self.canonical_envelope_digest,
+        )
+        if fence.operation_id != expected_operation_id:
+            raise ValueError("retained source operation ID is not core derived")
+        return self
+
+
 class GovernedSourceAdmissionService:
     """Owns the small governed-source admission admission index and its authorization-before-result rule."""
 
     def __init__(self, memory_plane: MemoryPlaneService) -> None:
         self._memory_plane = memory_plane
+
+    def allocate_retained_source_operation(
+        self,
+        *,
+        request: RetainedSourceOperationRequest,
+        authenticated_ingress: AuthenticatedIngressContext,
+    ) -> RetainedSourceOperationAccepted:
+        """Authorize and derive a distinct operation over one retained source.
+
+        This does not retain the source again.  It validates the immutable
+        source and its original admission index before deriving an operation
+        coordinate from caller-independent canonical envelope bytes.
+        """
+        source = self._memory_plane.get_record(request.source_id)
+        if source is None or source.source_kind not in {
+            "semantic_ingestion_source", "semantic_ingestion_metadata_poor_snapshot",
+        }:
+            raise ValueError("retained source is unavailable")
+        if source_admission_source_digest(source) != request.source_digest:
+            raise ValueError("retained source digest is mismatched")
+        indexes = tuple(
+            record
+            for record in self._memory_plane.list_records(
+                source_kind="semantic_ingestion_admission_index"
+            )
+            if _index_binds_source(record, request.source_id, request.source_digest)
+        )
+        if len(indexes) != 1:
+            raise ValueError("retained source admission is unavailable")
+        index = indexes[0]
+        try:
+            original_fence = OperationFenceBinding.model_validate(
+                index.content["operation_fence_binding"]
+            )
+            required = RequiredOutcomeScopeSet.create(
+                tenant_partition_id=index.content["tenant_partition_id"],
+                scopes=index.content["required_scopes"],
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("retained source admission is corrupt") from exc
+        ingress = authenticated_ingress
+        if (
+            ingress.delivery_principal_binding.binding_digest
+            != original_fence.delivery_principal_binding_digest
+            or ingress.delivery_principal_binding.tenant_partition_id
+            != required.tenant_partition_id
+            or ingress.required_outcome_scopes != required
+            or not set(required.scopes).issubset(ingress.current_authorized_scopes.scopes)
+        ):
+            raise ValueError("retained source access is denied")
+        envelope_digest = sha256(
+            b"memorii.semantic-ingestion.retained-source-envelope.v1\0"
+            + request.canonical_envelope
+        ).hexdigest()
+        operation_id = retained_source_operation_id(
+            source_id=request.source_id,
+            source_digest=request.source_digest,
+            delivery_identity=original_fence.delivery_identity,
+            canonical_envelope_digest=envelope_digest,
+        )
+        return RetainedSourceOperationAccepted(
+            source_id=request.source_id,
+            source_digest=request.source_digest,
+            delivery_identity=original_fence.delivery_identity,
+            required_outcome_scopes=required,
+            source_admission_index_digest=_index_digest(index),
+            canonical_envelope_digest=envelope_digest,
+            operation_fence_binding=OperationFenceBinding.create(
+                operation_id=operation_id,
+                source_id=request.source_id,
+                source_digest=request.source_digest,
+                delivery_identity=original_fence.delivery_identity,
+            ),
+        )
 
     def admit(
         self,
@@ -670,6 +794,29 @@ def source_admission_source_bytes(source: CanonicalMemoryRecord) -> bytes:
     return encode_typed_value(_immutable_source_identity(source))
 
 
+def retained_source_operation_id(
+    *,
+    source_id: str,
+    source_digest: str,
+    delivery_identity: DeliveryIdentity,
+    canonical_envelope_digest: str,
+) -> str:
+    """Derive the sole operation identity for one retained-source envelope."""
+    if not source_id or len(source_digest) != 64 or len(canonical_envelope_digest) != 64:
+        raise ValueError("retained source operation identity is invalid")
+    return "retained-source:v1:" + sha256(
+        b"memorii.semantic-ingestion.retained-source-operation.v1\0"
+        + encode_typed_value(
+            {
+                "source_id": source_id,
+                "source_digest": source_digest,
+                "delivery_key_digest": delivery_identity.delivery_key_digest,
+                "canonical_envelope_digest": canonical_envelope_digest,
+            }
+        )
+    ).hexdigest()
+
+
 def _immutable_source_identity(source: CanonicalMemoryRecord) -> dict[str, object]:
     """Exclude regenerated storage timestamps from delivery retry identity."""
     value = source.model_dump(mode="python")
@@ -693,6 +840,20 @@ def _validate_governed_source(source: CanonicalMemoryRecord) -> None:
 
 def _index_id(delivery_key_digest: str) -> str:
     return f"semantic_ingestion:admission:{delivery_key_digest}"
+
+
+def _index_binds_source(
+    index: CanonicalMemoryRecord, source_id: str, source_digest: str
+) -> bool:
+    try:
+        fence = OperationFenceBinding.model_validate(index.content["operation_fence_binding"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    return (
+        index.source_kind == "semantic_ingestion_admission_index"
+        and fence.source_id == source_id
+        and fence.source_digest == source_digest
+    )
 
 
 def _index_record(

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
+from typing import TYPE_CHECKING, Literal, Protocol
 
 from pydantic import ValidationError
 
@@ -36,6 +38,9 @@ from memorii.core.scoped_context.contracts import (
 from memorii.core.scoped_context.index import ScopedContextIndex
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility, TemporalValidityStatus
 
+if TYPE_CHECKING:
+    from memorii.core.memory_evolution.writer_admission import CatalogBundleLocator
+
 
 class ScopedSnapshotBackendError(RuntimeError):
     pass
@@ -55,6 +60,19 @@ class ScopedStructuredDependencyError(RuntimeError):
 
 class ScopedUnsupportedQueryError(RuntimeError):
     pass
+
+
+class LegacyBootstrapV3ProjectionReadVerifier(Protocol):
+    """Validate one pre-catalog runtime projection from durable V3 authority."""
+
+    def verify_legacy_bootstrap_v3_runtime_projection(
+        self,
+        projection: CanonicalMemoryRecord,
+        *,
+        revision: int,
+        records: tuple[CanonicalMemoryRecord, ...],
+        grant: ResolvedScopedReadGrant,
+    ) -> Literal["verified", "not_legacy", "unavailable"]: ...
 
 
 class ScopedClaimQueryAnalyzer:
@@ -91,6 +109,25 @@ class ScopedClaimQueryAnalyzer:
 
 
 class ScopedContextAssembler:
+    def __init__(
+        self,
+        *,
+        legacy_bootstrap_v3_projection_verifier: (
+            LegacyBootstrapV3ProjectionReadVerifier | None
+        ) = None,
+        catalog_bundle_locator: CatalogBundleLocator | None = None,
+    ) -> None:
+        if catalog_bundle_locator is None:
+            from memorii.core.semantic_ingestion.catalog_capture_pin import (
+                PackageIndexedCatalogBundleLocator,
+            )
+
+            catalog_bundle_locator = PackageIndexedCatalogBundleLocator()
+        self._legacy_bootstrap_v3_projection_verifier = (
+            legacy_bootstrap_v3_projection_verifier
+        )
+        self._catalog_bundle_locator = catalog_bundle_locator
+
     def assemble(
         self,
         *,
@@ -99,14 +136,41 @@ class ScopedContextAssembler:
         records: tuple[CanonicalMemoryRecord, ...],
         grant: ResolvedScopedReadGrant,
     ) -> ScopedContextActivation:
-        authorized, source_provenance_missing = _provenance_closed_records(records, grant)
+        (
+            catalog_authorized,
+            catalog_visibility_missing,
+            legacy_authority_unavailable,
+        ) = _catalog_protected_records(
+            records,
+            revision,
+            grant,
+            legacy_bootstrap_v3_projection_verifier=(
+                self._legacy_bootstrap_v3_projection_verifier
+            ),
+            catalog_bundle_locator=self._catalog_bundle_locator,
+        )
+        if legacy_authority_unavailable:
+            return _empty(ScopedContextStatus.UNAVAILABLE)
+        # A protected claim in the caller's ordinary scoped namespace has lost
+        # its second (fact/catalog) authority gate.  Do not downgrade that to
+        # an optional omission: omission counts or snippets would disclose the
+        # existence of the protected fact.
+        if any(
+            _authorized(record, grant)
+            for record in records
+            if record.memory_id in set(catalog_visibility_missing)
+        ):
+            return _empty(ScopedContextStatus.DENIED)
+        authorized, source_provenance_missing = _provenance_closed_records(catalog_authorized, grant)
         for record in authorized:
             if record.content.get("memory_evolution_kind") in {
                 "claim_state", "entity_link", "temporal_anchor", "action",
             }:
                 _decode_owned(record)
         eligible, lifecycle_missing = _current_provenance_closed_records(authorized, request.reference_time)
-        lexical_provenance_missing = tuple(sorted(set(source_provenance_missing) | set(lifecycle_missing)))
+        lexical_provenance_missing = tuple(
+            sorted(set(catalog_visibility_missing) | set(source_provenance_missing) | set(lifecycle_missing))
+        )
         by_id = {record.memory_id: record for record in eligible}
         mandatory_records = [by_id.get(ref.record_id) for ref in request.mandatory_record_references]
         if any(record is None for record in mandatory_records):
@@ -140,7 +204,7 @@ class ScopedContextAssembler:
         if request.structured_query is not None:
             structured_excluded = tuple(
                 record_id
-                for record_id in source_provenance_missing
+                for record_id in (*catalog_visibility_missing, *source_provenance_missing)
                 if any(
                     record.memory_id == record_id
                     and record.content.get("memory_evolution_kind") in {"claim_state", "entity_link", "temporal_anchor", "action"}
@@ -393,6 +457,72 @@ class ScopedContextAssembler:
             return None
         return ScopedStructuredOutcome(status="answered", claim_items=claim_items, evidence_items=evidence_items)
 
+def catalog_visibility_current_at_release(
+    *,
+    records: tuple[CanonicalMemoryRecord, ...],
+    original_records: tuple[CanonicalMemoryRecord, ...],
+    grant: ResolvedScopedReadGrant,
+    activation: ScopedContextActivation,
+    catalog_bundle_locator: CatalogBundleLocator | None = None,
+) -> bool:
+    """Recheck every released new structured projection against current state."""
+    protected_ids = _released_catalog_protected_ids(original_records, activation)
+    if not protected_ids:
+        return True
+    allowed, _, _ = _catalog_protected_records(
+        records,
+        0,
+        grant,
+        legacy_bootstrap_v3_projection_verifier=None,
+        catalog_bundle_locator=catalog_bundle_locator,
+    )
+    # An unrelated old projection has no new catalog binding. The current
+    # snapshot only needs to reauthorize the new items released from the
+    # original snapshot; the old item was verified there separately.
+    return protected_ids.issubset({record.memory_id for record in allowed})
+
+
+def catalog_visibility_recheck_required(
+    *, records: tuple[CanonicalMemoryRecord, ...], activation: ScopedContextActivation,
+) -> bool:
+    """Avoid a second snapshot for releases without a catalog-protected projection."""
+    return bool(_released_catalog_protected_ids(records, activation))
+
+
+def _released_catalog_protected_ids(
+    records: tuple[CanonicalMemoryRecord, ...], activation: ScopedContextActivation,
+) -> set[str]:
+    released_ids = {
+        *(item.record_id for item in activation.mandatory_items),
+        *(item.record_id for item in activation.optional_items),
+    }
+    if activation.structured_outcome is not None:
+        released_ids.update(item.record_id for item in activation.structured_outcome.claim_items)
+        released_ids.update(item.record_id for item in activation.structured_outcome.evidence_items)
+    return {
+        record.memory_id for record in records
+        if (
+            record.memory_id in released_ids
+            and _is_new_structured_claim_projection(record)
+            and _projection_has_catalog_binding_record(record, records)
+        )
+    }
+
+
+def _projection_has_catalog_binding_record(
+    projection: CanonicalMemoryRecord,
+    records: tuple[CanonicalMemoryRecord, ...],
+) -> bool:
+    """Only new bound claims require the second-snapshot visibility recheck."""
+    claim_id = projection.content.get("claim_assertion_id")
+    if not isinstance(claim_id, str):
+        return False
+    return any(
+        record.memory_id == "semantic_ingestion:structured-claim-catalog:" + claim_id
+        and record.source_kind == "semantic_ingestion_structured_claim_catalog_binding"
+        for record in records
+    )
+
 
 def _decode_owned(record: CanonicalMemoryRecord) -> None:
     try:
@@ -423,6 +553,260 @@ def _authorized(record: CanonicalMemoryRecord, grant: ResolvedScopedReadGrant) -
         and record.status == CommitStatus.COMMITTED
         and record.visibility == MemoryRecordVisibility.RUNTIME_CONTEXT
     )
+
+
+def _catalog_protected_records(
+    records: tuple[CanonicalMemoryRecord, ...],
+    revision: int,
+    grant: ResolvedScopedReadGrant,
+    *,
+    legacy_bootstrap_v3_projection_verifier: (
+        LegacyBootstrapV3ProjectionReadVerifier | None
+    ),
+    catalog_bundle_locator: CatalogBundleLocator | None = None,
+) -> tuple[tuple[CanonicalMemoryRecord, ...], tuple[str, ...], bool]:
+    """Fail closed for new structured projections without current dual visibility grants.
+
+    Bindings and grant states are control-plane records: they are inspected only
+    to decide whether a runtime projection can be released, never rendered.
+    Legacy claim-state projections do not carry this new coordinate and retain
+    their separately established scoped-read path.  Native V3 runtime
+    projections require the dedicated legacy verifier: the absence of a new
+    binding alone is never enough to release one.
+    """
+    from memorii.core.semantic_ingestion.catalog_authority import (
+        StructuredClaimCatalogBinding,
+        StructuredGrantState,
+    )
+    from memorii.core.semantic_ingestion.catalog_capture_pin import CatalogCapturedTurnPin
+
+    if catalog_bundle_locator is None:
+        from memorii.core.semantic_ingestion.catalog_capture_pin import (
+            PackageIndexedCatalogBundleLocator,
+        )
+
+        catalog_bundle_locator = PackageIndexedCatalogBundleLocator()
+
+    bindings: dict[str, StructuredClaimCatalogBinding] = {}
+    states: dict[tuple[str, str], StructuredGrantState] = {}
+    pins: dict[str, CatalogCapturedTurnPin] = {}
+    for record in records:
+        if record.source_kind == "semantic_ingestion_structured_claim_catalog_binding":
+            try:
+                binding = StructuredClaimCatalogBinding.model_validate(record.content["binding"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            expected_id = "semantic_ingestion:structured-claim-catalog:" + binding.claim_assertion_id
+            if (
+                record.memory_id != expected_id
+                or record.domain is not MemoryDomain.SEMANTIC
+                or record.visibility is not MemoryRecordVisibility.INTERNAL_CONTROL
+                or record.status is not CommitStatus.COMMITTED
+                or binding.claim_assertion_id in bindings
+            ):
+                continue
+            bindings[binding.claim_assertion_id] = binding
+        elif record.source_kind == "semantic_ingestion_structured_grant_state":
+            try:
+                state = StructuredGrantState.model_validate(record.content["state"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            key = (state.grant_kind, state.grant.grant_id)
+            if key in states:
+                continue
+            states[key] = state
+        elif record.source_kind == "semantic_ingestion_catalog_capture_pin":
+            try:
+                pin = CatalogCapturedTurnPin.model_validate(record.content["catalog_capture_pin"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if (
+                record.memory_id != pin.memory_id
+                or record.domain is not MemoryDomain.EXECUTION
+                or record.visibility is not MemoryRecordVisibility.INTERNAL_CONTROL
+                or record.status is not CommitStatus.COMMITTED
+                or pin.memory_id in pins
+            ):
+                continue
+            pins[pin.memory_id] = pin
+    allowed: list[CanonicalMemoryRecord] = []
+    excluded: list[str] = []
+    legacy_authority_unavailable = False
+    for record in records:
+        if not _is_new_structured_claim_projection(record):
+            allowed.append(record)
+            continue
+        # Do not inspect a legacy closure until the ordinary caller scope has
+        # admitted the projection.  An inaccessible corrupt record must not
+        # turn another caller's scoped result into UNAVAILABLE.
+        if not _authorized(record, grant):
+            allowed.append(record)
+            continue
+        if _current_catalog_read_authority(
+            record,
+            bindings,
+            states,
+            pins,
+            records,
+            grant.structured_fact_read_authorities,
+            catalog_bundle_locator,
+        ):
+            allowed.append(record)
+            continue
+        if _has_catalog_binding(record, bindings):
+            excluded.append(record.memory_id)
+            continue
+        verifier = legacy_bootstrap_v3_projection_verifier
+        verification = (
+            verifier.verify_legacy_bootstrap_v3_runtime_projection(
+                record,
+                revision=revision,
+                records=records,
+                grant=grant,
+            )
+            if verifier is not None
+            else "unavailable"
+        )
+        if verification == "verified":
+            allowed.append(record)
+        elif verification == "unavailable":
+            legacy_authority_unavailable = True
+        else:
+            excluded.append(record.memory_id)
+    return (
+        tuple(allowed),
+        tuple(sorted(set(excluded))),
+        legacy_authority_unavailable,
+    )
+
+
+def _is_new_structured_claim_projection(record: CanonicalMemoryRecord) -> bool:
+    return (
+        record.memory_id.startswith("mem:bootstrap-v3:runtime-claim:")
+        or record.content.get("runtime_context_projection_kind") == "bootstrap_v3_claim_assertion"
+    )
+
+
+def _has_catalog_binding(
+    record: CanonicalMemoryRecord,
+    bindings: Mapping[str, object],
+) -> bool:
+    """Reserve malformed or mismatched new bindings for the new-claim gate."""
+    claim_id = record.content.get("claim_assertion_id")
+    if not isinstance(claim_id, str):
+        return False
+    return claim_id in bindings
+
+
+def _current_catalog_read_authority(
+    record: CanonicalMemoryRecord,
+    bindings: Mapping[str, object],
+    states: Mapping[tuple[str, str], object],
+    pins: Mapping[str, object],
+    records: tuple[CanonicalMemoryRecord, ...],
+    authorities: tuple[object, ...],
+    catalog_bundle_locator: CatalogBundleLocator,
+) -> bool:
+    from memorii.core.semantic_ingestion.catalog_authority import (
+        CatalogAuthorityError,
+        StructuredClaimCatalogBinding,
+        StructuredFactReadAuthority,
+        StructuredGrantState,
+        ThreePredicateSeedCatalogAuthorityRepository,
+    )
+    from memorii.core.semantic_ingestion.catalog_capture_pin import (
+        CatalogCapturedTurnPin,
+    )
+    claim_id = record.content.get("claim_assertion_id")
+    claim_digest = record.content.get("claim_assertion_record_digest")
+    if not isinstance(claim_id, str) or not isinstance(claim_digest, str):
+        return False
+    binding = bindings.get(claim_id)
+    if not isinstance(binding, StructuredClaimCatalogBinding) or binding.claim_record_digest != claim_digest:
+        return False
+    # The principal is bound by authenticated source admission and by the
+    # current structured-read authority.  `user_id` is a memory namespace
+    # coordinate and need not equal the host's principal identifier.
+    if binding.authenticated.agent_id != record.agent_id:
+        return False
+    if binding.schema_version == 1:
+        try:
+            selected_catalog = ThreePredicateSeedCatalogAuthorityRepository().resolve_base(
+                expected_catalog_digest=binding.catalog_digest,
+            )
+        except CatalogAuthorityError:
+            return False
+        if selected_catalog.catalog_scope != binding.catalog_scope:
+            return False
+    elif binding.schema_version == 2:
+        if (
+            binding.pin_memory_id is None
+            or binding.selected_version_digest is None
+            or binding.selected_version_id is None
+            or binding.runtime_bundle_digest is None
+        ):
+            return False
+        pin = pins.get(binding.pin_memory_id)
+        try:
+            bundle = catalog_bundle_locator.locate_historical(
+                records,
+                version_id=binding.selected_version_id,
+                version_digest=binding.selected_version_digest,
+            )
+        except (CatalogAuthorityError, ValueError):
+            return False
+        if not isinstance(pin, CatalogCapturedTurnPin) or (
+            binding.capture_id != pin.capture_id
+            or binding.pin_memory_id != pin.memory_id
+            or binding.pin_digest != pin.pin_digest
+            or binding.catalog_scope != pin.catalog_scope
+            or binding.catalog_digest != pin.catalog_digest
+            or binding.selected_version_id != pin.selected_version_id
+            or binding.selected_version_digest != pin.selected_version_digest
+            or binding.runtime_bundle_digest != pin.runtime_bundle_digest
+            or pin.catalog_scope != bundle.catalog.catalog_scope
+            or pin.catalog_digest != bundle.catalog.catalog_digest
+            or pin.selected_version_id != bundle.version.version_id
+            or pin.selected_version_digest != bundle.version.version_digest
+            or pin.runtime_bundle_digest != bundle.runtime_bundle_digest
+            or bundle.version.version_id != binding.selected_version_id
+            or bundle.version.version_digest != binding.selected_version_digest
+            or bundle.version.catalog_scope != binding.catalog_scope
+            or bundle.version.catalog_digest != binding.catalog_digest
+        ):
+            return False
+        if bundle.version.version_id == "default-catalog-v1":
+            from memorii.core.semantic_ingestion.default_catalog_capability import (
+                DefaultCatalogProtectedReader,
+            )
+
+            if not DefaultCatalogProtectedReader.authorizes_version(
+                selected_version_id=bundle.version.version_id
+            ):
+                return False
+    else:
+        return False
+    for authority in authorities:
+        if not isinstance(authority, StructuredFactReadAuthority):
+            continue
+        if (
+            authority.authenticated != binding.authenticated
+            or authority.fact_grant.fact_scope != binding.fact_scope
+            or authority.catalog_visibility_grant.catalog_scope != binding.catalog_scope
+        ):
+            continue
+        fact_state = states.get(("fact", authority.fact_grant.grant_id))
+        catalog_state = states.get(("catalog_visibility", authority.catalog_visibility_grant.grant_id))
+        if (
+            isinstance(fact_state, StructuredGrantState)
+            and isinstance(catalog_state, StructuredGrantState)
+            and fact_state.active
+            and catalog_state.active
+            and fact_state.grant == authority.fact_grant
+            and catalog_state.grant == authority.catalog_visibility_grant
+        ):
+            return True
+    return False
 
 
 def _provenance_closed_records(

@@ -9,14 +9,24 @@ import threading
 import time
 import unicodedata
 from collections.abc import Callable
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from secrets import token_hex
 
+from memorii.core.memory_evolution.admission import GovernedSourceAdmissionService
 from memorii.core.memory_evolution.ingestion_contracts import (
     AuthenticatedHostIngress,
     AuthenticatedIngressContext,
+    DeliveryIdentity,
+    derive_composite_child_delivery_id,
+    encode_typed_value,
+)
+from memorii.core.provider.ingestion import (
+    CapturedCatalogPinReference,
+    StructuredFactSubmissionRequest,
+    StructuredFactSubmissionStatusRequest,
 )
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.scoped_context.authority import (
@@ -28,21 +38,190 @@ from memorii.core.scoped_context.contracts import (
     ScopedContextRequest,
     ScopedContextStatus,
 )
+from memorii.core.semantic_ingestion.catalog_authority import (
+    StructuredFactReadAuthority,
+    StructuredSubmissionAuthorityRequest,
+)
+from memorii.core.semantic_ingestion.catalog_capture_pin import (
+    CatalogCapturedTurnPin,
+)
+from memorii.core.semantic_ingestion.contracts import (
+    PreparedSource,
+    ProviderEntityObject,
+    ProviderSemanticProposal,
+    TextPreparationRequest,
+    VerbatimTextArtifactMappingProof,
+)
+from memorii.core.semantic_ingestion.default_catalog_runtime import (
+    DEFAULT_CATALOG_LITERAL_TYPES,
+    default_catalog_runtime_rows,
+    validate_default_catalog_literal_grounding,
+    validate_default_catalog_provider_proposal,
+)
+from memorii.core.semantic_ingestion.hermes_captured_turn import (
+    HermesCapturedTurnCompletion,
+    HermesCapturedTurnLedger,
+    HermesCapturedTurnSourceOwner,
+)
 from memorii.core.semantic_ingestion.hermes_completed_turn_admission import (
     HermesCompletedTurnAdmission,
     HermesCompletedTurnAdmissionRequest,
     HermesCompletedTurnAdmissionService,
     HermesCompletedTurnMessage,
+    _prepare_governed_child_source,
+)
+from memorii.core.semantic_ingestion.reports_to_capability import (
+    validate_reports_to_tool_proposal,
 )
 from memorii.domain.enums import MemoryDomain
 
 logger = logging.getLogger(__name__)
 
 
+def _parse_project_assertions_literal(*, predicate_id: str, value_quote: object) -> tuple[str, str | None]:
+    """Use the selected packaged seed's canonical literal parser."""
+    if not isinstance(value_quote, str):
+        raise ValueError("structured tool literal quote is invalid")
+    from memorii.core.semantic_ingestion.project_assertions import (
+        ProjectAssertionProviderProposalAdapter,
+        _Hint,
+    )
+
+    literal_type, canonical_value = ProjectAssertionProviderProposalAdapter._literal(
+        _Hint(
+            predicate_id=predicate_id, assertion_quote=value_quote,
+            subject_quote=value_quote, predicate_anchor_quote=value_quote,
+            value_quote=value_quote,
+        )
+    )
+    return literal_type.value, canonical_value
+
+_FACT_ONLY_PROPOSAL_SCHEMA: dict[str, object] = {
+    "type": "object", "additionalProperties": False,
+    "required": ["abstained", "mentions", "facts", "corrections", "retractions", "action_states", "identity_operations"],
+    "properties": {
+        "abstained": {"const": False},
+        "mentions": {
+            "type": "array", "minItems": 1, "maxItems": 2,
+            "items": {"type": "object", "additionalProperties": False,
+                      "required": ["local_id", "mention_quote", "mention_context_quote", "proposed_type"],
+                      "properties": {"local_id": {"type": "string", "minLength": 1}, "mention_quote": {"type": "string", "minLength": 1}, "mention_context_quote": {"type": "string", "minLength": 1}, "proposed_type": {"type": ["string", "null"]}}},
+        },
+        "facts": {
+            "type": "array", "minItems": 1, "maxItems": 1,
+            "items": {"type": "object", "additionalProperties": False,
+                      "required": ["kind", "local_id", "predicate_id", "subject_entity_ref", "object", "assertion_quote", "predicate_anchor_quote", "polarity", "commitment", "attributed_to_entity_ref", "temporal_qualifier_quotes"],
+                      "properties": {"kind": {"const": "fact"}, "local_id": {"type": "string", "minLength": 1}, "predicate_id": {"enum": ["project_owner", "project_status", "project_deadline"]}, "subject_entity_ref": {"type": "string", "minLength": 1}, "object": {"oneOf": [{"type": "object", "additionalProperties": False, "required": ["kind", "entity_ref"], "properties": {"kind": {"const": "entity"}, "entity_ref": {"type": "string", "minLength": 1}}}, {"type": "object", "additionalProperties": False, "required": ["kind", "literal_type", "canonical_value", "unit"], "properties": {"kind": {"const": "literal"}, "literal_type": {"enum": ["text", "date"]}, "canonical_value": {"type": "string", "minLength": 1}, "unit": {"type": ["string", "null"]}}}]}, "assertion_quote": {"type": "string", "minLength": 1}, "predicate_anchor_quote": {"type": "string", "minLength": 1}, "polarity": {"enum": ["positive", "negative"]}, "commitment": {"const": "asserted"}, "attributed_to_entity_ref": {"const": None}, "temporal_qualifier_quotes": {"type": "array", "items": {"type": "string", "minLength": 1}}}},
+        },
+        "corrections": {"type": "array", "maxItems": 0},
+        "retractions": {"type": "array", "maxItems": 0},
+        "action_states": {"type": "array", "maxItems": 0},
+        "identity_operations": {"type": "array", "maxItems": 0},
+    },
+    # The two entity mentions only make sense for the owner relation.  The
+    # literal seeds derive their object from the selected sentence and retain
+    # only the project mention.
+    "allOf": [{"oneOf": [
+        {
+            "properties": {
+                "mentions": {"minItems": 2, "maxItems": 2},
+                "facts": {"items": {"properties": {
+                    "predicate_id": {"const": "project_owner"},
+                    "object": {"properties": {"kind": {"const": "entity"}}},
+                }}},
+            },
+        },
+        {
+            "properties": {
+                "mentions": {"minItems": 1, "maxItems": 1},
+                "facts": {"items": {"properties": {
+                    "predicate_id": {"const": "project_status"},
+                    "object": {"properties": {
+                        "kind": {"const": "literal"},
+                        "literal_type": {"const": "text"},
+                    }},
+                }}},
+            },
+        },
+        {
+            "properties": {
+                "mentions": {"minItems": 1, "maxItems": 1},
+                "facts": {"items": {"properties": {
+                    "predicate_id": {"const": "project_deadline"},
+                    "object": {"properties": {
+                        "kind": {"const": "literal"},
+                        "literal_type": {"const": "date"},
+                    }},
+                }}},
+            },
+        },
+    ]}],
+}
+
+_REPORTS_TO_FACT_ONLY_PROPOSAL_SCHEMA: dict[str, object] = {
+    "type": "object", "additionalProperties": False,
+    "required": ["abstained", "mentions", "facts", "corrections", "retractions", "action_states", "identity_operations"],
+    "properties": {
+        "abstained": {"const": False},
+        "mentions": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "object", "additionalProperties": False, "required": ["local_id", "mention_quote", "mention_context_quote", "proposed_type"], "properties": {"local_id": {"type": "string", "minLength": 1}, "mention_quote": {"type": "string", "minLength": 1}, "mention_context_quote": {"type": "string", "minLength": 1}, "proposed_type": {"const": "PersonName"}}}},
+        "facts": {"type": "array", "minItems": 1, "maxItems": 1, "items": {"type": "object", "additionalProperties": False, "required": ["kind", "local_id", "predicate_id", "subject_entity_ref", "object", "assertion_quote", "predicate_anchor_quote", "polarity", "commitment", "attributed_to_entity_ref", "temporal_qualifier_quotes"], "properties": {"kind": {"const": "fact"}, "local_id": {"type": "string", "minLength": 1}, "predicate_id": {"const": "reports_to"}, "subject_entity_ref": {"type": "string", "minLength": 1}, "object": {"type": "object", "additionalProperties": False, "required": ["kind", "entity_ref"], "properties": {"kind": {"const": "entity"}, "entity_ref": {"type": "string", "minLength": 1}}}, "assertion_quote": {"type": "string", "minLength": 1}, "predicate_anchor_quote": {"const": "reports to"}, "polarity": {"const": "positive"}, "commitment": {"const": "asserted"}, "attributed_to_entity_ref": {"const": None}, "temporal_qualifier_quotes": {"type": "array", "maxItems": 0}}}},
+        "corrections": {"type": "array", "maxItems": 0}, "retractions": {"type": "array", "maxItems": 0}, "action_states": {"type": "array", "maxItems": 0}, "identity_operations": {"type": "array", "maxItems": 0},
+    },
+}
+
+
+def _default_catalog_fact_only_proposal_schema() -> dict[str, object]:
+    """Project the verified corpus inventory into the provider transport schema."""
+    schema = deepcopy(_FACT_ONLY_PROPOSAL_SCHEMA)
+    properties = schema["properties"]
+    assert isinstance(properties, dict)
+    facts = properties["facts"]
+    assert isinstance(facts, dict)
+    items = facts["items"]
+    assert isinstance(items, dict)
+    fact_properties = items["properties"]
+    assert isinstance(fact_properties, dict)
+    fact_properties["predicate_id"] = {
+        "enum": sorted({
+            *default_catalog_runtime_rows(),
+            "project_deadline",
+            "project_owner",
+            "project_status",
+        }),
+    }
+    object_schema = fact_properties["object"]
+    assert isinstance(object_schema, dict)
+    alternatives = object_schema["oneOf"]
+    assert isinstance(alternatives, list)
+    literal = alternatives[1]
+    assert isinstance(literal, dict)
+    literal_properties = literal["properties"]
+    assert isinstance(literal_properties, dict)
+    literal_properties["literal_type"] = {
+        "enum": sorted(item.value for item in DEFAULT_CATALOG_LITERAL_TYPES.values()),
+    }
+    return schema
+
+
 @dataclass(frozen=True)
 class _CompletedTurnWork:
     admitted: HermesCompletedTurnAdmission
     ingress: AuthenticatedIngressContext
+    captured_user_admission: object | None = None
+
+
+@dataclass(frozen=True)
+class _CapturedTurnHandle:
+    """Provider-local callback join state; never reconstructed after restart."""
+
+    session_id: str
+    turn_ordinal: int
+    message_digest: str
+    admission: object
+    ledger: HermesCapturedTurnLedger
+    generation: str
+    expires_at: datetime
+    closing: bool = False
 
 
 @dataclass(frozen=True)
@@ -69,6 +248,9 @@ class HermesCompletedTurnRuntime:
         project_task_id: str,
         authenticated_agent_id: str,
         authenticated_author_id: str,
+        structured_authority_request: StructuredSubmissionAuthorityRequest | None = None,
+        structured_tool_is_current: Callable[[], bool] | None = None,
+        structured_fact_read_authority: Callable[[], StructuredFactReadAuthority | None] | None = None,
     ) -> None:
         self._service = service
         self._installation_id = installation_id
@@ -78,12 +260,19 @@ class HermesCompletedTurnRuntime:
         self._project_task_id = project_task_id
         self._authenticated_agent_id = authenticated_agent_id
         self._authenticated_author_id = authenticated_author_id
+        self._structured_authority_request = structured_authority_request
+        self._structured_tool_is_current = structured_tool_is_current
+        self._structured_fact_read_authority = structured_fact_read_authority
         self._work: queue.Queue[_CompletedTurnWork | _RecoverySweep | _StopWorker] = queue.Queue()
         self._condition = threading.Condition()
         self._outstanding = 0
         self._failures: list[BaseException] = []
         self._closed = False
         self._stopped = False
+        self._active_turn: _CapturedTurnHandle | None = None
+        self._active_turn_ambiguous = False
+        self._active_tool_calls = 0
+        self._active_turn_condition = threading.Condition(self._condition)
         self._worker = threading.Thread(
             target=self._worker_loop,
             name="memorii-hermes-semantic-worker",
@@ -91,6 +280,566 @@ class HermesCompletedTurnRuntime:
         )
         self._worker.start()
         self._enqueue(_RecoverySweep())
+
+    def get_tool_schemas(self) -> list[dict[str, object]]:
+        """Persist an authorized catalog pin before advertising the fact tool."""
+        with self._condition:
+            active = self._active_turn
+            tool_is_current = self._structured_tool_is_current
+            authority_request = self._structured_authority_request
+            available = (
+                active is not None and not active.closing and not self._active_turn_ambiguous
+                and active.expires_at > datetime.now(UTC)
+                and authority_request is not None
+                and tool_is_current is not None
+            )
+        if not available or tool_is_current is None or not tool_is_current():
+            return []
+        assert active is not None
+        assert authority_request is not None
+        # The verified factory-controlled file authority is rechecked around
+        # the durable operation.  It is deliberately not represented as a
+        # memory-plane precondition because it lives in another store.
+        try:
+            self._require_current_authority()
+        except (OSError, ValueError):
+            return []
+        pin = self._service.pin_captured_turn_catalog(
+            ledger=active.ledger,
+            authority_request=authority_request,
+            authenticated_host_ingress=self._issue_host_ingress(
+                active.session_id, self._authenticated_author_id, datetime.now(UTC)
+            ),
+        )
+        if pin is None:
+            return []
+        if not tool_is_current():
+            return []
+        with self._condition:
+            current = self._active_turn
+            if (
+                current is not active or self._closed or active.closing
+                or self._active_turn_ambiguous or active.expires_at <= datetime.now(UTC)
+            ):
+                return []
+        dispatch = self._service.resolve_captured_turn_catalog_dispatch(pin=pin)
+        if dispatch == "reports_to":
+            proposal_schema = _REPORTS_TO_FACT_ONLY_PROPOSAL_SCHEMA
+        elif dispatch == "default_catalog":
+            proposal_schema = _default_catalog_fact_only_proposal_schema()
+        else:
+            proposal_schema = _FACT_ONLY_PROPOSAL_SCHEMA
+        if dispatch not in {"seed", "reports_to", "default_catalog"}:
+            return []
+        return [{
+            "type": "function",
+            "function": {
+                "name": "memorii_submit_fact",
+                "description": "Submit one quote-grounded fact from the current user turn.",
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": [
+                        "schema_version", "source_quote", "subject_quote",
+                        "predicate_anchor_quote", "object_quote", "proposal",
+                    ],
+                    "properties": {
+                        "schema_version": {"type": "integer", "const": 1},
+                        "source_quote": {"type": "string", "minLength": 1},
+                        "source_quote_start": {"type": "integer", "minimum": 0},
+                        "subject_quote": {"type": "string", "minLength": 1},
+                        "predicate_anchor_quote": {"type": "string", "minLength": 1},
+                        "object_quote": {"type": "string", "minLength": 1},
+                        "proposal": proposal_schema,
+                    },
+                },
+            },
+        }]
+
+    def handle_tool_call(self, *, tool_name: str, arguments: dict[str, object]) -> object:
+        if tool_name != "memorii_submit_fact":
+            raise ValueError(f"Memorii does not provide Hermes tool {tool_name!r}")
+        if type(arguments) is not dict:
+            return {"status": "rejected"}
+        active = self._acquire_active_tool_turn()
+        if active is None:
+            return {"status": "unavailable"}
+        try:
+            authority_request = self._structured_authority_request
+            if authority_request is None:
+                return {"status": "unavailable"}
+            pin = self._service.load_captured_turn_catalog_pin(
+                ledger=active.ledger,
+                authority_request=authority_request,
+                authenticated_host_ingress=self._issue_host_ingress(
+                    active.session_id, self._authenticated_author_id, datetime.now(UTC)
+                ),
+            )
+            if not isinstance(pin, CatalogCapturedTurnPin):
+                return {"status": "unavailable"}
+            dispatch = self._service.resolve_captured_turn_catalog_dispatch(pin=pin)
+            if dispatch not in {"seed", "reports_to", "default_catalog"}:
+                return {"status": "denied"}
+            try:
+                request = self._structured_tool_request(
+                    active=active, arguments=arguments,
+                    reports_to=dispatch == "reports_to",
+                    default_catalog=dispatch == "default_catalog",
+                )
+            except (TypeError, ValueError):
+                return {"status": "rejected"}
+            if self._structured_tool_is_current is None or not self._structured_tool_is_current():
+                return {"status": "denied"}
+            request = request.model_copy(update={
+                "captured_pin": CapturedCatalogPinReference(
+                    capture_id=pin.capture_id, pin_memory_id=pin.memory_id,
+                    pin_digest=pin.pin_digest,
+                    catalog_scope=pin.catalog_scope,
+                    catalog_digest=pin.catalog_digest,
+                    selected_version_id=pin.selected_version_id,
+                    selected_version_digest=pin.selected_version_digest,
+                    runtime_bundle_digest=pin.runtime_bundle_digest,
+                ),
+            })
+            response = self._service.submit_structured_fact(
+                request,
+                authenticated_host_ingress=self._issue_host_ingress(
+                    active.session_id, self._authenticated_author_id, datetime.now(UTC)
+                ),
+            )
+            result: dict[str, object] = {"status": response.status}
+            if response.operation_id is not None:
+                result["operation_id"] = response.operation_id
+            return result
+        finally:
+            with self._condition:
+                self._active_tool_calls -= 1
+                self._condition.notify_all()
+
+    def _acquire_active_tool_turn(self) -> _CapturedTurnHandle | None:
+        with self._condition:
+            active = self._active_turn
+            if (
+                self._closed or active is None or active.closing or self._active_turn_ambiguous
+                or active.expires_at <= datetime.now(UTC) or self._structured_authority_request is None
+            ):
+                return None
+            self._active_tool_calls += 1
+            return active
+
+    def _structured_tool_request(
+        self, *, active: _CapturedTurnHandle, arguments: dict[str, object],
+        reports_to: bool = False,
+        default_catalog: bool = False,
+    ) -> StructuredFactSubmissionRequest:
+        allowed = {
+            "schema_version", "source_quote", "source_quote_start", "subject_quote",
+            "predicate_anchor_quote", "object_quote", "proposal",
+        }
+        if (
+            set(arguments) - allowed
+            or type(arguments.get("schema_version")) is not int
+            or arguments["schema_version"] != 1
+        ):
+            raise ValueError("structured tool arguments are not closed")
+        required = allowed - {"source_quote_start"}
+        if set(arguments) < required or any(not isinstance(arguments[name], str) or not arguments[name] for name in required - {"schema_version", "proposal"}):
+            raise ValueError("structured tool arguments are incomplete")
+        source_start = arguments.get("source_quote_start")
+        if source_start is not None and (type(source_start) is not int or source_start < 0):
+            raise ValueError("structured tool source quote offset is invalid")
+        proposal_value = arguments["proposal"]
+        if type(proposal_value) is not dict:
+            raise ValueError("structured tool proposal is invalid")
+        _validate_fact_only_argument_shape(proposal_value)
+        # Hermes function arguments arrive from JSON, while the typed proposal
+        # contract deliberately models ordered collections as tuples.
+        proposal = ProviderSemanticProposal.model_validate(_json_arrays_to_tuples(proposal_value))
+        if reports_to and default_catalog:
+            raise ValueError("structured tool dispatch is ambiguous")
+        if reports_to:
+            validate_reports_to_tool_proposal(proposal)
+        elif default_catalog:
+            self._validate_default_catalog_tool_proposal(
+                proposal=proposal, arguments=arguments,
+            )
+        else:
+            HermesCompletedTurnRuntime._validate_fact_only_proposal(
+                proposal=proposal, arguments=arguments
+            )
+        prepared = self._load_active_prepared_source(active)
+        source_span = self._resolve_sentence_span(
+            prepared=prepared, source_quote=arguments["source_quote"], source_quote_start=source_start,
+        )
+        raw = encode_typed_value(arguments)
+        assert self._structured_authority_request is not None
+        return StructuredFactSubmissionRequest(
+            source_id=active.ledger.source_id,
+            source_digest=active.ledger.source_digest,
+            authority_request=self._structured_authority_request,
+            exact_source_spans=(source_span,),
+            raw_proposal_artifact=raw,
+            raw_proposal_artifact_digest=sha256(raw).hexdigest(),
+            protocol_version="memorii.hermes.structured-fact-tool.v1",
+            parser_version="memorii.hermes.retained-sentence-parser.v1",
+            proposal=proposal,
+            proposal_bytes=encode_typed_value(proposal.model_dump(mode="python")),
+        )
+
+    @staticmethod
+    def _validate_default_catalog_tool_proposal(
+        *, proposal: ProviderSemanticProposal, arguments: dict[str, object],
+    ) -> None:
+        if proposal.facts and proposal.facts[0].predicate_id in {
+            "project_deadline", "project_owner", "project_status",
+        }:
+            # The selected release extends, rather than replaces, the seed
+            # grammar.  Retain the seed's exact validation semantics.
+            HermesCompletedTurnRuntime._validate_fact_only_proposal(
+                proposal=proposal, arguments=arguments
+            )
+            return
+        row = validate_default_catalog_provider_proposal(proposal)
+        fact = proposal.facts[0]
+        source_quote = arguments["source_quote"]
+        if (
+            not isinstance(source_quote, str)
+            or fact.assertion_quote != source_quote
+            or fact.predicate_anchor_quote != arguments["predicate_anchor_quote"]
+        ):
+            raise ValueError("default catalog assertion quotes do not match")
+        mentions = {mention.local_id: mention for mention in proposal.mentions}
+        subject = mentions[fact.subject_entity_ref]
+        if (
+            subject.mention_quote != arguments["subject_quote"]
+            or subject.mention_context_quote != source_quote
+        ):
+            raise ValueError("default catalog subject grounding is invalid")
+        if isinstance(fact.object, ProviderEntityObject):
+            object_mention = mentions[fact.object.entity_ref]
+            if (
+                object_mention.mention_quote != arguments["object_quote"]
+                or object_mention.mention_context_quote != source_quote
+            ):
+                raise ValueError("default catalog object grounding is invalid")
+        else:
+            object_quote = arguments["object_quote"]
+            if not isinstance(object_quote, str):
+                raise ValueError("default catalog object grounding is invalid")
+            validate_default_catalog_literal_grounding(
+                row=row, value=fact.object, object_quote=object_quote,
+            )
+        for quote in (
+            arguments["subject_quote"], arguments["predicate_anchor_quote"],
+            arguments["object_quote"], *fact.temporal_qualifier_quotes,
+        ):
+            if not isinstance(quote, str) or source_quote.count(quote) != 1:
+                raise ValueError("default catalog quote is absent or ambiguous")
+
+    @staticmethod
+    def _validate_fact_only_proposal(*, proposal: ProviderSemanticProposal, arguments: dict[str, object]) -> None:
+        if (
+            proposal.abstained or len(proposal.facts) != 1 or proposal.corrections
+            or proposal.retractions or proposal.action_states or proposal.identity_operations
+        ):
+            raise ValueError("structured tool proposal is outside the fact-only grammar")
+        fact = proposal.facts[0]
+        if (
+            fact.predicate_id not in {"project_owner", "project_status", "project_deadline"}
+            or fact.commitment != "asserted" or fact.attributed_to_entity_ref is not None
+        ):
+            raise ValueError("structured tool fact commitment is invalid")
+        if fact.assertion_quote != arguments["source_quote"] or fact.predicate_anchor_quote != arguments["predicate_anchor_quote"]:
+            raise ValueError("structured tool assertion quotes do not match")
+        mentions = {mention.local_id: mention for mention in proposal.mentions}
+        subject = mentions.get(fact.subject_entity_ref)
+        if subject is None or subject.mention_quote != arguments["subject_quote"] or subject.mention_context_quote != arguments["source_quote"]:
+            raise ValueError("structured tool subject grounding is invalid")
+        source_quote = arguments["source_quote"]
+        assert isinstance(source_quote, str)
+        for quote in (
+            arguments["subject_quote"], arguments["predicate_anchor_quote"],
+            arguments["object_quote"], *fact.temporal_qualifier_quotes,
+        ):
+            if not isinstance(quote, str) or source_quote.count(quote) != 1:
+                raise ValueError("structured tool quote is absent or ambiguous")
+        if isinstance(fact.object, ProviderEntityObject):
+            if fact.predicate_id != "project_owner":
+                raise ValueError("structured tool entity object predicate is invalid")
+            obj = mentions.get(fact.object.entity_ref)
+            if obj is None or obj.mention_quote != arguments["object_quote"] or obj.mention_context_quote != arguments["source_quote"]:
+                raise ValueError("structured tool object grounding is invalid")
+            if len(proposal.mentions) != 2 or fact.object.entity_ref == fact.subject_entity_ref:
+                raise ValueError("structured tool entity mentions are invalid")
+        else:
+            if fact.predicate_id == "project_owner" or len(proposal.mentions) != 1:
+                raise ValueError("structured tool literal mentions are invalid")
+            literal_type, canonical_value = _parse_project_assertions_literal(
+                predicate_id=fact.predicate_id, value_quote=arguments["object_quote"]
+            )
+            if (
+                canonical_value is None or fact.object.literal_type != literal_type
+                or fact.object.canonical_value != canonical_value or fact.object.unit is not None
+            ):
+                raise ValueError("structured tool literal grounding is invalid")
+
+    def _load_active_prepared_source(self, active: _CapturedTurnHandle) -> PreparedSource:
+        runtime = self._service._provider_ingestion._semantic_runtime
+        if runtime is None or runtime.prepared_source_repository is None:
+            raise ValueError("captured prepared source is unavailable")
+        prepared = runtime.prepared_source_repository.load(
+            source_id=active.ledger.source_id, source_digest=active.ledger.source_digest,
+        )
+        if (
+            prepared is None or prepared.preparation_fingerprint != active.ledger.preparation_fingerprint
+            or prepared.source_id != active.ledger.source_id or prepared.source_digest != active.ledger.source_digest
+        ):
+            raise ValueError("captured prepared source is unavailable")
+        return prepared
+
+    @staticmethod
+    def _resolve_sentence_span(*, prepared: PreparedSource, source_quote: object, source_quote_start: object):
+        if not isinstance(source_quote, str):
+            raise ValueError("structured tool source quote is invalid")
+        matches = []
+        for span in prepared.sentence_spans:
+            proof = span.text_mapping_proof
+            if not isinstance(proof, VerbatimTextArtifactMappingProof):
+                continue
+            text = prepared.semantic_text[span.projection_span.start : span.projection_span.end]
+            if text != source_quote:
+                continue
+            retained_start = proof.retained_span.start + (span.projection_span.start - proof.projection_span.start)
+            if source_quote_start is not None and retained_start != source_quote_start:
+                continue
+            matches.append(span)
+        if len(matches) != 1:
+            raise ValueError("structured tool source sentence is absent or ambiguous")
+        return matches[0]
+
+    def capture_user_turn(
+        self, *, session_id: str, turn_ordinal: int, message: str,
+        authenticated_author_id: str, received_at: datetime,
+    ) -> None:
+        """Synchronously retain the user source before Hermes can dispatch tools."""
+        author = authenticated_author_id.strip()
+        if (
+            not session_id.strip() or turn_ordinal < 1 or not message
+            or author != self._authenticated_author_id or received_at.tzinfo is None
+        ):
+            raise ValueError("Hermes turn-start authentication is incomplete")
+        self._require_current_authority()
+        digest = sha256(message.encode("utf-8")).hexdigest()
+        with self._condition:
+            if self._closed:
+                raise RuntimeError("Hermes semantic worker is closed")
+            active = self._active_turn
+            if active is not None and active.expires_at <= received_at:
+                self._active_turn = None
+                active = None
+            if active is not None:
+                if (
+                    active.session_id == session_id
+                    and active.turn_ordinal == turn_ordinal
+                    and active.message_digest == digest
+                ):
+                    return
+                self._active_turn_ambiguous = True
+                raise ValueError("Hermes overlapping turn context is ambiguous")
+
+        ingress = self._service._preflight_ingress(
+            self._issue_host_ingress(session_id, author, received_at)
+        )
+        if ingress is None:
+            raise ValueError("Hermes turn-start ingress is unavailable")
+        runtime = self._service._composed_semantic_runtime
+        if runtime is None or runtime.text_preparation_service is None or runtime.text_preparation_policy is None:
+            raise ValueError("Hermes turn-start preparation is unavailable")
+        coordinate_digest = sha256(
+            (
+                "memorii.hermes.captured-turn.coordinate.v1:\0"
+                f"{self._installation_id}\0{session_id}\0{author}\0{self._authenticated_agent_id}\0"
+                f"{turn_ordinal}\0{digest}"
+            ).encode()
+        ).hexdigest()
+        request = HermesCompletedTurnAdmissionRequest(
+            installation_id=self._installation_id,
+            session_id=session_id,
+            authenticated_author_id=author,
+            authenticated_agent_id=self._authenticated_agent_id,
+            project_task_namespace=self._project_task_id,
+            turn_ordinal=turn_ordinal,
+            canonical_transcript_digest=coordinate_digest,
+            completed_messages=(
+                HermesCompletedTurnMessage(role="user", content=message),
+                HermesCompletedTurnMessage(role="assistant", content="capture-placeholder"),
+            ),
+            completed_at=received_at,
+            ingress=ingress,
+        )
+        child_delivery_id = derive_composite_child_delivery_id(
+            request.delivery_id, "hermes-completed-turn-user"
+        )
+        identity = DeliveryIdentity.create(ingress.delivery_principal_binding, child_delivery_id)
+        child = _prepare_governed_child_source(
+            request=request,
+            message=request.completed_messages[0],
+            child_delivery_id=child_delivery_id,
+            child_identity=identity,
+            child_kind="hermes-completed-turn-user",
+        )
+        prepared_admission = GovernedSourceAdmissionService(
+            self._service._memory_plane
+        ).prepare_atomic(
+            source=child.source,
+            delivery_identity=identity,
+            ingress=ingress,
+            operation_id="hermes-captured-turn-operation:v1:" + coordinate_digest,
+            evidence_only=True,
+            bootstrap_language_evidence=child.request.bootstrap_language_evidence,
+        )
+        prepared_source = runtime.text_preparation_service.prepare(
+            TextPreparationRequest(
+                observation=prepared_admission.accepted.observation,
+                policy=runtime.text_preparation_policy,
+            )
+        )
+        ledger = HermesCapturedTurnLedger(
+            installation_id=self._installation_id,
+            session_id=session_id,
+            principal_id=author,
+            agent_id=self._authenticated_agent_id,
+            turn_ordinal=turn_ordinal,
+            message_digest=digest,
+            source_id=prepared_admission.accepted.source_id,
+            source_digest=prepared_admission.accepted.source_digest,
+            preparation_fingerprint=prepared_source.preparation_fingerprint,
+            captured_at=received_at,
+        )
+        owner = HermesCapturedTurnSourceOwner(
+            atomic_store=self._service._semantic_atomic_store,
+            preparation=runtime.text_preparation_service,
+            policy=runtime.text_preparation_policy,
+            writer_binding=lambda: self._service._semantic_writer_admission.commit_binding(
+                self._service._semantic_writer_admission.current()
+            ),
+        )
+        owner.capture(admission=prepared_admission, ledger=ledger)
+        with self._condition:
+            if self._active_turn is not None:
+                self._active_turn_ambiguous = True
+                raise ValueError("Hermes overlapping turn context is ambiguous")
+            self._active_turn = _CapturedTurnHandle(
+                session_id=session_id,
+                turn_ordinal=turn_ordinal,
+                message_digest=digest,
+                admission=prepared_admission,
+                ledger=ledger,
+                generation=token_hex(16),
+                expires_at=received_at + timedelta(minutes=5),
+            )
+
+    def complete_captured_turn(
+        self, *, user_content: str, assistant_content: str, messages: list[dict[str, object]] | None,
+        session_id: str, authenticated_author_id: str | None, received_at: datetime,
+    ) -> bool:
+        """Join a captured user callback to completion without re-admitting it."""
+        author = authenticated_author_id.strip() if isinstance(authenticated_author_id, str) else ""
+        digest = sha256(user_content.encode("utf-8")).hexdigest()
+        with self._condition:
+            active = self._active_turn
+            if active is None:
+                return False
+            if (
+                self._active_turn_ambiguous or active.closing
+                or active.expires_at <= received_at or active.session_id != session_id
+                or active.message_digest != digest or author != self._authenticated_author_id
+            ):
+                # A captured source already exists for this callback window.
+                # Never let a mismatched completion fall back into ordinary
+                # completed-turn admission and create a second user lineage.
+                raise ValueError("Hermes captured-turn completion is mismatched or ambiguous")
+            self._active_turn = _CapturedTurnHandle(**(active.__dict__ | {"closing": True}))
+            # A tool has an immutable view of this handle.  Completion must
+            # wait for that submission to publish its captured coordination
+            # transition before choosing ordinary versus structured work.
+            while self._active_tool_calls:
+                self._condition.wait()
+        try:
+            canonical = _canonicalize_completed_messages(
+                messages=messages, user_content=user_content, assistant_content=assistant_content
+            )
+            ordinal = sum(1 for item in canonical if item["role"] == "user")
+            if ordinal != active.turn_ordinal:
+                raise ValueError("Hermes captured-turn completion ordinal is mismatched")
+            completed_at = _completed_turn_timestamp(canonical)
+            ingress = self._service._preflight_ingress(
+                self._issue_host_ingress(session_id, author, completed_at)
+            )
+            if ingress is None:
+                raise ValueError("Hermes completed-turn ingress is unavailable")
+            request = HermesCompletedTurnAdmissionRequest(
+                installation_id=self._installation_id,
+                session_id=session_id,
+                authenticated_author_id=author,
+                authenticated_agent_id=self._authenticated_agent_id,
+                project_task_namespace=self._project_task_id,
+                turn_ordinal=ordinal,
+                canonical_transcript_digest=_canonical_messages_digest(canonical),
+                completed_messages=(
+                    HermesCompletedTurnMessage(role="user", content=user_content),
+                    HermesCompletedTurnMessage(role="assistant", content=assistant_content),
+                ),
+                completed_at=completed_at,
+                ingress=ingress,
+            )
+            assistant_delivery = derive_composite_child_delivery_id(
+                request.delivery_id, "hermes-completed-turn-assistant"
+            )
+            assistant_identity = DeliveryIdentity.create(
+                ingress.delivery_principal_binding, assistant_delivery
+            )
+            assistant = _prepare_governed_child_source(
+                request=request,
+                message=request.completed_messages[1],
+                child_delivery_id=assistant_delivery,
+                child_identity=assistant_identity,
+                child_kind="hermes-completed-turn-assistant",
+            )
+            assistant_admission = GovernedSourceAdmissionService(
+                self._service._memory_plane
+            ).prepare_atomic(
+                source=assistant.source,
+                delivery_identity=assistant_identity,
+                ingress=ingress,
+                operation_id="hermes-captured-turn-assistant:v1:" + active.ledger.capture_id,
+                evidence_only=True,
+            )
+            completion = HermesCapturedTurnCompletion(
+                capture_id=active.ledger.capture_id, session_id=session_id,
+                principal_id=author, agent_id=self._authenticated_agent_id,
+                turn_ordinal=ordinal, user_message_digest=digest,
+                assistant_message_digest=sha256(assistant_content.encode("utf-8")).hexdigest(),
+                transcript_digest=_canonical_messages_digest(canonical),
+            )
+            ordinary = self._service._semantic_atomic_store.publish_captured_turn_completion(
+                ledger=active.ledger, assistant=assistant_admission, completion=completion,
+                authenticated_ingress=ingress,
+                writer_binding=self._service._semantic_writer_admission.commit_binding(
+                    self._service._semantic_writer_admission.current()
+                ),
+            )
+            if ordinary is not None:
+                # The ordinary operation has a distinct retained-source fence;
+                # recovery owns it rather than reusing the capture admission's
+                # source-only operation.
+                self._enqueue(_RecoverySweep())
+        finally:
+            with self._condition:
+                self._active_turn = None
+                self._active_turn_ambiguous = False
+                self._condition.notify_all()
+        return True
 
     def sync_completed_turn(
         self,
@@ -118,11 +867,55 @@ class HermesCompletedTurnRuntime:
         # clock has advanced.  Source retention is bound to the transcript's
         # final persisted timestamp, never to the callback delivery time.
         completed_at = _completed_turn_timestamp(canonical_messages)
-        ordinal = sum(1 for item in canonical_messages if item["role"] == "assistant")
+        ordinal = sum(1 for item in canonical_messages if item["role"] == "user")
         host_ingress = self._issue_host_ingress(session_id, author, completed_at)
         ingress = self._service._preflight_ingress(host_ingress)
         if ingress is None:
             raise ValueError("Hermes completed-turn ingress is unavailable")
+        durable_capture = self._service._semantic_atomic_store.find_captured_turn(
+            installation_id=self._installation_id, session_id=session_id, principal_id=author,
+            agent_id=self._authenticated_agent_id, turn_ordinal=ordinal,
+            message_digest=sha256(user_content.encode("utf-8")).hexdigest(),
+        )
+        if durable_capture is not None:
+            request = HermesCompletedTurnAdmissionRequest(
+                installation_id=self._installation_id, session_id=session_id,
+                authenticated_author_id=author, authenticated_agent_id=self._authenticated_agent_id,
+                project_task_namespace=self._project_task_id, turn_ordinal=ordinal,
+                canonical_transcript_digest=_canonical_messages_digest(canonical_messages),
+                completed_messages=(
+                    HermesCompletedTurnMessage(role="user", content=user_content),
+                    HermesCompletedTurnMessage(role="assistant", content=assistant_content),
+                ), completed_at=completed_at, ingress=ingress,
+            )
+            assistant_delivery = derive_composite_child_delivery_id(request.delivery_id, "hermes-completed-turn-assistant")
+            assistant_identity = DeliveryIdentity.create(ingress.delivery_principal_binding, assistant_delivery)
+            assistant = _prepare_governed_child_source(
+                request=request, message=request.completed_messages[1], child_delivery_id=assistant_delivery,
+                child_identity=assistant_identity, child_kind="hermes-completed-turn-assistant",
+            )
+            assistant_admission = GovernedSourceAdmissionService(self._service._memory_plane).prepare_atomic(
+                source=assistant.source, delivery_identity=assistant_identity, ingress=ingress,
+                operation_id="hermes-captured-turn-assistant:v1:" + durable_capture.capture_id,
+                evidence_only=True,
+            )
+            completion = HermesCapturedTurnCompletion(
+                capture_id=durable_capture.capture_id, session_id=session_id, principal_id=author,
+                agent_id=self._authenticated_agent_id, turn_ordinal=ordinal,
+                user_message_digest=durable_capture.message_digest,
+                assistant_message_digest=sha256(assistant_content.encode("utf-8")).hexdigest(),
+                transcript_digest=_canonical_messages_digest(canonical_messages),
+            )
+            ordinary = self._service._semantic_atomic_store.publish_captured_turn_completion(
+                ledger=durable_capture, assistant=assistant_admission, completion=completion,
+                authenticated_ingress=ingress,
+                writer_binding=self._service._semantic_writer_admission.commit_binding(
+                    self._service._semantic_writer_admission.current()
+                ),
+            )
+            if ordinary is not None:
+                self._enqueue(_RecoverySweep())
+            return
         request = HermesCompletedTurnAdmissionRequest(
             installation_id=self._installation_id,
             session_id=session_id,
@@ -213,9 +1006,11 @@ class HermesCompletedTurnRuntime:
             time.sleep(1.0)
 
     def _process(self, work: _CompletedTurnWork) -> None:
-        admitted = work.admitted
         ingress = work.ingress
-        user_admission = admitted.normalization_inputs.source_admissions[0]
+        if work.captured_user_admission is not None:
+            user_admission = work.captured_user_admission
+        else:
+            user_admission = work.admitted.normalization_inputs.source_admissions[0]
         coordinator = self._service._provider_ingestion
         with self._service._new_canonical_evidence_arena() as arena:
             handoff_with_lease = coordinator._bootstrap_prepare_and_handoff(
@@ -286,11 +1081,19 @@ class HermesCompletedTurnRuntime:
             execution_node_id=None,
             solver_run_id=None,
         ),)
+        read_authority = (
+            self._structured_fact_read_authority()
+            if self._structured_fact_read_authority is not None
+            else None
+        )
+        if read_authority is None:
+            return ""
         handle = self._scoped_read_authority.provision(
             host_task_id=task_id,
             host_state_id=state_id,
             rows=rows,
             expires_at=now.replace(microsecond=0) + timedelta(minutes=1),
+            structured_fact_read_authorities=(read_authority,),
         )
         try:
             activation = self._service.retrieve_context(
@@ -316,6 +1119,31 @@ class HermesCompletedTurnRuntime:
         if activation.status not in {ScopedContextStatus.COMPLETE, ScopedContextStatus.PARTIAL_OPTIONAL}:
             return ""
         return "\n".join(item.rendered_text for item in activation.optional_items)
+
+    def lookup_structured_fact_status(
+        self, *, operation_id: str, session_id: str, authenticated_author_id: str, now: datetime,
+    ) -> dict[str, object]:
+        """Return one current-grant-protected terminal status after restart."""
+        author = authenticated_author_id.strip()
+        if (
+            not operation_id.strip()
+            or author != self._authenticated_author_id
+            or now.tzinfo is None
+            or self._structured_authority_request is None
+        ):
+            return {"status": "unavailable"}
+        self._require_current_authority()
+        response = self._service.lookup_structured_fact_status(
+            StructuredFactSubmissionStatusRequest(
+                operation_id=operation_id,
+                authority_request=self._structured_authority_request,
+            ),
+            authenticated_host_ingress=self._issue_host_ingress(session_id, author, now),
+        )
+        result: dict[str, object] = {"status": response.status}
+        if response.operation_id is not None:
+            result["operation_id"] = response.operation_id
+        return result
 
 
 def _canonicalize_completed_messages(
@@ -348,6 +1176,48 @@ def _canonicalize_completed_messages(
     if pending_calls:
         raise ValueError("Hermes transcript has unmatched tool calls")
     return canonical
+
+
+def _json_arrays_to_tuples(value: object) -> object:
+    """Translate JSON container syntax without relaxing the typed proposal schema."""
+    if type(value) is list:
+        return tuple(_json_arrays_to_tuples(item) for item in value)
+    if type(value) is dict:
+        return {key: _json_arrays_to_tuples(item) for key, item in value.items()}
+    return value
+
+
+def _validate_fact_only_argument_shape(proposal: dict[str, object]) -> None:
+    """Keep runtime acceptance exactly aligned with the advertised JSON schema."""
+    required = {
+        "abstained", "mentions", "facts", "corrections", "retractions",
+        "action_states", "identity_operations",
+    }
+    if set(proposal) != required or proposal.get("abstained") is not False:
+        raise ValueError("structured tool proposal is not the closed fact grammar")
+    empty = ("corrections", "retractions", "action_states", "identity_operations")
+    if any(type(proposal[name]) is not list or proposal[name] for name in empty):
+        raise ValueError("structured tool proposal contains a forbidden operation")
+    mentions = proposal["mentions"]
+    facts = proposal["facts"]
+    if type(mentions) is not list or not 1 <= len(mentions) <= 2 or type(facts) is not list or len(facts) != 1:
+        raise ValueError("structured tool proposal cardinality is invalid")
+    mention_fields = {"local_id", "mention_quote", "mention_context_quote", "proposed_type"}
+    if any(type(mention) is not dict or set(mention) != mention_fields for mention in mentions):
+        raise ValueError("structured tool mention grammar is invalid")
+    fact = facts[0]
+    fact_fields = {
+        "kind", "local_id", "predicate_id", "subject_entity_ref", "object", "assertion_quote",
+        "predicate_anchor_quote", "polarity", "commitment", "attributed_to_entity_ref", "temporal_qualifier_quotes",
+    }
+    if type(fact) is not dict or set(fact) != fact_fields or fact.get("kind") != "fact":
+        raise ValueError("structured tool fact grammar is invalid")
+    obj = fact["object"]
+    if type(obj) is not dict or obj.get("kind") not in {"entity", "literal"}:
+        raise ValueError("structured tool object grammar is invalid")
+    expected_object_fields = {"kind", "entity_ref"} if obj["kind"] == "entity" else {"kind", "literal_type", "canonical_value", "unit"}
+    if set(obj) != expected_object_fields:
+        raise ValueError("structured tool object grammar is invalid")
 
 
 def _canonicalize_message(value: object) -> dict[str, object]:

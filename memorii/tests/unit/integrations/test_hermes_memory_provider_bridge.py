@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import importlib
+import socket
 import sys
 import tomllib
 from abc import ABC, abstractmethod
 from datetime import UTC, datetime
 from importlib.metadata import EntryPoint
 from pathlib import Path
+from threading import Event, Thread
 from types import ModuleType, SimpleNamespace
 
 import pytest
+from memorii.core.memory_evolution.atomic_store import StructuredSubmissionGrantRevokedError
 
 
 @pytest.fixture
@@ -107,6 +110,48 @@ def test_operation_identity_reuses_completed_transcript_and_separates_positions(
     assert first == bridge_module._operation_id("sync_turn", "session:one", first_messages)
     assert first != bridge_module._operation_id("sync_turn", "session:one", later_messages)
     assert first.startswith("hermes:")
+
+
+def test_turn_start_delegates_the_pinned_callback_identity_to_capture_runtime(bridge_module) -> None:
+    calls: list[dict[str, object]] = []
+    provider = bridge_module.MemoriiHermesMemoryProvider()
+    provider._provider = object()
+    provider._session_id = "session:one"
+    provider._default_user_id = "user:ada"
+    provider._absent_author_id = "operator:ada"
+    provider._completed_turn_runtime = SimpleNamespace(capture_user_turn=lambda **kwargs: calls.append(kwargs))
+
+    provider.on_turn_start(7, "Atlas owner is Ada.", author_id="user:ada")
+
+    assert calls[0]["session_id"] == "session:one"
+    assert calls[0]["turn_ordinal"] == 7
+    assert calls[0]["message"] == "Atlas owner is Ada."
+    assert calls[0]["authenticated_author_id"] == "operator:ada"
+    assert isinstance(calls[0]["received_at"], datetime)
+
+
+def test_sync_turn_joins_a_captured_turn_without_legacy_duplicate_admission(bridge_module) -> None:
+    completed: list[dict[str, object]] = []
+    provider = bridge_module.MemoriiHermesMemoryProvider()
+    provider._provider = object()
+    provider._session_id = "session:one"
+    provider._default_user_id = "user:ada"
+    provider._absent_author_id = "operator:ada"
+    provider._completed_turn_runtime = SimpleNamespace(
+        complete_captured_turn=lambda **kwargs: (completed.append(kwargs) or True),
+        sync_completed_turn=lambda **_kwargs: (_ for _ in ()).throw(AssertionError("legacy duplicate admission")),
+    )
+
+    provider.sync_turn(
+        "Atlas owner is Ada.", "I will remember that.",
+        messages=[
+            {"role": "user", "content": "Atlas owner is Ada."},
+            {"role": "assistant", "content": "I will remember that."},
+        ],
+    )
+
+    assert completed[0]["session_id"] == "session:one"
+    assert completed[0]["authenticated_author_id"] == "operator:ada"
 
 
 def test_completed_runtime_lifecycle_hooks_drain_before_read_or_return_without_legacy_ingress(bridge_module) -> None:
@@ -326,6 +371,34 @@ def test_first_party_factory_initializes_after_authority_validation_without_open
     assert ingress.provider_identity == "hermes"
     assert ingress.principal_handle.author_id == binding.absent_author_id
     assert binding.absent_author_id.startswith("memorii:hermes:operator:")
+    assert len(binding.service._memory_plane.list_records(
+        source_kind="semantic_ingestion_catalog_version"
+    )) == 1
+    assert len(binding.service._memory_plane.list_records(
+        source_kind="semantic_ingestion_catalog_selection_pointer"
+    )) == 1
+    runtime = binding.completed_turn_runtime
+    assert runtime is not None
+    runtime.close()
+    reopened = build_local_level2_runtime_binding(
+        bridge_module.HermesProviderServiceContext(
+            storage_root=tmp_path / "memorii",
+            hermes_home=tmp_path,
+            session_id="session:two",
+            user_id="user:one",
+            agent_identity="profile:primary",
+            platform="cli",
+            agent_context="primary",
+            agent_workspace="hermes",
+            parent_session_id=None,
+        )
+    )
+    assert len(reopened.service._memory_plane.list_records(
+        source_kind="semantic_ingestion_catalog_selection_pointer"
+    )) == 1
+    reopened_runtime = reopened.completed_turn_runtime
+    assert reopened_runtime is not None
+    reopened_runtime.close()
     with pytest.raises(LocalLevel2AuthorityError, match="already bound"):
         build_local_level2_runtime_binding(
             bridge_module.HermesProviderServiceContext(
@@ -340,6 +413,77 @@ def test_first_party_factory_initializes_after_authority_validation_without_open
                 parent_session_id=None,
             )
         )
+
+
+def test_factory_issues_stable_exact_local_structured_grants() -> None:
+    from memorii.core.semantic_ingestion.catalog_authority import (
+        AuthenticatedPrincipalAgent,
+        StructuredSubmissionAuthorityRequest,
+    )
+    from memorii.integrations.hermes_factory import _LocalLevel2StructuredSubmissionResolver
+
+    resolver = _LocalLevel2StructuredSubmissionResolver(
+        installation_id="installation:one",
+        operator_id="operator:one",
+        agent_id="agent:one",
+        project_task_id="task:one",
+        authority_is_current=lambda: True,
+        structured_tool_is_current=lambda: True,
+    )
+    authority = resolver.issued_authority()
+    assert authority.source_grant.grant_id.startswith("hermes-local-structured-grant:v1:source:")
+    assert authority.fact_grant.grant_id.startswith("hermes-local-structured-grant:v1:fact:")
+    assert authority.catalog_visibility_grant.grant_id.startswith(
+        "hermes-local-structured-grant:v1:catalog_visibility:"
+    )
+    assert {authority.source_grant.grant_version, authority.fact_grant.grant_version,
+            authority.catalog_visibility_grant.grant_version} == {1}
+
+    request = StructuredSubmissionAuthorityRequest(
+        authenticated=AuthenticatedPrincipalAgent(principal_id="operator:one", agent_id="agent:one"),
+        source_grant=authority.source_grant,
+        fact_grant=authority.fact_grant,
+        catalog_visibility_grant=authority.catalog_visibility_grant,
+    )
+    ingress = SimpleNamespace(
+        delivery_principal_binding=SimpleNamespace(principal_subject_id="operator:one"),
+        authenticated_agent_id="agent:one",
+    )
+    assert resolver.resolve_submission_authority(authenticated_ingress=ingress, request=request) == authority
+    assert resolver.resolve_submission_authority(
+        authenticated_ingress=ingress,
+        request=request.model_copy(update={"fact_grant": request.fact_grant.model_copy(update={"grant_version": 2})}),
+    ) is None
+
+
+def test_installed_factory_provisions_the_tool_grant_trio_only_with_tool_artifact(
+    bridge_module, tmp_path: Path,
+) -> None:
+    from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
+    from memorii.integrations.hermes_local_authority import (
+        authorize_local_level2,
+        authorize_local_structured_tool,
+    )
+
+    authorize_local_level2(hermes_home=tmp_path)
+    authorize_local_structured_tool(hermes_home=tmp_path)
+    binding = build_local_level2_runtime_binding(
+        bridge_module.HermesProviderServiceContext(
+            storage_root=tmp_path / "memorii", hermes_home=tmp_path,
+            session_id="session:one", user_id=None, agent_identity="profile:primary",
+            platform="cli", agent_context="primary", agent_workspace="hermes",
+            parent_session_id=None,
+        )
+    )
+    states = binding.service._memory_plane.list_records(
+        source_kind="semantic_ingestion_structured_grant_state"
+    )
+    assert len(states) == 3
+    assert {record.content["state"]["grant_kind"] for record in states} == {
+        "source", "fact", "catalog_visibility",
+    }
+    assert all(record.content["state"]["active"] for record in states)
+    binding.completed_turn_runtime.close()
 
 
 def test_bridge_rejects_changed_raw_author_before_turn_admission(
@@ -378,6 +522,754 @@ def test_bridge_rejects_changed_raw_author_before_turn_admission(
             ],
             turn_author={"id": "raw:user:two"},
         )
+
+
+def test_installed_bridge_turn_start_reaches_source_only_capture_owner_without_openai(
+    bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from memorii.core.semantic_ingestion.openai_responses_project_assertions import OpenAIResponsesApiClient
+    from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
+    from memorii.integrations.hermes_local_authority import authorize_local_level2
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(
+        OpenAIResponsesApiClient,
+        "complete",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("model transport must not run")),
+    )
+    authorize_local_level2(hermes_home=tmp_path)
+    monkeypatch.setattr(
+        bridge_module.importlib.metadata,
+        "entry_points",
+        lambda *, group: (_FactoryEntryPoint(build_local_level2_runtime_binding),),
+    )
+    provider = bridge_module.MemoriiHermesMemoryProvider()
+    provider.initialize(
+        "session:one", hermes_home=tmp_path, user_id="raw:user:one",
+        agent_identity="profile:primary", platform="cli", agent_context="primary",
+        agent_workspace="hermes",
+    )
+
+    provider.on_turn_start(1, "Atlas owner is Ada.")
+
+    records = provider._provider._service._memory_plane.list_records()
+    assert any(record.source_kind == "semantic_ingestion_hermes_captured_turn" for record in records)
+    assert any(record.source_kind == "semantic_ingestion_prepared_source" for record in records)
+    assert not any(record.source_kind == "semantic_ingestion_preplanning_control" for record in records)
+    provider.shutdown()
+
+
+def test_installed_no_key_bridge_advertises_only_the_closed_structured_tool_after_capture(
+    bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
+    from memorii.integrations.hermes_local_authority import (
+        authorize_local_level2,
+        authorize_local_structured_tool,
+    )
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    authorize_local_level2(hermes_home=tmp_path)
+    authorize_local_structured_tool(hermes_home=tmp_path)
+    monkeypatch.setattr(
+        bridge_module.importlib.metadata,
+        "entry_points",
+        lambda *, group: (_FactoryEntryPoint(build_local_level2_runtime_binding),),
+    )
+    provider = bridge_module.MemoriiHermesMemoryProvider()
+    provider.initialize(
+        "session:one", hermes_home=tmp_path, user_id="raw:user:one",
+        agent_identity="profile:primary", platform="cli", agent_context="primary",
+        agent_workspace="hermes",
+    )
+
+    assert provider.get_tool_schemas() == []
+    provider.on_turn_start(1, "Atlas owner is Ada.")
+    schemas = provider.get_tool_schemas()
+
+    assert [schema["function"]["name"] for schema in schemas] == ["memorii_submit_fact"]
+    parameters = schemas[0]["function"]["parameters"]
+    assert parameters["additionalProperties"] is False
+    assert provider.handle_tool_call("memorii_submit_fact", {"schema_version": 2}) == {
+        "status": "rejected"
+    }
+    provider.shutdown()
+
+
+def test_installed_no_key_bridge_reaches_canonical_structured_submission_without_model_transport(
+    bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from memorii.core.semantic_ingestion.openai_responses_project_assertions import OpenAIResponsesApiClient
+    from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
+    from memorii.integrations.hermes_local_authority import (
+        authorize_local_level2,
+        authorize_local_structured_tool,
+    )
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    def network_forbidden(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        raise AssertionError("installed structured fact attempted network access")
+
+    monkeypatch.setattr(socket, "getaddrinfo", network_forbidden)
+    monkeypatch.setattr(socket, "create_connection", network_forbidden)
+    monkeypatch.setattr(socket.socket, "connect", network_forbidden)
+    monkeypatch.setattr(socket.socket, "connect_ex", network_forbidden)
+    monkeypatch.setattr(
+        OpenAIResponsesApiClient,
+        "complete",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("model transport must not run")),
+    )
+    authorize_local_level2(hermes_home=tmp_path)
+    authorize_local_structured_tool(hermes_home=tmp_path)
+    monkeypatch.setattr(
+        bridge_module.importlib.metadata,
+        "entry_points",
+        lambda *, group: (_FactoryEntryPoint(build_local_level2_runtime_binding),),
+    )
+    provider = bridge_module.MemoriiHermesMemoryProvider()
+    provider.initialize(
+        "session:one", hermes_home=tmp_path, user_id="raw:user:one",
+        agent_identity="profile:primary", platform="cli", agent_context="primary",
+        agent_workspace="hermes",
+    )
+    sentence = "Atlas project owner is Ada."
+    provider.on_turn_start(1, sentence)
+    arguments = {
+        "schema_version": 1,
+        "source_quote": sentence,
+        "source_quote_start": 0,
+        "subject_quote": "Atlas",
+        "predicate_anchor_quote": "owner",
+        "object_quote": "Ada",
+        "proposal": {
+            "abstained": False,
+                "mentions": [
+                    {"local_id": "atlas", "mention_quote": "Atlas", "mention_context_quote": sentence, "proposed_type": None},
+                    {"local_id": "ada", "mention_quote": "Ada", "mention_context_quote": sentence, "proposed_type": None},
+            ],
+                "facts": [{
+                    "kind": "fact", "local_id": "owner", "predicate_id": "project_owner",
+                "subject_entity_ref": "atlas", "object": {"kind": "entity", "entity_ref": "ada"},
+                "assertion_quote": sentence, "predicate_anchor_quote": "owner",
+                "polarity": "positive", "commitment": "asserted", "attributed_to_entity_ref": None,
+                "temporal_qualifier_quotes": [],
+            }],
+            "corrections": [], "retractions": [], "action_states": [], "identity_operations": [],
+        },
+    }
+    service = provider._provider._service
+    runtime = provider._completed_turn_runtime
+    active = runtime._active_turn
+    assert active is not None
+    # Exercise the generic public root directly with a real captured source,
+    # valid factory authority and no pin reference.  Submission must deny
+    # before retained-operation allocation; only schema egress may create a pin.
+    missing_pin = service.submit_structured_fact(
+        runtime._structured_tool_request(active=active, arguments=arguments),
+        authenticated_host_ingress=runtime._issue_host_ingress(
+            active.session_id, runtime._authenticated_author_id, datetime.now(UTC),
+        ),
+    )
+    assert missing_pin.status == "denied"
+    assert missing_pin.denial_reason == "retained_source_denied"
+    # A captured callback cannot use submission to create its own pre-egress
+    # pin.  It leaves no retained structured operation or semantic effect.
+    assert provider.handle_tool_call("memorii_submit_fact", arguments) == {
+        "status": "unavailable"
+    }
+    records_before_schema = tuple(service._memory_plane.list_records())
+    assert not any(
+        record.source_kind == "semantic_ingestion_catalog_capture_pin"
+        for record in records_before_schema
+    )
+    assert not any(
+        record.source_kind == "semantic_ingestion_retained_source_operation"
+        for record in records_before_schema
+    )
+    assert not any(
+        record.source_kind == "semantic_ingestion_retained_structured_submission"
+        for record in records_before_schema
+    )
+    assert not any(
+        record.source_kind == "semantic_ingestion_preplanning_control"
+        for record in records_before_schema
+    )
+    assert not any(
+        record.content.get("runtime_context_projection_kind")
+        == "bootstrap_v3_claim_assertion"
+        for record in records_before_schema
+    )
+    # The schema call is the pre-tool egress boundary: it persists and
+    # verifies the captured-turn catalog witness consumed below.
+    assert [item["function"]["name"] for item in provider.get_tool_schemas()] == [
+        "memorii_submit_fact"
+    ]
+    def stage(note: str) -> None:
+        print(f"installed-bridge stage={note} at={datetime.now(UTC).isoformat()}", flush=True)
+
+    stage("captured")
+    result = provider.handle_tool_call("memorii_submit_fact", arguments)
+    stage("native-commit-returned")
+
+    # The installed bridge reaches a committed native fact without model
+    # transport through the captured retained-source path.
+    assert result["status"] == "committed"
+    assert isinstance(result.get("operation_id"), str)
+    assert result["operation_id"].startswith("retained-source:v1:")
+    records = tuple(service._memory_plane.list_records())
+    assert sum(
+        record.content.get("runtime_context_projection_kind")
+        == "bootstrap_v3_claim_assertion"
+        for record in records
+    ) == 1
+    assert sum(
+        record.source_kind == "semantic_ingestion_structured_claim_catalog_binding"
+        for record in records
+    ) == 1
+    pin_record = next(
+        record for record in records
+        if record.source_kind == "semantic_ingestion_catalog_capture_pin"
+    )
+    binding_record = next(
+        record for record in records
+        if record.source_kind == "semantic_ingestion_structured_claim_catalog_binding"
+    )
+    pin = pin_record.content["catalog_capture_pin"]
+    binding = binding_record.content["binding"]
+    assert binding["schema_version"] == 2
+    assert {
+        key: binding[key]
+        for key in (
+            "capture_id", "pin_memory_id", "pin_digest", "catalog_scope",
+            "catalog_digest", "selected_version_id", "selected_version_digest",
+            "runtime_bundle_digest",
+        )
+    } == {
+        "capture_id": pin["capture_id"],
+        "pin_memory_id": pin_record.memory_id,
+        "pin_digest": pin["pin_digest"],
+        "catalog_scope": pin["catalog_scope"],
+        "catalog_digest": pin["catalog_digest"],
+        "selected_version_id": pin["selected_version_id"],
+        "selected_version_digest": pin["selected_version_digest"],
+        "runtime_bundle_digest": pin["runtime_bundle_digest"],
+    }
+    stage("durable-record-counts-verified")
+    first_prefetch = provider.prefetch("Atlas")
+    assert "Atlas" in first_prefetch and "Ada" in first_prefetch
+    stage("first-protected-prefetch-verified")
+    first_status = provider.lookup_structured_fact_status(result["operation_id"])
+    assert first_status == result
+    stage("first-status-verified")
+    provider.shutdown()
+    stage("first-runtime-shutdown")
+
+    reopened = bridge_module.MemoriiHermesMemoryProvider()
+    reopened.initialize(
+        "session:one", hermes_home=tmp_path, user_id="raw:user:one",
+        agent_identity="profile:primary", platform="cli", agent_context="primary",
+        agent_workspace="hermes",
+    )
+    stage("jsonl-runtime-reopened")
+    retry = reopened.lookup_structured_fact_status(result["operation_id"])
+    assert retry == result
+    assert reopened.lookup_structured_fact_status(result["operation_id"]) == retry
+    stage("reopened-status-retry-verified")
+    reopened_prefetch = reopened.prefetch("Atlas")
+    assert reopened_prefetch == first_prefetch
+    stage("reopened-protected-prefetch-verified")
+    reopened.shutdown()
+
+
+def test_installed_default_catalog_entity_relation_commits_and_recalls(
+    bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exercise selected default dispatch through the installed Hermes root."""
+    from memorii.core.semantic_ingestion.openai_responses_project_assertions import OpenAIResponsesApiClient
+    from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
+    from memorii.integrations.hermes_local_authority import (
+        authorize_local_level2,
+        authorize_local_structured_tool,
+    )
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(
+        OpenAIResponsesApiClient,
+        "complete",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("model transport must not run")),
+    )
+    authorize_local_level2(hermes_home=tmp_path)
+    authorize_local_structured_tool(hermes_home=tmp_path)
+    monkeypatch.setattr(
+        bridge_module.importlib.metadata,
+        "entry_points",
+        lambda *, group: (_FactoryEntryPoint(build_local_level2_runtime_binding),),
+    )
+    provider = bridge_module.MemoriiHermesMemoryProvider()
+    provider.initialize(
+        "session:default", hermes_home=tmp_path, user_id="raw:user:one",
+        agent_identity="profile:primary", platform="cli", agent_context="primary",
+        agent_workspace="hermes",
+    )
+    sentence = "Alice reports to Bob."
+    provider.on_turn_start(1, sentence)
+    schemas = provider.get_tool_schemas()
+    predicate_ids = schemas[0]["function"]["parameters"]["properties"]["proposal"]["properties"]["facts"]["items"]["properties"]["predicate_id"]["enum"]
+    assert "reports_to" in predicate_ids
+    arguments = {
+        "schema_version": 1, "source_quote": sentence, "source_quote_start": 0,
+        "subject_quote": "Alice", "predicate_anchor_quote": "reports to", "object_quote": "Bob",
+        "proposal": {
+            "abstained": False,
+            "mentions": [
+                {"local_id": "alice", "mention_quote": "Alice", "mention_context_quote": sentence, "proposed_type": "Person"},
+                {"local_id": "bob", "mention_quote": "Bob", "mention_context_quote": sentence, "proposed_type": "Person"},
+            ],
+            "facts": [{
+                "kind": "fact", "local_id": "reports", "predicate_id": "reports_to",
+                "subject_entity_ref": "alice", "object": {"kind": "entity", "entity_ref": "bob"},
+                "assertion_quote": sentence, "predicate_anchor_quote": "reports to",
+                "polarity": "positive", "commitment": "asserted", "attributed_to_entity_ref": None,
+                "temporal_qualifier_quotes": [],
+            }],
+            "corrections": [], "retractions": [], "action_states": [], "identity_operations": [],
+        },
+    }
+    result = provider.handle_tool_call("memorii_submit_fact", arguments)
+    assert result["status"] == "committed"
+    records = tuple(provider._provider._service._memory_plane.list_records())
+    assert any(
+        record.content.get("runtime_context_projection_kind") == "bootstrap_v3_claim_assertion"
+        for record in records
+    )
+    binding = next(
+        record.content["binding"] for record in records
+        if record.source_kind == "semantic_ingestion_structured_claim_catalog_binding"
+    )
+    assert binding["schema_version"] == 2
+    assert binding["selected_version_id"] == "default-catalog-v1"
+    recalled = provider.prefetch("Who does Alice report to?")
+    provider.shutdown()
+    assert "Alice" in recalled and "Bob" in recalled
+
+
+def test_installed_default_catalog_reuses_one_runtime_for_entity_and_literal_rows(
+    bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Representative corpus rows retain independent pins on one installed root."""
+    from time import monotonic
+
+    from memorii.core.semantic_ingestion.openai_responses_project_assertions import OpenAIResponsesApiClient
+    from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
+    from memorii.integrations.hermes_local_authority import authorize_local_level2, authorize_local_structured_tool
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(OpenAIResponsesApiClient, "complete", lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("network")))
+    authorize_local_level2(hermes_home=tmp_path)
+    authorize_local_structured_tool(hermes_home=tmp_path)
+    monkeypatch.setattr(bridge_module.importlib.metadata, "entry_points", lambda *, group: (_FactoryEntryPoint(build_local_level2_runtime_binding),))
+    provider = bridge_module.MemoriiHermesMemoryProvider()
+    provider.initialize("session:matrix", hermes_home=tmp_path, user_id="raw:user:one", agent_identity="profile:primary", platform="cli", agent_context="primary", agent_workspace="hermes")
+    transcript: list[dict[str, object]] = []
+
+    def submit(*, ordinal: int, sentence: str, subject: str, subject_type: str, predicate: str, anchor: str, object_quote: str, object_value: dict[str, object], object_type: str | None, complete: bool = True) -> dict[str, object]:
+        provider.on_turn_start(ordinal, sentence)
+        assert predicate in provider.get_tool_schemas()[0]["function"]["parameters"]["properties"]["proposal"]["properties"]["facts"]["items"]["properties"]["predicate_id"]["enum"]
+        mentions = [{"local_id": "subject", "mention_quote": subject, "mention_context_quote": sentence, "proposed_type": subject_type}]
+        if object_type is not None:
+            mentions.append({"local_id": "object", "mention_quote": object_quote, "mention_context_quote": sentence, "proposed_type": object_type})
+        arguments = {"schema_version": 1, "source_quote": sentence, "source_quote_start": 0, "subject_quote": subject, "predicate_anchor_quote": anchor, "object_quote": object_quote, "proposal": {"abstained": False, "mentions": mentions, "facts": [{"kind": "fact", "local_id": predicate, "predicate_id": predicate, "subject_entity_ref": "subject", "object": object_value, "assertion_quote": sentence, "predicate_anchor_quote": anchor, "polarity": "positive", "commitment": "asserted", "attributed_to_entity_ref": None, "temporal_qualifier_quotes": []}], "corrections": [], "retractions": [], "action_states": [], "identity_operations": []}}
+        started = monotonic()
+        result = provider.handle_tool_call("memorii_submit_fact", arguments)
+        print(f"default-catalog-row={predicate} elapsed_seconds={monotonic() - started:.3f}", flush=True)
+        if not complete:
+            return result
+        transcript.extend((
+            {"role": "user", "content": sentence},
+            {
+                "role": "assistant", "content": "Recorded.",
+                "timestamp": datetime.now(UTC).isoformat(),
+            },
+        ))
+        provider.sync_turn(
+            user_content=sentence,
+            assistant_content="Recorded.",
+            messages=transcript,
+        )
+        # The bridge's public retrieval boundary drains completed-turn work
+        # before the next capture advances the same installed runtime.
+        provider.prefetch(subject)
+        return result
+
+    entity = submit(ordinal=1, sentence="Atlas is owned by Ada.", subject="Atlas", subject_type="Project", predicate="project_owned_by", anchor="owned by", object_quote="Ada", object_value={"kind": "entity", "entity_ref": "object"}, object_type="Person")
+    literal = submit(ordinal=2, sentence="Fix bug is due 2026-10-03.", subject="Fix bug", subject_type="WorkItem", predicate="work_item_due_on", anchor="due", object_quote="2026-10-03", object_value={"kind": "literal", "literal_type": "local_date", "canonical_value": "{\"source_calendar\":\"gregorian\",\"value\":\"2026-10-03\"}", "unit": None}, object_type=None)
+    assert entity["status"] == literal["status"] == "committed"
+    records = tuple(provider._provider._service._memory_plane.list_records())
+    bindings = [r.content["binding"] for r in records if r.source_kind == "semantic_ingestion_structured_claim_catalog_binding"]
+    assert len(bindings) == 2 and all(item["schema_version"] == 2 and item["selected_version_id"] == "default-catalog-v1" for item in bindings)
+    assert "Ada" in provider.prefetch("Who owns Atlas?")
+    assert "2026-10-03" in provider.prefetch("When is Fix bug due?")
+    before_bindings = len(bindings)
+    before_projections = sum(
+        record.content.get("runtime_context_projection_kind") == "bootstrap_v3_claim_assertion"
+        for record in records
+    )
+    denied = submit(ordinal=3, sentence="Atlas is owned by Ada.", subject="Atlas", subject_type="Person", predicate="project_owned_by", anchor="owned by", object_quote="Ada", object_value={"kind": "entity", "entity_ref": "object"}, object_type="Person", complete=False)
+    assert denied["status"] in {"rejected", "unavailable"}
+    after = tuple(provider._provider._service._memory_plane.list_records())
+    assert sum(
+        record.source_kind == "semantic_ingestion_structured_claim_catalog_binding"
+        for record in after
+    ) == before_bindings
+    assert sum(
+        record.content.get("runtime_context_projection_kind") == "bootstrap_v3_claim_assertion"
+        for record in after
+    ) == before_projections
+    outcomes = provider._provider._service.reconcile_memory_evolution()
+    print(f"default-catalog-pending-outcomes={outcomes!r}", flush=True)
+    assert not any(outcome.retryable for outcome in outcomes)
+    provider.shutdown()
+
+
+def _persist_installed_protected_claim(
+    *,
+    provider: object,
+    storage_root: Path,
+):
+    """Write a narrow persisted read fixture bound to the installed grants.
+
+    The native V3 commit is separately covered above.  These records isolate
+    the release race while retaining the factory-issued principal, grants, and
+    catalog binding that the bridge uses in production.
+    """
+    from hashlib import sha256
+
+    from memorii.core.memory_plane import JsonlMemoryPlaneStore
+    from memorii.core.memory_plane.models import CanonicalMemoryRecord
+    from memorii.core.memory_plane.store import _PersistedBatch
+    from memorii.core.semantic_ingestion.catalog_authority import (
+        StructuredClaimCatalogBinding,
+        ThreePredicateSeedCatalogAuthorityRepository,
+    )
+    from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
+
+    runtime = provider._completed_turn_runtime
+    read_authority = runtime._structured_fact_read_authority()
+    assert read_authority is not None
+    claim_id = "claim:installed-release-race"
+    claim_digest = sha256(b"installed-release-race-claim").hexdigest()
+    projection = CanonicalMemoryRecord(
+        memory_id="semantic:installed-release-race",
+        domain=MemoryDomain.SEMANTIC,
+        text="Atlas project owner is Ada.",
+        content={
+            "runtime_context_projection_kind": "bootstrap_v3_claim_assertion",
+            "claim_assertion_id": claim_id,
+            "claim_assertion_record_digest": claim_digest,
+        },
+        status=CommitStatus.COMMITTED,
+        task_id=runtime._project_task_id,
+        user_id=runtime._authenticated_author_id,
+        agent_id=runtime._authenticated_agent_id,
+        source_kind="test_installed_protected_claim",
+        visibility=MemoryRecordVisibility.RUNTIME_CONTEXT,
+    )
+    catalog = ThreePredicateSeedCatalogAuthorityRepository().resolve_base()
+    binding = StructuredClaimCatalogBinding(
+        schema_version=1,
+        claim_assertion_id=claim_id,
+        claim_record_digest=claim_digest,
+        catalog_scope=catalog.catalog_scope,
+        catalog_digest=catalog.catalog_digest,
+        fact_scope=read_authority.fact_grant.fact_scope,
+        authenticated=read_authority.authenticated,
+    )
+    binding_record = CanonicalMemoryRecord(
+        memory_id="semantic_ingestion:structured-claim-catalog:" + claim_id,
+        domain=MemoryDomain.SEMANTIC,
+        text="",
+        content={"binding": binding.model_dump(mode="json")},
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_structured_claim_catalog_binding",
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+    # The fixture is deliberately persisted through a second JSONL handle.
+    # It models an already committed protected projection and binding without
+    # repeating the native commit path, which this regression does not test.
+    external_store = JsonlMemoryPlaneStore(storage_root / "memory-plane")
+    with external_store._locked(exclusive=True):
+        batches, _ = external_store._current_records_unlocked()
+        write_revision = batches[-1].revision if batches else 0
+        data_revision = batches[-1].data_revision if batches else 0
+        external_store._replace_batches([
+            *batches,
+            _PersistedBatch.create(
+                revision=write_revision + 1,
+                data_revision=data_revision + 1,
+                records=(projection, binding_record),
+            ),
+        ])
+    return external_store, read_authority
+
+
+def test_installed_bridge_operator_revocation_only_accepts_factory_grant_kinds(
+    bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
+    from memorii.integrations.hermes_local_authority import (
+        authorize_local_level2,
+        authorize_local_structured_tool,
+    )
+
+    unavailable_home = tmp_path / "unavailable"
+    authorize_local_level2(hermes_home=unavailable_home)
+    monkeypatch.setattr(
+        bridge_module.importlib.metadata,
+        "entry_points",
+        lambda *, group: (_FactoryEntryPoint(build_local_level2_runtime_binding),),
+    )
+    unavailable = bridge_module.MemoriiHermesMemoryProvider()
+    unavailable.initialize(
+        "session:one", hermes_home=unavailable_home, user_id="raw:user:one",
+        agent_identity="profile:primary", platform="cli", agent_context="primary",
+        agent_workspace="hermes",
+    )
+    try:
+        with pytest.raises(RuntimeError, match="revocation is unavailable"):
+            unavailable.revoke_structured_grant("fact")
+    finally:
+        unavailable.shutdown()
+
+    authorize_local_level2(hermes_home=tmp_path)
+    authorize_local_structured_tool(hermes_home=tmp_path)
+    provider = bridge_module.MemoriiHermesMemoryProvider()
+    provider.initialize(
+        "session:one", hermes_home=tmp_path, user_id="raw:user:one",
+        agent_identity="profile:primary", platform="cli", agent_context="primary",
+        agent_workspace="hermes",
+    )
+    try:
+        with pytest.raises(ValueError, match="grant kind is invalid"):
+            provider.revoke_structured_grant("foreign")
+        provider.revoke_structured_grant("fact")
+        records = provider._provider._service._memory_plane.list_records(
+            source_kind="semantic_ingestion_structured_grant_state"
+        )
+        states = {record.content["state"]["grant_kind"]: record.content["state"] for record in records}
+        assert states["fact"]["active"] is False
+        assert states["source"]["active"] is True
+        assert states["catalog_visibility"]["active"] is True
+        provider.revoke_structured_grant("fact")
+    finally:
+        provider.shutdown()
+
+
+@pytest.mark.parametrize("grant_kind", ("source", "fact", "catalog_visibility"))
+def test_installed_schema_retry_after_pin_denies_each_revoked_grant(
+    bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, grant_kind: str,
+) -> None:
+    """An existing pin is historical selection, never a grant authorization."""
+    from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
+    from memorii.integrations.hermes_local_authority import (
+        authorize_local_level2,
+        authorize_local_structured_tool,
+    )
+
+    home = tmp_path / grant_kind
+    authorize_local_level2(hermes_home=home)
+    authorize_local_structured_tool(hermes_home=home)
+    monkeypatch.setattr(
+        bridge_module.importlib.metadata,
+        "entry_points",
+        lambda *, group: (_FactoryEntryPoint(build_local_level2_runtime_binding),),
+    )
+    provider = bridge_module.MemoriiHermesMemoryProvider()
+    provider.initialize(
+        "session:one", hermes_home=home, user_id="raw:user:one",
+        agent_identity="profile:primary", platform="cli", agent_context="primary",
+        agent_workspace="hermes",
+    )
+    try:
+        provider.on_turn_start(1, "Atlas owner is Ada.")
+        assert [item["function"]["name"] for item in provider.get_tool_schemas()] == [
+            "memorii_submit_fact"
+        ]
+        service = provider._provider._service
+        before = len(service._memory_plane.list_records())
+        provider.revoke_structured_grant(grant_kind)
+        assert provider.get_tool_schemas() == []
+        assert len(service._memory_plane.list_records()) == before
+    finally:
+        provider.shutdown()
+
+
+def test_verified_operator_action_revokes_before_provisioning_and_blocks_later_startup(
+    bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from memorii.core.memory_plane import JsonlMemoryPlaneStore, MemoryPlaneService
+    from memorii.integrations.hermes_factory import (
+        build_local_level2_runtime_binding,
+        revoke_local_level2_structured_grant,
+    )
+    from memorii.integrations.hermes_local_authority import (
+        authorize_local_level2,
+        authorize_local_structured_tool,
+    )
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    authorize_local_level2(hermes_home=tmp_path)
+    authorize_local_structured_tool(hermes_home=tmp_path)
+    context = bridge_module.HermesProviderServiceContext(
+        storage_root=tmp_path / "memorii",
+        hermes_home=tmp_path,
+        session_id="session:operator-revoke",
+        user_id="raw:user:one",
+        agent_identity="profile:primary",
+        platform="cli",
+        agent_context="primary",
+        agent_workspace="hermes",
+        parent_session_id=None,
+    )
+
+    revoke_local_level2_structured_grant(context=context, grant_kind="fact")
+
+    records = MemoryPlaneService(
+        record_store=JsonlMemoryPlaneStore(tmp_path / "memorii" / "memory-plane")
+    ).list_records(source_kind="semantic_ingestion_structured_grant_state")
+    assert len(records) == 1
+    assert records[0].content["state"]["grant_kind"] == "fact"
+    assert records[0].content["state"]["active"] is False
+    with pytest.raises(StructuredSubmissionGrantRevokedError, match="revoked"):
+        build_local_level2_runtime_binding(context)
+
+
+def test_installed_bridge_durable_revocation_before_release_discloses_no_protected_context(
+    bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An installed bridge sees a durable fact revoke before it releases context."""
+    from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
+    from memorii.integrations.hermes_local_authority import (
+        authorize_local_level2,
+        authorize_local_structured_tool,
+    )
+
+    authorize_local_level2(hermes_home=tmp_path)
+    authorize_local_structured_tool(hermes_home=tmp_path)
+    monkeypatch.setattr(
+        bridge_module.importlib.metadata,
+        "entry_points",
+        lambda *, group: (_FactoryEntryPoint(build_local_level2_runtime_binding),),
+    )
+    provider = bridge_module.MemoriiHermesMemoryProvider()
+    provider.initialize(
+        "session:one", hermes_home=tmp_path, user_id="raw:user:one",
+        agent_identity="profile:primary", platform="cli", agent_context="primary",
+        agent_workspace="hermes",
+    )
+    try:
+        _external_store, _read_authority = _persist_installed_protected_claim(
+            provider=provider, storage_root=tmp_path / "memorii",
+        )
+        service = provider._provider._service
+        provider.revoke_structured_grant("fact")
+        observed = []
+        original = service.retrieve_context
+
+        def capture_activation(*args, **kwargs):
+            result = original(*args, **kwargs)
+            observed.append(result)
+            return result
+
+        monkeypatch.setattr(service, "retrieve_context", capture_activation)
+        assert provider.prefetch("Atlas") == ""
+        assert len(observed) == 1
+        assert observed[0].mandatory_items == ()
+        assert observed[0].optional_items == ()
+        assert observed[0].omissions == ()
+        assert observed[0].structured_outcome is None
+    finally:
+        provider.shutdown()
+
+
+def test_installed_bridge_release_receipt_linearizes_before_durable_fact_revocation(
+    bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A competing JSONL revoke waits for the bridge's final release receipt."""
+    from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
+    from memorii.integrations.hermes_local_authority import (
+        authorize_local_level2,
+        authorize_local_structured_tool,
+    )
+
+    authorize_local_level2(hermes_home=tmp_path)
+    authorize_local_structured_tool(hermes_home=tmp_path)
+    monkeypatch.setattr(
+        bridge_module.importlib.metadata,
+        "entry_points",
+        lambda *, group: (_FactoryEntryPoint(build_local_level2_runtime_binding),),
+    )
+    provider = bridge_module.MemoriiHermesMemoryProvider()
+    provider.initialize(
+        "session:one", hermes_home=tmp_path, user_id="raw:user:one",
+        agent_identity="profile:primary", platform="cli", agent_context="primary",
+        agent_workspace="hermes",
+    )
+    revoker = bridge_module.MemoriiHermesMemoryProvider()
+    revoker.initialize(
+        "session:two", hermes_home=tmp_path, user_id="raw:user:one",
+        agent_identity="profile:primary", platform="cli", agent_context="primary",
+        agent_workspace="hermes",
+    )
+    try:
+        _external_store, _read_authority = _persist_installed_protected_claim(
+            provider=provider, storage_root=tmp_path / "memorii",
+        )
+        service = provider._provider._service
+        authority = service._scoped_read_authority
+        original_authorize_release = authority.authorize_release
+        revoke_started = Event()
+        revoke_finished = Event()
+        receipt_issued = Event()
+        writer: Thread | None = None
+        race_started = False
+
+        def revoke() -> None:
+            revoke_started.set()
+            revoker.revoke_structured_grant("fact")
+            revoke_finished.set()
+
+        def authorize_release(grant):
+            nonlocal race_started, writer
+            if race_started:
+                return original_authorize_release(grant)
+            race_started = True
+            writer = Thread(target=revoke, name="installed-fact-grant-revoker")
+            writer.start()
+            assert revoke_started.wait(timeout=1.0)
+            receipt = original_authorize_release(grant)
+            assert receipt is not None
+            # The competing JSONL writer began after the final durable
+            # recheck and cannot alter the decision before its receipt.
+            assert not revoke_finished.is_set()
+            receipt_issued.set()
+            return receipt
+
+        monkeypatch.setattr(authority, "authorize_release", authorize_release)
+        released = provider.prefetch("Atlas")
+        assert receipt_issued.is_set()
+        assert "Atlas project owner is Ada." in released
+        assert writer is not None
+        writer.join(timeout=2.0)
+        assert not writer.is_alive()
+        assert revoke_finished.is_set()
+
+        # The next bridge read sees the durable tombstone and releases no
+        # protected text after the earlier receipt's linearization point.
+        assert provider.prefetch("Atlas") == ""
+    finally:
+        revoker.shutdown()
+        provider.shutdown()
 
 
 def test_bridge_without_initial_raw_user_rejects_author_bearing_callbacks(

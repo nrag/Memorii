@@ -46,6 +46,9 @@ from memorii.integrations.hermes_provider import (
 from tests.fixtures.semantic_ingestion.bootstrap_graph_v3_fixture import (
     DeterministicBootstrapGraphAuthorityProviderV3,
 )
+from tests.integration.test_observation_ledger_activation import (
+    _signed_monitoring_authority,
+)
 from tests.unit.core.semantic_ingestion.bootstrap_graph_production_roots_support import (
     RemovedBootstrapGraphHostBundleBuilder,
     build_filesystem_provider,
@@ -363,12 +366,15 @@ def test_all_normal_roots_execute_builtin_native_graph_path_without_injection(
     """A real fact reaches native graph commit through every normal root."""
     proposal = graph_fact_proposal()
     normalization, _calls = _v3_normalization_host_builder(proposal=proposal)
+    authority = _signed_monitoring_authority()
     common = {
         "now_provider": lambda: TEST_NOW,
         "host_bootstrap_capability": _built_in_local_capability(),
         "host_bootstrap_material_verifier": DeterministicTestHostBootstrapMaterialVerifier(),
         "source_normalization_host_bundle_builder": normalization,
+        "verified_capability_monitoring_authorities": (authority,),
     }
+    hermes = None
     if root == "direct":
         service = provider_service(**common)
     elif root == "factory":
@@ -376,13 +382,23 @@ def test_all_normal_roots_execute_builtin_native_graph_path_without_injection(
     elif root == "filesystem":
         service = build_filesystem_provider(tmp_path / "builtin-native-graph", **common)
     else:
-        service = hermes_provider(service=provider_service(**common))._service
-    result = service.sync_event(
-        operation=ProviderOperation.CHAT_USER_TURN,
-        content="Atlas owner is Bob.", operation_id=f"builtin-native-graph-{root}",
-        task_id="task:one", user_id="user:alice",
-        authenticated_host_ingress=_host_ingress(),
+        hermes = hermes_provider(**common)
+        service = hermes._service
+    status_records = service._memory_plane.list_records(
+        source_kind="semantic_ingestion_capability_status"
     )
+    assert len(status_records) == 1
+    assert status_records[0].content["status"]["status"] == "active"
+    assert service._semantic_atomic_store._capability_authorization_guard is not None
+    event = {
+        "operation": ProviderOperation.CHAT_USER_TURN,
+        "content": "Atlas owner is Bob.",
+        "operation_id": f"builtin-native-graph-{root}",
+        "task_id": "task:one",
+        "user_id": "user:alice",
+        "authenticated_host_ingress": _host_ingress(),
+    }
+    result = (hermes.sync_event(**event) if hermes is not None else service.sync_event(**event))
     assert result.blocked_reasons["semantic_ingestion"] == "source_only"
     primary_records = service._memory_plane.list_records(
         source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
@@ -430,6 +446,38 @@ def test_all_normal_roots_execute_builtin_native_graph_path_without_injection(
     replay = service._semantic_atomic_store.semantic_replay_state()
     assert replay.graph_revision == reload.persisted_result.core.graph_revision_after
     assert replay.last_event_batch_digest == batch.event_batch_digest
+
+
+def test_builtin_normal_root_without_capability_status_fails_closed_before_effects() -> None:
+    """A normal host cannot promote an accepted fact without retained status."""
+    normalization, _calls = _v3_normalization_host_builder(
+        proposal=graph_fact_proposal()
+    )
+    service = provider_service(
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=_built_in_local_capability(),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        source_normalization_host_bundle_builder=normalization,
+    )
+
+    result = service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.", operation_id="builtin-native-graph-no-status",
+        task_id="task:one", user_id="user:alice",
+        authenticated_host_ingress=_host_ingress(),
+    )
+
+    assert result.blocked_reasons["semantic_ingestion"] == (
+        "graph_transaction_authority_unavailable"
+    )
+    assert not service._memory_plane.list_records(
+        source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+    )
+    assert not service._memory_plane.list_records(
+        source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_effect"
+    )
+    assert service._semantic_atomic_store.semantic_event_batches() == ()
+    assert service._semantic_atomic_store.semantic_replay_state().graph_revision == "genesis"
 
 
 def test_builtin_root_rejects_substituted_reduction_snapshot_before_effect(

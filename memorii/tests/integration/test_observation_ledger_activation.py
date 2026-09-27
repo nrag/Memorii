@@ -116,9 +116,14 @@ def _replace_jsonl_writer_manifest(
     )])
 
 
-def _registry_configuration(tmp_path: Path, *, complete=False):
+def _registry_configuration(tmp_path: Path, *, complete=False, without_ingestion_time_seals=False):
     schemas = (tuple(sorted(path.name for path in (_ROOT / "schema").iterdir() if path.is_dir()))
                if complete else ("ObservationLedgerActivation", "ObservationLedgerHead"))
+    if without_ingestion_time_seals:
+        schemas = tuple(schema for schema in schemas if schema not in {
+            "SourceRetentionTimeAttestation", "TransactionGroupCommitTimeAttestation",
+            "IngestionTimeObservationSnapshot", "IngestionTimeAttestationPage",
+        })
     limits = replace(
         _PUBLICATION_LIMITS,
         decoder_source_limits=replace(_PUBLICATION_LIMITS.decoder_source_limits, maximum_files=max(8, len(schemas))),
@@ -155,6 +160,10 @@ def _provider_factory(
     *,
     normalization=False,
     complete_registry=False,
+    without_ingestion_time_seals=False,
+    agent_bound=False,
+    structured_submission_authority_resolver=None,
+    normalization_proposal_ref=None,
     verified_capability_monitoring_authorities: tuple[
         VerifiedCapabilityMonitoringAuthority, ...
     ] | None = None,
@@ -165,7 +174,7 @@ def _provider_factory(
         )
     elif verified_capability_monitoring_authorities is None:
         verified_capability_monitoring_authorities = ()
-    registry = _registry_configuration(tmp_path, complete=complete_registry)
+    registry = _registry_configuration(tmp_path, complete=complete_registry, without_ingestion_time_seals=without_ingestion_time_seals)
     target, _, _ = _signed_package(tmp_path, monkeypatch, verify_configured_typed_value_registry_history(registry))
     clock = [TEST_NOW]
     def build(plane):
@@ -175,9 +184,16 @@ def _provider_factory(
             from tests.unit.core.semantic_ingestion.test_semantic_provider_composition import (
                 _v3_normalization_host_builder,
             )
-            normalization_builder, _ = _v3_normalization_host_builder(proposal=graph_fact_proposal())
+            normalization_builder, _ = _v3_normalization_host_builder(
+                proposal=graph_fact_proposal(),
+                proposal_ref=normalization_proposal_ref,
+            )
+        from tests.unit.core.semantic_ingestion.test_semantic_provider_composition import _AgentBoundResolver
         capability = replace(
-            _built_in_local_capability(),
+            _built_in_local_capability(
+                resolver=_AgentBoundResolver() if agent_bound else None,
+                structured_submission_authority_resolver=structured_submission_authority_resolver,
+            ),
             typed_value_registry_configuration=registry,
             observation_activation_target_configuration=target,
         )

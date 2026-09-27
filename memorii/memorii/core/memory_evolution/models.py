@@ -33,10 +33,35 @@ def _validate_optional_half_open_interval(
 
 
 class EntityType(StrEnum):
+    ACCOUNT = "account"
+    AGREEMENT = "agreement"
+    ANIMAL = "animal"
+    APPOINTMENT = "appointment"
+    ASSET = "asset"
+    BILL = "bill"
+    CHORE = "chore"
+    DECISION = "decision"
+    DOCUMENT = "document"
+    EVENT = "event"
+    GOAL = "goal"
+    GROUP = "group"
+    HOUSEHOLD = "household"
+    ISSUE = "issue"
+    MESSAGE = "message"
+    OBLIGATION = "obligation"
+    OPPORTUNITY = "opportunity"
+    ORGANIZATION = "organization"
     PROJECT = "project"
     PERSON = "person"
+    PLACE = "place"
+    PRODUCT_SERVICE = "product_service"
+    RECIPE = "recipe"
+    ROLE = "role"
     SERVICE = "service"
+    SUBSCRIPTION = "subscription"
     TASK = "task"
+    VEHICLE = "vehicle"
+    WORK_ITEM = "work_item"
     PREFERENCE = "preference"
     UNKNOWN = "unknown"
 
@@ -47,6 +72,10 @@ class ClaimValueType(StrEnum):
     BOOLEAN = "boolean"
     NUMBER = "number"
     DATE = "date"
+    LOCAL_DATE = "local_date"
+    MONEY = "money"
+    STATUS_TEXT = "status_text"
+    TIME_INTERVAL = "time_interval"
 
 
 class PredicateCardinality(StrEnum):

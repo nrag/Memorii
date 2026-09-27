@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
 from memorii.core.memory_evolution.admission import (
     PreparedSourceAdmission,
+    RetainedSourceOperationAccepted,
     SourceAdmissionAccepted,
     source_admission_source_bytes,
     source_admission_source_digest,
@@ -58,6 +59,7 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     AuthenticatedIngressContext,
     DeliveryIdentity,
     OperationFenceBinding,
+    RequiredOutcomeScopeSet,
     SemanticWriterCommitBinding,
     canonical_emission_scope,
     decode_typed_value,
@@ -83,6 +85,7 @@ from memorii.core.memory_evolution.typed_value_registry_history import (
     ProtectedTypedValueRegistryHistory,
 )
 from memorii.core.memory_evolution.writer_admission import (
+    CatalogBundleLocator,
     SemanticWriterAdmissionError,
     SemanticWriterAdmissionStore,
     SemanticWriterWriteAuthorization,
@@ -115,6 +118,7 @@ if TYPE_CHECKING:
     from memorii.core.memory_evolution.typed_value_publication import (
         VerifiedTypedValuePublication,
     )
+    from memorii.core.semantic_ingestion.catalog_capture_pin import CatalogCapturedTurnPin
 
     class _GraphV3AuthorityRequest(Protocol):
         """The store's current-authority verifier's deliberately small view."""
@@ -233,6 +237,10 @@ if TYPE_CHECKING:
         SemanticReplayAuthorityAggregate,
         SemanticReplayState,
     )
+    from memorii.core.semantic_ingestion.hermes_captured_turn import (
+        HermesCapturedTurnCoordination,
+        HermesCapturedTurnLedger,
+    )
 
 _SEMANTIC_EVENT_REPOSITORY_ID = "semantic_ingestion"
 _SEMANTIC_CHECKPOINT_SIGNATURE_OWNER = object()
@@ -279,6 +287,10 @@ def _activation_record_shape(record: CanonicalMemoryRecord, source_kind: str) ->
 
 class PreplanningStoreError(ValueError):
     pass
+
+
+class StructuredSubmissionGrantRevokedError(PreplanningStoreError):
+    """One current structured grant lost authority before the V3 commit CAS."""
 
 
 class BootstrapGraphSourceProgressRecoveryUnavailableError(PreplanningStoreError):
@@ -1106,6 +1118,7 @@ class SemanticIngestionAtomicStore:
         semantic_conflict_authority_resolver: SemanticConflictAuthorityResolver
         | None = None,
         current_bootstrap_release_verifier: CurrentBootstrapReleaseVerifier | None = None,
+        catalog_bundle_locator: CatalogBundleLocator | None = None,
     ) -> None:
         if max_lease_recoveries < 0:
             raise ValueError("max lease recoveries must be non-negative")
@@ -1119,6 +1132,12 @@ class SemanticIngestionAtomicStore:
         self._memory_plane = memory_plane
         self._capability_authorization_guard: Callable[[tuple[str, ...]], AbstractContextManager[None]] | None = None
         self._writers = writer_admission
+        if catalog_bundle_locator is None:
+            catalog_bundle_locator = writer_admission._catalog_bundle_locator
+        assert catalog_bundle_locator is not None
+        if catalog_bundle_locator is not writer_admission._catalog_bundle_locator:
+            raise ValueError("atomic store and writer catalog bundle locators differ")
+        self._catalog_bundle_locator = catalog_bundle_locator
         if typed_value_registry_history is not writer_admission._typed_value_registry_history:
             raise TypedValueRegistryConfigurationError("atomic store and writer typed value registry histories differ")
         if observation_activation_target is not writer_admission._observation_activation_target:
@@ -1165,6 +1184,7 @@ class SemanticIngestionAtomicStore:
         self._ingestion_time_seal_authority_cache: (
             tuple[ProtectedTypedValueRegistryHistory, VerifiedTypedValuePublication] | None
         ) | None = None
+        self._verified_observation_replay_cache: tuple[str, ObservationReplayState] | None = None
         from memorii.core.semantic_ingestion.event_replay import (
             SemanticEventSchemaRegistry,
             SemanticEventSchemaRegistryHistory,
@@ -1496,7 +1516,7 @@ class SemanticIngestionAtomicStore:
             if terminal.operation_fence_binding_digest in active_fences:
                 if (
                     control is None
-                    or terminal.terminal_member_schema_version != 3
+                    or terminal.terminal_member_schema_version not in {3, 4}
                     or terminal.terminal_control.writer_commit_binding_digest
                     != control.writer_binding.binding_digest
                 ):
@@ -1691,10 +1711,14 @@ class SemanticIngestionAtomicStore:
             return self._load_prepared_source_record(existing, prepared.source_id, prepared.source_digest)
         return prepared
 
-    def load_prepared_source(self, *, source_id: str, source_digest: str) -> PreparedSource | None:
-        record = self._memory_plane.get_record(
+    def load_prepared_source(self, *, source_id: str, source_digest: str,
+                             operation_fence_binding: OperationFenceBinding | None = None) -> PreparedSource | None:
+        record_id = (
             "semantic_ingestion:prepared_source:" + sha256(source_id.encode("utf-8")).hexdigest()
+            if operation_fence_binding is None
+            else self._prepared_source_record_id(source_id, operation_fence_binding)
         )
+        record = self._memory_plane.get_record(record_id)
         return None if record is None else self._load_prepared_source_record(record, source_id, source_digest)
 
     def publish_bootstrap_prepared_source_if_absent(
@@ -1801,7 +1825,7 @@ class SemanticIngestionAtomicStore:
         # The pin's fence digest is stable identity, not a delivery-key alias.
         # Its equality is enforced by the handoff tuple where the full fence is available.
         wire = encode_semantic_contract(prepared)
-        record_id = "semantic_ingestion:prepared_source:" + sha256(prepared.source_id.encode("utf-8")).hexdigest()
+        record_id = self._prepared_source_record_id(prepared.source_id, operation_fence_binding)
         record = CanonicalMemoryRecord(
             memory_id=record_id, domain=MemoryDomain.TRANSCRIPT, text="",
             content={
@@ -1879,6 +1903,19 @@ class SemanticIngestionAtomicStore:
                 raise PreplanningStoreError("bootstrap prepared publication CAS conflicted") from exc
         return prepared, 1
 
+    def _prepared_source_record_id(
+        self, source_id: str, operation_fence_binding: OperationFenceBinding,
+    ) -> str:
+        """Keep a later retained-source operation from replacing its first preparation."""
+        base = "semantic_ingestion:prepared_source:" + sha256(source_id.encode("utf-8")).hexdigest()
+        link = self._memory_plane.get_record(
+            "semantic_ingestion:retained-source-operation:"
+            + operation_fence_binding.operation_fence_id
+        )
+        if link is None:
+            return base
+        return base + ":" + operation_fence_binding.operation_fence_id
+
     def bootstrap_writer_handoff(
         self, request: BootstrapWriterHandoffRequest, *, canonical_evidence_lease: CanonicalEvidenceLease | None = None
     ) -> BootstrapHandoffAccessDenied | BootstrapWriterHandoffResult:
@@ -1934,7 +1971,7 @@ class SemanticIngestionAtomicStore:
             request.source_id.encode("utf-8") + request.request_digest.encode("ascii")
         ).hexdigest()
         prepared_record = self._memory_plane.get_record(
-            "semantic_ingestion:prepared_source:" + sha256(request.source_id.encode("utf-8")).hexdigest()
+            self._prepared_source_record_id(request.source_id, request.operation_fence_binding)
         )
         if prepared_record is None:
             return BootstrapWriterHandoffResult.create(kind="conflict")
@@ -2609,10 +2646,87 @@ class SemanticIngestionAtomicStore:
             type(value) is not SourceRetentionTimeAttestation
             or value.attestation_id != member.memory_id
             or value.source_id != operation_fence.source_id
-            or value.operation_fence_id != operation_fence.operation_fence_id
         ):
             raise PreplanningStoreError("retention seal member is substituted")
+        expected_fence = self._retention_seal_fence(
+            delivery_key_digest=delivery_key_digest,
+            operation_fence=operation_fence,
+        )
+        if value.operation_fence_id != expected_fence.operation_fence_id:
+            raise PreplanningStoreError("retention seal member is substituted")
         return value.attestation_digest
+
+    def _retention_seal_fence(
+        self,
+        *,
+        delivery_key_digest: str,
+        operation_fence: OperationFenceBinding,
+    ) -> OperationFenceBinding:
+        """Resolve a retained operation back to its immutable capture fence.
+
+        The admission seal is minted once with the captured source. A later
+        retained operation must prove that it is authorized by that original
+        admission index; it never receives a replacement seal under its own
+        operation fence.
+        """
+        index = self._memory_plane.get_record(
+            f"semantic_ingestion:admission:{delivery_key_digest}"
+        )
+        if index is None or index.source_kind != "semantic_ingestion_admission_index":
+            raise PreplanningStoreError("retention seal member is substituted")
+        try:
+            original_fence = OperationFenceBinding.model_validate(
+                index.content["operation_fence_binding"]
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PreplanningStoreError("retention seal member is substituted") from exc
+        if original_fence == operation_fence:
+            return original_fence
+        link = self._memory_plane.get_record(
+            "semantic_ingestion:retained-source-operation:"
+            + operation_fence.operation_fence_id
+        )
+        source = self._memory_plane.get_record(operation_fence.source_id)
+        if (
+            link is None
+            or source is None
+            or link.source_kind != "semantic_ingestion_retained_source_operation"
+            or link.domain != MemoryDomain.EXECUTION
+            or link.visibility != MemoryRecordVisibility.INTERNAL_CONTROL
+            or link.status != CommitStatus.COMMITTED
+            or link.content.get("source_id") != operation_fence.source_id
+            or link.content.get("source_digest") != operation_fence.source_digest
+            or link.content.get("delivery_key_digest") != delivery_key_digest
+            or link.content.get("operation_fence_binding")
+            != operation_fence.model_dump(mode="json")
+        ):
+            raise PreplanningStoreError("retention seal member is substituted")
+        try:
+            scopes = RequiredOutcomeScopeSet.create(
+                tenant_partition_id=index.content["tenant_partition_id"],
+                scopes=tuple(index.content["required_scopes"]),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PreplanningStoreError("retention seal member is substituted") from exc
+        if (
+            source_admission_source_digest(source) != operation_fence.source_digest
+            or sha256(encode_typed_value(index.content)).hexdigest()
+            != link.content.get("source_admission_index_digest")
+            or original_fence.source_id != operation_fence.source_id
+            or original_fence.source_digest != operation_fence.source_digest
+            or original_fence.delivery_identity != operation_fence.delivery_identity
+            or index.content.get("principal_binding_digest")
+            != operation_fence.delivery_principal_binding_digest
+            or index.content.get("delivery_key_digest") != delivery_key_digest
+            or index.content.get("tenant_partition_id") != scopes.tenant_partition_id
+            or tuple(index.content.get("required_scopes", ())) != scopes.scopes
+            or index.content.get("required_scope_set_digest")
+            != scopes.required_scope_set_digest
+            or link.content.get("required_scope_set_digest")
+            != scopes.required_scope_set_digest
+        ):
+            raise PreplanningStoreError("retention seal member is substituted")
+        return original_fence
 
     def publish_admitted_source(
         self,
@@ -2637,6 +2751,118 @@ class SemanticIngestionAtomicStore:
                 prepared=prepared,
                 writer_binding=writer_binding,
             )
+
+    def publish_admitted_source_with_prepared_source(
+        self, *, prepared: PreparedSourceAdmission, prepared_source: object,
+        capture_ledger: object | None = None,
+        writer_binding: SemanticWriterCommitBinding,
+    ) -> SourceAdmissionAccepted:
+        """Atomically retain a source admission and its deterministic preparation."""
+        from memorii.core.semantic_ingestion.contracts import PreparedSource, encode_semantic_contract
+
+        if not isinstance(prepared_source, PreparedSource):
+            raise PreplanningStoreError("prepared source has an invalid type")
+        value = PreparedSource.model_validate(prepared_source.model_dump(mode="python"))
+        admission = prepared.accepted
+        if value.source_id != admission.source_id or value.source_digest != admission.source_digest:
+            raise PreplanningStoreError("prepared source does not bind admitted source")
+        record = CanonicalMemoryRecord(
+            memory_id="semantic_ingestion:prepared_source:" + sha256(value.source_id.encode()).hexdigest(),
+            domain=MemoryDomain.TRANSCRIPT, text="",
+            content={"source_id": value.source_id, "source_digest": value.source_digest,
+                "preparation_fingerprint": value.preparation_fingerprint,
+                "prepared_source_wire": base64.b64encode(encode_semantic_contract(value)).decode("ascii")},
+            status=CommitStatus.COMMITTED, source_kind="semantic_ingestion_prepared_source",
+            timestamp=self._now(), visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+        )
+        ledger_record = None
+        coordination_record = None
+        if capture_ledger is not None:
+            from memorii.core.semantic_ingestion.hermes_captured_turn import HermesCapturedTurnLedger
+            if not isinstance(capture_ledger, HermesCapturedTurnLedger) or (
+                capture_ledger.source_id != admission.source_id
+                or capture_ledger.source_digest != admission.source_digest
+                or capture_ledger.preparation_fingerprint != value.preparation_fingerprint
+            ):
+                raise PreplanningStoreError("captured turn ledger does not bind admitted source")
+            ledger_record = CanonicalMemoryRecord(
+                memory_id="semantic_ingestion:hermes_captured_turn:" + sha256(capture_ledger.capture_id.encode()).hexdigest(),
+                domain=MemoryDomain.TRANSCRIPT, text="", content=capture_ledger.model_dump(mode="json"),
+                status=CommitStatus.COMMITTED, source_kind="semantic_ingestion_hermes_captured_turn",
+                timestamp=capture_ledger.captured_at, visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+            )
+            from memorii.core.semantic_ingestion.hermes_captured_turn import HermesCapturedTurnCoordination
+            coordination = HermesCapturedTurnCoordination.captured(capture_ledger)
+            coordination_record = CanonicalMemoryRecord(
+                memory_id=coordination.memory_id,
+                domain=MemoryDomain.EXECUTION,
+                text="",
+                content={"coordination": coordination.model_dump(mode="json")},
+                status=CommitStatus.COMMITTED,
+                source_kind="semantic_ingestion_hermes_capture_coordination",
+                timestamp=capture_ledger.captured_at,
+                visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+            )
+        linearization = self._semantic_integrity_linearization
+        if linearization is not None:
+            with linearization.exclusive():
+                return self._publish_admitted_source_with_prepared_source_linearized(
+                    prepared=prepared, record=record, ledger_record=ledger_record,
+                    coordination_record=coordination_record, writer_binding=writer_binding
+                )
+        return self._publish_admitted_source_with_prepared_source_linearized(
+            prepared=prepared, record=record, ledger_record=ledger_record,
+            coordination_record=coordination_record, writer_binding=writer_binding
+        )
+
+    def _publish_admitted_source_with_prepared_source_linearized(
+        self, *, prepared: PreparedSourceAdmission, record: CanonicalMemoryRecord,
+        ledger_record: CanonicalMemoryRecord | None, coordination_record: CanonicalMemoryRecord | None,
+        writer_binding: SemanticWriterCommitBinding,
+    ) -> SourceAdmissionAccepted:
+        seal_member = self._mint_source_retention_seal_member(prepared)
+        base_records = (*prepared.records, *( (seal_member,) if seal_member is not None else () ), record)
+        if ledger_record is None:
+            admission_records = base_records
+        else:
+            if coordination_record is None:
+                raise PreplanningStoreError("captured turn coordination is absent")
+            admission_records = (*base_records, ledger_record, coordination_record)
+        existing = tuple(self._memory_plane.get_record(item.memory_id) for item in admission_records)
+        if any(item is not None for item in existing):
+            admission_existing = existing[: len(prepared.records)]
+            if not all(_same_admission_record(actual, expected) for actual, expected in zip(admission_existing, prepared.records, strict=True)):
+                raise PreplanningStoreError("captured source admission is partial or mismatched")
+            prepared_offset = len(prepared.records) + (1 if seal_member is not None else 0)
+            if seal_member is not None and not self._validate_retention_seal_member(existing[len(prepared.records)], prepared):
+                raise PreplanningStoreError("captured source retention seal is partial or mismatched")
+            prepared_existing = existing[prepared_offset]
+            if prepared_existing is None or self._load_prepared_source_record(prepared_existing, prepared.accepted.source_id, prepared.accepted.source_digest) is None:
+                raise PreplanningStoreError("captured source preparation is partial or mismatched")
+            if ledger_record is not None and (
+                existing[-2] is None
+                or existing[-2].source_kind != ledger_record.source_kind
+                or existing[-2].content != ledger_record.content
+            ):
+                raise PreplanningStoreError("captured turn ledger is partial or mismatched")
+            if coordination_record is not None and (
+                existing[-1] is None
+                or existing[-1].source_kind != coordination_record.source_kind
+                or existing[-1].content != coordination_record.content
+            ):
+                raise PreplanningStoreError("captured turn coordination is partial or mismatched")
+            return prepared.accepted
+        writer_record = self._writers.require_current(writer_binding)
+        authorization = self._writers._authorize_atomic(writer_binding, capability=self._write_capability)
+        try:
+            self._memory_plane.conditionally_write_records(
+                admission_records,
+                preconditions=(*(RecordAbsentPrecondition(memory_id=item.memory_id) for item in admission_records), RecordDigestPrecondition(memory_id=writer_record.memory_id, expected_digest=record_digest(writer_record))),
+                authorization=authorization,
+            )
+        except MemoryPlaneRevisionConflictError as exc:
+            raise PreplanningStoreError("captured source admission CAS conflicted") from exc
+        return prepared.accepted
 
     def _publish_admitted_source_linearized(
         self,
@@ -2702,6 +2928,1737 @@ class SemanticIngestionAtomicStore:
                     "atomic admission conflict is not an exact committed retry"
                 ) from exc
         return admission
+
+    def publish_retained_source_operation(
+        self,
+        *,
+        accepted: RetainedSourceOperationAccepted,
+        writer_binding: SemanticWriterCommitBinding,
+    ) -> PreplanningPublication:
+        """Persist one core-derived operation over an already admitted source.
+
+        The link record is written atomically with the normal preplanning
+        control.  It preserves the original admission evidence while allowing
+        different immutable structured envelopes to receive distinct fences.
+        """
+        linearization = self._semantic_integrity_linearization
+        if linearization is None:
+            return self._publish_retained_source_operation_linearized(
+                accepted=accepted, writer_binding=writer_binding
+            )
+        with linearization.exclusive():
+            return self._publish_retained_source_operation_linearized(
+                accepted=accepted, writer_binding=writer_binding
+            )
+
+    def _publish_retained_source_operation_linearized(
+        self,
+        *,
+        accepted: RetainedSourceOperationAccepted,
+        writer_binding: SemanticWriterCommitBinding,
+    ) -> PreplanningPublication:
+        self._validate_retained_source_operation(accepted)
+        fence = accepted.operation_fence_binding
+        control_id = _control_id(fence)
+        link = _retained_source_operation_record(accepted, self._now())
+        existing_control = self._memory_plane.get_record(control_id)
+        existing_link = self._memory_plane.get_record(link.memory_id)
+        if existing_control is not None or existing_link is not None:
+            if (
+                existing_control is None
+                or existing_link is None
+                or not _same_retained_source_operation_record(existing_link, link)
+            ):
+                raise PreplanningStoreError("retained source operation is partial or mismatched")
+            return self._recover_publication(existing_control, fence, writer_binding)
+        writer_record = self._writers.require_current(writer_binding)
+        authorization = self._writers._authorize_atomic(
+            writer_binding, capability=self._write_capability
+        )
+        control = PreplanningOperationControl(
+            operation_fence=fence,
+            persistence_namespace_id=fence.operation_fence_id,
+            writer_binding=writer_binding,
+            max_lease_recoveries=self._max_lease_recoveries,
+            graph_revision=self.semantic_replay_state().graph_revision,
+        )
+        publication = _publication(control)
+        records = (link, *_publication_records(publication, self._now()))
+        try:
+            self._memory_plane.conditionally_write_records(
+                records,
+                preconditions=(
+                    *(RecordAbsentPrecondition(memory_id=record.memory_id) for record in records),
+                    RecordDigestPrecondition(
+                        memory_id=writer_record.memory_id,
+                        expected_digest=record_digest(writer_record),
+                    ),
+                ),
+                authorization=authorization,
+            )
+        except MemoryPlaneRevisionConflictError:
+            return self._publish_retained_source_operation_linearized(
+                accepted=accepted, writer_binding=writer_binding
+            )
+        return publication
+
+    def publish_retained_structured_submission(
+        self,
+        *,
+        accepted: RetainedSourceOperationAccepted,
+        canonical_envelope: bytes,
+        proposal_bytes: bytes,
+        raw_proposal_artifact: bytes,
+        writer_binding: SemanticWriterCommitBinding,
+    ) -> None:
+        """Durably bind replay inputs to an already allocated operation fence."""
+        self._validate_retained_source_operation(accepted)
+        if sha256(
+            b"memorii.semantic-ingestion.retained-source-envelope.v1\0" + canonical_envelope
+        ).hexdigest() != accepted.canonical_envelope_digest:
+            raise PreplanningStoreError("structured submission envelope is mismatched")
+        fence = accepted.operation_fence_binding
+        record = CanonicalMemoryRecord(
+            memory_id="semantic_ingestion:retained-structured-submission:" + fence.operation_fence_id,
+            domain=MemoryDomain.EXECUTION, text="",
+            content={
+                "canonical_envelope": base64.b64encode(canonical_envelope).decode("ascii"),
+                "proposal_bytes": base64.b64encode(proposal_bytes).decode("ascii"),
+                "raw_proposal_artifact": base64.b64encode(raw_proposal_artifact).decode("ascii"),
+                "canonical_envelope_digest": accepted.canonical_envelope_digest,
+                "proposal_bytes_digest": sha256(proposal_bytes).hexdigest(),
+                "raw_proposal_artifact_digest": sha256(raw_proposal_artifact).hexdigest(),
+                "operation_fence_binding": fence.model_dump(mode="json"),
+            }, status=CommitStatus.COMMITTED,
+            source_kind="semantic_ingestion_retained_structured_submission",
+            timestamp=self._now(), visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+        )
+        current = self._memory_plane.get_record(record.memory_id)
+        if current is not None:
+            if _same_retained_source_operation_record(current, record):
+                return
+            raise PreplanningStoreError("structured submission is mismatched")
+        writer_record = self._writers.require_current(writer_binding)
+        try:
+            self._memory_plane.conditionally_write_records(
+                (record,), preconditions=(
+                    RecordAbsentPrecondition(memory_id=record.memory_id),
+                    RecordDigestPrecondition(memory_id=writer_record.memory_id, expected_digest=record_digest(writer_record)),
+                ), authorization=self._writers._authorize_atomic(writer_binding, capability=self._write_capability),
+            )
+        except MemoryPlaneRevisionConflictError as exc:
+            current = self._memory_plane.get_record(record.memory_id)
+            if current is None or not _same_retained_source_operation_record(current, record):
+                raise PreplanningStoreError("structured submission CAS conflicted") from exc
+
+    def publish_captured_retained_structured_submission(
+        self,
+        *,
+        accepted: RetainedSourceOperationAccepted,
+        canonical_envelope: bytes,
+        proposal_bytes: bytes,
+        raw_proposal_artifact: bytes,
+        writer_binding: SemanticWriterCommitBinding,
+    ) -> None:
+        """Publish all captured-turn structured ownership evidence in one CAS."""
+        self._validate_retained_source_operation(accepted)
+        if sha256(
+            b"memorii.semantic-ingestion.retained-source-envelope.v1\0" + canonical_envelope
+        ).hexdigest() != accepted.canonical_envelope_digest:
+            raise PreplanningStoreError("structured submission envelope is mismatched")
+        ledger, coordination_record, coordination = self._load_captured_turn_coordination(
+            source_id=accepted.source_id, source_digest=accepted.source_digest,
+        )
+        if coordination.state == "structured_pending":
+            self._validate_captured_structured_witness(
+                coordination=coordination, source_id=accepted.source_id,
+                source_digest=accepted.source_digest,
+            )
+        fence = accepted.operation_fence_binding
+        now = self._now()
+        link = _retained_source_operation_record(accepted, now)
+        submission = CanonicalMemoryRecord(
+            memory_id="semantic_ingestion:retained-structured-submission:" + fence.operation_fence_id,
+            domain=MemoryDomain.EXECUTION, text="",
+            content={
+                "canonical_envelope": base64.b64encode(canonical_envelope).decode("ascii"),
+                "proposal_bytes": base64.b64encode(proposal_bytes).decode("ascii"),
+                "raw_proposal_artifact": base64.b64encode(raw_proposal_artifact).decode("ascii"),
+                "canonical_envelope_digest": accepted.canonical_envelope_digest,
+                "proposal_bytes_digest": sha256(proposal_bytes).hexdigest(),
+                "raw_proposal_artifact_digest": sha256(raw_proposal_artifact).hexdigest(),
+                "operation_fence_binding": fence.model_dump(mode="json"),
+            }, status=CommitStatus.COMMITTED,
+            source_kind="semantic_ingestion_retained_structured_submission",
+            timestamp=now, visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+        )
+        control = PreplanningOperationControl(
+            operation_fence=fence, persistence_namespace_id=fence.operation_fence_id,
+            writer_binding=writer_binding, max_lease_recoveries=self._max_lease_recoveries,
+            graph_revision=self.semantic_replay_state().graph_revision,
+        )
+        publication = _publication(control)
+        next_coordination = coordination if coordination.state == "structured_pending" else coordination.model_copy(
+            update={
+                "state": "structured_pending",
+                "first_structured_operation_fence_id": fence.operation_fence_id,
+            }
+        )
+        next_coordination_record = (
+            coordination_record.model_copy(update={
+                "content": {"coordination": next_coordination.model_dump(mode="json")},
+                "timestamp": now,
+            })
+            if coordination.state == "captured"
+            else coordination_record
+        )
+        publication_records = _publication_records(publication, now)
+        records = (link, submission, *publication_records, next_coordination_record)
+        existing = tuple(self._memory_plane.get_record(record.memory_id) for record in records[:-1])
+        if any(record is not None for record in existing):
+            if coordination.state == "completed_ordinary":
+                raise PreplanningStoreError("captured source already has an ordinary completion")
+            if (
+                existing[0] is None or existing[1] is None
+                or not _same_retained_source_operation_record(existing[0], link)
+                or not _same_retained_source_operation_record(existing[1], submission)
+            ):
+                raise PreplanningStoreError("captured structured submission is partial or mismatched")
+            existing_control = self._memory_plane.get_record(_control_id(fence))
+            if existing_control is None:
+                raise PreplanningStoreError("captured structured submission control is partial")
+            self._recover_publication(existing_control, fence, writer_binding)
+            return
+        if coordination.state not in {"captured", "structured_pending"}:
+            raise PreplanningStoreError("captured source coordination cannot accept structured submission")
+        writer_record = self._writers.require_current(writer_binding)
+        try:
+            self._memory_plane.conditionally_write_records(
+                records,
+                preconditions=(
+                    *(RecordAbsentPrecondition(memory_id=record.memory_id) for record in records[:-1]),
+                    RecordDigestPrecondition(memory_id=coordination_record.memory_id, expected_digest=record_digest(coordination_record)),
+                    RecordDigestPrecondition(memory_id=writer_record.memory_id, expected_digest=record_digest(writer_record)),
+                ),
+                authorization=self._writers._authorize_atomic(writer_binding, capability=self._write_capability),
+            )
+        except MemoryPlaneRevisionConflictError as exc:
+            raise PreplanningStoreError("captured structured submission CAS conflicted") from exc
+
+    def publish_captured_turn_completion(
+        self, *, ledger: object, assistant: PreparedSourceAdmission,
+        completion: object, authenticated_ingress: AuthenticatedIngressContext,
+        writer_binding: SemanticWriterCommitBinding,
+    ) -> RetainedSourceOperationAccepted | None:
+        """Atomically close a captured turn and choose its one recovery owner."""
+        from memorii.core.memory_evolution.admission import (
+            GovernedSourceAdmissionService,
+            RetainedSourceOperationRequest,
+        )
+        from memorii.core.semantic_ingestion.hermes_captured_turn import (
+            HermesCapturedTurnCompletion,
+            HermesCapturedTurnLedger,
+        )
+
+        if not isinstance(ledger, HermesCapturedTurnLedger) or not isinstance(completion, HermesCapturedTurnCompletion):
+            raise PreplanningStoreError("captured turn completion input is invalid")
+        if (
+            completion.capture_id != ledger.capture_id
+            or completion.session_id != ledger.session_id
+            or completion.principal_id != ledger.principal_id
+            or completion.agent_id != ledger.agent_id
+            or completion.turn_ordinal != ledger.turn_ordinal
+            or completion.user_message_digest != ledger.message_digest
+        ):
+            raise PreplanningStoreError("captured turn completion does not join capture")
+        if assistant.accepted.delivery_identity.delivery_principal_binding_digest != authenticated_ingress.delivery_principal_binding.binding_digest:
+            raise PreplanningStoreError("captured turn assistant principal is invalid")
+        stored_ledger, coordination_record, coordination = self._load_captured_turn_coordination(
+            source_id=ledger.source_id, source_digest=ledger.source_digest,
+        )
+        if stored_ledger != ledger:
+            raise PreplanningStoreError("captured turn completion ledger is substituted")
+        ordinary_accepted: RetainedSourceOperationAccepted | None = None
+        if coordination.state == "captured":
+            envelope = encode_typed_value({
+                "schema_version": 1, "kind": "ordinary_completed_turn",
+                "capture_id": ledger.capture_id, "completion_digest": completion.completion_digest,
+            })
+            ordinary_accepted = GovernedSourceAdmissionService(self._memory_plane).allocate_retained_source_operation(
+                request=RetainedSourceOperationRequest(
+                    source_id=ledger.source_id, source_digest=ledger.source_digest,
+                    canonical_envelope=envelope,
+                ), authenticated_ingress=authenticated_ingress,
+            )
+            next_coordination = coordination.model_copy(update={
+                "state": "completed_ordinary", "completion_digest": completion.completion_digest,
+                "assistant_source_id": assistant.accepted.source_id,
+                "assistant_source_digest": assistant.accepted.source_digest,
+                "ordinary_operation_fence_id": ordinary_accepted.operation_fence_binding.operation_fence_id,
+            })
+        elif coordination.state == "structured_pending":
+            self._validate_captured_structured_witness(
+                coordination=coordination, source_id=ledger.source_id, source_digest=ledger.source_digest,
+            )
+            next_coordination = coordination.model_copy(update={
+                "state": "completed_structured", "completion_digest": completion.completion_digest,
+                "assistant_source_id": assistant.accepted.source_id,
+                "assistant_source_digest": assistant.accepted.source_digest,
+            })
+        elif coordination.state in {"completed_ordinary", "completed_structured"}:
+            if (
+                coordination.completion_digest != completion.completion_digest
+                or coordination.assistant_source_id != assistant.accepted.source_id
+                or coordination.assistant_source_digest != assistant.accepted.source_digest
+            ):
+                raise PreplanningStoreError("captured turn completion retry is changed")
+            if coordination.state == "completed_ordinary":
+                fence_id = coordination.ordinary_operation_fence_id
+                if not fence_id:
+                    raise PreplanningStoreError("captured ordinary completion is corrupt")
+                link = self._memory_plane.get_record("semantic_ingestion:retained-source-operation:" + fence_id)
+                if link is None:
+                    raise PreplanningStoreError("captured ordinary completion is partial")
+                # The retained link intentionally stores only the delivery-key
+                # digest. Recovery uses its existing control; reconstructing a
+                # public accepted operation would require inventing identity.
+                ordinary_accepted = None
+            return ordinary_accepted
+        else:
+            raise PreplanningStoreError("captured turn completion state is invalid")
+
+        now = self._now()
+        assistant_seal = self._mint_source_retention_seal_member(assistant)
+        assistant_records = (*assistant.records, *((assistant_seal,) if assistant_seal is not None else ()))
+        successor = coordination_record.model_copy(update={
+            "content": {"coordination": next_coordination.model_dump(mode="json")}, "timestamp": now,
+        })
+        ordinary_records: tuple[CanonicalMemoryRecord, ...] = ()
+        if ordinary_accepted is not None:
+            fence = ordinary_accepted.operation_fence_binding
+            control = PreplanningOperationControl(
+                operation_fence=fence, persistence_namespace_id=fence.operation_fence_id,
+                writer_binding=writer_binding, max_lease_recoveries=self._max_lease_recoveries,
+                graph_revision=self.semantic_replay_state().graph_revision,
+            )
+            publication = _publication(control)
+            operation_link = _retained_source_operation_record(ordinary_accepted, now)
+            completion_link = CanonicalMemoryRecord(
+                memory_id="semantic_ingestion:captured-turn-ordinary-operation:" + fence.operation_fence_id,
+                domain=MemoryDomain.EXECUTION, text="", status=CommitStatus.COMMITTED,
+                source_kind="semantic_ingestion_captured_turn_ordinary_operation",
+                timestamp=now, visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+                content={"capture_id": ledger.capture_id, "completion_digest": completion.completion_digest,
+                         "canonical_envelope_digest": ordinary_accepted.canonical_envelope_digest,
+                         "operation_fence_binding": fence.model_dump(mode="json")},
+            )
+            ordinary_records = (operation_link, completion_link, *_publication_records(publication, now))
+        records = (*assistant_records, successor, *ordinary_records)
+        writer_record = self._writers.require_current(writer_binding)
+        try:
+            self._memory_plane.conditionally_write_records(
+                records,
+                preconditions=(
+                    *(RecordAbsentPrecondition(memory_id=record.memory_id) for record in assistant_records),
+                    *(RecordAbsentPrecondition(memory_id=record.memory_id) for record in ordinary_records),
+                    RecordDigestPrecondition(memory_id=coordination_record.memory_id, expected_digest=record_digest(coordination_record)),
+                    RecordDigestPrecondition(memory_id=writer_record.memory_id, expected_digest=record_digest(writer_record)),
+                ), authorization=self._writers._authorize_atomic(writer_binding, capability=self._write_capability),
+            )
+        except MemoryPlaneRevisionConflictError:
+            # A structured publication or another exact completion may have
+            # won the coordination CAS. Re-evaluate the durable winner.
+            return self.publish_captured_turn_completion(
+                ledger=ledger, assistant=assistant, completion=completion,
+                authenticated_ingress=authenticated_ingress, writer_binding=writer_binding,
+            )
+        return ordinary_accepted
+
+    def classify_captured_turn_source(self, *, source_id: str, source_digest: str) -> bool:
+        """Classify a source or reject any partial captured-turn evidence."""
+        from memorii.core.semantic_ingestion.hermes_captured_turn import HermesCapturedTurnCoordination
+
+        coordination = self._memory_plane.get_record(
+            HermesCapturedTurnCoordination.memory_id_for_source(source_id)
+        )
+        ledgers = [
+            record for record in self._memory_plane.list_records(
+                source_kind="semantic_ingestion_hermes_captured_turn"
+            )
+            if record.content.get("source_id") == source_id
+            or record.content.get("source_digest") == source_digest
+        ]
+        if coordination is None and not ledgers:
+            return False
+        self._load_captured_turn_coordination(source_id=source_id, source_digest=source_digest)
+        return True
+
+    def find_captured_turn(
+        self, *, installation_id: str, session_id: str, principal_id: str,
+        agent_id: str, turn_ordinal: int, message_digest: str,
+    ) -> HermesCapturedTurnLedger | None:
+        """Return one exact durable capture, rejecting ambiguous or partial evidence."""
+        from memorii.core.semantic_ingestion.hermes_captured_turn import HermesCapturedTurnLedger
+
+        matches: list[HermesCapturedTurnLedger] = []
+        matching_coordination = False
+        for record in self._memory_plane.list_records(source_kind="semantic_ingestion_hermes_captured_turn"):
+            try:
+                ledger = HermesCapturedTurnLedger.model_validate(record.content)
+            except (TypeError, ValueError) as exc:
+                raw = record.content if isinstance(record.content, dict) else {}
+                if (
+                    raw.get("installation_id") == installation_id and raw.get("session_id") == session_id
+                    and raw.get("principal_id") == principal_id and raw.get("agent_id") == agent_id
+                    and raw.get("turn_ordinal") == turn_ordinal and raw.get("message_digest") == message_digest
+                ):
+                    raise PreplanningStoreError("captured turn ledger is corrupt") from exc
+                continue
+            if (
+                ledger.installation_id == installation_id and ledger.session_id == session_id
+                and ledger.principal_id == principal_id and ledger.agent_id == agent_id
+                and ledger.turn_ordinal == turn_ordinal and ledger.message_digest == message_digest
+            ):
+                matches.append(ledger)
+        from memorii.core.semantic_ingestion.hermes_captured_turn import HermesCapturedTurnCoordination
+        for record in self._memory_plane.list_records(source_kind="semantic_ingestion_hermes_capture_coordination"):
+            raw = record.content.get("coordination") if isinstance(record.content, dict) else None
+            try:
+                coordination = HermesCapturedTurnCoordination.model_validate(raw)
+            except (TypeError, ValueError) as exc:
+                if isinstance(raw, dict) and (
+                    raw.get("installation_id") == installation_id and raw.get("session_id") == session_id
+                    and raw.get("principal_id") == principal_id and raw.get("agent_id") == agent_id
+                    and raw.get("turn_ordinal") == turn_ordinal and raw.get("message_digest") == message_digest
+                ):
+                    raise PreplanningStoreError("captured turn coordination is corrupt") from exc
+                continue
+            if (
+                coordination.installation_id == installation_id and coordination.session_id == session_id
+                and coordination.principal_id == principal_id and coordination.agent_id == agent_id
+                and coordination.turn_ordinal == turn_ordinal and coordination.message_digest == message_digest
+            ):
+                matching_coordination = True
+        if not matches:
+            if matching_coordination:
+                raise PreplanningStoreError("captured turn coordination is partial")
+            return None
+        if len(matches) != 1:
+            raise PreplanningStoreError("captured turn lookup is ambiguous")
+        self._load_captured_turn_coordination(source_id=matches[0].source_id, source_digest=matches[0].source_digest)
+        return matches[0]
+
+    def _load_captured_turn_coordination(
+        self, *, source_id: str, source_digest: str,
+    ) -> tuple[HermesCapturedTurnLedger, CanonicalMemoryRecord, HermesCapturedTurnCoordination]:
+        from memorii.core.semantic_ingestion.hermes_captured_turn import (
+            HermesCapturedTurnCoordination,
+            HermesCapturedTurnLedger,
+        )
+
+        ledgers = [
+            record for record in self._memory_plane.list_records(
+                source_kind="semantic_ingestion_hermes_captured_turn"
+            )
+            if record.content.get("source_id") == source_id
+            and record.content.get("source_digest") == source_digest
+        ]
+        if len(ledgers) != 1:
+            raise PreplanningStoreError("captured source ledger is missing or ambiguous")
+        try:
+            ledger = HermesCapturedTurnLedger.model_validate(ledgers[0].content)
+            expected_coordination = HermesCapturedTurnCoordination.captured(ledger)
+            coordination_record = self._memory_plane.get_record(expected_coordination.memory_id)
+            coordination = HermesCapturedTurnCoordination.model_validate(
+                coordination_record.content["coordination"] if coordination_record is not None else None
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PreplanningStoreError("captured source coordination is missing or corrupt") from exc
+        if (
+            coordination_record is None
+            or coordination_record.source_kind != "semantic_ingestion_hermes_capture_coordination"
+            or coordination_record.domain != MemoryDomain.EXECUTION
+            or coordination_record.status != CommitStatus.COMMITTED
+            or coordination_record.visibility != MemoryRecordVisibility.INTERNAL_CONTROL
+            or coordination.memory_id != coordination_record.memory_id
+            or any(
+                getattr(coordination, field) != getattr(expected_coordination, field)
+                for field in (
+                    "capture_id", "source_id", "source_digest", "installation_id", "session_id",
+                    "principal_id", "agent_id", "turn_ordinal", "message_digest",
+                )
+            )
+        ):
+            raise PreplanningStoreError("captured source coordination is substituted")
+        return ledger, coordination_record, coordination
+
+    def _validate_captured_structured_witness(
+        self, *, coordination: object, source_id: str, source_digest: str,
+    ) -> None:
+        first_fence_id = getattr(coordination, "first_structured_operation_fence_id", None)
+        if not isinstance(first_fence_id, str) or not first_fence_id:
+            raise PreplanningStoreError("captured structured witness is invalid")
+        link = self._memory_plane.get_record(
+            "semantic_ingestion:retained-source-operation:" + first_fence_id
+        )
+        submission = self._memory_plane.get_record(
+            "semantic_ingestion:retained-structured-submission:" + first_fence_id
+        )
+        control = self._memory_plane.get_record("semantic_ingestion:operation:" + first_fence_id)
+        try:
+            fence = OperationFenceBinding.model_validate(link.content["operation_fence_binding"] if link else None)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PreplanningStoreError("captured structured witness is missing or corrupt") from exc
+        if (
+            link is None
+            or submission is None
+            or control is None
+            or link.source_kind != "semantic_ingestion_retained_source_operation"
+            or submission.source_kind != "semantic_ingestion_retained_structured_submission"
+            or fence.operation_fence_id != first_fence_id
+            or fence.source_id != source_id
+            or fence.source_digest != source_digest
+            or submission.content.get("operation_fence_binding") != fence.model_dump(mode="json")
+        ):
+            raise PreplanningStoreError("captured structured witness is missing or substituted")
+
+    def publish_structured_submission_grant_states(
+        self, *, accepted: RetainedSourceOperationAccepted, authority: object,
+        writer_binding: SemanticWriterCommitBinding,
+    ) -> None:
+        """Pin current structured grants; native V3 rechecks them in its final CAS."""
+        from memorii.core.semantic_ingestion.catalog_authority import (
+            ResolvedStructuredSubmissionAuthority,
+        )
+        self._validate_retained_source_operation(accepted)
+        if not isinstance(authority, ResolvedStructuredSubmissionAuthority):
+            raise PreplanningStoreError("structured submission authority has an invalid type")
+        self.provision_structured_submission_grant_states(
+            authority=authority, writer_binding=writer_binding,
+        )
+
+    def provision_structured_submission_grant_states(
+        self, *, authority: object, writer_binding: SemanticWriterCommitBinding,
+    ) -> None:
+        """Provision the exact factory-issued grant trio before tool use.
+
+        Only an entirely absent trio may become active.  In particular, an
+        inactive state is a durable revocation tombstone, never a candidate
+        for startup repair or sidecar-refresh reactivation.
+        """
+        from memorii.core.semantic_ingestion.catalog_authority import (
+            ResolvedStructuredSubmissionAuthority,
+            StructuredGrantState,
+        )
+        if not isinstance(authority, ResolvedStructuredSubmissionAuthority):
+            raise PreplanningStoreError("structured submission authority has an invalid type")
+        states = (
+            StructuredGrantState(schema_version=1, grant_kind="source", grant=authority.source_grant, active=True),
+            StructuredGrantState(schema_version=1, grant_kind="fact", grant=authority.fact_grant, active=True),
+            StructuredGrantState(schema_version=1, grant_kind="catalog_visibility", grant=authority.catalog_visibility_grant, active=True),
+        )
+        records = tuple(self._structured_grant_state_record(state, timestamp=self._now()) for state in states)
+        writer_record = self._writers.require_current(writer_binding)
+        authorization = self._writers._authorize_atomic(writer_binding, capability=self._write_capability)
+        current = tuple(self._memory_plane.get_record(record.memory_id) for record in records)
+        if all(record is not None for record in current):
+            if all(self._same_structured_grant_state(record, expected) for record, expected in zip(current, records, strict=True)):
+                return
+            if any(
+                record is not None
+                and self._structured_grant_state_matches_grant(record, expected)
+                and not StructuredGrantState.model_validate(record.content["state"]).active
+                for record, expected in zip(current, records, strict=True)
+            ):
+                raise StructuredSubmissionGrantRevokedError(
+                    "structured submission grant is revoked"
+                )
+            raise PreplanningStoreError("structured submission grant state is stale or substituted")
+        if any(record is not None for record in current):
+            if any(
+                record is not None
+                and self._structured_grant_state_matches_grant(record, expected)
+                and not StructuredGrantState.model_validate(record.content["state"]).active
+                for record, expected in zip(current, records, strict=True)
+            ):
+                raise StructuredSubmissionGrantRevokedError(
+                    "structured submission grant is revoked"
+                )
+            raise PreplanningStoreError("structured submission grant state is partial")
+        try:
+            self._memory_plane.conditionally_write_records(
+                records,
+                preconditions=(
+                    *(RecordAbsentPrecondition(memory_id=record.memory_id) for record in records),
+                    RecordDigestPrecondition(memory_id=writer_record.memory_id, expected_digest=record_digest(writer_record)),
+                ), authorization=authorization,
+            )
+        except MemoryPlaneRevisionConflictError as exc:
+            current = tuple(self._memory_plane.get_record(record.memory_id) for record in records)
+            if all(record is not None and self._same_structured_grant_state(record, expected)
+                   for record, expected in zip(current, records, strict=True)):
+                return
+            if any(
+                record is not None
+                and self._structured_grant_state_matches_grant(record, expected)
+                and not StructuredGrantState.model_validate(record.content["state"]).active
+                for record, expected in zip(current, records, strict=True)
+            ):
+                raise StructuredSubmissionGrantRevokedError(
+                    "structured submission grant is revoked"
+                ) from exc
+            raise PreplanningStoreError("structured submission grant state CAS conflicted") from exc
+
+    def revoke_structured_submission_grant(
+        self, *, grant_kind: str, grant: object | None = None, grant_id: str | None = None,
+        writer_binding: SemanticWriterCommitBinding,
+    ) -> None:
+        """Durably revoke a full typed grant, including before provisioning."""
+        from memorii.core.semantic_ingestion.catalog_authority import (
+            CatalogOwnerVisibilityGrant,
+            FactScopeGrant,
+            SourceScopeGrant,
+            StructuredGrantState,
+        )
+        if grant is None:
+            if not isinstance(grant_id, str) or not grant_id:
+                raise PreplanningStoreError("structured submission grant coordinate is invalid")
+            record_id = self._structured_grant_state_record_id(grant_kind, grant_id)
+            expected = None
+        else:
+            if grant_kind == "source" and isinstance(grant, SourceScopeGrant):
+                expected = StructuredGrantState(
+                    schema_version=1, grant_kind="source", grant=grant, active=False,
+                )
+            elif grant_kind == "fact" and isinstance(grant, FactScopeGrant):
+                expected = StructuredGrantState(
+                    schema_version=1, grant_kind="fact", grant=grant, active=False,
+                )
+            elif grant_kind == "catalog_visibility" and isinstance(grant, CatalogOwnerVisibilityGrant):
+                expected = StructuredGrantState(
+                    schema_version=1, grant_kind="catalog_visibility", grant=grant, active=False,
+                )
+            else:
+                raise PreplanningStoreError("structured submission grant kind is invalid")
+            if grant_id is not None and grant_id != expected.grant.grant_id:
+                raise PreplanningStoreError("structured submission grant coordinate is substituted")
+            record_id = self._structured_grant_state_record_id(grant_kind, expected.grant.grant_id)
+        current = self._memory_plane.get_record(record_id)
+        if current is None:
+            if expected is None:
+                raise PreplanningStoreError("structured submission grant state is unavailable")
+            writer_record = self._writers.require_current(writer_binding)
+            tombstone = self._structured_grant_state_record(expected, timestamp=self._now())
+            try:
+                self._memory_plane.conditionally_write_records(
+                    (tombstone,), preconditions=(
+                        RecordAbsentPrecondition(memory_id=tombstone.memory_id),
+                        RecordDigestPrecondition(memory_id=writer_record.memory_id, expected_digest=record_digest(writer_record)),
+                    ), authorization=self._writers._authorize_atomic(writer_binding, capability=self._write_capability),
+                )
+                return
+            except MemoryPlaneRevisionConflictError as exc:
+                current = self._memory_plane.get_record(record_id)
+                if current is None:
+                    raise PreplanningStoreError("structured submission grant revoke CAS conflicted") from exc
+        try:
+            state = StructuredGrantState.model_validate(current.content["state"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PreplanningStoreError("structured submission grant state is invalid") from exc
+        if state.grant_kind != grant_kind or (expected is not None and state.grant != expected.grant):
+            raise PreplanningStoreError("structured submission grant state is substituted")
+        if not state.active:
+            return
+        replacement = self._structured_grant_state_record(state.model_copy(update={"active": False}), timestamp=self._now())
+        writer_record = self._writers.require_current(writer_binding)
+        try:
+            self._memory_plane.conditionally_write_records(
+                (replacement,), preconditions=(
+                    RecordDigestPrecondition(memory_id=current.memory_id, expected_digest=record_digest(current)),
+                    RecordDigestPrecondition(memory_id=writer_record.memory_id, expected_digest=record_digest(writer_record)),
+                ), authorization=self._writers._authorize_atomic(writer_binding, capability=self._write_capability),
+            )
+        except MemoryPlaneRevisionConflictError as exc:
+            refreshed = self._memory_plane.get_record(record_id)
+            if refreshed is None or not self._same_structured_grant_state(refreshed, replacement):
+                raise PreplanningStoreError("structured submission grant revoke CAS conflicted") from exc
+
+    @staticmethod
+    def _structured_grant_state_record_id(grant_kind: str, grant_id: str) -> str:
+        if grant_kind not in {"source", "fact", "catalog_visibility"} or not grant_id:
+            raise PreplanningStoreError("structured submission grant coordinate is invalid")
+        return "semantic_ingestion:structured-grant:" + sha256((grant_kind + "\0" + grant_id).encode("utf-8")).hexdigest()
+
+    def _structured_grant_state_record(self, state: object, *, timestamp: datetime) -> CanonicalMemoryRecord:
+        from memorii.core.semantic_ingestion.catalog_authority import StructuredGrantState
+        if not isinstance(state, StructuredGrantState):
+            raise PreplanningStoreError("structured submission grant state has an invalid type")
+        return CanonicalMemoryRecord(
+            memory_id=self._structured_grant_state_record_id(state.grant_kind, state.grant.grant_id),
+            domain=MemoryDomain.EXECUTION, text="", content={"state": state.model_dump(mode="json")},
+            status=CommitStatus.COMMITTED, source_kind="semantic_ingestion_structured_grant_state",
+            timestamp=timestamp, visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+        )
+
+    @staticmethod
+    def _same_structured_grant_state(current: CanonicalMemoryRecord | None, expected: CanonicalMemoryRecord) -> bool:
+        return current is not None and current.source_kind == "semantic_ingestion_structured_grant_state" and current.content == expected.content
+
+    @staticmethod
+    def _structured_grant_state_matches_grant(
+        current: CanonicalMemoryRecord, expected: CanonicalMemoryRecord,
+    ) -> bool:
+        """Match an inactive current grant without treating it as reactivateable."""
+        from memorii.core.semantic_ingestion.catalog_authority import StructuredGrantState
+
+        if current.source_kind != "semantic_ingestion_structured_grant_state":
+            return False
+        try:
+            actual_state = StructuredGrantState.model_validate(current.content["state"])
+            expected_state = StructuredGrantState.model_validate(expected.content["state"])
+        except (KeyError, TypeError, ValueError):
+            return False
+        return (
+            actual_state.grant_kind == expected_state.grant_kind
+            and actual_state.grant == expected_state.grant
+        )
+
+    def pin_captured_turn_catalog(
+        self, *, ledger: object, authority: object,
+        writer_binding: SemanticWriterCommitBinding,
+    ) -> CatalogCapturedTurnPin | None:
+        """Persist the seed catalog witness before a captured turn exposes a tool.
+
+        This owner deliberately has no transport or adapter dependency.  It
+        binds the already retained capture to the current selected seed and all
+        three current grants in one writer-fenced CAS.  An unavailable child is
+        not a seed fallback.
+        """
+        from memorii.core.semantic_ingestion.catalog_authority import (
+            CatalogSelectionPointer,
+            ResolvedStructuredSubmissionAuthority,
+            StructuredGrantState,
+            catalog_selection_pointer_memory_id,
+            catalog_version_memory_id,
+        )
+        from memorii.core.semantic_ingestion.catalog_capture_pin import (
+            CatalogCapturedTurnPin,
+        )
+        from memorii.core.semantic_ingestion.hermes_captured_turn import (
+            HermesCapturedTurnCoordination,
+            HermesCapturedTurnLedger,
+        )
+
+        if not isinstance(ledger, HermesCapturedTurnLedger) or not isinstance(
+            authority, ResolvedStructuredSubmissionAuthority
+        ):
+            raise PreplanningStoreError("captured catalog pin authority is invalid")
+        pin_id = CatalogCapturedTurnPin.memory_id_for_capture(ledger.capture_id)
+        existing = self._memory_plane.get_record(pin_id)
+        if existing is not None:
+            # A retry must validate the durable pin's historical package tuple.
+            # Looking at today's pointer here would reinterpret an already
+            # advertised schema after a later catalog rotation.
+            persisted = self.load_captured_turn_catalog_pin(
+                ledger=ledger, authority=authority,
+            )
+            if persisted is None:
+                raise PreplanningStoreError("captured catalog pin is unavailable")
+            return persisted
+
+        _revision, selection_records = self._memory_plane.read_snapshot()
+        bundle, selected_pointer = self._catalog_bundle_locator.locate_selected(
+            selection_records, scope=authority.catalog.catalog_scope,
+        )
+        pointer_record = self._memory_plane.get_record(
+            catalog_selection_pointer_memory_id(bundle.catalog.catalog_scope)
+        )
+        version_record = self._memory_plane.get_record(
+            catalog_version_memory_id(bundle.version)
+        )
+        ledger_record = self._memory_plane.get_record(
+            "semantic_ingestion:hermes_captured_turn:" + sha256(ledger.capture_id.encode()).hexdigest()
+        )
+        prepared_record = self._memory_plane.get_record(
+            "semantic_ingestion:prepared_source:" + sha256(ledger.source_id.encode()).hexdigest()
+        )
+        coordination_record = self._memory_plane.get_record(
+            HermesCapturedTurnCoordination.memory_id_for_source(ledger.source_id)
+        )
+        source_record = self._memory_plane.get_record(ledger.source_id)
+        writer_record = self._writers.require_current(writer_binding)
+        grant_specs = (
+            ("source", authority.source_grant), ("fact", authority.fact_grant),
+            ("catalog_visibility", authority.catalog_visibility_grant),
+        )
+        grant_records = tuple(
+            self._memory_plane.get_record(self._structured_grant_state_record_id(kind, grant.grant_id))
+            for kind, grant in grant_specs
+        )
+        if any(
+            record is None
+            for record in (
+                version_record,
+                ledger_record,
+                prepared_record,
+                coordination_record,
+                source_record,
+                *grant_records,
+            )
+        ):
+            raise PreplanningStoreError("captured catalog pin predecessors are unavailable")
+        resolved_grant_records = tuple(record for record in grant_records if record is not None)
+        if len(resolved_grant_records) != len(grant_records):
+            raise PreplanningStoreError("captured catalog pin predecessors are unavailable")
+        assert version_record is not None
+        assert ledger_record is not None
+        assert prepared_record is not None
+        assert coordination_record is not None
+        assert source_record is not None
+        try:
+            version = type(bundle.version).model_validate(version_record.content["catalog_version"])
+            persisted_ledger = HermesCapturedTurnLedger.model_validate(ledger_record.content)
+            coordination = HermesCapturedTurnCoordination.model_validate(coordination_record.content["coordination"])
+            states = tuple(StructuredGrantState.model_validate(record.content["state"]) for record in resolved_grant_records)
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
+            raise PreplanningStoreError("captured catalog pin predecessors are unavailable") from exc
+        expected_coordination = HermesCapturedTurnCoordination.captured(ledger)
+        pending_coordination = (
+            coordination.state == "structured_pending"
+            and coordination.capture_id == expected_coordination.capture_id
+            and coordination.source_id == expected_coordination.source_id
+            and coordination.source_digest == expected_coordination.source_digest
+            and coordination.installation_id == expected_coordination.installation_id
+            and coordination.session_id == expected_coordination.session_id
+            and coordination.principal_id == expected_coordination.principal_id
+            and coordination.agent_id == expected_coordination.agent_id
+            and coordination.turn_ordinal == expected_coordination.turn_ordinal
+            and coordination.message_digest == expected_coordination.message_digest
+            and coordination.completion_digest is None
+            and coordination.assistant_source_id is None
+            and coordination.assistant_source_digest is None
+            and coordination.ordinary_operation_fence_id is None
+        )
+        if pending_coordination:
+            self._validate_captured_structured_witness(
+                coordination=coordination, source_id=ledger.source_id,
+                source_digest=ledger.source_digest,
+            )
+        if (
+            version != bundle.version
+            or authority.catalog != bundle.catalog
+            or persisted_ledger != ledger
+            or (coordination != expected_coordination and not pending_coordination)
+            or source_record is None
+            or source_admission_source_digest(source_record) != ledger.source_digest
+            or prepared_record is None
+            or self._load_prepared_source_record(prepared_record, ledger.source_id, ledger.source_digest) is None
+            or tuple((state.grant_kind, state.grant, state.active) for state in states)
+            != tuple((kind, grant, True) for kind, grant in grant_specs)
+        ):
+            raise PreplanningStoreError("captured catalog pin predecessors are substituted")
+        try:
+            assert pointer_record is not None
+            pointer = CatalogSelectionPointer.model_validate(pointer_record.content["catalog_selection_pointer"])
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
+            raise PreplanningStoreError("captured catalog selection is unavailable") from exc
+        if pointer != selected_pointer:
+            raise PreplanningStoreError("captured catalog selection is substituted")
+        pin = CatalogCapturedTurnPin.from_bundle(
+            ledger=ledger, bundle=bundle, selection_pointer_digest=pointer.pointer_digest,
+        )
+        record = CanonicalMemoryRecord(
+            memory_id=pin.memory_id, domain=MemoryDomain.EXECUTION, text="",
+            content={"catalog_capture_pin": pin.model_dump(mode="json")},
+            status=CommitStatus.COMMITTED,
+            source_kind="semantic_ingestion_catalog_capture_pin",
+            timestamp=self._now(), visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+        )
+        predecessors = (
+            ledger_record, source_record, prepared_record, coordination_record,
+            pointer_record, version_record, *resolved_grant_records, writer_record,
+        )
+        try:
+            self._memory_plane.conditionally_write_records(
+                (record,),
+                preconditions=(
+                    RecordAbsentPrecondition(memory_id=record.memory_id),
+                    *(RecordDigestPrecondition(memory_id=item.memory_id, expected_digest=record_digest(item)) for item in predecessors),
+                ),
+                authorization=self._writers._authorize_atomic(
+                    writer_binding, capability=self._write_capability,
+                ),
+            )
+            return pin
+        except MemoryPlaneRevisionConflictError as exc:
+            winner = self._memory_plane.get_record(record.memory_id)
+            if winner is None:
+                raise PreplanningStoreError("captured catalog pin CAS conflicted") from exc
+            try:
+                persisted = CatalogCapturedTurnPin.model_validate(winner.content["catalog_capture_pin"])
+            except (KeyError, TypeError, ValueError) as reload_exc:
+                raise PreplanningStoreError("captured catalog pin is invalid") from reload_exc
+            if persisted != pin:
+                raise PreplanningStoreError("captured catalog pin CAS winner is substituted") from exc
+            return persisted
+
+    def load_captured_turn_catalog_pin(
+        self, *, ledger: object, authority: object,
+    ) -> CatalogCapturedTurnPin | None:
+        """Load one existing capture pin without selecting or writing a catalog."""
+        from memorii.core.semantic_ingestion.catalog_authority import (
+            CatalogAuthorityError,
+            ResolvedStructuredSubmissionAuthority,
+            StructuredGrantState,
+            catalog_version_memory_id,
+        )
+        from memorii.core.semantic_ingestion.catalog_capture_pin import (
+            CatalogCapturedTurnPin,
+        )
+        from memorii.core.semantic_ingestion.hermes_captured_turn import (
+            HermesCapturedTurnCoordination,
+            HermesCapturedTurnLedger,
+        )
+
+        if not isinstance(ledger, HermesCapturedTurnLedger) or not isinstance(
+            authority, ResolvedStructuredSubmissionAuthority
+        ):
+            raise PreplanningStoreError("captured catalog pin authority is invalid")
+        pin_id = CatalogCapturedTurnPin.memory_id_for_capture(ledger.capture_id)
+        existing = self._memory_plane.get_record(pin_id)
+        if existing is None:
+            return None
+        try:
+            pin = CatalogCapturedTurnPin.model_validate(existing.content["catalog_capture_pin"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PreplanningStoreError("captured catalog pin is invalid") from exc
+        _revision, historical_records = self._memory_plane.read_snapshot()
+        try:
+            bundle = self._catalog_bundle_locator.locate_historical(
+                historical_records, version_id=pin.selected_version_id,
+                version_digest=pin.selected_version_digest,
+            )
+        except (CatalogAuthorityError, ValueError) as exc:
+            raise PreplanningStoreError("captured catalog pin is unavailable") from exc
+        version_record = self._memory_plane.get_record(catalog_version_memory_id(bundle.version))
+        ledger_record = self._memory_plane.get_record(
+            "semantic_ingestion:hermes_captured_turn:" + sha256(ledger.capture_id.encode()).hexdigest()
+        )
+        prepared_record = self._memory_plane.get_record(
+            "semantic_ingestion:prepared_source:" + sha256(ledger.source_id.encode()).hexdigest()
+        )
+        coordination_record = self._memory_plane.get_record(
+            HermesCapturedTurnCoordination.memory_id_for_source(ledger.source_id)
+        )
+        source_record = self._memory_plane.get_record(ledger.source_id)
+        grant_specs = (
+            ("source", authority.source_grant), ("fact", authority.fact_grant),
+            ("catalog_visibility", authority.catalog_visibility_grant),
+        )
+        grant_records = tuple(
+            self._memory_plane.get_record(self._structured_grant_state_record_id(kind, grant.grant_id))
+            for kind, grant in grant_specs
+        )
+        if any(record is None for record in (
+            version_record, ledger_record, prepared_record, coordination_record, source_record, *grant_records,
+        )):
+            raise PreplanningStoreError("captured catalog pin predecessors are unavailable")
+        resolved_grant_records = tuple(record for record in grant_records if record is not None)
+        assert version_record is not None
+        assert ledger_record is not None
+        assert prepared_record is not None
+        assert coordination_record is not None
+        assert source_record is not None
+        try:
+            version = type(bundle.version).model_validate(version_record.content["catalog_version"])
+            persisted_ledger = HermesCapturedTurnLedger.model_validate(ledger_record.content)
+            coordination = HermesCapturedTurnCoordination.model_validate(coordination_record.content["coordination"])
+            states = tuple(StructuredGrantState.model_validate(record.content["state"]) for record in resolved_grant_records)
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
+            raise PreplanningStoreError("captured catalog pin predecessors are unavailable") from exc
+        expected_coordination = HermesCapturedTurnCoordination.captured(ledger)
+        pending_coordination = (
+            coordination.state == "structured_pending"
+            and coordination.capture_id == expected_coordination.capture_id
+            and coordination.source_id == expected_coordination.source_id
+            and coordination.source_digest == expected_coordination.source_digest
+            and coordination.installation_id == expected_coordination.installation_id
+            and coordination.session_id == expected_coordination.session_id
+            and coordination.principal_id == expected_coordination.principal_id
+            and coordination.agent_id == expected_coordination.agent_id
+            and coordination.turn_ordinal == expected_coordination.turn_ordinal
+            and coordination.message_digest == expected_coordination.message_digest
+            and coordination.completion_digest is None
+            and coordination.assistant_source_id is None
+            and coordination.assistant_source_digest is None
+            and coordination.ordinary_operation_fence_id is None
+        )
+        if pending_coordination:
+            self._validate_captured_structured_witness(
+                coordination=coordination, source_id=ledger.source_id,
+                source_digest=ledger.source_digest,
+            )
+        if (
+            existing.memory_id != pin.memory_id
+            or existing.source_kind != "semantic_ingestion_catalog_capture_pin"
+            or existing.domain is not MemoryDomain.EXECUTION
+            or existing.visibility is not MemoryRecordVisibility.INTERNAL_CONTROL
+            or existing.status is not CommitStatus.COMMITTED
+            or version != bundle.version
+            or authority.catalog != bundle.catalog
+            or persisted_ledger != ledger
+            or (coordination != expected_coordination and not pending_coordination)
+            or source_admission_source_digest(source_record) != ledger.source_digest
+            or self._load_prepared_source_record(prepared_record, ledger.source_id, ledger.source_digest) is None
+            or tuple((state.grant_kind, state.grant, state.active) for state in states)
+            != tuple((kind, grant, True) for kind, grant in grant_specs)
+            or pin.capture_id != ledger.capture_id
+            or pin.source_id != ledger.source_id
+            or pin.source_digest != ledger.source_digest
+            or pin.catalog_scope != bundle.catalog.catalog_scope
+            or pin.catalog_digest != bundle.catalog.catalog_digest
+            or pin.selected_version_id != bundle.version.version_id
+            or pin.selected_version_digest != bundle.version.version_digest
+            or pin.runtime_bundle_digest != bundle.runtime_bundle_digest
+        ):
+            raise PreplanningStoreError("captured catalog pin is substituted")
+        return pin
+
+    def resolve_captured_turn_catalog_dispatch(self, *, pin: object) -> str:
+        """Name the closed tool grammar authorized by one verified historical pin."""
+        from memorii.core.semantic_ingestion.catalog_authority import (
+            CatalogAuthorityError,
+            CatalogChildVersionV2,
+            CatalogVersion,
+        )
+        from memorii.core.semantic_ingestion.catalog_capture_pin import CatalogCapturedTurnPin
+
+        if not isinstance(pin, CatalogCapturedTurnPin):
+            raise PreplanningStoreError("captured catalog dispatch pin is invalid")
+        _revision, records = self._memory_plane.read_snapshot()
+        try:
+            bundle = self._catalog_bundle_locator.locate_historical(
+                records,
+                version_id=pin.selected_version_id,
+                version_digest=pin.selected_version_digest,
+            )
+        except (CatalogAuthorityError, ValueError) as exc:
+            raise PreplanningStoreError("captured catalog dispatch is unavailable") from exc
+        if (
+            pin.catalog_scope != bundle.catalog.catalog_scope
+            or pin.catalog_digest != bundle.catalog.catalog_digest
+            or pin.selected_version_id != bundle.version.version_id
+            or pin.selected_version_digest != bundle.version.version_digest
+            or pin.runtime_bundle_digest != bundle.runtime_bundle_digest
+        ):
+            raise PreplanningStoreError("captured catalog dispatch is substituted")
+        if isinstance(bundle.version, CatalogVersion):
+            return "seed"
+        from memorii.core.semantic_ingestion.default_catalog_package import (
+            load_packaged_default_catalog_release,
+        )
+        default_release = load_packaged_default_catalog_release()
+        if (
+            isinstance(bundle.version, CatalogChildVersionV2)
+            and bundle.version == default_release.child_version
+        ):
+            return "default_catalog"
+        if (
+            isinstance(bundle.version, CatalogChildVersionV2)
+            and bundle.version.predicate_ids
+            == ("project_deadline", "project_owner", "project_status", "reports_to")
+        ):
+            return "reports_to"
+        raise PreplanningStoreError("captured catalog dispatch is unsupported")
+
+    def recover_retained_structured_terminal(
+        self, *, accepted: RetainedSourceOperationAccepted, authority: object,
+    ) -> object | None:
+        """Recover one native terminal after current grant validation.
+
+        This is the sole structured-status owner: it never returns a cached
+        terminal until the exact retained envelope and all three independently
+        revocable grants still match their current same-store records.
+        """
+        from memorii.core.semantic_ingestion.catalog_authority import (
+            ResolvedStructuredSubmissionAuthority,
+            StructuredGrantState,
+        )
+        from memorii.core.semantic_ingestion.contracts import BootstrapGraphTerminalReloadV3
+
+        self._validate_retained_source_operation(accepted)
+        if not isinstance(authority, ResolvedStructuredSubmissionAuthority):
+            raise PreplanningStoreError("structured status authority has an invalid type")
+        retained = self._memory_plane.get_record(
+            "semantic_ingestion:retained-structured-submission:"
+            + accepted.operation_fence_binding.operation_fence_id
+        )
+        if retained is None:
+            return None
+        if retained.source_kind != "semantic_ingestion_retained_structured_submission":
+            raise PreplanningStoreError("structured status submission record is invalid")
+        try:
+            envelope = base64.b64decode(retained.content["canonical_envelope"], validate=True)
+            stored_authority = ResolvedStructuredSubmissionAuthority.model_validate(
+                decode_typed_value(envelope)["authority"]
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PreplanningStoreError("structured status submission record is corrupt") from exc
+        if (
+            stored_authority != authority
+            or retained.content.get("operation_fence_binding")
+            != accepted.operation_fence_binding.model_dump(mode="json")
+        ):
+            raise PreplanningStoreError("structured status authority is substituted")
+        for kind, grant in (
+            ("source", authority.source_grant),
+            ("fact", authority.fact_grant),
+            ("catalog_visibility", authority.catalog_visibility_grant),
+        ):
+            record = self._memory_plane.get_record(
+                self._structured_grant_state_record_id(kind, grant.grant_id)
+            )
+            try:
+                state = StructuredGrantState.model_validate(record.content["state"]) if record else None
+            except (KeyError, TypeError, ValueError) as exc:
+                raise PreplanningStoreError("structured status grant state is invalid") from exc
+            if (
+                state is None
+                or not state.active
+                or state.grant_kind != kind
+                or state.grant != grant
+            ):
+                raise StructuredSubmissionGrantRevokedError(
+                    "structured submission status grant is revoked or unavailable"
+                )
+        candidates: dict[str, BootstrapGraphTerminalReloadV3] = {}
+        for record in self._memory_plane.list_records(
+            source_kind="semantic_ingestion_bootstrap_graph_v3_terminal_locator"
+        ):
+            try:
+                reload = BootstrapGraphTerminalReloadV3.model_validate_json(
+                    json.dumps(record.content["reload"]), strict=True
+                )
+            except (KeyError, TypeError, ValueError) as exc:
+                raise PreplanningStoreError("structured status terminal locator is corrupt") from exc
+            if reload.operation_fence_binding_digest == accepted.operation_fence_binding.binding_digest:
+                # One native terminal is indexed by its locator, request, and
+                # recovery coordinates.  They deliberately carry the same
+                # immutable reload, so count terminal identities rather than
+                # index records.
+                candidates[reload.reload_digest] = reload
+        if not candidates:
+            return None
+        if len(candidates) != 1:
+            raise PreplanningStoreError("structured status terminal is ambiguous")
+        reload = next(iter(candidates.values()))
+        from memorii.core.memory_evolution.source_governance import (
+            semantic_required_outcome_scopes_for_retained_source,
+        )
+        from memorii.core.semantic_ingestion.contracts import (
+            RequiredOutcomeScopeSet as SemanticRequiredOutcomeScopeSet,
+        )
+        semantic_scopes = semantic_required_outcome_scopes_for_retained_source(
+            accepted.required_outcome_scopes
+        )
+        if not isinstance(semantic_scopes, SemanticRequiredOutcomeScopeSet):
+            raise PreplanningStoreError("retained structured source scope is unprojectable")
+        return self._reload_bootstrap_graph_terminal_exact_v3(
+            locator_digest=reload.atomic_write_locator_digest,
+            expected_reload=reload,
+            expected_delivery_principal_binding_digest=(
+                accepted.delivery_identity.delivery_principal_binding_digest
+            ),
+            expected_required_scope_set_digest=(
+                semantic_scopes.required_scope_set_digest
+            ),
+            expected_operation_fence_binding=accepted.operation_fence_binding,
+            expected_operation_lease_binding_digest=reload.operation_lease_binding_digest,
+            expected_control_epoch_digest=reload.control_epoch_digest,
+        )
+
+    def recover_retained_structured_terminal_by_operation(
+        self, *, operation_id: str, authority: object,
+    ) -> object | None:
+        """Resolve an opaque public operation identity before protected recovery.
+
+        The scan is restricted to internal retained-operation artifacts.  It
+        does not inspect a terminal until :meth:`recover_retained_structured_terminal`
+        has checked the caller's exact current grants.
+        """
+        from memorii.core.memory_evolution.ingestion_contracts import RequiredOutcomeScopeSet
+
+        matches: list[RetainedSourceOperationAccepted] = []
+        for record in self._memory_plane.list_records(
+            source_kind="semantic_ingestion_retained_structured_submission"
+        ):
+            try:
+                envelope = base64.b64decode(record.content["canonical_envelope"], validate=True)
+                decoded = decode_typed_value(envelope)
+                fence = OperationFenceBinding.model_validate(
+                    record.content["operation_fence_binding"]
+                )
+            except (KeyError, TypeError, ValueError) as exc:
+                raise PreplanningStoreError("structured status submission record is corrupt") from exc
+            if fence.operation_id != operation_id:
+                continue
+            index = self._memory_plane.get_record(
+                "semantic_ingestion:admission:" + fence.delivery_key_digest
+            )
+            try:
+                required = RequiredOutcomeScopeSet.create(
+                    tenant_partition_id=index.content["tenant_partition_id"],
+                    scopes=index.content["required_scopes"],
+                ) if index is not None else None
+            except (KeyError, TypeError, ValueError) as exc:
+                raise PreplanningStoreError("structured status admission is corrupt") from exc
+            if (
+                required is None
+                or index is None
+                or index.source_kind != "semantic_ingestion_admission_index"
+                or decoded.get("source_id") != fence.source_id
+                or decoded.get("source_digest") != fence.source_digest
+                or record.content.get("canonical_envelope_digest")
+                != sha256(
+                    b"memorii.semantic-ingestion.retained-source-envelope.v1\0" + envelope
+                ).hexdigest()
+            ):
+                raise PreplanningStoreError("structured status operation is substituted")
+            matches.append(RetainedSourceOperationAccepted(
+                source_id=fence.source_id,
+                source_digest=fence.source_digest,
+                delivery_identity=fence.delivery_identity,
+                required_outcome_scopes=required,
+                source_admission_index_digest=sha256(encode_typed_value(index.content)).hexdigest(),
+                canonical_envelope_digest=record.content["canonical_envelope_digest"],
+                operation_fence_binding=fence,
+            ))
+        if not matches:
+            return None
+        if len(matches) != 1:
+            raise PreplanningStoreError("structured status operation is ambiguous")
+        return self.recover_retained_structured_terminal(
+            accepted=matches[0], authority=authority,
+        )
+
+    def verify_legacy_bootstrap_v3_runtime_projection(
+        self,
+        projection: CanonicalMemoryRecord,
+        *,
+        revision: int,
+        records: tuple[CanonicalMemoryRecord, ...],
+        grant: object,
+    ) -> Literal["verified", "not_legacy", "unavailable"]:
+        """Prove that one pre-catalog runtime projection is still readable.
+
+        Runtime projections did not originally carry a catalog binding.  They
+        may remain visible only when the immutable native V3 group which
+        produced them can be reloaded from the current durable image and when
+        that source operation has no retained structured-submission link.  A
+        structured operation without its claim binding must therefore never
+        reach this compatibility path.
+        """
+        # This reader deliberately uses the caller's assembled snapshot.  A
+        # fresh store read here could validate a different image from the one
+        # whose projection is about to be released.
+        del revision
+        from memorii.core.memory_evolution.record_projection import (
+            runtime_context_records_from_committed_claims,
+        )
+        from memorii.core.semantic_ingestion.contracts import (
+            BootstrapGraphOperationCommitResultV3,
+            ClaimAssertion,
+            decode_semantic_contract,
+        )
+
+        if (
+            projection.source_kind != "memory_evolution"
+            or projection.memory_id.startswith("mem:bootstrap-v3:runtime-claim:") is False
+            or projection.content.get("runtime_context_projection_kind")
+            != "bootstrap_v3_claim_assertion"
+        ):
+            return "not_legacy"
+        transaction_group_id = projection.content.get("transaction_group_id")
+        source_id = projection.content.get("source_id")
+        source_digest = projection.content.get("source_digest")
+        if not all(isinstance(value, str) and value for value in (
+            transaction_group_id, source_id, source_digest,
+        )):
+            return "unavailable"
+        if len({record.memory_id for record in records}) != len(records):
+            return "unavailable"
+        snapshot = {record.memory_id: record for record in records}
+        if snapshot.get(projection.memory_id) != projection:
+            return "unavailable"
+
+        candidates: list[tuple[CanonicalMemoryRecord, BootstrapGraphGroupCommitRequestV3]] = []
+        for primary in snapshot.values():
+            if primary.source_kind != "semantic_ingestion_bootstrap_graph_v3_group_commit_primary":
+                continue
+            try:
+                request = _bootstrap_graph_v3_group_commit_request_from_record(primary)
+            except PreplanningStoreError:
+                continue
+            if (
+                request.transaction_group_id == transaction_group_id
+                and request.operation_fence_binding.source_id == source_id
+                and request.operation_fence_binding.source_digest == source_digest
+            ):
+                candidates.append((primary, request))
+        if len(candidates) != 1:
+            return "unavailable"
+        primary, request = candidates[0]
+        # Retained-source identities are minted only by the structured
+        # submission admission path.  This durable operation coordinate keeps
+        # a missing or damaged submission-link record from downgrading a new
+        # claim into a pre-catalog legacy claim.
+        if request.source_operation_id.startswith("retained-source:v1:"):
+            return "not_legacy"
+        retained_id = (
+            "semantic_ingestion:retained-structured-submission:"
+            + request.operation_fence_binding.operation_fence_id
+        )
+        if retained_id in snapshot:
+            return "not_legacy"
+        try:
+            reload = _bootstrap_graph_v3_group_commit_reload_from_record(primary, request)
+            core = reload.persisted_result.core
+            if (
+                reload.group_result_schema_version not in (2, 3)
+                or core.group_result_schema_version != reload.group_result_schema_version
+                or core.disposition != "committed"
+                or primary.memory_id != _bootstrap_graph_v3_group_commit_primary_id(
+                    request.source_operation_id,
+                    request.transaction_group_id,
+                    request.operation_ids,
+                    request.request_ctv_digest,
+                )
+            ):
+                return "unavailable"
+            if reload.ledger_entry_id is None or reload.ledger_entry_digest is None:
+                return "unavailable"
+            ledger_record = snapshot.get(reload.ledger_entry_id)
+            if ledger_record is None:
+                return "unavailable"
+            entry = _ledger_entry_from_record(
+                ledger_record,
+                history=self._typed_value_registry_history,
+                limits=self._observation_artifact_limits,
+            )
+            if entry.entry_digest != reload.ledger_entry_digest:
+                return "unavailable"
+            # The native recovery validator works solely from this caller's
+            # snapshot.  It joins the result, source admission, effects,
+            # receipt, checkpoint, graph delta, and event batch without
+            # consulting mutable replay or conflict heads.
+            self._verify_native_group_entry_snapshot(
+                entry,
+                snapshot_records=snapshot,
+                historical_conflict_binding=True,
+            )
+            if reload.group_result_schema_version == 3:
+                self._verify_group_commit_seal_snapshot(
+                    primary,
+                    reload,
+                    request,
+                    snapshot_records=snapshot,
+                )
+            source = snapshot.get(request.operation_fence_binding.source_id)
+            admission_index = snapshot.get(
+                "semantic_ingestion:admission:"
+                + request.operation_fence_binding.delivery_key_digest
+            )
+            if source is None:
+                return "unavailable"
+            if (
+                source_admission_source_digest(source) != request.operation_fence_binding.source_digest
+                or admission_index is None
+                or admission_index.source_kind
+                != "semantic_ingestion_admission_index"
+                or admission_index.content.get("operation_fence_binding")
+                != request.operation_fence_binding.model_dump(mode="json")
+                or admission_index.content.get("principal_binding_digest")
+                != request.operation_fence_binding.delivery_principal_binding_digest
+                or admission_index.content.get("delivery_key_digest")
+                != request.operation_fence_binding.delivery_key_digest
+                or source.task_id != projection.task_id
+                or source.user_id != projection.user_id
+                or source.agent_id != projection.agent_id
+            ):
+                return "unavailable"
+
+            # A marker is authoritative even when the corresponding binding
+            # has been deleted or damaged.  Never reinterpret a new claim as
+            # an old one merely because its new-reader evidence is absent.
+            if any(
+                record.source_kind == "semantic_ingestion_retained_structured_submission"
+                and record.content.get("operation_fence_binding")
+                == request.operation_fence_binding.model_dump(mode="json")
+                for record in snapshot.values()
+            ):
+                return "not_legacy"
+
+            fanouts = [
+                record for record in snapshot.values()
+                if record.source_kind == "semantic_ingestion_bootstrap_graph_v3_group_commit_fanout"
+                and record.content.get("primary_id") == primary.memory_id
+            ]
+            if len(fanouts) != len(request.operation_ids):
+                return "unavailable"
+            expected_fanout_ids = {
+                _bootstrap_graph_v3_group_commit_fanout_id(
+                    request.source_operation_id, request.transaction_group_id,
+                    operation_id, request.request_ctv_digest,
+                )
+                for operation_id in request.operation_ids
+            }
+            if {record.memory_id for record in fanouts} != expected_fanout_ids:
+                return "unavailable"
+            for fanout in fanouts:
+                member_operation_id = fanout.content.get("member_operation_id")
+                if not isinstance(member_operation_id, str):
+                    return "unavailable"
+                expected_fanout = _bootstrap_graph_v3_group_commit_fanout_record(
+                    source_operation_id=request.source_operation_id,
+                    transaction_group_id=request.transaction_group_id,
+                    operation_ids=request.operation_ids,
+                    member_operation_id=member_operation_id,
+                    request_ctv_digest=request.request_ctv_digest,
+                    primary_id=primary.memory_id,
+                    reload_digest=reload.reload_digest,
+                    timestamp=fanout.timestamp,
+                )
+                if fanout.model_dump(mode="json")["content"] != expected_fanout.model_dump(mode="json")["content"]:
+                    return "unavailable"
+
+            effects = [
+                record for record in snapshot.values()
+                if record.source_kind == "semantic_ingestion_bootstrap_graph_v3_group_commit_effect"
+                and record.content.get("primary_id") == primary.memory_id
+            ]
+            expected_kinds: dict[str, set[str]] = {}
+            claims: list[ClaimAssertion] = []
+            results = {item.operation_id: item for item in core.ordered_operation_results}
+            for operation_id, result in results.items():
+                accepted = result.final_status == "accepted"
+                expected_kinds[operation_id] = {"result", "observation_delta"}
+                if accepted:
+                    expected_kinds[operation_id].update({"graph_delta", "event_batch"})
+            seen: dict[str, set[str]] = {operation_id: set() for operation_id in request.operation_ids}
+            for effect in effects:
+                operation_id = effect.content.get("operation_id")
+                kind = effect.content.get("kind")
+                payload_hex = effect.content.get("payload_hex")
+                payload_digest = effect.content.get("payload_digest")
+                if (
+                    not isinstance(operation_id, str) or not isinstance(kind, str)
+                    or not isinstance(payload_hex, str) or not isinstance(payload_digest, str)
+                    or operation_id not in expected_kinds or kind not in expected_kinds[operation_id]
+                ):
+                    return "unavailable"
+                payload = bytes.fromhex(payload_hex)
+                if sha256(payload).hexdigest() != payload_digest:
+                    return "unavailable"
+                expected_id = _bootstrap_graph_v3_group_commit_effect_record(
+                    primary_id=primary.memory_id, operation_id=operation_id, kind=kind,
+                    payload=payload, timestamp=effect.timestamp,
+                    carrier_digest=effect.content.get("carrier_digest"),
+                ).memory_id
+                if effect.memory_id != expected_id or kind in seen[operation_id]:
+                    return "unavailable"
+                seen[operation_id].add(kind)
+                if kind == "result":
+                    decoded = decode_semantic_contract(payload, BootstrapGraphOperationCommitResultV3)
+                    if decoded != results[operation_id]:
+                        return "unavailable"
+                elif kind == "graph_delta":
+                    decoded_records = decode_typed_value(payload)
+                    if not isinstance(decoded_records, tuple):
+                        return "unavailable"
+                    for value in decoded_records:
+                        if isinstance(value, ClaimAssertion):
+                            claims.append(value)
+                        elif isinstance(value, dict) and value.get("record_kind") == "claim_assertion":
+                            # Native graph effects persist canonical planning
+                            # materializations as typed dictionaries.  Decode
+                            # through the public carrier schema so its digest
+                            # and every identity field are revalidated before
+                            # it can regenerate a releasable projection.
+                            claims.append(ClaimAssertion.model_validate(value))
+            if any(seen[operation_id] != expected for operation_id, expected in expected_kinds.items()):
+                return "unavailable"
+            # The old writer recorded its claim carriers in graph effects.  A
+            # committed old projection without a claim carrier is incomplete.
+            if not claims:
+                return "unavailable"
+            expected = runtime_context_records_from_committed_claims(
+                source_record=source,
+                expected_source_id=request.operation_fence_binding.source_id,
+                expected_source_digest=request.operation_fence_binding.source_digest,
+                transaction_group_id=request.transaction_group_id,
+                claims=tuple(claims),
+            )
+            actual = tuple(sorted(
+                (
+                    record for record in snapshot.values()
+                    if record.memory_id.startswith("mem:bootstrap-v3:runtime-claim:")
+                    and record.content.get("transaction_group_id") == transaction_group_id
+                    and record.content.get("source_id") == source_id
+                    and record.content.get("source_digest") == source_digest
+                ),
+                key=lambda record: record.memory_id,
+            ))
+        except (PreplanningStoreError, TypeError, ValueError, KeyError):
+            return "unavailable"
+        return "verified" if expected == actual and projection in expected else "unavailable"
+
+    def _structured_submission_commit_fence_preconditions(self, request: object) -> tuple[MemoryPlanePrecondition, ...]:
+        """Read current grants for a retained structured operation into the V3 CAS set."""
+        from memorii.core.semantic_ingestion.catalog_authority import (
+            ResolvedStructuredSubmissionAuthority,
+            StructuredGrantState,
+        )
+        from memorii.core.semantic_ingestion.contracts import BootstrapGraphGroupCommitRequestV3
+        if not isinstance(request, BootstrapGraphGroupCommitRequestV3):
+            raise PreplanningStoreError("structured commit fence request is invalid")
+        retained = self._memory_plane.get_record("semantic_ingestion:retained-structured-submission:" + request.operation_fence_binding.operation_fence_id)
+        if retained is None:
+            operation = self._memory_plane.get_record(
+                "semantic_ingestion:retained-source-operation:"
+                + request.operation_fence_binding.operation_fence_id
+            )
+            if operation is not None:
+                raise PreplanningStoreError(
+                    "retained structured submission is unavailable"
+                )
+            return ()
+        if retained.source_kind != "semantic_ingestion_retained_structured_submission":
+            raise PreplanningStoreError("structured submission retention record is invalid")
+        try:
+            envelope = base64.b64decode(retained.content["canonical_envelope"], validate=True)
+            decoded = decode_typed_value(envelope)
+            authority = ResolvedStructuredSubmissionAuthority.model_validate(decoded["authority"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PreplanningStoreError("structured submission authority envelope is invalid") from exc
+        if (decoded.get("source_id") != request.operation_fence_binding.source_id
+                or decoded.get("source_digest") != request.operation_fence_binding.source_digest
+                or retained.content.get("operation_fence_binding") != request.operation_fence_binding.model_dump(mode="json")):
+            raise PreplanningStoreError("structured submission authority envelope is substituted")
+        states = (("source", authority.source_grant), ("fact", authority.fact_grant),
+                  ("catalog_visibility", authority.catalog_visibility_grant))
+        preconditions: list[MemoryPlanePrecondition] = []
+        for kind, grant in states:
+            record = self._memory_plane.get_record(self._structured_grant_state_record_id(kind, grant.grant_id))
+            try:
+                state = StructuredGrantState.model_validate(record.content["state"]) if record is not None else None
+            except (KeyError, TypeError, ValueError) as exc:
+                raise PreplanningStoreError("structured submission grant state is invalid") from exc
+            if record is None or state is None or not state.active or state.grant_kind != kind or state.grant != grant:
+                raise StructuredSubmissionGrantRevokedError(
+                    "structured submission grant is revoked, stale, or unavailable"
+                )
+            preconditions.append(RecordDigestPrecondition(memory_id=record.memory_id, expected_digest=record_digest(record)))
+        captured_pin = self._captured_pin_for_retained_structured_submission(
+            request=request, decoded=decoded, authority=authority,
+        )
+        if captured_pin is not None:
+            pin_record = self._memory_plane.get_record(captured_pin.memory_id)
+            if pin_record is None:
+                raise PreplanningStoreError("captured catalog pin is unavailable")
+            preconditions.append(
+                RecordDigestPrecondition(
+                    memory_id=pin_record.memory_id,
+                    expected_digest=record_digest(pin_record),
+                )
+            )
+        return tuple(preconditions)
+
+    def _captured_pin_for_retained_structured_submission(
+        self, *, request: object, decoded: object, authority: object,
+    ) -> CatalogCapturedTurnPin | None:
+        """Verify the retained captured tuple without consulting a current pointer."""
+        from memorii.core.provider.ingestion import CapturedCatalogPinReference
+        from memorii.core.semantic_ingestion.catalog_authority import (
+            CatalogAuthorityError,
+            ResolvedStructuredSubmissionAuthority,
+        )
+        from memorii.core.semantic_ingestion.catalog_capture_pin import CatalogCapturedTurnPin
+        from memorii.core.semantic_ingestion.contracts import BootstrapGraphGroupCommitRequestV3
+
+        if not isinstance(request, BootstrapGraphGroupCommitRequestV3):
+            raise PreplanningStoreError("structured captured pin request is invalid")
+        if not isinstance(decoded, dict) or not isinstance(
+            authority, ResolvedStructuredSubmissionAuthority
+        ):
+            raise PreplanningStoreError("structured captured pin envelope is invalid")
+        raw_reference = decoded.get("captured_pin")
+        if raw_reference is None:
+            return None
+        try:
+            reference = CapturedCatalogPinReference.model_validate(raw_reference)
+            pin_record = self._memory_plane.get_record(reference.pin_memory_id)
+            pin = CatalogCapturedTurnPin.model_validate(
+                pin_record.content["catalog_capture_pin"] if pin_record is not None else None
+            )
+            _revision, records = self._memory_plane.read_snapshot()
+            bundle = self._catalog_bundle_locator.locate_historical(
+                records,
+                version_id=pin.selected_version_id,
+                version_digest=pin.selected_version_digest,
+            )
+        except (AttributeError, CatalogAuthorityError, KeyError, TypeError, ValueError) as exc:
+            raise PreplanningStoreError("captured catalog pin is unavailable") from exc
+        if (
+            pin_record is None
+            or pin_record.memory_id != pin.memory_id
+            or pin_record.source_kind != "semantic_ingestion_catalog_capture_pin"
+            or pin_record.domain is not MemoryDomain.EXECUTION
+            or pin_record.visibility is not MemoryRecordVisibility.INTERNAL_CONTROL
+            or pin_record.status is not CommitStatus.COMMITTED
+            or pin.capture_id != reference.capture_id
+            or pin.memory_id != reference.pin_memory_id
+            or pin.pin_digest != reference.pin_digest
+            or pin.catalog_scope != reference.catalog_scope
+            or pin.catalog_digest != reference.catalog_digest
+            or pin.selected_version_id != reference.selected_version_id
+            or pin.selected_version_digest != reference.selected_version_digest
+            or pin.runtime_bundle_digest != reference.runtime_bundle_digest
+            or pin.source_id != request.operation_fence_binding.source_id
+            or pin.source_digest != request.operation_fence_binding.source_digest
+            or pin.catalog_scope != authority.catalog.catalog_scope
+            or pin.catalog_digest != authority.catalog.catalog_digest
+            or pin.catalog_scope != bundle.catalog.catalog_scope
+            or pin.catalog_digest != bundle.catalog.catalog_digest
+            or pin.selected_version_id != bundle.version.version_id
+            or pin.selected_version_digest != bundle.version.version_digest
+            or pin.runtime_bundle_digest != bundle.runtime_bundle_digest
+        ):
+            raise PreplanningStoreError("captured catalog pin is substituted")
+        return pin
+
+    def _structured_claim_catalog_binding_records(
+        self, request: object, materialized_records: Iterable[object], *, timestamp: datetime,
+    ) -> tuple[CanonicalMemoryRecord, ...]:
+        """Attach the selected catalog coordinate to every newly committed claim."""
+        from memorii.core.semantic_ingestion.catalog_authority import (
+            ResolvedStructuredSubmissionAuthority,
+            StructuredClaimCatalogBinding,
+        )
+        from memorii.core.semantic_ingestion.contracts import BootstrapGraphGroupCommitRequestV3
+        if not isinstance(request, BootstrapGraphGroupCommitRequestV3):
+            raise PreplanningStoreError("structured claim binding request is invalid")
+        retained = self._memory_plane.get_record(
+            "semantic_ingestion:retained-structured-submission:" + request.operation_fence_binding.operation_fence_id
+        )
+        if retained is None:
+            operation = self._memory_plane.get_record(
+                "semantic_ingestion:retained-source-operation:"
+                + request.operation_fence_binding.operation_fence_id
+            )
+            if operation is not None:
+                raise PreplanningStoreError(
+                    "retained structured submission is unavailable"
+                )
+            return ()
+        try:
+            decoded = decode_typed_value(base64.b64decode(retained.content["canonical_envelope"], validate=True))
+            authority = ResolvedStructuredSubmissionAuthority.model_validate(decoded["authority"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PreplanningStoreError("structured claim binding authority is invalid") from exc
+        captured_pin = self._captured_pin_for_retained_structured_submission(
+            request=request, decoded=decoded, authority=authority,
+        )
+        records: list[CanonicalMemoryRecord] = []
+        for claim in materialized_records:
+            if getattr(claim, "record_kind", None) != "claim_assertion":
+                continue
+            claim_id = getattr(claim, "claim_assertion_id", None)
+            claim_digest = getattr(claim, "record_digest", None)
+            if not isinstance(claim_id, str) or not isinstance(claim_digest, str):
+                raise PreplanningStoreError("structured claim binding claim is invalid")
+            binding = StructuredClaimCatalogBinding(
+                schema_version=2 if captured_pin is not None else 1,
+                claim_assertion_id=claim_id, claim_record_digest=claim_digest,
+                catalog_scope=authority.catalog.catalog_scope,
+                catalog_digest=authority.catalog.catalog_digest,
+                fact_scope=authority.fact_grant.fact_scope,
+                authenticated=authority.authenticated,
+                **({
+                    "capture_id": captured_pin.capture_id,
+                    "pin_memory_id": captured_pin.memory_id,
+                    "pin_digest": captured_pin.pin_digest,
+                    "selected_version_id": captured_pin.selected_version_id,
+                    "selected_version_digest": captured_pin.selected_version_digest,
+                    "runtime_bundle_digest": captured_pin.runtime_bundle_digest,
+                } if captured_pin is not None else {}),
+            )
+            records.append(CanonicalMemoryRecord(
+                memory_id="semantic_ingestion:structured-claim-catalog:" + claim_id,
+                domain=MemoryDomain.SEMANTIC, text="",
+                content={
+                    "semantic_ingestion_kind": "structured_claim_catalog_binding",
+                    "binding": binding.model_dump(mode="json"),
+                },
+                status=CommitStatus.COMMITTED,
+                source_kind="semantic_ingestion_structured_claim_catalog_binding",
+                timestamp=timestamp, visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+            ))
+        return tuple(records)
+
+    def load_retained_structured_submission(
+        self, *, accepted: RetainedSourceOperationAccepted,
+    ) -> tuple[bytes, bytes, bytes] | None:
+        record = self._memory_plane.get_record(
+            "semantic_ingestion:retained-structured-submission:"
+            + accepted.operation_fence_binding.operation_fence_id
+        )
+        if record is None or record.source_kind != "semantic_ingestion_retained_structured_submission":
+            return None
+        try:
+            envelope = base64.b64decode(record.content["canonical_envelope"], validate=True)
+            proposal = base64.b64decode(record.content["proposal_bytes"], validate=True)
+            raw = base64.b64decode(record.content["raw_proposal_artifact"], validate=True)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PreplanningStoreError("structured submission is corrupt") from exc
+        if (
+            record.content.get("canonical_envelope_digest") != accepted.canonical_envelope_digest
+            or record.content.get("proposal_bytes_digest") != sha256(proposal).hexdigest()
+            or record.content.get("raw_proposal_artifact_digest") != sha256(raw).hexdigest()
+            or record.content.get("operation_fence_binding") != accepted.operation_fence_binding.model_dump(mode="json")
+        ):
+            raise PreplanningStoreError("structured submission is substituted")
+        return envelope, proposal, raw
+
+    def _validate_retained_source_operation(
+        self, accepted: RetainedSourceOperationAccepted
+    ) -> None:
+        fence = accepted.operation_fence_binding
+        source = self._memory_plane.get_record(accepted.source_id)
+        index = self._memory_plane.get_record(
+            f"semantic_ingestion:admission:{accepted.delivery_identity.delivery_key_digest}"
+        )
+        if (
+            source is None
+            or index is None
+            or source_admission_source_digest(source) != accepted.source_digest
+            or index.source_kind != "semantic_ingestion_admission_index"
+            or sha256(encode_typed_value(index.content)).hexdigest()
+            != accepted.source_admission_index_digest
+            or index.content.get("principal_binding_digest")
+            != accepted.delivery_identity.delivery_principal_binding_digest
+            or index.content.get("delivery_key_digest")
+            != accepted.delivery_identity.delivery_key_digest
+            or index.content.get("tenant_partition_id")
+            != accepted.required_outcome_scopes.tenant_partition_id
+            or tuple(index.content.get("required_scopes", ()))
+            != accepted.required_outcome_scopes.scopes
+            or index.content.get("required_scope_set_digest")
+            != accepted.required_outcome_scopes.required_scope_set_digest
+            or fence.source_id != accepted.source_id
+            or fence.source_digest != accepted.source_digest
+            or fence.delivery_identity != accepted.delivery_identity
+        ):
+            raise PreplanningStoreError("retained source operation is not authorized")
 
     def assert_current_bootstrap_release(
         self,
@@ -2772,7 +4729,7 @@ class SemanticIngestionAtomicStore:
         control_id = _control_id(operation_fence)
         existing = self._memory_plane.get_record(control_id)
         if existing is not None:
-            return self._recover_publication(existing, admission, operation_fence, writer_binding)
+            return self._recover_publication(existing, operation_fence, writer_binding)
         control = PreplanningOperationControl(
             operation_fence=operation_fence,
             persistence_namespace_id=operation_fence.operation_fence_id,
@@ -2797,7 +4754,7 @@ class SemanticIngestionAtomicStore:
             existing = self._memory_plane.get_record(control_id)
             if existing is None:
                 raise exc
-            return self._recover_publication(existing, admission, operation_fence, writer_binding)
+            return self._recover_publication(existing, operation_fence, writer_binding)
         return publication
 
     def admit_source(
@@ -2889,7 +4846,7 @@ class SemanticIngestionAtomicStore:
             existing = self._memory_plane.get_record(_control_id(fence))
             if existing is None:
                 raise PreplanningStoreError("atomic source group evidence is partial")
-            return self._recover_publication(existing, pending.accepted, fence, writer_binding)
+            return self._recover_publication(existing, fence, writer_binding)
 
         writer_record = self._writers.require_current(writer_binding)
         authorization = self._writers._authorize_atomic(writer_binding, capability=self._write_capability)
@@ -2988,7 +4945,7 @@ class SemanticIngestionAtomicStore:
             existing = self._memory_plane.get_record(_control_id(fence))
             if existing is None:
                 raise PreplanningStoreError("atomic admission conflict has no complete operation generation") from exc
-            return self._recover_publication(existing, admission, fence, writer_binding)
+            return self._recover_publication(existing, fence, writer_binding)
         return publication
 
     def acquire_lease(
@@ -12102,7 +14059,22 @@ class SemanticIngestionAtomicStore:
         existing = self._memory_plane.get_record(locator_id)
         if existing is not None:
             return self._reload_bootstrap_graph_terminal_v3(request=request, reload_type=reload_type)
-        if intent.terminal_member_schema_version not in {2, 3}:
+        source_only_revocation = (
+            intent.terminal_member_schema_version == 4
+            and request.pre_group_noncommit is not None
+            and request.pre_group_noncommit.reason
+            == "authorization_revoked_before_commit"
+            and request.source_finalization_observation_delta is None
+            and request.source_observation_intent is None
+            and not request.ordered_group_result_constructions
+            and request.canonical_source_result_input.source_status == "failed"
+            and request.canonical_source_result_input.completed_canonical_source_result
+            .group_result_digests == ()
+        )
+        if (
+            intent.terminal_member_schema_version not in {2, 3}
+            and not source_only_revocation
+        ):
             raise PreplanningStoreError(
                 "bootstrap graph terminal publication requires a source observation grammar"
             )
@@ -12268,6 +14240,7 @@ class SemanticIngestionAtomicStore:
             handoff_digest=request.handoff.handoff_digest,
             atomic_write_locator_digest=intent.locator_digest, final_write_identity=identity,
             terminal_control=terminal_control, canonical_source_result=canonical_result,
+            pre_group_noncommit=request.pre_group_noncommit,
             source_finalization_observation_delta=source_observation,
             terminal_member_schema_version=intent.terminal_member_schema_version,
             **(
@@ -12693,6 +14666,8 @@ class SemanticIngestionAtomicStore:
             expected_kinds += (
                 "bootstrap_graph_source_finalization_observation_delta",
             )
+        if reload.terminal_member_schema_version == 4:
+            expected_kinds += ("bootstrap_graph_pre_group_noncommit",)
         kind_order = {kind: offset for offset, kind in enumerate(expected_kinds)}
         member_ids = tuple(member.member_id for member in members)
         member_digests = tuple(member.member_digest for member in members)
@@ -12856,6 +14831,44 @@ class SemanticIngestionAtomicStore:
             member for member in members
             if member.kind == "bootstrap_graph_source_finalization_observation_delta"
         )
+        pre_group_noncommit_members = tuple(
+            member for member in members
+            if member.kind == "bootstrap_graph_pre_group_noncommit"
+        )
+        if reload.terminal_member_schema_version == 4:
+            from memorii.core.semantic_ingestion.contracts import (
+                BootstrapGraphPreGroupNonCommitV3,
+            )
+
+            try:
+                decoded_noncommit = BootstrapGraphPreGroupNonCommitV3.model_validate(
+                    decode_bootstrap_graph_atomic_member_payload_v3(
+                        kind=pre_group_noncommit_members[0].kind,
+                        raw=pre_group_noncommit_members[0].canonical_payload,
+                    ),
+                    strict=False,
+                )
+            except (IndexError, TypeError, ValueError) as exc:
+                raise PreplanningStoreError(
+                    "bootstrap graph pre-group noncommit is corrupt"
+                ) from exc
+            if (
+                len(pre_group_noncommit_members) != 1
+                or reload.pre_group_noncommit != decoded_noncommit
+                or decoded_noncommit.request_digest != identity.request_digest
+                or decoded_noncommit.operation_fence_binding_digest
+                != reload.operation_fence_binding_digest
+                or decoded_noncommit.operation_lease_binding_digest
+                != reload.operation_lease_binding_digest
+                or decoded_noncommit.control_epoch_digest != reload.control_epoch_digest
+            ):
+                raise PreplanningStoreError(
+                    "bootstrap graph pre-group noncommit is substituted"
+                )
+        elif pre_group_noncommit_members or reload.pre_group_noncommit is not None:
+            raise PreplanningStoreError(
+                "historical terminal contains a pre-group noncommit"
+            )
         if reload.terminal_member_schema_version == 2:
             if len(source_observation_members) != 1:
                 raise PreplanningStoreError(
@@ -13031,6 +15044,13 @@ class SemanticIngestionAtomicStore:
         if any(key != record.memory_id for key, record in snapshot_records.items()):
             raise PreplanningStoreError("observation replay snapshot identity is substituted")
         admission, _, _ = self._activation_snapshot_admission(tuple(snapshot_records.values()))
+        snapshot_digest = sha256(encode_typed_value(tuple(
+            (record_id, record_digest(snapshot_records[record_id]))
+            for record_id in sorted(snapshot_records)
+        ))).hexdigest()
+        cached = self._verified_observation_replay_cache
+        if selected_artifact_proofs is None and cached is not None and cached[0] == snapshot_digest:
+            return cached[1]
         entry_records = tuple(record for record in snapshot_records.values()
                               if record.source_kind == "semantic_ingestion_observation_ledger_entry")
         if (
@@ -13099,6 +15119,7 @@ class SemanticIngestionAtomicStore:
             )
             if not isinstance(replay.value, ObservationReplayState):
                 raise ValueError("observation replay state type is invalid")
+            self._verified_observation_replay_cache = (snapshot_digest, replay.value)
             return replay.value
         except (KeyError, TypeError, ValueError) as exc:
             raise PreplanningStoreError("schema-3 observation replay is corrupt") from exc
@@ -13349,12 +15370,14 @@ class SemanticIngestionAtomicStore:
 
     def _verify_native_group_entry_snapshot(
         self, entry: ObservationLedgerEntry, *, snapshot_records: dict[str, CanonicalMemoryRecord],
+        historical_conflict_binding: bool = False,
     ) -> None:
         """Join the immutable group result, audit and native signed checkpoint."""
         from memorii.core.memory_evolution.bootstrap_group_observation import (
             build_native_group_observation_delta,
             build_native_group_observation_records,
         )
+        from memorii.core.memory_evolution.conflict_attention import SemanticConflictReplayBinding
         from memorii.core.memory_evolution.graph_effect_contracts import GraphRevisionDelta, IngestionObservationDelta
         from memorii.core.memory_evolution.observation_activation_runtime import (
             emit_registered_observation_artifact,
@@ -13482,9 +15505,17 @@ class SemanticIngestionAtomicStore:
             class RetainedProjectionVerifier:
                 def validate_checkpoint_bindings(self, bindings, *, graph_revision):
                     projections.validate_retained_checkpoint_bindings(bindings, graph_revision=graph_revision)
+            class HistoricalConflictVerifier:
+                def validate_semantic_conflict_replay_binding(self, binding):
+                    verified = SemanticConflictReplayBinding.model_validate(binding.model_dump(mode="python"))
+                    if verified.repository_id != entry.repository_id:
+                        raise ValueError("historical conflict binding repository is substituted")
             verified_state = validate_replay_checkpoint(
                 checkpoint.checkpoint_bundle, authority=self._checkpoint_resume_authority,
-                projection_history_verifier=RetainedProjectionVerifier(), semantic_conflict_verifier=projections,
+                projection_history_verifier=RetainedProjectionVerifier(),
+                semantic_conflict_verifier=(
+                    HistoricalConflictVerifier() if historical_conflict_binding else projections
+                ),
             )
             if verified_state != authority.aggregate.graph_state:
                 raise PreplanningStoreError("native group checkpoint graph state is substituted")
@@ -13762,6 +15793,7 @@ class SemanticIngestionAtomicStore:
         status_preconditions = self._capability_status_preconditions_for_group_commit(
             request
         )
+        structured_grant_preconditions = self._structured_submission_commit_fence_preconditions(request)
 
         def write(*, retried_after_cas_conflict: bool = False) -> BootstrapGraphGroupCommitReloadV3:
             # The transaction-start instant is one protected-clock sample taken
@@ -14497,6 +16529,9 @@ class SemanticIngestionAtomicStore:
                         expected_digest=record_digest(source_record),
                     ),
                 )
+            structured_claim_catalog_records = self._structured_claim_catalog_binding_records(
+                request, all_materialized_records, timestamp=committed_at,
+            )
             next_control = control.model_copy(update={
                 "generation": control.generation + 1, "state": "planned",
                 "last_request_digest": request.request_ctv_digest,
@@ -14520,6 +16555,7 @@ class SemanticIngestionAtomicStore:
                 *native_audit_records,
                 *ledger_records,
                 *runtime_context_records,
+                *structured_claim_catalog_records,
             )
             fingerprints = tuple(sorted({
                 binding.capability_fingerprint
@@ -14545,12 +16581,15 @@ class SemanticIngestionAtomicStore:
                             RecordDigestPrecondition(memory_id=control_record.memory_id, expected_digest=record_digest(control_record)),
                             RecordDigestPrecondition(memory_id=writer_record.memory_id, expected_digest=record_digest(writer_record)),
                             *status_preconditions,
+                            *structured_grant_preconditions,
                             *(RecordAbsentPrecondition(memory_id=record.memory_id) for record in records[1:]
                               if record not in (*canonical_event_records, *native_projection_records, *ledger_records)),
                             *canonical_event_preconditions,
                             *native_projection_preconditions,
                             *ledger_preconditions,
                             *runtime_context_preconditions,
+                            *(RecordAbsentPrecondition(memory_id=record.memory_id)
+                              for record in structured_claim_catalog_records),
                         ), authorization=authorization,
                     )
             except MemoryPlaneRevisionConflictError as exc:
@@ -16373,7 +18412,6 @@ class SemanticIngestionAtomicStore:
     def _recover_publication(
         self,
         existing: CanonicalMemoryRecord,
-        admission: SourceAdmissionAccepted,
         fence: OperationFenceBinding,
         binding: SemanticWriterCommitBinding,
     ) -> PreplanningPublication:
@@ -16458,6 +18496,46 @@ def _control_namespace(control: PreplanningOperationControl) -> str:
 
 def _control_id(operation_fence: OperationFenceBinding) -> str:
     return f"semantic_ingestion:operation:{_operation_namespace(operation_fence)}"
+
+
+def _retained_source_operation_record(
+    accepted: RetainedSourceOperationAccepted, timestamp: datetime
+) -> CanonicalMemoryRecord:
+    """Persist the immutable join between a later operation and its source."""
+    fence = accepted.operation_fence_binding
+    return CanonicalMemoryRecord(
+        memory_id="semantic_ingestion:retained-source-operation:" + fence.operation_fence_id,
+        domain=MemoryDomain.EXECUTION,
+        text="",
+        content={
+            "source_id": accepted.source_id,
+            "source_digest": accepted.source_digest,
+            "delivery_key_digest": accepted.delivery_identity.delivery_key_digest,
+            "source_admission_index_digest": accepted.source_admission_index_digest,
+            "required_scope_set_digest": accepted.required_outcome_scopes.required_scope_set_digest,
+            "canonical_envelope_digest": accepted.canonical_envelope_digest,
+            "operation_fence_binding": fence.model_dump(mode="json"),
+        },
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_retained_source_operation",
+        timestamp=timestamp,
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+
+
+def _same_retained_source_operation_record(
+    existing: CanonicalMemoryRecord, expected: CanonicalMemoryRecord
+) -> bool:
+    """Compare retry identity without treating storage time as operation input."""
+    return (
+        existing.memory_id == expected.memory_id
+        and existing.domain == expected.domain
+        and existing.text == expected.text
+        and existing.content == expected.content
+        and existing.status == expected.status
+        and existing.source_kind == expected.source_kind
+        and existing.visibility == expected.visibility
+    )
 
 
 def _authorization_authority_id(authority_scope_id: str) -> str:
@@ -16817,6 +18895,10 @@ def _bootstrap_graph_v3_terminal_payloads(*, request: BootstrapGraphTerminalPubl
         "bootstrap_graph_terminal_handoff": (request.handoff,),
         "bootstrap_graph_canonical_source_result": (canonical_result,),
     }
+    if request.pre_group_noncommit is not None:
+        payloads["bootstrap_graph_pre_group_noncommit"] = (
+            request.pre_group_noncommit,
+        )
     if request.publication_intent.terminal_member_schema_version == 2:
         if request.source_finalization_observation_delta is None:
             raise PreplanningStoreError("bootstrap graph source finalization observation is absent")
@@ -16840,6 +18922,7 @@ def _bootstrap_graph_v3_terminal_members(*, request: BootstrapGraphTerminalPubli
         "ingestion_execution_manifest": "manifest_digest",
         "transaction_group_result": "result_digest",
         "bootstrap_graph_canonical_source_result": "result_digest",
+        "bootstrap_graph_pre_group_noncommit": "result_digest",
         "bootstrap_graph_source_finalization_observation_delta": "delta_digest",
     }
     members: list[BootstrapGraphPlanAtomicMemberV3] = []
@@ -16872,7 +18955,10 @@ def _bootstrap_graph_v3_terminal_members(*, request: BootstrapGraphTerminalPubli
             or payload.observation_schema_fingerprint != request.source_observation_intent.observation_schema_fingerprint
         ):
             raise PreplanningStoreError("bootstrap graph source member intent is substituted")
-        if emitted_kind == "bootstrap_graph_source_finalization_observation_delta":
+        if emitted_kind in {
+            "bootstrap_graph_source_finalization_observation_delta",
+            "bootstrap_graph_pre_group_noncommit",
+        }:
             from memorii.core.semantic_ingestion.contracts import (
                 encode_bootstrap_graph_atomic_member_payload_v3,
             )

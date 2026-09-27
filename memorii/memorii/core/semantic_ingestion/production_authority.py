@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from hashlib import sha256
 from pathlib import Path
+from re import fullmatch
 from typing import NoReturn, cast
 
 from memorii.core.memory_evolution.bootstrap_profile import (
@@ -215,6 +216,7 @@ class VerifiedProductionHostAuthority:
     _verifier: HostBootstrapMaterialVerifier
     _material: HostVerifiedBootstrapMaterial
     _ingress_resolver: AuthenticatedIngressContextResolver
+    _structured_submission_authority_resolver: object | None
     receipt: ProductionAuthorityCompositionReceipt
     _issuance_token: object
 
@@ -423,6 +425,24 @@ def build_verified_production_host_authority(
     resolver = material.authenticated_ingress_resolver
     if not hasattr(resolver, "resolve"):
         return None
+    structured_resolver = material.structured_submission_authority_resolver
+    structured_resolver_digest = (
+        material.structured_submission_authority_resolver_binding_digest
+    )
+    if (
+        (structured_resolver is None) != (structured_resolver_digest is None)
+        or (
+            structured_resolver is not None
+            and (
+                not hasattr(structured_resolver, "resolve_submission_authority")
+                or not isinstance(structured_resolver_digest, str)
+                or fullmatch(r"[0-9a-f]{64}", structured_resolver_digest) is None
+                or getattr(structured_resolver, "resolver_binding_digest", None)
+                != structured_resolver_digest
+            )
+        )
+    ):
+        return None
     material_digest = _material_digest(material)
     verification_digest = sha256(
         encode_typed_value(
@@ -456,6 +476,7 @@ def build_verified_production_host_authority(
         _verifier=host_bootstrap_material_verifier,
         _material=material,
         _ingress_resolver=cast(AuthenticatedIngressContextResolver, resolver),
+        _structured_submission_authority_resolver=structured_resolver,
         receipt=receipt,
         _issuance_token=_ISSUANCE_TOKEN,
     )
@@ -480,16 +501,34 @@ def verified_production_authority_inputs(
     return authority._capability, authority._material, authority._ingress_resolver
 
 
+def verified_production_structured_submission_authority_resolver(
+    authority: VerifiedProductionHostAuthority,
+) -> object | None:
+    """Return only the resolver sealed into factory-verified host material."""
+
+    if (
+        type(authority) is not VerifiedProductionHostAuthority
+        or authority._issuance_token is not _ISSUANCE_TOKEN
+        or authority.receipt._token is None
+        or authority.receipt.trust_domain != "production"
+    ):
+        raise ValueError("verified production host authority is invalid")
+    return authority._structured_submission_authority_resolver
+
+
 def _material_digest(material: HostVerifiedBootstrapMaterial) -> str:
-    return sha256(
-        encode_typed_value(
-            {
-                "artifact_payloads": material.artifact_payloads.model_dump(mode="python"),
-                "release_evidence": material.release_evidence.model_dump(mode="python"),
-                "profile_enabled": material.profile_enabled,
-                "trust_domain": material.trust_domain,
-            }
+    body = {
+        "artifact_payloads": material.artifact_payloads.model_dump(mode="python"),
+        "release_evidence": material.release_evidence.model_dump(mode="python"),
+        "profile_enabled": material.profile_enabled,
+        "trust_domain": material.trust_domain,
+    }
+    if material.structured_submission_authority_resolver is not None:
+        body["structured_submission_authority_resolver_binding_digest"] = (
+            material.structured_submission_authority_resolver_binding_digest
         )
+    return sha256(
+        encode_typed_value(body)
     ).hexdigest()
 
 
@@ -505,4 +544,5 @@ __all__ = [
     "build_verified_production_host_authority",
     "verified_capability_monitoring_authority_inputs",
     "verified_production_authority_inputs",
+    "verified_production_structured_submission_authority_resolver",
 ]

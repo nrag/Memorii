@@ -18,6 +18,7 @@ from memorii.core.memory_evolution.bootstrap_profile import (
     VerifiedBootstrapProfile,
     classify_bootstrap_input,
 )
+from memorii.core.memory_evolution.ingestion_contracts import OperationFenceBinding
 from memorii.core.memory_evolution.semantic_analysis.source_contracts import (
     BootstrapFreeformSegmentLanguageRoute,
     PreparedSegment,
@@ -40,7 +41,7 @@ class PreparedSourceRepository(Protocol):
 
     def publish(self, prepared: PreparedSource) -> PreparedSource: ...
 
-    def load(self, *, source_id: str, source_digest: str) -> PreparedSource | None: ...
+    def load(self, *, source_id: str, source_digest: str, operation_fence_binding: OperationFenceBinding | None = None) -> PreparedSource | None: ...
 
 
 class InMemoryPreparedSourceRepository:
@@ -65,7 +66,15 @@ class InMemoryPreparedSourceRepository:
             self._values[key] = value
         return value
 
-    def load(self, *, source_id: str, source_digest: str) -> PreparedSource | None:
+    def load(self, *, source_id: str, source_digest: str, operation_fence_binding: OperationFenceBinding | None = None) -> PreparedSource | None:
+        if operation_fence_binding is not None and (
+            operation_fence_binding.source_id != source_id
+            or operation_fence_binding.source_digest != source_digest
+        ):
+            raise ValueError("prepared-source fence does not join source")
+        if operation_fence_binding is not None:
+            # This repository has no durable retained-operation namespace.
+            return None
         with self._lock:
             value = self._values.get((source_id, source_digest))
         if value is None:
@@ -89,9 +98,9 @@ class AtomicStorePreparedSourceRepository:
         )
         return certified_roundtrip(published)
 
-    def load(self, *, source_id: str, source_digest: str) -> PreparedSource | None:
+    def load(self, *, source_id: str, source_digest: str, operation_fence_binding: OperationFenceBinding | None = None) -> PreparedSource | None:
         value = self._atomic_store.load_prepared_source(
-            source_id=source_id, source_digest=source_digest
+            source_id=source_id, source_digest=source_digest, operation_fence_binding=operation_fence_binding
         )
         if value is None:
             return None

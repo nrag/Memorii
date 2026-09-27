@@ -26,20 +26,46 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     AuthenticatedSemanticSourceInterval,
     DeliveryPrincipalBinding,
     RequiredOutcomeScopeSet,
+    encode_typed_value,
 )
 from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.memory_plane.store import JsonlMemoryPlaneStore
 from memorii.core.provider.factory import build_provider_memory_service_from_env
 from memorii.core.scoped_context.authority import InProcessScopedReadAuthority
+from memorii.core.semantic_ingestion.catalog_authority import (
+    AuthenticatedPrincipalAgent,
+    CatalogAuthorityScope,
+    CatalogOwnerVisibilityGrant,
+    FactScopeGrant,
+    ResolvedStructuredSubmissionAuthority,
+    SourceScopeGrant,
+    StructuredFactReadAuthority,
+    StructuredSubmissionAuthorityRequest,
+    ThreePredicateSeedCatalogAuthorityRepository,
+)
 from memorii.core.semantic_ingestion.current_bootstrap_v3_authority import (
     CurrentReleaseBootstrapV3HostMaterialBuilder,
     local_level2_bootstrap_authorization_from_sidecar,
 )
 from memorii.core.semantic_ingestion.project_assertions_profile import load_project_assertions_bundle
-from memorii.integrations.hermes_local_authority import LocalLevel2AuthorityError, load_local_level2_authority
+from memorii.integrations.hermes_local_authority import (
+    LocalLevel2AuthorityError,
+    load_local_level2_authority,
+    load_local_structured_tool_authority,
+)
 
 
 def build_local_level2_runtime_binding(context: object) -> object:
+    """Construct the standard verified first-party Hermes runtime binding."""
+    return _build_local_level2_runtime_binding(context)
+
+
+def _build_local_level2_runtime_binding(
+    context: object,
+    *,
+    _provision_structured_authority: bool = True,
+    _allow_existing_operator_binding: bool = False,
+) -> object:
     """Construct one verified, first-party Hermes binding without model I/O.
 
     The bridge supplies a typed context, but this module avoids importing the
@@ -73,6 +99,7 @@ def build_local_level2_runtime_binding(context: object) -> object:
         storage_root=storage_root,
         installation_id=authorization.installation_id,
         raw_user_id=getattr(context, "user_id", None),
+        allow_existing_operator_binding=_allow_existing_operator_binding,
     )
     ingress_resolver = _LocalLevel2IngressResolver(
         installation_id=authorization.installation_id,
@@ -90,10 +117,25 @@ def build_local_level2_runtime_binding(context: object) -> object:
         except (OSError, TypeError, ValueError):
             return False
 
+    try:
+        load_local_structured_tool_authority(hermes_home=hermes_home, now=now)
+    except LocalLevel2AuthorityError:
+        structured_resolver = None
+    else:
+        structured_resolver = _LocalLevel2StructuredSubmissionResolver(
+            installation_id=authorization.installation_id,
+            operator_id=operator_id,
+            agent_id=agent_id,
+            project_task_id=_project_task_id(authorization.installation_id, bundle.profile_digests["semantic_contract_digest"]),
+            authority_is_current=authority_is_current,
+            structured_tool_is_current=lambda: _structured_tool_is_current(hermes_home),
+        )
+
     capability, verifier = CurrentReleaseBootstrapV3HostMaterialBuilder.build_capability(
         authorization=authorization,
         now=now,
         authenticated_ingress_resolver=ingress_resolver,
+        structured_submission_authority_resolver=structured_resolver,
         authorization_is_current=authority_is_current,
     )
     memory_plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(storage_root / "memory-plane"))
@@ -107,6 +149,17 @@ def build_local_level2_runtime_binding(context: object) -> object:
     if service._composed_semantic_runtime is None:
         raise RuntimeError(
             "Hermes local Level 2 semantic runtime is unavailable: " + service._bootstrap_unavailable_reason
+        )
+    # Both the seed and generated default bundle are governed startup fences.
+    # A captured turn therefore pins one persisted catalog version before the
+    # tool schema is advertised.
+    service.ensure_catalog_seed_genesis()
+    service.ensure_default_catalog_release()
+    if structured_resolver is not None and _provision_structured_authority:
+        # The local tool cannot be advertised until its complete, factory-bound
+        # authority tuple is durably active in the semantic writer's store.
+        service.provision_structured_submission_authority(
+            authority=structured_resolver.issued_authority(),
         )
     # A prior process can stop after atomic callback admission but before the
     # worker creates its handoff. Drain that retained operation before the
@@ -142,15 +195,25 @@ def build_local_level2_runtime_binding(context: object) -> object:
         if not authority_is_current():
             raise LocalLevel2AuthorityError("local Level 2 authority is unavailable")
 
-    project_task_id = (
-        "memorii:hermes:task:"
-        + sha256(
-            (
-                "memorii.hermes.project_assertions.task.v1:"
-                f"{authorization.installation_id}:"
-                f"{bundle.profile_digests['semantic_contract_digest']}"
-            ).encode()
-        ).hexdigest()
+    def revoke_current_structured_grant(grant_kind: str) -> None:
+        """Revoke only the current factory-issued grant for this signed-in binding."""
+        if structured_resolver is None:
+            raise LocalLevel2AuthorityError("local structured tool authority is unavailable")
+        if grant_kind not in {"source", "fact", "catalog_visibility"}:
+            raise ValueError("structured grant kind is invalid")
+        authority = structured_resolver.issued_authority()
+        grant = {
+            "source": authority.source_grant,
+            "fact": authority.fact_grant,
+            "catalog_visibility": authority.catalog_visibility_grant,
+        }[grant_kind]
+        service.revoke_structured_submission_authority_grant(
+            grant_kind=grant_kind,
+            grant=grant,
+        )
+
+    project_task_id = _project_task_id(
+        authorization.installation_id, bundle.profile_digests["semantic_contract_digest"],
     )
 
     return HermesProviderRuntimeBinding(
@@ -165,9 +228,52 @@ def build_local_level2_runtime_binding(context: object) -> object:
             project_task_id=project_task_id,
             authenticated_agent_id=agent_id,
             authenticated_author_id=operator_id,
+            structured_authority_request=(
+                structured_resolver.issued_authority_request() if structured_resolver is not None else None
+            ),
+            structured_tool_is_current=(
+                (lambda: authority_is_current() and _structured_tool_is_current(hermes_home))
+                if structured_resolver is not None else None
+            ),
+            structured_fact_read_authority=(
+                structured_resolver.issued_read_authority
+                if structured_resolver is not None else None
+            ),
         ),
         absent_author_id=operator_id,
+        revoke_structured_submission_grant=(
+            revoke_current_structured_grant if structured_resolver is not None else None
+        ),
     )
+
+
+def revoke_local_level2_structured_grant(*, context: object, grant_kind: str) -> None:
+    """Run the verified local operator action before or after grant provisioning.
+
+    The caller supplies only a closed grant-kind selector.  Factory composition
+    derives the signed-in installation, operator, agent, and exact grant tuple
+    from current authority artifacts before the public service performs its
+    canonical durable revoke.
+    """
+    binding = _build_local_level2_runtime_binding(
+        context,
+        _provision_structured_authority=False,
+        _allow_existing_operator_binding=True,
+    )
+    from memorii.integrations.hermes_runtime_binding import HermesProviderRuntimeBinding
+
+    if type(binding) is not HermesProviderRuntimeBinding:
+        raise RuntimeError("Hermes local revocation binding is invalid")
+    action = binding.revoke_structured_submission_grant
+    if not callable(action):
+        raise LocalLevel2AuthorityError("local structured tool authority is unavailable")
+    try:
+        action(grant_kind)
+    finally:
+        runtime = binding.completed_turn_runtime
+        close = getattr(runtime, "close", None) if runtime is not None else None
+        if callable(close):
+            close()
 
 
 @dataclass(frozen=True)
@@ -175,6 +281,114 @@ class _LocalLevel2IngressEvidence:
     session_id: str
     author_id: str
     agent_id: str
+
+
+class _LocalLevel2StructuredSubmissionResolver:
+    """Issue only current local structured authority for the pinned account."""
+
+    def __init__(
+        self,
+        *,
+        installation_id: str,
+        operator_id: str,
+        agent_id: str,
+        project_task_id: str,
+        authority_is_current,
+        structured_tool_is_current,
+    ) -> None:
+        self._installation_id = installation_id
+        self._operator_id = operator_id
+        self._agent_id = agent_id
+        self._authority_is_current = authority_is_current
+        self._structured_tool_is_current = structured_tool_is_current
+        expected = AuthenticatedPrincipalAgent(principal_id=operator_id, agent_id=agent_id)
+        catalog_scope = CatalogAuthorityScope(schema_version=1, kind="base")
+        self._issued_request = StructuredSubmissionAuthorityRequest(
+            authenticated=expected,
+            source_grant=SourceScopeGrant(
+                grant_id=_grant_id(installation_id, operator_id, agent_id, "source", f"task:{project_task_id}"),
+                grant_version=1, source_scope=f"task:{project_task_id}", authenticated=expected,
+            ),
+            fact_grant=FactScopeGrant(
+                grant_id=_grant_id(installation_id, operator_id, agent_id, "fact", f"user:{operator_id}"),
+                grant_version=1, fact_scope=f"user:{operator_id}", authenticated=expected,
+            ),
+            catalog_visibility_grant=CatalogOwnerVisibilityGrant(
+                grant_id=_grant_id(installation_id, operator_id, agent_id, "catalog_visibility", catalog_scope),
+                grant_version=1, catalog_scope=catalog_scope, authenticated=expected,
+                purpose="visibility_status",
+            ),
+        )
+        self.resolver_binding_digest = sha256(
+            (
+                "memorii.hermes.local-level2.structured-submission-resolver.v1:"
+                f"{installation_id}:{operator_id}:{agent_id}"
+            ).encode()
+        ).hexdigest()
+
+    def resolve_submission_authority(
+        self,
+        *,
+        authenticated_ingress: AuthenticatedIngressContext,
+        request: StructuredSubmissionAuthorityRequest,
+    ) -> ResolvedStructuredSubmissionAuthority | None:
+        if not self._authority_is_current():
+            return None
+        if not self._structured_tool_is_current():
+            return None
+        expected = self._issued_request.authenticated
+        if (
+            request != self._issued_request
+            or authenticated_ingress.delivery_principal_binding.principal_subject_id
+            != self._operator_id
+            or authenticated_ingress.authenticated_agent_id != self._agent_id
+        ):
+            return None
+        try:
+            catalog = ThreePredicateSeedCatalogAuthorityRepository().resolve_base(
+                expected_catalog_digest=request.expected_catalog_digest
+            )
+        except ValueError:
+            return None
+        return ResolvedStructuredSubmissionAuthority(
+            authenticated=expected,
+            source_grant=request.source_grant,
+            fact_grant=request.fact_grant,
+            catalog_visibility_grant=request.catalog_visibility_grant,
+            catalog=catalog,
+            provider_model_prompt_provenance_digest=(
+                request.provider_model_prompt_provenance_digest
+            ),
+        )
+
+    def issued_authority(self) -> ResolvedStructuredSubmissionAuthority:
+        """Return the exact local tuple that this resolver will accept."""
+        if not self._authority_is_current() or not self._structured_tool_is_current():
+            raise LocalLevel2AuthorityError("local structured tool authority is unavailable")
+        catalog = ThreePredicateSeedCatalogAuthorityRepository().resolve_base()
+        return ResolvedStructuredSubmissionAuthority(
+            authenticated=self._issued_request.authenticated,
+            source_grant=self._issued_request.source_grant,
+            fact_grant=self._issued_request.fact_grant,
+            catalog_visibility_grant=self._issued_request.catalog_visibility_grant,
+            catalog=catalog,
+        )
+
+    def issued_authority_request(self) -> StructuredSubmissionAuthorityRequest:
+        """Return the factory-owned request the resolver alone will attest."""
+        if not self._authority_is_current() or not self._structured_tool_is_current():
+            raise LocalLevel2AuthorityError("local structured tool authority is unavailable")
+        return self._issued_request
+
+    def issued_read_authority(self) -> StructuredFactReadAuthority | None:
+        """Issue the current fact/catalog grant pair for one protected read."""
+        if not self._authority_is_current() or not self._structured_tool_is_current():
+            return None
+        return StructuredFactReadAuthority(
+            authenticated=self._issued_request.authenticated,
+            fact_grant=self._issued_request.fact_grant,
+            catalog_visibility_grant=self._issued_request.catalog_visibility_grant,
+        )
 
 
 class _LocalLevel2IngressResolver:
@@ -232,6 +446,7 @@ class _LocalLevel2IngressResolver:
         provenance = sha256(f"memorii.local-level2:{self._installation_id}:{evidence.author_id}".encode()).hexdigest()
         return AuthenticatedIngressContext(
             delivery_principal_binding=principal,
+            authenticated_agent_id=evidence.agent_id,
             required_outcome_scopes=scopes,
             current_authorized_scopes=scopes,
             language_declaration="en",
@@ -288,6 +503,41 @@ def _canonical_agent_id(value: object) -> str:
     return "memorii:hermes:agent:" + sha256(b"memorii.hermes.agent-identity.v1\0" + payload.encode("utf-8")).hexdigest()
 
 
+def _project_task_id(installation_id: str, semantic_contract_digest: str) -> str:
+    return "memorii:hermes:task:" + sha256(
+        (
+            "memorii.hermes.project_assertions.task.v1:"
+            f"{installation_id}:{semantic_contract_digest}"
+        ).encode()
+    ).hexdigest()
+
+
+def _grant_id(
+    installation_id: str,
+    operator_id: str,
+    agent_id: str,
+    grant_kind: str,
+    scope: str | CatalogAuthorityScope,
+) -> str:
+    """Derive the stable v1 grant coordinate from verified factory inputs."""
+    digest = sha256(
+        b"memorii.hermes.local-structured-grant.v1\0"
+        + encode_typed_value((
+            installation_id, operator_id, agent_id, grant_kind,
+            scope.model_dump(mode="python") if isinstance(scope, CatalogAuthorityScope) else scope,
+        ))
+    ).hexdigest()
+    return f"hermes-local-structured-grant:v1:{grant_kind}:{digest}"
+
+
+def _structured_tool_is_current(hermes_home: Path) -> bool:
+    try:
+        load_local_structured_tool_authority(hermes_home=hermes_home, now=datetime.now(UTC))
+    except (OSError, TypeError, ValueError):
+        return False
+    return True
+
+
 def _require_primary_cli_context(context: object) -> None:
     """Admit only Hermes' pinned primary CLI provider context.
 
@@ -306,7 +556,13 @@ def _require_primary_cli_context(context: object) -> None:
         raise LocalLevel2AuthorityError("local Level 2 requires Hermes primary CLI execution")
 
 
-def _bind_single_local_operator_context(*, storage_root: Path, installation_id: str, raw_user_id: object) -> None:
+def _bind_single_local_operator_context(
+    *,
+    storage_root: Path,
+    installation_id: str,
+    raw_user_id: object,
+    allow_existing_operator_binding: bool = False,
+) -> None:
     """Use raw Hermes identity only to deny multi-user reuse of one local profile."""
 
     raw_user = raw_user_id.strip() if isinstance(raw_user_id, str) else ""
@@ -325,15 +581,32 @@ def _bind_single_local_operator_context(*, storage_root: Path, installation_id: 
     try:
         descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     except FileExistsError:
+        if raw_user_id is None and allow_existing_operator_binding:
+            try:
+                existing = json.loads(path.read_bytes())
+            except (OSError, TypeError, ValueError) as exc:
+                raise LocalLevel2AuthorityError("local Level 2 operator context is invalid") from exc
+            if (
+                not isinstance(existing, dict)
+                or existing.get("schema") != "memorii.hermes.local-operator-context.v1"
+                or existing.get("installation_id") != installation_id
+                or not isinstance(existing.get("raw_user_consistency_digest"), str)
+            ):
+                raise LocalLevel2AuthorityError("local Level 2 operator context is invalid") from None
+            return
         if path.read_bytes() != payload:
             raise LocalLevel2AuthorityError(
                 "local Level 2 profile is already bound to another Hermes user context"
             ) from None
         return
+    if raw_user_id is None and allow_existing_operator_binding:
+        os.close(descriptor)
+        path.unlink(missing_ok=True)
+        raise LocalLevel2AuthorityError("local Level 2 operator context is absent")
     with os.fdopen(descriptor, "wb") as stream:
         stream.write(payload)
         stream.flush()
         os.fsync(stream.fileno())
 
 
-__all__ = ["build_local_level2_runtime_binding"]
+__all__ = ["build_local_level2_runtime_binding", "revoke_local_level2_structured_grant"]

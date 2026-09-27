@@ -385,6 +385,51 @@ class SealedBootstrapV3ProposalProducer:
             return None
 
 
+class DirectBootstrapV3ProposalProducer:
+    """Seal one already-parsed structured proposal without a transport call.
+
+    The coordinator owns admission of the immutable envelope.  This producer
+    only enters the same V3 request normalization used by the host transport.
+    """
+
+    def __init__(
+        self,
+        *,
+        proposal: ProviderSemanticProposal,
+        raw_proposal_artifact: bytes,
+        resolve_quote: SpanResolver,
+        projection_quote_verifier: ProjectionQuoteVerificationAuthority,
+    ) -> None:
+        self._proposal = proposal
+        self._raw_proposal_artifact = raw_proposal_artifact
+        self._resolve_quote = resolve_quote
+        self._projection_quote_verifier = projection_quote_verifier
+
+    def produce(self, *, authority: object, renew: Callable[[], bool]) -> BootstrapProposalRunPayloadV3 | None:
+        requests = getattr(authority, "proposal_requests", None)
+        payload_limit_authority = getattr(authority, "payload_limit_authority", None)
+        if (
+            not isinstance(requests, tuple)
+            or len(requests) != 1
+            or not isinstance(self._raw_proposal_artifact, bytes)
+            or payload_limit_authority is None
+            or not renew()
+        ):
+            return None
+        try:
+            return seal_bootstrap_proposal_run(
+                requests=requests,
+                responses=(self._proposal,),
+                raw_response_bytes=(self._raw_proposal_artifact,),
+                payload_limit_authority=payload_limit_authority,
+                resolve_quote=self._resolve_quote,
+                projection_quote_verifier=self._projection_quote_verifier,
+            )
+        except ValueError:
+            logger.warning("direct_bootstrap_v3_proposal_sealing_rejected", exc_info=True)
+            return None
+
+
 def _contains(outer: SourceSpanReference, inner: SourceSpanReference) -> bool:
     return (
         outer.projection_span.start <= inner.projection_span.start <= inner.projection_span.end <= outer.projection_span.end
@@ -394,6 +439,7 @@ def _contains(outer: SourceSpanReference, inner: SourceSpanReference) -> bool:
 
 __all__ = [
     "BootstrapV3ProposalTransport",
+    "DirectBootstrapV3ProposalProducer",
     "SealedBootstrapV3ProposalProducer",
     "normalize_bootstrap_provider_proposal",
     "seal_bootstrap_proposal_run",

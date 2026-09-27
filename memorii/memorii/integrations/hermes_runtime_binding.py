@@ -17,6 +17,7 @@ class HermesProviderRuntimeBinding:
     issue_ingress: Callable[[object], AuthenticatedHostIngress]
     completed_turn_runtime: object | None = None
     absent_author_id: str = "memorii.hermes.author.absent.v1"
+    revoke_structured_submission_grant: Callable[[str], None] | None = None
 
 
 __all__ = ["HermesProviderRuntimeBinding"]

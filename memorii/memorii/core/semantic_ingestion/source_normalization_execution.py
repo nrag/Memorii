@@ -30,6 +30,7 @@ from memorii.core.semantic_ingestion.contracts import (
     LanguageConstructionPolicyAuthorityBundle,
     PrePlanningSourceIngestionProgress,
     SegmentLanguageResourceBinding,
+    SemanticArbitrationPolicyBundle,
     TemporalPolicySnapshot,
     TrustPolicySnapshot,
     contract_digest,
@@ -338,6 +339,7 @@ class SourceNormalizationExecutionOwnerProtocol(Protocol):
         handoff: BootstrapWriterHandoffResult,
         recovery_claim: BootstrapRecoveryClaimV3,
         authority: SourceNormalizationAuthorityBundle,
+        direct_proposal_producer: BootstrapV3ProposalProducer | None = None,
     ) -> BootstrapSourceNormalizationResultV3 | SourceNormalizationNonCommit: ...
 
 
@@ -370,6 +372,7 @@ class SourceNormalizationExecutionOwner:
         handoff: BootstrapWriterHandoffResult,
         recovery_claim: BootstrapRecoveryClaimV3,
         authority: SourceNormalizationAuthorityBundle,
+        direct_proposal_producer: BootstrapV3ProposalProducer | None = None,
     ) -> BootstrapSourceNormalizationResultV3 | SourceNormalizationNonCommit:
         # Probe/found/unavailable handling belongs to the coordinator.  This
         # boundary receives only its one live claim and cannot retry a probe.
@@ -392,7 +395,8 @@ class SourceNormalizationExecutionOwner:
                 phase="proposal_sealed", reason="proposal_run_unavailable", invocation=invocation
             )
         return self._normalize_bootstrap_v3(
-            invocation=invocation, handoff=handoff, claim=recovery_claim, authority=authority
+            invocation=invocation, handoff=handoff, claim=recovery_claim, authority=authority,
+            direct_proposal_producer=direct_proposal_producer,
         )
 
     @staticmethod
@@ -514,12 +518,13 @@ class SourceNormalizationExecutionOwner:
         handoff: BootstrapWriterHandoffResult,
         claim: BootstrapRecoveryClaimV3,
         authority: SourceNormalizationAuthorityBundle,
+        direct_proposal_producer: BootstrapV3ProposalProducer | None,
     ) -> BootstrapSourceNormalizationResultV3 | SourceNormalizationNonCommit:
         """Run the strictly V3-native branch; generic V2 producers never enter it."""
         runtime = authority.derivation.bootstrap_v3_runtime_authority
         if (
             runtime is None
-            or self._bootstrap_v3_proposal_producer is None
+            or (direct_proposal_producer is None and self._bootstrap_v3_proposal_producer is None)
             or self._bootstrap_v3_evidence_producer is None
             or self._bootstrap_v3_interpreter is None
         ):
@@ -542,7 +547,9 @@ class SourceNormalizationExecutionOwner:
                     break
                 if not self._recovery_repository.begin_provider_attempt(claim=current):
                     break
-                payload = self._bootstrap_v3_proposal_producer.produce(
+                producer = direct_proposal_producer or self._bootstrap_v3_proposal_producer
+                assert producer is not None
+                payload = producer.produce(
                     authority=runtime, renew=renew
                 )
                 if payload is not None:
@@ -574,7 +581,11 @@ class SourceNormalizationExecutionOwner:
                 prepared_source=invocation.source,
                 source_authority_evidence=invocation.source_authority_evidence,
                 source_interval_evidence=invocation.source_interval_evidence,
-                policy_bundle=invocation.policy_bundle,
+                policy_bundle=SemanticArbitrationPolicyBundle.create(
+                    trust_policy=authority.derivation.trust_policy,
+                    temporal_policy=authority.derivation.temporal_policy,
+                    arbitration_as_of=authority.derivation.arbitration_as_of,
+                ),
                 planning_policy_authority=authority.derivation.bootstrap_planning_policy_authority,
                 operation_lease_binding=(
                     current.control_snapshot.control_record.operation_lease_binding

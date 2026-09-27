@@ -52,14 +52,17 @@ def build_test_host_verified_bootstrap_release_evidence(
 
 
 def _proof_payload(material: HostVerifiedBootstrapMaterial) -> bytes:
-    return encode_typed_value(
-        {
-            "artifact_payloads": material.artifact_payloads.model_dump(mode="python"),
-            "release_evidence": material.release_evidence.model_dump(mode="python"),
-            "profile_enabled": material.profile_enabled,
-            "trust_domain": material.trust_domain,
-        }
-    )
+    payload = {
+        "artifact_payloads": material.artifact_payloads.model_dump(mode="python"),
+        "release_evidence": material.release_evidence.model_dump(mode="python"),
+        "profile_enabled": material.profile_enabled,
+        "trust_domain": material.trust_domain,
+    }
+    if material.structured_submission_authority_resolver is not None:
+        payload["structured_submission_authority_resolver_binding_digest"] = (
+            material.structured_submission_authority_resolver_binding_digest
+        )
+    return encode_typed_value(payload)
 
 
 def present_authenticated_host_bootstrap_material(

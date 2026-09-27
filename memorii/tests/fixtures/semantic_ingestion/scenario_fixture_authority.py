@@ -9,10 +9,14 @@ default trust source.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 from hashlib import sha256
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any, cast
 
 from memorii.core.memory_evolution.bootstrap_profile import (
@@ -57,7 +61,11 @@ from memorii.core.semantic_ingestion.capability import (
     SemanticDeploymentAuthorizationUse,
     SemanticIngestionRuntimeAuthorization,
 )
+from memorii.core.semantic_ingestion.catalog_authority import (
+    VerifiedPackagedBaseCatalogRelease,
+)
 from memorii.core.semantic_ingestion.contracts import (
+    PredicateProposalCatalog,
     PredicateTemporalRule,
     PredicateTrustRule,
     SemanticArbitrationPolicyBundle,
@@ -136,6 +144,7 @@ class _ScenarioIngressResolver:
         )
         return AuthenticatedIngressContext(
             delivery_principal_binding=principal,
+            authenticated_agent_id="scenario-agent",
             required_outcome_scopes=scopes,
             current_authorized_scopes=scopes,
             language_declaration="en",
@@ -215,12 +224,17 @@ class _ScenarioCurrentReleaseVerifier:
 
 
 class _ScenarioPolicyProvider:
+    def __init__(self, *, include_reports_to: bool = False) -> None:
+        self._include_reports_to = include_reports_to
+
     def current_policy(self, *, source_id: str, source_digest: str) -> SemanticPipelinePolicy:
         del source_id, source_digest
         interval = TimeInterval(
             start=datetime(2026, 1, 1, tzinfo=UTC), end=datetime(2027, 1, 1, tzinfo=UTC)
         )
-        predicates = ("owner", "status")
+        predicates = tuple(sorted(
+            ("owner", "status") + (("reports_to",) if self._include_reports_to else ())
+        ))
         trust = TrustPolicySnapshot.create(
             policy_revision="scenario-trust-v1",
             system_effective_interval=interval,
@@ -236,14 +250,11 @@ class _ScenarioPolicyProvider:
         temporal = TemporalPolicySnapshot.create(
             policy_revision="scenario-temporal-v1",
             system_effective_interval=interval,
-            rules=tuple(
-                PredicateTemporalRule(
-                    predicate_id=predicate,
-                    valid_time_requirement="required",
-                    allow_open_end=True,
-                )
-                for predicate in predicates
-            ),
+            rules=tuple(PredicateTemporalRule(
+                predicate_id=predicate,
+                valid_time_requirement=("optional" if predicate == "reports_to" else "required"),
+                allow_open_end=True,
+            ) for predicate in predicates),
         )
         return SemanticPipelinePolicy(
             arbitration_bundle=SemanticArbitrationPolicyBundle.create(
@@ -342,12 +353,107 @@ _SCENARIO_SOURCE_TEXTS = (
 )
 
 
+@dataclass(frozen=True)
+class VerifiedScenarioReportsToRequestCatalog:
+    """Fixture-only child-release identity that can extend a V3 request catalog."""
+
+    release: VerifiedPackagedBaseCatalogRelease
+    release_root: str
+
+    @property
+    def vocabulary_namespace(self) -> str:
+        return (
+            "scenario-reports-to:"
+            f"{self.release.child_version_digest}:{self.release.runtime_bundle_digest}"
+        )
+
+    def augment_predicate_catalog(
+        self, base: PredicateProposalCatalog
+    ) -> PredicateProposalCatalog:
+        from memorii.core.semantic_ingestion.contracts import (
+            PredicatePromptContract,
+            PredicateProposalCatalog,
+        )
+
+        release = self.release
+        if (
+            not release.selectable
+            or release.child_version_digest == ""
+            or release.runtime_bundle_digest == ""
+        ):
+            raise ValueError("scenario reports-to package authority is not selectable")
+        reports_to = PredicatePromptContract.create(
+            predicate_id="reports_to",
+            description="direct person reporting line",
+            subject_value_kind="entity",
+            object_value_kind="entity",
+            object_literal_type=None,
+            supported_commitments=("asserted",),
+        )
+        return PredicateProposalCatalog.create(
+            vocabulary_namespace=self.vocabulary_namespace,
+            proposal_capability_fingerprint=base.proposal_capability_fingerprint,
+            predicates=tuple(sorted((*base.predicates, reports_to), key=lambda item: item.predicate_id)),
+            catalog_schema_fingerprint=base.catalog_schema_fingerprint,
+        )
+
+    def expected_catalog_fingerprint(self) -> str:
+        """Return the one clean-room catalog fingerprint bound to this child release."""
+        from tests.fixtures.semantic_ingestion.clean_room_request_fixture import (
+            build_clean_room_proposal_catalogs,
+        )
+
+        base = build_clean_room_proposal_catalogs(
+            source_id="scenario-reports-to-catalog",
+            source_digest="0" * 64,
+            source_text="catalog fixture.",
+            require_text_digest=False,
+        ).predicate_catalog
+        return self.augment_predicate_catalog(base).catalog_fingerprint
+
+
+def build_verified_reports_to_scenario_request_catalog() -> VerifiedScenarioReportsToRequestCatalog:
+    """Generate and verify the complete available child package for one scenario host."""
+    from memorii.core.semantic_ingestion import catalog_authority
+    from scripts.generate_reports_to_catalog_package import (
+        _IMPLEMENTED_CAPABILITIES,
+        generate_package,
+    )
+
+    with TemporaryDirectory(prefix="memorii-reports-to-scenario-") as directory:
+        resource_directory = Path(directory)
+        root = generate_package(
+            output_dir=resource_directory,
+            root_module=None,
+            available_capability_ids=tuple(sorted(_IMPLEMENTED_CAPABILITIES)),
+        )
+        release = catalog_authority._load_packaged_reports_to_release(
+            resource_bytes=lambda name: (resource_directory / name).read_bytes(),
+            package_resource_names=lambda: tuple(
+                path.name for path in resource_directory.iterdir() if path.is_file()
+            ),
+            release_root=root,
+        )
+    if not release.selectable:
+        raise ValueError("verified scenario reports-to package is unselectable")
+    return VerifiedScenarioReportsToRequestCatalog(
+        release=release,
+        release_root=root,
+    )
+
+
 class _ScenarioQuoteAuthority:
     """Resolve quotes against the fixed scenario corpus texts."""
 
+    def __init__(self) -> None:
+        self._texts: set[str] = set(_SCENARIO_SOURCE_TEXTS)
+
+    def register(self, source_text: str) -> None:
+        self._texts.add(source_text)
+
     def resolve(self, quote, context, owned):
         del owned
-        for text in _SCENARIO_SOURCE_TEXTS:
+        for text in self._texts:
             start = text.find(quote, context.projection_span.start, context.projection_span.end)
             if start >= 0 and text.find(quote, start + 1, context.projection_span.end) < 0:
                 projection = context.projection_span
@@ -377,7 +483,7 @@ class _ScenarioQuoteAuthority:
     def verify_quote(self, *, projection_digest, quote, span):
         if projection_digest != span.projection_digest or not any(
             text[span.projection_span.start : span.projection_span.end] == quote
-            for text in _SCENARIO_SOURCE_TEXTS
+            for text in self._texts
         ):
             raise ValueError("scenario quote is not an exact source slice")
 
@@ -439,7 +545,61 @@ def _scenario_provider_proposal(source_id: str, source_digest: str, source_text:
     )
 
 
-def _scenario_normalization_host_bundle_builder(*, now_provider):
+_DIRECT_REPORTING_LINE = re.compile(
+    r"^(?P<subject>[A-Za-z][A-Za-z .'-]{0,126}) reports to "
+    r"(?P<object>[A-Za-z][A-Za-z .'-]{0,126})\.$"
+)
+
+
+def _scenario_reports_to_provider_proposal(
+    *, request, source_text: str, quotes: _ScenarioQuoteAuthority,
+    request_catalog: VerifiedScenarioReportsToRequestCatalog,
+):
+    """Issue the package-owned direct-line proposal only for the selected predicate."""
+    from memorii.core.semantic_ingestion.contracts import ProviderSemanticProposal
+    from memorii.core.semantic_ingestion.reports_to_capability import (
+        ReportsToProviderProposalAdapter,
+    )
+
+    if "reports_to" not in {item.predicate_id for item in request.predicate_catalog.predicates}:
+        return _scenario_provider_proposal(
+            request.segment.source_id, request.segment.source_digest, source_text
+        )
+    if (
+        request.predicate_catalog.vocabulary_namespace
+        != request_catalog.vocabulary_namespace
+        or request.predicate_catalog.catalog_fingerprint
+        != request_catalog.expected_catalog_fingerprint()
+    ):
+        return ProviderSemanticProposal(abstained=True)
+    quotes.register(source_text)
+    match = _DIRECT_REPORTING_LINE.fullmatch(source_text)
+    response = (
+        {"abstained": True, "candidates": []}
+        if match is None
+        else {
+            "abstained": False,
+            "candidates": [{
+                "predicate_id": "reports_to",
+                "assertion_quote": source_text,
+                "subject_quote": match.group("subject"),
+                "predicate_anchor_quote": "reports to",
+                "object_quote": match.group("object"),
+            }],
+        }
+    )
+    proposal = ReportsToProviderProposalAdapter(
+        semantic_contract_digest=request_catalog.release.runtime_bundle_digest,
+        resolve_quote=quotes.resolve,
+        projection_quote_verifier=quotes,
+    ).from_response(
+        request=request,
+        response_text=json.dumps(response, sort_keys=True, separators=(",", ":")),
+    )
+    return proposal if proposal is not None else ProviderSemanticProposal(abstained=True)
+
+
+def _scenario_normalization_host_bundle_builder(*, now_provider, scenario_request_catalog=None):
     """Build the scenario host's V3 normalization bundle.
 
     Mirrors the composition suite's ordinary-root builder, with the proposal
@@ -455,9 +615,17 @@ def _scenario_normalization_host_bundle_builder(*, now_provider):
     # transport sees only digest-bearing spans.  Bridge the two seams so the
     # transport derives the same analyzer-driven proposal.
     segment_texts: dict[tuple[str, str], str] = {}
+    quotes = _ScenarioQuoteAuthority()
 
-    def record_and_propose(source, _request):
+    def record_and_propose(source, request):
         segment_texts[(source.source_id, source.source_digest)] = source.semantic_text
+        if scenario_request_catalog is not None:
+            return _scenario_reports_to_provider_proposal(
+                request=request,
+                source_text=source.semantic_text,
+                quotes=quotes,
+                request_catalog=scenario_request_catalog,
+            )
         return _scenario_provider_proposal(
             source.source_id, source.source_digest, source.semantic_text
         )
@@ -465,19 +633,32 @@ def _scenario_normalization_host_bundle_builder(*, now_provider):
     authority_provider = DynamicSourceNormalizationAuthorityProvider(
         proposal_factory=record_and_propose,
         retry_policy_fingerprint="a" * 64,
+        scenario_request_catalog=scenario_request_catalog,
     )
 
     def proposal(request):
-        full_text = segment_texts[
-            (request.segment.source_id, request.segment.source_digest)
-        ]
+        full_text = segment_texts.get(
+            (request.segment.source_id, request.segment.source_digest),
+            request.segment.segment_text,
+        )
+        if full_text is None:
+            raise ValueError("scenario proposal transport has no segment text")
         # One proposal request per segment: the sealed proposal's quotes must
         # resolve inside this segment's projection span, so the analyzer
         # parses the segment slice, not the whole source.
         span = request.segment.context_text.projection_span
         text = full_text[span.start : span.end] if span is not None else full_text
-        value = _scenario_provider_proposal(
-            request.segment.source_id, request.segment.source_digest, text
+        value = (
+            _scenario_provider_proposal(
+                request.segment.source_id, request.segment.source_digest, text
+            )
+            if scenario_request_catalog is None
+            else _scenario_reports_to_provider_proposal(
+                request=request,
+                source_text=text,
+                quotes=quotes,
+                request_catalog=scenario_request_catalog,
+            )
         )
         return value, encode_typed_value(value.model_dump(mode="python"))
 
@@ -549,7 +730,7 @@ def _scenario_normalization_host_bundle_builder(*, now_provider):
             candidates=(), ambiguities=(), status="complete", reason_codes=(),
         )
 
-    quotes = _ScenarioQuoteAuthority()
+    authority_provider.bind_bootstrap_v3_proposal_transport(proposal)
     return SourceNormalizationHostBundleBuilder(
         authority_provider=authority_provider,
         resolve_quote=quotes.resolve, projection_quote_verifier=quotes,
@@ -782,20 +963,46 @@ def _scenario_graph_host_bundle_builder():
     )
 
 
-def build_scenario_test_provider_service(*, memory_plane, now_provider):
+def build_scenario_test_provider_service(
+    *, memory_plane, now_provider,
+    scenario_request_catalog: VerifiedScenarioReportsToRequestCatalog | None = None,
+    structured_submission_authority_resolver=None,
+    scoped_read_authority=None,
+):
     """Fixture-private route to the only non-production provider composition."""
     from memorii.core.provider.service import ProviderMemoryService
 
     policy, evidence, checkpoint = _scenario_capability_monitoring(now_provider())
+    locator = None
+    if scenario_request_catalog is not None:
+        from memorii.core.semantic_ingestion.catalog_capture_pin import (
+            PackageIndexedCatalogBundleLocator,
+        )
+        locator = PackageIndexedCatalogBundleLocator(
+            release_authority_loader=lambda: scenario_request_catalog.release
+        )
     service = ProviderMemoryService._from_scenario_test_host(
         memory_plane=memory_plane,
-        host_bootstrap_capability=build_scenario_test_host_capability(),
+        host_bootstrap_capability=replace(
+            build_scenario_test_host_capability(),
+            catalog_bundle_locator=locator,
+            policy_provider=_ScenarioPolicyProvider(
+                include_reports_to=scenario_request_catalog is not None
+            ),
+        ),
         host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
         source_normalization_host_bundle_builder=_scenario_normalization_host_bundle_builder(
-            now_provider=now_provider
+            now_provider=now_provider,
+            scenario_request_catalog=scenario_request_catalog,
         ),
-        bootstrap_graph_host_bundle_builder=_scenario_graph_host_bundle_builder(),
+        bootstrap_graph_host_bundle_builder=(
+            None
+            if scenario_request_catalog is not None
+            else _scenario_graph_host_bundle_builder()
+        ),
         capability_monitoring_policies=(policy,),
+        structured_submission_authority_resolver=structured_submission_authority_resolver,
+        scoped_read_authority=scoped_read_authority,
         now_provider=now_provider,
     )
     service._capability_monitor = CapabilityMonitor(

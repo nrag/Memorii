@@ -323,6 +323,11 @@ class HostVerifiedBootstrapMaterial:
     authenticated_ingress_resolver: object
     profile_enabled: bool
     trust_domain: Literal["production", "local_level2", "scenario_test"] = "production"
+    # This optional port is returned by the same host verifier that attests
+    # ingress.  Production composition must never accept it as a loose
+    # constructor argument.
+    structured_submission_authority_resolver: object | None = None
+    structured_submission_authority_resolver_binding_digest: str | None = None
 
 
 @dataclass(frozen=True)

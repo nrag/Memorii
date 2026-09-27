@@ -537,6 +537,9 @@ class RequiredOutcomeScopeSet(BaseModel):
 
 class AuthenticatedIngressContext(BaseModel):
     delivery_principal_binding: DeliveryPrincipalBinding
+    # The host supplies an agent identity only when it has authenticated one.
+    # Provider event metadata never selects the catalog-agent coordinate.
+    authenticated_agent_id: str | None = None
     # The host derives this from authenticated message governance.  It is
     # deliberately distinct from the current authorization snapshot: callers
     # may have additional scopes, but cannot shrink retained-source coverage.
@@ -576,6 +579,8 @@ class AuthenticatedIngressContext(BaseModel):
             ("mismatched", "mismatched", "disagrees"),
         }:
             raise ValueError("language evidence tuple is invalid")
+        if self.authenticated_agent_id is not None and not self.authenticated_agent_id.strip():
+            raise ValueError("authenticated agent ID must be nonblank when present")
         return self
 
 

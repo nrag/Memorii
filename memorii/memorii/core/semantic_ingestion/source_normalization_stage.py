@@ -15,6 +15,7 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     SemanticWriterCommitBinding,
     encode_typed_value,
 )
+from memorii.core.semantic_ingestion.catalog_capture_pin import CatalogRuntimeCoordinate
 from memorii.core.semantic_ingestion.contracts import (
     AcceptedOperationGovernanceCarrier,
     AcceptedTemporalEvidence,
@@ -376,6 +377,7 @@ class GraphFreeSourceNormalizationInvocation:
     policy_bundle: SemanticArbitrationPolicyBundle
     authorization_read_set_provider: object
     operation_fence_binding: OperationFenceBinding
+    catalog_runtime_coordinate: CatalogRuntimeCoordinate | None = None
 
 
 def validate_reloaded_bootstrap_v3_source_normalization_result(

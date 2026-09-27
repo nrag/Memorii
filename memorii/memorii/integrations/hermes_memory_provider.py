@@ -67,6 +67,7 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         self._issue_ingress: Callable[[HermesIngressRequest], AuthenticatedHostIngress] | None = None
         self._completed_turn_runtime: object | None = None
         self._absent_author_id = "memorii.hermes.author.absent.v1"
+        self._revoke_structured_submission_grant: Callable[[str], None] | None = None
 
     @property
     def name(self) -> str:
@@ -117,13 +118,43 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         self._issue_ingress = binding.issue_ingress
         self._completed_turn_runtime = binding.completed_turn_runtime
         self._absent_author_id = binding.absent_author_id
+        self._revoke_structured_submission_grant = binding.revoke_structured_submission_grant
 
     def get_tool_schemas(self) -> list[dict[str, object]]:
-        return []
+        runtime = self._completed_turn_runtime
+        schemas = getattr(runtime, "get_tool_schemas", None) if runtime is not None else None
+        if not callable(schemas):
+            return []
+        value = schemas()
+        if not isinstance(value, list) or not all(type(item) is dict for item in value):
+            raise TypeError("Memorii completed-turn runtime returned invalid tool schemas")
+        return value
 
     def handle_tool_call(self, tool_name: str, arguments: dict[str, object]) -> object:
-        del arguments
+        runtime = self._completed_turn_runtime
+        handler = getattr(runtime, "handle_tool_call", None) if runtime is not None else None
+        if callable(handler):
+            return handler(tool_name=tool_name, arguments=arguments)
         raise ValueError(f"Memorii does not provide Hermes tool {tool_name!r}")
+
+    def lookup_structured_fact_status(self, operation_id: str, *, session_id: str = "") -> object:
+        runtime = self._completed_turn_runtime
+        lookup = getattr(runtime, "lookup_structured_fact_status", None) if runtime is not None else None
+        if not callable(lookup):
+            return {"status": "unavailable"}
+        return lookup(
+            operation_id=operation_id,
+            session_id=self._effective_session_id(session_id),
+            authenticated_author_id=self._absent_author_id,
+            now=datetime.now(UTC),
+        )
+
+    def revoke_structured_grant(self, grant_kind: str) -> None:
+        """Run the factory-authorized local operator revocation action."""
+        action = self._revoke_structured_submission_grant
+        if not callable(action):
+            raise RuntimeError("Memorii structured grant revocation is unavailable")
+        action(grant_kind)
 
     def prefetch(self, query: str, *, session_id: str = "") -> str:
         user_id = self._current_user_id()
@@ -154,12 +185,23 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         message: str,
         **kwargs: Any,
     ) -> None:
-        del turn_number, message
         self._require_provider()
         observed = _optional_text(kwargs.get("author_id"))
         if self._completed_turn_runtime is not None and observed is not None and observed != self._default_user_id:
             raise ValueError("Hermes local Level 2 author identity changed")
         self._turn_user_id.set(observed or self._default_user_id)
+        runtime = self._completed_turn_runtime
+        if runtime is not None:
+            capture = getattr(runtime, "capture_user_turn", None)
+            if not callable(capture):
+                raise TypeError("Memorii completed-turn runtime is invalid")
+            capture(
+                session_id=self._effective_session_id(""),
+                turn_ordinal=turn_number,
+                message=message,
+                authenticated_author_id=self._absent_author_id,
+                received_at=datetime.now(UTC),
+            )
 
     def sync_turn(
         self,
@@ -178,10 +220,11 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         if runtime is not None:
             if effective_user_id is not None and effective_user_id != self._default_user_id:
                 raise ValueError("Hermes local Level 2 author identity changed")
+            complete = getattr(runtime, "complete_captured_turn", None)
             sync = getattr(runtime, "sync_completed_turn", None)
-            if not callable(sync):
+            if not callable(complete) or not callable(sync):
                 raise TypeError("Memorii completed-turn runtime is invalid")
-            sync(
+            arguments = dict(
                 user_content=user_content,
                 assistant_content=assistant_content,
                 messages=messages,
@@ -189,6 +232,8 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
                 authenticated_author_id=self._absent_author_id,
                 received_at=datetime.now(UTC),
             )
+            if not complete(**arguments):
+                sync(**arguments)
             return
         self._require_provider().sync_turn(
             user_content,
@@ -316,6 +361,7 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
             self._issue_ingress = None
             self._completed_turn_runtime = None
             self._absent_author_id = "memorii.hermes.author.absent.v1"
+            self._revoke_structured_submission_grant = None
 
     def _wait_for_completed_runtime(self) -> None:
         runtime = self._completed_turn_runtime

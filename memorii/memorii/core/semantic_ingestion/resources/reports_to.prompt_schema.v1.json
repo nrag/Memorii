@@ -1,0 +1,1 @@
+{"capability_id":"reports_to_prompt_schema","catalog_digest":"a0275e9fd7e3fa7426c3481703d09368f7953f9e8696a72d725bcb80e8fcb4bd","implementation":{"module":"memorii.core.semantic_ingestion.reports_to_capability","source_sha256":"a42d2229fe46e270b14a3592320bd6e417aaaafac49366922adabf067c862b51","symbol":"reports_to_output_schema"},"schema_version":1,"status":"unavailable"}

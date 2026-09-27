@@ -6,6 +6,7 @@ from hashlib import sha256
 
 import pytest
 from memorii.core.semantic_ingestion.contracts import (
+    BootstrapGraphPreGroupNonCommitV3,
     BootstrapV3PayloadLimitAuthority,
     BootstrapV3PayloadLimitPolicy,
     decode_semantic_contract,
@@ -44,6 +45,19 @@ def test_bootstrap_v3_limit_policy_and_authority_are_closed_codec_records() -> N
         BootstrapV3PayloadLimitAuthority.model_validate(
             authority.model_dump(mode="python") | {"source_id": "source:substituted"}
         )
+
+
+def test_pre_group_noncommit_is_a_closed_canonical_codec_record() -> None:
+    value = BootstrapGraphPreGroupNonCommitV3.create(
+        request_digest=_hex("request"),
+        operation_fence_binding_digest=_hex("fence"),
+        operation_lease_binding_digest=_hex("lease"),
+        writer_commit_binding_digest=_hex("writer"),
+        control_epoch_digest=_hex("epoch"),
+        reason="authorization_revoked_before_commit",
+    )
+    encoded = encode_semantic_contract(value)
+    assert decode_semantic_contract(encoded, BootstrapGraphPreGroupNonCommitV3) == value
 
 
 def test_bootstrap_v3_fixture_issues_current_route_and_exact_four_lane_requests() -> None:

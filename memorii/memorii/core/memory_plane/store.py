@@ -219,6 +219,11 @@ class MemoryPlaneStore(Protocol):
 
     def read_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]: ...
 
+    def read_snapshot_linearized(
+        self,
+        callback: Callable[[int, tuple[CanonicalMemoryRecord, ...]], object],
+    ) -> object: ...
+
     def read_write_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]: ...
 
     def read_timed_write_snapshot(
@@ -375,6 +380,17 @@ class InMemoryMemoryPlaneStore:
         with self._lock:
             return self._revision, tuple(_clone_record(record) for record in self._records.values())
 
+    def read_snapshot_linearized(
+        self,
+        callback: Callable[[int, tuple[CanonicalMemoryRecord, ...]], object],
+    ) -> object:
+        """Keep the read decision ordered with in-process store writers."""
+        with self._lock:
+            return callback(
+                self._revision,
+                tuple(_clone_record(record) for record in self._records.values()),
+            )
+
     def read_write_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]:
         with self._lock:
             return self._write_revision, tuple(_clone_record(record) for record in self._records.values())
@@ -424,6 +440,15 @@ class ReadOnlyMemoryPlaneSnapshotStore(InMemoryMemoryPlaneStore):
 
     def read_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]:
         raise PermissionError("detached inventory has no data-revision authority")
+
+    def read_snapshot_linearized(
+        self,
+        callback: Callable[[int, tuple[CanonicalMemoryRecord, ...]], object],
+    ) -> object:
+        return callback(
+            self._revision,
+            tuple(_clone_record(record) for record in self._records.values()),
+        )
 
     def read_timed_write_snapshot(self, *, now: Callable[[], datetime]) -> MemoryPlaneTimedWriteSnapshot:
         del now
@@ -640,6 +665,19 @@ class JsonlMemoryPlaneStore:
             batches, latest_by_id = self._current_records_unlocked()
             revision = batches[-1].data_revision if batches else 0
             return revision, tuple(_clone_record(record) for record in latest_by_id.values())
+
+    def read_snapshot_linearized(
+        self,
+        callback: Callable[[int, tuple[CanonicalMemoryRecord, ...]], object],
+    ) -> object:
+        """Hold the cross-process store lock through protected read release."""
+        with self._locked(exclusive=False):
+            batches, latest_by_id = self._current_records_unlocked()
+            revision = batches[-1].data_revision if batches else 0
+            return callback(
+                revision,
+                tuple(_clone_record(record) for record in latest_by_id.values()),
+            )
 
     def read_write_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]:
         with self._locked(exclusive=False):

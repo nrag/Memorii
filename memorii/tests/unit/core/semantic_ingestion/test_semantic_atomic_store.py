@@ -3,7 +3,11 @@ from pathlib import Path
 from threading import Barrier, Event, Lock, Thread
 
 import pytest
-from memorii.core.memory_evolution.admission import GovernedSourceAdmissionService, SourceAdmissionAccepted
+from memorii.core.memory_evolution.admission import (
+    GovernedSourceAdmissionService,
+    RetainedSourceOperationRequest,
+    SourceAdmissionAccepted,
+)
 from memorii.core.memory_evolution.atomic_store import (
     BootstrapPreparedPublishedAuthorityUnavailable,
     BootstrapRetainedPendingAuthorityUnavailable,
@@ -11,6 +15,7 @@ from memorii.core.memory_evolution.atomic_store import (
     BootstrapWriterHandoffResult,
     PreplanningStoreError,
     SemanticIngestionAtomicStore,
+    StructuredSubmissionGrantRevokedError,
 )
 from memorii.core.memory_evolution.bootstrap_profile import (
     BOOTSTRAP_COORDINATE,
@@ -42,10 +47,21 @@ from memorii.core.memory_plane.store import (
     MemoryPlaneRevisionConflictError,
     RecordAbsentPrecondition,
 )
+from memorii.core.semantic_ingestion.catalog_authority import (
+    AuthenticatedPrincipalAgent,
+    CatalogAuthorityScope,
+    CatalogOwnerVisibilityGrant,
+    FactScopeGrant,
+    ResolvedCatalogAuthority,
+    ResolvedStructuredSubmissionAuthority,
+    SourceScopeGrant,
+)
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
 
 
-def _handoff(plane: MemoryPlaneService) -> tuple[SourceAdmissionAccepted, OperationFenceBinding]:
+def _handoff(
+    plane: MemoryPlaneService, *, scopes: set[str] | None = None
+) -> tuple[SourceAdmissionAccepted, OperationFenceBinding]:
     principal = DeliveryPrincipalBinding.create(
         principal_subject_id="principal:a", tenant_partition_id="tenant:a", provider_identity="provider:test"
     )
@@ -63,8 +79,8 @@ def _handoff(plane: MemoryPlaneService) -> tuple[SourceAdmissionAccepted, Operat
     )
     ingress = AuthenticatedIngressContext(
         delivery_principal_binding=principal,
-        required_outcome_scopes=RequiredOutcomeScopeSet.create(tenant_partition_id="tenant:a", scopes=set()),
-        current_authorized_scopes=RequiredOutcomeScopeSet.create(tenant_partition_id="tenant:a", scopes=set()),
+        required_outcome_scopes=RequiredOutcomeScopeSet.create(tenant_partition_id="tenant:a", scopes=scopes or set()),
+        current_authorized_scopes=RequiredOutcomeScopeSet.create(tenant_partition_id="tenant:a", scopes=scopes or set()),
     )
     admission = GovernedSourceAdmissionService(plane).admit(
         source=source, delivery_identity=identity, ingress=ingress, operation_id="op:one", evidence_only=True
@@ -99,6 +115,213 @@ def test_preplanning_publication_is_atomic_idempotent_and_has_empty_future_effec
     assert first == second
     assert first.operation.graph_record_ids == first.operation.event_ids == first.operation.terminal_group_ids == ()
     assert len([r for r in plane.list_records() if r.source_kind == "semantic_ingestion_preplanning_artifact"]) == 3
+
+
+def test_typed_absent_grant_revocation_wins_over_later_provisioning() -> None:
+    plane = MemoryPlaneService(record_store=InMemoryMemoryPlaneStore())
+    writers = SemanticWriterAdmissionStore(
+        plane, bounded_preplanning_ownership_manifest(), now_provider=lambda: datetime(2026, 1, 1, tzinfo=UTC)
+    )
+    binding = writers.commit_binding(writers.create_initial_evidence_only(
+        admission_id="writer-admission", writer_implementation_fingerprint="writer-fingerprint",
+        graph_schema_fingerprint="schema-fingerprint",
+    ))
+    store = SemanticIngestionAtomicStore(plane, writers, now_provider=lambda: datetime(2026, 1, 1, tzinfo=UTC))
+    authenticated = AuthenticatedPrincipalAgent(principal_id="principal:a", agent_id="agent:a")
+    catalog_scope = CatalogAuthorityScope(schema_version=1, kind="base")
+    authority = ResolvedStructuredSubmissionAuthority(
+        authenticated=authenticated,
+        source_grant=SourceScopeGrant(grant_id="source:a", grant_version=1, source_scope="task:a", authenticated=authenticated),
+        fact_grant=FactScopeGrant(grant_id="fact:a", grant_version=1, fact_scope="user:a", authenticated=authenticated),
+        catalog_visibility_grant=CatalogOwnerVisibilityGrant(
+            grant_id="catalog:a", grant_version=1, catalog_scope=catalog_scope,
+            authenticated=authenticated, purpose="visibility_status",
+        ),
+        catalog=ResolvedCatalogAuthority(
+            catalog_scope=catalog_scope, catalog_digest="a" * 64, genesis_selection_digest="b" * 64,
+        ),
+    )
+
+    store.revoke_structured_submission_grant(
+        grant_kind="fact", grant=authority.fact_grant, writer_binding=binding,
+    )
+    store.revoke_structured_submission_grant(
+        grant_kind="fact", grant=authority.fact_grant, writer_binding=binding,
+    )
+    with pytest.raises(StructuredSubmissionGrantRevokedError, match="revoked"):
+        store.provision_structured_submission_grant_states(authority=authority, writer_binding=binding)
+
+    records = plane.list_records(source_kind="semantic_ingestion_structured_grant_state")
+    assert len(records) == 1
+    assert records[0].content["state"]["active"] is False
+
+
+def test_retained_source_operation_allocates_a_distinct_idempotent_control() -> None:
+    plane = MemoryPlaneService(record_store=InMemoryMemoryPlaneStore())
+    admission, _ = _handoff(plane, scopes={"user:alice"})
+    writers = SemanticWriterAdmissionStore(
+        plane, bounded_preplanning_ownership_manifest(), now_provider=lambda: datetime(2026, 1, 1, tzinfo=UTC)
+    )
+    binding = writers.commit_binding(writers.create_initial_evidence_only(
+        admission_id="writer-admission", writer_implementation_fingerprint="writer-fingerprint", graph_schema_fingerprint="schema-fingerprint",
+    ))
+    store = SemanticIngestionAtomicStore(plane, writers, now_provider=lambda: datetime(2026, 1, 1, tzinfo=UTC))
+    ingress = AuthenticatedIngressContext(
+        delivery_principal_binding=DeliveryPrincipalBinding.create(
+            principal_subject_id="principal:a", tenant_partition_id="tenant:a", provider_identity="provider:test"
+        ),
+        required_outcome_scopes=admission.required_outcome_scopes,
+        current_authorized_scopes=admission.required_outcome_scopes,
+    )
+    request = RetainedSourceOperationRequest(
+        source_id=admission.source_id,
+        source_digest=admission.source_digest,
+        canonical_envelope=b'{"span":"0:6","scope":"user:a"}',
+    )
+    allocator = GovernedSourceAdmissionService(plane)
+    accepted = allocator.allocate_retained_source_operation(
+        request=request, authenticated_ingress=ingress
+    )
+    first = store.publish_retained_source_operation(accepted=accepted, writer_binding=binding)
+    second = store.publish_retained_source_operation(accepted=accepted, writer_binding=binding)
+
+    assert first == second
+    assert first.operation.operation_fence == accepted.operation_fence_binding
+    assert first.operation.operation_fence.operation_id != admission.operation_fence_binding.operation_id
+    assert len(plane.list_records(source_kind="semantic_ingestion_retained_source_operation")) == 1
+
+
+def test_retained_structured_submission_rejects_substituted_proposal_bytes() -> None:
+    plane = MemoryPlaneService(record_store=InMemoryMemoryPlaneStore())
+    admission, _ = _handoff(plane, scopes={"user:alice"})
+    writers = SemanticWriterAdmissionStore(
+        plane, bounded_preplanning_ownership_manifest(), now_provider=lambda: datetime(2026, 1, 1, tzinfo=UTC)
+    )
+    binding = writers.commit_binding(writers.create_initial_evidence_only(
+        admission_id="writer-admission", writer_implementation_fingerprint="writer-fingerprint", graph_schema_fingerprint="schema-fingerprint",
+    ))
+    store = SemanticIngestionAtomicStore(plane, writers, now_provider=lambda: datetime(2026, 1, 1, tzinfo=UTC))
+    ingress = AuthenticatedIngressContext(
+        delivery_principal_binding=DeliveryPrincipalBinding.create(
+            principal_subject_id="principal:a", tenant_partition_id="tenant:a", provider_identity="provider:test"
+        ),
+        required_outcome_scopes=admission.required_outcome_scopes,
+        current_authorized_scopes=admission.required_outcome_scopes,
+    )
+    envelope = b'{"raw_proposal_artifact_digest":"same-artifact"}'
+    accepted = GovernedSourceAdmissionService(plane).allocate_retained_source_operation(
+        request=RetainedSourceOperationRequest(
+            source_id=admission.source_id, source_digest=admission.source_digest,
+            canonical_envelope=envelope,
+        ),
+        authenticated_ingress=ingress,
+    )
+
+    store.publish_retained_structured_submission(
+        accepted=accepted,
+        canonical_envelope=envelope,
+        proposal_bytes=b"proposal:original",
+        raw_proposal_artifact=b"raw:original",
+        writer_binding=binding,
+    )
+    with pytest.raises(PreplanningStoreError, match="structured submission is mismatched"):
+        store.publish_retained_structured_submission(
+            accepted=accepted,
+            canonical_envelope=envelope,
+            proposal_bytes=b"proposal:substituted",
+            raw_proposal_artifact=b"raw:original",
+            writer_binding=binding,
+        )
+
+
+def test_retained_source_operation_derives_distinct_envelopes_and_denies_mismatch() -> None:
+    plane = MemoryPlaneService(record_store=InMemoryMemoryPlaneStore())
+    admission, _ = _handoff(plane, scopes={"user:alice"})
+    ingress = AuthenticatedIngressContext(
+        delivery_principal_binding=DeliveryPrincipalBinding.create(
+            principal_subject_id="principal:a", tenant_partition_id="tenant:a", provider_identity="provider:test"
+        ),
+        required_outcome_scopes=admission.required_outcome_scopes,
+        current_authorized_scopes=admission.required_outcome_scopes,
+    )
+    allocator = GovernedSourceAdmissionService(plane)
+    first = allocator.allocate_retained_source_operation(
+        request=RetainedSourceOperationRequest(
+            source_id=admission.source_id, source_digest=admission.source_digest,
+            canonical_envelope=b'{"span":"0:6","scope":"user:a"}',
+        ), authenticated_ingress=ingress,
+    )
+    changed_span = allocator.allocate_retained_source_operation(
+        request=RetainedSourceOperationRequest(
+            source_id=admission.source_id, source_digest=admission.source_digest,
+            canonical_envelope=b'{"span":"1:6","scope":"user:a"}',
+        ), authenticated_ingress=ingress,
+    )
+    changed_scope = allocator.allocate_retained_source_operation(
+        request=RetainedSourceOperationRequest(
+            source_id=admission.source_id, source_digest=admission.source_digest,
+            canonical_envelope=b'{"span":"0:6","scope":"task:a"}',
+        ), authenticated_ingress=ingress,
+    )
+    assert len({
+        first.operation_fence_binding.operation_id,
+        changed_span.operation_fence_binding.operation_id,
+        changed_scope.operation_fence_binding.operation_id,
+    }) == 3
+    with pytest.raises(ValueError, match="retained source digest is mismatched"):
+        allocator.allocate_retained_source_operation(
+            request=RetainedSourceOperationRequest(
+                source_id=admission.source_id, source_digest="0" * 64,
+                canonical_envelope=b'{"span":"0:6","scope":"user:a"}',
+            ), authenticated_ingress=ingress,
+        )
+    denied = ingress.model_copy(update={
+        "current_authorized_scopes": RequiredOutcomeScopeSet.create(
+            tenant_partition_id="tenant:a", scopes=set()
+        )
+    })
+    with pytest.raises(ValueError, match="retained source access is denied"):
+        allocator.allocate_retained_source_operation(
+            request=RetainedSourceOperationRequest(
+                source_id=admission.source_id, source_digest=admission.source_digest,
+                canonical_envelope=b'{"span":"0:6","scope":"user:a"}',
+            ), authenticated_ingress=denied,
+        )
+
+
+def test_retained_source_operation_reopens_for_exact_retry(tmp_path: Path) -> None:
+    path = tmp_path / "retained-source-operation.jsonl"
+    plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path))
+    admission, _ = _handoff(plane, scopes={"user:alice"})
+    writers = SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest())
+    binding = writers.commit_binding(writers.create_initial_evidence_only(
+        admission_id="writer-admission", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
+    ))
+    ingress = AuthenticatedIngressContext(
+        delivery_principal_binding=DeliveryPrincipalBinding.create(
+            principal_subject_id="principal:a", tenant_partition_id="tenant:a", provider_identity="provider:test"
+        ), required_outcome_scopes=admission.required_outcome_scopes,
+        current_authorized_scopes=admission.required_outcome_scopes,
+    )
+    request = RetainedSourceOperationRequest(
+        source_id=admission.source_id, source_digest=admission.source_digest,
+        canonical_envelope=b'{"span":"0:6","scope":"user:a"}',
+    )
+    accepted = GovernedSourceAdmissionService(plane).allocate_retained_source_operation(
+        request=request, authenticated_ingress=ingress
+    )
+    first = SemanticIngestionAtomicStore(plane, writers).publish_retained_source_operation(
+        accepted=accepted, writer_binding=binding
+    )
+    reopened_plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path))
+    reopened_writers = SemanticWriterAdmissionStore(reopened_plane, bounded_preplanning_ownership_manifest())
+    reopened = SemanticIngestionAtomicStore(reopened_plane, reopened_writers)
+    retried = GovernedSourceAdmissionService(reopened_plane).allocate_retained_source_operation(
+        request=request, authenticated_ingress=ingress
+    )
+    assert reopened.publish_retained_source_operation(
+        accepted=retried, writer_binding=reopened_writers.commit_binding(reopened_writers.current())
+    ) == first
 
 
 def test_unconfigured_observation_ledger_activation_never_mutates_the_actual_store() -> None:

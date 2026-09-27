@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from hashlib import sha256
-from typing import Literal, Protocol
+from typing import Literal, Protocol, cast
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -21,6 +21,7 @@ from memorii.core.memory_evolution.bootstrap_profile import (
     VerifiedBootstrapProfile,
     verify_bootstrap_profile,
 )
+from memorii.core.memory_evolution.conflict_attention import SemanticConflictAuthorityResolver
 from memorii.core.memory_evolution.conflict_integrity import (
     PrivilegedSemanticIntegrityLifecycle,
 )
@@ -153,6 +154,9 @@ class AuthorizedSemanticIngestionRuntime:
     observation_activation_target: VerifiedObservationActivationTargetVariant | None = None
     bootstrap_profile: VerifiedBootstrapProfile | None = None
     now_provider: Callable[[], datetime] | None = None
+    conflict_authority_bootstrap: (
+        Callable[[SemanticConflictAuthorityAdministrationGrant], None] | None
+    ) = None
     _conflict_authority_administration_grant: (
         SemanticConflictAuthorityAdministrationGrant | None
     ) = field(default=None, init=False, repr=False, compare=False)
@@ -265,6 +269,10 @@ class AuthorizedSemanticIngestionRuntime:
             object.__setattr__(
                 self, "_conflict_authority_administration_grant", grant
             )
+            if self.conflict_authority_bootstrap is not None:
+                # Resolver authority must be installed while the writer remains
+                # evidence-only; post-activation administration is forbidden.
+                self.conflict_authority_bootstrap(grant)
             binding = self.writer_admission.commit_binding(
                 self.writer_admission.current()
             )
@@ -335,6 +343,12 @@ class BuiltInLocalHostSemanticIngestionCapability:
     typed_value_registry_configuration: ProtectedTypedValueRegistryConfiguration | None = None
     verified_typed_value_registry_history: ProtectedTypedValueRegistryHistory | None = None
     observation_activation_target_configuration: ObservationActivationTargetConfigurationVariant | None = None
+    conflict_authority_bootstrap_factory: (
+        Callable[[object, SemanticWriterAdmissionStore], Callable[[SemanticConflictAuthorityAdministrationGrant], None]]
+        | None
+    ) = None
+    semantic_conflict_authority_resolver: SemanticConflictAuthorityResolver | None = None
+    catalog_bundle_locator: object | None = None
 
     def load_bootstrap_material_presentation(self) -> HostBootstrapMaterialPresentation:
         return self.bootstrap_material_presentation
@@ -362,6 +376,7 @@ class BuiltInLocalHostSemanticIngestionCapability:
         if material_profile != bootstrap_profile or not material_profile.enabled:
             raise ValueError("built-in local semantic runtime profile binding is unavailable")
         from memorii.core.memory_evolution.writer_admission import (
+            CatalogBundleLocator,
             SemanticWriterAdmissionStore,
             bounded_preplanning_ownership_manifest,
             writer_admission_memory_id,
@@ -388,6 +403,7 @@ class BuiltInLocalHostSemanticIngestionCapability:
             now_provider=now_provider,
             typed_value_registry_history=typed_value_registry_history,
             observation_activation_target=observation_activation_target,
+            catalog_bundle_locator=cast(CatalogBundleLocator | None, self.catalog_bundle_locator),
         )
         if (
             verified_material.trust_domain in {"scenario_test", "local_level2"}
@@ -451,6 +467,8 @@ class BuiltInLocalHostSemanticIngestionCapability:
             typed_value_registry_history=typed_value_registry_history,
             observation_activation_target=observation_activation_target,
             bootstrap_recovery_operation_lease_duration=self.bootstrap_recovery_operation_lease_duration,
+            semantic_conflict_authority_resolver=self.semantic_conflict_authority_resolver,
+            catalog_bundle_locator=writers._catalog_bundle_locator,
         )
         host_bundle = (
             None
@@ -476,6 +494,11 @@ class BuiltInLocalHostSemanticIngestionCapability:
             bootstrap_graph_host_bundle=graph_bundle,
             typed_value_registry_history=typed_value_registry_history,
             observation_activation_target=observation_activation_target,
+            conflict_authority_bootstrap=(
+                self.conflict_authority_bootstrap_factory(memory_plane, writers)
+                if self.conflict_authority_bootstrap_factory is not None
+                else None
+            ),
         )
         return runtime
 
@@ -493,6 +516,9 @@ def build_authorized_local_semantic_runtime(
     bootstrap_graph_host_bundle: BootstrapGraphHostBundle | None = None,
     typed_value_registry_history: ProtectedTypedValueRegistryHistory | None = None,
     observation_activation_target: VerifiedObservationActivationTargetVariant | None = None,
+    conflict_authority_bootstrap: (
+        Callable[[SemanticConflictAuthorityAdministrationGrant], None] | None
+    ) = None,
 ) -> AuthorizedSemanticIngestionRuntime:
     """Build the ordinary zero-egress production semantic ingestion composition."""
 
@@ -541,6 +567,7 @@ def build_authorized_local_semantic_runtime(
         observation_activation_target=observation_activation_target,
         bootstrap_profile=bootstrap_profile,
         now_provider=now_provider,
+        conflict_authority_bootstrap=conflict_authority_bootstrap,
     )
 
 

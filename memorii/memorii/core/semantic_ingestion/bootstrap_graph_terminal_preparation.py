@@ -31,6 +31,7 @@ from memorii.core.semantic_ingestion.contracts import (
     BootstrapGraphFinalStageEvidenceV3,
     BootstrapGraphPlanCompilationV3,
     BootstrapGraphPreExecutionManifestIdentityClosureV3,
+    BootstrapGraphPreGroupNonCommitV3,
     BootstrapGraphTerminalHandoffCoreV3,
     BootstrapGraphTerminalHostAuthorityV3,
     BootstrapGraphTerminalMemberIntentV3,
@@ -82,6 +83,7 @@ def build_bootstrap_graph_execution_stage_outcomes(
     complete_lineage: BootstrapSourcePlanLineageV3,
     group_constructions: tuple[BootstrapNativeGroupCommitTerminalConstructionV3, ...],
     finalized_failure_group_id: str | None = None,
+    pre_group_noncommit_reason: str | None = None,
 ) -> tuple[
     tuple[IngestionStageOutcome, ...],
     tuple[tuple[str, tuple[IngestionStageOutcome, ...]], ...],
@@ -140,6 +142,14 @@ def build_bootstrap_graph_execution_stage_outcomes(
         or (
             finalized_failure_group_id is not None
             and finalized_failure_group_id not in group_ids
+        )
+        or (
+            pre_group_noncommit_reason is not None
+            and (
+                pre_group_noncommit_reason != "authorization_revoked_before_commit"
+                or finalized_failure_group_id is None
+                or dispositions
+            )
         )
     ):
         raise ValueError("bootstrap graph execution stage groups are invalid")
@@ -285,6 +295,7 @@ class BootstrapGraphTerminalPreparationPortV3(Protocol):
         group_constructions: tuple[BootstrapNativeGroupCommitTerminalConstructionV3, ...],
         host_authority: BootstrapGraphTerminalHostAuthorityV3,
         finalized_failure_group_id: str | None = None,
+        pre_group_noncommit_reason: str | None = None,
     ) -> BootstrapGraphTerminalPreparationV3: ...
 
 
@@ -364,6 +375,7 @@ class DeterministicBootstrapGraphTerminalPreparationV3:
         group_constructions: tuple[BootstrapNativeGroupCommitTerminalConstructionV3, ...],
         host_authority: BootstrapGraphTerminalHostAuthorityV3,
         finalized_failure_group_id: str | None = None,
+        pre_group_noncommit_reason: str | None = None,
     ) -> BootstrapGraphTerminalPreparationV3:
         final_plan = final_compilation.plan
         source_outcomes, transaction_group_outcomes, causal_blockers = (
@@ -375,6 +387,7 @@ class DeterministicBootstrapGraphTerminalPreparationV3:
                 complete_lineage=complete_lineage,
                 group_constructions=group_constructions,
                 finalized_failure_group_id=finalized_failure_group_id,
+                pre_group_noncommit_reason=pre_group_noncommit_reason,
             )
         )
         causal_blockers = _canonical_stage_instances(
@@ -513,7 +526,13 @@ class DeterministicBootstrapGraphTerminalPreparationV3:
             canonical_source_result=outcome_record,
             control_epoch_digest=control_epoch.epoch_digest,
         )
+        # A revocation terminal deliberately records only the immutable source
+        # result.  It must not emit a graph/event/projection observation after
+        # the commit fence has denied every transaction group.
         source_observation_intent = (
+            None
+            if pre_group_noncommit_reason is not None
+            else
             None
             if self._source_observation_intent_factory is None
             else self._source_observation_intent_factory(
@@ -525,10 +544,14 @@ class DeterministicBootstrapGraphTerminalPreparationV3:
             and source_observation_intent.source_outcome != outcome_record
         ):
             raise ValueError("bootstrap graph source observation intent is substituted")
-        if activated_observation_ledger and source_observation_intent is None:
+        if (
+            activated_observation_ledger
+            and source_observation_intent is None
+            and pre_group_noncommit_reason is None
+        ):
             raise ValueError("activated source terminal requires an observation intent")
         source_finalization_observation_delta = None
-        if source_observation_intent is None:
+        if source_observation_intent is None and pre_group_noncommit_reason is None:
             observation_revision_before = (
                 constructions[-1].group_commit_reload.persisted_result.core.observation_revision_after
                 if constructions
@@ -548,6 +571,17 @@ class DeterministicBootstrapGraphTerminalPreparationV3:
                 observation_revision_after=observation_revision_after,
                 observation_schema_fingerprint=source_finalization_observation_schema_fingerprint(),
             )
+        pre_group_noncommit = (
+            None if pre_group_noncommit_reason is None else
+            BootstrapGraphPreGroupNonCommitV3.create(
+                request_digest=request.request_digest,
+                operation_fence_binding_digest=control_epoch.operation_fence_binding.binding_digest,
+                operation_lease_binding_digest=control_epoch.operation_lease_binding.binding_digest,
+                writer_commit_binding_digest=control_epoch.writer_commit_binding.binding_digest,
+                control_epoch_digest=control_epoch.epoch_digest,
+                reason="authorization_revoked_before_commit",
+            )
+        )
         handoff_core = BootstrapGraphTerminalHandoffCoreV3.create(
             request_digest=request.request_digest,
             normalization_replay_digest=request.normalization_replay.replay_digest,
@@ -569,9 +603,13 @@ class DeterministicBootstrapGraphTerminalPreparationV3:
             handoff_core=handoff_core, canonical_result=canonical_result,
             source_finalization_observation_delta=source_finalization_observation_delta,
             source_observation_intent=source_observation_intent,
+            pre_group_noncommit=pre_group_noncommit,
         )
         publication_intent = BootstrapGraphTerminalPublicationIntentV3.create(
-            terminal_member_schema_version=(3 if source_observation_intent is not None else 2),
+            terminal_member_schema_version=(
+                4 if pre_group_noncommit_reason is not None
+                else 3 if source_observation_intent is not None else 2
+            ),
             source_id=host_authority.source_id, source_digest=host_authority.source_digest,
             preparation_fingerprint=host_authority.preparation_fingerprint,
             operation_id=control_epoch.operation_fence_binding.operation_id,
@@ -600,6 +638,7 @@ class DeterministicBootstrapGraphTerminalPreparationV3:
             final_plan=final_plan, complete_lineage=complete_lineage, execution_manifest=manifest,
             ordered_group_result_constructions=constructions,
             canonical_source_result_input=canonical_input, handoff_core=handoff_core,
+            pre_group_noncommit=pre_group_noncommit,
             source_finalization_observation_delta=source_finalization_observation_delta,
             source_observation_intent=source_observation_intent,
             publication_intent=publication_intent, handoff=handoff,
@@ -675,6 +714,7 @@ class DeterministicBootstrapGraphTerminalPreparationV3:
         canonical_result: BootstrapGraphCanonicalSourceResultV3,
         source_finalization_observation_delta: SourceFinalizationObservationDelta | None,
         source_observation_intent: SourceObservationIntent | None,
+        pre_group_noncommit: BootstrapGraphPreGroupNonCommitV3 | None = None,
     ) -> tuple[BootstrapGraphTerminalMemberIntentV3, ...]:
         rows = [
             ("bootstrap_graph_coordinator_request", "coordinator-request", request.request_digest),
@@ -692,20 +732,24 @@ class DeterministicBootstrapGraphTerminalPreparationV3:
             ),
             ("bootstrap_graph_terminal_handoff", "terminal-handoff", handoff_core.core_digest),
             ("bootstrap_graph_canonical_source_result", "canonical-source-result", canonical_result.result_digest),
-            *(
-                ((
-                    "source_observation_intent",
-                    "source-finalization-observation",
-                    source_observation_intent.intent_digest,
-                ),)
-                if source_observation_intent is not None
-                else ((
-                    "bootstrap_graph_source_finalization_observation_delta",
-                    "source-finalization-observation",
-                    source_finalization_observation_delta.delta_digest,
-                ),)
-            ),
         ]
+        if pre_group_noncommit is not None:
+            rows.append((
+                "bootstrap_graph_pre_group_noncommit", "pre-group-noncommit",
+                pre_group_noncommit.result_digest,
+            ))
+        if source_observation_intent is not None:
+            rows.append((
+                "source_observation_intent",
+                "source-finalization-observation",
+                source_observation_intent.intent_digest,
+            ))
+        elif source_finalization_observation_delta is not None:
+            rows.append((
+                "bootstrap_graph_source_finalization_observation_delta",
+                "source-finalization-observation",
+                source_finalization_observation_delta.delta_digest,
+            ))
         return tuple(
             BootstrapGraphTerminalMemberIntentV3.create(
                 kind=kind, member_id=member_id, construction_input_digest=digest,

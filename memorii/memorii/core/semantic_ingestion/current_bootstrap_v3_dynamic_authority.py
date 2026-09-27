@@ -12,14 +12,18 @@ from memorii.core.memory_evolution.atomic_store import (
 )
 from memorii.core.memory_evolution.semantic_state import PredicateStateRule
 from memorii.core.memory_evolution.writer_admission import SemanticWriterCommitBinding
+from memorii.core.semantic_ingestion.catalog_capture_pin import PackageIndexedCatalogBundleLocator
 from memorii.core.semantic_ingestion.contracts import (
     BootstrapRecoveryClaimV3,
     LanguageConstructionPolicyAuthorityBundle,
     ParserConsensusPolicy,
     ScopeConsensusPolicy,
     SegmentLocalTextSpan,
+    SemanticArbitrationPolicyBundle,
     SourceSpanReference,
     TemporalAttachmentConsensusPolicy,
+    TemporalPolicySnapshot,
+    TrustPolicySnapshot,
     contract_digest,
 )
 from memorii.core.semantic_ingestion.current_bootstrap_v3_authority import (
@@ -171,15 +175,59 @@ class CurrentBootstrapV3DynamicAuthorityProvider:
             or recovery_claim.operation_fence_digest != invocation.operation_fence_binding.binding_digest
         ):
             return None
+        coordinate = invocation.catalog_runtime_coordinate
+        if coordinate is not None:
+            try:
+                _revision, records = self._store._memory_plane.read_snapshot()
+                from memorii.core.semantic_ingestion.catalog_capture_pin import (
+                    CatalogCapturedTurnPin,
+                )
+                pin_record = next(
+                    (record for record in records if record.memory_id == coordinate.pin_memory_id),
+                    None,
+                )
+                if pin_record is None:
+                    return None
+                pin = CatalogCapturedTurnPin.model_validate(
+                    pin_record.content["catalog_capture_pin"]
+                )
+                bundle = PackageIndexedCatalogBundleLocator().locate_historical(
+                    records,
+                    version_id=coordinate.selected_version_id,
+                    version_digest=coordinate.selected_version_digest,
+                )
+            except (OSError, ValueError):
+                return None
+            if (
+                pin.memory_id != coordinate.pin_memory_id
+                or pin.pin_digest != coordinate.capture_pin_digest
+                or pin.capture_id != coordinate.capture_id
+                or pin.source_id != coordinate.source_id
+                or pin.source_digest != coordinate.source_digest
+                or pin.source_id != invocation.source.source_id
+                or pin.source_digest != invocation.source.source_digest
+                or coordinate.catalog_scope != bundle.catalog.catalog_scope
+                or coordinate.catalog_digest != bundle.catalog.catalog_digest
+                or coordinate.selected_version_id != bundle.version.version_id
+                or coordinate.selected_version_digest != bundle.version.version_digest
+                or coordinate.runtime_bundle_digest != bundle.runtime_bundle_digest
+            ):
+                return None
         try:
-            progress, coordinate, lease, operation_generation, artifact_generation = (
+            progress, publication_coordinate, lease, operation_generation, artifact_generation = (
                 self._store.initialize_source_normalization_publication(
                     prepared_source=invocation.source,
                     operation_fence=invocation.operation_fence_binding,
                     writer_binding=writer,
                 )
             )
-            material = self._materializer.materialize(source=invocation.source)
+            material = self._materializer.materialize(
+                source=invocation.source,
+                default_catalog=(
+                    coordinate is not None
+                    and coordinate.selected_version_id == "default-catalog-v1"
+                ),
+            )
         except (TypeError, ValueError):
             return None
         if (
@@ -225,6 +273,32 @@ class CurrentBootstrapV3DynamicAuthorityProvider:
             ),
         )
         policy = build_project_assertions_arbitration_policy(at=self._now())
+        if coordinate is not None and coordinate.selected_version_id == "default-catalog-v1":
+            from memorii.core.semantic_ingestion.default_catalog_capability import (
+                selected_default_catalog_temporal_rules,
+                selected_default_catalog_trust_rules,
+            )
+
+            trust = TrustPolicySnapshot.create(
+                policy_revision="bootstrap-v3-default-catalog-trust-v1",
+                system_effective_interval=policy.trust_policy.system_effective_interval,
+                rules=tuple(sorted(
+                    selected_default_catalog_trust_rules().values(),
+                    key=lambda rule: rule.predicate_id,
+                )),
+            )
+            temporal = TemporalPolicySnapshot.create(
+                policy_revision="bootstrap-v3-default-catalog-temporal-v1",
+                system_effective_interval=policy.temporal_policy.system_effective_interval,
+                rules=tuple(sorted(
+                    selected_default_catalog_temporal_rules().values(),
+                    key=lambda rule: rule.predicate_id,
+                )),
+            )
+            policy = SemanticArbitrationPolicyBundle.create(
+                trust_policy=trust, temporal_policy=temporal,
+                arbitration_as_of=policy.arbitration_as_of,
+            )
         registry_body = {
             "registry_revision": "bootstrap-v3-project-assertions-v1",
             "capabilities": (CapabilityRegistryEntry(
@@ -255,11 +329,21 @@ class CurrentBootstrapV3DynamicAuthorityProvider:
                 b"memorii.semantic-ingestion.graph-dependent-execution-policy.v1", execution_body
             ),
         )
-        state_rules = tuple(PredicateStateRule(
-            predicate_id=predicate_id, cardinality="single", conflict_behavior="compete_within_slot",
-            qualifier_partition_fields=(), value_identity_policy_id="memorii.project-assertions.value.v1",
-            policy_fingerprint=self._digest(f"predicate-state:{predicate_id}"),
-        ) for predicate_id in ("project_deadline", "project_owner", "project_status"))
+        if coordinate is not None and coordinate.selected_version_id == "default-catalog-v1":
+            from memorii.core.semantic_ingestion.default_catalog_capability import (
+                selected_default_catalog_state_rules,
+            )
+
+            state_rules = tuple(
+                selected_default_catalog_state_rules()[predicate_id]
+                for predicate_id in sorted(selected_default_catalog_state_rules())
+            )
+        else:
+            state_rules = tuple(PredicateStateRule(
+                predicate_id=predicate_id, cardinality="single", conflict_behavior="compete_within_slot",
+                qualifier_partition_fields=(), value_identity_policy_id="memorii.project-assertions.value.v1",
+                policy_fingerprint=self._digest(f"predicate-state:{predicate_id}"),
+            ) for predicate_id in ("project_deadline", "project_owner", "project_status"))
         planning_body = {
             "predicate_registry_fingerprint": self._resource_policy.catalog_digest,
             "predicate_state_rules": state_rules,
@@ -300,7 +384,7 @@ class CurrentBootstrapV3DynamicAuthorityProvider:
         publication = SourceNormalizationPublicationAuthority(
             source_id=invocation.source.source_id, source_digest=invocation.source.source_digest,
             preparation_fingerprint=invocation.source.preparation_fingerprint,
-            operation_id=invocation.operation_id, publication_coordinate=coordinate,
+            operation_id=invocation.operation_id, publication_coordinate=publication_coordinate,
             progress=progress, operation_fence_binding=invocation.operation_fence_binding,
             operation_lease_binding=lease, writer_commit_binding=writer,
             expected_operation_generation=operation_generation,
