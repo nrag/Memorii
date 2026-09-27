@@ -451,7 +451,10 @@ def _query_projected_claims(
         ):
             continue
         state = lifecycle.get(claim_id, "active")
-        if request.view == "current" and state != "active":
+        # A transaction-time query reconstructs the effective claim set at
+        # that instant.  Unbounded history remains an audit view and includes
+        # superseded and retracted claims with their lifecycle labels.
+        if (request.view == "current" or cutoff is not None) and state != "active":
             continue
         claims.append(
             _ProjectedClaim(
@@ -541,11 +544,11 @@ def _query_states(
     transitions: tuple[_LifecycleTransition, ...],
 ) -> list[ClaimState]:
     query = ClaimStateQueryService(repository=EvolutionStateRepository.from_snapshot(records), now_provider=lambda: now)
-    if request.view == "current":
+    if request.view == "current" or request.system_as_of is not None:
         # ``system_as_of`` is transaction time, while HISTORICAL_AT is valid
-        # time.  Reconstruct the transaction-time image from immutable claim
-        # versions instead of accidentally applying the request timestamp as
-        # a validity predicate.
+        # time.  Both current and as-of reads reconstruct one effective claim
+        # image from immutable versions instead of using it as a validity
+        # predicate.  History without a cutoff remains an audit view.
         versions = query.retrieve(
             view=RetrievalView.ALL_VERSIONS,
             predicate_id=request.predicate_id,

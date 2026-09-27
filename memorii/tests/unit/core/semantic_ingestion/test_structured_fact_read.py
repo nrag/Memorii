@@ -353,6 +353,38 @@ def test_native_projection_fallback_reconstructs_correction_and_as_of(monkeypatc
         ),
         now=NOW,
     )
+    persisted_before_correction = read_structured_facts_from_snapshot(
+        records=records,
+        authority=authority,
+        request=StructuredFactReadRequest(
+            predicate_id="project_owned_by",
+            subject_entity_id="project",
+            view="history",
+            system_as_of=NOW - timedelta(days=1),
+        ),
+        now=NOW,
+    )
+    persisted_after_correction = read_structured_facts_from_snapshot(
+        records=records,
+        authority=authority,
+        request=StructuredFactReadRequest(
+            predicate_id="project_owned_by",
+            subject_entity_id="project",
+            view="history",
+            system_as_of=NOW + timedelta(hours=1),
+        ),
+        now=NOW,
+    )
+    persisted_history = read_structured_facts_from_snapshot(
+        records=records,
+        authority=authority,
+        request=StructuredFactReadRequest(
+            predicate_id="project_owned_by",
+            subject_entity_id="project",
+            view="history",
+        ),
+        now=NOW,
+    )
     historical = read_structured_facts_from_snapshot(
         records=projection_only,
         authority=authority,
@@ -364,12 +396,32 @@ def test_native_projection_fallback_reconstructs_correction_and_as_of(monkeypatc
         ),
         now=NOW,
     )
+    after_correction = read_structured_facts_from_snapshot(
+        records=projection_only,
+        authority=authority,
+        request=StructuredFactReadRequest(
+            predicate_id="project_owned_by",
+            subject_entity_id="project",
+            view="history",
+            system_as_of=NOW + timedelta(hours=1),
+        ),
+        now=NOW,
+    )
 
     assert [(item.claim_id, item.object_value, item.lifecycle_state) for item in current.items] == [
         ("new", "bea", "active")
     ]
     assert [(item.claim_id, item.object_value, item.lifecycle_state) for item in historical.items] == [
         ("old", "ada", "active")
+    ]
+    assert [(item.claim_id, item.object_value, item.lifecycle_state) for item in after_correction.items] == [
+        ("new", "bea", "active")
+    ]
+    assert [item.claim_id for item in persisted_before_correction.items] == ["old"]
+    assert [item.claim_id for item in persisted_after_correction.items] == ["new"]
+    assert [(item.claim_id, item.lifecycle_state) for item in persisted_history.items] == [
+        ("old", "superseded"),
+        ("new", "active"),
     ]
 
 
