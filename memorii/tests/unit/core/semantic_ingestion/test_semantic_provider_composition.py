@@ -4041,12 +4041,12 @@ def test_near_expiry_bootstrap_graph_lease_renews_before_execution() -> None:
         ownership_epoch=1,
         acquired_at=now - timedelta(minutes=14),
         expires_at=now + timedelta(minutes=1),
-        renewal_interval=timedelta(minutes=7, seconds=30),
+        renewal_interval=timedelta(minutes=15),
     )
     control = SimpleNamespace(state="planned", lease=near_expiry, writer_binding=writer)
     renewed = SimpleNamespace(
         state="planned",
-        lease=near_expiry.model_copy(update={"expires_at": now + timedelta(minutes=15)}),
+        lease=near_expiry.model_copy(update={"expires_at": now + timedelta(minutes=30)}),
         writer_binding=writer,
     )
 
@@ -4075,7 +4075,7 @@ def test_near_expiry_bootstrap_graph_lease_renews_before_execution() -> None:
         "operation_fence": fence,
         "writer_binding": writer,
         "lease": near_expiry,
-        "duration": timedelta(minutes=15),
+        "duration": timedelta(minutes=30),
     }]
 
     fresh = near_expiry.model_copy(update={"expires_at": now + timedelta(minutes=9)})
