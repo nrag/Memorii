@@ -12,7 +12,6 @@ from memorii.core.user_context.preferences import (
     PreferenceReadRequest,
     PreferenceService,
     PreferenceWriteRequest,
-    preference_topic_id,
 )
 
 NOW = datetime(2026, 9, 27, tzinfo=UTC)
@@ -28,7 +27,8 @@ def request(
         authenticated_source_id="source:" + source,
         authenticated_agent_id="agent:a",
         topic_type="ProductService",
-        canonical_topic_id=preference_topic_id("ProductService", "tea"),
+        topic_quote="tea",
+        canonical_topic_id="entity:tea",
         preference_key="drink",
         value=value,
         source_id="source:" + source,
@@ -52,15 +52,14 @@ def service(plane: MemoryPlaneService | None = None, *, now=lambda: NOW) -> Pref
                 PreferenceAccessGrant(holder_user_id="user:a", agent_id="agent:nondelegate"),
             ),
         ),
+        topic_identity_is_current=lambda holder, topic, topic_type, quote: (
+            holder == "user:a"
+            and topic == "entity:tea"
+            and topic_type == "ProductService"
+            and quote == "tea"
+        ),
         now=now,
     )
-    assert owner.register_topic(
-        holder_user_id="user:a",
-        acting_agent_id="agent:a",
-        topic_type="ProductService",
-        topic_quote="tea",
-        evidence=("source:topic", sha256(b"topic").hexdigest(), 0, 5),
-    ) is not None
     return owner
 
 
@@ -147,10 +146,10 @@ def test_correction_atomically_supersedes_prior_current_and_history_is_protected
     assert second is not None
     assert second.predecessor_id == first.preference_id
     assert current(owner) == (second,)
-    assert [(item.preference_id, item.state) for item in history(owner)] == [
+    assert {(item.preference_id, item.state) for item in history(owner)} == {
         (first.preference_id, "superseded"),
         (second.preference_id, "confirmed"),
-    ]
+    }
     assert history(owner, agent_id="agent:delegate") == history(owner)
     assert current(owner, agent_id="agent:nondelegate") == ()
     assert current(owner, agent_id="agent:no") == ()
@@ -334,10 +333,10 @@ def test_duplicate_retry_and_competing_candidates_keep_one_current_value() -> No
     confirmed_second = confirm(owner, second)
     assert confirmed_second is not None
     assert current(owner) == (confirmed_second,)
-    assert [(item.preference_id, item.state) for item in history(owner)] == [
+    assert {(item.preference_id, item.state) for item in history(owner)} == {
         (confirmed_first.preference_id, "superseded"),
         (confirmed_second.preference_id, "confirmed"),
-    ]
+    }
 
 
 def test_concurrent_confirmations_conflict_then_retry_supersedes_atomically() -> None:

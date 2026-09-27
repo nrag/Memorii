@@ -174,6 +174,7 @@ def test_preference_tool_dispatch_reaches_canonical_service_without_semantic_sub
             holder_authorities=(PreferenceHolderAuthority(holder_user_id="operator:ada", primary_agent_id="agent:a"),),
             grants=(),
         ),
+        topic_identity_is_current=lambda *_args: True,
         now=lambda: datetime(2026, 9, 26, tzinfo=UTC),
     )
     runtime._preference_write_request = lambda **_kwargs: PreferenceWriteRequest(
@@ -182,6 +183,7 @@ def test_preference_tool_dispatch_reaches_canonical_service_without_semantic_sub
         authenticated_source_id="source:a",
         authenticated_agent_id="agent:a",
         topic_type="ProductService",
+        topic_quote="tea",
         canonical_topic_id="product:tea",
         preference_key="drink",
         value="tea",
@@ -247,6 +249,7 @@ def test_preference_tools_fail_closed_when_factory_authority_is_revoked() -> Non
             holder_authorities=(PreferenceHolderAuthority(holder_user_id="operator:ada", primary_agent_id="agent:a"),),
             grants=(),
         ),
+        topic_identity_is_current=lambda *_args: False,
     )
     runtime._require_current_authority = lambda: (_ for _ in ()).throw(ValueError("revoked"))
 

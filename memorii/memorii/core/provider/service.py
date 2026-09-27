@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from collections.abc import Callable, Iterator
 from contextlib import ExitStack, contextmanager
 from dataclasses import replace
@@ -109,6 +110,9 @@ from memorii.core.memory_evolution.graph_observation_public_contracts import (
     IngestionTimeAttestationRequest,
     IngestionTimeAttestationResponse,
 )
+from memorii.core.memory_evolution.graph_records import (
+    EntityRevision,
+)
 from memorii.core.memory_evolution.identity_lineage import (
     IdentityLineageAuditScopeSnapshot,
     IdentityLineageAuditView,
@@ -120,6 +124,7 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     AuthenticatedIngressResolutionError,
     DeliveryIdentity,
     SemanticWriterCommitBinding,
+    decode_typed_value,
 )
 from memorii.core.memory_evolution.ingestion_time_clock import (
     PRODUCTION_INGESTION_TIME_CLOCK_IDENTITY,
@@ -202,11 +207,13 @@ from memorii.core.semantic_ingestion.capability import (
 )
 from memorii.core.semantic_ingestion.catalog_authority import (
     SelectedCatalogAuthorityRepository,
+    StructuredClaimCatalogBinding,
     StructuredFactReadAuthority,
     StructuredSubmissionAuthorityRequest,
     StructuredSubmissionAuthorityResolver,
 )
 from memorii.core.semantic_ingestion.catalog_capture_pin import CatalogCapturedTurnPin
+from memorii.core.semantic_ingestion.contracts import ClaimAssertion, ProviderSemanticProposal
 from memorii.core.semantic_ingestion.production_authority import (
     VerifiedCapabilityMonitoringAuthority,
     VerifiedProductionHostAuthority,
@@ -1663,6 +1670,105 @@ class ProviderMemoryService:
         """Install the verified generated catalog before captured tool egress."""
         self._ensure_writer_admission_record()
         self._catalog_selection_repository.install_default_catalog_release()
+
+    def current_semantic_entity_matches(
+        self,
+        *,
+        canonical_entity_id: str,
+        asserted_type: str,
+        normalized_alias_key: str,
+        expected_fact_scope: str,
+    ) -> bool:
+        """Verify one active typed entity and alias in canonical graph state."""
+        snapshot = self._semantic_atomic_store.graph_state_snapshot()
+        entities = [
+            record.payload
+            for record in snapshot.records
+            if isinstance(record.payload, EntityRevision)
+            and record.payload.logical_entity_id == canonical_entity_id
+            and record.payload.lifecycle == "active"
+        ]
+        if len(entities) != 1:
+            return False
+        claims = [
+            record.payload
+            for record in snapshot.records
+            if isinstance(record.payload, ClaimAssertion)
+            and record.payload.claim_identity is not None
+            and record.payload.source_authority_evidence is not None
+            and canonical_entity_id
+            in {
+                record.payload.claim_identity.subject_assertion_ref.logical_entity_id_at_assertion,
+                (
+                    record.payload.claim_identity.object_assertion_ref.logical_entity_id_at_assertion
+                    if record.payload.claim_identity.object_assertion_ref is not None
+                    else None
+                ),
+            }
+        ]
+        expected_type_key = asserted_type.replace("_", "").casefold()
+        records = tuple(self._memory_plane.list_records())
+        for claim in claims:
+            identity = claim.claim_identity
+            source_authority = claim.source_authority_evidence
+            assert identity is not None and source_authority is not None
+            binding_record = self._memory_plane.get_record(
+                "semantic_ingestion:structured-claim-catalog:" + claim.claim_assertion_id
+            )
+            if binding_record is None:
+                continue
+            try:
+                binding = StructuredClaimCatalogBinding.model_validate(binding_record.content["binding"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if (
+                binding.claim_record_digest != claim.record_digest
+                or binding.fact_scope != expected_fact_scope
+            ):
+                continue
+            retained = [
+                record
+                for record in records
+                if record.source_kind == "semantic_ingestion_retained_structured_submission"
+                and record.content.get("operation_fence_binding", {}).get("source_id")
+                == source_authority.source_id
+                and record.content.get("operation_fence_binding", {}).get("source_digest")
+                == source_authority.source_digest
+            ]
+            if len(retained) != 1:
+                continue
+            try:
+                proposal_bytes = base64.b64decode(
+                    retained[0].content["proposal_bytes"], validate=True
+                )
+                if retained[0].content.get("proposal_bytes_digest") != sha256(proposal_bytes).hexdigest():
+                    continue
+                proposal = ProviderSemanticProposal.model_validate(decode_typed_value(proposal_bytes))
+            except (KeyError, TypeError, ValueError):
+                continue
+            predicate_id = identity.assertion_key_at_recording.slot.predicate_id
+            facts = [fact for fact in proposal.facts if fact.predicate_id == predicate_id]
+            if len(facts) != 1:
+                continue
+            fact = facts[0]
+            if identity.subject_assertion_ref.logical_entity_id_at_assertion == canonical_entity_id:
+                local_id = fact.subject_entity_ref
+            elif fact.object.kind == "entity":
+                local_id = fact.object.entity_ref
+            else:
+                continue
+            mentions = [mention for mention in proposal.mentions if mention.local_id == local_id]
+            if len(mentions) != 1:
+                continue
+            mention = mentions[0]
+            proposed_type = mention.proposed_type
+            if proposed_type is None:
+                continue
+            type_key = proposed_type.replace("_", "").casefold()
+            quote_key = " ".join(mention.mention_quote.casefold().split())
+            if type_key == expected_type_key and quote_key == normalized_alias_key:
+                return True
+        return False
 
     def revoke_structured_submission_authority_grant(
         self, *, grant_kind: str, grant: object,

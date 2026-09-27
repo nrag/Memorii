@@ -35,14 +35,6 @@ def _normalized_key(value: str) -> str:
     return "_".join(value.strip().lower().split())
 
 
-def preference_topic_id(topic_type: PreferenceTopicType, topic_quote: str) -> str:
-    """Return the deterministic identity for a grounded preference topic."""
-    normalized = " ".join(topic_quote.strip().split())
-    if not normalized:
-        raise ValueError("preference topic quote is empty")
-    return "preference-topic:" + _digest((topic_type, normalized))
-
-
 def preference_candidate_sentence(*, topic_quote: str, preference_key: str, value: str, valid_until: datetime | None = None) -> str:
     suffix = "" if valid_until is None else f" until {valid_until.astimezone(UTC).isoformat()}"
     return f"Preference: {topic_quote}; {preference_key}={value}{suffix}."
@@ -59,10 +51,6 @@ def preference_close_sentence(*, state: str, topic_id: str, preference_key: str,
 def preference_delegation_sentence(*, delegated_agent_id: str, state: Literal["active", "revoked"]) -> str:
     verb = "Delegate preferences to" if state == "active" else "Revoke preference delegation for"
     return f"{verb} {delegated_agent_id}."
-
-
-def preference_topic_sentence(*, topic_type: PreferenceTopicType, topic_quote: str) -> str:
-    return f"Preference topic: {topic_type}; {topic_quote}."
 
 
 class PreferenceAccessGrant(BaseModel):
@@ -88,6 +76,7 @@ class PreferenceWriteRequest(BaseModel):
     authenticated_agent_id: str = Field(min_length=1, max_length=128)
     holder_kind: Literal["Person"] = "Person"
     topic_type: PreferenceTopicType
+    topic_quote: str = Field(min_length=1, max_length=256)
     canonical_topic_id: str = Field(min_length=1, max_length=256)
     preference_key: str = Field(min_length=1, max_length=96)
     value: str = Field(min_length=1, max_length=512)
@@ -169,20 +158,6 @@ class PreferenceLogicalHead(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
-class PreferenceTopicIdentity(BaseModel):
-    topic_id: str
-    holder_user_id: str
-    topic_type: PreferenceTopicType
-    topic_quote: str
-    evidence_source_id: str
-    evidence_source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    evidence_start: int = Field(ge=0)
-    evidence_end: int = Field(gt=0)
-    record_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
 def _preference_record_digest(record: PreferenceRecord) -> str:
     return _digest(record.model_dump(mode="json", exclude={"record_digest"}))
 
@@ -193,10 +168,6 @@ def _preference_event_digest(event: PreferenceEvent) -> str:
 
 def _preference_head_digest(head: PreferenceLogicalHead) -> str:
     return _digest(head.model_dump(mode="json", exclude={"record_digest"}))
-
-
-def _preference_topic_digest(topic: PreferenceTopicIdentity) -> str:
-    return _digest(topic.model_dump(mode="json", exclude={"record_digest"}))
 
 
 class PreferenceReadRequest(BaseModel):
@@ -246,18 +217,18 @@ class PreferenceService:
     _KIND = "user_preference_v1"
     _EVENT_KIND = "user_preference_event_v1"
     _HEAD_KIND = "user_preference_logical_head_v1"
-    _TOPIC_KIND = "user_preference_topic_identity_v1"
-
     def __init__(
         self,
         *,
         memory_plane: MemoryPlaneService,
         policy: PreferenceAccessPolicy,
+        topic_identity_is_current: Callable[[str, str, PreferenceTopicType, str], bool],
         delegation_repository: PreferenceDelegationRepository | None = None,
         now: Callable[[], datetime] | None = None,
     ) -> None:
         self._plane = memory_plane
         self._policy = policy
+        self._topic_identity_is_current = topic_identity_is_current
         self._delegations = delegation_repository
         self._now = now or (lambda: datetime.now(UTC))
 
@@ -296,41 +267,6 @@ class PreferenceService:
     def can_access(self, *, holder_user_id: str, agent_id: str) -> bool:
         return self._policy.allows(holder_user_id=holder_user_id, agent_id=agent_id)
 
-    def register_topic(
-        self,
-        *,
-        holder_user_id: str,
-        acting_agent_id: str,
-        topic_type: PreferenceTopicType,
-        topic_quote: str,
-        evidence: tuple[str, str, int, int],
-    ) -> PreferenceTopicIdentity | None:
-        if not self._policy.is_primary(holder_user_id=holder_user_id, agent_id=acting_agent_id):
-            return None
-        topic_id = preference_topic_id(topic_type, topic_quote)
-        existing = self._load_topic(topic_id, holder_user_id)
-        if existing is not None:
-            return existing if (existing.holder_user_id, existing.topic_type) == (holder_user_id, topic_type) else None
-        draft = PreferenceTopicIdentity(
-            topic_id=topic_id,
-            holder_user_id=holder_user_id,
-            topic_type=topic_type,
-            topic_quote=" ".join(topic_quote.strip().split()),
-            evidence_source_id=evidence[0],
-            evidence_source_digest=evidence[1],
-            evidence_start=evidence[2],
-            evidence_end=evidence[3],
-            record_digest="0" * 64,
-        )
-        topic = draft.model_copy(update={"record_digest": _preference_topic_digest(draft)})
-        self._plane.conditionally_write_records(
-            (self._topic_record(topic),),
-            preconditions=(
-                RecordAbsentPrecondition(memory_id=self._topic_record_id(holder_user_id, topic.topic_id)),
-            ),
-        )
-        return topic
-
     def create_candidate(self, request: PreferenceWriteRequest) -> PreferenceRecord | None:
         if (
             request.authenticated_author_id != request.holder_user_id
@@ -344,10 +280,11 @@ class PreferenceService:
             return None
         if not self._policy.allows(holder_user_id=request.holder_user_id, agent_id=request.authenticated_agent_id):
             return None
-        topic = self._load_topic(request.canonical_topic_id, request.holder_user_id)
-        if topic is None or (topic.holder_user_id, topic.topic_type) != (
+        if not self._topic_identity_is_current(
             request.holder_user_id,
+            request.canonical_topic_id,
             request.topic_type,
+            request.topic_quote,
         ):
             return None
         if request.assertion_end <= request.assertion_start:
@@ -658,44 +595,6 @@ class PreferenceService:
             validity_status=TemporalValidityStatus.ACTIVE, source_kind=self._HEAD_KIND, timestamp=datetime(1970, 1, 1, tzinfo=UTC),
             visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
         )
-
-    def _topic_record(self, topic: PreferenceTopicIdentity) -> CanonicalMemoryRecord:
-        return CanonicalMemoryRecord(
-            memory_id=self._topic_record_id(topic.holder_user_id, topic.topic_id),
-            domain=MemoryDomain.USER,
-            text=topic.topic_quote,
-            content={"kind": self._TOPIC_KIND, "topic": topic.model_dump(mode="json")},
-            status=CommitStatus.COMMITTED,
-            validity_status=TemporalValidityStatus.ACTIVE,
-            source_kind=self._TOPIC_KIND,
-            timestamp=datetime(1970, 1, 1, tzinfo=UTC),
-            user_id=topic.holder_user_id,
-            visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
-        )
-
-    @staticmethod
-    def _topic_record_id(holder_user_id: str, topic_id: str) -> str:
-        return "user-preference-topic:" + _digest((holder_user_id, topic_id))
-
-    def _load_topic(self, topic_id: str, holder_user_id: str | None = None) -> PreferenceTopicIdentity | None:
-        if holder_user_id is None:
-            matches = [
-                item
-                for item in self._plane.list_records(domains=[MemoryDomain.USER], source_kind=self._TOPIC_KIND)
-                if item.content.get("topic", {}).get("topic_id") == topic_id
-            ]
-            if len(matches) != 1:
-                return None
-            item = matches[0]
-        else:
-            item = self._plane.get_record(self._topic_record_id(holder_user_id, topic_id))
-        if item is None or item.domain != MemoryDomain.USER or item.source_kind != self._TOPIC_KIND:
-            return None
-        try:
-            topic = PreferenceTopicIdentity.model_validate(item.content["topic"])
-            return topic if topic.record_digest == _preference_topic_digest(topic) else None
-        except (KeyError, TypeError, ValueError):
-            return None
 
     def _write(
         self,

@@ -28,6 +28,7 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     RequiredOutcomeScopeSet,
     encode_typed_value,
 )
+from memorii.core.memory_evolution.models import EntityType
 from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.memory_plane.store import JsonlMemoryPlaneStore
 from memorii.core.provider.factory import build_provider_memory_service_from_env
@@ -59,6 +60,39 @@ from memorii.integrations.hermes_local_authority import (
     load_local_level2_authority,
     load_local_structured_tool_authority,
 )
+
+_PREFERENCE_TOPIC_TYPES = {
+    "ProductService": EntityType.PRODUCT_SERVICE,
+    "Asset": EntityType.ASSET,
+    "Place": EntityType.PLACE,
+}
+
+
+def _preference_topic_identity_resolver(
+    *,
+    service,
+    holder_user_id: str,
+):
+    """Bind Preferences to the current canonical semantic entity owner."""
+
+    def identity_is_current(
+        requested_holder_id: str,
+        canonical_topic_id: str,
+        topic_type: str,
+        topic_quote: str,
+    ) -> bool:
+        expected_type = _PREFERENCE_TOPIC_TYPES.get(topic_type)
+        if requested_holder_id != holder_user_id or expected_type is None:
+            return False
+        quote_key = " ".join(unicodedata.normalize("NFKC", topic_quote).casefold().split())
+        return bool(quote_key) and service.current_semantic_entity_matches(
+            canonical_entity_id=canonical_topic_id,
+            asserted_type=expected_type.value,
+            normalized_alias_key=quote_key,
+            expected_fact_scope=f"user:{holder_user_id}",
+        )
+
+    return identity_is_current
 
 
 def build_local_level2_runtime_binding(context: object) -> object:
@@ -160,17 +194,6 @@ def _build_local_level2_runtime_binding(
     delegation_repository = PreferenceDelegationRepository(memory_plane)
     if context_kind == "delegated" and not delegation_repository.active(operator_id, agent_id):
         raise LocalLevel2AuthorityError("Hermes preference agent delegation is unavailable")
-    preference_service = PreferenceService(
-        memory_plane=memory_plane,
-        policy=PreferenceAccessPolicy(
-            holder_authorities=(
-                PreferenceHolderAuthority(holder_user_id=operator_id, primary_agent_id=primary_agent_id),
-            ),
-            grants=(),
-            delegation_repository=delegation_repository,
-        ),
-        delegation_repository=delegation_repository,
-    )
     scoped_read_authority = InProcessScopedReadAuthority(now_provider=lambda: datetime.now(UTC))
     service = build_provider_memory_service_from_env(
         memory_plane=memory_plane,
@@ -187,6 +210,21 @@ def _build_local_level2_runtime_binding(
     # tool schema is advertised.
     service.ensure_catalog_seed_genesis()
     service.ensure_default_catalog_release()
+    preference_service = PreferenceService(
+        memory_plane=memory_plane,
+        policy=PreferenceAccessPolicy(
+            holder_authorities=(
+                PreferenceHolderAuthority(holder_user_id=operator_id, primary_agent_id=primary_agent_id),
+            ),
+            grants=(),
+            delegation_repository=delegation_repository,
+        ),
+        topic_identity_is_current=_preference_topic_identity_resolver(
+            service=service,
+            holder_user_id=operator_id,
+        ),
+        delegation_repository=delegation_repository,
+    )
     if structured_resolver is not None and _provision_structured_authority:
         # The local tool cannot be advertised until its complete, factory-bound
         # authority tuple is durably active in the semantic writer's store.

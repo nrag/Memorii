@@ -10,16 +10,16 @@ from types import SimpleNamespace
 import memorii.integrations.hermes_local_authority as local_authority
 import pytest
 from memorii.core.memory_evolution.atomic_store import StructuredSubmissionGrantRevokedError
+from memorii.core.memory_evolution.models import EntityType
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.store import MemoryPlaneRevisionConflictError
+from memorii.core.semantic_ingestion.default_catalog_corpus import load_default_catalog_acceptance_corpus
 from memorii.core.user_context.preferences import (
     PreferenceReadRequest,
     preference_candidate_sentence,
     preference_close_sentence,
     preference_confirmation_sentence,
     preference_delegation_sentence,
-    preference_topic_id,
-    preference_topic_sentence,
 )
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
 from memorii.integrations.hermes_local_authority import (
@@ -31,6 +31,180 @@ from memorii.integrations.hermes_local_authority import (
     local_level2_status,
     main,
 )
+from tests.fixtures.semantic_ingestion.default_catalog_proposals import build_default_catalog_proposal
+
+
+def _commit_preference_topic(binding, *, relation_id: str, topic_type: EntityType) -> tuple[str, str]:
+    """Commit and return one canonical topic through the installed semantic writer."""
+    row = next(
+        row for row in load_default_catalog_acceptance_corpus().rows
+        if row.relation_id == relation_id
+    )
+    fixture = build_default_catalog_proposal(row)
+    runtime = binding.completed_turn_runtime
+    runtime.capture_user_turn(
+        session_id="session:topic",
+        turn_ordinal=1,
+        message=fixture.source,
+        authenticated_author_id=binding.absent_author_id,
+        received_at=datetime.now(UTC),
+    )
+    assert "memorii_submit_fact" in {
+        schema["function"]["name"] for schema in runtime.get_tool_schemas()
+    }
+    assert runtime.handle_tool_call(
+        tool_name="memorii_submit_fact",
+        arguments=fixture.tool_arguments(),
+    )["status"] == "committed"
+    expected_type = topic_type.value.replace("_", "")
+    if fixture.subject.proposed_type is not None and fixture.subject.proposed_type.casefold() == expected_type:
+        topic_quote = fixture.subject_quote
+        topic_position = "subject"
+    else:
+        assert (
+            fixture.object is not None
+            and fixture.object.proposed_type is not None
+            and fixture.object.proposed_type.casefold() == expected_type
+        )
+        topic_quote = fixture.object_quote
+        topic_position = "object"
+    projections = [
+        record
+        for record in binding.service._memory_plane.list_records()
+        if record.content.get("runtime_context_projection_kind") == "bootstrap_v3_claim_assertion"
+        and record.content["claim_identity"]["assertion_key_at_recording"]["slot"]["predicate_id"]
+        == relation_id
+    ]
+    assert len(projections) == 1
+    identity = projections[0].content["claim_identity"]
+    if topic_position == "subject":
+        topic_id = identity["subject_assertion_ref"]["logical_entity_id_at_assertion"]
+    else:
+        topic_id = identity["object_assertion_ref"]["logical_entity_id_at_assertion"]
+    assert isinstance(topic_id, str)
+    runtime.close()
+    return topic_quote, topic_id
+
+
+def test_installed_preference_uses_existing_canonical_typed_topic(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from memorii.core.semantic_ingestion.openai_responses_project_assertions import OpenAIResponsesApiClient
+    from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(
+        OpenAIResponsesApiClient,
+        "complete",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("Preference tools must not call model transport")
+        ),
+    )
+    authorize_local_level2(hermes_home=tmp_path)
+    authorize_local_structured_tool(hermes_home=tmp_path)
+    context = SimpleNamespace(
+        storage_root=tmp_path / "memorii",
+        hermes_home=tmp_path,
+        session_id="session:typed-preference",
+        user_id="raw:user:one",
+        agent_identity="profile:primary",
+        platform="cli",
+        agent_context="primary",
+        agent_workspace="hermes",
+        parent_session_id=None,
+    )
+    topic_binding = build_local_level2_runtime_binding(context)
+    topic_quote, topic_id = _commit_preference_topic(
+        topic_binding,
+        relation_id="product_provided_by",
+        topic_type=EntityType.PRODUCT_SERVICE,
+    )
+
+    assertion = preference_candidate_sentence(
+        topic_quote=topic_quote,
+        preference_key="drink",
+        value="tea",
+    )
+    candidate_binding = build_local_level2_runtime_binding(context)
+    runtime = candidate_binding.completed_turn_runtime
+    runtime.capture_user_turn(
+        session_id="session:typed-preference",
+        turn_ordinal=2,
+        message=assertion,
+        authenticated_author_id=candidate_binding.absent_author_id,
+        received_at=datetime.now(UTC),
+    )
+    base_arguments = {
+        "topic_quote": topic_quote,
+        "preference_key": "drink",
+        "value": "tea",
+        "source_quote": assertion,
+        "source_quote_start": 0,
+    }
+    before = tuple(candidate_binding.service._memory_plane.list_records(domains=[MemoryDomain.USER]))
+    assert runtime.handle_tool_call(
+        tool_name="memorii_create_preference_candidate",
+        arguments={
+            **base_arguments,
+            "topic_type": "ProductService",
+            "canonical_topic_id": "unknown-topic",
+        },
+    ) == {"status": "abstained"}
+    assert runtime.handle_tool_call(
+        tool_name="memorii_create_preference_candidate",
+        arguments={
+            **base_arguments,
+            "topic_type": "Asset",
+            "canonical_topic_id": topic_id,
+        },
+    ) == {"status": "abstained"}
+    assert tuple(candidate_binding.service._memory_plane.list_records(domains=[MemoryDomain.USER])) == before
+    candidate = runtime.handle_tool_call(
+        tool_name="memorii_create_preference_candidate",
+        arguments={
+            **base_arguments,
+            "topic_type": "ProductService",
+            "canonical_topic_id": topic_id,
+        },
+    )
+    assert candidate["status"] == "candidate"
+    runtime.close()
+
+    confirmation = preference_confirmation_sentence(
+        topic_id=topic_id,
+        preference_key="drink",
+        value="tea",
+        source_digest=candidate["source_digest"],
+    )
+    confirmed_binding = build_local_level2_runtime_binding(context)
+    runtime = confirmed_binding.completed_turn_runtime
+    runtime.capture_user_turn(
+        session_id="session:typed-preference",
+        turn_ordinal=3,
+        message=confirmation,
+        authenticated_author_id=confirmed_binding.absent_author_id,
+        received_at=datetime.now(UTC),
+    )
+    assert runtime.handle_tool_call(
+        tool_name="memorii_confirm_preference",
+        arguments={
+            "preference_id": candidate["preference_id"],
+            "preference_key": "drink",
+            "value": "tea",
+            "source_digest": candidate["source_digest"],
+            "approval_quote": confirmation,
+            "approval_quote_start": 0,
+        },
+    )["status"] == "confirmed"
+    current = runtime.handle_tool_call(
+        tool_name="memorii_read_preference",
+        arguments={"view": "current", "canonical_topic_id": topic_id},
+    )
+    assert [(item["canonical_topic_id"], item["state"]) for item in current["preferences"]] == [
+        (topic_id, "confirmed")
+    ]
+    runtime.close()
 
 
 def test_authorize_issues_an_installed_bundle_bound_sidecar(tmp_path: Path) -> None:
@@ -100,6 +274,7 @@ def test_cli_revokes_factory_derived_grant_before_provisioning(
 
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     authorize_local_level2(hermes_home=tmp_path)
+    authorize_local_structured_tool(hermes_home=tmp_path)
     binding = build_local_level2_runtime_binding(
         SimpleNamespace(
             storage_root=tmp_path / "memorii",
@@ -155,6 +330,7 @@ def test_installed_no_key_preference_tools_persist_through_reopen(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from memorii.core.provider.service import ProviderMemoryService
     from memorii.core.semantic_ingestion.openai_responses_project_assertions import OpenAIResponsesApiClient
     from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
 
@@ -164,6 +340,15 @@ def test_installed_no_key_preference_tools_persist_through_reopen(
         "complete",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
             AssertionError("Preference tools must not call model transport")
+        ),
+    )
+    monkeypatch.setattr(
+        ProviderMemoryService,
+        "current_semantic_entity_matches",
+        lambda _self, **kwargs: (
+            kwargs["canonical_entity_id"] == "entity:tea"
+            and kwargs["asserted_type"] == "product_service"
+            and kwargs["normalized_alias_key"] == "tea"
         ),
     )
     authorize_local_level2(hermes_home=tmp_path)
@@ -180,13 +365,12 @@ def test_installed_no_key_preference_tools_persist_through_reopen(
         parent_session_id=None,
     )
     topic_quote = "tea"
-    topic_id = preference_topic_id("ProductService", topic_quote)
+    topic_id = "entity:tea"
     sentence = preference_candidate_sentence(
         topic_quote=topic_quote,
         preference_key="drink",
         value="tea",
     )
-    topic_sentence = preference_topic_sentence(topic_type="ProductService", topic_quote=topic_quote)
     summary = f'Assistant said, "{sentence}"'
     summary_binding = build_local_level2_runtime_binding(context)
     runtime = summary_binding.completed_turn_runtime
@@ -229,6 +413,9 @@ def test_installed_no_key_preference_tools_persist_through_reopen(
         "memorii_close_preference",
         "memorii_read_preference",
     }
+    assert "memorii_register_preference_topic" not in {
+        schema["function"]["name"] for schema in runtime.get_tool_schemas()
+    }
     before_user_records = tuple(
         first.service._memory_plane.list_records(domains=[MemoryDomain.USER])
     )
@@ -242,7 +429,7 @@ def test_installed_no_key_preference_tools_persist_through_reopen(
         arguments={
             "topic_type": "ProductService",
             "topic_quote": topic_quote,
-            "canonical_topic_id": topic_id,
+            "canonical_topic_id": "unknown-topic",
             "preference_key": "drink",
             "value": "tea",
             "source_quote": sentence,
@@ -251,31 +438,11 @@ def test_installed_no_key_preference_tools_persist_through_reopen(
     ) == {"status": "abstained"}
     assert tuple(first.service._memory_plane.list_records(domains=[MemoryDomain.USER])) == before_user_records
     runtime.close()
-    topic_binding = build_local_level2_runtime_binding(context)
-    runtime = topic_binding.completed_turn_runtime
-    runtime.capture_user_turn(
-        session_id="session:preference",
-        turn_ordinal=3,
-        message=topic_sentence,
-        authenticated_author_id=topic_binding.absent_author_id,
-        received_at=datetime.now(UTC),
-    )
-    registered = runtime.handle_tool_call(
-        tool_name="memorii_register_preference_topic",
-        arguments={
-            "topic_type": "ProductService",
-            "topic_quote": topic_quote,
-            "approval_quote": topic_sentence,
-            "approval_quote_start": 0,
-        },
-    )
-    assert registered == {"status": "registered", "canonical_topic_id": topic_id}
-    runtime.close()
     candidate_binding = build_local_level2_runtime_binding(context)
     runtime = candidate_binding.completed_turn_runtime
     runtime.capture_user_turn(
         session_id="session:preference",
-        turn_ordinal=4,
+        turn_ordinal=3,
         message=sentence,
         authenticated_author_id=candidate_binding.absent_author_id,
         received_at=datetime.now(UTC),
@@ -287,16 +454,16 @@ def test_installed_no_key_preference_tools_persist_through_reopen(
     invalid_topic = runtime.handle_tool_call(
         tool_name="memorii_create_preference_candidate",
         arguments={
-            "topic_type": "ProductService",
+            "topic_type": "Asset",
             "topic_quote": topic_quote,
-            "canonical_topic_id": "unknown-topic",
+            "canonical_topic_id": topic_id,
             "preference_key": "drink",
             "value": "tea",
             "source_quote": sentence,
             "source_quote_start": 0,
         },
     )
-    assert invalid_topic == {"status": "rejected"}
+    assert invalid_topic == {"status": "abstained"}
     assert tuple(candidate_binding.service._memory_plane.list_records(domains=[MemoryDomain.USER])) == before_candidate_records
     candidate_arguments = {
         "topic_type": "ProductService",
@@ -686,9 +853,19 @@ def test_installed_preference_valid_until_expires_durably_on_read(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from memorii.core.provider.service import ProviderMemoryService
     from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
 
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(
+        ProviderMemoryService,
+        "current_semantic_entity_matches",
+        lambda _self, **kwargs: (
+            kwargs["canonical_entity_id"] == "entity:home"
+            and kwargs["asserted_type"] == "place"
+            and kwargs["normalized_alias_key"] == "home"
+        ),
+    )
     authorize_local_level2(hermes_home=tmp_path)
     context = SimpleNamespace(
         storage_root=tmp_path / "memorii",
@@ -702,26 +879,7 @@ def test_installed_preference_valid_until_expires_durably_on_read(
         parent_session_id=None,
     )
     topic_quote = "home"
-    topic_sentence = preference_topic_sentence(topic_type="Place", topic_quote=topic_quote)
-    topic_binding = build_local_level2_runtime_binding(context)
-    runtime = topic_binding.completed_turn_runtime
-    runtime.capture_user_turn(
-        session_id="session:expiry",
-        turn_ordinal=1,
-        message=topic_sentence,
-        authenticated_author_id=topic_binding.absent_author_id,
-        received_at=datetime.now(UTC),
-    )
-    topic = runtime.handle_tool_call(
-        tool_name="memorii_register_preference_topic",
-        arguments={
-            "topic_type": "Place",
-            "topic_quote": topic_quote,
-            "approval_quote": topic_sentence,
-            "approval_quote_start": 0,
-        },
-    )
-    runtime.close()
+    topic_id = "entity:home"
 
     valid_until = datetime.now(UTC) - timedelta(minutes=1)
     assertion = preference_candidate_sentence(
@@ -745,7 +903,7 @@ def test_installed_preference_valid_until_expires_durably_on_read(
         arguments={
             "topic_type": "Place",
             "topic_quote": topic_quote,
-            "canonical_topic_id": topic["canonical_topic_id"],
+            "canonical_topic_id": topic_id,
             "preference_key": "temperature",
             "value": "warm",
             "source_quote": assertion,
@@ -760,7 +918,7 @@ def test_installed_preference_valid_until_expires_durably_on_read(
         arguments={
             "topic_type": "Place",
             "topic_quote": topic_quote,
-            "canonical_topic_id": topic["canonical_topic_id"],
+            "canonical_topic_id": topic_id,
             "preference_key": "temperature",
             "value": "warm",
             "source_quote": assertion,
@@ -771,7 +929,7 @@ def test_installed_preference_valid_until_expires_durably_on_read(
     runtime.close()
 
     confirmation = preference_confirmation_sentence(
-        topic_id=topic["canonical_topic_id"],
+        topic_id=topic_id,
         preference_key="temperature",
         value="warm",
         source_digest=candidate["source_digest"],

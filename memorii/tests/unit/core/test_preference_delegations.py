@@ -29,6 +29,7 @@ def _service(plane: MemoryPlaneService) -> tuple[PreferenceService, PreferenceDe
         PreferenceService(
             memory_plane=plane,
             policy=policy,
+            topic_identity_is_current=lambda *_args: False,
             delegation_repository=repository,
             now=lambda: NOW,
         ),

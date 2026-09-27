@@ -11,14 +11,11 @@ from memorii.core.user_context.preferences import (
     PreferenceReadRequest,
     PreferenceRecord,
     PreferenceService,
-    PreferenceTopicIdentity,
     PreferenceWriteRequest,
     preference_candidate_sentence,
     preference_close_sentence,
     preference_confirmation_sentence,
     preference_delegation_sentence,
-    preference_topic_id,
-    preference_topic_sentence,
 )
 
 __all__ = [
@@ -31,13 +28,10 @@ __all__ = [
     "PreferenceReadRequest",
     "PreferenceRecord",
     "PreferenceService",
-    "PreferenceTopicIdentity",
     "PreferenceWriteRequest",
     "new_preference_delegation",
     "preference_candidate_sentence",
     "preference_close_sentence",
     "preference_confirmation_sentence",
     "preference_delegation_sentence",
-    "preference_topic_id",
-    "preference_topic_sentence",
 ]
