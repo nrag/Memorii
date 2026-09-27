@@ -11,7 +11,13 @@ import memorii.integrations.hermes_local_authority as local_authority
 import pytest
 from memorii.core.memory_evolution.atomic_store import StructuredSubmissionGrantRevokedError
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
-from memorii.core.user_context.preferences import PreferenceReadRequest
+from memorii.core.user_context.preferences import (
+    PreferenceReadRequest,
+    preference_candidate_sentence,
+    preference_close_sentence,
+    preference_confirmation_sentence,
+    preference_topic_id,
+)
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
 from memorii.integrations.hermes_local_authority import (
     LocalLevel2AuthorityError,
@@ -158,6 +164,7 @@ def test_installed_no_key_preference_tools_persist_through_reopen(
         ),
     )
     authorize_local_level2(hermes_home=tmp_path)
+    authorize_local_structured_tool(hermes_home=tmp_path)
     context = SimpleNamespace(
         storage_root=tmp_path / "memorii",
         hermes_home=tmp_path,
@@ -172,7 +179,13 @@ def test_installed_no_key_preference_tools_persist_through_reopen(
     first = build_local_level2_runtime_binding(context)
     runtime = first.completed_turn_runtime
     assert runtime is not None
-    sentence = "I prefer tea."
+    topic_quote = "tea"
+    topic_id = preference_topic_id("ProductService", topic_quote)
+    sentence = preference_candidate_sentence(
+        topic_quote=topic_quote,
+        preference_key="drink",
+        value="tea",
+    )
     runtime.capture_user_turn(
         session_id="session:preference",
         turn_ordinal=1,
@@ -180,17 +193,41 @@ def test_installed_no_key_preference_tools_persist_through_reopen(
         authenticated_author_id=first.absent_author_id,
         received_at=datetime.now(UTC),
     )
+    first_source = runtime._active_turn.ledger
     assert {schema["function"]["name"] for schema in runtime.get_tool_schemas()} >= {
         "memorii_create_preference_candidate",
         "memorii_confirm_preference",
         "memorii_close_preference",
         "memorii_read_preference",
     }
+    before_user_records = tuple(
+        first.service._memory_plane.list_records(domains=[MemoryDomain.USER])
+    )
+    assert runtime.handle_tool_call(
+        tool_name="memorii_submit_fact",
+        arguments={"schema_version": 1, "preference": {"value": "tea"}},
+    ) == {"status": "rejected"}
+    assert tuple(first.service._memory_plane.list_records(domains=[MemoryDomain.USER])) == before_user_records
+    invalid_topic = runtime.handle_tool_call(
+        tool_name="memorii_create_preference_candidate",
+        arguments={
+            "topic_type": "ProductService",
+            "topic_quote": topic_quote,
+            "canonical_topic_id": "unknown-topic",
+            "preference_key": "drink",
+            "value": "tea",
+            "source_quote": sentence,
+            "source_quote_start": 0,
+        },
+    )
+    assert invalid_topic == {"status": "rejected"}
+    assert tuple(first.service._memory_plane.list_records(domains=[MemoryDomain.USER])) == before_user_records
     candidate = runtime.handle_tool_call(
         tool_name="memorii_create_preference_candidate",
         arguments={
             "topic_type": "ProductService",
-            "canonical_topic_id": "product:tea",
+            "topic_quote": topic_quote,
+            "canonical_topic_id": topic_id,
             "preference_key": "drink",
             "value": "tea",
             "source_quote": sentence,
@@ -198,12 +235,24 @@ def test_installed_no_key_preference_tools_persist_through_reopen(
         },
     )
     assert candidate["status"] == "candidate"
+    assert runtime.handle_tool_call(
+        tool_name="memorii_confirm_preference",
+        arguments={
+            "preference_id": candidate["preference_id"],
+            "preference_key": candidate["preference_key"],
+            "value": candidate["value"],
+            "source_digest": candidate["source_digest"],
+            "approval_quote": sentence,
+            "approval_quote_start": 0,
+        },
+    ) == {"status": "rejected"}
     assert (
         runtime.handle_tool_call(
             tool_name="memorii_create_preference_candidate",
             arguments={
                 "topic_type": "ProductService",
-                "canonical_topic_id": "product:tea",
+                "topic_quote": topic_quote,
+                "canonical_topic_id": topic_id,
                 "preference_key": "drink",
                 "value": "tea",
                 "source_quote": sentence,
@@ -216,7 +265,12 @@ def test_installed_no_key_preference_tools_persist_through_reopen(
     second = build_local_level2_runtime_binding(context)
     runtime = second.completed_turn_runtime
     assert runtime is not None
-    approval_sentence = "Yes, remember that I prefer tea."
+    approval_sentence = preference_confirmation_sentence(
+        topic_id=topic_id,
+        preference_key="drink",
+        value="tea",
+        source_digest=candidate["source_digest"],
+    )
     runtime.capture_user_turn(
         session_id="session:preference",
         turn_ordinal=2,
@@ -224,6 +278,7 @@ def test_installed_no_key_preference_tools_persist_through_reopen(
         authenticated_author_id=second.absent_author_id,
         received_at=datetime.now(UTC),
     )
+    approval_source = runtime._active_turn.ledger
     confirmation = {
         "preference_id": candidate["preference_id"],
         "preference_key": candidate["preference_key"],
@@ -240,7 +295,11 @@ def test_installed_no_key_preference_tools_persist_through_reopen(
     third = build_local_level2_runtime_binding(context)
     runtime = third.completed_turn_runtime
     assert runtime is not None
-    correction_sentence = "I now prefer coffee."
+    correction_sentence = preference_candidate_sentence(
+        topic_quote=topic_quote,
+        preference_key="drink",
+        value="coffee",
+    )
     runtime.capture_user_turn(
         session_id="session:preference",
         turn_ordinal=3,
@@ -248,11 +307,13 @@ def test_installed_no_key_preference_tools_persist_through_reopen(
         authenticated_author_id=third.absent_author_id,
         received_at=datetime.now(UTC),
     )
+    correction_source = runtime._active_turn.ledger
     correction = runtime.handle_tool_call(
         tool_name="memorii_create_preference_candidate",
         arguments={
             "topic_type": "ProductService",
-            "canonical_topic_id": "product:tea",
+            "topic_quote": topic_quote,
+            "canonical_topic_id": topic_id,
             "preference_key": "drink",
             "value": "coffee",
             "source_quote": correction_sentence,
@@ -264,7 +325,12 @@ def test_installed_no_key_preference_tools_persist_through_reopen(
     fourth = build_local_level2_runtime_binding(context)
     runtime = fourth.completed_turn_runtime
     assert runtime is not None
-    correction_approval = "Yes, remember that I now prefer coffee."
+    correction_approval = preference_confirmation_sentence(
+        topic_id=topic_id,
+        preference_key="drink",
+        value="coffee",
+        source_digest=correction["source_digest"],
+    )
     runtime.capture_user_turn(
         session_id="session:preference",
         turn_ordinal=4,
@@ -272,6 +338,7 @@ def test_installed_no_key_preference_tools_persist_through_reopen(
         authenticated_author_id=fourth.absent_author_id,
         received_at=datetime.now(UTC),
     )
+    correction_approval_source = runtime._active_turn.ledger
     assert (
         runtime.handle_tool_call(
             tool_name="memorii_confirm_preference",
@@ -296,7 +363,13 @@ def test_installed_no_key_preference_tools_persist_through_reopen(
     fifth = build_local_level2_runtime_binding(context)
     runtime = fifth.completed_turn_runtime
     assert runtime is not None
-    revocation_sentence = "Forget that I prefer coffee."
+    revocation_sentence = preference_close_sentence(
+        state="retracted",
+        topic_id=topic_id,
+        preference_key="drink",
+        value="coffee",
+        source_digest=correction["source_digest"],
+    )
     runtime.capture_user_turn(
         session_id="session:preference",
         turn_ordinal=5,
@@ -304,6 +377,7 @@ def test_installed_no_key_preference_tools_persist_through_reopen(
         authenticated_author_id=fifth.absent_author_id,
         received_at=datetime.now(UTC),
     )
+    revocation_source = runtime._active_turn.ledger
     assert (
         runtime.handle_tool_call(
             tool_name="memorii_close_preference",
@@ -342,8 +416,35 @@ def test_installed_no_key_preference_tools_persist_through_reopen(
     events = reopened_runtime._preference_service.read_events(
         PreferenceReadRequest(holder_user_id=reopened.absent_author_id, agent_id=reopened_runtime._authenticated_agent_id)
     )
-    evidence_sources = {event.evidence_source_id for event in events}
-    assert len(evidence_sources) == 5
+    assert {
+        (
+            event.preference_id,
+            event.event_type,
+            event.evidence_source_id,
+            event.evidence_source_digest,
+            event.evidence_start,
+            event.evidence_end,
+        )
+        for event in events
+    } == {
+        (candidate["preference_id"], "candidate_observed", first_source.source_id, first_source.source_digest, 0, len(sentence)),
+        (candidate["preference_id"], "confirmed", approval_source.source_id, approval_source.source_digest, 0, len(approval_sentence)),
+        (candidate["preference_id"], "superseded", correction_approval_source.source_id, correction_approval_source.source_digest, 0, len(correction_approval)),
+        (correction["preference_id"], "candidate_observed", correction_source.source_id, correction_source.source_digest, 0, len(correction_sentence)),
+        (correction["preference_id"], "confirmed", correction_approval_source.source_id, correction_approval_source.source_digest, 0, len(correction_approval)),
+        (correction["preference_id"], "retracted", revocation_source.source_id, revocation_source.source_digest, 0, len(revocation_sentence)),
+    }
+    sidecar = tmp_path / "memorii" / "local-level2.json"
+    invalid_authority = json.loads(sidecar.read_text(encoding="utf-8"))
+    invalid_authority["unexpected"] = True
+    sidecar.write_text(json.dumps(invalid_authority), encoding="utf-8")
+    assert not any(
+        "preference" in schema["function"]["name"]
+        for schema in reopened_runtime.get_tool_schemas()
+    )
+    assert reopened_runtime.handle_tool_call(
+        tool_name="memorii_read_preference", arguments={"view": "history"}
+    ) == {"status": "denied"}
     reopened_runtime.close()
 
 

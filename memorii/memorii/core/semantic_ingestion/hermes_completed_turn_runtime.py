@@ -23,6 +23,7 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     derive_composite_child_delivery_id,
     encode_typed_value,
 )
+from memorii.core.memory_plane.store import MemoryPlaneRevisionConflictError
 from memorii.core.provider.ingestion import (
     CapturedCatalogPinReference,
     StructuredFactSubmissionRequest,
@@ -84,6 +85,10 @@ from memorii.core.user_context.preferences import (
     PreferenceReadRequest,
     PreferenceService,
     PreferenceWriteRequest,
+    preference_candidate_sentence,
+    preference_close_sentence,
+    preference_confirmation_sentence,
+    preference_topic_id,
 )
 from memorii.domain.enums import MemoryDomain
 
@@ -826,6 +831,8 @@ class HermesCompletedTurnRuntime:
                     )
                 )
                 return {"status": "ok", "preferences": [record.model_dump(mode="json") for record in records]}
+        except MemoryPlaneRevisionConflictError:
+            return {"status": "unavailable"}
         except (TypeError, ValueError):
             return {"status": "rejected"}
         raise ValueError(f"Memorii does not provide Hermes tool {tool_name!r}")
@@ -838,6 +845,7 @@ class HermesCompletedTurnRuntime:
     ) -> PreferenceWriteRequest:
         allowed = {
             "topic_type",
+            "topic_quote",
             "canonical_topic_id",
             "preference_key",
             "value",
@@ -848,6 +856,9 @@ class HermesCompletedTurnRuntime:
         required = allowed - {"valid_until"}
         if set(arguments) - allowed or not required <= set(arguments):
             raise ValueError("preference candidate arguments are not closed")
+        topic_quote = _required_string(arguments, "topic_quote")
+        if arguments["canonical_topic_id"] != preference_topic_id(arguments["topic_type"], topic_quote):
+            raise ValueError("preference topic identity is invalid")
         prepared = self._load_active_prepared_source(active)
         span = self._resolve_sentence_span(
             prepared=prepared,
@@ -859,7 +870,7 @@ class HermesCompletedTurnRuntime:
             raise ValueError("preference source mapping is unavailable")
         start = proof.retained_span.start + (span.projection_span.start - proof.projection_span.start)
         source_quote = _required_string(arguments, "source_quote")
-        return PreferenceWriteRequest.model_validate(
+        request = PreferenceWriteRequest.model_validate(
             {
                 "holder_user_id": self._authenticated_author_id,
                 "authenticated_author_id": self._authenticated_author_id,
@@ -878,6 +889,15 @@ class HermesCompletedTurnRuntime:
                 "valid_until": arguments.get("valid_until"),
             }
         )
+        expected = preference_candidate_sentence(
+            topic_quote=topic_quote,
+            preference_key=request.preference_key,
+            value=request.value,
+            valid_until=request.valid_until,
+        )
+        if source_quote != expected:
+            raise ValueError("preference assertion grammar is invalid")
+        return request
 
     def _require_preference_approval_quote(
         self,
@@ -892,10 +912,34 @@ class HermesCompletedTurnRuntime:
         allowed = common | ({"state"} if closing else set())
         if set(arguments) - allowed or set(arguments) != allowed:
             raise ValueError("preference approval arguments are not closed")
-        _required_string(arguments, "preference_id")
-        _required_string(arguments, "preference_key")
-        _required_string(arguments, "value")
-        _required_digest(arguments, "source_digest")
+        preference_id = _required_string(arguments, "preference_id")
+        assert self._preference_service is not None
+        record = self._preference_service.load_preference(preference_id)
+        if record is None or (
+            _required_string(arguments, "preference_key"),
+            _required_string(arguments, "value"),
+            _required_digest(arguments, "source_digest"),
+        ) != (record.preference_key, record.value, record.source_digest):
+            raise ValueError("preference approval target is invalid")
+        state = arguments.get("state") if closing else None
+        expected = (
+            preference_close_sentence(
+                state=str(state),
+                topic_id=record.canonical_topic_id,
+                preference_key=record.preference_key,
+                value=record.value,
+                source_digest=record.source_digest,
+            )
+            if closing
+            else preference_confirmation_sentence(
+                topic_id=record.canonical_topic_id,
+                preference_key=record.preference_key,
+                value=record.value,
+                source_digest=record.source_digest,
+            )
+        )
+        if arguments[quote_field] != expected:
+            raise ValueError("preference approval grammar is invalid")
         prepared = self._load_active_prepared_source(active)
         span = self._resolve_sentence_span(
             prepared=prepared,
@@ -907,6 +951,8 @@ class HermesCompletedTurnRuntime:
             raise ValueError("preference approval mapping is unavailable")
         start = proof.retained_span.start + (span.projection_span.start - proof.projection_span.start)
         quote = _required_string(arguments, quote_field)
+        if active.ledger.source_id == record.source_id or active.ledger.source_digest == record.source_digest:
+            raise ValueError("preference approval evidence must be distinct")
         return (active.ledger.source_id, active.ledger.source_digest, start, start + len(quote))
 
     def _structured_tool_request(
@@ -2359,6 +2405,7 @@ def _preference_result(status: str, preference: object) -> dict[str, object]:
 def _preference_tool_schemas() -> list[dict[str, object]]:
     candidate_required = [
         "topic_type",
+        "topic_quote",
         "canonical_topic_id",
         "preference_key",
         "value",
@@ -2379,6 +2426,7 @@ def _preference_tool_schemas() -> list[dict[str, object]]:
                     "required": candidate_required,
                     "properties": {
                         "topic_type": {"enum": ["ProductService", "Asset", "Place"]},
+                        "topic_quote": string,
                         "canonical_topic_id": string,
                         "preference_key": string,
                         "value": string,

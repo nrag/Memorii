@@ -277,3 +277,66 @@ def test_jsonl_reopen_preserves_protected_current_and_history(tmp_path) -> None:
         "confirmed",
         "superseded",
     }
+    head = reopened.load_head(confirmed.logical_key)
+    assert head is not None
+    assert head.current_confirmed_id == corrected.preference_id
+    assert head.candidate_ids == ()
+
+
+def test_stale_head_cas_leaves_no_partial_state_or_event() -> None:
+    owner = service()
+    first = owner.create_candidate(request())
+    assert first is not None
+    stale_head = owner.load_head(first.logical_key)
+    assert stale_head is not None
+    second = owner.create_candidate(request("coffee", "second"))
+    assert second is not None
+    before_history = history(owner)
+    before_events = owner.read_events(PreferenceReadRequest(holder_user_id="user:a", agent_id="agent:a"))
+    stale_update = owner._with_state(first, state="confirmed")
+    with pytest.raises(MemoryPlaneRevisionConflictError, match="user-preference-head"):
+        owner._write(
+            stale_update,
+            predecessor=first,
+            events=(owner._event(stale_update, event_type="confirmed", actor_id="agent:a", evidence=APPROVAL_EVIDENCE),),
+            head_snapshot=stale_head,
+        )
+    assert history(owner) == before_history
+    assert owner.read_events(PreferenceReadRequest(holder_user_id="user:a", agent_id="agent:a")) == before_events
+    head = owner.load_head(first.logical_key)
+    assert head is not None and head.candidate_ids == tuple(sorted((first.preference_id, second.preference_id)))
+
+
+def test_duplicate_retry_and_competing_candidates_keep_one_current_value() -> None:
+    owner = service()
+    first = owner.create_candidate(request())
+    assert first is not None
+    head_before = owner.load_head(first.logical_key)
+    events_before = owner.read_events(PreferenceReadRequest(holder_user_id="user:a", agent_id="agent:a"))
+    assert owner.create_candidate(request()) == first
+    assert owner.load_head(first.logical_key) == head_before
+    assert owner.read_events(PreferenceReadRequest(holder_user_id="user:a", agent_id="agent:a")) == events_before
+
+    second = owner.create_candidate(request("coffee", "competing"))
+    assert second is not None
+    confirmed_first = confirm(owner, first)
+    assert confirmed_first is not None
+    confirmed_second = confirm(owner, second)
+    assert confirmed_second is not None
+    assert current(owner) == (confirmed_second,)
+    assert [(item.preference_id, item.state) for item in history(owner)] == [
+        (confirmed_first.preference_id, "superseded"),
+        (confirmed_second.preference_id, "confirmed"),
+    ]
+
+
+def test_write_authority_and_utc_validation_fail_closed() -> None:
+    owner = service()
+    denied = request().model_copy(update={"authenticated_agent_id": "agent:nondelegate"})
+    assert owner.create_candidate(denied) is None
+    assert history(owner) == ()
+
+    payload = request().model_dump(mode="python")
+    payload["valid_until"] = datetime(2026, 9, 28)
+    with pytest.raises(ValueError, match="timezone-aware"):
+        PreferenceWriteRequest.model_validate(payload)

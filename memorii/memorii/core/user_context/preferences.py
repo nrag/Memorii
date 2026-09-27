@@ -13,6 +13,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.memory_plane.store import RecordAbsentPrecondition, RecordDigestPrecondition, record_digest
+from memorii.core.user_context.preference_delegations import (
+    PreferenceDelegationRecord,
+    PreferenceDelegationRepository,
+    new_preference_delegation,
+)
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility, TemporalValidityStatus
 
 PreferenceTopicType = Literal["ProductService", "Asset", "Place"]
@@ -28,6 +33,27 @@ def _digest(value: object) -> str:
 
 def _normalized_key(value: str) -> str:
     return "_".join(value.strip().lower().split())
+
+
+def preference_topic_id(topic_type: PreferenceTopicType, topic_quote: str) -> str:
+    """Return the deterministic identity for a grounded preference topic."""
+    normalized = " ".join(topic_quote.strip().split())
+    if not normalized:
+        raise ValueError("preference topic quote is empty")
+    return "preference-topic:" + _digest((topic_type, normalized))
+
+
+def preference_candidate_sentence(*, topic_quote: str, preference_key: str, value: str, valid_until: datetime | None = None) -> str:
+    suffix = "" if valid_until is None else f" until {valid_until.astimezone(UTC).isoformat()}"
+    return f"Preference: {topic_quote}; {preference_key}={value}{suffix}."
+
+
+def preference_confirmation_sentence(*, topic_id: str, preference_key: str, value: str, source_digest: str) -> str:
+    return f"Confirm preference: {topic_id}; {preference_key}={value}; source={source_digest}."
+
+
+def preference_close_sentence(*, state: str, topic_id: str, preference_key: str, value: str, source_digest: str) -> str:
+    return f"{state.capitalize()} preference: {topic_id}; {preference_key}={value}; source={source_digest}."
 
 
 class PreferenceAccessGrant(BaseModel):
@@ -72,6 +98,15 @@ class PreferenceWriteRequest(BaseModel):
             raise ValueError("preference_key must be normalized bounded text")
         return value
 
+    @field_validator("event_time", "valid_until")
+    @classmethod
+    def utc_time(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("preference times must be timezone-aware")
+        return value.astimezone(UTC)
+
 
 class PreferenceRecord(BaseModel):
     preference_id: str
@@ -114,12 +149,26 @@ class PreferenceEvent(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+class PreferenceLogicalHead(BaseModel):
+    logical_key: str
+    revision: int = Field(ge=1)
+    candidate_ids: tuple[str, ...]
+    current_confirmed_id: str | None = None
+    record_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
 def _preference_record_digest(record: PreferenceRecord) -> str:
     return _digest(record.model_dump(mode="json", exclude={"record_digest"}))
 
 
 def _preference_event_digest(event: PreferenceEvent) -> str:
     return _digest(event.model_dump(mode="json", exclude={"event_digest"}))
+
+
+def _preference_head_digest(head: PreferenceLogicalHead) -> str:
+    return _digest(head.model_dump(mode="json", exclude={"record_digest"}))
 
 
 class PreferenceReadRequest(BaseModel):
@@ -137,9 +186,11 @@ class PreferenceAccessPolicy:
         *,
         holder_authorities: tuple[PreferenceHolderAuthority, ...],
         grants: tuple[PreferenceAccessGrant, ...],
+        delegation_repository: PreferenceDelegationRepository | None = None,
     ) -> None:
         self._holder_authorities = {authority.holder_user_id: authority for authority in holder_authorities}
         self._grants = grants
+        self._delegation_repository = delegation_repository
 
     def allows(self, *, holder_user_id: str, agent_id: str) -> bool:
         authority = self._holder_authorities.get(holder_user_id)
@@ -147,10 +198,18 @@ class PreferenceAccessPolicy:
             return False
         if authority.primary_agent_id == agent_id:
             return True
-        return any(
+        configured = any(
             grant.holder_user_id == holder_user_id and grant.agent_id == agent_id and grant.delegated
             for grant in self._grants
         )
+        durable = self._delegation_repository is not None and self._delegation_repository.active(
+            holder_user_id, agent_id
+        )
+        return configured or durable
+
+    def is_primary(self, *, holder_user_id: str, agent_id: str) -> bool:
+        authority = self._holder_authorities.get(holder_user_id)
+        return authority is not None and authority.primary_agent_id == agent_id
 
 
 class PreferenceService:
@@ -158,21 +217,55 @@ class PreferenceService:
 
     _KIND = "user_preference_v1"
     _EVENT_KIND = "user_preference_event_v1"
+    _HEAD_KIND = "user_preference_logical_head_v1"
 
     def __init__(
         self,
         *,
         memory_plane: MemoryPlaneService,
         policy: PreferenceAccessPolicy,
+        delegation_repository: PreferenceDelegationRepository | None = None,
         now: Callable[[], datetime] | None = None,
     ) -> None:
         self._plane = memory_plane
         self._policy = policy
+        self._delegations = delegation_repository
         self._now = now or (lambda: datetime.now(UTC))
+
+    def set_delegation(
+        self,
+        *,
+        holder_user_id: str,
+        acting_agent_id: str,
+        delegated_agent_id: str,
+        state: Literal["active", "revoked"],
+        evidence: tuple[str, str, int, int],
+    ) -> PreferenceDelegationRecord | None:
+        if self._delegations is None:
+            return None
+        if not self._policy.is_primary(holder_user_id=holder_user_id, agent_id=acting_agent_id):
+            return None
+        previous = self._delegations.load(holder_user_id, delegated_agent_id)
+        if previous is not None and previous.state == state:
+            return previous
+        record = new_preference_delegation(
+            holder_user_id=holder_user_id,
+            primary_agent_id=acting_agent_id,
+            delegated_agent_id=delegated_agent_id,
+            state=state,
+            evidence=evidence,
+            occurred_at=self._now(),
+            previous=previous,
+        )
+        self._delegations.write(record, previous=previous)
+        return record
 
     @staticmethod
     def logical_key(request: PreferenceWriteRequest) -> str:
         return _digest((request.holder_user_id, request.canonical_topic_id, request.preference_key))
+
+    def can_access(self, *, holder_user_id: str, agent_id: str) -> bool:
+        return self._policy.allows(holder_user_id=holder_user_id, agent_id=agent_id)
 
     def create_candidate(self, request: PreferenceWriteRequest) -> PreferenceRecord | None:
         if (
@@ -184,6 +277,8 @@ class PreferenceService:
                 "explicit_user_form",
             }
         ):
+            return None
+        if not self._policy.allows(holder_user_id=request.holder_user_id, agent_id=request.authenticated_agent_id):
             return None
         if request.assertion_end <= request.assertion_start:
             return None
@@ -226,6 +321,8 @@ class PreferenceService:
             or (record.preference_key, record.value, record.source_digest) != (preference_key, value, source_digest)
         ):
             return None
+        if approval_evidence[:2] == (record.source_id, record.source_digest):
+            return None
         if not self._policy.allows(holder_user_id=holder_user_id, agent_id=agent_id):
             return None
         prior = next((item for item in self._by_logical_key(record.logical_key) if item.state == "confirmed"), None)
@@ -248,7 +345,13 @@ class PreferenceService:
                 extra=(retired, prior),
                 events=(
                     self._event(confirmed, event_type="confirmed", actor_id=agent_id, occurred_at=self._now(), evidence=approval_evidence),
-                    self._event(retired, event_type="superseded", actor_id=agent_id, occurred_at=self._now()),
+                    self._event(
+                        retired,
+                        event_type="superseded",
+                        actor_id=agent_id,
+                        occurred_at=self._now(),
+                        evidence=approval_evidence,
+                    ),
                 ),
             )
         return confirmed
@@ -275,6 +378,8 @@ class PreferenceService:
             or not explicit
             or not self._policy.allows(holder_user_id=holder_user_id, agent_id=agent_id)
         ):
+            return None
+        if evidence[:2] == (record.source_id, record.source_digest):
             return None
         if (
             (
@@ -429,6 +534,18 @@ class PreferenceService:
             visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
         )
 
+    @staticmethod
+    def _head_id(logical_key: str) -> str:
+        return "user-preference-head:" + logical_key
+
+    def _head_record(self, head: PreferenceLogicalHead) -> CanonicalMemoryRecord:
+        return CanonicalMemoryRecord(
+            memory_id=self._head_id(head.logical_key), domain=MemoryDomain.USER, text=head.logical_key,
+            content={"kind": self._HEAD_KIND, "head": head.model_dump(mode="json")}, status=CommitStatus.COMMITTED,
+            validity_status=TemporalValidityStatus.ACTIVE, source_kind=self._HEAD_KIND, timestamp=datetime(1970, 1, 1, tzinfo=UTC),
+            visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+        )
+
     def _write(
         self,
         preference: PreferenceRecord,
@@ -436,8 +553,25 @@ class PreferenceService:
         predecessor: PreferenceRecord | None,
         extra: tuple[PreferenceRecord, PreferenceRecord] | None = None,
         events: tuple[PreferenceEvent, ...],
+        head_snapshot: PreferenceLogicalHead | None = None,
     ) -> None:
-        records = [self._record(preference), *(self._event_record(event) for event in events)]
+        prior_head = head_snapshot if head_snapshot is not None else self._load_head(preference.logical_key)
+        candidates = set(prior_head.candidate_ids if prior_head is not None else ())
+        if preference.state == "candidate":
+            candidates.add(preference.preference_id)
+        else:
+            candidates.discard(preference.preference_id)
+        current = prior_head.current_confirmed_id if prior_head is not None else None
+        if preference.state == "confirmed":
+            current = preference.preference_id
+        elif current == preference.preference_id:
+            current = None
+        draft_head = PreferenceLogicalHead(
+            logical_key=preference.logical_key, revision=(prior_head.revision + 1 if prior_head else 1),
+            candidate_ids=tuple(sorted(candidates)), current_confirmed_id=current, record_digest="0" * 64,
+        )
+        head = draft_head.model_copy(update={"record_digest": _preference_head_digest(draft_head)})
+        records = [self._record(preference), self._head_record(head), *(self._event_record(event) for event in events)]
         conditions = []
         if predecessor is None:
             conditions.append(RecordAbsentPrecondition(memory_id=preference.preference_id))
@@ -448,6 +582,10 @@ class PreferenceService:
                     expected_digest=record_digest(self._record(predecessor)),
                 )
             )
+        if prior_head is None:
+            conditions.append(RecordAbsentPrecondition(memory_id=self._head_id(preference.logical_key)))
+        else:
+            conditions.append(RecordDigestPrecondition(memory_id=self._head_id(preference.logical_key), expected_digest=record_digest(self._head_record(prior_head))))
         if extra is not None:
             records.append(self._record(extra[0]))
             conditions.append(
@@ -478,6 +616,24 @@ class PreferenceService:
 
     def _by_logical_key(self, key: str) -> list[PreferenceRecord]:
         return [item for item in self._all() if item.logical_key == key]
+
+    def _load_head(self, logical_key: str) -> PreferenceLogicalHead | None:
+        item = self._plane.get_record(self._head_id(logical_key))
+        if item is None or item.source_kind != self._HEAD_KIND:
+            return None
+        try:
+            head = PreferenceLogicalHead.model_validate(item.content["head"])
+            return head if head.record_digest == _preference_head_digest(head) else None
+        except (KeyError, TypeError, ValueError):
+            return None
+
+    def load_head(self, logical_key: str) -> PreferenceLogicalHead | None:
+        """Return the verified persisted head for diagnostics and retry handling."""
+        return self._load_head(logical_key)
+
+    def load_preference(self, preference_id: str) -> PreferenceRecord | None:
+        """Return one verified preference record for protected tool validation."""
+        return self._load(preference_id)
 
     def _load_event(self, event_id: str) -> PreferenceEvent | None:
         item = self._plane.get_record(event_id)
