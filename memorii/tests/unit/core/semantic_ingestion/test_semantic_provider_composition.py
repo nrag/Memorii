@@ -8,7 +8,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
-from threading import Barrier
+from threading import Barrier, Event, Lock
 from types import SimpleNamespace
 from typing import cast
 from unittest.mock import patch
@@ -61,6 +61,7 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     AuthenticatedHostIngress,
     AuthenticatedIngressContext,
     AuthenticatedIngressResolutionError,
+    AuthenticatedOriginLineageEvidence,
     AuthenticatedSemanticEgressGovernance,
     AuthenticatedSemanticSourceAuthority,
     AuthenticatedSemanticSourceInterval,
@@ -509,6 +510,19 @@ class _AgentBoundResolver(_Resolver):
     def resolve(self, host_ingress: AuthenticatedHostIngress, server_time: datetime):
         return super().resolve(host_ingress, server_time).model_copy(
             update={"authenticated_agent_id": "agent:alice"}
+        )
+
+
+class _SharedOriginLineageResolver(_Resolver):
+    def __init__(self) -> None:
+        self.evidence = AuthenticatedOriginLineageEvidence.create(
+            authority_digest=_hex("trusted-origin-authority"),
+            origin_receipt_digest=_hex("upstream-message-one"),
+        )
+
+    def resolve(self, host_ingress: AuthenticatedHostIngress, server_time: datetime):
+        return super().resolve(host_ingress, server_time).model_copy(
+            update={"origin_lineage_evidence": self.evidence}
         )
 
 
@@ -1467,6 +1481,167 @@ def test_direct_provider_root_publishes_and_reloads_bootstrap_v3_normalization()
             source_kind="learned_ontology_coverage_observation_v1"
         )
     ) == 3
+
+
+def test_concurrent_first_admission_recovers_across_catalog_rotation() -> None:
+    builder, _ = _v3_normalization_host_builder(proposal=_bob_owner_proposal())
+    service = ProviderMemoryService._from_scenario_test_host(
+        memory_plane=MemoryPlaneService(),
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=_built_in_local_capability(scenario_test=True),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        source_normalization_host_bundle_builder=builder,
+        bootstrap_graph_host_bundle_builder=_deterministic_graph_bundle_builder(),
+    )
+    selection_repository = service._provider_ingestion._catalog_selection_repository
+    assert selection_repository is not None
+    selected = selection_repository.resolve_selected_base()
+    catalog_digests = (selected.catalog_digest, "f" * 64)
+    selection_lock = Lock()
+    selection_count = 0
+
+    class _RotatingCatalog:
+        def resolve_selected_base(self):
+            nonlocal selection_count
+            with selection_lock:
+                digest = catalog_digests[min(selection_count, 1)]
+                selection_count += 1
+            return selected.model_copy(update={"catalog_digest": digest})
+
+    service._provider_ingestion._catalog_selection_repository = _RotatingCatalog()
+    replay_barrier = Barrier(2)
+    replay_lock = Lock()
+    replay_count = 0
+    original_replay = service._provider_ingestion._admission_service.replay_retained_source
+
+    def replay_together(*args, **kwargs):
+        nonlocal replay_count
+        retained = original_replay(*args, **kwargs)
+        with replay_lock:
+            replay_count += 1
+            ordinal = replay_count
+        if retained is None and ordinal <= 2:
+            replay_barrier.wait(timeout=10)
+        return retained
+
+    first_catalog_published = Event()
+    original_publish = service._semantic_atomic_store.publish_admitted_source
+
+    def publish_in_catalog_order(*, prepared, writer_binding):
+        coverage = next(
+            (
+                record
+                for record in prepared.records
+                if record.source_kind == "learned_ontology_coverage_observation_v1"
+            ),
+            None,
+        )
+        digest = (
+            None
+            if coverage is None
+            else coverage.content["observation"]["catalog_digest"]
+        )
+        if digest == catalog_digests[1]:
+            assert first_catalog_published.wait(timeout=30)
+        try:
+            return original_publish(prepared=prepared, writer_binding=writer_binding)
+        finally:
+            if digest == catalog_digests[0]:
+                first_catalog_published.set()
+
+    with (
+        patch.object(
+            service._provider_ingestion._admission_service,
+            "replay_retained_source",
+            side_effect=replay_together,
+        ),
+        patch.object(
+            service._semantic_atomic_store,
+            "publish_admitted_source",
+            side_effect=publish_in_catalog_order,
+        ),
+        ThreadPoolExecutor(max_workers=2) as executor,
+    ):
+        futures = tuple(
+            executor.submit(
+                service.sync_event,
+                operation=ProviderOperation.CHAT_USER_TURN,
+                content="Atlas owner is Bob.",
+                operation_id="provider-concurrent-catalog-rotation",
+                task_id="task:one",
+                user_id="user:alice",
+                authenticated_host_ingress=_host_ingress(),
+            )
+            for _ in range(2)
+        )
+        results = tuple(future.result(timeout=180) for future in futures)
+
+    assert all(result.transcript_ids for result in results)
+    observations = tuple(
+        CoverageObservationRepository(service._memory_plane).load(record.memory_id)
+        for record in service._memory_plane.list_records(
+            source_kind="learned_ontology_coverage_observation_v1"
+        )
+    )
+    assert len(observations) == 2
+    assert {observation.catalog_digest for observation in observations if observation} == set(
+        catalog_digests
+    )
+
+
+def test_authenticated_origin_coalesces_direct_and_forwarded_deliveries() -> None:
+    resolver = _SharedOriginLineageResolver()
+    builder, _ = _v3_normalization_host_builder(proposal=_bob_owner_proposal())
+    service = ProviderMemoryService._from_scenario_test_host(
+        memory_plane=MemoryPlaneService(),
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=_built_in_local_capability(
+            resolver=resolver, scenario_test=True
+        ),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        source_normalization_host_bundle_builder=builder,
+        bootstrap_graph_host_bundle_builder=_deterministic_graph_bundle_builder(),
+    )
+
+    for provider_identity, content, operation_id in (
+        ("adapter:direct", "Atlas owner is Bob.", "direct-origin-delivery"),
+        (
+            "adapter:forwarded",
+            "Bob is the owner of Atlas.",
+            "forwarded-origin-delivery",
+        ),
+    ):
+        service.sync_event(
+            operation=ProviderOperation.CHAT_USER_TURN,
+            content=content,
+            operation_id=operation_id,
+            task_id="task:one",
+            user_id="user:alice",
+            authenticated_host_ingress=AuthenticatedHostIngress(
+                provider_identity=provider_identity,
+                principal_handle=object(),
+                session_handle=object(),
+                received_at=TEST_NOW,
+            ),
+        )
+
+    observations = tuple(
+        observation
+        for record in service._memory_plane.list_records(
+            source_kind="learned_ontology_coverage_observation_v1"
+        )
+        if (
+            observation := CoverageObservationRepository(service._memory_plane).load(
+                record.memory_id
+            )
+        )
+        is not None
+    )
+    assert len(observations) == 2
+    assert len({observation.source_id for observation in observations}) == 2
+    assert {observation.origin_lineage_digest for observation in observations} == {
+        resolver.evidence.lineage_digest
+    }
 
 
 def _retained_structured_submission(

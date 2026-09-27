@@ -117,6 +117,7 @@ from memorii.core.semantic_ingestion.contracts import (
     encode_semantic_contract_result,
 )
 from memorii.core.semantic_ingestion.coverage_observation import (
+    CoverageObservation,
     CoverageObservationRepository,
     coverage_observation_record,
     delivery_origin_lineage_digest,
@@ -919,31 +920,41 @@ class ProviderIngestionCoordinator:
                     if self._catalog_selection_repository is not None
                     else None
                 )
-                coverage_observation = None
-                if selected_catalog is not None:
-                    coverage_observation = new_coverage_observation(
-                        source_id=governed_source.memory_id,
-                        source_digest=source_admission_source_digest(governed_source),
+                def build_coverage_observation(
+                    source: CanonicalMemoryRecord,
+                ) -> CoverageObservation | None:
+                    if selected_catalog is None:
+                        return None
+                    return new_coverage_observation(
+                        source_id=source.memory_id,
+                        source_digest=source_admission_source_digest(source),
                         source_span=None,
                         source_scope_digest=(
                             authenticated_ingress.required_outcome_scopes.required_scope_set_digest
                         ),
-                        origin_lineage_digest=delivery_origin_lineage_digest(
-                            principal_binding_digest=identity.delivery_principal_binding_digest,
-                            normalized_delivery_id_digest=(
-                                identity.normalized_delivery_id.normalized_delivery_id_digest
-                            ),
+                        origin_lineage_digest=(
+                            authenticated_ingress.origin_lineage_evidence.lineage_digest
+                            if authenticated_ingress.origin_lineage_evidence is not None
+                            else delivery_origin_lineage_digest(
+                                principal_binding_digest=(
+                                    identity.delivery_principal_binding_digest
+                                ),
+                                normalized_delivery_id_digest=(
+                                    identity.normalized_delivery_id.normalized_delivery_id_digest
+                                ),
+                            )
                         ),
                         session_id=delivery_event.session_id,
                         principal_id=(
                             authenticated_ingress.delivery_principal_binding.principal_subject_id
                         ),
                         agent_id=authenticated_ingress.authenticated_agent_id,
-                        observed_at=governed_source.timestamp,
+                        observed_at=source.timestamp,
                         catalog_scope=selected_catalog.catalog_scope,
                         catalog_digest=selected_catalog.catalog_digest,
                         observer_binding=None,
                     )
+                coverage_observation = build_coverage_observation(governed_source)
                 initial_coverage_record = (
                     coverage_observation_record(coverage_observation)
                     if include_initial_coverage and coverage_observation is not None
@@ -970,6 +981,8 @@ class ProviderIngestionCoordinator:
                     matched_case_id: str | None = matched_case_id,
                     bootstrap_language_evidence: BootstrapAuthenticatedLanguageEvidence
                     | None = bootstrap_language_evidence,
+                    coverage_record: CanonicalMemoryRecord
+                    | None = initial_coverage_record,
                 ) -> PreparedSourceAdmission:
                     prepared = self._admission_service.prepare_atomic(
                         source=source,
@@ -990,15 +1003,62 @@ class ProviderIngestionCoordinator:
                     )
                     return (
                         prepared
-                        if initial_coverage_record is None
+                        if coverage_record is None
                         else prepared.model_copy(
                             update={
-                                "records": (*prepared.records, initial_coverage_record)
+                                "records": (*prepared.records, coverage_record)
                             }
                         )
                     )
 
-                prepared_admission = self._admit_with_writer_retry(prepare)
+                try:
+                    prepared_admission = self._admit_with_writer_retry(prepare)
+                except PreplanningStoreError as exc:
+                    if (
+                        not include_initial_coverage
+                        or str(exc)
+                        not in {
+                            "atomic admission evidence is partial or mismatched",
+                            "atomic admission conflict is not an exact committed retry",
+                        }
+                    ):
+                        raise
+                    # Another first-delivery caller may have won admission
+                    # after both callers observed no retained source.  Its
+                    # catalog-pinned coverage member is not part of the
+                    # immutable source tuple for this retry.  Reload through
+                    # the authenticated replay contract, then verify and reuse
+                    # the winner before adding this caller's observation via
+                    # the independent idempotent repository below.
+                    recovered_source = self._admission_service.replay_retained_source(
+                        SemanticIngestionSourceReplayRequest(delivery_identity=identity),
+                        authenticated_ingress=authenticated_ingress,
+                    )
+                    if (
+                        recovered_source is None
+                        or recovered_source.text != request.original_text
+                    ):
+                        raise
+                    recovered_observation = source_observation_from_record(
+                        recovered_source
+                    )
+                    if recovered_observation.semantic_text_projection is None:
+                        raise RuntimeError(
+                            "retained admitted source has no sealed Step-1 material"
+                        ) from exc
+                    governed_source = recovered_source
+                    coverage_observation = build_coverage_observation(recovered_source)
+                    bootstrap_language_evidence = (
+                        recovered_observation.bootstrap_language_evidence
+                    )
+                    projection = recovered_observation.semantic_text_projection
+                    prepared_admission = self._admit_with_writer_retry(
+                        lambda: prepare(
+                            source=recovered_source,
+                            bootstrap_language_evidence=bootstrap_language_evidence,
+                            coverage_record=None,
+                        )
+                    )
                 if coverage_observation is not None:
                     CoverageObservationRepository(self._memory_plane).create(
                         coverage_observation

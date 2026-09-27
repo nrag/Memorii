@@ -112,9 +112,19 @@ is now active. Its typed observation repository and trace map pass focused
 construction checks. The generic provider atomically admits the first pending
 observation, separately backfills legacy/catalog-change observations, and
 the installed Hermes trigger survives JSONL reopen with zero candidate/fact.
-Counts remain 3/5 and 5/14. Exactly one next action: add authenticated upstream
-origin receipt and core lineage derivation, then prove direct and forwarded
-adapter coalescing before recurrence counting.
+Counts remain 3/5 and 5/14. The origin receipt and adapter-coalescing slice that
+followed this checkpoint is recorded next.
+
+The M4 origin-lineage candidate now supplies a resolver-authenticated upstream
+authority/receipt contract and uses its validated digest across transformed
+direct and forwarded deliveries. A targeted admission review found a catalog
+rotation race in the preceding crash-safe slice; the corrected path reloads and
+verifies the winning retained source, reuses its immutable admission tuple, and
+adds the losing catalog observation independently. Focused contract,
+two-thread race, two-adapter coalescing and original crash-safe admission tests
+pass. Counts remain 3/5 and 5/14. Exactly one next action: freeze the corrected
+candidate and obtain targeted correctness approval before recurrence
+aggregation.
 
 ## Production Boundary And Change Map
 

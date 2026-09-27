@@ -16,7 +16,7 @@ Extend common source admission after `core/memory_evolution/admission.py:97` and
 
 Run source admission, provider outage, recovery, retry, changed observer binding, duplicate lineage, two-session recurrence, quoted/hypothetical/ambiguous text, wrong-domain, extraction-failure, recall-miss and cross-scope cases. Verify identical and transformed bytes with one core-verified upstream origin count as one lineage; different verified origins count independently, and adapter-claimed or forged origin IDs cannot satisfy recurrence. Assert no candidate/fact for pending or uncertain states, one group for correlated copies, and zero raw source disclosure outside grants. Run two-adapter conformance with equal core observations and one installed-root path. Execute focused tests, static/type, persistence/recovery, applicable integration gates and current workflow pins. A fake model proves only plumbing; a live host/local/remote quality result is separate and binding-specific. Do not activate a catalog in this milestone.
 
-- Next action: add the authenticated upstream-origin receipt and core lineage derivation contract, then prove direct and forwarded adapter deliveries coalesce correctly before recurrence counting.
+- Next action: freeze the catalog-race and authenticated-origin candidate, then obtain targeted correctness approval before recurrence aggregation.
 
 ## Frozen Schema And Trace Map (2026-09-27)
 
@@ -70,7 +70,25 @@ redelivery leaves one pending/not-evaluated record, direct JSONL reopen returns
 the same digest-verified record, and no ontology candidate or gap fact exists.
 Ruff and whitespace pass. Scoped Pyright reports no observation-contract
 errors; seven existing diagnostics remain in unrelated later ingestion recovery
-branches. Counts remain 3/5 milestones and 5/14 requirements. Exactly one next
-action: add the authenticated upstream-origin receipt and core lineage
-derivation contract, then prove direct and forwarded adapter deliveries
-coalesce correctly before recurrence counting.
+branches.
+
+Targeted review of the crash-safe admission candidate found one Level-2 P2:
+two callers that both saw no retained source could race across catalog rotation,
+causing the losing caller's larger immutable admission tuple to be rejected.
+The remediation reloads the winner through authenticated retained-source replay,
+verifies exact source text and sealed Step-1 material, republishes the original
+source tuple without a rebuilt coverage member, and then performs the normal
+idempotent catalog-specific observation insert. Its deterministic two-thread
+regression passes in 28.37 seconds and retains both catalog observations once.
+
+`AuthenticatedOriginLineageEvidence` now carries a resolver-authenticated
+authority/receipt pair with a content-validated core lineage digest. The generic
+provider uses it when present and retains the direct authenticated
+principal/delivery derivation otherwise. Two separate direct and forwarded
+adapter deliveries with different operation IDs and transformed text persist
+two observations with one shared verified lineage. Six contract checks plus the
+catalog-race and adapter-coalescing paths pass as 8 tests in 70.82 seconds; the
+original crash-safe admission path still passes in 36.42 seconds. Ruff, scoped
+Pyright, compilation and whitespace pass. Counts remain 3/5 milestones and
+5/14 requirements. Exactly one next action: freeze this candidate and obtain
+targeted correctness approval before recurrence aggregation.

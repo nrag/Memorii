@@ -3,6 +3,9 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
+from memorii.core.memory_evolution.ingestion_contracts import (
+    AuthenticatedOriginLineageEvidence,
+)
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.memory_plane.store import InMemoryMemoryPlaneStore
 from memorii.core.semantic_ingestion.catalog_authority import CatalogAuthorityScope
@@ -102,3 +105,20 @@ def test_unknown_or_tampered_persisted_observation_fails_closed() -> None:
 
     with pytest.raises(ValueError, match="digest mismatch"):
         CoverageObservation.model_validate(payload)
+
+
+def test_authenticated_origin_lineage_is_stable_across_transformed_deliveries() -> None:
+    evidence = AuthenticatedOriginLineageEvidence.create(
+        authority_digest="a" * 64,
+        origin_receipt_digest="b" * 64,
+    )
+    forwarded = AuthenticatedOriginLineageEvidence.create(
+        authority_digest="a" * 64,
+        origin_receipt_digest="b" * 64,
+    )
+
+    assert evidence.lineage_digest == forwarded.lineage_digest
+    payload = evidence.model_dump(mode="python")
+    payload["origin_receipt_digest"] = "c" * 64
+    with pytest.raises(ValueError, match="lineage digest mismatch"):
+        AuthenticatedOriginLineageEvidence.model_validate(payload)

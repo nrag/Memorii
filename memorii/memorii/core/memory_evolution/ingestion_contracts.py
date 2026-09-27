@@ -535,6 +535,41 @@ class RequiredOutcomeScopeSet(BaseModel):
         )
 
 
+class AuthenticatedOriginLineageEvidence(BaseModel):
+    """Resolver-authenticated upstream origin shared across transformed deliveries."""
+
+    authority_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    origin_receipt_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    lineage_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def validate_lineage(self) -> AuthenticatedOriginLineageEvidence:
+        expected = _digest(
+            b"memorii.learned-ontology.authenticated-origin-lineage.v1",
+            self.authority_digest.encode(),
+            self.origin_receipt_digest.encode(),
+        )
+        if self.lineage_digest != expected:
+            raise ValueError("authenticated origin lineage digest mismatch")
+        return self
+
+    @classmethod
+    def create(
+        cls, *, authority_digest: str, origin_receipt_digest: str
+    ) -> AuthenticatedOriginLineageEvidence:
+        return cls(
+            authority_digest=authority_digest,
+            origin_receipt_digest=origin_receipt_digest,
+            lineage_digest=_digest(
+                b"memorii.learned-ontology.authenticated-origin-lineage.v1",
+                authority_digest.encode(),
+                origin_receipt_digest.encode(),
+            ),
+        )
+
+
 class AuthenticatedIngressContext(BaseModel):
     delivery_principal_binding: DeliveryPrincipalBinding
     # The host supplies an agent identity only when it has authenticated one.
@@ -553,6 +588,7 @@ class AuthenticatedIngressContext(BaseModel):
     semantic_source_authority: AuthenticatedSemanticSourceAuthority | None = None
     semantic_source_interval: AuthenticatedSemanticSourceInterval | None = None
     structured_source_envelope: AuthenticatedStructuredSourceEnvelope | None = None
+    origin_lineage_evidence: AuthenticatedOriginLineageEvidence | None = None
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
