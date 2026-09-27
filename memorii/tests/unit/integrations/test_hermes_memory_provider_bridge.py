@@ -960,6 +960,8 @@ def test_installed_default_catalog_entity_relation_commits_and_recalls(
         agent_identity="profile:primary", platform="cli", agent_context="primary",
         agent_workspace="hermes",
     )
+    reopened.on_turn_start(3, f"Recall who owns {subject_quote}.")
+    assert reopened.get_tool_schemas()[1]["function"]["name"] == "memorii_read_fact"
     reopened_current = reopened.handle_tool_call(
         "memorii_read_fact",
         {"predicate_id": "project_owned_by", "subject_entity_id": subject_entity_id, "view": "current"},

@@ -245,3 +245,11 @@ pre-correction transaction-time reads completed through the installed Hermes
 provider with no API key or model transport. This pass predates explicit JSONL
 reopen equality assertions. The one next action is the same journey with those
 reopen assertions added.
+
+The first strengthened run at `cfbb1b53` reached post-restart in `1016.41s`
+and returned `unavailable` before the protected reader because the test invoked
+a Hermes tool without an active captured turn. The installed tool contract
+requires `on_turn_start` and pinned schema egress in each process. The fixture
+now starts a fresh recall turn and confirms `memorii_read_fact` schema egress
+before comparing persisted current/history/as-of results. The one next action
+is to rerun this corrected installed scenario.

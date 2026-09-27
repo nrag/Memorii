@@ -134,3 +134,8 @@ Commit `27bf3e87` passes the installed no-key entity correction and protected
 current/history/as-of journey in `696.92s`. The test now adds explicit JSONL
 reopen equality for those three protected views and prefetch. Exactly one next
 action: run that strengthened journey on the frozen tree.
+
+The first strengthened run reached reopen but the test skipped the mandatory
+captured-turn/schema step, so Hermes returned `unavailable` before entering the
+reader. The fixture now opens a recall turn and confirms read-tool schema
+egress. Exactly one next action: rerun the corrected reopen journey.
