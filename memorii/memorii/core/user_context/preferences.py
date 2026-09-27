@@ -439,7 +439,7 @@ class PreferenceService:
         predecessor_id: str | None,
     ) -> PreferenceRecord:
         preference_id = "user-preference:" + _digest((logical_key, request.source_digest, request.value))
-        body = dict(
+        record = PreferenceRecord(
             preference_id=preference_id,
             logical_key=logical_key,
             holder_user_id=request.holder_user_id,
@@ -458,8 +458,8 @@ class PreferenceService:
             valid_until=request.valid_until,
             state=state,
             predecessor_id=predecessor_id,
+            record_digest="",
         )
-        record = PreferenceRecord(**body, record_digest="")
         return record.model_copy(update={"record_digest": _preference_record_digest(record)})
 
     @staticmethod
