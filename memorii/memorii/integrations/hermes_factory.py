@@ -48,6 +48,11 @@ from memorii.core.semantic_ingestion.current_bootstrap_v3_authority import (
     local_level2_bootstrap_authorization_from_sidecar,
 )
 from memorii.core.semantic_ingestion.project_assertions_profile import load_project_assertions_bundle
+from memorii.core.user_context.preferences import (
+    PreferenceAccessPolicy,
+    PreferenceHolderAuthority,
+    PreferenceService,
+)
 from memorii.integrations.hermes_local_authority import (
     LocalLevel2AuthorityError,
     load_local_level2_authority,
@@ -126,7 +131,9 @@ def _build_local_level2_runtime_binding(
             installation_id=authorization.installation_id,
             operator_id=operator_id,
             agent_id=agent_id,
-            project_task_id=_project_task_id(authorization.installation_id, bundle.profile_digests["semantic_contract_digest"]),
+            project_task_id=_project_task_id(
+                authorization.installation_id, bundle.profile_digests["semantic_contract_digest"]
+            ),
             authority_is_current=authority_is_current,
             structured_tool_is_current=lambda: _structured_tool_is_current(hermes_home),
         )
@@ -139,6 +146,13 @@ def _build_local_level2_runtime_binding(
         authorization_is_current=authority_is_current,
     )
     memory_plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(storage_root / "memory-plane"))
+    preference_service = PreferenceService(
+        memory_plane=memory_plane,
+        policy=PreferenceAccessPolicy(
+            holder_authorities=(PreferenceHolderAuthority(holder_user_id=operator_id, primary_agent_id=agent_id),),
+            grants=(),
+        ),
+    )
     scoped_read_authority = InProcessScopedReadAuthority(now_provider=lambda: datetime.now(UTC))
     service = build_provider_memory_service_from_env(
         memory_plane=memory_plane,
@@ -213,7 +227,8 @@ def _build_local_level2_runtime_binding(
         )
 
     project_task_id = _project_task_id(
-        authorization.installation_id, bundle.profile_digests["semantic_contract_digest"],
+        authorization.installation_id,
+        bundle.profile_digests["semantic_contract_digest"],
     )
 
     return HermesProviderRuntimeBinding(
@@ -233,12 +248,13 @@ def _build_local_level2_runtime_binding(
             ),
             structured_tool_is_current=(
                 (lambda: authority_is_current() and _structured_tool_is_current(hermes_home))
-                if structured_resolver is not None else None
+                if structured_resolver is not None
+                else None
             ),
             structured_fact_read_authority=(
-                structured_resolver.issued_read_authority
-                if structured_resolver is not None else None
+                structured_resolver.issued_read_authority if structured_resolver is not None else None
             ),
+            preference_service=preference_service,
         ),
         absent_author_id=operator_id,
         revoke_structured_submission_grant=(
@@ -307,15 +323,21 @@ class _LocalLevel2StructuredSubmissionResolver:
             authenticated=expected,
             source_grant=SourceScopeGrant(
                 grant_id=_grant_id(installation_id, operator_id, agent_id, "source", f"task:{project_task_id}"),
-                grant_version=1, source_scope=f"task:{project_task_id}", authenticated=expected,
+                grant_version=1,
+                source_scope=f"task:{project_task_id}",
+                authenticated=expected,
             ),
             fact_grant=FactScopeGrant(
                 grant_id=_grant_id(installation_id, operator_id, agent_id, "fact", f"user:{operator_id}"),
-                grant_version=1, fact_scope=f"user:{operator_id}", authenticated=expected,
+                grant_version=1,
+                fact_scope=f"user:{operator_id}",
+                authenticated=expected,
             ),
             catalog_visibility_grant=CatalogOwnerVisibilityGrant(
                 grant_id=_grant_id(installation_id, operator_id, agent_id, "catalog_visibility", catalog_scope),
-                grant_version=1, catalog_scope=catalog_scope, authenticated=expected,
+                grant_version=1,
+                catalog_scope=catalog_scope,
+                authenticated=expected,
                 purpose="visibility_status",
             ),
         )
@@ -339,8 +361,7 @@ class _LocalLevel2StructuredSubmissionResolver:
         expected = self._issued_request.authenticated
         if (
             request != self._issued_request
-            or authenticated_ingress.delivery_principal_binding.principal_subject_id
-            != self._operator_id
+            or authenticated_ingress.delivery_principal_binding.principal_subject_id != self._operator_id
             or authenticated_ingress.authenticated_agent_id != self._agent_id
         ):
             return None
@@ -356,9 +377,7 @@ class _LocalLevel2StructuredSubmissionResolver:
             fact_grant=request.fact_grant,
             catalog_visibility_grant=request.catalog_visibility_grant,
             catalog=catalog,
-            provider_model_prompt_provenance_digest=(
-                request.provider_model_prompt_provenance_digest
-            ),
+            provider_model_prompt_provenance_digest=(request.provider_model_prompt_provenance_digest),
         )
 
     def issued_authority(self) -> ResolvedStructuredSubmissionAuthority:
@@ -504,12 +523,12 @@ def _canonical_agent_id(value: object) -> str:
 
 
 def _project_task_id(installation_id: str, semantic_contract_digest: str) -> str:
-    return "memorii:hermes:task:" + sha256(
-        (
-            "memorii.hermes.project_assertions.task.v1:"
-            f"{installation_id}:{semantic_contract_digest}"
-        ).encode()
-    ).hexdigest()
+    return (
+        "memorii:hermes:task:"
+        + sha256(
+            (f"memorii.hermes.project_assertions.task.v1:{installation_id}:{semantic_contract_digest}").encode()
+        ).hexdigest()
+    )
 
 
 def _grant_id(
@@ -522,10 +541,15 @@ def _grant_id(
     """Derive the stable v1 grant coordinate from verified factory inputs."""
     digest = sha256(
         b"memorii.hermes.local-structured-grant.v1\0"
-        + encode_typed_value((
-            installation_id, operator_id, agent_id, grant_kind,
-            scope.model_dump(mode="python") if isinstance(scope, CatalogAuthorityScope) else scope,
-        ))
+        + encode_typed_value(
+            (
+                installation_id,
+                operator_id,
+                agent_id,
+                grant_kind,
+                scope.model_dump(mode="python") if isinstance(scope, CatalogAuthorityScope) else scope,
+            )
+        )
     ).hexdigest()
     return f"hermes-local-structured-grant:v1:{grant_kind}:{digest}"
 

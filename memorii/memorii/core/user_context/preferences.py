@@ -105,6 +105,10 @@ class PreferenceEvent(BaseModel):
     actor_id: str
     occurred_at: datetime
     preference_record_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    evidence_source_id: str = Field(min_length=1)
+    evidence_source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    evidence_start: int = Field(ge=0)
+    evidence_end: int = Field(gt=0)
     event_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -211,10 +215,12 @@ class PreferenceService:
         preference_key: str,
         value: str,
         source_digest: str,
+        approval_evidence: tuple[str, str, int, int] | None = None,
     ) -> PreferenceRecord | None:
         record = self._load(preference_id)
         if (
             record is None
+            or approval_evidence is None
             or record.state != "candidate"
             or record.holder_user_id != holder_user_id
             or (record.preference_key, record.value, record.source_digest) != (preference_key, value, source_digest)
@@ -228,7 +234,7 @@ class PreferenceService:
             self._write(
                 confirmed,
                 predecessor=record,
-                events=(self._event(confirmed, event_type="confirmed", actor_id=agent_id, occurred_at=self._now()),),
+                events=(self._event(confirmed, event_type="confirmed", actor_id=agent_id, occurred_at=self._now(), evidence=approval_evidence),),
             )
         else:
             retired = self._with_state(
@@ -241,7 +247,7 @@ class PreferenceService:
                 predecessor=record,
                 extra=(retired, prior),
                 events=(
-                    self._event(confirmed, event_type="confirmed", actor_id=agent_id, occurred_at=self._now()),
+                    self._event(confirmed, event_type="confirmed", actor_id=agent_id, occurred_at=self._now(), evidence=approval_evidence),
                     self._event(retired, event_type="superseded", actor_id=agent_id, occurred_at=self._now()),
                 ),
             )
@@ -253,13 +259,19 @@ class PreferenceService:
         preference_id: str,
         holder_user_id: str,
         agent_id: str,
+        preference_key: str,
+        value: str,
+        source_digest: str,
         state: Literal["expired", "retracted", "rejected"],
         explicit: bool = True,
+        evidence: tuple[str, str, int, int] | None = None,
     ) -> PreferenceRecord | None:
         record = self._load(preference_id)
         if (
             record is None
+            or evidence is None
             or record.holder_user_id != holder_user_id
+            or (record.preference_key, record.value, record.source_digest) != (preference_key, value, source_digest)
             or not explicit
             or not self._policy.allows(holder_user_id=holder_user_id, agent_id=agent_id)
         ):
@@ -277,7 +289,7 @@ class PreferenceService:
         self._write(
             closed,
             predecessor=record,
-            events=(self._event(closed, event_type=state, actor_id=agent_id, occurred_at=self._now()),),
+            events=(self._event(closed, event_type=state, actor_id=agent_id, occurred_at=self._now(), evidence=evidence),),
         )
         return closed
 
@@ -357,8 +369,15 @@ class PreferenceService:
         event_type: PreferenceEventType,
         actor_id: str,
         occurred_at: datetime | None = None,
+        evidence: tuple[str, str, int, int] | None = None,
     ) -> PreferenceEvent:
         occurred_at = occurred_at or preference.event_time
+        evidence = evidence or (
+            preference.source_id,
+            preference.source_digest,
+            preference.assertion_start,
+            preference.assertion_end,
+        )
         event_id = "user-preference-event:" + _digest(
             (preference.preference_id, event_type, preference.record_digest, occurred_at.isoformat())
         )
@@ -370,6 +389,10 @@ class PreferenceService:
             actor_id=actor_id,
             occurred_at=occurred_at,
             preference_record_digest=preference.record_digest,
+            evidence_source_id=evidence[0],
+            evidence_source_digest=evidence[1],
+            evidence_start=evidence[2],
+            evidence_end=evidence[3],
             event_digest="0" * 64,
         )
         return event.model_copy(update={"event_digest": _preference_event_digest(event)})

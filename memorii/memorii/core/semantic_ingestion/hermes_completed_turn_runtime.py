@@ -80,6 +80,11 @@ from memorii.core.semantic_ingestion.structured_fact_read import (
     StructuredFactReadRequest,
     StructuredFactReadResponse,
 )
+from memorii.core.user_context.preferences import (
+    PreferenceReadRequest,
+    PreferenceService,
+    PreferenceWriteRequest,
+)
 from memorii.domain.enums import MemoryDomain
 
 logger = logging.getLogger(__name__)
@@ -504,6 +509,7 @@ class HermesCompletedTurnRuntime:
         structured_authority_request: StructuredSubmissionAuthorityRequest | None = None,
         structured_tool_is_current: Callable[[], bool] | None = None,
         structured_fact_read_authority: Callable[[], StructuredFactReadAuthority | None] | None = None,
+        preference_service: PreferenceService | None = None,
     ) -> None:
         self._service = service
         self._installation_id = installation_id
@@ -516,6 +522,7 @@ class HermesCompletedTurnRuntime:
         self._structured_authority_request = structured_authority_request
         self._structured_tool_is_current = structured_tool_is_current
         self._structured_fact_read_authority = structured_fact_read_authority
+        self._preference_service = preference_service
         self._work: queue.Queue[_CompletedTurnWork | _RecoverySweep | _StopWorker] = queue.Queue()
         self._condition = threading.Condition()
         self._outstanding = 0
@@ -548,8 +555,21 @@ class HermesCompletedTurnRuntime:
                 and authority_request is not None
                 and tool_is_current is not None
             )
+            preference_available = (
+                self._preference_service is not None
+                and active is not None
+                and not active.closing
+                and not self._active_turn_ambiguous
+                and active.expires_at > datetime.now(UTC)
+            )
+        preference_schemas = _preference_tool_schemas() if preference_available else []
+        if preference_schemas:
+            try:
+                self._require_current_authority()
+            except (OSError, ValueError):
+                preference_schemas = []
         if not available or tool_is_current is None or not tool_is_current():
-            return []
+            return preference_schemas
         assert active is not None
         assert authority_request is not None
         # The verified factory-controlled file authority is rechecked around
@@ -625,10 +645,18 @@ class HermesCompletedTurnRuntime:
                     },
                 },
             },
+            *preference_schemas,
         ]
 
     def handle_tool_call(self, *, tool_name: str, arguments: dict[str, object]) -> object:
-        if tool_name not in {"memorii_submit_fact", "memorii_read_fact"}:
+        if tool_name not in {
+            "memorii_submit_fact",
+            "memorii_read_fact",
+            "memorii_create_preference_candidate",
+            "memorii_confirm_preference",
+            "memorii_close_preference",
+            "memorii_read_preference",
+        }:
             raise ValueError(f"Memorii does not provide Hermes tool {tool_name!r}")
         if type(arguments) is not dict:
             return {"status": "rejected"}
@@ -636,6 +664,8 @@ class HermesCompletedTurnRuntime:
         if active is None:
             return {"status": "unavailable"}
         try:
+            if tool_name.startswith("memorii_") and "preference" in tool_name:
+                return self._handle_preference_tool_call(active=active, tool_name=tool_name, arguments=arguments)
             authority_request = self._structured_authority_request
             if authority_request is None:
                 return {"status": "unavailable"}
@@ -713,11 +743,171 @@ class HermesCompletedTurnRuntime:
                 or active.closing
                 or self._active_turn_ambiguous
                 or active.expires_at <= datetime.now(UTC)
-                or self._structured_authority_request is None
             ):
                 return None
             self._active_tool_calls += 1
             return active
+
+    def _handle_preference_tool_call(
+        self,
+        *,
+        active: _CapturedTurnHandle,
+        tool_name: str,
+        arguments: dict[str, object],
+    ) -> dict[str, object]:
+        service = self._preference_service
+        if service is None:
+            return {"status": "unavailable"}
+        try:
+            self._require_current_authority()
+        except (OSError, ValueError):
+            return {"status": "denied"}
+        try:
+            if tool_name == "memorii_create_preference_candidate":
+                preference = service.create_candidate(
+                    self._preference_write_request(active=active, arguments=arguments)
+                )
+                if preference is None:
+                    return {"status": "abstained"}
+                return {
+                    "status": "candidate",
+                    "preference_id": preference.preference_id,
+                    "preference_key": preference.preference_key,
+                    "value": preference.value,
+                    "source_digest": preference.source_digest,
+                }
+            if tool_name == "memorii_confirm_preference":
+                evidence = self._require_preference_approval_quote(active=active, arguments=arguments, closing=False)
+                preference = service.confirm(
+                    preference_id=_required_string(arguments, "preference_id"),
+                    holder_user_id=self._authenticated_author_id,
+                    agent_id=self._authenticated_agent_id,
+                    preference_key=_required_string(arguments, "preference_key"),
+                    value=_required_string(arguments, "value"),
+                    source_digest=_required_digest(arguments, "source_digest"),
+                    approval_evidence=evidence,
+                )
+                return _preference_result("confirmed", preference)
+            if tool_name == "memorii_close_preference":
+                evidence = self._require_preference_approval_quote(active=active, arguments=arguments, closing=True)
+                state = arguments.get("state")
+                if state not in {"expired", "retracted", "rejected"}:
+                    raise ValueError("preference close state is invalid")
+                preference = service.close(
+                    preference_id=_required_string(arguments, "preference_id"),
+                    holder_user_id=self._authenticated_author_id,
+                    agent_id=self._authenticated_agent_id,
+                    preference_key=_required_string(arguments, "preference_key"),
+                    value=_required_string(arguments, "value"),
+                    source_digest=_required_digest(arguments, "source_digest"),
+                    state=state,
+                    evidence=evidence,
+                )
+                return _preference_result("closed", preference)
+            if tool_name == "memorii_read_preference":
+                if set(arguments) - {"canonical_topic_id", "preference_key", "view"}:
+                    raise ValueError("preference read arguments are not closed")
+                view = arguments.get("view")
+                if view not in {"current", "history"}:
+                    raise ValueError("preference read view is invalid")
+                topic = arguments.get("canonical_topic_id")
+                key = arguments.get("preference_key")
+                if topic is not None and (not isinstance(topic, str) or not topic):
+                    raise ValueError("preference topic is invalid")
+                if key is not None and (not isinstance(key, str) or not key):
+                    raise ValueError("preference key is invalid")
+                records = service.read(
+                    PreferenceReadRequest(
+                        holder_user_id=self._authenticated_author_id,
+                        agent_id=self._authenticated_agent_id,
+                        canonical_topic_id=topic,
+                        preference_key=key,
+                        history=view == "history",
+                    )
+                )
+                return {"status": "ok", "preferences": [record.model_dump(mode="json") for record in records]}
+        except (TypeError, ValueError):
+            return {"status": "rejected"}
+        raise ValueError(f"Memorii does not provide Hermes tool {tool_name!r}")
+
+    def _preference_write_request(
+        self,
+        *,
+        active: _CapturedTurnHandle,
+        arguments: dict[str, object],
+    ) -> PreferenceWriteRequest:
+        allowed = {
+            "topic_type",
+            "canonical_topic_id",
+            "preference_key",
+            "value",
+            "source_quote",
+            "source_quote_start",
+            "valid_until",
+        }
+        required = allowed - {"valid_until"}
+        if set(arguments) - allowed or not required <= set(arguments):
+            raise ValueError("preference candidate arguments are not closed")
+        prepared = self._load_active_prepared_source(active)
+        span = self._resolve_sentence_span(
+            prepared=prepared,
+            source_quote=arguments["source_quote"],
+            source_quote_start=arguments["source_quote_start"],
+        )
+        proof = span.text_mapping_proof
+        if not isinstance(proof, VerbatimTextArtifactMappingProof):
+            raise ValueError("preference source mapping is unavailable")
+        start = proof.retained_span.start + (span.projection_span.start - proof.projection_span.start)
+        source_quote = _required_string(arguments, "source_quote")
+        return PreferenceWriteRequest.model_validate(
+            {
+                "holder_user_id": self._authenticated_author_id,
+                "authenticated_author_id": self._authenticated_author_id,
+                "authenticated_source_id": active.ledger.source_id,
+                "authenticated_agent_id": self._authenticated_agent_id,
+                "topic_type": arguments["topic_type"],
+                "canonical_topic_id": arguments["canonical_topic_id"],
+                "preference_key": arguments["preference_key"],
+                "value": arguments["value"],
+                "source_id": active.ledger.source_id,
+                "source_digest": active.ledger.source_digest,
+                "assertion_start": start,
+                "assertion_end": start + len(source_quote),
+                "origin": "user_assertion",
+                "event_time": active.ledger.captured_at,
+                "valid_until": arguments.get("valid_until"),
+            }
+        )
+
+    def _require_preference_approval_quote(
+        self,
+        *,
+        active: _CapturedTurnHandle,
+        arguments: dict[str, object],
+        closing: bool,
+    ) -> tuple[str, str, int, int]:
+        quote_field = "revocation_quote" if closing else "approval_quote"
+        offset_field = "revocation_quote_start" if closing else "approval_quote_start"
+        common = {"preference_id", "preference_key", "value", "source_digest", quote_field, offset_field}
+        allowed = common | ({"state"} if closing else set())
+        if set(arguments) - allowed or set(arguments) != allowed:
+            raise ValueError("preference approval arguments are not closed")
+        _required_string(arguments, "preference_id")
+        _required_string(arguments, "preference_key")
+        _required_string(arguments, "value")
+        _required_digest(arguments, "source_digest")
+        prepared = self._load_active_prepared_source(active)
+        span = self._resolve_sentence_span(
+            prepared=prepared,
+            source_quote=arguments[quote_field],
+            source_quote_start=arguments[offset_field],
+        )
+        proof = span.text_mapping_proof
+        if not isinstance(proof, VerbatimTextArtifactMappingProof):
+            raise ValueError("preference approval mapping is unavailable")
+        start = proof.retained_span.start + (span.projection_span.start - proof.projection_span.start)
+        quote = _required_string(arguments, quote_field)
+        return (active.ledger.source_id, active.ledger.source_digest, start, start + len(quote))
 
     def _structured_tool_request(
         self,
@@ -2141,6 +2331,117 @@ def _canonical_messages_digest(messages: tuple[dict[str, object], ...]) -> str:
         "utf-8"
     )
     return sha256(b"memorii.hermes.completed-turn.transcript.v1\0" + payload).hexdigest()
+
+
+def _required_string(arguments: dict[str, object], name: str) -> str:
+    value = arguments.get(name)
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"preference {name} is invalid")
+    return value
+
+
+def _required_digest(arguments: dict[str, object], name: str) -> str:
+    value = _required_string(arguments, name)
+    if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
+        raise ValueError(f"preference {name} is invalid")
+    return value
+
+
+def _preference_result(status: str, preference: object) -> dict[str, object]:
+    if preference is None:
+        return {"status": "denied"}
+    preference_id = getattr(preference, "preference_id", None)
+    if not isinstance(preference_id, str):
+        raise ValueError("preference service returned an invalid result")
+    return {"status": status, "preference_id": preference_id}
+
+
+def _preference_tool_schemas() -> list[dict[str, object]]:
+    candidate_required = [
+        "topic_type",
+        "canonical_topic_id",
+        "preference_key",
+        "value",
+        "source_quote",
+        "source_quote_start",
+    ]
+    approval_required = ["preference_id", "preference_key", "value", "source_digest"]
+    string = {"type": "string", "minLength": 1}
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": "memorii_create_preference_candidate",
+                "description": "Create one quote-grounded user Preference candidate from the active turn.",
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": candidate_required,
+                    "properties": {
+                        "topic_type": {"enum": ["ProductService", "Asset", "Place"]},
+                        "canonical_topic_id": string,
+                        "preference_key": string,
+                        "value": string,
+                        "source_quote": string,
+                        "source_quote_start": {"type": "integer", "minimum": 0},
+                        "valid_until": {"type": ["string", "null"], "format": "date-time"},
+                    },
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "memorii_confirm_preference",
+                "description": "Confirm an exact Preference candidate with an approval quote from the active turn.",
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": [*approval_required, "approval_quote", "approval_quote_start"],
+                    "properties": {
+                        **{name: string for name in approval_required},
+                        "approval_quote": string,
+                        "approval_quote_start": {"type": "integer", "minimum": 0},
+                    },
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "memorii_close_preference",
+                "description": "Close an exact Preference candidate with an explicit revocation quote from the active turn.",
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": [*approval_required, "state", "revocation_quote", "revocation_quote_start"],
+                    "properties": {
+                        **{name: string for name in approval_required},
+                        "state": {"enum": ["expired", "retracted", "rejected"]},
+                        "revocation_quote": string,
+                        "revocation_quote_start": {"type": "integer", "minimum": 0},
+                    },
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "memorii_read_preference",
+                "description": "Read current or historical protected Preferences for the signed-in user.",
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["view"],
+                    "properties": {
+                        "view": {"enum": ["current", "history"]},
+                        "canonical_topic_id": string,
+                        "preference_key": string,
+                    },
+                },
+            },
+        },
+    ]
 
 
 __all__ = ["HermesCompletedTurnRuntime"]

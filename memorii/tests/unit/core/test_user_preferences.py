@@ -14,6 +14,7 @@ from memorii.core.user_context.preferences import (
 )
 
 NOW = datetime(2026, 9, 27, tzinfo=UTC)
+APPROVAL_EVIDENCE = ("source:approval", sha256(b"approval").hexdigest(), 0, 8)
 
 
 def request(
@@ -61,6 +62,7 @@ def confirm(owner: PreferenceService, candidate, *, agent_id: str = "agent:a", v
         preference_key=candidate.preference_key,
         value=candidate.value if value is None else value,
         source_digest=candidate.source_digest,
+        approval_evidence=APPROVAL_EVIDENCE,
     )
 
 
@@ -113,7 +115,11 @@ def test_candidate_admission_abstention_coalescing_and_exact_confirmation() -> N
         preference_id=rejected_candidate.preference_id,
         holder_user_id="user:a",
         agent_id="agent:a",
+        preference_key=rejected_candidate.preference_key,
+        value=rejected_candidate.value,
+        source_digest=rejected_candidate.source_digest,
         state="rejected",
+        evidence=APPROVAL_EVIDENCE,
     )
     assert rejected is not None and rejected.state == "rejected"
 
@@ -152,7 +158,11 @@ def test_expiry_requires_explicit_valid_until_and_retraction_requires_confirmed_
             preference_id=expiring.preference_id,
             holder_user_id="user:a",
             agent_id="agent:a",
+            preference_key=expiring.preference_key,
+            value=expiring.value,
+            source_digest=expiring.source_digest,
             state="expired",
+            evidence=APPROVAL_EVIDENCE,
         )
         is None
     )
@@ -164,7 +174,11 @@ def test_expiry_requires_explicit_valid_until_and_retraction_requires_confirmed_
             preference_id=expiring_confirmed.preference_id,
             holder_user_id="user:a",
             agent_id="agent:a",
+            preference_key=expiring_confirmed.preference_key,
+            value=expiring_confirmed.value,
+            source_digest=expiring_confirmed.source_digest,
             state="expired",
+            evidence=APPROVAL_EVIDENCE,
         )
         is None
     )
@@ -173,7 +187,11 @@ def test_expiry_requires_explicit_valid_until_and_retraction_requires_confirmed_
         preference_id=expiring_confirmed.preference_id,
         holder_user_id="user:a",
         agent_id="agent:a",
+        preference_key=expiring_confirmed.preference_key,
+        value=expiring_confirmed.value,
+        source_digest=expiring_confirmed.source_digest,
         state="expired",
+        evidence=APPROVAL_EVIDENCE,
     )
     assert expired is not None and expired.state == "expired"
 
@@ -185,7 +203,11 @@ def test_expiry_requires_explicit_valid_until_and_retraction_requires_confirmed_
         preference_id=retained_confirmed.preference_id,
         holder_user_id="user:a",
         agent_id="agent:a",
+        preference_key=retained_confirmed.preference_key,
+        value=retained_confirmed.value,
+        source_digest=retained_confirmed.source_digest,
         state="retracted",
+        evidence=APPROVAL_EVIDENCE,
     )
     assert retracted is not None and retracted.state == "retracted"
     assert current(owner) == ()
