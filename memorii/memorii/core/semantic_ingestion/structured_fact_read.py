@@ -150,6 +150,7 @@ def read_structured_facts_from_snapshot(
                 pins=pins,
                 authority=authority,
                 reverse=True,
+                requested_reverse_endpoint=request.subject_entity_id,
             )
             if reverse_items is None:
                 return StructuredFactReadResponse(status="unavailable")
@@ -482,6 +483,7 @@ def _projected_items(
     pins: dict[str, CatalogCapturedTurnPin],
     authority: StructuredFactReadAuthority,
     reverse: bool,
+    requested_reverse_endpoint: str | None = None,
 ) -> list[StructuredFactReadItem] | None:
     locator = PackageIndexedCatalogBundleLocator()
     items: list[StructuredFactReadItem] = []
@@ -499,11 +501,14 @@ def _projected_items(
             catalog_bundle_locator=locator,
         ):
             return None
-        if reverse and not _endpoint_visibility_allows(
-            claim.projection,
-            claim.object_value,
-            claim.subject_entity_id,
-            claim.object_value,
+        if reverse and (
+            requested_reverse_endpoint is None
+            or not _endpoint_visibility_allows(
+                claim.projection,
+                requested_reverse_endpoint,
+                claim.subject_entity_id,
+                claim.object_value,
+            )
         ):
             return None
         items.append(

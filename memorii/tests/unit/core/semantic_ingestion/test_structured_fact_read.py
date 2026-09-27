@@ -513,3 +513,33 @@ def test_native_projection_fallback_reconstructs_literal_and_retracted_symmetric
     assert [(item.object_value, item.derived_direction, item.lifecycle_state) for item in reverse_as_of.items] == [
         ("alice", "reverse", "active")
     ]
+
+
+def test_native_projection_fallback_reads_symmetric_reverse_views(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "memorii.core.semantic_ingestion.structured_fact_read.PackageIndexedCatalogBundleLocator.locate_historical",
+        _bundle,
+    )
+    monkeypatch.setattr(
+        "memorii.core.semantic_ingestion.structured_fact_read.verify_structured_catalog_projection_for_read",
+        lambda *args, **kwargs: True,
+    )
+    for predicate_id in ("partner_of", "sibling_of"):
+        records, authority = _records(
+            _state(claim_id=predicate_id, subject="alice", value="bob", predicate=predicate_id)
+        )
+        projection_only = tuple(
+            record for record in records if record.content.get("memory_evolution_kind") != "claim_state"
+        )
+
+        response = read_structured_facts_from_snapshot(
+            records=projection_only,
+            authority=authority,
+            request=StructuredFactReadRequest(predicate_id=predicate_id, subject_entity_id="bob"),
+            now=NOW,
+        )
+
+        assert response.status == "ok"
+        assert [(item.object_value, item.derived_direction) for item in response.items] == [
+            ("alice", "reverse")
+        ]
