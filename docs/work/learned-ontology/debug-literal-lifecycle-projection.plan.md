@@ -70,6 +70,7 @@ control -> event evidence -> semantic conflict scope -> atomic projection.
 | Rerun combined installed probe at `af1abbb6` | If isolated symmetric success composes with the lifecycle sequence, both symmetric writes and reads complete before reopen. | After `3027.13s`, the literal lifecycle and first symmetric reverse read pass. A later symmetric submission returns `unavailable`: terminal persistence rejects an expired governed writer lease, graph retry rejects its stale lease, and terminal fallback finds a different execution lease. Isolated rows remain green, so the defect is long-sequence lease continuity rather than ontology or reverse-read semantics. Retained store is pytest run `1205`. |
 | Reclaim an expired graph lease from verified retained replay | If the live graph attempt exhausts its individual recovery lease, exactly one reclaim with the same owner and configured duration can rebuild execution from retained checkpoints without accepting stale authority or changing TTL. | Commit `71432230` initializes replay explicitly, reclaims only an expired `bootstrap-v3-recovery` lease, retries graph execution once with the returned lease/writer binding, and preserves replay and revoked-grant propagation. The deterministic test raises the observed stale-lease error and proves one reclaim plus durable retry; five reachable graph/retained composition cases pass in `151.74s`; Ruff, compileall and diff checks pass. Six full-file failures were reproduced outside the changed branches and remain unrelated existing branch failures. |
 | Rerun the combined installed probe at `6b8b2888` | If exception-only recovery matches the installed path, the later symmetric write reclaims the expired lease and completes. | After `2974.89s`, every lifecycle, as-of and earlier symmetric step passes, but the later write again returns `unavailable`. Terminal publication raises `SemanticWriterAdmissionError` for an expired writer lease; `_finalize_attempt` converts that failure into a persisted `BootstrapGraphDurableRetryProgressV3(reason="storage_retry")`, so the provider's exception/`None`-only reclaim branch does not run. Generic terminal fallback then finds the recovery operation owned by the graph execution. The recovery trigger must interpret the exact durable retry result instead of only exceptions. |
+| Renew the retained graph lease before epoch-zero construction | If graph execution receives the full configured recovery window before it creates epoch zero, the long local normalization sequence cannot consume part of the graph's lease budget; post-effect durable retry semantics remain unchanged. | Commit `4bd44010` renews every active, owned `bootstrap-v3-recovery` lease once with its configured duration immediately before the first graph request. Foreign, expired and terminal controls fail closed. The prior exception-only expired-lease reclaim remains bounded to one attempt, and returned durable retry progress is never re-entered. Three focused tests cover near-expiry and fresh renewal, foreign/expired denial, exception-triggered reclaim, live-lease no-reclaim, revoked-grant propagation, and the ordinary provider root passing the renewed binding into the native graph request; `3 passed, 60 deselected in 10.72s`, with Ruff, compileall and whitespace checks clean. |
 
 ## production_entrypoint_bindings
 
@@ -119,9 +120,11 @@ then exposes governed writer/graph lease expiry during the later sequential
 symmetric write. Commit `71432230` adds bounded expired-lease reclaim from
 verified replay, but the combined rerun at `6b8b2888` proves the actual
 coordinator path persists a `storage_retry` result rather than returning
-`None` or propagating the lease exception. The provider therefore never
-attempts the reclaim. The combined reopen proof and targeted independent
-review remain outstanding, so no milestone or requirement count changes yet.
+`None` or propagating the lease exception. Commit `4bd44010` avoids that path
+by renewing the owned recovery lease before epoch zero and graph execution;
+it does not reinterpret or rerun a sealed durable retry. The combined reopen
+proof and targeted independent review remain outstanding, so no milestone or
+requirement count changes yet.
 
 ## Completion Contract
 
@@ -134,8 +137,6 @@ Level-2 P1/P2 in this boundary. Hostile-store permutations remain Level 3.
 
 ## One Next Action
 
-Teach the provider's bounded graph executor to recognize the exact persisted
-durable retry produced after terminal writer-lease expiry, reclaim only an
-actually expired `bootstrap-v3-recovery` lease, and resume from verified replay
-once. Prove that exact returned-result branch deterministically before another
-combined installed rerun.
+Rerun the frozen combined installed lifecycle, both symmetric reverse views,
+zero read-side persistence and JSONL reopen probe at `4bd44010`; classify the
+result before targeted independent correctness and test review.
