@@ -90,6 +90,13 @@ views, both symmetric reverse relations, no inverse persistence, and JSONL
 reopen. Fast affected coverage passes 97 tests. The long installed run is the
 active M3 gate; counts remain unchanged pending its result.
 
+The first long shared-mechanics run failed after the initial LocalDate claim
+committed: correction projection history rejected the retained-source
+admission/control join with `projection_history_integrity_error`. Linked
+debugging WorkPlan `debug-literal-lifecycle-projection.plan.md` is now the sole
+detailed owner. The parent next action is to complete that debug operation and
+rerun the frozen installed candidate; counts remain 2/5 and 3/14.
+
 ## Production Boundary And Change Map
 
 `implementation-readiness.md` contains the read-only composition-root preflight and caller counts. Current paths are generic `ProviderMemoryService.sync_event` and the installed Hermes completed-turn root, one fixed three-predicate profile, one shared semantic terminal writer, and one protected-reader core. Ontology observer, catalog registry, activation, learner, and structured-fact port have zero current production callers. No future owner counts as implemented until a mapper finds a real caller and a focused path proof reaches its durable outcome.

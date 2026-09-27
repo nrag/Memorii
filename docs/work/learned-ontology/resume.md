@@ -151,3 +151,10 @@ retraction, two transaction-time cutoffs, both symmetric reverse relations,
 zero read-side persistence, and one JSONL reopen. Fast affected coverage passes
 97 tests in 8.56 seconds with Ruff and whitespace clean. Exactly one next
 action: run this long installed candidate on the frozen checkpoint.
+
+The first long run failed at LocalDate correction after the initial claim
+committed. Projection-history conflict scope rejects the retained-source
+admission/control join; the outer lease error is downstream. Active linked
+operation: `debug-literal-lifecycle-projection.plan.md`. Counts remain 2/5 and
+3/14. Exactly one next action: distinguish erroneous conflict creation from a
+valid conflict with an incomplete retained-operation admission join.

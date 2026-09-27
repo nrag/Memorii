@@ -23,6 +23,7 @@ The corpus must contain the exact 53 relation IDs and exact twenty persona plus 
 H8 closes only through the separate user-context slice above. Its real-root suite must cover candidate, agent-summary abstention, holder confirmation, duplicate, correction, expiry/retraction, delegated-agent allow, nondelegated-agent and second-user denial, and historical read. The six Level-2 blockers are: package/compiler integrity; 53-row runtime corpus including private denials; H8 suite; shared JSONL lifecycle/scope probes; existing M2 catalog/capture/runtime/reports-to regressions; and focused lint/type checks for changed modules. Full PR workflow matrices, release certification, hostile-storage families and exhaustive platform permutations remain Level-3 follow-up. Only then may OLE-09/10 be complete at Level 2. The learner remains absent and must not be reported as shipped.
 
 - Linked debugging operation: `../debug-structured-lifecycle-lease.plan.md` owns the active captured-turn correction lease failure. It is a Level-2 dependency for installed lifecycle/reopen evidence.
+- Linked debugging operation: `../debug-literal-lifecycle-projection.plan.md` owns the active LocalDate correction projection-history failure. It is the sole detailed owner until literal correction publication is repaired and reviewed.
 - Next action: complete the linked recovery-lease debugging operation, then resume installed durable entity correction, literal correction and retraction plus protected current/history/as-of behavior before and after JSONL reopen, followed by the two symmetric reverse views.
 
 ## Active Read-Lifecycle Investigation (2026-09-26)
@@ -188,6 +189,14 @@ the retained lifecycle and reverse views. Fast projection/retraction/symmetric
 reader coverage and the affected runtime suite pass 97 tests in 8.56 seconds;
 Ruff and whitespace pass. The long installed candidate is the one next action;
 M3 and requirement counts do not change before it passes.
+
+The first long shared-mechanics run at `902df81b` failed after `250.34s` on the
+LocalDate correction. The original assertion committed, but projection-history
+conflict scope rejected the retained-source admission/control join with
+`projection_history_integrity_error`; the later lease error is downstream.
+Pause parent product edits. Linked debugging WorkPlan
+`../debug-literal-lifecycle-projection.plan.md` owns causal isolation and the
+fix. Counts remain 2/5 and 3/14.
 
 The first native-writer wiring pass added a typed runtime catalog coordinate to the graph-free invocation and rechecked its version/bundle through the historical package locator; 42 focused authority/pin tests and Ruff/whitespace passed. Coordinator inspection rejected this as a completed slice because the production provider did not propagate the captured pin, the coordinate omitted the capture/source/persisted-pin join, and the materializer and derivation remained on the three fixed predicates. The same writer is continuing: `submit_structured_fact` must pass the already loaded exact `CatalogCapturedTurnPin` through provider ingestion, dynamic authority must rejoin the persisted pin and selected package, and only then may selected default policies drive native planning. No completion count changes.
 
