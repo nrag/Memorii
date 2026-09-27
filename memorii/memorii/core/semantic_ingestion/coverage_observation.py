@@ -6,6 +6,7 @@ import json
 from datetime import datetime
 from enum import StrEnum
 from hashlib import sha256
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -140,6 +141,39 @@ class CoverageObservation(BaseModel):
         if self.observation_id != expected_id:
             raise ValueError("coverage observation identity mismatch")
         return self
+
+
+class CoverageObservationStatus(BaseModel):
+    observation_id: str = Field(min_length=1)
+    processing_state: DiscoveryProcessingState
+    semantic_outcome: CoverageSemanticOutcome
+    attempt_count: int = Field(ge=0)
+    catalog_scope: CatalogAuthorityScope
+    catalog_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    downstream_failure_signature: str | None = Field(default=None, max_length=256)
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @classmethod
+    def from_observation(
+        cls, observation: CoverageObservation
+    ) -> CoverageObservationStatus:
+        return cls(
+            observation_id=observation.observation_id,
+            processing_state=observation.processing_state,
+            semantic_outcome=observation.semantic_outcome,
+            attempt_count=observation.attempt_count,
+            catalog_scope=observation.catalog_scope,
+            catalog_digest=observation.catalog_digest,
+            downstream_failure_signature=observation.downstream_failure_signature,
+        )
+
+
+class CoverageObservationStatusResponse(BaseModel):
+    status: Literal["ok", "denied", "unavailable"]
+    observations: tuple[CoverageObservationStatus, ...] = ()
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
 
 def coverage_observation_id(
@@ -341,11 +375,12 @@ class CoverageObservationRepository:
             return None
 
     def all(self) -> tuple[CoverageObservation, ...]:
-        observations = tuple(
-            observation
-            for record in self._plane.list_records(source_kind=self._KIND)
-            if (observation := self.load(record.memory_id)) is not None
-        )
+        observations: list[CoverageObservation] = []
+        for record in self._plane.list_records(source_kind=self._KIND):
+            observation = self.load(record.memory_id)
+            if observation is None:
+                raise ValueError("persisted coverage observation is invalid")
+            observations.append(observation)
         return tuple(sorted(observations, key=lambda item: item.observation_id))
 
     def create(self, observation: CoverageObservation) -> CoverageObservation:

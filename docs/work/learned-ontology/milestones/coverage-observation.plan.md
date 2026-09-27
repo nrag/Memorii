@@ -221,3 +221,19 @@ pre-existing unrelated possibly-unbound diagnostic. Counts remain 3/5 and
 and obtain
 targeted correctness and test approval before completing M4 status and
 second-adapter conformance.
+
+Review of `fc5a9d62` found one remaining Level-2 P2: ordinary transport failure
+became durable `discovery_unavailable`, but live retry and restart recovery did
+not invoke the defined `unavailable -> queued` transition. The correction now
+CAS-transitions the same binding back through queued/running on exact retry or
+startup recovery. Its regression persists the outage in JSONL, reopens a new
+memory plane with a recovered capability, and reaches classified recurrence
+without losing the original observation identity. The same slice adds a typed
+scope-filtered public status response that exposes processing state, outcome,
+attempt count, catalog identity and bounded failure signature without source
+text or source ID; malformed durable observations return unavailable. Seventeen
+focused lifecycle tests pass in 5.51 seconds, and the real no-capability
+provider root returns pending/not-evaluated status in 34.89 seconds. Counts
+remain 3/5 and 5/14. Exactly one next action: freeze this outage-retry/status
+correction and obtain targeted correctness and test approval before the second
+adapter conformance proof.

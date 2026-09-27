@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 from memorii.core.memory_plane.service import MemoryPlaneService
-from memorii.core.memory_plane.store import InMemoryMemoryPlaneStore
+from memorii.core.memory_plane.store import InMemoryMemoryPlaneStore, JsonlMemoryPlaneStore
 from memorii.core.semantic_ingestion.catalog_authority import CatalogAuthorityScope
 from memorii.core.semantic_ingestion.coverage_observation import (
     CoverageObservation,
@@ -164,8 +165,9 @@ def test_invalid_span_or_signature_becomes_uncertain_without_gap() -> None:
     ) == ()
 
 
-def test_provider_outage_is_durable_unavailable_without_gap() -> None:
-    plane = MemoryPlaneService(record_store=InMemoryMemoryPlaneStore())
+def test_provider_outage_retries_after_jsonl_reopen(tmp_path: Path) -> None:
+    storage_path = tmp_path / "memory-plane"
+    plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(storage_path))
     repository = CoverageObservationRepository(plane)
     observation = _observation(
         1, lineage="a" * 64, session_id="session:one"
@@ -188,6 +190,15 @@ def test_provider_outage_is_durable_unavailable_without_gap() -> None:
     assert result.observation.semantic_outcome == CoverageSemanticOutcome.NOT_EVALUATED
     assert result.observation.downstream_failure_signature is not None
     assert result.recurrence_group is None
+
+    reopened = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(storage_path))
+    recovered = _runner(reopened, _gap_result()).recover_interrupted(
+        source_loader=lambda _source_id: "Alice mentors Bob."
+    )
+    assert len(recovered) == 1
+    assert recovered[0].observation.processing_state == DiscoveryProcessingState.CLASSIFIED
+    assert recovered[0].observation.semantic_outcome == CoverageSemanticOutcome.UNSUPPORTED_RELATION
+    assert recovered[0].recurrence_group is not None
 
 
 def test_restart_recovers_running_attempt_without_durable_result() -> None:

@@ -189,6 +189,16 @@ authorized retry plus denied-egress production-root cases pass together in
 Exactly one next action: freeze and review this recovery/authorization
 correction before completing M4 status and second-adapter conformance.
 
+The exact `fc5a9d62` review found that durable observer unavailability was not
+retried after transport recovery. The correction implements the designed
+`discovery_unavailable -> queued` CAS on exact retry and startup recovery and
+proves it across JSONL reopen with the same binding. A new privacy-safe,
+scope-filtered service status returns durable pending/unavailable state without
+source text or source ID and reports corrupt persistence as unavailable.
+Seventeen lifecycle checks and the focused real no-model status root pass.
+Counts remain 3/5 and 5/14. Exactly one next action: freeze and review this
+outage-retry/status correction before the M4 second-adapter conformance proof.
+
 Review of `f7ce04a6` found the installed producer accepted a caller-supplied
 digest and was unreachable from normal callbacks. The replacement uses a
 bridge-owned receipt created from an observed user turn, allows inheritance

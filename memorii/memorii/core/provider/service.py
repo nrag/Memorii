@@ -216,6 +216,8 @@ from memorii.core.semantic_ingestion.catalog_capture_pin import CatalogCapturedT
 from memorii.core.semantic_ingestion.contracts import ClaimAssertion, ProviderSemanticProposal
 from memorii.core.semantic_ingestion.coverage_observation import (
     CoverageObservationRepository,
+    CoverageObservationStatus,
+    CoverageObservationStatusResponse,
     ObserverBindingIdentity,
 )
 from memorii.core.semantic_ingestion.coverage_observer import (
@@ -1585,6 +1587,37 @@ class ProviderMemoryService:
                     status=submission.status, operation_id=request.operation_id,
                 )
         return StructuredFactSubmissionStatusResponse(status="unavailable")
+
+    def list_ontology_coverage_statuses(
+        self,
+        *,
+        authenticated_host_ingress: AuthenticatedHostIngress,
+    ) -> CoverageObservationStatusResponse:
+        """Return source-text-free discovery state within the caller's exact scope."""
+
+        ingress = self._preflight_ingress(authenticated_host_ingress)
+        if ingress is None:
+            return CoverageObservationStatusResponse(status="denied")
+        principal_id = ingress.delivery_principal_binding.principal_subject_id
+        agent_id = ingress.authenticated_agent_id
+        source_scope_digest = (
+            ingress.required_outcome_scopes.required_scope_set_digest
+        )
+        try:
+            observations = tuple(
+                CoverageObservationStatus.from_observation(observation)
+                for observation in CoverageObservationRepository(
+                    self._memory_plane
+                ).all()
+                if observation.principal_id == principal_id
+                and observation.agent_id == agent_id
+                and observation.source_scope_digest == source_scope_digest
+            )
+        except (OSError, ValueError):
+            return CoverageObservationStatusResponse(status="unavailable")
+        return CoverageObservationStatusResponse(
+            status="ok", observations=observations
+        )
 
     def read_structured_facts(
         self,

@@ -313,6 +313,10 @@ class CoverageObserverRunner:
         if persisted != observation:
             raise ValueError("ontology observation is not the persisted head")
         head = observation
+        if head.processing_state == DiscoveryProcessingState.UNAVAILABLE:
+            queued = retry_coverage_observation(head)
+            self._observations.replace(queued, previous=head)
+            head = queued
         if head.processing_state == DiscoveryProcessingState.QUEUED:
             running = start_coverage_observation(head)
             self._observations.replace(running, previous=head)
@@ -402,6 +406,7 @@ class CoverageObserverRunner:
                 DiscoveryProcessingState.QUEUED,
                 DiscoveryProcessingState.RUNNING,
                 DiscoveryProcessingState.CLASSIFIED,
+                DiscoveryProcessingState.UNAVAILABLE,
             }:
                 results.append(self.run(observation=head, source_text=source_text))
         return tuple(results)

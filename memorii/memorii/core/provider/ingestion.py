@@ -1101,6 +1101,7 @@ class ProviderIngestionCoordinator:
                         in {
                             DiscoveryProcessingState.QUEUED,
                             DiscoveryProcessingState.CLASSIFIED,
+                            DiscoveryProcessingState.UNAVAILABLE,
                         }
                     ):
                         self._coverage_observer_runner.run(

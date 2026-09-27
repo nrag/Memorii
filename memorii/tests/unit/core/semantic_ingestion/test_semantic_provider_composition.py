@@ -1446,6 +1446,18 @@ def test_direct_provider_root_publishes_and_reloads_bootstrap_v3_normalization()
     assert coverage is not None
     assert coverage.processing_state == DiscoveryProcessingState.PENDING_NO_CAPABILITY
     assert coverage.semantic_outcome == CoverageSemanticOutcome.NOT_EVALUATED
+    status = service.list_ontology_coverage_statuses(
+        authenticated_host_ingress=_host_ingress()
+    )
+    assert status.status == "ok"
+    assert len(status.observations) == 1
+    assert (
+        status.observations[0].processing_state
+        == DiscoveryProcessingState.PENDING_NO_CAPABILITY
+    )
+    assert status.observations[0].semantic_outcome == CoverageSemanticOutcome.NOT_EVALUATED
+    assert "Atlas owner is Bob" not in status.model_dump_json()
+    assert coverage.source_id not in status.model_dump_json()
 
     class _RotatedCatalog:
         def resolve_selected_base(self):
