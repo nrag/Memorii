@@ -18717,15 +18717,16 @@ def _bootstrap_graph_operation_effects(*, request, item, materialized_records, p
 def _bootstrap_graph_v3_group_commit_request_from_record(
     record: CanonicalMemoryRecord,
 ) -> BootstrapGraphGroupCommitRequestV3:
-    from memorii.core.semantic_ingestion.contracts import (
-        BootstrapGraphGroupCommitRequestV3,
-        decode_semantic_contract,
+    from memorii.core.memory_evolution.bootstrap_group_primary import (
+        BootstrapGroupPrimaryVerificationError,
+        decode_verified_bootstrap_graph_group_commit_primary,
     )
 
     try:
-        raw = bytes.fromhex(record.content["request_hex"])
-        request = decode_semantic_contract(raw, BootstrapGraphGroupCommitRequestV3)
-    except (KeyError, TypeError, ValueError) as exc:
+        request, _ = decode_verified_bootstrap_graph_group_commit_primary(
+            record, require_committed_result=False,
+        )
+    except BootstrapGroupPrimaryVerificationError as exc:
         raise PreplanningStoreError("bootstrap graph group commit primary is corrupt") from exc
     return request
 
@@ -18733,25 +18734,18 @@ def _bootstrap_graph_v3_group_commit_request_from_record(
 def _bootstrap_graph_v3_group_commit_reload_from_record(
     record: CanonicalMemoryRecord, request: BootstrapGraphGroupCommitRequestV3,
 ) -> BootstrapGraphGroupCommitReloadV3:
-    from memorii.core.semantic_ingestion.contracts import (
-        BootstrapGraphGroupCommitReloadV3,
-        decode_semantic_contract,
-        encode_semantic_contract,
+    from memorii.core.memory_evolution.bootstrap_group_primary import (
+        BootstrapGroupPrimaryVerificationError,
+        decode_verified_bootstrap_graph_group_commit_primary,
     )
 
     try:
-        raw = bytes.fromhex(record.content["reload_hex"])
-        reload = decode_semantic_contract(raw, BootstrapGraphGroupCommitReloadV3)
-    except (KeyError, TypeError, ValueError) as exc:
+        decoded_request, reload = decode_verified_bootstrap_graph_group_commit_primary(
+            record, require_committed_result=False,
+        )
+    except BootstrapGroupPrimaryVerificationError as exc:
         raise PreplanningStoreError("bootstrap graph group commit primary is corrupt") from exc
-    if (
-        record.source_kind != "semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
-        or encode_semantic_contract(reload) != raw
-        or reload.source_operation_id != request.source_operation_id
-        or reload.transaction_group_id != request.transaction_group_id
-        or reload.operation_ids != request.operation_ids
-        or reload.request_ctv_digest != request.request_ctv_digest
-    ):
+    if decoded_request != request:
         raise PreplanningStoreError("bootstrap graph group commit primary is substituted")
     return reload
 

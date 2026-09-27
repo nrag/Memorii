@@ -11,6 +11,10 @@ from typing import Literal, TypeGuard, TypeVar, overload
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from memorii.core.memory_evolution.admission import source_admission_source_digest
+from memorii.core.memory_evolution.bootstrap_group_primary import (
+    BootstrapGroupPrimaryVerificationError,
+    decode_verified_bootstrap_graph_group_commit_primary,
+)
 from memorii.core.memory_evolution.conflict_attention import (
     ActiveSemanticConflict,
     ActiveSemanticConflictResolverAuthority,
@@ -2308,11 +2312,6 @@ class ProjectionHistoryRepository:
                 raise ProjectionHistoryError("projection_history_integrity_error")
             return current_fence, writer_commit_binding, None
 
-        from memorii.core.semantic_ingestion.contracts import (
-            BootstrapGraphGroupCommitRequestV3,
-            decode_semantic_contract,
-        )
-
         candidates: list[
             tuple[OperationFenceBinding, SemanticWriterCommitBinding, CanonicalMemoryRecord]
         ] = []
@@ -2320,26 +2319,13 @@ class ProjectionHistoryRepository:
             source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
         ):
             try:
-                request = decode_semantic_contract(
-                    bytes.fromhex(primary.content["request_hex"]),
-                    BootstrapGraphGroupCommitRequestV3,
+                request, _ = decode_verified_bootstrap_graph_group_commit_primary(
+                    primary, require_committed_result=True,
                 )
-            except (KeyError, TypeError, ValueError):
+            except BootstrapGroupPrimaryVerificationError:
                 continue
-            expected_id = (
-                "semantic_ingestion:bootstrap-graph-v3:group-commit:"
-                + sha256(
-                    encode_typed_value((
-                        request.source_operation_id,
-                        request.transaction_group_id,
-                        request.operation_ids,
-                        request.request_ctv_digest,
-                    ))
-                ).hexdigest()
-            )
             if (
-                primary.memory_id == expected_id
-                and request.transaction_group_id == transaction_group_id
+                request.transaction_group_id == transaction_group_id
                 and request.operation_fence_binding.source_id == contender.source_id
                 and request.operation_fence_binding.source_digest == admission_fence.source_digest
             ):

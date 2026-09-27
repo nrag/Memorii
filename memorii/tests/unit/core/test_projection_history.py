@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Literal
 
 import pytest
@@ -112,9 +111,7 @@ def _scope_contender(transaction_group_id: str) -> ProjectionEvidenceRecord:
     )
 
 
-def test_conflict_scope_uses_exact_group_fence_and_denies_missing_retained_primary(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_conflict_scope_uses_exact_group_fence_and_denies_missing_retained_primary() -> None:
     repository = object.__new__(ProjectionHistoryRepository)
     repository._memory_plane = _ProjectionScopeRecords()
     capture_fence = _scope_fence("capture-operation")
@@ -135,60 +132,41 @@ def test_conflict_scope_uses_exact_group_fence_and_denies_missing_retained_prima
         writer_commit_binding=None,
     ) == (capture_fence, None, None)
 
-    retained_request = SimpleNamespace(
-        source_operation_id="retained-source:v1:one",
-        transaction_group_id=contender.transaction_group_id,
-        operation_ids=("operation:one",),
-        request_ctv_digest="b" * 64,
-        operation_fence_binding=retained_fence,
-        writer_commit_binding=binding,
-    )
-    primary_id = (
-        "semantic_ingestion:bootstrap-graph-v3:group-commit:"
-        + sha256(encode_typed_value((
-            retained_request.source_operation_id,
-            retained_request.transaction_group_id,
-            retained_request.operation_ids,
-            retained_request.request_ctv_digest,
-        ))).hexdigest()
-    )
     primary = CanonicalMemoryRecord(
-        memory_id=primary_id,
+        memory_id="semantic_ingestion:bootstrap-graph-v3:group-commit:malformed",
         domain=MemoryDomain.EXECUTION,
         text="",
-        content={"request_hex": "00"},
+        content={
+            "semantic_ingestion_kind": "bootstrap_graph_v3_group_commit_primary",
+            "request_hex": "00",
+        },
         status=CommitStatus.COMMITTED,
         source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary",
         timestamp=T0,
         visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
     )
-    from memorii.core.semantic_ingestion import contracts as contracts_module
-
-    monkeypatch.setattr(
-        contracts_module,
-        "decode_semantic_contract",
-        lambda *_args, **_kwargs: retained_request,
+    retained_link = CanonicalMemoryRecord(
+        memory_id="semantic_ingestion:retained-source-operation:" + retained_fence.operation_fence_id,
+        domain=MemoryDomain.EXECUTION,
+        text="",
+        content={"source_id": contender.source_id},
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_retained_source_operation",
+        timestamp=T0,
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
     )
-    repository._memory_plane = _ProjectionScopeRecords((primary,))
-    assert repository._contender_operation_authority(
-        contender=contender,
-        admission_fence=capture_fence,
-        operation_fences_by_transaction_group={},
-        writer_commit_binding=None,
-    ) == (retained_fence, binding, primary)
-
-    repository._memory_plane = _ProjectionScopeRecords((
-        CanonicalMemoryRecord(
-            memory_id="semantic_ingestion:retained-source-operation:" + retained_fence.operation_fence_id,
-            domain=MemoryDomain.EXECUTION,
-            text="",
-            content={"source_id": contender.source_id},
-            status=CommitStatus.COMMITTED,
-            source_kind="semantic_ingestion_retained_source_operation",
-            timestamp=T0,
-            visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
-        ),
-    ))
+    repository._memory_plane = _ProjectionScopeRecords((primary, retained_link))
+    with pytest.raises(ProjectionHistoryError, match="projection_history_integrity_error"):
+        repository._contender_operation_authority(
+            contender=contender,
+            admission_fence=capture_fence,
+            operation_fences_by_transaction_group={},
+            writer_commit_binding=None,
+        )
+    corrupt_reload = primary.model_copy(update={
+        "content": {**primary.content, "reload_hex": "00"},
+    })
+    repository._memory_plane = _ProjectionScopeRecords((corrupt_reload, retained_link))
     with pytest.raises(ProjectionHistoryError, match="projection_history_integrity_error"):
         repository._contender_operation_authority(
             contender=contender,
