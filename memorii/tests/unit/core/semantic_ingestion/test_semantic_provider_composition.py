@@ -182,6 +182,11 @@ from memorii.core.semantic_ingestion.contracts import (
     TrustPolicySnapshot,
     contract_digest,
 )
+from memorii.core.semantic_ingestion.coverage_observation import (
+    CoverageObservationRepository,
+    CoverageSemanticOutcome,
+    DiscoveryProcessingState,
+)
 from memorii.core.semantic_ingestion.egress import (
     ProviderEgressDecision,
 )
@@ -1377,6 +1382,24 @@ def test_direct_provider_root_publishes_and_reloads_bootstrap_v3_normalization()
     assert calls == {"proposal": 1, "stanza": 1, "spacy": 1, "predicate": 1, "temporal": 1}
     store = service._semantic_atomic_store
     assert store.bootstrap_v3_recovery_snapshot()
+    coverage_records = service._memory_plane.list_records(
+        source_kind="learned_ontology_coverage_observation_v1"
+    )
+    assert len(coverage_records) == 1
+    coverage = CoverageObservationRepository(service._memory_plane).load(
+        coverage_records[0].memory_id
+    )
+    assert coverage is not None
+    assert coverage.processing_state == DiscoveryProcessingState.PENDING_NO_CAPABILITY
+    assert coverage.semantic_outcome == CoverageSemanticOutcome.NOT_EVALUATED
+    assert not [
+        record
+        for record in service._memory_plane.list_records()
+        if record.source_kind in {
+            "learned_ontology_change_proposal_v1",
+            "learned_ontology_gap_fact_v1",
+        }
+    ]
     # A lost acknowledgement retries the same public operation.  Found must
     # reload the V3 closure before authority or any of the five learned lanes.
     retry = service.sync_event(
@@ -1389,6 +1412,11 @@ def test_direct_provider_root_publishes_and_reloads_bootstrap_v3_normalization()
     )
     assert retry.blocked_reasons.get("semantic_ingestion") != "source_alignment_authority_unavailable"
     assert calls == {"proposal": 1, "stanza": 1, "spacy": 1, "predicate": 1, "temporal": 1}
+    assert len(
+        service._memory_plane.list_records(
+            source_kind="learned_ontology_coverage_observation_v1"
+        )
+    ) == 1
 
 
 def _retained_structured_submission(

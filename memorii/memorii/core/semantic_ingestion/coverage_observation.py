@@ -151,6 +151,17 @@ def coverage_observation_id(
     return f"coverage-observation:v1:{digest}"
 
 
+def delivery_origin_lineage_digest(
+    *, principal_binding_digest: str, normalized_delivery_id_digest: str
+) -> str:
+    """Derive the v1 lineage for a directly authenticated source delivery."""
+
+    return _digest(
+        b"memorii.learned-ontology.direct-delivery-origin-lineage.v1",
+        (principal_binding_digest, normalized_delivery_id_digest),
+    )
+
+
 def new_coverage_observation(
     *,
     source_id: str,
@@ -165,12 +176,9 @@ def new_coverage_observation(
     catalog_scope: CatalogAuthorityScope,
     catalog_digest: str,
     observer_binding: ObserverBindingIdentity | None,
-    semantic_outcome: CoverageSemanticOutcome = CoverageSemanticOutcome.NOT_EVALUATED,
-    processing_state: DiscoveryProcessingState | None = None,
     downstream_failure_signature: str | None = None,
-    attempt_count: int = 0,
 ) -> CoverageObservation:
-    state = processing_state or (
+    state = (
         DiscoveryProcessingState.PENDING_NO_CAPABILITY
         if observer_binding is None
         else DiscoveryProcessingState.QUEUED
@@ -195,10 +203,10 @@ def new_coverage_observation(
         catalog_scope=catalog_scope,
         catalog_digest=catalog_digest,
         observer_binding=observer_binding,
-        semantic_outcome=semantic_outcome,
+        semantic_outcome=CoverageSemanticOutcome.NOT_EVALUATED,
         processing_state=state,
         downstream_failure_signature=downstream_failure_signature,
-        attempt_count=attempt_count,
+        attempt_count=0,
         observation_digest="0" * 64,
     )
     body = draft.model_dump(mode="json", exclude={"observation_digest"})
@@ -233,7 +241,7 @@ class CoverageObservationRepository:
             return None
 
     def create(self, observation: CoverageObservation) -> CoverageObservation:
-        record = self._record(observation)
+        record = coverage_observation_record(observation)
         try:
             self._plane.conditionally_write_records(
                 (record,),
@@ -247,21 +255,23 @@ class CoverageObservationRepository:
                 return existing
             raise
 
-    def _record(self, observation: CoverageObservation) -> CanonicalMemoryRecord:
-        return CanonicalMemoryRecord(
-            memory_id=observation.observation_id,
-            domain=MemoryDomain.EXECUTION,
-            text=observation.processing_state.value,
-            content={
-                "kind": self._KIND,
-                "observation": observation.model_dump(mode="json"),
-            },
-            status=CommitStatus.COMMITTED,
-            validity_status=TemporalValidityStatus.ACTIVE,
-            source_kind=self._KIND,
-            timestamp=observation.observed_at,
-            session_id=observation.session_id,
-            user_id=observation.principal_id,
-            agent_id=observation.agent_id,
-            visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
-        )
+
+
+def coverage_observation_record(observation: CoverageObservation) -> CanonicalMemoryRecord:
+    return CanonicalMemoryRecord(
+        memory_id=observation.observation_id,
+        domain=MemoryDomain.EXECUTION,
+        text=observation.processing_state.value,
+        content={
+            "kind": CoverageObservationRepository._KIND,
+            "observation": observation.model_dump(mode="json"),
+        },
+        status=CommitStatus.COMMITTED,
+        validity_status=TemporalValidityStatus.ACTIVE,
+        source_kind=CoverageObservationRepository._KIND,
+        timestamp=observation.observed_at,
+        session_id=observation.session_id,
+        user_id=observation.principal_id,
+        agent_id=observation.agent_id,
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )

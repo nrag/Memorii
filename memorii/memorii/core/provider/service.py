@@ -765,6 +765,7 @@ class ProviderMemoryService:
             semantic_policy_provider=semantic_runtime.policy_provider if semantic_runtime is not None else None,
             semantic_runtime=semantic_runtime,
             canonical_evidence_arena_factory=self._new_canonical_evidence_arena,
+            catalog_selection_repository=self._catalog_selection_repository,
         )
         self._capability_monitor = CapabilityMonitor(
             writers=self._semantic_writer_admission,

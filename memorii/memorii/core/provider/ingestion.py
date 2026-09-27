@@ -80,6 +80,7 @@ from memorii.core.semantic_ingestion.capability import (
 from memorii.core.semantic_ingestion.catalog_authority import (
     CatalogAuthorityScope,
     ResolvedStructuredSubmissionAuthority,
+    SelectedCatalogAuthorityRepository,
     StructuredSubmissionAuthorityRequest,
 )
 from memorii.core.semantic_ingestion.catalog_capture_pin import CatalogCapturedTurnPin
@@ -114,6 +115,11 @@ from memorii.core.semantic_ingestion.contracts import (
     certified_roundtrip,
     contract_digest,
     encode_semantic_contract_result,
+)
+from memorii.core.semantic_ingestion.coverage_observation import (
+    coverage_observation_record,
+    delivery_origin_lineage_digest,
+    new_coverage_observation,
 )
 from memorii.core.semantic_ingestion.event_replay import SemanticEventReplayError
 from memorii.core.semantic_ingestion.persistence import (
@@ -464,6 +470,7 @@ class ProviderIngestionCoordinator:
         semantic_policy_provider: SemanticPipelinePolicyProvider | None = None,
         semantic_runtime: AuthorizedSemanticIngestionRuntime | None = None,
         canonical_evidence_arena_factory: Callable[[], CanonicalEvidenceArena] | None = None,
+        catalog_selection_repository: SelectedCatalogAuthorityRepository | None = None,
     ) -> None:
         self._memory_plane = memory_plane
         self._admission_service = admission_service
@@ -477,6 +484,7 @@ class ProviderIngestionCoordinator:
         self._semantic_runtime = semantic_runtime
         self._now_provider = clock.now_utc
         self._canonical_evidence_arena_factory = canonical_evidence_arena_factory
+        self._catalog_selection_repository = catalog_selection_repository
         self._authorization_repository = SemanticAuthorizationAuthorityRepository(
             atomic_store=atomic_store,
             writer_binding_provider=self._current_writer_binding,
@@ -904,6 +912,40 @@ class ProviderIngestionCoordinator:
                     )
                     bootstrap_language_evidence = request.bootstrap_language_evidence
                     projection = step_one_material.semantic_text_projection
+                selected_catalog = (
+                    self._catalog_selection_repository.resolve_selected_base()
+                    if self._catalog_selection_repository is not None
+                    else None
+                )
+                coverage_record = None
+                if selected_catalog is not None:
+                    coverage_record = coverage_observation_record(
+                        new_coverage_observation(
+                            source_id=governed_source.memory_id,
+                            source_digest=source_admission_source_digest(governed_source),
+                            source_span=None,
+                            source_scope_digest=(
+                                authenticated_ingress.required_outcome_scopes.required_scope_set_digest
+                            ),
+                            origin_lineage_digest=delivery_origin_lineage_digest(
+                                principal_binding_digest=(
+                                    identity.delivery_principal_binding_digest
+                                ),
+                                normalized_delivery_id_digest=(
+                                    identity.normalized_delivery_id.normalized_delivery_id_digest
+                                ),
+                            ),
+                            session_id=delivery_event.session_id,
+                            principal_id=(
+                                authenticated_ingress.delivery_principal_binding.principal_subject_id
+                            ),
+                            agent_id=authenticated_ingress.authenticated_agent_id,
+                            observed_at=governed_source.timestamp,
+                            catalog_scope=selected_catalog.catalog_scope,
+                            catalog_digest=selected_catalog.catalog_digest,
+                            observer_binding=None,
+                        )
+                    )
                 outcome = "unavailable"
                 reason = self._bootstrap_unavailable_reason
                 matched_case_id = None
@@ -926,7 +968,7 @@ class ProviderIngestionCoordinator:
                     bootstrap_language_evidence: BootstrapAuthenticatedLanguageEvidence
                     | None = bootstrap_language_evidence,
                 ) -> PreparedSourceAdmission:
-                    return self._admission_service.prepare_atomic(
+                    prepared = self._admission_service.prepare_atomic(
                         source=source,
                         delivery_identity=delivery_identity,
                         ingress=authenticated_ingress,
@@ -942,6 +984,13 @@ class ProviderIngestionCoordinator:
                             self._bootstrap_profile.verification_digest if self._bootstrap_profile else None
                         ),
                         bootstrap_language_evidence=bootstrap_language_evidence,
+                    )
+                    return (
+                        prepared
+                        if coverage_record is None
+                        else prepared.model_copy(
+                            update={"records": (*prepared.records, coverage_record)}
+                        )
                     )
 
                 prepared_admission = self._admit_with_writer_retry(prepare)

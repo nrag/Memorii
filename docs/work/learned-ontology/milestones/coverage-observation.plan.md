@@ -50,3 +50,22 @@ caller yet and does not change any milestone or requirement count. Exactly one
 next action: bind the no-capability record into the admitted-source atomic
 transaction with selected-catalog and authenticated origin-lineage authority,
 then prove JSONL reopen and zero candidate/fact through one installed root.
+
+The first review found that the general constructor could skip directly to a
+classified unsupported gap. The corrected initial constructor can create only
+`discovery_pending_no_capability/not_evaluated` or `queued/not_evaluated`;
+future running/classified/unavailable changes require a separate CAS transition
+owner with predecessor state and attempt fence. Five contract tests pass.
+
+The direct provider root now resolves the exact selected catalog, derives the
+v1 direct-delivery origin lineage from authenticated principal and normalized
+delivery identity, and appends the initial observation record to the same
+admitted-source transaction. Its focused real-provider test passes in 31.61
+seconds and proves exact retry leaves one pending observation and zero ontology
+candidate/gap-fact records. Ruff and whitespace pass. Scoped Pyright reports no
+observation-contract errors; seven existing diagnostics remain in unrelated
+later ingestion recovery branches. This is one generic provider caller, not yet
+the installed Hermes JSONL/restart proof. Counts remain 3/5 milestones and 5/14
+requirements. Exactly one next action: prove the same pending observation,
+idempotent retry, JSONL reopen and zero candidate/fact through the installed
+Hermes root with no model capability.
