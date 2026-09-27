@@ -3,7 +3,7 @@
 - Work ID: `replay-observation-reopen`
 - Work type: debugging
 - Delivery fidelity: Level 2, early real-world manual testing
-- Status: active
+- Status: complete
 - Coordinator: `/root`
 - Created: 2026-09-27
 - Last updated: 2026-09-27
@@ -80,6 +80,10 @@ The correction snapshots one writer binding immediately before allocation and pa
 
 The persisted claim and receipt were present. The unavailable result came from invoking the provider tool after restart without an active captured-turn handle, which is correctly denied by that tool boundary. `HermesCompletedTurnRuntime.read_structured_facts` is the public protected reader root that authorizes a session without requiring an active tool turn; the regression now uses it on both sides of reopen.
 
+## Independent Closure Review
+
+Frozen revision `4954e2e4` received targeted correctness and test approval. The correctness reviewer confirmed the allocation-time writer binding reaches grant, control, and terminal publication while concurrent writer change fails closed. The test reviewer confirmed the retained-preselection journey proves exactly one claim and one replay receipt plus equivalent protected reads before and after JSONL reopen, the normal post-selection journey remains green, and malformed locator/control attachments remain denied. Both report `remaining_validated_p1_p2: []`.
+
 ## One Next Action
 
-Request targeted correctness and test review of the frozen changed surface; the parent M5 packet remains blocked on this linked debugging closure.
+Resume parent M5 at rollback, revoked/deleted replay outcomes, and final milestone cohort review.
