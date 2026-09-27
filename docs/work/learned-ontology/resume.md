@@ -114,4 +114,6 @@ The all-row gate now has deterministic four-shard selection, exact 53-row invent
 
 The bounded lifecycle transport contract is independently accepted at scoped diff SHA-256 `2480e82cbbde011cb97edef97b58977732a54677a135951346280734c3a2f3fd`: 53 rows carry exact read-derivation metadata, only `partner_of` and `sibling_of` are symmetric, real entity/literal corrections have independent closed groundings and canonical source spans, retractions use the existing native lifecycle path, H8 shapes reject, and the package binds the lifecycle-aware validator. `247` focused tests, Ruff and whitespace pass. This is construction evidence only; installed revision effects, product current/history/as-of reads, reopen and symmetric reverse reads remain open.
 
-Exactly one next action: rerun the frozen four-shard 53-row native/revocation matrix, then implement and prove installed durable correction/retraction plus current/history/reopen behavior.
+The frozen all-row matrix passes at pushed commit `8d57deaa`: shard 1 is `14 passed in 2902.67s`; shards 2-4 are respectively `13 passed in 2772.94s`, `13 passed in 2772.68s`, and `13 passed in 2775.44s`. Together this proves all 53 installed native assertions, schema-2 bindings, protected recalls, wrong-endpoint zero effects and all 25 private grant revocations without an API key or model call.
+
+Exactly one next action: prove installed durable entity correction, literal correction and retraction with protected current/history/as-of reads before and after JSONL reopen, then implement the two symmetric reverse views.
