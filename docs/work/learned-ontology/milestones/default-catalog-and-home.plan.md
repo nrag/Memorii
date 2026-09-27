@@ -180,6 +180,15 @@ M3 remains active because literal correction, retraction, both symmetric reverse
 views, and H8 are still open; counts remain 2/5 and 3/14. Next action: the
 combined literal correction/retraction and symmetric installed probe.
 
+The combined shared-mechanics candidate now exercises one installed no-key
+provider through LocalDate assertion, correction, retraction, protected
+current/history/two as-of cutoffs, both `partner_of` and `sibling_of` reverse
+views with zero read-side persistence, shutdown, JSONL reopen, and equality of
+the retained lifecycle and reverse views. Fast projection/retraction/symmetric
+reader coverage and the affected runtime suite pass 97 tests in 8.56 seconds;
+Ruff and whitespace pass. The long installed candidate is the one next action;
+M3 and requirement counts do not change before it passes.
+
 The first native-writer wiring pass added a typed runtime catalog coordinate to the graph-free invocation and rechecked its version/bundle through the historical package locator; 42 focused authority/pin tests and Ruff/whitespace passed. Coordinator inspection rejected this as a completed slice because the production provider did not propagate the captured pin, the coordinate omitted the capture/source/persisted-pin join, and the materializer and derivation remained on the three fixed predicates. The same writer is continuing: `submit_structured_fact` must pass the already loaded exact `CatalogCapturedTurnPin` through provider ingestion, dynamic authority must rejoin the persisted pin and selected package, and only then may selected default policies drive native planning. No completion count changes.
 
 Native-path tracing then invalidated the bounded package acceptance for a compatibility omission the package-only review did not exercise. The selected child declares 56 predicates: the existing `project_owner`, `project_status` and `project_deadline` seed plus 53 corpus relations. Its generated schema, validator and policy maps covered only the 53 new rows. Because Hermes selects the default child at startup, this would remove or reject the already working M1 seed tool path while claiming those predicates in the selected version. The writer must compose the three existing seed contracts/policies with the 53 corpus relations, require exact 56-ID capability coverage, regenerate the package, and prove existing `project_owner` remains runnable after default selection. Until then the seven-member package is not accepted and counts remain unchanged.

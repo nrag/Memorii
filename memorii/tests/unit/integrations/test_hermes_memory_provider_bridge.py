@@ -1069,6 +1069,245 @@ def test_installed_default_catalog_money_relation_commits_reads_and_revokes(
         provider.shutdown()
 
 
+def test_installed_default_catalog_literal_retraction_and_symmetric_reads_survive_reopen(
+    bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Prove the remaining shared M3 lifecycle and symmetric read mechanics."""
+    from memorii.core.semantic_ingestion.openai_responses_project_assertions import (
+        OpenAIResponsesApiClient,
+    )
+    from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
+    from memorii.integrations.hermes_local_authority import (
+        authorize_local_level2,
+        authorize_local_structured_tool,
+    )
+
+    rows = {row.relation_id: row for row in load_default_catalog_acceptance_corpus().rows}
+    due = build_default_catalog_proposal(rows["work_item_due_on"])
+    symmetric = tuple(
+        build_default_catalog_proposal(rows[relation_id])
+        for relation_id in ("partner_of", "sibling_of")
+    )
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(
+        OpenAIResponsesApiClient,
+        "complete",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("model transport must not run")),
+    )
+    authorize_local_level2(hermes_home=tmp_path)
+    authorize_local_structured_tool(hermes_home=tmp_path)
+    monkeypatch.setattr(
+        bridge_module.importlib.metadata,
+        "entry_points",
+        lambda *, group: (_FactoryEntryPoint(build_local_level2_runtime_binding),),
+    )
+    provider = bridge_module.MemoriiHermesMemoryProvider()
+    provider.initialize(
+        "session:lifecycle-shared", hermes_home=tmp_path, user_id="raw:user:one",
+        agent_identity="profile:primary", platform="cli", agent_context="primary",
+        agent_workspace="hermes",
+    )
+    transcript: list[dict[str, object]] = []
+
+    def complete_turn(source: str) -> None:
+        timestamp = datetime.now(UTC).isoformat()
+        transcript.extend((
+            {"role": "user", "content": source, "timestamp": timestamp},
+            {"role": "assistant", "content": "Recorded.", "timestamp": timestamp},
+        ))
+        provider.sync_turn(
+            user_content=source,
+            assistant_content="Recorded.",
+            messages=transcript,
+        )
+        provider.prefetch(source)
+
+    provider.on_turn_start(1, due.source)
+    assert provider.get_tool_schemas()[0]["function"]["name"] == "memorii_submit_fact"
+    assert provider.handle_tool_call("memorii_submit_fact", due.tool_arguments())["status"] == "committed"
+    initial_records = tuple(provider._provider._service._memory_plane.list_records())
+    initial_projection = next(
+        record for record in initial_records
+        if record.content.get("runtime_context_projection_kind") == "bootstrap_v3_claim_assertion"
+        and record.content["claim_identity"]["assertion_key_at_recording"]["slot"]["predicate_id"]
+        == "work_item_due_on"
+    )
+    due_subject_id = initial_projection.content["claim_identity"]["subject_assertion_ref"][
+        "logical_entity_id_at_assertion"
+    ]
+    initial_due = provider.handle_tool_call(
+        "memorii_read_fact",
+        {"predicate_id": "work_item_due_on", "subject_entity_id": due_subject_id, "view": "current"},
+    )
+    assert initial_due["status"] == "ok"
+    before_correction = datetime.now(UTC).isoformat()
+    complete_turn(due.source)
+
+    replacement_quote = "2027-10-03"
+    replacement_value = '{"source_calendar":"gregorian","value":"2027-10-03"}'
+    replacement_source = (
+        f" Correction: {due.subject_quote} {due.predicate_anchor_quote} {replacement_quote}."
+    )
+    correction_source = due.source + replacement_source
+    old_subject = due.subject.model_copy(update={"local_id": "old_subject"})
+    new_subject = due.subject.model_copy(update={
+        "local_id": "new_subject", "mention_context_quote": replacement_source,
+    })
+    corrected_fact = due.fact.model_copy(update={
+        "local_id": "old", "subject_entity_ref": old_subject.local_id,
+    })
+    replacement_fact = due.fact.model_copy(update={
+        "local_id": "new", "subject_entity_ref": new_subject.local_id,
+        "assertion_quote": replacement_source,
+        "object": due.fact.object.model_copy(update={"canonical_value": replacement_value}),
+    })
+    correction_arguments = {
+        "schema_version": 1,
+        "correction": {
+            "assertion_quote": replacement_source,
+            "correction_anchor_quote": "Correction",
+            "corrected": {
+                "source_quote": due.source, "subject_quote": due.subject_quote,
+                "predicate_anchor_quote": due.predicate_anchor_quote, "object_quote": due.object_quote,
+            },
+            "replacement": {
+                "source_quote": replacement_source, "subject_quote": due.subject_quote,
+                "predicate_anchor_quote": due.predicate_anchor_quote, "object_quote": replacement_quote,
+            },
+        },
+        "proposal": {
+            "abstained": False,
+            "mentions": [
+                old_subject.model_dump(mode="json"),
+                new_subject.model_dump(mode="json"),
+            ],
+            "facts": [],
+            "corrections": [{
+                "kind": "correction", "local_id": "correction",
+                "corrected_fact": corrected_fact.model_dump(mode="json"),
+                "replacement_fact": replacement_fact.model_dump(mode="json"),
+                "assertion_quote": replacement_source,
+                "correction_anchor_quote": "Correction",
+            }],
+            "retractions": [], "action_states": [], "identity_operations": [],
+        },
+    }
+    provider.on_turn_start(2, correction_source)
+    assert provider.get_tool_schemas()[0]["function"]["name"] == "memorii_submit_fact"
+    assert provider.handle_tool_call("memorii_submit_fact", correction_arguments)["status"] == "committed"
+    corrected_due = provider.handle_tool_call(
+        "memorii_read_fact",
+        {"predicate_id": "work_item_due_on", "subject_entity_id": due_subject_id, "view": "current"},
+    )
+    assert [item["object_value"] for item in corrected_due["items"]] == [replacement_value]
+    before_retraction = datetime.now(UTC).isoformat()
+    complete_turn(correction_source)
+
+    retracted_subject = new_subject.model_copy(update={"local_id": "subject"})
+    retracted_fact = replacement_fact.model_copy(update={
+        "local_id": "retracted", "subject_entity_ref": retracted_subject.local_id,
+    })
+    retraction_arguments = {
+        "schema_version": 1,
+        "source_quote": replacement_source,
+        "subject_quote": due.subject_quote,
+        "predicate_anchor_quote": due.predicate_anchor_quote,
+        "object_quote": replacement_quote,
+        "proposal": {
+            "abstained": False,
+            "mentions": [retracted_subject.model_dump(mode="json")],
+            "facts": [], "corrections": [],
+            "retractions": [{
+                "kind": "retraction", "local_id": "retraction",
+                "retracted_fact": retracted_fact.model_dump(mode="json"),
+                "assertion_quote": replacement_source,
+                "retraction_anchor_quote": due.predicate_anchor_quote,
+            }],
+            "action_states": [], "identity_operations": [],
+        },
+    }
+    provider.on_turn_start(3, replacement_source)
+    assert provider.get_tool_schemas()[0]["function"]["name"] == "memorii_submit_fact"
+    assert provider.handle_tool_call("memorii_submit_fact", retraction_arguments)["status"] == "committed"
+    retracted_current = provider.handle_tool_call(
+        "memorii_read_fact",
+        {"predicate_id": "work_item_due_on", "subject_entity_id": due_subject_id, "view": "current"},
+    )
+    assert retracted_current == {"status": "ok", "items": []}
+    due_history = provider.handle_tool_call(
+        "memorii_read_fact",
+        {"predicate_id": "work_item_due_on", "subject_entity_id": due_subject_id, "view": "history"},
+    )
+    assert sorted(item["lifecycle_state"] for item in due_history["items"]) == ["retracted", "superseded"]
+    due_before_correction = provider.handle_tool_call(
+        "memorii_read_fact",
+        {"predicate_id": "work_item_due_on", "subject_entity_id": due_subject_id,
+         "view": "history", "system_as_of": before_correction},
+    )
+    assert [item["object_value"] for item in due_before_correction["items"]] == [
+        initial_due["items"][0]["object_value"]
+    ]
+    due_before_retraction = provider.handle_tool_call(
+        "memorii_read_fact",
+        {"predicate_id": "work_item_due_on", "subject_entity_id": due_subject_id,
+         "view": "history", "system_as_of": before_retraction},
+    )
+    assert [item["object_value"] for item in due_before_retraction["items"]] == [replacement_value]
+    complete_turn(replacement_source)
+
+    symmetric_results: dict[str, tuple[str, dict[str, object]]] = {}
+    for ordinal, fixture in enumerate(symmetric, start=4):
+        provider.on_turn_start(ordinal, fixture.source)
+        assert provider.get_tool_schemas()[0]["function"]["name"] == "memorii_submit_fact"
+        assert provider.handle_tool_call("memorii_submit_fact", fixture.tool_arguments())["status"] == "committed"
+        records = tuple(provider._provider._service._memory_plane.list_records())
+        projection = next(
+            record for record in records
+            if record.content.get("runtime_context_projection_kind") == "bootstrap_v3_claim_assertion"
+            and record.content["claim_identity"]["assertion_key_at_recording"]["slot"]["predicate_id"]
+            == fixture.row.relation_id
+        )
+        identity = projection.content["claim_identity"]
+        subject_id = identity["subject_assertion_ref"]["logical_entity_id_at_assertion"]
+        object_id = identity["object_assertion_ref"]["logical_entity_id_at_assertion"]
+        before_read_count = len(records)
+        reverse = provider.handle_tool_call(
+            "memorii_read_fact",
+            {"predicate_id": fixture.row.relation_id, "subject_entity_id": object_id, "view": "current"},
+        )
+        assert reverse["status"] == "ok"
+        assert [(item["object_value"], item["derived_direction"]) for item in reverse["items"]] == [
+            (subject_id, "reverse")
+        ]
+        assert len(tuple(provider._provider._service._memory_plane.list_records())) == before_read_count
+        symmetric_results[fixture.row.relation_id] = (object_id, reverse)
+        complete_turn(fixture.source)
+
+    provider.shutdown()
+    reopened = bridge_module.MemoriiHermesMemoryProvider()
+    reopened.initialize(
+        "session:lifecycle-shared", hermes_home=tmp_path, user_id="raw:user:one",
+        agent_identity="profile:primary", platform="cli", agent_context="primary",
+        agent_workspace="hermes",
+    )
+    reopened.on_turn_start(6, "Recall lifecycle and family relations.")
+    assert reopened.get_tool_schemas()[1]["function"]["name"] == "memorii_read_fact"
+    assert reopened.handle_tool_call(
+        "memorii_read_fact",
+        {"predicate_id": "work_item_due_on", "subject_entity_id": due_subject_id, "view": "current"},
+    ) == retracted_current
+    assert reopened.handle_tool_call(
+        "memorii_read_fact",
+        {"predicate_id": "work_item_due_on", "subject_entity_id": due_subject_id, "view": "history"},
+    ) == due_history
+    for relation_id, (object_id, reverse) in symmetric_results.items():
+        assert reopened.handle_tool_call(
+            "memorii_read_fact",
+            {"predicate_id": relation_id, "subject_entity_id": object_id, "view": "current"},
+        ) == reverse
+    reopened.shutdown()
+
+
 _INSTALLED_DEFAULT_CATALOG_ROWS = tuple(
     sorted(load_default_catalog_acceptance_corpus().rows, key=lambda row: row.relation_id)
 )

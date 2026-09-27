@@ -71,7 +71,9 @@ def _state(
 
 
 def _records(
-    *states: ClaimState, active_grants: bool = True
+    *states: ClaimState,
+    active_grants: bool = True,
+    literal_claim_ids: frozenset[str] = frozenset(),
 ) -> tuple[tuple[CanonicalMemoryRecord, ...], StructuredFactReadAuthority]:
     authenticated = AuthenticatedPrincipalAgent(principal_id="alice", agent_id="agent")
     scope = CatalogAuthorityScope(schema_version=1, kind="base")
@@ -149,10 +151,14 @@ def _records(
                             "predicate_id": state.claim_key.predicate_id,
                         },
                         "value": {
-                            "object_kind": "entity",
-                            "object_logical_entity_id": state.object_value,
-                            "literal_type": None,
-                            "canonical_literal_value": None,
+                            "object_kind": "literal" if state.claim_id in literal_claim_ids else "entity",
+                            "object_logical_entity_id": (
+                                None if state.claim_id in literal_claim_ids else state.object_value
+                            ),
+                            "literal_type": "LocalDate" if state.claim_id in literal_claim_ids else None,
+                            "canonical_literal_value": (
+                                state.object_value if state.claim_id in literal_claim_ids else None
+                            ),
                         },
                     },
                     "subject_assertion_ref": {
@@ -364,4 +370,94 @@ def test_native_projection_fallback_reconstructs_correction_and_as_of(monkeypatc
     ]
     assert [(item.claim_id, item.object_value, item.lifecycle_state) for item in historical.items] == [
         ("old", "ada", "active")
+    ]
+
+
+def test_native_projection_fallback_reconstructs_literal_and_retracted_symmetric_view(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "memorii.core.semantic_ingestion.structured_fact_read.PackageIndexedCatalogBundleLocator.locate_historical",
+        _bundle,
+    )
+    monkeypatch.setattr(
+        "memorii.core.semantic_ingestion.structured_fact_read.verify_structured_catalog_projection_for_read",
+        lambda *args, **kwargs: True,
+    )
+    literal = _state(
+        claim_id="literal",
+        subject="task",
+        value='{"source_calendar":"gregorian","value":"2026-10-03"}',
+        predicate="work_item_due_on",
+        updated_at=NOW - timedelta(days=2),
+    )
+    symmetric = _state(
+        claim_id="symmetric",
+        subject="alice",
+        value="bob",
+        predicate="partner_of",
+        active=False,
+        updated_at=NOW - timedelta(days=2),
+    )
+    records, authority = _records(literal, symmetric, literal_claim_ids=frozenset({"literal"}))
+    projection_only = tuple(
+        record for record in records if record.content.get("memory_evolution_kind") != "claim_state"
+    )
+    monkeypatch.setattr(
+        "memorii.core.semantic_ingestion.structured_fact_read._lifecycle_transitions",
+        lambda _records: (
+            _LifecycleTransition(
+                transition_id="retraction",
+                operation_id="retraction",
+                transition_kind="retraction",
+                compared_claim_ids=("symmetric",),
+                next_claim_ids=(),
+                recorded_at=NOW,
+            ),
+        ),
+    )
+
+    literal_read = read_structured_facts_from_snapshot(
+        records=projection_only,
+        authority=authority,
+        request=StructuredFactReadRequest(
+            predicate_id="work_item_due_on",
+            subject_entity_id="task",
+        ),
+        now=NOW,
+    )
+    retracted_current = read_structured_facts_from_snapshot(
+        records=projection_only,
+        authority=authority,
+        request=StructuredFactReadRequest(
+            predicate_id="partner_of",
+            subject_entity_id="alice",
+        ),
+        now=NOW,
+    )
+    reverse_as_of = read_structured_facts_from_snapshot(
+        records=projection_only,
+        authority=authority,
+        request=StructuredFactReadRequest(
+            predicate_id="partner_of",
+            subject_entity_id="bob",
+            view="history",
+            system_as_of=NOW - timedelta(days=1),
+        ),
+        now=NOW,
+    )
+    retracted_history = read_structured_facts_from_snapshot(
+        records=projection_only,
+        authority=authority,
+        request=StructuredFactReadRequest(
+            predicate_id="partner_of",
+            subject_entity_id="alice",
+            view="history",
+        ),
+        now=NOW,
+    )
+
+    assert literal_read.items[0].object_value == literal.object_value
+    assert retracted_current.items == ()
+    assert [(item.object_value, item.lifecycle_state) for item in retracted_history.items] == [("bob", "retracted")]
+    assert [(item.object_value, item.derived_direction, item.lifecycle_state) for item in reverse_as_of.items] == [
+        ("alice", "reverse", "active")
     ]

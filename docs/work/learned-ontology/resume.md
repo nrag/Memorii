@@ -145,3 +145,9 @@ protected current/history/as-of and prefetch after JSONL reopen. The linked
 lifecycle lease debugging WorkPlan is complete. Counts remain 2/5 and 3/14.
 Exactly one next action: implement and run the combined installed literal
 correction/retraction and `partner_of`/`sibling_of` symmetric reverse probe.
+
+The combined candidate is implemented. It covers LocalDate correction and
+retraction, two transaction-time cutoffs, both symmetric reverse relations,
+zero read-side persistence, and one JSONL reopen. Fast affected coverage passes
+97 tests in 8.56 seconds with Ruff and whitespace clean. Exactly one next
+action: run this long installed candidate on the frozen checkpoint.

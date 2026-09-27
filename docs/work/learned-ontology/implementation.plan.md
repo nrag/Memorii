@@ -84,6 +84,12 @@ protected current/history/as-of reads. The linked debugging operation is
 complete. M3 remains active on literal correction, retraction, two symmetric
 reverse views, and H8; counts remain 2/5 milestones and 3/14 requirements.
 
+The remaining shared lifecycle candidate is implemented as one installed
+no-key provider journey: LocalDate correction/retraction, transaction-time
+views, both symmetric reverse relations, no inverse persistence, and JSONL
+reopen. Fast affected coverage passes 97 tests. The long installed run is the
+active M3 gate; counts remain unchanged pending its result.
+
 ## Production Boundary And Change Map
 
 `implementation-readiness.md` contains the read-only composition-root preflight and caller counts. Current paths are generic `ProviderMemoryService.sync_event` and the installed Hermes completed-turn root, one fixed three-predicate profile, one shared semantic terminal writer, and one protected-reader core. Ontology observer, catalog registry, activation, learner, and structured-fact port have zero current production callers. No future owner counts as implemented until a mapper finds a real caller and a focused path proof reaches its durable outcome.
