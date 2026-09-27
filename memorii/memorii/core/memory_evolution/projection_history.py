@@ -56,6 +56,7 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     CanonicalTypedValueError,
     OperationFenceBinding,
     RequiredOutcomeScopeSet,
+    SemanticWriterCommitBinding,
     decode_typed_value,
     encode_typed_value,
 )
@@ -87,6 +88,7 @@ from memorii.core.memory_evolution.writer_admission import (
     SemanticConflictAuthorityAdministrationGrant,
     SemanticWriterAdmissionStore,
     SemanticWriterWriteAuthorization,
+    has_activated_operation_admission,
 )
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
@@ -1977,12 +1979,16 @@ class ProjectionHistoryRepository:
         *,
         temporal_projections: tuple[TemporalProjectionRecord, ...] = (),
         trust_projections: tuple[TrustProjectionRecord, ...] = (),
+        operation_fences_by_transaction_group: Mapping[str, OperationFenceBinding] | None = None,
+        writer_commit_binding: SemanticWriterCommitBinding | None = None,
     ) -> SemanticConflictAuthorityCommitInput:
         """Resolve display authority over a server-derived provenance/scope closure."""
 
         requests = self._semantic_conflict_resolution_requests(
             temporal_projections=temporal_projections,
             trust_projections=trust_projections,
+            operation_fences_by_transaction_group=operation_fences_by_transaction_group,
+            writer_commit_binding=writer_commit_binding,
         )
         resolver = self._semantic_conflict_authority_resolver
         if requests and resolver is None:
@@ -2053,6 +2059,8 @@ class ProjectionHistoryRepository:
         temporal_projections: tuple[TemporalProjectionRecord, ...],
         trust_projections: tuple[TrustProjectionRecord, ...],
         provenance_read_records: dict[str, CanonicalMemoryRecord] | None = None,
+        operation_fences_by_transaction_group: Mapping[str, OperationFenceBinding] | None = None,
+        writer_commit_binding: SemanticWriterCommitBinding | None = None,
     ) -> tuple[SemanticConflictAuthorityResolutionRequest, ...]:
         grouped: dict[
             tuple[SemanticClaimSlotKey, str, tuple[tuple[str, str], ...]],
@@ -2100,6 +2108,8 @@ class ProjectionHistoryRepository:
             scope = self._derive_semantic_conflict_scope(
                 tuple(evidence_by_id[candidate_id] for candidate_id, _ in candidate_set),
                 provenance_read_records=provenance_read_records,
+                operation_fences_by_transaction_group=operation_fences_by_transaction_group,
+                writer_commit_binding=writer_commit_binding,
             )
             contest_values = {
                 "tenant_partition_id": scope.tenant_partition_id,
@@ -2130,6 +2140,8 @@ class ProjectionHistoryRepository:
         evidence: tuple[ProjectionEvidenceRecord, ...],
         *,
         provenance_read_records: dict[str, CanonicalMemoryRecord] | None = None,
+        operation_fences_by_transaction_group: Mapping[str, OperationFenceBinding] | None = None,
+        writer_commit_binding: SemanticWriterCommitBinding | None = None,
     ) -> SemanticConflictScopeBinding:
         admissions = []
         tenants = set()
@@ -2159,8 +2171,18 @@ class ProjectionHistoryRepository:
                 raise ProjectionHistoryError("projection_history_integrity_error")
             index, fence = candidates[0]
             source = self._memory_plane.get_record(contender.source_id)
+            operation_fence, operation_binding, operation_primary = (
+                self._contender_operation_authority(
+                    contender=contender,
+                    admission_fence=fence,
+                    operation_fences_by_transaction_group=(
+                        operation_fences_by_transaction_group or {}
+                    ),
+                    writer_commit_binding=writer_commit_binding,
+                )
+            )
             operation = self._memory_plane.get_record(
-                f"semantic_ingestion:operation:{fence.operation_fence_id}"
+                f"semantic_ingestion:operation:{operation_fence.operation_fence_id}"
             )
             required_scopes = tuple(index.content.get("required_scopes", ()))
             tenant = index.content.get("tenant_partition_id")
@@ -2192,17 +2214,29 @@ class ProjectionHistoryRepository:
             ):
                 raise ProjectionHistoryError("projection_history_integrity_error")
             try:
-                operation_fence = OperationFenceBinding.model_validate(
+                control_fence = OperationFenceBinding.model_validate(
                     operation.content["control"]["operation_fence"]
                 )
             except (KeyError, TypeError, ValueError) as exc:
                 raise ProjectionHistoryError(
                     "projection_history_integrity_error"
                 ) from exc
-            if operation_fence != fence:
+            if control_fence != operation_fence:
+                raise ProjectionHistoryError("projection_history_integrity_error")
+            if operation_fence != fence and (
+                operation_binding is None
+                or not has_activated_operation_admission(
+                    operation_fence=operation_fence,
+                    binding=operation_binding,
+                    current=tuple(self._memory_plane.list_records()),
+                    governed=[],
+                )
+            ):
                 raise ProjectionHistoryError("projection_history_integrity_error")
             if provenance_read_records is not None:
-                for read_record in (source, index, operation):
+                for read_record in (source, index, operation, operation_primary):
+                    if read_record is None:
+                        continue
                     previous = provenance_read_records.setdefault(
                         read_record.memory_id, read_record
                     )
@@ -2240,6 +2274,99 @@ class ProjectionHistoryRepository:
                 + encode_typed_value(_conflict_contract_value(scope_values))
             ).hexdigest(),
         )
+
+    def _contender_operation_authority(
+        self,
+        *,
+        contender: ProjectionEvidenceRecord,
+        admission_fence: OperationFenceBinding,
+        operation_fences_by_transaction_group: Mapping[str, OperationFenceBinding],
+        writer_commit_binding: SemanticWriterCommitBinding | None,
+    ) -> tuple[
+        OperationFenceBinding,
+        SemanticWriterCommitBinding | None,
+        CanonicalMemoryRecord | None,
+    ]:
+        """Resolve the operation that authored one contender's transaction group.
+
+        A retained structured submission has a fresh operation fence but keeps
+        the capture admission fence in its evidence.  The current write passes
+        that new fence directly; already committed contenders recover it only
+        from their immutable native group primary.
+        """
+        transaction_group_id = contender.transaction_group_id
+        if transaction_group_id is None:
+            raise ProjectionHistoryError("projection_history_integrity_error")
+        current_fence = operation_fences_by_transaction_group.get(transaction_group_id)
+        if current_fence is not None:
+            if writer_commit_binding is None:
+                raise ProjectionHistoryError("projection_history_integrity_error")
+            if (
+                current_fence.source_id != contender.source_id
+                or current_fence.source_digest != admission_fence.source_digest
+            ):
+                raise ProjectionHistoryError("projection_history_integrity_error")
+            return current_fence, writer_commit_binding, None
+
+        from memorii.core.semantic_ingestion.contracts import (
+            BootstrapGraphGroupCommitRequestV3,
+            decode_semantic_contract,
+        )
+
+        candidates: list[
+            tuple[OperationFenceBinding, SemanticWriterCommitBinding, CanonicalMemoryRecord]
+        ] = []
+        for primary in self._memory_plane.list_records(
+            source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+        ):
+            try:
+                request = decode_semantic_contract(
+                    bytes.fromhex(primary.content["request_hex"]),
+                    BootstrapGraphGroupCommitRequestV3,
+                )
+            except (KeyError, TypeError, ValueError):
+                continue
+            expected_id = (
+                "semantic_ingestion:bootstrap-graph-v3:group-commit:"
+                + sha256(
+                    encode_typed_value((
+                        request.source_operation_id,
+                        request.transaction_group_id,
+                        request.operation_ids,
+                        request.request_ctv_digest,
+                    ))
+                ).hexdigest()
+            )
+            if (
+                primary.memory_id == expected_id
+                and request.transaction_group_id == transaction_group_id
+                and request.operation_fence_binding.source_id == contender.source_id
+                and request.operation_fence_binding.source_digest == admission_fence.source_digest
+            ):
+                candidates.append((
+                    request.operation_fence_binding,
+                    request.writer_commit_binding,
+                    primary,
+                ))
+        if candidates:
+            if len(candidates) != 1:
+                raise ProjectionHistoryError("projection_history_integrity_error")
+            return candidates[0]
+
+        # Once a source has a retained-operation link, the original capture
+        # fence is no longer authority for that operation.  A missing or
+        # substituted immutable group primary must therefore fail closed.
+        if any(
+            record.source_kind == "semantic_ingestion_retained_source_operation"
+            and record.content.get("source_id") == contender.source_id
+            for record in self._memory_plane.list_records()
+        ):
+            raise ProjectionHistoryError("projection_history_integrity_error")
+
+        # Legacy ordinary terminal writes predate native group primaries. Their
+        # operation is the original capture admission fence and remains valid
+        # only under the existing direct-admission checks above.
+        return admission_fence, None, None
 
     def _semantic_conflict_id(self, contest: SemanticConflictContestKey) -> str:
         return sha256(
@@ -2750,6 +2877,8 @@ class ProjectionHistoryRepository:
         capability: object | None = None,
         authorization: SemanticWriterWriteAuthorization | None = None,
         pending_conflict_immutable_prefix_count: int = 0,
+        operation_fences_by_transaction_group: Mapping[str, OperationFenceBinding] | None = None,
+        writer_commit_binding: SemanticWriterCommitBinding | None = None,
     ) -> PreparedProjectionPublication:
         """Prepare complete immutable authority records for a caller-owned atomic CAS."""
 
@@ -2854,6 +2983,8 @@ class ProjectionHistoryRepository:
             temporal_publication=publication.temporal,
             trust_publication=publication.trust,
             pending_immutable_prefix_count=pending_conflict_immutable_prefix_count,
+            operation_fences_by_transaction_group=operation_fences_by_transaction_group,
+            writer_commit_binding=writer_commit_binding,
         )
         records.extend(conflict_records)
         preconditions.extend(conflict_preconditions)
@@ -2878,6 +3009,8 @@ class ProjectionHistoryRepository:
         temporal_publication: TemporalProjectionPublication | None = None,
         trust_publication: TrustProjectionPublication | None = None,
         pending_immutable_prefix_count: int = 0,
+        operation_fences_by_transaction_group: Mapping[str, OperationFenceBinding] | None = None,
+        writer_commit_binding: SemanticWriterCommitBinding | None = None,
     ) -> tuple[tuple[CanonicalMemoryRecord, ...], tuple[MemoryPlanePrecondition, ...]]:
         """Prepare the authority records before the caller's single semantic CAS.
 
@@ -2979,6 +3112,8 @@ class ProjectionHistoryRepository:
                 temporal_projections=getattr(request, "temporal_projections", ()),
                 trust_projections=getattr(request, "trust_projections", ()),
                 provenance_read_records=provenance_read_records,
+                operation_fences_by_transaction_group=operation_fences_by_transaction_group,
+                writer_commit_binding=writer_commit_binding,
             )
         }
 

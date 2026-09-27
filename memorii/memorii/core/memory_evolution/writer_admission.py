@@ -3524,7 +3524,7 @@ def _is_retained_source_operation_link(
     )
 
 
-def _has_activated_operation_admission(
+def has_activated_operation_admission(
     *,
     operation_fence: OperationFenceBinding,
     binding: SemanticWriterCommitBinding,
@@ -3608,6 +3608,10 @@ def _has_activated_operation_admission(
         and index.content.get("admitted_writer_epoch") == binding.expected_writer_epoch
         and index.content.get("writer_admission_digest") == binding.admission_digest
     )
+
+
+# Kept as a private compatibility alias for the existing admission write paths.
+_has_activated_operation_admission = has_activated_operation_admission
 
 
 def _is_retained_structured_submission_write(

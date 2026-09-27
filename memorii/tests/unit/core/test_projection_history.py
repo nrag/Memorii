@@ -5,13 +5,25 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Literal
 
 import pytest
+from memorii.core.memory_evolution.admission import (
+    GovernedSourceAdmissionService,
+    RetainedSourceOperationRequest,
+)
+from memorii.core.memory_evolution.atomic_store import SemanticIngestionAtomicStore
 from memorii.core.memory_evolution.conflict_attention import (
     SemanticConflictAuthorityCommitInput,
 )
-from memorii.core.memory_evolution.ingestion_contracts import encode_typed_value
+from memorii.core.memory_evolution.ingestion_contracts import (
+    AuthenticatedIngressContext,
+    DeliveryIdentity,
+    DeliveryPrincipalBinding,
+    OperationFenceBinding,
+    encode_typed_value,
+)
 from memorii.core.memory_evolution.projection_history import (
     ProjectionCommitRequest,
     ProjectionHistoryError,
@@ -42,6 +54,16 @@ from memorii.core.memory_plane.store import (
     _PersistedBatch,
 )
 from memorii.core.semantic_ingestion.contracts import TimeInterval
+from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
+from tests.fixtures.semantic_ingestion.semantic_terminal_fixture import (
+    TestSemanticConflictAuthorityResolver as SemanticConflictAuthorityResolverFixture,
+)
+from tests.fixtures.semantic_ingestion.semantic_terminal_fixture import (
+    handoff as terminal_handoff,
+)
+from tests.fixtures.semantic_ingestion.semantic_terminal_fixture import (
+    install_test_semantic_conflict_authority_resolver,
+)
 
 REPOSITORY_ID = "semantic_ingestion"
 T0 = datetime(2026, 8, 3, 12, tzinfo=UTC)
@@ -49,6 +71,298 @@ T0 = datetime(2026, 8, 3, 12, tzinfo=UTC)
 
 def _digest(value: str) -> str:
     return sha256(value.encode("utf-8")).hexdigest()
+
+
+class _ProjectionScopeRecords:
+    def __init__(self, records: tuple[CanonicalMemoryRecord, ...] = ()) -> None:
+        self.records = records
+
+    def list_records(self, *, source_kind: str | None = None):
+        return tuple(
+            record for record in self.records
+            if source_kind is None or record.source_kind == source_kind
+        )
+
+
+def _scope_fence(operation_id: str) -> OperationFenceBinding:
+    principal = DeliveryPrincipalBinding.create(
+        principal_subject_id="user:one",
+        tenant_partition_id="tenant:one",
+        provider_identity="test",
+    )
+    return OperationFenceBinding.create(
+        operation_id=operation_id,
+        source_id="source:one",
+        source_digest=_digest("source:one"),
+        delivery_identity=DeliveryIdentity.create(principal, "delivery:one"),
+    )
+
+
+def _scope_contender(transaction_group_id: str) -> ProjectionEvidenceRecord:
+    # The operation-authority selector reads only these coordinates; model
+    # construction keeps this focused test independent of projection payloads.
+    return ProjectionEvidenceRecord.model_construct(
+        candidate_id="candidate:one",
+        candidate_digest=_digest("candidate:one"),
+        authority_relation="contested_top",
+        source_id="source:one",
+        source_event_id="event:one",
+        source_event_digest=_digest("event:one"),
+        transaction_group_id=transaction_group_id,
+    )
+
+
+def test_conflict_scope_uses_exact_group_fence_and_denies_missing_retained_primary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = object.__new__(ProjectionHistoryRepository)
+    repository._memory_plane = _ProjectionScopeRecords()
+    capture_fence = _scope_fence("capture-operation")
+    retained_fence = _scope_fence("retained-operation")
+    contender = _scope_contender("a" * 64)
+    binding = object()
+
+    assert repository._contender_operation_authority(
+        contender=contender,
+        admission_fence=capture_fence,
+        operation_fences_by_transaction_group={contender.transaction_group_id: retained_fence},
+        writer_commit_binding=binding,
+    ) == (retained_fence, binding, None)
+    assert repository._contender_operation_authority(
+        contender=contender,
+        admission_fence=capture_fence,
+        operation_fences_by_transaction_group={},
+        writer_commit_binding=None,
+    ) == (capture_fence, None, None)
+
+    retained_request = SimpleNamespace(
+        source_operation_id="retained-source:v1:one",
+        transaction_group_id=contender.transaction_group_id,
+        operation_ids=("operation:one",),
+        request_ctv_digest="b" * 64,
+        operation_fence_binding=retained_fence,
+        writer_commit_binding=binding,
+    )
+    primary_id = (
+        "semantic_ingestion:bootstrap-graph-v3:group-commit:"
+        + sha256(encode_typed_value((
+            retained_request.source_operation_id,
+            retained_request.transaction_group_id,
+            retained_request.operation_ids,
+            retained_request.request_ctv_digest,
+        ))).hexdigest()
+    )
+    primary = CanonicalMemoryRecord(
+        memory_id=primary_id,
+        domain=MemoryDomain.EXECUTION,
+        text="",
+        content={"request_hex": "00"},
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary",
+        timestamp=T0,
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+    from memorii.core.semantic_ingestion import contracts as contracts_module
+
+    monkeypatch.setattr(
+        contracts_module,
+        "decode_semantic_contract",
+        lambda *_args, **_kwargs: retained_request,
+    )
+    repository._memory_plane = _ProjectionScopeRecords((primary,))
+    assert repository._contender_operation_authority(
+        contender=contender,
+        admission_fence=capture_fence,
+        operation_fences_by_transaction_group={},
+        writer_commit_binding=None,
+    ) == (retained_fence, binding, primary)
+
+    repository._memory_plane = _ProjectionScopeRecords((
+        CanonicalMemoryRecord(
+            memory_id="semantic_ingestion:retained-source-operation:" + retained_fence.operation_fence_id,
+            domain=MemoryDomain.EXECUTION,
+            text="",
+            content={"source_id": contender.source_id},
+            status=CommitStatus.COMMITTED,
+            source_kind="semantic_ingestion_retained_source_operation",
+            timestamp=T0,
+            visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+        ),
+    ))
+    with pytest.raises(ProjectionHistoryError, match="projection_history_integrity_error"):
+        repository._contender_operation_authority(
+            contender=contender,
+            admission_fence=capture_fence,
+            operation_fences_by_transaction_group={},
+            writer_commit_binding=None,
+        )
+
+
+def test_prepare_retains_pending_operation_authority_for_retained_conflicts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Prepare must repeat the same retained-operation scope proof as preflight."""
+    harness = _repository(tmp_path / "retained-conflict", _Clock(T0))
+    writers = harness.writers
+    binding = harness.binding
+    resolver = SemanticConflictAuthorityResolverFixture(harness.plane, now=T0)
+    store = SemanticIngestionAtomicStore(
+        harness.plane,
+        writers,
+        now_provider=lambda: T0,
+        semantic_conflict_authority_resolver=resolver,
+    )
+    install_test_semantic_conflict_authority_resolver(
+        harness.plane, writers, store, resolver=resolver,
+    )
+    admission, _ = terminal_handoff(
+        harness.plane,
+        coordinate="retained-conflict",
+        scope_ids=frozenset({"scope:a"}),
+        atomic_store=store,
+        writer_binding=binding,
+    )
+    ingress = AuthenticatedIngressContext(
+        delivery_principal_binding=DeliveryPrincipalBinding.create(
+            principal_subject_id="principal:a",
+            tenant_partition_id="tenant:a",
+            provider_identity="provider:test",
+        ),
+        required_outcome_scopes=admission.required_outcome_scopes,
+        current_authorized_scopes=admission.required_outcome_scopes,
+    )
+    retained = GovernedSourceAdmissionService(harness.plane).allocate_retained_source_operation(
+        request=RetainedSourceOperationRequest(
+            source_id=admission.source_id,
+            source_digest=admission.source_digest,
+            canonical_envelope=b"retained-conflict",
+        ),
+        authenticated_ingress=ingress,
+    )
+    store.publish_retained_source_operation(accepted=retained, writer_binding=binding)
+
+    slot = SemanticClaimSlotKey(
+        subject_logical_entity_id="entity:alice",
+        predicate_id="works_for",
+        scope_identity="asserted:speaker",
+    )
+    group_id = "a" * 64
+    evidence = tuple(
+        ProjectionEvidenceRecord(
+            candidate_id=f"assertion:{candidate}",
+            candidate_digest=_digest(f"assertion:{candidate}"),
+            authority_relation="contested_top",
+            assertion_key=SemanticAssertionKey(
+                slot=slot,
+                value=SemanticClaimValueKey(
+                    object_kind="entity",
+                    object_logical_entity_id=f"entity:{candidate}",
+                    value_policy_fingerprint=_digest("value-policy"),
+                ),
+            ),
+            source_id=admission.source_id,
+            source_authority_class="official",
+            source_authority_evidence_digest=_digest("authority-evidence"),
+            source_event_id=f"event:{candidate}",
+            source_event_digest=_digest(f"event:{candidate}"),
+            transaction_group_id=group_id,
+            valid_interval=TimeInterval(start=T0, end=None),
+            system_valid_from=T0,
+        )
+        for candidate in ("globex", "initech")
+    )
+    common = {
+        "projection_id": _digest("retained-contested-projection"),
+        "repository_id": REPOSITORY_ID,
+        "source_record_kind": "claim_assertion",
+        "source_record_id": "assertion:alice-employer",
+        "source_record_version": 1,
+        "source_record_digest": _digest("source-record"),
+        "claim_slot_key": slot,
+        "predicate_state_policy_fingerprint": _digest("state-policy"),
+        "selected_assertion_ids": (),
+        "contested_assertion_ids": tuple(item.candidate_id for item in evidence),
+        "retained_assertion_ids": (),
+        "system_valid_from": T0,
+        "valid_interval": TimeInterval(start=T0, end=None),
+        "outcome": "contested",
+        "evidence": evidence,
+    }
+    temporal = TemporalProjectionRecord.create(
+        **common, temporal_policy_fingerprint=_digest("temporal-policy"),
+    )
+    trust = TrustProjectionRecord.create(
+        **common,
+        trust_policy_fingerprint=_digest("trust-policy"),
+        arbitration_as_of=T0,
+    )
+    fence_map = {group_id: retained.operation_fence_binding}
+    authority = store.projection_history.resolve_semantic_conflict_authority(
+        temporal_projections=(temporal,),
+        trust_projections=(trust,),
+        operation_fences_by_transaction_group=fence_map,
+        writer_commit_binding=binding,
+    )
+    request = ProjectionCommitRequest(
+        repository_id=REPOSITORY_ID,
+        operation_id=group_id,
+        graph_revision="graph-revision-1",
+        event_batch_sequence=1,
+        event_batch_digest=_digest("event-batch-1"),
+        complete_read_set_digest=_digest("read-set-1"),
+        writer_epoch=binding.expected_writer_epoch,
+        base_snapshot_token="snapshot-0",
+        temporal_policy_fingerprint=_digest("temporal-policy"),
+        trust_policy_fingerprint=_digest("trust-policy"),
+        arbitration_as_of=T0,
+        temporal_projections=(temporal,),
+        trust_projections=(trust,),
+        semantic_conflict_authority=authority,
+    )
+    authorization = writers._authorize_atomic(binding, capability=store._write_capability)
+
+    with pytest.raises(ProjectionHistoryError, match="projection_history_integrity_error"):
+        store.projection_history.prepare(
+            request, capability=store._write_capability, authorization=authorization,
+        )
+    prepared = store.projection_history.prepare(
+        request,
+        capability=store._write_capability,
+        authorization=authorization,
+        operation_fences_by_transaction_group=fence_map,
+        writer_commit_binding=binding,
+    )
+    assert prepared.records
+
+    retained_link = harness.plane.get_record(
+        "semantic_ingestion:retained-source-operation:"
+        + retained.operation_fence_binding.operation_fence_id
+    )
+    assert retained_link is not None
+    real_get = harness.plane.get_record
+    real_list = harness.plane.list_records
+    monkeypatch.setattr(
+        harness.plane,
+        "get_record",
+        lambda memory_id: None if memory_id == retained_link.memory_id else real_get(memory_id),
+    )
+    monkeypatch.setattr(
+        harness.plane,
+        "list_records",
+        lambda *args, **kwargs: tuple(
+            record for record in real_list(*args, **kwargs)
+            if record.memory_id != retained_link.memory_id
+        ),
+    )
+    with pytest.raises(ProjectionHistoryError, match="projection_history_integrity_error"):
+        store.projection_history.prepare(
+            request,
+            capability=store._write_capability,
+            authorization=authorization,
+            operation_fences_by_transaction_group=fence_map,
+            writer_commit_binding=binding,
+        )
 
 
 class _Clock:
@@ -147,6 +461,8 @@ class _ProjectionHarness:
     capability: object
     authorization: SemanticWriterWriteAuthorization
     authority: list[tuple[str, tuple]]
+    writers: SemanticWriterAdmissionStore
+    binding: object
 
     def replace_records(
         self,
@@ -225,6 +541,8 @@ def _repository(
         capability=capability,
         authorization=authorization,
         authority=authority,
+        writers=writers,
+        binding=binding,
     )
 
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -16235,6 +16235,9 @@ class SemanticIngestionAtomicStore:
                         canonical_event_batch=canonical_event_batch,
                         canonical_graph_delta=canonical_graph_delta,
                         writer_commit_binding=request.writer_commit_binding,
+                        operation_fences_by_transaction_group={
+                            canonical_event_batch.transaction_group_id: request.operation_fence_binding,
+                        },
                         complete_read_set_digest=request.group_plan_member.graph_read_set.read_set_digest,
                         base_snapshot_token=prior_replay_state.state_digest,
                         authorization=authorization,
@@ -17577,6 +17580,7 @@ class SemanticIngestionAtomicStore:
         canonical_event_batch,
         canonical_graph_delta,
         writer_commit_binding,
+        operation_fences_by_transaction_group: Mapping[str, OperationFenceBinding],
         complete_read_set_digest: str,
         base_snapshot_token: str,
         authorization: SemanticWriterWriteAuthorization,
@@ -17619,6 +17623,8 @@ class SemanticIngestionAtomicStore:
                 conflict_authority = self._projection_history.resolve_semantic_conflict_authority(
                     temporal_projections=temporal_projections,
                     trust_projections=trust_projections,
+                    operation_fences_by_transaction_group=operation_fences_by_transaction_group,
+                    writer_commit_binding=writer_commit_binding,
                 )
             prepared = self._projection_history.prepare(
                 ProjectionCommitRequest(
@@ -17639,6 +17645,8 @@ class SemanticIngestionAtomicStore:
                 ),
                 capability=self._write_capability,
                 authorization=authorization,
+                operation_fences_by_transaction_group=operation_fences_by_transaction_group,
+                writer_commit_binding=writer_commit_binding,
             )
             catch_up = self._policy_migration.prepare_write_catch_up(
                 temporal_projections=temporal_projections,
@@ -17829,6 +17837,9 @@ class SemanticIngestionAtomicStore:
                 canonical_event_batch=batch,
                 canonical_graph_delta=graph_delta,
                 writer_commit_binding=request.writer_commit_binding,
+                operation_fences_by_transaction_group={
+                    batch.transaction_group_id: request.operation_fence_binding,
+                },
                 complete_read_set_digest=request.expected_effective_read_set_digest,
                 base_snapshot_token=prior.graph_state.state_digest,
                 authorization=authorization,
