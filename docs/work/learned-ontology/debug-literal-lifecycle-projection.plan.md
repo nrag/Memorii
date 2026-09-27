@@ -66,6 +66,7 @@ control -> event evidence -> semantic conflict scope -> atomic projection.
 | Run installed lifecycle and symmetric-read probe at `286897d5` | If lifecycle retirement is complete, correction and retraction commit, current/history/as-of reads select the lifecycle-valid value, and symmetric reads survive reopen. | After `1433.57s`, correction and retraction both commit; corrected current, retracted current, complete history states, and pre-correction as-of pass. Pre-retraction as-of incorrectly returns both the superseded original and replacement instead of only the replacement. Symmetric/reopen steps are not reached. The projection contest defect is resolved; historical effective-interval filtering remains defective. |
 | Apply transaction-time lifecycle filtering to both read backends | If any `system_as_of` query reconstructs the effective active image while unbounded history remains an audit view, the pre-retraction snapshot returns only the replacement in native projection and persisted claim-state paths. | Commit `cce43a6a` applies the same cutoff rule to both paths. Focused coverage proves original-only before correction, replacement-only after correction and before retraction, and superseded-plus-active unbounded history. `6 passed`; Ruff, compileall, and diff checks pass. |
 | Rerun installed shared-mechanics probe at `9d2398df` | If the as-of fix closes the remaining lifecycle defect, both cutoffs pass and execution reaches symmetric reverse reads. | After `2329.86s`, assertion, correction, retraction, current/history, both transaction-time cutoffs, and transcript sync all pass. The first symmetric relation commits, but its reverse protected current read returns `unavailable`; sibling and reopen are not reached. Retained store is pytest run `1201`. |
+| Trace and isolate symmetric reverse reads | If stored authority and projection data are valid, replay of run `1201` and clean one-row installed probes should distinguish durable read logic from the historical live runtime result. | Run `1201` contains 584 records and two verified lifecycle transitions; catalog and endpoint verification pass and direct production snapshot read returns the reverse partner item. Commit `51cdf138` binds fallback endpoint validation to the caller instead of a tautological claim-self check. Focused reader suite passes 7/7. Clean no-key installed one-row probes pass `sibling_of` in `184.48s` and `partner_of` in `181.64s`, each with exact reverse output and zero read-side record growth. The prior live `unavailable` is not reproduced. |
 
 ## production_entrypoint_bindings
 
@@ -109,8 +110,9 @@ Affected-family and publication checks pass. The installed probe at `286897d5`
 proves correction and retraction publication plus current and complete-history
 reads, but exposed an as-of interval bug. Commit `cce43a6a` repairs both read
 backends, and the installed rerun proves the entire literal lifecycle plus both
-cutoffs. The first symmetric reverse read now exposes the next fail-closed
-boundary. Targeted independent review remains outstanding, so no milestone or
+cutoffs. Commit `51cdf138` closes the reverse endpoint binding and isolated
+installed probes prove both symmetric predicates. The combined reopen rerun
+and targeted independent review remain outstanding, so no milestone or
 requirement count changes yet.
 
 ## Completion Contract
@@ -124,6 +126,6 @@ Level-2 P1/P2 in this boundary. Hostile-store permutations remain Level 3.
 
 ## One Next Action
 
-Identify and correct the first committed symmetric relation's reverse-read
-`unavailable` result using the retained run `1201`, prove both symmetric rows
-without read-side persistence, then restart the installed probe.
+Rerun the frozen combined installed lifecycle, both symmetric reverse views,
+zero read-side persistence and JSONL reopen probe at `51cdf138`, then classify
+the result before targeted independent correctness and test review.
