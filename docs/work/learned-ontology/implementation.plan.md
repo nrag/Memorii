@@ -224,6 +224,19 @@ catalog-aware production-root tests and the four-root production acceptance
 pass. Static checks pass. Counts remain 3/5 and 5/14 pending exact cohort
 review. Exactly one next action: review `53eb8b69` for M4 closure.
 
+The `2c94d831` cohort accepted the historical version binding and test matrix,
+but correctness review found default-only display phrases could still evade
+the predicate-ID comparison and the generic runtime lacked a public product
+factory. Commit `75eb0316` builds a closed display-alias index from the exact
+pinned predicate inventory and rejects the reproduced `asset owner`,
+`opportunity owner` and `product provider` reports. Public
+`build_authenticated_source_runtime` now composes verified production host
+authority and a host-owned ingress issuer into the generic adapter; the public
+factory and independent Hermes root both have focused execution proof. Four
+focused tests pass in 66.20 seconds and production composition passes in 35.33
+seconds; static/type checks pass. Counts remain 3/5 and 5/14 pending exact
+cohort review. Exactly one next action: review `75eb0316` for M4 closure.
+
 Review of `f7ce04a6` found the installed producer accepted a caller-supplied
 digest and was unreachable from normal callbacks. The replacement uses a
 bridge-owned receipt created from an observed user turn, allows inheritance

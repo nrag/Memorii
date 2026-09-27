@@ -16,7 +16,7 @@ Extend common source admission after `core/memory_evolution/admission.py:97` and
 
 Run source admission, provider outage, recovery, retry, changed observer binding, duplicate lineage, two-session recurrence, quoted/hypothetical/ambiguous text, wrong-domain, extraction-failure, recall-miss and cross-scope cases. Verify identical and transformed bytes with one core-verified upstream origin count as one lineage; different verified origins count independently, and adapter-claimed or forged origin IDs cannot satisfy recurrence. Assert no candidate/fact for pending or uncertain states, one group for correlated copies, and zero raw source disclosure outside grants. Run two-adapter conformance with equal core observations and one installed-root path. Execute focused tests, static/type, persistence/recovery, applicable integration gates and current workflow pins. A fake model proves only plumbing; a live host/local/remote quality result is separate and binding-specific. Do not activate a catalog in this milestone.
 
-- Next action: run specification, correctness and test review on exact remediation commit `53eb8b69`; close M4 only if all confirmed Level-2 P1/P2 findings are resolved.
+- Next action: run specification, correctness and test review on exact remediation commit `75eb0316`; close M4 only if all confirmed Level-2 P1/P2 findings are resolved.
 
 ## Frozen Schema And Trace Map (2026-09-27)
 
@@ -275,4 +275,21 @@ tests pass in 6.34 seconds; seven focused service/rotation/adapter tests pass in
 83.05 seconds; the two catalog-aware production-root tests pass in 42.86
 seconds; and the four-root production acceptance passes in 36.88 seconds.
 Ruff, compilation, whitespace and scoped Pyright are clean. Counts remain 3/5
+and 5/14 pending exact cohort review.
+
+The `2c94d831` cohort accepted the pinned-version boundary and test evidence,
+but correctness review found two remaining P2s. The validator recognized only
+canonical predicate-token wording, so default relations such as `asset_owned_by`
+could be misreported as the covered display phrase `asset owner`; the generic
+runtime was constructed only by the isolated evidence harness. Commit
+`75eb0316` derives a closed historical display-alias index from each pinned
+version's predicate inventory, including frozen role forms such as owner,
+provider, author, assignee, sender and recipient. The exact reproduced
+`asset owner`, `opportunity owner`, and `product provider` cases now deny gap
+admission. A public `build_authenticated_source_runtime` factory composes
+verified production host authority, the host ingress issuer and the generic
+adapter; both the ordinary direct production caller and a direct public-root
+acceptance exercise it. Four focused catalog/root tests pass in 66.20 seconds,
+the four-root plus public-factory production acceptance passes in 35.33 seconds,
+and Ruff, compilation, whitespace and scoped Pyright pass. Counts remain 3/5
 and 5/14 pending exact cohort review.
