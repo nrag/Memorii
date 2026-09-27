@@ -39,6 +39,7 @@ from memorii.core.semantic_ingestion.catalog_authority import (
     AgentLocalCatalogAuthorityScope,
     AuthenticatedPrincipalAgent,
     CatalogAuthorityCoordinate,
+    CatalogAuthorityError,
     CatalogAuthorityScope,
     CatalogOwnerVisibilityGrant,
     FactScopeGrant,
@@ -57,6 +58,8 @@ from memorii.core.semantic_ingestion.learned_relation import (
     ActivationPolicy,
     LearnedRelationRuntime,
     OntologyActivation,
+    OntologyCatalogVersion,
+    learned_catalog_pointer_memory_id,
 )
 from memorii.core.semantic_ingestion.project_assertions_profile import load_project_assertions_bundle
 from memorii.core.user_context.preference_delegations import PreferenceDelegationRepository
@@ -475,6 +478,39 @@ class _LocalLevel2IngressEvidence:
     origin_lineage_evidence: AuthenticatedOriginLineageEvidence | None = None
 
 
+def _has_agent_local_learned_control(
+    *, records: tuple[object, ...], scope: AgentLocalCatalogAuthorityScope,
+) -> bool:
+    """Return whether this owner has begun a learned catalog lifecycle.
+
+    The pointer coordinate itself is scope-bound, so it remains an admission
+    signal even if its payload was corrupted.  Versions and attempts use
+    typed payloads because their record identities are content addressed.
+    """
+    if any(
+        getattr(record, "memory_id", None) == learned_catalog_pointer_memory_id(scope)
+        for record in records
+    ):
+        return True
+    for record in records:
+        source_kind = getattr(record, "source_kind", None)
+        content = getattr(record, "content", None)
+        if not isinstance(content, dict):
+            continue
+        try:
+            if source_kind == "learned_ontology_catalog_version_v1":
+                if OntologyCatalogVersion.model_validate(content["version"]).catalog_scope == scope:
+                    return True
+            elif (
+                source_kind == "learned_ontology_activation_attempt_v1"
+                and OntologyActivation.model_validate(content["activation"]).catalog_scope == scope
+            ):
+                return True
+        except (KeyError, TypeError, ValueError):
+            continue
+    return False
+
+
 class _LocalLevel2StructuredSubmissionResolver:
     """Issue only current local structured authority for the pinned account."""
 
@@ -539,7 +575,13 @@ class _LocalLevel2StructuredSubmissionResolver:
                     principal_id=self._operator_id, agent_id=self._agent_id,
                 ),
             )
-        except ValueError:
+        except CatalogAuthorityError:
+            # A base catalog remains selectable until this owner has any
+            # learned control state.  Once a learned pointer, version, or
+            # activation exists, an invalid selected closure must deny this
+            # request rather than silently reinterpreting it as base state.
+            if _has_agent_local_learned_control(records=records, scope=scope):
+                raise
             return ThreePredicateSeedCatalogAuthorityRepository().resolve_base()
         return bundle.catalog
 

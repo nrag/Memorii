@@ -15,6 +15,7 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 from memorii.core.memory_evolution.atomic_store import StructuredSubmissionGrantRevokedError
+from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.semantic_ingestion.default_catalog_corpus import (
     EXPECTED_DEFAULT_RELATION_IDS,
     DefaultCatalogCorpusRow,
@@ -731,6 +732,136 @@ def test_factory_issues_stable_exact_local_structured_grants() -> None:
         authenticated_ingress=ingress,
         request=request.model_copy(update={"fact_grant": request.fact_grant.model_copy(update={"grant_version": 2})}),
     ) is None
+
+
+def _append_external_control_record(*, storage_root: Path, record: CanonicalMemoryRecord) -> None:
+    """Model a persisted control-plane corruption from a second process."""
+    from memorii.core.memory_plane import JsonlMemoryPlaneStore
+    from memorii.core.memory_plane.store import _PersistedBatch
+
+    store = JsonlMemoryPlaneStore(storage_root / "memory-plane")
+    with store._locked(exclusive=True):
+        batches, _records = store._current_records_unlocked()
+        write_revision = batches[-1].revision if batches else 0
+        data_revision = batches[-1].data_revision if batches else 0
+        store._replace_batches([
+            *batches,
+            _PersistedBatch.create(
+                revision=write_revision + 1,
+                data_revision=data_revision,
+                records=(record,),
+            ),
+        ])
+
+
+def test_installed_factory_uses_base_catalog_when_no_agent_local_control_exists(
+    bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An untouched owner remains eligible for the persisted base catalog."""
+    from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
+    from memorii.integrations.hermes_local_authority import (
+        authorize_local_level2,
+        authorize_local_structured_tool,
+    )
+
+    authorize_local_level2(hermes_home=tmp_path)
+    authorize_local_structured_tool(hermes_home=tmp_path)
+    monkeypatch.setattr(
+        bridge_module.importlib.metadata,
+        "entry_points",
+        lambda *, group: (_FactoryEntryPoint(build_local_level2_runtime_binding),),
+    )
+    provider = bridge_module.MemoriiHermesMemoryProvider()
+    provider.initialize(
+        "session:base", hermes_home=tmp_path, user_id="raw:user:one",
+        agent_identity="profile:primary", platform="cli", agent_context="primary",
+        agent_workspace="hermes",
+    )
+    try:
+        provider.on_turn_start(1, "Atlas owner is Ada.")
+        assert [schema["function"]["name"] for schema in provider.get_tool_schemas()][:2] == [
+            "memorii_submit_fact", "memorii_read_fact",
+        ]
+    finally:
+        provider.shutdown()
+
+
+@pytest.mark.parametrize("corruption", ("malformed_pointer", "missing_version", "substituted_scope"))
+def test_installed_factory_denies_invalid_agent_local_control_without_base_fallback(
+    bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, corruption: str,
+) -> None:
+    """The production root withholds egress and writes no fact for bad learned control."""
+    from memorii.core.semantic_ingestion.learned_relation import (
+        AgentLocalCatalogScope,
+        CatalogPointer,
+        learned_catalog_pointer_memory_id,
+    )
+    from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
+    from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
+    from memorii.integrations.hermes_local_authority import (
+        authorize_local_level2,
+        authorize_local_structured_tool,
+    )
+
+    authorize_local_level2(hermes_home=tmp_path)
+    authorize_local_structured_tool(hermes_home=tmp_path)
+    monkeypatch.setattr(
+        bridge_module.importlib.metadata,
+        "entry_points",
+        lambda *, group: (_FactoryEntryPoint(build_local_level2_runtime_binding),),
+    )
+    provider = bridge_module.MemoriiHermesMemoryProvider()
+    provider.initialize(
+        "session:corrupt", hermes_home=tmp_path, user_id="raw:user:one",
+        agent_identity="profile:primary", platform="cli", agent_context="primary",
+        agent_workspace="hermes",
+    )
+    try:
+        runtime = provider._completed_turn_runtime
+        assert runtime is not None
+        scope = AgentLocalCatalogScope(
+            principal_id=provider._absent_author_id,
+            agent_id=runtime._authenticated_agent_id,
+        )
+        pointer_scope = (
+            AgentLocalCatalogScope(principal_id="substituted:owner", agent_id=scope.agent_id)
+            if corruption == "substituted_scope" else scope
+        )
+        pointer = CatalogPointer.create(
+            catalog_scope=pointer_scope,
+            selected_version_digest="a" * 64,
+            selected_attempt_id="oca_" + "b" * 64,
+            activation_sequence=1,
+        )
+        content = {"pointer": {}} if corruption == "malformed_pointer" else {
+            "pointer": pointer.model_dump(mode="json"),
+        }
+        _append_external_control_record(
+            storage_root=tmp_path / "memorii",
+            record=CanonicalMemoryRecord(
+                memory_id=learned_catalog_pointer_memory_id(scope),
+                domain=MemoryDomain.EXECUTION,
+                text="",
+                content=content,
+                status=CommitStatus.COMMITTED,
+                source_kind="learned_ontology_catalog_pointer_v1",
+                visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+                timestamp=datetime.now(UTC),
+            ),
+        )
+        provider.on_turn_start(1, "Atlas owner is Ada.")
+        assert provider.get_tool_schemas() == []
+        assert provider.handle_tool_call("memorii_submit_fact", {"schema_version": 1}) == {
+            "status": "unavailable",
+        }
+        records = tuple(provider._provider._service._memory_plane.list_records())
+        assert not any(
+            record.content.get("runtime_context_projection_kind")
+            == "bootstrap_v3_claim_assertion"
+            for record in records
+        )
+    finally:
+        provider.shutdown()
 
 
 def test_installed_factory_provisions_the_tool_grant_trio_only_with_tool_artifact(
