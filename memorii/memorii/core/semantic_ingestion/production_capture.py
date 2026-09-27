@@ -30,9 +30,9 @@ from memorii.core.semantic_ingestion.production_authority import (
 )
 from memorii.domain.enums import SourceModality
 from memorii.integrations.authenticated_source import (
-    AuthenticatedSourceAdapter,
     AuthenticatedSourceRuntime,
     AuthenticatedSourceSubmission,
+    build_authenticated_source_runtime,
 )
 from memorii.integrations.hermes_provider import HermesMemoryProvider
 
@@ -134,12 +134,8 @@ def _capture_child(
         monitoring_authorities=monitoring_authorities,
     )
     if cell.root == "direct":
-        assert isinstance(service, ProviderMemoryService)
-        runtime = AuthenticatedSourceRuntime(
-            adapter=AuthenticatedSourceAdapter(service),
-            issue_ingress=lambda _submission: cell.authenticated_host_ingress,
-        )
-        result = runtime.submit(
+        assert isinstance(service, AuthenticatedSourceRuntime)
+        result = service.submit(
             AuthenticatedSourceSubmission(
                 operation=cell.operation,
                 content=cell.content,
@@ -157,6 +153,7 @@ def _capture_child(
             )
         )
     else:
+        assert isinstance(service, (ProviderMemoryService, HermesMemoryProvider))
         result = service.sync_event(
             operation=cell.operation,
             content=cell.content,
@@ -189,7 +186,7 @@ def _build_root(
     storage_root: Path,
     authority: VerifiedProductionHostAuthority,
     monitoring_authorities: tuple[VerifiedCapabilityMonitoringAuthority, ...],
-) -> ProviderMemoryService | HermesMemoryProvider:
+) -> ProviderMemoryService | HermesMemoryProvider | AuthenticatedSourceRuntime:
     if cell.backend == "memory":
         memory_plane = MemoryPlaneService()
     else:
@@ -198,7 +195,8 @@ def _build_root(
             record_store=JsonlMemoryPlaneStore(storage_root / "memory_plane")
         )
     if cell.root == "direct":
-        return ProviderMemoryService(
+        return build_authenticated_source_runtime(
+            issue_ingress=lambda _submission: cell.authenticated_host_ingress,
             memory_plane=memory_plane,
             verified_production_host_authority=authority,
             verified_capability_monitoring_authorities=monitoring_authorities,

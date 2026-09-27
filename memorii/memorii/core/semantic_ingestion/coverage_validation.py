@@ -21,11 +21,43 @@ from memorii.core.semantic_ingestion.default_catalog_corpus import (
 
 _ALIAS_SEPARATOR = re.compile(r"[^a-z0-9]+")
 _SEED_RELATIONS = frozenset({"project_deadline", "project_owner", "project_status"})
+_RELATION_ROLE_ALIASES = {
+    "approved_by": "approver",
+    "assigned_to": "assignee",
+    "authored_by": "author",
+    "cared_for_by": "caregiver",
+    "held_by": "holder",
+    "made_by": "maker",
+    "maintained_by": "maintainer",
+    "owed_by": "debtor",
+    "owed_to": "creditor",
+    "owned_by": "owner",
+    "provided_by": "provider",
+    "reported_by": "reporter",
+    "resolved_by": "resolver",
+    "sent_by": "sender",
+    "sent_to": "recipient",
+}
 
 
 def _alias_key(value: str) -> str:
     normalized = unicodedata.normalize("NFKC", value).casefold()
     return " ".join(part for part in _ALIAS_SEPARATOR.split(normalized) if part)
+
+
+def _relation_alias_keys(relation_id: str) -> frozenset[str]:
+    aliases = {_alias_key(relation_id)}
+    for suffix, role in _RELATION_ROLE_ALIASES.items():
+        marker = "_" + suffix
+        if relation_id.endswith(marker):
+            subject = relation_id[: -len(marker)]
+            aliases.update(
+                {
+                    _alias_key(f"{subject} {role}"),
+                    _alias_key(f"{role} of {subject}"),
+                }
+            )
+    return frozenset(aliases)
 
 
 class CoreCoverageGapValidator:
@@ -59,10 +91,11 @@ class CoreCoverageGapValidator:
         ):
             return False
         rows = {row.relation_id: row for row in corpus.rows}
+        requested_alias = _alias_key(signature.normalized_relation_meaning)
         matches = tuple(
             predicate_id
             for predicate_id in predicate_ids
-            if _alias_key(predicate_id) == _alias_key(signature.normalized_relation_meaning)
+            if requested_alias in _relation_alias_keys(predicate_id)
         )
         if len(matches) != 0:
             # A registered relation or its normalized display alias is coverage,

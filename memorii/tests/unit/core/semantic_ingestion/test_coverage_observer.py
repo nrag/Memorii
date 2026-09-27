@@ -233,6 +233,25 @@ def test_catalog_rotation_uses_observation_pinned_version() -> None:
 
     assert validator.validates(observation=seed_observation, signature=reports_to) is True
     assert validator.validates(observation=default_observation, signature=reports_to) is False
+    for meaning, subject_type in (
+        ("asset owner", "Asset"),
+        ("opportunity owner", "Opportunity"),
+        ("product provider", "ProductService"),
+    ):
+        covered_display = RelationGapSignature.create(
+            normalized_relation_meaning=meaning,
+            subject_type_id=subject_type,
+            object_type_id="Person",
+            domain_id="organization",
+            evidence_rule_id="direct_assertion:v1",
+        )
+        assert (
+            validator.validates(
+                observation=default_observation,
+                signature=covered_display,
+            )
+            is False
+        )
 
 
 def test_provider_outage_retries_after_jsonl_reopen(tmp_path: Path) -> None:

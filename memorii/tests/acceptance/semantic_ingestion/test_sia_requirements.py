@@ -33,6 +33,7 @@ from memorii.core.memory_evolution.projection_history import (
     projection_records_from_replay_state,
 )
 from memorii.core.memory_evolution.semantic_state import LineageEntityIdentity
+from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.provider.factory import build_provider_memory_service_from_env
 from memorii.core.provider.models import ProviderOperation
 from memorii.core.semantic_ingestion.capability import (
@@ -58,6 +59,10 @@ from memorii.core.semantic_ingestion.production_authority import (
 from memorii.core.semantic_ingestion.production_capture import (
     CanonicalEvidenceCaptureCell,
     CanonicalEvidenceCaptureSupervisor,
+)
+from memorii.integrations.authenticated_source import (
+    AuthenticatedSourceSubmission,
+    build_authenticated_source_runtime,
 )
 from memorii.tools.semantic_ingestion_acceptance_watermark_store import (
     FileTraceabilityReleaseWatermarkStore,
@@ -2567,6 +2572,26 @@ def test_production_composition(tmp_path: Path) -> None:
             blocked["semantic_ingestion"]
             == "source_alignment_authority_unavailable"
         )
+
+    public_runtime = build_authenticated_source_runtime(
+        issue_ingress=lambda _submission: _production_ingress(),
+        verified_production_host_authority=_production_authority(),
+        memory_plane=MemoryPlaneService(),
+        now_provider=lambda: datetime(2026, 9, 5, tzinfo=UTC),
+    )
+    public_result = public_runtime.submit(
+        AuthenticatedSourceSubmission(
+            operation=ProviderOperation.CHAT_USER_TURN,
+            content="Atlas owner is Alice.",
+            operation_id="acceptance-public-authenticated-source",
+            task_id="task:scenario-task",
+            user_id="user:scenario-user",
+        )
+    )
+    assert (
+        public_result.blocked_reasons["semantic_ingestion"]
+        == "source_alignment_authority_unavailable"
+    )
 
     authority = _production_authority()
     enabled_roots = (

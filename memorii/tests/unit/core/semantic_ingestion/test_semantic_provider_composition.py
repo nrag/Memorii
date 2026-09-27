@@ -1803,8 +1803,8 @@ def test_observer_report_of_registered_relation_alias_becomes_uncertain() -> Non
         output_schema_digest="6" * 64,
     )
     covered = RelationGapSignature.create(
-        normalized_relation_meaning="project owner",
-        subject_type_id="Project",
+        normalized_relation_meaning="asset owner",
+        subject_type_id="Asset",
         object_type_id="Person",
         domain_id="organization",
         evidence_rule_id="direct_assertion:v1",
@@ -1819,7 +1819,7 @@ def test_observer_report_of_registered_relation_alias_becomes_uncertain() -> Non
             return OntologyObservationResult.create(
                 semantic_outcome=CoverageSemanticOutcome.UNSUPPORTED_RELATION,
                 source_span=CoverageSourceSpan(start=0, end=18),
-                source_quote="Atlas owner is Bob",
+                source_quote="Truck owner is Bob",
                 signature=covered,
             )
 
@@ -1834,10 +1834,13 @@ def test_observer_report_of_registered_relation_alias_becomes_uncertain() -> Non
         ontology_observer_capability=Observer(),
         ontology_observer_authorizer=lambda _ingress, candidate: candidate == binding,
     )
+    repository = service._provider_ingestion._catalog_selection_repository
+    assert repository is not None
+    repository.install_default_catalog_release()
 
     service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
-        content="Atlas owner is Bob.",
+        content="Truck owner is Bob.",
         operation_id="covered-ontology-alias",
         task_id="task:one",
         user_id="user:alice",

@@ -8,8 +8,14 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from memorii.core.memory_evolution.ingestion_contracts import AuthenticatedHostIngress
+from memorii.core.memory_plane.service import MemoryPlaneService
+from memorii.core.provider.factory import build_provider_memory_service_from_env
 from memorii.core.provider.models import ProviderOperation, ProviderSyncResult
 from memorii.core.provider.service import ProviderMemoryService
+from memorii.core.semantic_ingestion.production_authority import (
+    VerifiedCapabilityMonitoringAuthority,
+    VerifiedProductionHostAuthority,
+)
 from memorii.domain.enums import SourceModality
 
 
@@ -83,8 +89,37 @@ class AuthenticatedSourceRuntime:
         )
 
 
+def build_authenticated_source_runtime(
+    *,
+    issue_ingress: Callable[
+        [AuthenticatedSourceSubmission], AuthenticatedHostIngress
+    ],
+    verified_production_host_authority: VerifiedProductionHostAuthority,
+    memory_plane: MemoryPlaneService | None = None,
+    now_provider: Callable[[], datetime] | None = None,
+    verified_capability_monitoring_authorities: tuple[
+        VerifiedCapabilityMonitoringAuthority, ...
+    ] = (),
+) -> AuthenticatedSourceRuntime:
+    """Build the public non-Hermes source root from verified host authority."""
+
+    service = build_provider_memory_service_from_env(
+        memory_plane=memory_plane,
+        verified_production_host_authority=verified_production_host_authority,
+        verified_capability_monitoring_authorities=(
+            verified_capability_monitoring_authorities
+        ),
+        now_provider=now_provider,
+    )
+    return AuthenticatedSourceRuntime(
+        adapter=AuthenticatedSourceAdapter(service),
+        issue_ingress=issue_ingress,
+    )
+
+
 __all__ = [
     "AuthenticatedSourceAdapter",
     "AuthenticatedSourceRuntime",
     "AuthenticatedSourceSubmission",
+    "build_authenticated_source_runtime",
 ]
