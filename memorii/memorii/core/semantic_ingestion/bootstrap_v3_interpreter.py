@@ -258,11 +258,11 @@ class BootstrapV3GraphFreeInterpreter:
                 "proof_kind": "certified_unambiguous_repetition",
                 "mention_digests": tuple(sorted(row.mention_digest for row in rows)),
                 "source_evidence": (),
-                "provenance_closure": tuple(sorted((
+                "provenance_closure": tuple(sorted({(
                     row.bootstrap_analysis_provenance.segment_id,
                     row.bootstrap_analysis_provenance.provenance_digest,
                     payload_limit_authority.policy.policy_digest,
-                ) for row in rows)),
+                ) for row in rows})),
             }
             return BootstrapSourceLocalIdentityClusterDecisionV3.create(
                 **values,

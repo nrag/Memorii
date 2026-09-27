@@ -89,9 +89,9 @@ grammar was corrected.
 
 ## One Next Action
 
-Coordinator reruns the installed corpus correction journey against the frozen
-statement-selector identity allocator, then records either its first causal
-failure or the resulting reopen and reader evidence.
+Coordinator reruns the installed corpus correction journey after the focused
+multi-mention provenance-closure correction, then records either its first
+causal failure or the resulting reopen and reader evidence.
 
 ## Current Update (2026-09-26)
 
@@ -202,3 +202,16 @@ with new mention IDs, proves one prior pending claim becomes an existing
 decision, proves the changed replacement object remains new, and denies missing,
 ambiguous, and foreign-scope selectors. The installed caller remains unrerun;
 this is not a completed production entrypoint binding.
+
+## Current Update (2026-09-27, interpreter provenance closure)
+
+The first installed rerun at commit `6a7ebb48` reached the real V3 interpreter
+and failed before canonical allocation. The correction subject's paired old and
+replacement mentions share one segment provenance tuple, but the new cluster
+builder retained that tuple twice. The closed cluster contract requires a
+canonical set, so normalization rejected the publication and the outer
+fallback later reported the already-known lease conflict. The cluster builder
+now deduplicates provenance closure tuples before sorting. This is a narrow
+construction defect; the scoped prior-claim allocator remains unchanged. The
+next action is the same installed lifecycle journey on the corrected frozen
+revision.
