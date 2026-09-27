@@ -3,7 +3,7 @@
 - Work ID: `learned-ontology-implementation` (planning coordinate only)
 - Work type: implementation
 - Delivery fidelity: Level 2, early real-world manual testing. The user explicitly clarified that Levels 2/3/4 control implementation and review rigor: this operation must produce usable manual-test journeys and common-failure handling, while production rollout, scale, exhaustive hardening, and release ceremony wait until manual validation is complete.
-- Status: active; milestones 1 through 3 are ready for manual testing, milestone 4 is the only active implementation milestone; progress table below is current
+- Status: active; milestones 1 through 4 are ready for manual testing, milestone 5 is the only active implementation milestone; progress table below is current
 - Coordinator: `/root`
 - Created: 2026-09-25
 - Last updated: 2026-09-27
@@ -60,8 +60,8 @@ States below are judged at the selected Level-2 manual-testing bar. `Complete` m
 | 1 | `milestones/structured-fact-no-key.plan.md` | Retained source -> authenticated structured fact -> protected read, no key/network | approved design baseline and reviewed Hermes/legacy addendum | ready for manual testing; OLE-12 and OLE-14 complete at Level 2 |
 | 2 | `milestones/catalog-version-and-fourth-relation.plan.md` | One fourth registered relation through installed writer/read, pinned version, verified legacy read | 1 | ready for manual testing; OLE-05 complete at Level 2 |
 | 3 | `milestones/default-catalog-and-home.plan.md` | All 53 relations, twenty personas, ten home journeys and preference usable before learning | 2 | ready for manual testing; OLE-09 and OLE-10 complete at Level 2 |
-| 4 | `milestones/coverage-observation.plan.md` | Any conforming adapter supplies scoped evidence; durable gap attribution and recurrence | 2; base from 3 for full coverage judgment | active |
-| 5 | `milestones/learning-activation-replay.plan.md` | One grounded relation/subtype candidate evaluated, selected, read and replayed safely | 3 and 4 | not started |
+| 4 | `milestones/coverage-observation.plan.md` | Any conforming adapter supplies scoped evidence; durable gap attribution and recurrence | 2; base from 3 for full coverage judgment | ready for manual testing; exact cohort at `f8e262cd` reports no Level-2 P1/P2 |
+| 5 | `milestones/learning-activation-replay.plan.md` | One grounded relation/subtype candidate evaluated, selected, read and replayed safely | 3 and 4 | active |
 | 6 | `milestones/release-conformance.plan.md` | Production package, migration, rollback, CI, live-provider and broad release evidence | manual validation of 1-5 | deferred to Level 3 |
 
 **Progress snapshot (2026-09-26):** 2 of 5 Level-2 implementation milestones are ready for manual testing; the sixth release-conformance milestone is deferred to Level 3. At the current fidelity, 3 of 14 requirements are complete (OLE-05, OLE-12 and OLE-14), 4 are partial (OLE-03, OLE-07, OLE-08 and OLE-09), and 7 are not started. M1's installed no-key journey passed at frozen code/test SHA-256 `04ec877069b836204ef5b34afb0ea411cd10011fe3b167b1b73e2d1f6ecffc06`. M2's versioned `reports_to` journey passed at exact `memorii/` SHA-256 `39ebb0344f7a15f8879dc9ee07cad6e4f808f2bfa7e6b7161314f666c3065d65`, including native write, protected read, JSONL reopen/status retry, current-grant denial, seed coexistence and independent Level-2 review. M3 is active: its compiler, content-addressed literal codecs, exact 27-entity/four-literal/53-relation endpoint validator, provider dispatch, source grounding, verified seven-member package, exact 56-predicate closure, seed compatibility, installed `reports_to`, and reusable installed entity/literal harness are accepted through pushed commit `b9052820`; corpus-driven validation, aligned 15-minute capture/recovery, compact installed M/C/H/value-family evidence, lifecycle transport contracts, and the exact 53-row/25-private installed native matrix are accepted through pushed commit `8d57deaa`. Installed durable revision effects, product current/history/as-of reads, reopen, symmetric reverse reads and H8 remain open. Milestone and requirement counts do not change for these construction slices.
@@ -236,6 +236,16 @@ factory and independent Hermes root both have focused execution proof. Four
 focused tests pass in 66.20 seconds and production composition passes in 35.33
 seconds; static/type checks pass. Counts remain 3/5 and 5/14 pending exact
 cohort review. Exactly one next action: review `75eb0316` for M4 closure.
+
+**M4 closure checkpoint (2026-09-27):** exact cohort review of `f8e262cd`
+and product commit `75eb0316` reports `remaining_validated_p1_p2: []`.
+Core-owned historical coverage validation, durable observation/recovery/status,
+verified recurrence, the public non-Hermes root and independent Hermes path are
+ready for Level-2 manual testing. Progress is 4 of 5 milestones and 5 of 14
+requirements complete; OLE-01, OLE-02, OLE-08 and OLE-11 remain partial until
+M5 closes candidate/activation behavior, and OLE-12 remains partial for the
+optional observer capability. M5 is now active. Exactly one next action: freeze
+one complete learned relation edit and its paired acceptance corpus.
 
 Review of `f7ce04a6` found the installed producer accepted a caller-supplied
 digest and was unreachable from normal callbacks. The replacement uses a

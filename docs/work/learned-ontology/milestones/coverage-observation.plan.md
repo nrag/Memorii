@@ -1,6 +1,6 @@
 # Provider-Neutral Coverage Observation And Recurrence
 
-- Parent WorkPlan: `../implementation.plan.md`; order 4; state `active`
+- Parent WorkPlan: `../implementation.plan.md`; order 4; state `ready for manual testing`
 - Requirement allocation: OLE-01, OLE-02, OLE-08 and OLE-11 primary; OLE-12 `partial` for model capability; other requirements remain open
 - Dependency: catalog identity and retained-source path from milestone 2; complete base from milestone 3 for final gap-versus-coverage proof; record actual base/head SHA and tree state.
 
@@ -16,7 +16,7 @@ Extend common source admission after `core/memory_evolution/admission.py:97` and
 
 Run source admission, provider outage, recovery, retry, changed observer binding, duplicate lineage, two-session recurrence, quoted/hypothetical/ambiguous text, wrong-domain, extraction-failure, recall-miss and cross-scope cases. Verify identical and transformed bytes with one core-verified upstream origin count as one lineage; different verified origins count independently, and adapter-claimed or forged origin IDs cannot satisfy recurrence. Assert no candidate/fact for pending or uncertain states, one group for correlated copies, and zero raw source disclosure outside grants. Run two-adapter conformance with equal core observations and one installed-root path. Execute focused tests, static/type, persistence/recovery, applicable integration gates and current workflow pins. A fake model proves only plumbing; a live host/local/remote quality result is separate and binding-specific. Do not activate a catalog in this milestone.
 
-- Next action: run specification, correctness and test review on exact remediation commit `75eb0316`; close M4 only if all confirmed Level-2 P1/P2 findings are resolved.
+- Next action: preserve this accepted Level-2 boundary while M5 consumes its proposal-eligible recurrence groups.
 
 ## Frozen Schema And Trace Map (2026-09-27)
 
@@ -276,6 +276,15 @@ tests pass in 6.34 seconds; seven focused service/rotation/adapter tests pass in
 seconds; and the four-root production acceptance passes in 36.88 seconds.
 Ruff, compilation, whitespace and scoped Pyright are clean. Counts remain 3/5
 and 5/14 pending exact cohort review.
+
+Exact cohort review of `f8e262cd` / product `75eb0316` approved the bounded
+Level-2 M4 slice with `remaining_validated_p1_p2: []`. Correctness independently
+reproduced the three default display aliases and the public non-Hermes factory;
+test review accepted the production trigger, recovery/status and adapter
+evidence; specification review accepted historical pinned-version resolution.
+M4 is ready for manual testing. OLE-01, OLE-02, OLE-08 and OLE-11 remain
+partial at parent level because candidate, activation and suppression behavior
+is allocated to M5; OLE-12 remains partial for optional observer capability.
 
 The `2c94d831` cohort accepted the pinned-version boundary and test evidence,
 but correctness review found two remaining P2s. The validator recognized only
