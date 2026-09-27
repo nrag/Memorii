@@ -56,6 +56,11 @@ def preference_close_sentence(*, state: str, topic_id: str, preference_key: str,
     return f"{state.capitalize()} preference: {topic_id}; {preference_key}={value}; source={source_digest}."
 
 
+def preference_delegation_sentence(*, delegated_agent_id: str, state: Literal["active", "revoked"]) -> str:
+    verb = "Delegate preferences to" if state == "active" else "Revoke preference delegation for"
+    return f"{verb} {delegated_agent_id}."
+
+
 class PreferenceAccessGrant(BaseModel):
     holder_user_id: str = Field(min_length=1, max_length=128)
     agent_id: str = Field(min_length=1, max_length=128)

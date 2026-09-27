@@ -88,6 +88,7 @@ from memorii.core.user_context.preferences import (
     preference_candidate_sentence,
     preference_close_sentence,
     preference_confirmation_sentence,
+    preference_delegation_sentence,
     preference_topic_id,
 )
 from memorii.domain.enums import MemoryDomain
@@ -661,6 +662,7 @@ class HermesCompletedTurnRuntime:
             "memorii_confirm_preference",
             "memorii_close_preference",
             "memorii_read_preference",
+            "memorii_set_preference_delegation",
         }:
             raise ValueError(f"Memorii does not provide Hermes tool {tool_name!r}")
         if type(arguments) is not dict:
@@ -831,6 +833,40 @@ class HermesCompletedTurnRuntime:
                     )
                 )
                 return {"status": "ok", "preferences": [record.model_dump(mode="json") for record in records]}
+            if tool_name == "memorii_set_preference_delegation":
+                allowed = {"delegated_agent_id", "state", "approval_quote", "approval_quote_start"}
+                if set(arguments) != allowed:
+                    raise ValueError("preference delegation arguments are not closed")
+                delegated_agent_id = _required_string(arguments, "delegated_agent_id")
+                state = arguments.get("state")
+                if state not in {"active", "revoked"}:
+                    raise ValueError("preference delegation state is invalid")
+                quote = _required_string(arguments, "approval_quote")
+                if quote != preference_delegation_sentence(
+                    delegated_agent_id=delegated_agent_id,
+                    state=state,
+                ):
+                    raise ValueError("preference delegation grammar is invalid")
+                prepared = self._load_active_prepared_source(active)
+                span = self._resolve_sentence_span(
+                    prepared=prepared,
+                    source_quote=quote,
+                    source_quote_start=arguments.get("approval_quote_start"),
+                )
+                proof = span.text_mapping_proof
+                if not isinstance(proof, VerbatimTextArtifactMappingProof):
+                    raise ValueError("preference delegation mapping is unavailable")
+                start = proof.retained_span.start + (span.projection_span.start - proof.projection_span.start)
+                record = service.set_delegation(
+                    holder_user_id=self._authenticated_author_id,
+                    acting_agent_id=self._authenticated_agent_id,
+                    delegated_agent_id=delegated_agent_id,
+                    state=state,
+                    evidence=(active.ledger.source_id, active.ledger.source_digest, start, start + len(quote)),
+                )
+                if record is None:
+                    return {"status": "denied"}
+                return {"status": state, "delegated_agent_id": delegated_agent_id, "revision": record.revision}
         except MemoryPlaneRevisionConflictError:
             return {"status": "unavailable"}
         except (TypeError, ValueError):
@@ -2468,6 +2504,24 @@ def _preference_tool_schemas() -> list[dict[str, object]]:
                         "state": {"enum": ["expired", "retracted", "rejected"]},
                         "revocation_quote": string,
                         "revocation_quote_start": {"type": "integer", "minimum": 0},
+                    },
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "memorii_set_preference_delegation",
+                "description": "Grant or revoke one agent's access to the signed-in user's Preferences.",
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["delegated_agent_id", "state", "approval_quote", "approval_quote_start"],
+                    "properties": {
+                        "delegated_agent_id": string,
+                        "state": {"enum": ["active", "revoked"]},
+                        "approval_quote": string,
+                        "approval_quote_start": {"type": "integer", "minimum": 0},
                     },
                 },
             },

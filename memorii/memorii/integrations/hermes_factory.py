@@ -48,6 +48,7 @@ from memorii.core.semantic_ingestion.current_bootstrap_v3_authority import (
     local_level2_bootstrap_authorization_from_sidecar,
 )
 from memorii.core.semantic_ingestion.project_assertions_profile import load_project_assertions_bundle
+from memorii.core.user_context.preference_delegations import PreferenceDelegationRepository
 from memorii.core.user_context.preferences import (
     PreferenceAccessPolicy,
     PreferenceHolderAuthority,
@@ -83,7 +84,7 @@ def _build_local_level2_runtime_binding(
     storage_root = getattr(context, "storage_root", None)
     if hermes_home is None or storage_root is None:
         raise TypeError("Hermes factory context is invalid")
-    _require_primary_cli_context(context)
+    context_kind = _require_local_cli_context(context)
 
     bundle = load_project_assertions_bundle()
     sidecar = load_local_level2_authority(hermes_home=hermes_home)
@@ -100,10 +101,12 @@ def _build_local_level2_runtime_binding(
         + sha256((f"memorii.hermes.local-level2-operator.v1:{authorization.installation_id}").encode()).hexdigest()
     )
     agent_id = _canonical_agent_id(getattr(context, "agent_identity", None))
-    _bind_single_local_operator_context(
+    primary_agent_id = _bind_single_local_operator_context(
         storage_root=storage_root,
         installation_id=authorization.installation_id,
         raw_user_id=getattr(context, "user_id", None),
+        agent_id=agent_id,
+        context_kind=context_kind,
         allow_existing_operator_binding=_allow_existing_operator_binding,
     )
     ingress_resolver = _LocalLevel2IngressResolver(
@@ -123,6 +126,8 @@ def _build_local_level2_runtime_binding(
             return False
 
     try:
+        if context_kind != "primary":
+            raise LocalLevel2AuthorityError("delegated preference agents cannot submit semantic facts")
         load_local_structured_tool_authority(hermes_home=hermes_home, now=now)
     except LocalLevel2AuthorityError:
         structured_resolver = None
@@ -146,12 +151,19 @@ def _build_local_level2_runtime_binding(
         authorization_is_current=authority_is_current,
     )
     memory_plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(storage_root / "memory-plane"))
+    delegation_repository = PreferenceDelegationRepository(memory_plane)
+    if context_kind == "delegated" and not delegation_repository.active(operator_id, agent_id):
+        raise LocalLevel2AuthorityError("Hermes preference agent delegation is unavailable")
     preference_service = PreferenceService(
         memory_plane=memory_plane,
         policy=PreferenceAccessPolicy(
-            holder_authorities=(PreferenceHolderAuthority(holder_user_id=operator_id, primary_agent_id=agent_id),),
+            holder_authorities=(
+                PreferenceHolderAuthority(holder_user_id=operator_id, primary_agent_id=primary_agent_id),
+            ),
             grants=(),
+            delegation_repository=delegation_repository,
         ),
+        delegation_repository=delegation_repository,
     )
     scoped_read_authority = InProcessScopedReadAuthority(now_provider=lambda: datetime.now(UTC))
     service = build_provider_memory_service_from_env(
@@ -562,22 +574,20 @@ def _structured_tool_is_current(hermes_home: Path) -> bool:
     return True
 
 
-def _require_primary_cli_context(context: object) -> None:
-    """Admit only Hermes' pinned primary CLI provider context.
+def _require_local_cli_context(context: object) -> str:
+    """Classify the primary or explicitly delegated Hermes CLI context."""
 
-    Hermes uses ``agent_workspace='hermes'`` as a fixed marker for its primary
-    CLI profile.  It is not a delegated workspace.  Every other context is
-    denied because this local Level 2 authority has one operator and no shared
-    or child-agent isolation contract.
-    """
-
-    if (
-        getattr(context, "platform", None) != "cli"
-        or getattr(context, "agent_context", None) != "primary"
-        or getattr(context, "agent_workspace", None) != "hermes"
-        or getattr(context, "parent_session_id", None) is not None
+    kind = getattr(context, "agent_context", None)
+    parent = getattr(context, "parent_session_id", None)
+    if getattr(context, "platform", None) != "cli" or kind not in {"primary", "delegated"}:
+        raise LocalLevel2AuthorityError("local Level 2 requires Hermes CLI execution")
+    if kind == "primary" and (
+        getattr(context, "agent_workspace", None) != "hermes" or parent is not None
     ):
-        raise LocalLevel2AuthorityError("local Level 2 requires Hermes primary CLI execution")
+        raise LocalLevel2AuthorityError("local Level 2 primary context is invalid")
+    if kind == "delegated" and (not isinstance(parent, str) or not parent.strip()):
+        raise LocalLevel2AuthorityError("local Level 2 delegated context is invalid")
+    return kind
 
 
 def _bind_single_local_operator_context(
@@ -585,8 +595,10 @@ def _bind_single_local_operator_context(
     storage_root: Path,
     installation_id: str,
     raw_user_id: object,
+    agent_id: str,
+    context_kind: str,
     allow_existing_operator_binding: bool = False,
-) -> None:
+) -> str:
     """Use raw Hermes identity only to deny multi-user reuse of one local profile."""
 
     raw_user = raw_user_id.strip() if isinstance(raw_user_id, str) else ""
@@ -595,34 +607,40 @@ def _bind_single_local_operator_context(
     binding = {
         "schema": "memorii.hermes.local-operator-context.v1",
         "installation_id": installation_id,
+        "primary_agent_id": agent_id,
         "raw_user_consistency_digest": sha256(
             b"memorii.hermes.raw-user-consistency.v1\0" + raw_user.encode("utf-8")
         ).hexdigest(),
     }
+    if context_kind != "primary" and not (storage_root / "local-operator-context.json").exists():
+        raise LocalLevel2AuthorityError("local Level 2 primary context must initialize the profile")
     payload = json.dumps(binding, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     storage_root.mkdir(parents=True, exist_ok=True)
     path = storage_root / "local-operator-context.json"
     try:
         descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     except FileExistsError:
+        try:
+            existing = json.loads(path.read_bytes())
+        except (OSError, TypeError, ValueError) as exc:
+            raise LocalLevel2AuthorityError("local Level 2 operator context is invalid") from exc
+        if (
+            not isinstance(existing, dict)
+            or existing.get("schema") != "memorii.hermes.local-operator-context.v1"
+            or existing.get("installation_id") != installation_id
+            or not isinstance(existing.get("raw_user_consistency_digest"), str)
+            or not isinstance(existing.get("primary_agent_id"), str)
+        ):
+            raise LocalLevel2AuthorityError("local Level 2 operator context is invalid") from None
         if raw_user_id is None and allow_existing_operator_binding:
-            try:
-                existing = json.loads(path.read_bytes())
-            except (OSError, TypeError, ValueError) as exc:
-                raise LocalLevel2AuthorityError("local Level 2 operator context is invalid") from exc
-            if (
-                not isinstance(existing, dict)
-                or existing.get("schema") != "memorii.hermes.local-operator-context.v1"
-                or existing.get("installation_id") != installation_id
-                or not isinstance(existing.get("raw_user_consistency_digest"), str)
-            ):
-                raise LocalLevel2AuthorityError("local Level 2 operator context is invalid") from None
-            return
-        if path.read_bytes() != payload:
+            return existing["primary_agent_id"]
+        if existing["raw_user_consistency_digest"] != binding["raw_user_consistency_digest"]:
             raise LocalLevel2AuthorityError(
                 "local Level 2 profile is already bound to another Hermes user context"
             ) from None
-        return
+        if context_kind == "primary" and existing["primary_agent_id"] != agent_id:
+            raise LocalLevel2AuthorityError("local Level 2 primary agent identity is substituted") from None
+        return existing["primary_agent_id"]
     if raw_user_id is None and allow_existing_operator_binding:
         os.close(descriptor)
         path.unlink(missing_ok=True)
@@ -631,6 +649,7 @@ def _bind_single_local_operator_context(
         stream.write(payload)
         stream.flush()
         os.fsync(stream.fileno())
+    return agent_id
 
 
 __all__ = ["build_local_level2_runtime_binding", "revoke_local_level2_structured_grant"]

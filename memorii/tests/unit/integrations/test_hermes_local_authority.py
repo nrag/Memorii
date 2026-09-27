@@ -16,6 +16,7 @@ from memorii.core.user_context.preferences import (
     preference_candidate_sentence,
     preference_close_sentence,
     preference_confirmation_sentence,
+    preference_delegation_sentence,
     preference_topic_id,
 )
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
@@ -446,6 +447,129 @@ def test_installed_no_key_preference_tools_persist_through_reopen(
         tool_name="memorii_read_preference", arguments={"view": "history"}
     ) == {"status": "denied"}
     reopened_runtime.close()
+
+
+def test_primary_can_grant_and_revoke_one_persisted_preference_delegate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from memorii.integrations.hermes_factory import _canonical_agent_id, build_local_level2_runtime_binding
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    authorize_local_level2(hermes_home=tmp_path)
+    primary_context = SimpleNamespace(
+        storage_root=tmp_path / "memorii",
+        hermes_home=tmp_path,
+        session_id="session:primary",
+        user_id="raw:user:one",
+        agent_identity="profile:primary",
+        platform="cli",
+        agent_context="primary",
+        agent_workspace="hermes",
+        parent_session_id=None,
+    )
+    delegated_agent_id = _canonical_agent_id("profile:delegate")
+    grant_quote = preference_delegation_sentence(
+        delegated_agent_id=delegated_agent_id,
+        state="active",
+    )
+    primary = build_local_level2_runtime_binding(primary_context)
+    primary_runtime = primary.completed_turn_runtime
+    primary_runtime.capture_user_turn(
+        session_id="session:primary",
+        turn_ordinal=1,
+        message=grant_quote,
+        authenticated_author_id=primary.absent_author_id,
+        received_at=datetime.now(UTC),
+    )
+    assert primary_runtime.handle_tool_call(
+        tool_name="memorii_set_preference_delegation",
+        arguments={
+            "delegated_agent_id": delegated_agent_id,
+            "state": "active",
+            "approval_quote": grant_quote,
+            "approval_quote_start": 0,
+        },
+    )["status"] == "active"
+    primary_runtime.close()
+
+    delegated_context = SimpleNamespace(
+        **{
+            **vars(primary_context),
+            "session_id": "session:delegate",
+            "agent_identity": "profile:delegate",
+            "agent_context": "delegated",
+            "agent_workspace": "delegate-workspace",
+            "parent_session_id": "session:primary",
+        }
+    )
+    delegated = build_local_level2_runtime_binding(delegated_context)
+    delegated_runtime = delegated.completed_turn_runtime
+    delegated_runtime.capture_user_turn(
+        session_id="session:delegate",
+        turn_ordinal=1,
+        message="Read my preferences.",
+        authenticated_author_id=delegated.absent_author_id,
+        received_at=datetime.now(UTC),
+    )
+    names = {schema["function"]["name"] for schema in delegated_runtime.get_tool_schemas()}
+    assert "memorii_read_preference" in names
+    assert "memorii_submit_fact" not in names
+    delegated_runtime.close()
+    delegated = build_local_level2_runtime_binding(delegated_context)
+    delegated_runtime = delegated.completed_turn_runtime
+    other_agent_id = _canonical_agent_id("profile:other")
+    redelegation_quote = preference_delegation_sentence(
+        delegated_agent_id=other_agent_id,
+        state="active",
+    )
+    delegated_runtime.capture_user_turn(
+        session_id="session:delegate",
+        turn_ordinal=2,
+        message=redelegation_quote,
+        authenticated_author_id=delegated.absent_author_id,
+        received_at=datetime.now(UTC),
+    )
+    assert delegated_runtime.handle_tool_call(
+        tool_name="memorii_set_preference_delegation",
+        arguments={
+            "delegated_agent_id": other_agent_id,
+            "state": "active",
+            "approval_quote": redelegation_quote,
+            "approval_quote_start": 0,
+        },
+    ) == {"status": "denied"}
+    delegated_runtime.close()
+
+    primary = build_local_level2_runtime_binding(primary_context)
+    primary_runtime = primary.completed_turn_runtime
+    revoke_quote = preference_delegation_sentence(
+        delegated_agent_id=delegated_agent_id,
+        state="revoked",
+    )
+    primary_runtime.capture_user_turn(
+        session_id="session:primary",
+        turn_ordinal=2,
+        message=revoke_quote,
+        authenticated_author_id=primary.absent_author_id,
+        received_at=datetime.now(UTC),
+    )
+    assert primary_runtime.handle_tool_call(
+        tool_name="memorii_set_preference_delegation",
+        arguments={
+            "delegated_agent_id": delegated_agent_id,
+            "state": "revoked",
+            "approval_quote": revoke_quote,
+            "approval_quote_start": 0,
+        },
+    )["status"] == "revoked"
+    primary_runtime.close()
+    with pytest.raises(LocalLevel2AuthorityError, match="delegation is unavailable"):
+        build_local_level2_runtime_binding(delegated_context)
+    with pytest.raises(LocalLevel2AuthorityError, match="another Hermes user context"):
+        build_local_level2_runtime_binding(
+            SimpleNamespace(**{**vars(primary_context), "user_id": "raw:user:two"})
+        )
 
 
 def test_structured_tool_artifact_rejects_unknown_field_and_sidecar_refresh(tmp_path: Path) -> None:

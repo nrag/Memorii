@@ -15,6 +15,7 @@ from memorii.core.user_context.preferences import (
     preference_candidate_sentence,
     preference_close_sentence,
     preference_confirmation_sentence,
+    preference_delegation_sentence,
     preference_topic_id,
 )
 
@@ -33,5 +34,6 @@ __all__ = [
     "preference_candidate_sentence",
     "preference_close_sentence",
     "preference_confirmation_sentence",
+    "preference_delegation_sentence",
     "preference_topic_id",
 ]
