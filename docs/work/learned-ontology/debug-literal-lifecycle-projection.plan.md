@@ -50,8 +50,8 @@ control -> event evidence -> semantic conflict scope -> atomic projection.
 
 | Hypothesis | Mechanism | Evidence | Discriminating experiment | Status |
 | --- | --- | --- | --- | --- |
-| Conflict scope assumes the original capture fence owns a preplanning control and ignores the retained-operation link. | `_derive_semantic_conflict_scope` looks up the admission index by contender source ID, then loads `operation:<original fence id>`; installed retained structured execution stores its control under a distinct linked fence. | All three retained snapshot admission indexes have valid source/digest/scope fields, but no control under their original fence IDs; controls exist under the structured operation fences and exact retained links. | Build a focused scope-resolution fixture with one normal operation and one linked retained-source operation, then assert both produce the same closed admission binding while a missing/substituted link denies. | leading |
-| Literal lifecycle incorrectly remains contested after correction, so conflict authority should never run. | Old and replacement literal values may both remain top candidates if transition application fails. | Entity correction passes without this conflict error; literal correction enters conflict authority. | Reconstruct the correction replay state and inspect lifecycle plus `contested_top` evidence before changing admission resolution. | open |
+| Conflict scope assumes the original capture fence owns a preplanning control and ignores the retained-operation link. | `_derive_semantic_conflict_scope` looks up the admission index by contender source ID, then loads `operation:<original fence id>`; installed retained structured execution stores its control under a distinct linked fence. | All retained snapshot admission indexes have valid source/digest/scope fields, while operation controls exist under distinct structured fences joined by exact retained-source links. The pending group also carries its exact operation fence, and committed contenders can be joined through their immutable group-primary request. | Add a typed transaction-group-to-operation-fence input to conflict scope derivation; validate both direct and retained admission chains and deny missing or substituted links. | confirmed |
+| Literal lifecycle incorrectly remains contested after correction, so conflict authority should never run. | Old and replacement literal values may both remain top candidates if transition application fails. | `work_item_due_on` is a single-cardinality current projection. Equal-rank old and replacement literal candidates therefore form the expected `contested_top`; entity relation siblings use set projection and do not exercise this authority path. | Compare the catalog read form and typed-claim grouping rules. | disproved |
 | The test's literal correction shape creates a false semantic conflict. | A malformed corrected/replacement literal could bypass lifecycle matching but still reach projection. | Provider validation and native planner accepted the operation far enough to build a group; exact target selection has not yet been inspected for this failed run. | Compare retained corrected target and transition claim IDs with the initial claim and replacement claim IDs. | open |
 
 ## Experiment Ledger
@@ -59,6 +59,7 @@ control -> event evidence -> semantic conflict scope -> atomic projection.
 | Experiment | Prediction | Result |
 | --- | --- | --- |
 | Inspect failed snapshot admission/source/control joins | If the leading hypothesis is correct, original index fields validate but control lookup by its fence fails while a retained linked control exists. | Confirmed for all retained source admissions; two structured operation controls exist under distinct fence IDs linked to their captured sources. |
+| Inspect projection grouping and catalog read form | If conflict creation is valid, the literal relation is single-cardinality and equal-rank replacement values become `contested_top`. | Confirmed: `work_item_due_on` uses current/single semantics; the entity sibling uses set semantics. Conflict authority is required. |
 
 ## Completion Contract
 
@@ -71,6 +72,5 @@ Level-2 P1/P2 in this boundary. Hostile-store permutations remain Level 3.
 
 ## One Next Action
 
-Reconstruct the failed literal correction's replay lifecycle and contested
-projection evidence to distinguish erroneous conflict creation from a valid
-conflict whose retained-operation admission join is incomplete.
+Implement the confirmed retained-operation admission join with focused direct,
+retained, and denial regressions, then run the smallest projection test set.
