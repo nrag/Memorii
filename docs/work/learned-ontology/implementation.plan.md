@@ -3,16 +3,16 @@
 - Work ID: `learned-ontology-implementation` (planning coordinate only)
 - Work type: implementation
 - Delivery fidelity: Level 2, early real-world manual testing. The user explicitly clarified that Levels 2/3/4 control implementation and review rigor: this operation must produce usable manual-test journeys and common-failure handling, while production rollout, scale, exhaustive hardening, and release ceremony wait until manual validation is complete.
-- Status: active; milestones 1 and 2 are ready for manual testing, milestone 3 is the only active implementation milestone; progress table below is current
+- Status: active; milestones 1 through 3 are ready for manual testing, milestone 4 is the only active implementation milestone; progress table below is current
 - Coordinator: `/root`
 - Created: 2026-09-25
-- Last updated: 2026-09-26
+- Last updated: 2026-09-27
 - Parent: `docs/work/learned-ontology/design.plan.md` (complete)
 - Related WorkPlans: `docs/work/learned-ontology/debug-native-graph-authority.plan.md`, `docs/work/learned-ontology/debug-structured-restart-preparation.plan.md`, `docs/work/learned-ontology/design-compatibility-and-hermes.plan.md`, `docs/work/learned-ontology/design-projection-era-compatibility.plan.md`, `docs/work/learned-ontology/design-hermes-tool-authority.plan.md`, `docs/work/learned-ontology/design-captured-turn-completion.plan.md`
 - Canonical inputs: the approved design and base catalog identified below
 - Expected outputs: the first five milestone packets' runnable Level-2 behavior and focused evidence. The release-conformance packet is deferred until manual validation authorizes Level 3 work.
 - Approved design: `docs/design/learned_ontology.md` SHA-256 `e14eb84533f285af0db3017b7f00192959ad152dab555b62c78cb579262dd533`; `docs/design/learned_ontology_base_catalog.md` SHA-256 `adfa931e754c79475dee90c4a06b150ad001556d9065e0e5072d00a30fd529d0`; milestone-1 addendum's Hermes callback contract reviewed originally at SHA-256 `bdaa81eaf90a3115e8f17e7ea5ead27f2aa246828733a51b04235d27295a1fdf`, projection-era correction reviewed at `c4862606ccd0d5973ff064eece0914de993986252566a97d2221c48226466703`, local tool grant/quote correction reviewed at `e14992f04d0fdbb6023f158936eb881fbb96812c20b407757aa4d210d2d71dbb`, and current full-document captured-turn completion correction reviewed at SHA-256 `64c168e6d98de0ad9608d423f2c189a430269858f220e6f8b295de5624e744d5`
-- Repository baseline: `main` at `5716ba1143a124f98df4c9701f1420a4ee71b0f2`; implementation branch `codex/learned-ontology-implementation` starts there. Both approved design files and this WorkPlan are currently untracked, and `docs/design/hermes_conversation_memory_trial.md` is modified. Preserve this existing design work; do not treat HEAD alone as the approved design.
+- Repository baseline: `main` at `5716ba1143a124f98df4c9701f1420a4ee71b0f2`; implementation branch `codex/learned-ontology-implementation` starts there. The approved design and WorkPlan are tracked on the implementation branch. `docs/design/hermes_conversation_memory_trial.md` remains a separate user-owned modification and must not be included in implementation commits.
 - Resume packet: `docs/work/learned-ontology/resume.md`
 - Preflight and validation: `docs/work/learned-ontology/implementation-readiness.md`, `docs/work/learned-ontology/validation-matrix.md`
 
@@ -48,8 +48,8 @@ States below are judged at the selected Level-2 manual-testing bar. `Complete` m
 | OLE-06 authorized replay through normal writer | learning-activation-replay | not started | production replay breadth |
 | OLE-07 durable status and recovery | learning-activation-replay | partial: structured terminal restart works; learner recovery open | scale and platform recovery matrices |
 | OLE-08 adapter/provider neutrality | coverage-observation | partial: first-party installed structured port works; second adapter open | full adapter certification |
-| OLE-09 broad workplace base | default-catalog-and-home | partial: one versioned fourth relation works; complete 53-row default remains open | exhaustive per-relation certification |
-| OLE-10 single-account home and preference | default-catalog-and-home | not started | production migration and compatibility |
+| OLE-09 broad workplace base | default-catalog-and-home | complete for Level 2: all 53 default relations, twenty personas, typed literals, lifecycle/history/reopen and symmetric reads work through the installed no-key root | exhaustive per-relation certification |
+| OLE-10 single-account home and preference | default-catalog-and-home | complete for Level 2: home catalog plus canonical-topic Preference lifecycle, protected reads and durable delegation work within one signed-in user scope | production migration and compatibility |
 | OLE-11 monitoring, attribution, recurrence | coverage-observation | not started | scale calibration and abuse resistance |
 | OLE-12 optional model and structured fact port | structured-fact-no-key | complete for Level 2: installed no-key structured submit/read/restart works and absent model remains explicit | provider certification and broad conformance |
 | OLE-13 calibrated/owner-reviewed promotion | learning-activation-replay | not started | production thresholds and rollout evidence |
@@ -59,8 +59,8 @@ States below are judged at the selected Level-2 manual-testing bar. `Complete` m
 | --- | --- | --- | --- | --- |
 | 1 | `milestones/structured-fact-no-key.plan.md` | Retained source -> authenticated structured fact -> protected read, no key/network | approved design baseline and reviewed Hermes/legacy addendum | ready for manual testing; OLE-12 and OLE-14 complete at Level 2 |
 | 2 | `milestones/catalog-version-and-fourth-relation.plan.md` | One fourth registered relation through installed writer/read, pinned version, verified legacy read | 1 | ready for manual testing; OLE-05 complete at Level 2 |
-| 3 | `milestones/default-catalog-and-home.plan.md` | All 53 relations, twenty personas, ten home journeys and preference usable before learning | 2 | active; compiler, codecs, endpoint validator and provider dispatch accepted; verified bundle/native lifecycle/read and H8 open |
-| 4 | `milestones/coverage-observation.plan.md` | Any conforming adapter supplies scoped evidence; durable gap attribution and recurrence | 2; base from 3 for full coverage judgment | not started |
+| 3 | `milestones/default-catalog-and-home.plan.md` | All 53 relations, twenty personas, ten home journeys and preference usable before learning | 2 | ready for manual testing; OLE-09 and OLE-10 complete at Level 2 |
+| 4 | `milestones/coverage-observation.plan.md` | Any conforming adapter supplies scoped evidence; durable gap attribution and recurrence | 2; base from 3 for full coverage judgment | active |
 | 5 | `milestones/learning-activation-replay.plan.md` | One grounded relation/subtype candidate evaluated, selected, read and replayed safely | 3 and 4 | not started |
 | 6 | `milestones/release-conformance.plan.md` | Production package, migration, rollback, CI, live-provider and broad release evidence | manual validation of 1-5 | deferred to Level 3 |
 
@@ -96,6 +96,20 @@ admission/control join with `projection_history_integrity_error`. Linked
 debugging WorkPlan `debug-literal-lifecycle-projection.plan.md` is now the sole
 detailed owner. The parent next action is to complete that debug operation and
 rerun the frozen installed candidate; counts remain 2/5 and 3/14.
+
+**M3 closure checkpoint (2026-09-27):** 3 of 5 Level-2 milestones and 5 of 14
+requirements are complete. OLE-09 and OLE-10 are ready for manual testing.
+The frozen all-row matrix proves all 53 relations and all 25 private revocations;
+the installed lifecycle gate proves correction, retraction, current/history/as-of,
+symmetric reverse reads and JSONL reopen. H8 closes at `ca647222` plus test-only
+commit `f5f4f265`: the installed root commits a real canonical `ProductService`,
+rejects unknown and mistyped topics, persists candidate/confirmation/correction/
+expiry/retraction, protects current/history reads, permits one durably authorized
+delegate to read the exact confirmed record, and denies never-granted, revoked,
+reopened and second-user callers. The H8 specification, correctness and test
+reviews report no remaining Level-2 P1/P2. M4 coverage observation and recurrence
+is now active. Exactly one next action: freeze the M4 observation/event schema
+and trace-owner map at the real admission, read and correction callsites.
 
 ## Production Boundary And Change Map
 

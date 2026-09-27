@@ -1,6 +1,6 @@
 # Complete Default Catalog For Work And Home
 
-- Parent WorkPlan: `../implementation.plan.md`; order 3; state `active`
+- Parent WorkPlan: `../implementation.plan.md`; order 3; state `ready for manual testing`
 - Requirement allocation: OLE-09 and OLE-10 primary, OLE-14 `partial`; OLE-03 and OLE-05 supporting; learning requirements remain open
 - Dependency: versioned fourth-relation root proof; record actual base/head SHA and tree state at start/closure.
 
@@ -22,9 +22,9 @@ The corpus must contain the exact 53 relation IDs and exact twenty persona plus 
 
 H8 closes only through the separate user-context slice above. Its real-root suite must cover candidate, agent-summary abstention, holder confirmation, duplicate, correction, expiry/retraction, delegated-agent allow, nondelegated-agent and second-user denial, and historical read. The six Level-2 blockers are: package/compiler integrity; 53-row runtime corpus including private denials; H8 suite; shared JSONL lifecycle/scope probes; existing M2 catalog/capture/runtime/reports-to regressions; and focused lint/type checks for changed modules. Full PR workflow matrices, release certification, hostile-storage families and exhaustive platform permutations remain Level-3 follow-up. Only then may OLE-09/10 be complete at Level 2. The learner remains absent and must not be reported as shipped.
 
-- Linked debugging operation: `../debug-structured-lifecycle-lease.plan.md` owns the active captured-turn correction lease failure. It is a Level-2 dependency for installed lifecycle/reopen evidence.
-- Linked debugging operation: `../debug-literal-lifecycle-projection.plan.md` owns the active LocalDate correction projection-history failure. It is the sole detailed owner until literal correction publication is repaired and reviewed.
-- Next action: implement the separate H8 `Preference` user-context writer, event/state repository, protected reader and real-root lifecycle suite.
+- Completed linked debugging operation: `../debug-structured-lifecycle-lease.plan.md` closed the captured-turn correction lease failure.
+- Completed linked debugging operation: `../debug-literal-lifecycle-projection.plan.md` closed the LocalDate correction projection-history failure.
+- Next action: none for M3; continue with M4 coverage observation and recurrence.
 
 ## Active Read-Lifecycle Investigation (2026-09-26)
 
@@ -213,3 +213,29 @@ only open M3 product slice; counts remain 2/5 milestones and 3/14 requirements
 until its acceptance contract passes.
 
 Native-path tracing then invalidated the bounded package acceptance for a compatibility omission the package-only review did not exercise. The selected child declares 56 predicates: the existing `project_owner`, `project_status` and `project_deadline` seed plus 53 corpus relations. Its generated schema, validator and policy maps covered only the 53 new rows. Because Hermes selects the default child at startup, this would remove or reject the already working M1 seed tool path while claiming those predicates in the selected version. The writer must compose the three existing seed contracts/policies with the 53 corpus relations, require exact 56-ID capability coverage, regenerate the package, and prove existing `project_owner` remains runnable after default selection. Until then the seven-member package is not accepted and counts remain unchanged.
+
+## Level-2 Closure (2026-09-27)
+
+M3 is ready for manual testing. The later corrections and accepted evidence
+supersede the historical open-state entries above:
+
+- package/compiler integrity and exact 56-predicate seed compatibility pass;
+- the frozen installed four-shard matrix passes all 53 canonical relations,
+  wrong-endpoint zero effects, protected recalls and all 25 private revocations;
+- installed entity and LocalDate correction/retraction, protected
+  current/history/transaction-time reads, both symmetric reverse views, zero
+  inverse persistence and JSONL reopen pass;
+- H8 at product commit `ca647222` uses only existing canonical
+  `ProductService|Asset|Place` identities and the signed-in user's scope. Its
+  unmocked installed path commits a real canonical topic, proves unknown and
+  wrong-type zero effect, persists and reopens the Preference lifecycle, and
+  enforces holder/delegated authorization; and
+- test commit `f5f4f265` closes the final delegated-read gap by asserting the
+  exact confirmed preference ID, topic, key, value and state before live revoke
+  denial and reopened binding refusal. The focused journey passed `1 in
+  1040.91s`; Ruff and diff checks passed. Independent specification,
+  correctness and test reviewers report no remaining Level-2 P1/P2.
+
+OLE-09 and OLE-10 are complete at Level 2. Overall progress is 3/5 milestones
+and 5/14 requirements. Production migration, exhaustive matrices and release
+certification remain assigned to Level 3. M4 is the sole active milestone.

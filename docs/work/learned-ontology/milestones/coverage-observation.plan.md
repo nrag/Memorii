@@ -1,6 +1,6 @@
 # Provider-Neutral Coverage Observation And Recurrence
 
-- Parent WorkPlan: `../implementation.plan.md`; order 4; state `not started`
+- Parent WorkPlan: `../implementation.plan.md`; order 4; state `active`
 - Requirement allocation: OLE-01, OLE-02, OLE-08 and OLE-11 primary; OLE-12 `partial` for model capability; other requirements remain open
 - Dependency: catalog identity and retained-source path from milestone 2; complete base from milestone 3 for final gap-versus-coverage proof; record actual base/head SHA and tree state.
 
@@ -16,4 +16,4 @@ Extend common source admission after `core/memory_evolution/admission.py:97` and
 
 Run source admission, provider outage, recovery, retry, changed observer binding, duplicate lineage, two-session recurrence, quoted/hypothetical/ambiguous text, wrong-domain, extraction-failure, recall-miss and cross-scope cases. Verify identical and transformed bytes with one core-verified upstream origin count as one lineage; different verified origins count independently, and adapter-claimed or forged origin IDs cannot satisfy recurrence. Assert no candidate/fact for pending or uncertain states, one group for correlated copies, and zero raw source disclosure outside grants. Run two-adapter conformance with equal core observations and one installed-root path. Execute focused tests, static/type, persistence/recovery, applicable integration gates and current workflow pins. A fake model proves only plumbing; a live host/local/remote quality result is separate and binding-specific. Do not activate a catalog in this milestone.
 
-- Next action for this packet once activated: freeze the observation/event schema and trace-owner map with exact admission, read and correction callsites.
+- Next action: freeze the observation/event schema and trace-owner map with exact admission, read and correction callsites.

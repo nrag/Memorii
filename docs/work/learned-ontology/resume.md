@@ -1,10 +1,20 @@
 # Learned Ontology Implementation Resume Packet
 
-**Active implementation WorkPlan:** `docs/work/learned-ontology/implementation.plan.md`. **Active milestone:** `docs/work/learned-ontology/milestones/catalog-version-and-fourth-relation.plan.md` (order 2 of 6). **Completed linked design WorkPlan:** `docs/work/learned-ontology/design-pre-schema-catalog-pin.plan.md`. Milestone 1, `milestones/structured-fact-no-key.plan.md`, is accepted as a bounded Level-2 checkpoint with 6/6 local checks and independent review; its frozen production/test SHA-256 is `04ec877069b836204ef5b34afb0ea411cd10011fe3b167b1b73e2d1f6ecffc06`. **One next action:** route the committed child claim through the protected historical reader, then add JSONL restart/retry, current-grant denial and seed-fact coexistence to close M2 for manual testing. Broader historical mutation and conflict evolution remain OLE-05 Level-3 work.
+**Active implementation WorkPlan:** `docs/work/learned-ontology/implementation.plan.md`. **Active milestone:** `docs/work/learned-ontology/milestones/coverage-observation.plan.md` (order 4 of 6; order 6 is deferred to Level 3). Milestones 1 through 3 are ready for Level-2 manual testing. M3 closes at product commit `ca647222` plus accepted delegated-read proof `f5f4f265`; independent specification, correctness and test reviewers report no remaining Level-2 P1/P2. **One next action:** freeze the M4 observation/event schema and trace-owner map at the real admission, read and correction callsites.
 
 ## Progress
 
-As of 2026-09-26, 1/5 Level-2 implementation milestones is ready for manual testing; the sixth release-conformance milestone is deferred until Level 3. At the current fidelity, OLE-12 and OLE-14 are complete, OLE-03/OLE-05/OLE-07/OLE-08 are partial, and the other eight requirements are not started. Milestone 2 alone is active. Level 2 means a runnable real integration for manual validation with common failures handled; it does not require production scale, exhaustive tamper matrices, release ceremony, or exact CI approval. The parent index is the dashboard and must be updated after each material checkpoint.
+As of 2026-09-27, 3/5 Level-2 implementation milestones and 5/14 requirements are complete. OLE-05, OLE-09, OLE-10, OLE-12 and OLE-14 are ready for manual testing; OLE-03, OLE-07 and OLE-08 are partial; the remaining six requirements are not started. M4 alone is active. Level 2 means a runnable real integration for manual validation with common failures handled; production scale, exhaustive tamper matrices, release ceremony and exact CI approval remain Level 3. The parent index is the dashboard and must be updated after each material checkpoint.
+
+M3 acceptance evidence includes the exact 53-relation installed matrix and 25
+private revocations, correction/retraction and protected current/history/as-of
+views, both symmetric reverse reads, JSONL reopen, and the separate Preference
+lifecycle over existing canonical topics in the signed-in user's scope. The
+final installed delegate journey passed in 1040.91 seconds and proved the exact
+confirmed record is readable while authorization is active, then denied after
+live revocation and on a new binding. No OpenAI key or model transport is needed.
+
+## Historical Progress Log
 
 Generic verified-production no-key submission passed accepted native fact commit, one catalog binding, protected recall, exact retry, JSONL restart, current-grant denial and zero-network assertions on the final M1 surface. The installed Hermes no-key structured path passed one committed native fact, one catalog binding, protected prefetch/status, JSONL factory reopen/retry/read and socket egress denial in 459.50 seconds. Authentic schema-2 and schema-3 pre-catalog claims each passed mixed same-scope protected read with a new catalog-bound claim before/after JSONL reopen at the same surface; schema-3 missing/substituted own-seal and current-handle revocation denied. M1 review and selected Level-2 gates passed; broader Level-3 compatibility, complete default catalog, and learner remain open. No release approval is claimed.
 
