@@ -151,6 +151,15 @@ Level-2 fail-closed lineage boundary. Counts remain 3/5 and 5/14. Exactly one
 next action: implement the typed recurrence group and prove the three-lineage/
 two-session threshold with duplicate-lineage suppression.
 
+The recurrence construction now has typed relation/type signatures, verified
+exact-span evidence, a durable inert group and CAS repository. It rejects
+cross-scope/signature grouping, counts one representative per verified origin
+lineage, uses that lineage's first observed session, and derives eligibility at
+exactly three lineages across two sessions. Eleven focused tests and scoped
+static checks pass. Counts remain 3/5 and 5/14. Exactly one next action: freeze
+this recurrence slice and obtain targeted correctness review before wiring the
+authorized observer lifecycle.
+
 Review of `f7ce04a6` found the installed producer accepted a caller-supplied
 digest and was unreachable from normal callbacks. The replacement uses a
 bridge-owned receipt created from an observed user turn, allows inheritance

@@ -163,3 +163,16 @@ cannot identify one unique parent is an accepted Level-2 fail-closed limitation.
 Counts remain 3/5 and 5/14. Exactly one next action: implement the typed
 recurrence group and prove three independent lineages across two sessions with
 duplicate-lineage suppression.
+
+The first recurrence construction adds core-owned typed relation/type gap
+signatures, verified gap evidence, a durable inert recurrence group and CAS
+repository. Entry requires a classified observer-bound observation with an
+exact span and matching unsupported outcome. Group identity binds catalog
+scope/digest, source-scope digest and semantic signature. Each origin lineage
+counts once, its earliest evidence supplies the session coordinate, and
+proposal eligibility is derived only at three lineages across two sessions.
+Cross-scope and cross-signature grouping rejects; no semantic or user fact is
+written. Eleven focused observation/recurrence tests pass in 4.49 seconds;
+scoped Pyright, Ruff, compilation and whitespace pass. Counts remain 3/5 and
+5/14. Exactly one next action: freeze this recurrence slice and obtain targeted
+correctness review before wiring the authorized observer lifecycle.

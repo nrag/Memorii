@@ -11,7 +11,12 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
-from memorii.core.memory_plane.store import MemoryPlaneRevisionConflictError, RecordAbsentPrecondition
+from memorii.core.memory_plane.store import (
+    MemoryPlaneRevisionConflictError,
+    RecordAbsentPrecondition,
+    RecordDigestPrecondition,
+    record_digest,
+)
 from memorii.core.semantic_ingestion.catalog_authority import CatalogAuthorityScope
 from memorii.domain.enums import (
     CommitStatus,
@@ -220,6 +225,68 @@ def new_coverage_observation(
     )
 
 
+def start_coverage_observation(
+    observation: CoverageObservation,
+) -> CoverageObservation:
+    if (
+        observation.processing_state != DiscoveryProcessingState.QUEUED
+        or observation.semantic_outcome != CoverageSemanticOutcome.NOT_EVALUATED
+        or observation.observer_binding is None
+    ):
+        raise ValueError("only a queued bound observation can start")
+    return _replace_observation(
+        observation,
+        processing_state=DiscoveryProcessingState.RUNNING,
+        attempt_count=observation.attempt_count + 1,
+    )
+
+
+def classify_coverage_observation(
+    observation: CoverageObservation,
+    *,
+    semantic_outcome: CoverageSemanticOutcome,
+    source_span: CoverageSourceSpan | None,
+) -> CoverageObservation:
+    if (
+        observation.processing_state != DiscoveryProcessingState.RUNNING
+        or observation.observer_binding is None
+    ):
+        raise ValueError("only a running bound observation can be classified")
+    if semantic_outcome in {
+        CoverageSemanticOutcome.NOT_EVALUATED,
+        CoverageSemanticOutcome.INELIGIBLE,
+    }:
+        raise ValueError("classification outcome is invalid")
+    if semantic_outcome in {
+        CoverageSemanticOutcome.UNSUPPORTED_RELATION,
+        CoverageSemanticOutcome.UNSUPPORTED_ENTITY_TYPE,
+    } and source_span is None:
+        raise ValueError("verified ontology gaps require an exact source span")
+    return _replace_observation(
+        observation,
+        semantic_outcome=semantic_outcome,
+        processing_state=DiscoveryProcessingState.CLASSIFIED,
+        source_span=source_span,
+    )
+
+
+def _replace_observation(
+    observation: CoverageObservation, **changes: object
+) -> CoverageObservation:
+    draft = observation.model_copy(
+        update={**changes, "observation_digest": "0" * 64}
+    )
+    body = draft.model_dump(mode="json", exclude={"observation_digest"})
+    return CoverageObservation.model_validate(
+        {
+            **draft.model_dump(mode="python", exclude={"observation_digest"}),
+            "observation_digest": _digest(
+                b"memorii.learned-ontology.coverage-observation.v1", body
+            ),
+        }
+    )
+
+
 class CoverageObservationRepository:
     _KIND = "learned_ontology_coverage_observation_v1"
 
@@ -254,6 +321,28 @@ class CoverageObservationRepository:
                 assert existing is not None
                 return existing
             raise
+
+    def replace(
+        self,
+        observation: CoverageObservation,
+        *,
+        previous: CoverageObservation,
+    ) -> CoverageObservation:
+        if observation.observation_id != previous.observation_id:
+            raise ValueError("coverage observation replacement changed identity")
+        record = coverage_observation_record(observation)
+        self._plane.conditionally_write_records(
+            (record,),
+            preconditions=(
+                RecordDigestPrecondition(
+                    memory_id=observation.observation_id,
+                    expected_digest=record_digest(
+                        coverage_observation_record(previous)
+                    ),
+                ),
+            ),
+        )
+        return observation
 
 
 
