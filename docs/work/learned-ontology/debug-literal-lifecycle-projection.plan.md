@@ -75,6 +75,7 @@ control -> event evidence -> semantic conflict scope -> atomic projection.
 | Give the local Level-2 graph stage a measured 30-minute window | If the failure is only the measured execution-budget mismatch, doubling the local Bootstrap V3 recovery lease while preserving its half-window renewal rule lets the fifth accumulated graph complete without changing captured-turn, retry or epoch contracts. | Commit `f3b37295` configures the current local Level-2 Bootstrap V3 runtime with a 30-minute recovery-operation lease and a 15-minute renewal interval. Preflight and exception-only reclaim continue deriving duration from the lease. The authority suite passes `5 in 14.38s`; the three lease/provider-root selectors pass `3 in 11.01s`; Ruff, compileall and whitespace checks pass. |
 | Rerun the combined installed probe at `d1d0fae3` | If the measured lease window closes the last write failure, both symmetric facts commit and their immediate reverse reads proceed to reopen. | After `2386.61s`, the fourth structured operation, `partner_of`, commits without any lease or terminal fallback error. Its immediate reverse read returns `unavailable` at line 1278; `sibling_of` has not started. Retained store is pytest run `1214`. Reopening that exact 85 MB/584-record JSONL store under a fresh captured turn returns both reverse and forward `partner_of` views correctly, proving persisted data and the reader are valid. Turn 4 was captured at `14:40:32.245804Z`; the long write holds its acquired turn handle past the 15-minute captured-turn TTL, so the next read call is denied before reaching the reader. |
 | Align the captured turn with the measured graph window | If the write may validly occupy up to the local Level-2 graph window, the same captured turn must remain available for the immediate read and one completion callback through that window. | Commit `8a7eda99` changes only the Hermes captured-turn TTL from 15 to 30 minutes. A deterministic boundary test proves acquisition after 16 minutes, balanced active-call accounting, and denial at the exact 30-minute cutoff. Four focused Hermes tests pass in `5.60s`; Ruff, compileall and whitespace checks pass. |
+| Rerun the combined installed probe at `caf1bf5c` | If the aligned graph and captured-turn windows close the common long-sequence failures, the complete lifecycle and symmetric path passes through reopen without model transport. | Passed: `1 passed in 4120.90s`. The no-key installed provider commits LocalDate assertion/correction/retraction, returns current/history and both transaction-time cutoffs, commits `partner_of` and `sibling_of`, returns exact reverse views with zero read-side record growth, shuts down, reopens the JSONL store, advertises the protected read tool on a fresh turn, and returns identical lifecycle and reverse views. No API key or model transport is used. |
 
 ## production_entrypoint_bindings
 
@@ -142,6 +143,7 @@ Level-2 P1/P2 in this boundary. Hostile-store permutations remain Level 3.
 
 ## One Next Action
 
-Rerun the frozen combined installed lifecycle, immediate reverse views, zero
-read-side persistence and JSONL reopen probe at `8a7eda99`; classify the result
-before targeted independent correctness and test review.
+Run targeted independent correctness and test review on frozen candidate
+`caf1bf5c`, including the pre-epoch lease renewal, measured 30-minute local
+operation/turn windows, preserved durable-retry behavior and the complete
+installed reopen evidence. Classify every Level-2 finding before closure.
