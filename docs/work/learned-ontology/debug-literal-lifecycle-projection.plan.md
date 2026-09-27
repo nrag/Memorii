@@ -3,7 +3,7 @@
 - Work ID: `literal-lifecycle-projection`
 - Work type: debugging
 - Delivery fidelity: Level 2, early real-world manual testing
-- Status: active
+- Status: complete
 - Coordinator: `/root`
 - Created: 2026-09-27
 - Last updated: 2026-09-27
@@ -52,7 +52,7 @@ control -> event evidence -> semantic conflict scope -> atomic projection.
 | --- | --- | --- | --- | --- |
 | Conflict scope assumes the original capture fence owns a preplanning control and ignores the retained-operation link. | `_derive_semantic_conflict_scope` looks up the admission index by contender source ID, then loads `operation:<original fence id>`; installed retained structured execution stores its control under a distinct linked fence. | All retained snapshot admission indexes have valid source/digest/scope fields, while operation controls exist under distinct structured fences joined by exact retained-source links. The pending group also carries its exact operation fence, and committed contenders can be joined through their immutable group-primary request. | Add a typed transaction-group-to-operation-fence input to conflict scope derivation; validate both direct and retained admission chains and deny missing or substituted links. | confirmed |
 | A grounded correction remains contested because projection derivation ignores its retained lifecycle transition. | Replay retains old and replacement claim assertions plus a temporal transition. `_typed_claim_projection_records` arbitrates every same-slot claim but does not apply the transition's exact corrected/retracted target IDs first. | The repaired installed run reaches the offline resolver and fails with `local Level 2 conflict resolution is unavailable`. General equal-rank independent claims must remain contested, but this correction already carries exact target authority. `TemporalTransitionRecord` alone lacks target IDs; verified native group request/reload effects retain them. | Reconstruct the complete retired-claim set from verified committed group primaries plus the pending typed group request, pass it into replay projection derivation, and prove only lifecycle-targeted claims become `retained_noncurrent`. Independent equal-rank claims must remain contested. | confirmed |
-| The test's literal correction shape creates a false semantic conflict. | A malformed corrected/replacement literal could bypass lifecycle matching but still reach projection. | Provider validation and native planner accepted the operation far enough to build a group; exact target selection has not yet been inspected for this failed run. | Compare retained corrected target and transition claim IDs with the initial claim and replacement claim IDs. | open |
+| The test's literal correction shape creates a false semantic conflict. | A malformed corrected/replacement literal could bypass lifecycle matching but still reach projection. | The installed run now commits the exact correction and retraction, reconstructs both transaction-time cutoffs, and returns the expected current/history views before and after reopen. | Compare retained corrected target and transition claim IDs with the initial claim and replacement claim IDs. | disproved |
 
 ## Experiment Ledger
 
@@ -90,7 +90,7 @@ continue without fabricating a successful delegate run.
 
 | Requirement | Canonical trigger and composition root | Exact callsite and arguments/authority | Owner chain: validation -> write/read -> outcome | Proof and caller count | Status or explicit blocker |
 | --- | --- | --- | --- | --- | --- |
-| Retained LocalDate correction conflict publication | Installed `MemoriiHermesMemoryProvider.handle_tool_call("memorii_submit_fact", correction)` composed by `build_local_level2_runtime_binding` into `HermesCompletedTurnRuntime` and `ProviderMemoryService` | `HermesCompletedTurnRuntime.handle_tool_call` validates captured pin/default-catalog lifecycle grounding and calls `ProviderMemoryService.submit_structured_fact`; that owner allocates the retained operation and calls `execute_retained_structured_proposal`; `SemanticIngestionAtomicStore.commit_or_reload_bootstrap_graph_group_v3` calls `_prepare_native_projection_publication` with the pending group request, exact operation-fence binding, and writer binding | captured turn/pin and proposal validation -> retained source admission/link/control -> native group reduction -> verified committed and pending lifecycle targets -> projection conflict resolve and prepare -> same group CAS persists primary/reload, projections, replay authority and structured claim binding -> protected current/history/as-of read | `rg` finds one production structured-fact caller, one native group callsite at `atomic_store.py:16232`, and one generic terminal callsite at `atomic_store.py:17873`; 129 affected-family checks and 23 publication checks pass. Frozen installed probe `test_installed_default_catalog_literal_retraction_and_symmetric_reads_survive_reopen` is outstanding. | candidate implemented; installed proof outstanding. |
+| Retained LocalDate correction conflict publication | Installed `MemoriiHermesMemoryProvider.handle_tool_call("memorii_submit_fact", correction)` composed by `build_local_level2_runtime_binding` into `HermesCompletedTurnRuntime` and `ProviderMemoryService` | `HermesCompletedTurnRuntime.handle_tool_call` validates captured pin/default-catalog lifecycle grounding and calls `ProviderMemoryService.submit_structured_fact`; that owner allocates the retained operation and calls `execute_retained_structured_proposal`; `SemanticIngestionAtomicStore.commit_or_reload_bootstrap_graph_group_v3` calls `_prepare_native_projection_publication` with the pending group request, exact operation-fence binding, and writer binding | captured turn/pin and proposal validation -> retained source admission/link/control -> native group reduction -> verified committed and pending lifecycle targets -> projection conflict resolve and prepare -> same group CAS persists primary/reload, projections, replay authority and structured claim binding -> protected current/history/as-of read | `rg` finds one production structured-fact caller, one native group callsite at `atomic_store.py:16232`, and one generic terminal callsite at `atomic_store.py:17873`; 129 affected-family checks and 23 publication checks pass. Frozen installed probe `test_installed_default_catalog_literal_retraction_and_symmetric_reads_survive_reopen` passes `1 in 4120.90s`. | complete at Level 2. |
 | Generic committed terminal conflict publication | `SemanticIngestionAtomicStore` committed terminal replay path | `atomic_store.py:17834` passes `{batch.transaction_group_id: request.operation_fence_binding}` and `request.writer_commit_binding` into the same `_prepare_native_projection_publication` owner | validated terminal group closure -> shared projection resolve/prepare -> replay aggregate/checkpoint CAS | One production caller; same shared owner and focused prepare proof. No separate default-catalog trigger reaches this path in the frozen installed scenario. | implemented supporting root; retained LocalDate closure depends on the native group root above. |
 
 ## Frozen Candidate And Review
@@ -141,9 +141,15 @@ affected projection checks and frozen installed LocalDate correction must pass.
 Targeted independent correctness and test review must find no remaining
 Level-2 P1/P2 in this boundary. Hostile-store permutations remain Level 3.
 
+The combined reopen proof passes at `caf1bf5c`. Independent correctness review
+found no Level-2 P1/P2. Test review requested one verification-only regression
+for the already-correct non-null durable-retry branch. The added provider-root
+test proves one graph execution, no reclaim/acquire, no second terminal attempt,
+and the existing fail-closed public outcome; it passes `1 in 10.77s` with 63
+deselected. Targeted Ruff and whitespace checks pass. This completion contract
+is satisfied; parent M3 remains active and its counts do not change until H8.
+
 ## One Next Action
 
-Run targeted independent correctness and test review on frozen candidate
-`caf1bf5c`, including the pre-epoch lease renewal, measured 30-minute local
-operation/turn windows, preserved durable-retry behavior and the complete
-installed reopen evidence. Classify every Level-2 finding before closure.
+Resume parent M3 with the separate H8 `Preference` user-context writer,
+repository, protected reader and real-root lifecycle suite.

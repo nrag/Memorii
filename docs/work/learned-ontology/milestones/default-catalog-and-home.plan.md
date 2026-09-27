@@ -24,7 +24,7 @@ H8 closes only through the separate user-context slice above. Its real-root suit
 
 - Linked debugging operation: `../debug-structured-lifecycle-lease.plan.md` owns the active captured-turn correction lease failure. It is a Level-2 dependency for installed lifecycle/reopen evidence.
 - Linked debugging operation: `../debug-literal-lifecycle-projection.plan.md` owns the active LocalDate correction projection-history failure. It is the sole detailed owner until literal correction publication is repaired and reviewed.
-- Next action: complete the linked recovery-lease debugging operation, then resume installed durable entity correction, literal correction and retraction plus protected current/history/as-of behavior before and after JSONL reopen, followed by the two symmetric reverse views.
+- Next action: implement the separate H8 `Preference` user-context writer, event/state repository, protected reader and real-root lifecycle suite.
 
 ## Active Read-Lifecycle Investigation (2026-09-26)
 
@@ -199,5 +199,17 @@ Pause parent product edits. Linked debugging WorkPlan
 fix. Counts remain 2/5 and 3/14.
 
 The first native-writer wiring pass added a typed runtime catalog coordinate to the graph-free invocation and rechecked its version/bundle through the historical package locator; 42 focused authority/pin tests and Ruff/whitespace passed. Coordinator inspection rejected this as a completed slice because the production provider did not propagate the captured pin, the coordinate omitted the capture/source/persisted-pin join, and the materializer and derivation remained on the three fixed predicates. The same writer is continuing: `submit_structured_fact` must pass the already loaded exact `CatalogCapturedTurnPin` through provider ingestion, dynamic authority must rejoin the persisted pin and selected package, and only then may selected default policies drive native planning. No completion count changes.
+
+The linked literal lifecycle debugging operation is complete. At frozen code
+candidate `caf1bf5c`, the combined installed no-key gate passes `1 in 4120.90s`
+and proves LocalDate assertion/correction/retraction, protected current/history
+and two transaction-time views, both symmetric reverse reads with zero read-side
+persistence, shutdown, JSONL reopen and identical reopened results. Independent
+correctness review found no Level-2 P1/P2. Test review's sole verification gap
+was closed by a provider-root durable-retry regression (`1 passed, 63
+deselected in 10.77s`) proving no reclaim or reexecution of persisted retry
+progress. The relation/lifecycle/reopen portion of M3 is complete. H8 is now the
+only open M3 product slice; counts remain 2/5 milestones and 3/14 requirements
+until its acceptance contract passes.
 
 Native-path tracing then invalidated the bounded package acceptance for a compatibility omission the package-only review did not exercise. The selected child declares 56 predicates: the existing `project_owner`, `project_status` and `project_deadline` seed plus 53 corpus relations. Its generated schema, validator and policy maps covered only the 53 new rows. Because Hermes selects the default child at startup, this would remove or reject the already working M1 seed tool path while claiming those predicates in the selected version. The writer must compose the three existing seed contracts/policies with the 53 corpus relations, require exact 56-ID capability coverage, regenerate the package, and prove existing `project_owner` remains runnable after default selection. Until then the seven-member package is not accepted and counts remain unchanged.

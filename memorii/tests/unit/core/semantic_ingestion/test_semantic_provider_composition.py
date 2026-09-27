@@ -161,6 +161,7 @@ from memorii.core.semantic_ingestion.catalog_authority import (
     ThreePredicateSeedCatalogAuthorityRepository,
 )
 from memorii.core.semantic_ingestion.contracts import (
+    BootstrapGraphDurableRetryProgressV3,
     BootstrapGraphGroupCommitRequestV3,
     BootstrapPredicateLanePayloadV3,
     BootstrapRecoveryKeyV3,
@@ -4226,3 +4227,64 @@ def test_provider_root_uses_preflight_renewed_lease_for_native_graph_request(
     control = observed_controls[0]
     assert control.lease is not None
     assert observed_lease_bindings[0] == atomic.lease_binding(control)
+
+
+def test_provider_root_returns_durable_graph_retry_without_reclaim(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A persisted graph retry is terminal progress, not a second graph attempt."""
+    from memorii.core.semantic_ingestion.bootstrap_graph_host import BootstrapGraphHostBundle
+
+    service = ProviderMemoryService._from_scenario_test_host(
+        memory_plane=MemoryPlaneService(),
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=_built_in_local_capability(scenario_test=True),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        source_normalization_host_bundle_builder=_bob_owner_proposal_bundle_builder(),
+    )
+    atomic = service._semantic_atomic_store
+    retry = BootstrapGraphDurableRetryProgressV3.create(
+        kind="durable_retry", request_digest="0" * 64,
+        normalization_replay_digest="1" * 64, attempt_digest="2" * 64,
+        source_plan_lineage_digest="3" * 64, completed_group_result_digests=(),
+        retry_group_ids=(), reason="storage_retry", operation_fence_binding_digest="4" * 64,
+        writer_commit_binding_digest="5" * 64, control_epoch_digest="6" * 64,
+        progress_digest="7" * 64,
+    )
+    original_reload = atomic.reload_bootstrap_recovery_replay_v3
+    original_acquire = atomic.acquire_lease
+    acquires: list[object] = []
+    executions: list[object] = []
+    terminal_attempts: list[object] = []
+
+    def reload_then_reset(**kwargs):
+        replay = original_reload(**kwargs)
+        acquires.clear()
+        return replay
+
+    def observe_acquire(**kwargs):
+        acquires.append(kwargs)
+        return original_acquire(**kwargs)
+
+    def return_retry(_bundle, *, request):
+        executions.append(request)
+        return retry
+
+    def terminal_attempt(**kwargs):
+        terminal_attempts.append(kwargs)
+        raise AssertionError("durable retry must not attempt graph terminal persistence")
+
+    monkeypatch.setattr(atomic, "reload_bootstrap_recovery_replay_v3", reload_then_reset)
+    monkeypatch.setattr(atomic, "acquire_lease", observe_acquire)
+    monkeypatch.setattr(BootstrapGraphHostBundle, "execute", return_retry)
+    monkeypatch.setattr(atomic, "persist_bootstrap_graph_terminal_v3", terminal_attempt)
+    result = service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.", operation_id="provider-durable-graph-retry",
+        task_id="task:one", user_id="user:alice", authenticated_host_ingress=_host_ingress(),
+    )
+
+    assert len(executions) == 1
+    assert acquires == []
+    assert terminal_attempts == []
+    assert result.blocked_reasons["semantic_ingestion"] == "graph_transaction_authority_unavailable"
