@@ -36,7 +36,9 @@ from memorii.core.memory_plane.store import JsonlMemoryPlaneStore
 from memorii.core.provider.factory import build_provider_memory_service_from_env
 from memorii.core.scoped_context.authority import InProcessScopedReadAuthority
 from memorii.core.semantic_ingestion.catalog_authority import (
+    AgentLocalCatalogAuthorityScope,
     AuthenticatedPrincipalAgent,
+    CatalogAuthorityCoordinate,
     CatalogAuthorityScope,
     CatalogOwnerVisibilityGrant,
     FactScopeGrant,
@@ -46,9 +48,15 @@ from memorii.core.semantic_ingestion.catalog_authority import (
     StructuredSubmissionAuthorityRequest,
     ThreePredicateSeedCatalogAuthorityRepository,
 )
+from memorii.core.semantic_ingestion.catalog_capture_pin import PackageIndexedCatalogBundleLocator
 from memorii.core.semantic_ingestion.current_bootstrap_v3_authority import (
     CurrentReleaseBootstrapV3HostMaterialBuilder,
     local_level2_bootstrap_authorization_from_sidecar,
+)
+from memorii.core.semantic_ingestion.learned_relation import (
+    ActivationPolicy,
+    LearnedRelationRuntime,
+    OntologyActivation,
 )
 from memorii.core.semantic_ingestion.project_assertions_profile import load_project_assertions_bundle
 from memorii.core.user_context.preference_delegations import PreferenceDelegationRepository
@@ -172,6 +180,10 @@ def _build_local_level2_runtime_binding(
         except (OSError, TypeError, ValueError):
             return False
 
+    memory_plane = MemoryPlaneService(
+        record_store=JsonlMemoryPlaneStore(storage_root / "memory-plane")
+    )
+
     try:
         if context_kind != "primary":
             raise LocalLevel2AuthorityError("delegated preference agents cannot submit semantic facts")
@@ -188,6 +200,7 @@ def _build_local_level2_runtime_binding(
             ),
             authority_is_current=authority_is_current,
             structured_tool_is_current=lambda: _structured_tool_is_current(hermes_home),
+            memory_plane=memory_plane,
         )
 
     capability, verifier = CurrentReleaseBootstrapV3HostMaterialBuilder.build_capability(
@@ -197,7 +210,6 @@ def _build_local_level2_runtime_binding(
         structured_submission_authority_resolver=structured_resolver,
         authorization_is_current=authority_is_current,
     )
-    memory_plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(storage_root / "memory-plane"))
     delegation_repository = PreferenceDelegationRepository(memory_plane)
     if context_kind == "delegated" and not delegation_repository.active(operator_id, agent_id):
         raise LocalLevel2AuthorityError("Hermes preference agent delegation is unavailable")
@@ -324,35 +336,63 @@ def _build_local_level2_runtime_binding(
         bundle.profile_digests["semantic_contract_digest"],
     )
 
+    class _DeferredReplayWriter:
+        def replay_retained_source(self, **_kwargs: object) -> str:
+            # Activation only selects an immutable catalog.  Retained-source
+            # replay is reconciled by the ordinary structured writer later.
+            return "pending"
+
+    learned_runtime = LearnedRelationRuntime(
+        memory_plane=memory_plane,
+        replay_writer=_DeferredReplayWriter(),
+        policy_for_scope=lambda scope: ActivationPolicy(
+            owner_principal_id=scope.principal_id,
+            owner_agent_id=scope.agent_id,
+        ),
+    )
+    completed_runtime = HermesCompletedTurnRuntime(
+        service=service,
+        installation_id=authorization.installation_id,
+        issue_host_ingress=issue_completed_turn_ingress,
+        scoped_read_authority=scoped_read_authority,
+        require_current_authority=require_current_authority,
+        project_task_id=project_task_id,
+        authenticated_agent_id=agent_id,
+        authenticated_author_id=operator_id,
+        structured_authority_request=(
+            structured_resolver.issued_authority_request() if structured_resolver is not None else None
+        ),
+        structured_tool_is_current=(
+            (lambda: authority_is_current() and _structured_tool_is_current(hermes_home))
+            if structured_resolver is not None else None
+        ),
+        structured_fact_read_authority=(
+            structured_resolver.issued_read_authority if structured_resolver is not None else None
+        ),
+        preference_service=preference_service,
+    )
+
+    def activate_learned_candidate(proposal_id: str) -> OntologyActivation:
+        activation = learned_runtime.activate_candidate(
+            proposal_id=proposal_id, principal_id=operator_id, agent_id=agent_id,
+        )
+        if structured_resolver is None:
+            raise LocalLevel2AuthorityError("local structured tool authority is unavailable")
+        authority = structured_resolver.issued_authority()
+        service.provision_structured_submission_authority(authority=authority)
+        completed_runtime._structured_authority_request = structured_resolver.issued_authority_request()
+        return activation
+
     return HermesProviderRuntimeBinding(
         service=service,
         issue_ingress=ingress_resolver.issue,
-        completed_turn_runtime=HermesCompletedTurnRuntime(
-            service=service,
-            installation_id=authorization.installation_id,
-            issue_host_ingress=issue_completed_turn_ingress,
-            scoped_read_authority=scoped_read_authority,
-            require_current_authority=require_current_authority,
-            project_task_id=project_task_id,
-            authenticated_agent_id=agent_id,
-            authenticated_author_id=operator_id,
-            structured_authority_request=(
-                structured_resolver.issued_authority_request() if structured_resolver is not None else None
-            ),
-            structured_tool_is_current=(
-                (lambda: authority_is_current() and _structured_tool_is_current(hermes_home))
-                if structured_resolver is not None
-                else None
-            ),
-            structured_fact_read_authority=(
-                structured_resolver.issued_read_authority if structured_resolver is not None else None
-            ),
-            preference_service=preference_service,
-        ),
+        completed_turn_runtime=completed_runtime,
         absent_author_id=operator_id,
         revoke_structured_submission_grant=(
             revoke_current_structured_grant if structured_resolver is not None else None
         ),
+        activate_learned_candidate=activate_learned_candidate,
+        learned_ontology_runtime=learned_runtime,
         issue_origin_receipt=ingress_resolver.issue_origin_receipt,
         issue_forwarding_receipt=ingress_resolver.issue_forwarding_receipt,
     )
@@ -407,12 +447,14 @@ class _LocalLevel2StructuredSubmissionResolver:
         project_task_id: str,
         authority_is_current,
         structured_tool_is_current,
+        memory_plane: MemoryPlaneService,
     ) -> None:
         self._installation_id = installation_id
         self._operator_id = operator_id
         self._agent_id = agent_id
         self._authority_is_current = authority_is_current
         self._structured_tool_is_current = structured_tool_is_current
+        self._memory_plane = memory_plane
         expected = AuthenticatedPrincipalAgent(principal_id=operator_id, agent_id=agent_id)
         catalog_scope = CatalogAuthorityScope(schema_version=1, kind="base")
         self._issued_request = StructuredSubmissionAuthorityRequest(
@@ -444,6 +486,39 @@ class _LocalLevel2StructuredSubmissionResolver:
             ).encode()
         ).hexdigest()
 
+    def _selected_catalog(self):
+        scope = AgentLocalCatalogAuthorityScope(
+            principal_id=self._operator_id, agent_id=self._agent_id,
+        )
+        _revision, records = self._memory_plane.read_snapshot()
+        try:
+            bundle, _pointer = PackageIndexedCatalogBundleLocator().locate_selected(
+                records,
+                scope=scope,
+                authenticated=AuthenticatedPrincipalAgent(
+                    principal_id=self._operator_id, agent_id=self._agent_id,
+                ),
+            )
+        except ValueError:
+            return ThreePredicateSeedCatalogAuthorityRepository().resolve_base()
+        return bundle.catalog
+
+    def _request_for_catalog(self, catalog) -> StructuredSubmissionAuthorityRequest:
+        expected = self._issued_request.authenticated
+        return StructuredSubmissionAuthorityRequest(
+            authenticated=expected,
+            source_grant=self._issued_request.source_grant,
+            fact_grant=self._issued_request.fact_grant,
+            catalog_visibility_grant=CatalogOwnerVisibilityGrant(
+                grant_id=_grant_id(self._installation_id, self._operator_id, self._agent_id, "catalog_visibility", catalog.catalog_scope),
+                grant_version=1,
+                catalog_scope=catalog.catalog_scope,
+                authenticated=expected,
+                purpose="visibility_status",
+            ),
+            expected_catalog_digest=catalog.catalog_digest,
+        )
+
     def resolve_submission_authority(
         self,
         *,
@@ -455,17 +530,18 @@ class _LocalLevel2StructuredSubmissionResolver:
         if not self._structured_tool_is_current():
             return None
         expected = self._issued_request.authenticated
+        try:
+            catalog = self._selected_catalog()
+            expected_request = self._request_for_catalog(catalog)
+        except ValueError:
+            return None
         if (
-            request != self._issued_request
+            request != expected_request
             or authenticated_ingress.delivery_principal_binding.principal_subject_id != self._operator_id
             or authenticated_ingress.authenticated_agent_id != self._agent_id
         ):
             return None
-        try:
-            catalog = ThreePredicateSeedCatalogAuthorityRepository().resolve_base(
-                expected_catalog_digest=request.expected_catalog_digest
-            )
-        except ValueError:
+        if request.expected_catalog_digest != catalog.catalog_digest:
             return None
         return ResolvedStructuredSubmissionAuthority(
             authenticated=expected,
@@ -480,12 +556,12 @@ class _LocalLevel2StructuredSubmissionResolver:
         """Return the exact local tuple that this resolver will accept."""
         if not self._authority_is_current() or not self._structured_tool_is_current():
             raise LocalLevel2AuthorityError("local structured tool authority is unavailable")
-        catalog = ThreePredicateSeedCatalogAuthorityRepository().resolve_base()
+        catalog = self._selected_catalog()
         return ResolvedStructuredSubmissionAuthority(
             authenticated=self._issued_request.authenticated,
             source_grant=self._issued_request.source_grant,
             fact_grant=self._issued_request.fact_grant,
-            catalog_visibility_grant=self._issued_request.catalog_visibility_grant,
+            catalog_visibility_grant=self._request_for_catalog(catalog).catalog_visibility_grant,
             catalog=catalog,
         )
 
@@ -493,16 +569,17 @@ class _LocalLevel2StructuredSubmissionResolver:
         """Return the factory-owned request the resolver alone will attest."""
         if not self._authority_is_current() or not self._structured_tool_is_current():
             raise LocalLevel2AuthorityError("local structured tool authority is unavailable")
-        return self._issued_request
+        return self._request_for_catalog(self._selected_catalog())
 
     def issued_read_authority(self) -> StructuredFactReadAuthority | None:
         """Issue the current fact/catalog grant pair for one protected read."""
         if not self._authority_is_current() or not self._structured_tool_is_current():
             return None
+        request = self.issued_authority_request()
         return StructuredFactReadAuthority(
-            authenticated=self._issued_request.authenticated,
-            fact_grant=self._issued_request.fact_grant,
-            catalog_visibility_grant=self._issued_request.catalog_visibility_grant,
+            authenticated=request.authenticated,
+            fact_grant=request.fact_grant,
+            catalog_visibility_grant=request.catalog_visibility_grant,
         )
 
 
@@ -737,7 +814,7 @@ def _grant_id(
     operator_id: str,
     agent_id: str,
     grant_kind: str,
-    scope: str | CatalogAuthorityScope,
+    scope: str | CatalogAuthorityCoordinate,
 ) -> str:
     """Derive the stable v1 grant coordinate from verified factory inputs."""
     digest = sha256(
@@ -748,7 +825,9 @@ def _grant_id(
                 operator_id,
                 agent_id,
                 grant_kind,
-                scope.model_dump(mode="python") if isinstance(scope, CatalogAuthorityScope) else scope,
+                scope.model_dump(mode="python")
+                if isinstance(scope, (CatalogAuthorityScope, AgentLocalCatalogAuthorityScope))
+                else scope,
             )
         )
     ).hexdigest()

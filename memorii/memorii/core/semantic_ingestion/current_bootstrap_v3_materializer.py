@@ -174,7 +174,15 @@ class CurrentBootstrapV3RequestMaterializer:
             structured_output_capability_fingerprint=self._capability,
         )
 
-    def materialize(self, *, source: PreparedSource, default_catalog: bool = False) -> CurrentBootstrapV3Materialization:
+    def materialize(
+        self,
+        *,
+        source: PreparedSource,
+        default_catalog: bool = False,
+        learned_mentors: bool = False,
+    ) -> CurrentBootstrapV3Materialization:
+        if default_catalog and learned_mentors:
+            raise CurrentBootstrapV3MaterializationError("catalog dispatch is ambiguous")
         routes = source.segment_language_routes.routes
         segments = {segment.segment_id: segment for segment in source.segments}
         if (
@@ -220,7 +228,13 @@ class CurrentBootstrapV3RequestMaterializer:
                 semantic_context_fingerprint=segment.segment_governance.message_semantic_context_digest,
                 provider_egress_decision_digest=segment.segment_governance.provider_egress_decision_digest,
                 proposal_capability_fingerprint=self._capability,
-                predicate_catalog=(self._default_predicate_catalog() if default_catalog else self._predicate_catalog),
+                predicate_catalog=(
+                    self._learned_mentors_predicate_catalog()
+                    if learned_mentors
+                    else self._default_predicate_catalog()
+                    if default_catalog
+                    else self._predicate_catalog
+                ),
                 action_proposal_catalog=self._action_catalog,
                 registered_prompt=self._prompt, proposer_manifest=self._proposer,
                 bootstrap_analysis_provenance=provenance,
@@ -276,6 +290,26 @@ class CurrentBootstrapV3RequestMaterializer:
             vocabulary_namespace="memorii.default_catalog",
             proposal_capability_fingerprint=self._capability,
             predicates=tuple(sorted(predicates, key=lambda item: item.predicate_id)),
+            catalog_schema_fingerprint="7c2fef7072d3996b93949eab7db1701d5458379a6b65d96f5851415d748fb0e0",
+        )
+
+    def _learned_mentors_predicate_catalog(self) -> PredicateProposalCatalog:
+        """Issue the sole M5 learned relation grammar from a pinned version."""
+        predicates = tuple(sorted(
+            (*self._predicate_catalog.predicates, PredicatePromptContract.create(
+                predicate_id="mentors",
+                description="a person mentors another person",
+                subject_value_kind="entity",
+                object_value_kind="entity",
+                object_literal_type=None,
+                supported_commitments=("asserted",),
+            )),
+            key=lambda item: item.predicate_id,
+        ))
+        return PredicateProposalCatalog.create(
+            vocabulary_namespace="memorii.learned_ontology.agent_local",
+            proposal_capability_fingerprint=self._capability,
+            predicates=predicates,
             catalog_schema_fingerprint="7c2fef7072d3996b93949eab7db1701d5458379a6b65d96f5851415d748fb0e0",
         )
 

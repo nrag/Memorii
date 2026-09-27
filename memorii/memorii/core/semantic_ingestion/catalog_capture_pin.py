@@ -20,6 +20,7 @@ from memorii.core.semantic_ingestion.catalog_authority import (
     AuthenticatedPrincipalAgent,
     CatalogAuthorityCoordinate,
     CatalogAuthorityError,
+    CatalogAuthorityScope,
     CatalogChildVersionV2,
     CatalogSelectionPointer,
     CatalogVersion,
@@ -186,16 +187,18 @@ class PackageIndexedCatalogBundleLocator:
 
     def locate_historical(
         self, records: Sequence[CanonicalMemoryRecord], *, version_id: str, version_digest: str,
-        scope: AgentLocalCatalogAuthorityScope | None = None,
+        scope: CatalogAuthorityCoordinate | None = None,
         authenticated: AuthenticatedPrincipalAgent | None = None,
     ) -> VerifiedCatalogBundle:
-        if scope is not None:
+        if isinstance(scope, AgentLocalCatalogAuthorityScope):
             if authenticated is None:
                 raise CatalogAuthorityError("agent-local catalog owner is required")
             return self._locate_historical_learned(
                 records, scope=scope, authenticated=authenticated,
                 version_id=version_id, version_digest=version_digest,
             )
+        if scope is not None and not isinstance(scope, CatalogAuthorityScope):
+            raise CatalogAuthorityError("catalog scope is unavailable")
         seed = SeedCatalogBundleLocator().locate()
         if version_id == seed.version.version_id and version_digest == seed.version.version_digest:
             self._require_persisted_version(records, seed.version)

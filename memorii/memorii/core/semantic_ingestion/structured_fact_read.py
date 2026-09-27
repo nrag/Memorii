@@ -22,10 +22,7 @@ from memorii.core.semantic_ingestion.catalog_capture_pin import (
     CatalogCapturedTurnPin,
     PackageIndexedCatalogBundleLocator,
 )
-from memorii.core.semantic_ingestion.default_catalog_corpus import (
-    DefaultCatalogCorpusRow,
-    load_default_catalog_acceptance_corpus,
-)
+from memorii.core.semantic_ingestion.default_catalog_corpus import load_default_catalog_acceptance_corpus
 
 
 @dataclass(frozen=True)
@@ -52,6 +49,13 @@ class _ProjectedClaim:
     system_time: datetime
     provenance: str
     projection: CanonicalMemoryRecord
+
+
+@dataclass(frozen=True)
+class _ReadPolicy:
+    """Minimal read behavior required after catalog binding verification."""
+
+    read_derivation_policy: Literal["none", "symmetric_view"]
 
 
 class StructuredFactReadRequest(BaseModel):
@@ -206,8 +210,18 @@ def read_structured_facts_from_snapshot(
     )
 
 
-def _catalog_row(predicate_id: str) -> DefaultCatalogCorpusRow | None:
-    return next((row for row in load_default_catalog_acceptance_corpus().rows if row.relation_id == predicate_id), None)
+def _catalog_row(predicate_id: str) -> _ReadPolicy | None:
+    row = next(
+        (row for row in load_default_catalog_acceptance_corpus().rows if row.relation_id == predicate_id),
+        None,
+    )
+    if row is not None:
+        return _ReadPolicy(read_derivation_policy=row.read_derivation_policy)
+    # The frozen first learned relation is directional.  Each returned item is
+    # still joined to its agent-local binding and captured pin below.
+    if predicate_id == "mentors":
+        return _ReadPolicy(read_derivation_policy="none")
+    return None
 
 
 def _controls(

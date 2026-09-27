@@ -68,7 +68,10 @@ if TYPE_CHECKING:
         ObservationLedgerActivation,
         ObservationLedgerHead,
     )
-    from memorii.core.semantic_ingestion.catalog_authority import CatalogAuthorityScope, CatalogSelectionPointer
+    from memorii.core.semantic_ingestion.catalog_authority import (
+        AuthenticatedPrincipalAgent,
+        CatalogAuthorityCoordinate,
+    )
     from memorii.core.semantic_ingestion.catalog_capture_pin import VerifiedCatalogBundle
 
 
@@ -272,8 +275,22 @@ def observation_ledger_head_memory_id(repository_id: str) -> str:
 
 
 class CatalogBundleLocator(Protocol):
-    def locate_selected(self, records: Sequence[CanonicalMemoryRecord], *, scope: CatalogAuthorityScope) -> tuple[VerifiedCatalogBundle, CatalogSelectionPointer]: ...
-    def locate_historical(self, records: Sequence[CanonicalMemoryRecord], *, version_id: str, version_digest: str) -> VerifiedCatalogBundle: ...
+    def locate_selected(
+        self,
+        records: Sequence[CanonicalMemoryRecord],
+        *,
+        scope: CatalogAuthorityCoordinate,
+        authenticated: AuthenticatedPrincipalAgent | None = None,
+    ) -> tuple[VerifiedCatalogBundle, object]: ...
+    def locate_historical(
+        self,
+        records: Sequence[CanonicalMemoryRecord],
+        *,
+        version_id: str,
+        version_digest: str,
+        scope: CatalogAuthorityCoordinate | None = None,
+        authenticated: AuthenticatedPrincipalAgent | None = None,
+    ) -> VerifiedCatalogBundle: ...
 
 
 class SemanticWriterAdmissionStore:
@@ -1254,6 +1271,8 @@ class SemanticGovernedWritePolicy:
             ) or _is_activated_preterminal_write(
                 governed, current, admissions=self._admissions
             ) or _is_activated_structured_grant_revocation_write(
+                governed, current,
+            ) or _is_activated_agent_local_catalog_visibility_grant_write(
                 governed, current,
             ):
                 if authorization.lease_expires_at is not None and (
@@ -3789,6 +3808,68 @@ def _is_activated_structured_grant_revocation_write(
     return active.active and active.model_copy(update={"active": False}) == revoked
 
 
+def _is_activated_agent_local_catalog_visibility_grant_write(
+    records: list[CanonicalMemoryRecord],
+    current: tuple[CanonicalMemoryRecord, ...],
+) -> bool:
+    """Allow one selected agent catalog to add its owner-bound read grant."""
+    from memorii.core.semantic_ingestion.catalog_authority import (
+        AgentLocalCatalogAuthorityScope,
+        CatalogOwnerVisibilityGrant,
+        FactScopeGrant,
+        SourceScopeGrant,
+        StructuredGrantState,
+    )
+
+    if len(records) != 1:
+        return False
+    record = records[0]
+    if (
+        record.source_kind != "semantic_ingestion_structured_grant_state"
+        or record.domain != MemoryDomain.EXECUTION
+        or record.visibility != MemoryRecordVisibility.INTERNAL_CONTROL
+        or record.status != CommitStatus.COMMITTED
+    ):
+        return False
+    try:
+        added = StructuredGrantState.model_validate(record.content["state"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    if (
+        not added.active
+        or added.grant_kind != "catalog_visibility"
+        or not isinstance(added.grant, CatalogOwnerVisibilityGrant)
+        or not isinstance(added.grant.catalog_scope, AgentLocalCatalogAuthorityScope)
+    ):
+        return False
+    expected_id = "semantic_ingestion:structured-grant:" + sha256(
+        (added.grant_kind + "\0" + added.grant.grant_id).encode("utf-8")
+    ).hexdigest()
+    if record.memory_id != expected_id or any(item.memory_id == expected_id for item in current):
+        return False
+    owner = added.grant.authenticated
+    required_kinds = {"source", "fact"}
+    matched: set[str] = set()
+    for prior in current:
+        if prior.source_kind != "semantic_ingestion_structured_grant_state":
+            continue
+        try:
+            state = StructuredGrantState.model_validate(prior.content["state"])
+        except (KeyError, TypeError, ValueError):
+            return False
+        if state.grant_kind not in required_kinds or not state.active:
+            continue
+        if not isinstance(state.grant, (SourceScopeGrant, FactScopeGrant)):
+            return False
+        if state.grant.authenticated == owner:
+            matched.add(state.grant_kind)
+    return (
+        matched == required_kinds
+        and added.grant.catalog_scope.principal_id == owner.principal_id
+        and added.grant.catalog_scope.agent_id == owner.agent_id
+    )
+
+
 def _is_atomic_admission_only_write(
     records: list[CanonicalMemoryRecord],
     binding: SemanticWriterCommitBinding,
@@ -3901,6 +3982,7 @@ def _is_catalog_captured_turn_pin_write(
         return False
     try:
         from memorii.core.semantic_ingestion.catalog_authority import (
+            AuthenticatedPrincipalAgent,
             CatalogSelectionPointer,
             StructuredGrantState,
             catalog_selection_pointer_memory_id,
@@ -3918,7 +4000,16 @@ def _is_catalog_captured_turn_pin_write(
         if not isinstance(catalog_bundle_locator, PackageIndexedCatalogBundleLocator):
             return False
         bundle, selected_pointer = catalog_bundle_locator.locate_selected(
-            current, scope=pin.catalog_scope,
+            current,
+            scope=pin.catalog_scope,
+            authenticated=(
+                AuthenticatedPrincipalAgent(
+                    principal_id=pin.catalog_scope.principal_id,
+                    agent_id=pin.catalog_scope.agent_id,
+                )
+                if getattr(pin.catalog_scope, "kind", None) == "agent_local"
+                else None
+            ),
         )
     except (ImportError, KeyError, TypeError, ValueError):
         return False
@@ -3933,8 +4024,17 @@ def _is_catalog_captured_turn_pin_write(
     )
     coordination_record = by_id.get(HermesCapturedTurnCoordination.memory_id_for_source(pin.source_id))
     source_record = by_id.get(pin.source_id)
-    pointer_record = by_id.get(catalog_selection_pointer_memory_id(pin.catalog_scope))
-    version_record = by_id.get(catalog_version_memory_id(bundle.version))
+    if getattr(pin.catalog_scope, "kind", None) == "agent_local":
+        from memorii.core.semantic_ingestion.learned_relation import (
+            learned_catalog_pointer_memory_id,
+            learned_catalog_version_memory_id,
+        )
+
+        pointer_record = by_id.get(learned_catalog_pointer_memory_id(pin.catalog_scope))
+        version_record = by_id.get(learned_catalog_version_memory_id(bundle.version))
+    else:
+        pointer_record = by_id.get(catalog_selection_pointer_memory_id(pin.catalog_scope))
+        version_record = by_id.get(catalog_version_memory_id(bundle.version))
     if any(
         item is None
         for item in (
@@ -3952,8 +4052,16 @@ def _is_catalog_captured_turn_pin_write(
     try:
         ledger = HermesCapturedTurnLedger.model_validate(ledger_record.content)
         coordination = HermesCapturedTurnCoordination.model_validate(coordination_record.content["coordination"])
-        pointer = CatalogSelectionPointer.model_validate(pointer_record.content["catalog_selection_pointer"])
-        version = type(bundle.version).model_validate(version_record.content["catalog_version"])
+        pointer = (
+            selected_pointer.__class__.model_validate(pointer_record.content["pointer"])
+            if getattr(pin.catalog_scope, "kind", None) == "agent_local"
+            else CatalogSelectionPointer.model_validate(pointer_record.content["catalog_selection_pointer"])
+        )
+        version = type(bundle.version).model_validate(
+            version_record.content[
+                "version" if getattr(pin.catalog_scope, "kind", None) == "agent_local" else "catalog_version"
+            ]
+        )
     except (AttributeError, KeyError, TypeError, ValueError):
         return False
     if (
@@ -3969,6 +4077,13 @@ def _is_catalog_captured_turn_pin_write(
         or pin.selected_version_digest != bundle.version.version_digest
         or pin.runtime_bundle_digest != bundle.runtime_bundle_digest
         or pin.selection_pointer_digest != pointer.pointer_digest
+        or (
+            getattr(pin.catalog_scope, "kind", None) == "agent_local"
+            and (
+                ledger.principal_id != pin.catalog_scope.principal_id
+                or ledger.agent_id != pin.catalog_scope.agent_id
+            )
+        )
     ):
         return False
     # A pin never makes an inactive or substituted grant usable.  The atomic

@@ -12,11 +12,17 @@ from memorii.core.memory_evolution.atomic_store import (
 )
 from memorii.core.memory_evolution.semantic_state import PredicateStateRule
 from memorii.core.memory_evolution.writer_admission import SemanticWriterCommitBinding
+from memorii.core.semantic_ingestion.catalog_authority import (
+    AgentLocalCatalogAuthorityScope,
+    AuthenticatedPrincipalAgent,
+)
 from memorii.core.semantic_ingestion.catalog_capture_pin import PackageIndexedCatalogBundleLocator
 from memorii.core.semantic_ingestion.contracts import (
     BootstrapRecoveryClaimV3,
     LanguageConstructionPolicyAuthorityBundle,
     ParserConsensusPolicy,
+    PredicateTemporalRule,
+    PredicateTrustRule,
     ScopeConsensusPolicy,
     SegmentLocalTextSpan,
     SemanticArbitrationPolicyBundle,
@@ -176,6 +182,7 @@ class CurrentBootstrapV3DynamicAuthorityProvider:
         ):
             return None
         coordinate = invocation.catalog_runtime_coordinate
+        learned_mentors = False
         if coordinate is not None:
             try:
                 _revision, records = self._store._memory_plane.read_snapshot()
@@ -193,6 +200,15 @@ class CurrentBootstrapV3DynamicAuthorityProvider:
                 )
                 bundle = PackageIndexedCatalogBundleLocator().locate_historical(
                     records,
+                    scope=coordinate.catalog_scope,
+                    authenticated=(
+                        AuthenticatedPrincipalAgent(
+                            principal_id=coordinate.catalog_scope.principal_id,
+                            agent_id=coordinate.catalog_scope.agent_id,
+                        )
+                        if isinstance(coordinate.catalog_scope, AgentLocalCatalogAuthorityScope)
+                        else None
+                    ),
                     version_id=coordinate.selected_version_id,
                     version_digest=coordinate.selected_version_digest,
                 )
@@ -213,6 +229,12 @@ class CurrentBootstrapV3DynamicAuthorityProvider:
                 or coordinate.runtime_bundle_digest != bundle.runtime_bundle_digest
             ):
                 return None
+            # The persisted learned version is the authority for this narrow
+            # M5 grammar.  No caller-selected predicate can reach this path.
+            learned_mentors = (
+                isinstance(bundle.catalog.catalog_scope, AgentLocalCatalogAuthorityScope)
+                and getattr(bundle.version, "relation_ids", ()) == ("mentors",)
+            )
         try:
             progress, publication_coordinate, lease, operation_generation, artifact_generation = (
                 self._store.initialize_source_normalization_publication(
@@ -227,6 +249,7 @@ class CurrentBootstrapV3DynamicAuthorityProvider:
                     coordinate is not None
                     and coordinate.selected_version_id == "default-catalog-v1"
                 ),
+                learned_mentors=learned_mentors,
             )
         except (TypeError, ValueError):
             return None
@@ -299,6 +322,32 @@ class CurrentBootstrapV3DynamicAuthorityProvider:
                 trust_policy=trust, temporal_policy=temporal,
                 arbitration_as_of=policy.arbitration_as_of,
             )
+        elif learned_mentors:
+            mentors_trust = PredicateTrustRule(
+                predicate_id="mentors",
+                eligible_authority_classes=frozenset({"official"}),
+                authority_rank_by_class={"official": 10},
+            )
+            mentors_temporal = PredicateTemporalRule(
+                predicate_id="mentors", valid_time_requirement="optional", allow_open_end=True,
+            )
+            policy = SemanticArbitrationPolicyBundle.create(
+                trust_policy=TrustPolicySnapshot.create(
+                    policy_revision="memorii.learned-ontology.mentors-trust.v1",
+                    system_effective_interval=policy.trust_policy.system_effective_interval,
+                    rules=tuple(sorted(
+                        (*policy.trust_policy.rules, mentors_trust), key=lambda rule: rule.predicate_id,
+                    )),
+                ),
+                temporal_policy=TemporalPolicySnapshot.create(
+                    policy_revision="memorii.learned-ontology.mentors-temporal.v1",
+                    system_effective_interval=policy.temporal_policy.system_effective_interval,
+                    rules=tuple(sorted(
+                        (*policy.temporal_policy.rules, mentors_temporal), key=lambda rule: rule.predicate_id,
+                    )),
+                ),
+                arbitration_as_of=policy.arbitration_as_of,
+            )
         registry_body = {
             "registry_revision": "bootstrap-v3-project-assertions-v1",
             "capabilities": (CapabilityRegistryEntry(
@@ -338,6 +387,17 @@ class CurrentBootstrapV3DynamicAuthorityProvider:
                 selected_default_catalog_state_rules()[predicate_id]
                 for predicate_id in sorted(selected_default_catalog_state_rules())
             )
+        elif learned_mentors:
+            state_rules = tuple(sorted((*tuple(PredicateStateRule(
+                predicate_id=predicate_id, cardinality="single", conflict_behavior="compete_within_slot",
+                qualifier_partition_fields=(), value_identity_policy_id="memorii.project-assertions.value.v1",
+                policy_fingerprint=self._digest(f"predicate-state:{predicate_id}"),
+            ) for predicate_id in ("project_deadline", "project_owner", "project_status")),
+            PredicateStateRule(
+                predicate_id="mentors", cardinality="multi", conflict_behavior="accumulate_distinct_values",
+                qualifier_partition_fields=(), value_identity_policy_id="memorii.learned-ontology.mentors.value.v1",
+                policy_fingerprint=self._digest("predicate-state:mentors"),
+            )), key=lambda rule: rule.predicate_id))
         else:
             state_rules = tuple(PredicateStateRule(
                 predicate_id=predicate_id, cardinality="single", conflict_behavior="compete_within_slot",

@@ -12,6 +12,12 @@ from memorii.core.semantic_ingestion.catalog_capture_pin import (
     CatalogCapturedTurnPin,
     PackageIndexedCatalogBundleLocator,
 )
+from memorii.core.semantic_ingestion.contracts import (
+    ProviderEntityObject,
+    ProviderFact,
+    ProviderMention,
+    ProviderSemanticProposal,
+)
 from memorii.core.semantic_ingestion.hermes_captured_turn import HermesCapturedTurnLedger
 from memorii.core.semantic_ingestion.learned_relation import (
     ActivationPolicy,
@@ -22,6 +28,7 @@ from memorii.core.semantic_ingestion.learned_relation import (
     OntologyEvidenceReference,
     PairedEvaluation,
     RelationDeclaration,
+    validate_mentors_tool_proposal,
 )
 
 
@@ -201,3 +208,28 @@ def test_agent_local_catalog_denies_other_owner_and_invalid_selected_child() -> 
     malformed = tuple(corrupt if record.memory_id == pointer_record.memory_id else record for record in records)
     with pytest.raises(CatalogAuthorityError, match="agent-local catalog selection"):
         locator.locate_selected(malformed, scope=_SCOPE, authenticated=_authenticated())
+
+
+def test_mentors_grammar_accepts_only_direct_person_relation() -> None:
+    proposal = ProviderSemanticProposal(
+        abstained=False,
+        mentions=(
+            ProviderMention(local_id="alice", mention_quote="Alice", mention_context_quote="Alice mentors Bob.", proposed_type="Person"),
+            ProviderMention(local_id="bob", mention_quote="Bob", mention_context_quote="Alice mentors Bob.", proposed_type="Person"),
+        ),
+        facts=(ProviderFact(
+            local_id="fact", predicate_id="mentors", subject_entity_ref="alice",
+            object=ProviderEntityObject(entity_ref="bob"), assertion_quote="Alice mentors Bob.",
+            predicate_anchor_quote="mentors", polarity="positive", commitment="asserted",
+        ),),
+    )
+    arguments = {
+        "source_quote": "Alice mentors Bob.", "subject_quote": "Alice",
+        "predicate_anchor_quote": "mentors", "object_quote": "Bob",
+    }
+    validate_mentors_tool_proposal(proposal, arguments=arguments)
+    with pytest.raises(ValueError, match="relation shape"):
+        validate_mentors_tool_proposal(
+            proposal.model_copy(update={"facts": (proposal.facts[0].model_copy(update={"assertion_quote": "Alice might mentor Bob."}),)}),
+            arguments=arguments,
+        )

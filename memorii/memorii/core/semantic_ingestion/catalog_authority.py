@@ -851,7 +851,10 @@ class StructuredClaimCatalogBinding(BaseModel):
     schema_version: Literal[1, 2]
     claim_assertion_id: str = Field(min_length=1)
     claim_record_digest: str = Field(pattern=_DIGEST)
-    catalog_scope: CatalogAuthorityScope
+    # Schema two records may be pinned to the closed agent-local learned
+    # catalog coordinate.  Schema one remains byte-compatible with the base
+    # scope and has no captured pin tuple.
+    catalog_scope: CatalogAuthorityCoordinate
     catalog_digest: str = Field(pattern=_DIGEST)
     fact_scope: str = Field(min_length=1)
     authenticated: AuthenticatedPrincipalAgent

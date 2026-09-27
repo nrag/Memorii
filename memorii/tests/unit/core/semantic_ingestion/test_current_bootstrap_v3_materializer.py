@@ -57,6 +57,17 @@ def test_default_catalog_materialization_composes_seed_and_corpus_predicates() -
     assert predicates["obligation_amount"].object_literal_type == "money"
 
 
+def test_learned_mentors_materialization_uses_closed_person_relation_grammar() -> None:
+    material = _materializer().materialize(source=_source(), learned_mentors=True)
+    predicates = {item.predicate_id: item for item in material.runtime_authority.proposal_requests[0].predicate_catalog.predicates}
+
+    assert set(predicates) == {"project_deadline", "project_owner", "project_status", "mentors"}
+    assert predicates["mentors"].subject_value_kind == "entity"
+    assert predicates["mentors"].object_value_kind == "entity"
+    with pytest.raises(CurrentBootstrapV3MaterializationError, match="ambiguous"):
+        _materializer().materialize(source=_source(), default_catalog=True, learned_mentors=True)
+
+
 def test_rejects_source_without_current_bootstrap_freeform_routes() -> None:
     source = _source()
     route = source.segment_language_routes.routes[0]

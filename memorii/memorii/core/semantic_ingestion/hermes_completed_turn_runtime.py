@@ -79,6 +79,7 @@ from memorii.core.semantic_ingestion.hermes_completed_turn_admission import (
     HermesCompletedTurnMessage,
     _prepare_governed_child_source,
 )
+from memorii.core.semantic_ingestion.learned_relation import validate_mentors_tool_proposal
 from memorii.core.semantic_ingestion.reports_to_capability import (
     validate_reports_to_tool_proposal,
 )
@@ -385,6 +386,26 @@ _REPORTS_TO_FACT_ONLY_PROPOSAL_SCHEMA: dict[str, object] = {
 }
 
 
+def _mentors_fact_only_proposal_schema() -> dict[str, object]:
+    """Project the selected `mentors(Person, Person)` grammar to Hermes JSON."""
+    def replace(value: object) -> object:
+        if isinstance(value, dict):
+            return {key: replace(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [replace(item) for item in value]
+        if value == "reports_to":
+            return "mentors"
+        if value == "reports to":
+            return "mentors"
+        if value == "PersonName":
+            return "Person"
+        return value
+
+    schema = replace(_REPORTS_TO_FACT_ONLY_PROPOSAL_SCHEMA)
+    assert isinstance(schema, dict)
+    return schema
+
+
 def _default_catalog_fact_only_proposal_schema() -> dict[str, object]:
     """Project default predicates and their closed lifecycle grammar to transport."""
     schema = deepcopy(_FACT_ONLY_PROPOSAL_SCHEMA)
@@ -613,11 +634,13 @@ class HermesCompletedTurnRuntime:
         dispatch = self._service.resolve_captured_turn_catalog_dispatch(pin=pin)
         if dispatch == "reports_to":
             proposal_schema = _REPORTS_TO_FACT_ONLY_PROPOSAL_SCHEMA
+        elif dispatch == "mentors":
+            proposal_schema = _mentors_fact_only_proposal_schema()
         elif dispatch == "default_catalog":
             proposal_schema = _default_catalog_fact_only_proposal_schema()
         else:
             proposal_schema = _FACT_ONLY_PROPOSAL_SCHEMA
-        if dispatch not in {"seed", "reports_to", "default_catalog"}:
+        if dispatch not in {"seed", "reports_to", "default_catalog", "mentors"}:
             return []
         parameters = (
             _default_catalog_tool_parameters(proposal_schema)
@@ -703,7 +726,7 @@ class HermesCompletedTurnRuntime:
             if not isinstance(pin, CatalogCapturedTurnPin):
                 return {"status": "unavailable"}
             dispatch = self._service.resolve_captured_turn_catalog_dispatch(pin=pin)
-            if dispatch not in {"seed", "reports_to", "default_catalog"}:
+            if dispatch not in {"seed", "reports_to", "default_catalog", "mentors"}:
                 return {"status": "denied"}
             try:
                 request = self._structured_tool_request(
@@ -711,6 +734,7 @@ class HermesCompletedTurnRuntime:
                     arguments=arguments,
                     reports_to=dispatch == "reports_to",
                     default_catalog=dispatch == "default_catalog",
+                    mentors=dispatch == "mentors",
                 )
             except (TypeError, ValueError):
                 return {"status": "rejected"}
@@ -1001,6 +1025,7 @@ class HermesCompletedTurnRuntime:
         arguments: dict[str, object],
         reports_to: bool = False,
         default_catalog: bool = False,
+        mentors: bool = False,
     ) -> StructuredFactSubmissionRequest:
         ordinary_allowed = {
             "schema_version",
@@ -1047,7 +1072,7 @@ class HermesCompletedTurnRuntime:
         # Hermes function arguments arrive from JSON, while the typed proposal
         # contract deliberately models ordered collections as tuples.
         proposal = ProviderSemanticProposal.model_validate(_json_arrays_to_tuples(proposal_value))
-        if reports_to and default_catalog:
+        if sum((reports_to, default_catalog, mentors)) > 1:
             raise ValueError("structured tool dispatch is ambiguous")
         if reports_to:
             validate_reports_to_tool_proposal(proposal)
@@ -1056,6 +1081,8 @@ class HermesCompletedTurnRuntime:
                 proposal=proposal,
                 arguments=arguments,
             )
+        elif mentors:
+            validate_mentors_tool_proposal(proposal, arguments=arguments)
         else:
             HermesCompletedTurnRuntime._validate_fact_only_proposal(proposal=proposal, arguments=arguments)
         prepared = self._load_active_prepared_source(active)

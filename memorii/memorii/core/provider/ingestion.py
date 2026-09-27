@@ -78,7 +78,7 @@ from memorii.core.semantic_ingestion.capability import (
     AuthorizedSemanticIngestionRuntime,
 )
 from memorii.core.semantic_ingestion.catalog_authority import (
-    CatalogAuthorityScope,
+    CatalogAuthorityCoordinate,
     ResolvedStructuredSubmissionAuthority,
     SelectedCatalogAuthorityRepository,
     StructuredSubmissionAuthorityRequest,
@@ -162,7 +162,7 @@ class CapturedCatalogPinReference(BaseModel):
     capture_id: str = Field(min_length=1)
     pin_memory_id: str = Field(min_length=1)
     pin_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    catalog_scope: CatalogAuthorityScope
+    catalog_scope: CatalogAuthorityCoordinate
     catalog_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     selected_version_id: str = Field(min_length=1)
     selected_version_digest: str = Field(pattern=r"^[0-9a-f]{64}$")

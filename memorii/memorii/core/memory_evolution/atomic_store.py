@@ -3484,6 +3484,36 @@ class SemanticIngestionAtomicStore:
                 raise StructuredSubmissionGrantRevokedError(
                     "structured submission grant is revoked"
                 )
+            # An activated agent-local catalog reuses the installation's
+            # source/fact grants and adds only its distinct visibility grant.
+            # Do not repair arbitrary partial tuples: this is the sole
+            # compatible extension, and both reused grants must be exact.
+            if (
+                current[0] is not None
+                and current[1] is not None
+                and current[2] is None
+                and self._same_structured_grant_state(current[0], records[0])
+                and self._same_structured_grant_state(current[1], records[1])
+            ):
+                try:
+                    self._memory_plane.conditionally_write_records(
+                        (records[2],),
+                        preconditions=(
+                            RecordAbsentPrecondition(memory_id=records[2].memory_id),
+                            RecordDigestPrecondition(
+                                memory_id=writer_record.memory_id,
+                                expected_digest=record_digest(writer_record),
+                            ),
+                        ),
+                        authorization=authorization,
+                    )
+                except MemoryPlaneRevisionConflictError as exc:
+                    current_catalog = self._memory_plane.get_record(records[2].memory_id)
+                    if not self._same_structured_grant_state(current_catalog, records[2]):
+                        raise PreplanningStoreError(
+                            "structured submission grant state CAS conflicted"
+                        ) from exc
+                return
             raise PreplanningStoreError("structured submission grant state is partial")
         try:
             self._memory_plane.conditionally_write_records(
@@ -3635,6 +3665,7 @@ class SemanticIngestionAtomicStore:
         not a seed fallback.
         """
         from memorii.core.semantic_ingestion.catalog_authority import (
+            AgentLocalCatalogAuthorityScope,
             CatalogSelectionPointer,
             ResolvedStructuredSubmissionAuthority,
             StructuredGrantState,
@@ -3668,14 +3699,29 @@ class SemanticIngestionAtomicStore:
 
         _revision, selection_records = self._memory_plane.read_snapshot()
         bundle, selected_pointer = self._catalog_bundle_locator.locate_selected(
-            selection_records, scope=authority.catalog.catalog_scope,
+            selection_records,
+            scope=authority.catalog.catalog_scope,
+            authenticated=authority.authenticated,
         )
-        pointer_record = self._memory_plane.get_record(
-            catalog_selection_pointer_memory_id(bundle.catalog.catalog_scope)
-        )
-        version_record = self._memory_plane.get_record(
-            catalog_version_memory_id(bundle.version)
-        )
+        if isinstance(bundle.catalog.catalog_scope, AgentLocalCatalogAuthorityScope):
+            from memorii.core.semantic_ingestion.learned_relation import (
+                learned_catalog_pointer_memory_id,
+                learned_catalog_version_memory_id,
+            )
+
+            pointer_record = self._memory_plane.get_record(
+                learned_catalog_pointer_memory_id(bundle.catalog.catalog_scope)
+            )
+            version_record = self._memory_plane.get_record(
+                learned_catalog_version_memory_id(bundle.version)
+            )
+        else:
+            pointer_record = self._memory_plane.get_record(
+                catalog_selection_pointer_memory_id(bundle.catalog.catalog_scope)
+            )
+            version_record = self._memory_plane.get_record(
+                catalog_version_memory_id(bundle.version)
+            )
         ledger_record = self._memory_plane.get_record(
             "semantic_ingestion:hermes_captured_turn:" + sha256(ledger.capture_id.encode()).hexdigest()
         )
@@ -3716,7 +3762,13 @@ class SemanticIngestionAtomicStore:
         assert coordination_record is not None
         assert source_record is not None
         try:
-            version = type(bundle.version).model_validate(version_record.content["catalog_version"])
+            version = type(bundle.version).model_validate(
+                version_record.content[
+                    "version"
+                    if isinstance(bundle.catalog.catalog_scope, AgentLocalCatalogAuthorityScope)
+                    else "catalog_version"
+                ]
+            )
             persisted_ledger = HermesCapturedTurnLedger.model_validate(ledger_record.content)
             coordination = HermesCapturedTurnCoordination.model_validate(coordination_record.content["coordination"])
             states = tuple(StructuredGrantState.model_validate(record.content["state"]) for record in resolved_grant_records)
@@ -3746,7 +3798,8 @@ class SemanticIngestionAtomicStore:
             )
         if (
             version != bundle.version
-            or authority.catalog != bundle.catalog
+            or authority.catalog.catalog_scope != bundle.catalog.catalog_scope
+            or authority.catalog.catalog_digest != bundle.catalog.catalog_digest
             or persisted_ledger != ledger
             or (coordination != expected_coordination and not pending_coordination)
             or source_record is None
@@ -3759,7 +3812,11 @@ class SemanticIngestionAtomicStore:
             raise PreplanningStoreError("captured catalog pin predecessors are substituted")
         try:
             assert pointer_record is not None
-            pointer = CatalogSelectionPointer.model_validate(pointer_record.content["catalog_selection_pointer"])
+            pointer = (
+                selected_pointer.__class__.model_validate(pointer_record.content["pointer"])
+                if isinstance(bundle.catalog.catalog_scope, AgentLocalCatalogAuthorityScope)
+                else CatalogSelectionPointer.model_validate(pointer_record.content["catalog_selection_pointer"])
+            )
         except (AttributeError, KeyError, TypeError, ValueError) as exc:
             raise PreplanningStoreError("captured catalog selection is unavailable") from exc
         if pointer != selected_pointer:
@@ -3807,6 +3864,7 @@ class SemanticIngestionAtomicStore:
     ) -> CatalogCapturedTurnPin | None:
         """Load one existing capture pin without selecting or writing a catalog."""
         from memorii.core.semantic_ingestion.catalog_authority import (
+            AgentLocalCatalogAuthorityScope,
             CatalogAuthorityError,
             ResolvedStructuredSubmissionAuthority,
             StructuredGrantState,
@@ -3835,12 +3893,22 @@ class SemanticIngestionAtomicStore:
         _revision, historical_records = self._memory_plane.read_snapshot()
         try:
             bundle = self._catalog_bundle_locator.locate_historical(
-                historical_records, version_id=pin.selected_version_id,
+                historical_records,
+                scope=authority.catalog.catalog_scope,
+                authenticated=authority.authenticated,
+                version_id=pin.selected_version_id,
                 version_digest=pin.selected_version_digest,
             )
         except (CatalogAuthorityError, ValueError) as exc:
             raise PreplanningStoreError("captured catalog pin is unavailable") from exc
-        version_record = self._memory_plane.get_record(catalog_version_memory_id(bundle.version))
+        if isinstance(bundle.catalog.catalog_scope, AgentLocalCatalogAuthorityScope):
+            from memorii.core.semantic_ingestion.learned_relation import learned_catalog_version_memory_id
+
+            version_record = self._memory_plane.get_record(
+                learned_catalog_version_memory_id(bundle.version)
+            )
+        else:
+            version_record = self._memory_plane.get_record(catalog_version_memory_id(bundle.version))
         ledger_record = self._memory_plane.get_record(
             "semantic_ingestion:hermes_captured_turn:" + sha256(ledger.capture_id.encode()).hexdigest()
         )
@@ -3870,7 +3938,13 @@ class SemanticIngestionAtomicStore:
         assert coordination_record is not None
         assert source_record is not None
         try:
-            version = type(bundle.version).model_validate(version_record.content["catalog_version"])
+            version = type(bundle.version).model_validate(
+                version_record.content[
+                    "version"
+                    if isinstance(bundle.catalog.catalog_scope, AgentLocalCatalogAuthorityScope)
+                    else "catalog_version"
+                ]
+            )
             persisted_ledger = HermesCapturedTurnLedger.model_validate(ledger_record.content)
             coordination = HermesCapturedTurnCoordination.model_validate(coordination_record.content["coordination"])
             states = tuple(StructuredGrantState.model_validate(record.content["state"]) for record in resolved_grant_records)
@@ -3905,7 +3979,8 @@ class SemanticIngestionAtomicStore:
             or existing.visibility is not MemoryRecordVisibility.INTERNAL_CONTROL
             or existing.status is not CommitStatus.COMMITTED
             or version != bundle.version
-            or authority.catalog != bundle.catalog
+            or authority.catalog.catalog_scope != bundle.catalog.catalog_scope
+            or authority.catalog.catalog_digest != bundle.catalog.catalog_digest
             or persisted_ledger != ledger
             or (coordination != expected_coordination and not pending_coordination)
             or source_admission_source_digest(source_record) != ledger.source_digest
@@ -3927,6 +4002,8 @@ class SemanticIngestionAtomicStore:
     def resolve_captured_turn_catalog_dispatch(self, *, pin: object) -> str:
         """Name the closed tool grammar authorized by one verified historical pin."""
         from memorii.core.semantic_ingestion.catalog_authority import (
+            AgentLocalCatalogAuthorityScope,
+            AuthenticatedPrincipalAgent,
             CatalogAuthorityError,
             CatalogChildVersionV2,
             CatalogVersion,
@@ -3939,6 +4016,15 @@ class SemanticIngestionAtomicStore:
         try:
             bundle = self._catalog_bundle_locator.locate_historical(
                 records,
+                scope=pin.catalog_scope,
+                authenticated=(
+                    AuthenticatedPrincipalAgent(
+                        principal_id=pin.catalog_scope.principal_id,
+                        agent_id=pin.catalog_scope.agent_id,
+                    )
+                    if isinstance(pin.catalog_scope, AgentLocalCatalogAuthorityScope)
+                    else None
+                ),
                 version_id=pin.selected_version_id,
                 version_digest=pin.selected_version_digest,
             )
@@ -3954,6 +4040,11 @@ class SemanticIngestionAtomicStore:
             raise PreplanningStoreError("captured catalog dispatch is substituted")
         if isinstance(bundle.version, CatalogVersion):
             return "seed"
+        if (
+            isinstance(bundle.catalog.catalog_scope, AgentLocalCatalogAuthorityScope)
+            and getattr(bundle.version, "relation_ids", ()) == ("mentors",)
+        ):
+            return "mentors"
         from memorii.core.semantic_ingestion.default_catalog_package import (
             load_packaged_default_catalog_release,
         )
@@ -4479,6 +4570,8 @@ class SemanticIngestionAtomicStore:
         """Verify the retained captured tuple without consulting a current pointer."""
         from memorii.core.provider.ingestion import CapturedCatalogPinReference
         from memorii.core.semantic_ingestion.catalog_authority import (
+            AgentLocalCatalogAuthorityScope,
+            AuthenticatedPrincipalAgent,
             CatalogAuthorityError,
             ResolvedStructuredSubmissionAuthority,
         )
@@ -4503,6 +4596,15 @@ class SemanticIngestionAtomicStore:
             _revision, records = self._memory_plane.read_snapshot()
             bundle = self._catalog_bundle_locator.locate_historical(
                 records,
+                scope=pin.catalog_scope,
+                authenticated=(
+                    AuthenticatedPrincipalAgent(
+                        principal_id=pin.catalog_scope.principal_id,
+                        agent_id=pin.catalog_scope.agent_id,
+                    )
+                    if isinstance(pin.catalog_scope, AgentLocalCatalogAuthorityScope)
+                    else None
+                ),
                 version_id=pin.selected_version_id,
                 version_digest=pin.selected_version_digest,
             )

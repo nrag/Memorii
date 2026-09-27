@@ -56,6 +56,51 @@ class LearnedRelationError(ValueError):
     """The closed learned-relation protocol rejected a request."""
 
 
+def validate_mentors_tool_proposal(proposal: object, *, arguments: dict[str, object]) -> None:
+    """Validate the one activated agent-local relation before normal writing.
+
+    This is deliberately a relation grammar, not a second writer.  The
+    selected catalog remains the authority which makes this grammar reachable.
+    """
+    from memorii.core.semantic_ingestion.contracts import ProviderEntityObject, ProviderSemanticProposal
+
+    if not isinstance(proposal, ProviderSemanticProposal) or (
+        proposal.abstained or len(proposal.facts) != 1 or proposal.corrections
+        or proposal.retractions or proposal.action_states or proposal.identity_operations
+    ):
+        raise ValueError("mentors proposal is outside the fact-only grammar")
+    fact = proposal.facts[0]
+    if (
+        fact.predicate_id != _RELATION_ID
+        or not isinstance(fact.object, ProviderEntityObject)
+        or fact.predicate_anchor_quote != "mentors"
+        or fact.polarity != "positive"
+        or fact.commitment != "asserted"
+        or fact.attributed_to_entity_ref is not None
+        or fact.temporal_qualifier_quotes
+        or fact.assertion_quote != arguments.get("source_quote")
+    ):
+        raise ValueError("mentors proposal relation shape is invalid")
+    mentions = {mention.local_id: mention for mention in proposal.mentions}
+    subject = mentions.get(fact.subject_entity_ref)
+    object_mention = mentions.get(fact.object.entity_ref)
+    if (
+        len(mentions) != 2 or subject is None or object_mention is None
+        or subject.proposed_type != "Person" or object_mention.proposed_type != "Person"
+        or subject.local_id == object_mention.local_id
+        or subject.mention_quote != arguments.get("subject_quote")
+        or object_mention.mention_quote != arguments.get("object_quote")
+        or subject.mention_context_quote != fact.assertion_quote
+        or object_mention.mention_context_quote != fact.assertion_quote
+    ):
+        raise ValueError("mentors proposal must ground two distinct people")
+    quote = fact.assertion_quote
+    if not isinstance(quote, str) or quote != (
+        f"{subject.mention_quote} mentors {object_mention.mention_quote}."
+    ):
+        raise ValueError("mentors assertion is not a direct relation")
+
+
 AgentLocalCatalogScope = AgentLocalCatalogAuthorityScope
 
 
@@ -671,6 +716,11 @@ def learned_catalog_pointer_memory_id(scope: AgentLocalCatalogScope) -> str:
     return "learned-catalog-pointer:" + contract_digest(
         b"memorii.learned-ontology.learned-scope-key.v1", scope.model_dump(mode="json")
     )
+
+
+def learned_catalog_version_memory_id(version: OntologyCatalogVersion) -> str:
+    """Return the persisted coordinate for one immutable learned version."""
+    return "learned-catalog-version:" + version.version_digest
 
 
 def locate_selected_learned_catalog(

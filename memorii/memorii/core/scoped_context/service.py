@@ -712,6 +712,7 @@ def _current_catalog_read_authority(
     catalog_bundle_locator: CatalogBundleLocator,
 ) -> bool:
     from memorii.core.semantic_ingestion.catalog_authority import (
+        AuthenticatedPrincipalAgent,
         CatalogAuthorityError,
         StructuredClaimCatalogBinding,
         StructuredFactReadAuthority,
@@ -755,6 +756,11 @@ def _current_catalog_read_authority(
         try:
             bundle = catalog_bundle_locator.locate_historical(
                 records,
+                scope=binding.catalog_scope,
+                authenticated=AuthenticatedPrincipalAgent(
+                    principal_id=binding.authenticated.principal_id,
+                    agent_id=binding.authenticated.agent_id,
+                ),
                 version_id=binding.selected_version_id,
                 version_digest=binding.selected_version_digest,
             )

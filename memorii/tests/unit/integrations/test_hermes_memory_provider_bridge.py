@@ -875,7 +875,7 @@ def test_installed_no_key_bridge_advertises_only_the_closed_structured_tool_afte
     provider.shutdown()
 
 
-def test_installed_no_key_bridge_reaches_canonical_structured_submission_without_model_transport(
+def test_installed_no_key_bridge_reaches_learned_mentors_submission_without_model_transport(
     bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from memorii.core.semantic_ingestion.openai_responses_project_assertions import OpenAIResponsesApiClient
@@ -912,25 +912,63 @@ def test_installed_no_key_bridge_reaches_canonical_structured_submission_without
         agent_identity="profile:primary", platform="cli", agent_context="primary",
         agent_workspace="hermes",
     )
-    sentence = "Atlas project owner is Ada."
+    from memorii.core.semantic_ingestion.learned_relation import (
+        AgentLocalCatalogScope,
+        OntologyChangeProposal,
+        OntologyEvidenceReference,
+        PairedEvaluation,
+        RelationDeclaration,
+    )
+
+    learned = provider._learned_ontology_runtime
+    assert learned is not None
+    active_runtime = provider._completed_turn_runtime
+    assert active_runtime is not None
+    scope = AgentLocalCatalogScope(
+        principal_id=provider._absent_author_id,
+        agent_id=active_runtime._authenticated_agent_id,
+    )
+    candidate = learned.prepare_candidate(OntologyChangeProposal.create(
+        catalog_scope=scope, parent_catalog_digest="a" * 64,
+        relation=RelationDeclaration(description="A person mentors another person."),
+        evidence=(OntologyEvidenceReference(
+            source_id="activation:evidence", source_digest="1" * 64,
+            origin_lineage_digest="2" * 64, source_scope_digest="3" * 64,
+        ),),
+    ))
+    candidate = learned.record_evaluation(
+        proposal_id=candidate.proposal_id,
+        evaluation=PairedEvaluation.create(
+            binding_digest="4" * 64, targeted_positive_count=2,
+            targeted_positive_committed_and_read=2, parent_regressions=0,
+            unsupported_or_misleading_failures=0, scope_or_provenance_failures=0,
+            available=True,
+        ),
+    )
+    learned.approve_candidate(
+        proposal_id=candidate.proposal_id,
+        principal_id=scope.principal_id, agent_id=scope.agent_id,
+    )
+    provider.activate_learned_candidate(candidate.proposal_id)
+    sentence = "Atlas mentors Ada."
     provider.on_turn_start(1, sentence)
     arguments = {
         "schema_version": 1,
         "source_quote": sentence,
         "source_quote_start": 0,
         "subject_quote": "Atlas",
-        "predicate_anchor_quote": "owner",
+        "predicate_anchor_quote": "mentors",
         "object_quote": "Ada",
         "proposal": {
             "abstained": False,
                 "mentions": [
-                    {"local_id": "atlas", "mention_quote": "Atlas", "mention_context_quote": sentence, "proposed_type": None},
-                    {"local_id": "ada", "mention_quote": "Ada", "mention_context_quote": sentence, "proposed_type": None},
+                    {"local_id": "atlas", "mention_quote": "Atlas", "mention_context_quote": sentence, "proposed_type": "Person"},
+                    {"local_id": "ada", "mention_quote": "Ada", "mention_context_quote": sentence, "proposed_type": "Person"},
             ],
                 "facts": [{
-                    "kind": "fact", "local_id": "owner", "predicate_id": "project_owner",
+                    "kind": "fact", "local_id": "mentors", "predicate_id": "mentors",
                 "subject_entity_ref": "atlas", "object": {"kind": "entity", "entity_ref": "ada"},
-                "assertion_quote": sentence, "predicate_anchor_quote": "owner",
+                "assertion_quote": sentence, "predicate_anchor_quote": "mentors",
                 "polarity": "positive", "commitment": "asserted", "attributed_to_entity_ref": None,
                 "temporal_qualifier_quotes": [],
             }],
@@ -945,7 +983,7 @@ def test_installed_no_key_bridge_reaches_canonical_structured_submission_without
     # valid factory authority and no pin reference.  Submission must deny
     # before retained-operation allocation; only schema egress may create a pin.
     missing_pin = service.submit_structured_fact(
-        runtime._structured_tool_request(active=active, arguments=arguments),
+        runtime._structured_tool_request(active=active, arguments=arguments, mentors=True),
         authenticated_host_ingress=runtime._issue_host_ingress(
             active.session_id, runtime._authenticated_author_id, datetime.now(UTC),
         ),
@@ -981,9 +1019,20 @@ def test_installed_no_key_bridge_reaches_canonical_structured_submission_without
     )
     # The schema call is the pre-tool egress boundary: it persists and
     # verifies the captured-turn catalog witness consumed below.
-    assert [item["function"]["name"] for item in provider.get_tool_schemas()] == [
-        "memorii_submit_fact", "memorii_read_fact"
-    ]
+    schema_names = [item["function"]["name"] for item in provider.get_tool_schemas()]
+    assert schema_names[:2] == ["memorii_submit_fact", "memorii_read_fact"]
+    assert set(schema_names[2:]) == {
+        "memorii_create_preference_candidate", "memorii_confirm_preference",
+        "memorii_close_preference", "memorii_read_preference",
+        "memorii_set_preference_delegation",
+    }
+    assert service.load_captured_turn_catalog_pin(
+        ledger=active.ledger,
+        authority_request=runtime._structured_authority_request,
+        authenticated_host_ingress=runtime._issue_host_ingress(
+            active.session_id, runtime._authenticated_author_id, datetime.now(UTC),
+        ),
+    ) is not None
     def stage(note: str) -> None:
         print(f"installed-bridge stage={note} at={datetime.now(UTC).isoformat()}", flush=True)
 
@@ -1034,6 +1083,42 @@ def test_installed_no_key_bridge_reaches_canonical_structured_submission_without
         "selected_version_digest": pin["selected_version_digest"],
         "runtime_bundle_digest": pin["runtime_bundle_digest"],
     }
+    projection = next(
+        record for record in records
+        if record.content.get("runtime_context_projection_kind") == "bootstrap_v3_claim_assertion"
+    )
+    subject_entity_id = projection.content["claim_identity"]["subject_assertion_ref"][
+        "logical_entity_id_at_assertion"
+    ]
+    protected_read = provider.handle_tool_call(
+        "memorii_read_fact",
+        {"predicate_id": "mentors", "subject_entity_id": subject_entity_id, "view": "current"},
+    )
+    assert protected_read["status"] == "ok"
+    assert len(protected_read["items"]) == 1
+    from memorii.core.semantic_ingestion.catalog_authority import (
+        AuthenticatedPrincipalAgent,
+        CatalogAuthorityError,
+    )
+    from memorii.core.semantic_ingestion.catalog_capture_pin import PackageIndexedCatalogBundleLocator
+    from memorii.core.semantic_ingestion.structured_fact_read import StructuredFactReadRequest
+
+    with pytest.raises(CatalogAuthorityError):
+        PackageIndexedCatalogBundleLocator().locate_selected(
+            records,
+            scope=scope,
+            authenticated=AuthenticatedPrincipalAgent(
+                principal_id=scope.principal_id, agent_id="memorii:other-agent",
+            ),
+        )
+    assert runtime.read_structured_facts(
+        request=StructuredFactReadRequest(
+            predicate_id="mentors", subject_entity_id=subject_entity_id,
+        ),
+        session_id=active.session_id,
+        authenticated_author_id="memorii:other-principal",
+        now=datetime.now(UTC),
+    ).status == "denied"
     stage("durable-record-counts-verified")
     first_prefetch = provider.prefetch("Atlas")
     assert "Atlas" in first_prefetch and "Ada" in first_prefetch
