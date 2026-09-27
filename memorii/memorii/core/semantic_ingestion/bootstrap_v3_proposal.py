@@ -205,16 +205,22 @@ def normalize_bootstrap_provider_proposal(
         actions_by_coordinate[(item.logical_action_local_id, action_anchor.span.reference_digest)] = action
         actions.append(action)
 
-    corrections = tuple(BootstrapProposalCorrectionV3.create(
-        corrected_fact=fact(item.corrected_fact), replacement_fact=fact(item.replacement_fact),
-        assertion=evidence(item.assertion_quote, segment.context_text),
-        correction_anchor=evidence(item.correction_anchor_quote, segment.context_text),
-    ) for item in provider.corrections)
-    retractions = tuple(BootstrapProposalRetractionV3.create(
-        retracted_fact=fact(item.retracted_fact),
-        assertion=evidence(item.assertion_quote, segment.context_text),
-        retraction_anchor=evidence(item.retraction_anchor_quote, segment.context_text),
-    ) for item in provider.retractions)
+    corrections = tuple(
+        BootstrapProposalCorrectionV3.create(
+            corrected_fact=fact(item.corrected_fact), replacement_fact=fact(item.replacement_fact),
+            assertion=(assertion := evidence(item.assertion_quote, segment.context_text)),
+            correction_anchor=evidence(item.correction_anchor_quote, assertion.span),
+        )
+        for item in provider.corrections
+    )
+    retractions = tuple(
+        BootstrapProposalRetractionV3.create(
+            retracted_fact=fact(item.retracted_fact),
+            assertion=(assertion := evidence(item.assertion_quote, segment.context_text)),
+            retraction_anchor=evidence(item.retraction_anchor_quote, assertion.span),
+        )
+        for item in provider.retractions
+    )
     identities = []
     for item in provider.identity_operations:
         assertion = evidence(item.assertion_quote, segment.context_text)
@@ -410,17 +416,28 @@ class DirectBootstrapV3ProposalProducer:
         payload_limit_authority = getattr(authority, "payload_limit_authority", None)
         if (
             not isinstance(requests, tuple)
-            or len(requests) != 1
             or not isinstance(self._raw_proposal_artifact, bytes)
             or payload_limit_authority is None
             or not renew()
         ):
             return None
         try:
+            owner = self._owning_request(requests)
+            abstained = ProviderSemanticProposal(abstained=True)
+            responses = tuple(
+                self._proposal if request is owner else abstained
+                for request in requests
+            )
+            raw_response_bytes = tuple(
+                self._raw_proposal_artifact
+                if request is owner
+                else encode_typed_value(abstained.model_dump(mode="python"))
+                for request in requests
+            )
             return seal_bootstrap_proposal_run(
                 requests=requests,
-                responses=(self._proposal,),
-                raw_response_bytes=(self._raw_proposal_artifact,),
+                responses=responses,
+                raw_response_bytes=raw_response_bytes,
                 payload_limit_authority=payload_limit_authority,
                 resolve_quote=self._resolve_quote,
                 projection_quote_verifier=self._projection_quote_verifier,
@@ -428,6 +445,61 @@ class DirectBootstrapV3ProposalProducer:
         except ValueError:
             logger.warning("direct_bootstrap_v3_proposal_sealing_rejected", exc_info=True)
             return None
+
+    def _owning_request(
+        self, requests: tuple[BootstrapSemanticProposalRequestV3, ...],
+    ) -> BootstrapSemanticProposalRequestV3:
+        """Assign one retained operation to its unique root-anchor route.
+
+        A captured correction can cite facts in more than one sentence route.
+        Its operation anchor nevertheless belongs to exactly one route; sibling
+        routes receive explicit abstentions so the source-wide lane closure is
+        preserved without copying the lifecycle operation.
+        """
+        assertions_and_anchors = tuple(
+            [(fact.assertion_quote, fact.predicate_anchor_quote) for fact in self._proposal.facts]
+            + [(item.assertion_quote, item.correction_anchor_quote) for item in self._proposal.corrections]
+            + [(item.assertion_quote, item.retraction_anchor_quote) for item in self._proposal.retractions]
+            + [(item.assertion_quote, item.action_anchor_quote) for item in self._proposal.action_states]
+            + [(item.assertion_quote, item.identity_anchor_quote) for item in self._proposal.identity_operations]
+        )
+        if not assertions_and_anchors:
+            raise ValueError("direct bootstrap proposal has no operation anchor")
+        owners: set[int] = set()
+        for assertion_quote, anchor in assertions_and_anchors:
+            matches: list[int] = []
+            for index, request in enumerate(requests):
+                try:
+                    assertion = self._resolve_quote(
+                        assertion_quote, request.segment.context_text, False,
+                    )
+                    self._projection_quote_verifier.verify_quote(
+                        projection_digest=request.segment.context_text.projection_digest,
+                        quote=assertion_quote,
+                        span=assertion,
+                    )
+                    anchor_span = self._resolve_quote(anchor, assertion, True)
+                    self._projection_quote_verifier.verify_quote(
+                        projection_digest=request.segment.context_text.projection_digest,
+                        quote=anchor,
+                        span=anchor_span,
+                    )
+                    if not _contains(assertion, anchor_span):
+                        continue
+                except ValueError:
+                    continue
+                route = request.segment.bootstrap_projection.bootstrap_route
+                if (
+                    route.unicode_scalar_start <= assertion.projection_span.start
+                    and assertion.projection_span.end <= route.unicode_scalar_end
+                ):
+                    matches.append(index)
+            if len(matches) != 1:
+                raise ValueError("direct bootstrap operation anchor has no unique route owner")
+            owners.add(matches[0])
+        if len(owners) != 1:
+            raise ValueError("direct bootstrap operation spans route owners")
+        return requests[owners.pop()]
 
 
 def _contains(outer: SourceSpanReference, inner: SourceSpanReference) -> bool:
