@@ -1362,11 +1362,10 @@ class HermesCompletedTurnRuntime:
         selection_repository = (
             self._service._provider_ingestion._catalog_selection_repository
         )
-        selected_catalog = (
+        selected_catalog = None
+        if selection_repository is not None:
             selection_repository.resolve_selected_base()
-            if selection_repository is not None
-            else None
-        )
+            selected_catalog = selection_repository.resolve_selected_bundle()
         if selected_catalog is not None:
             lineage = (
                 ingress.origin_lineage_evidence.lineage_digest
@@ -1392,8 +1391,8 @@ class HermesCompletedTurnRuntime:
                 principal_id=author,
                 agent_id=self._authenticated_agent_id,
                 observed_at=received_at,
-                catalog_scope=selected_catalog.catalog_scope,
-                catalog_digest=selected_catalog.catalog_digest,
+                catalog_scope=selected_catalog.catalog.catalog_scope,
+                catalog_digest=selected_catalog.version.version_digest,
                 observer_binding=None,
             )
             prepared_admission = prepared_admission.model_copy(

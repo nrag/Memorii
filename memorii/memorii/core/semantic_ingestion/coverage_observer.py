@@ -36,6 +36,7 @@ from memorii.core.semantic_ingestion.coverage_recurrence import (
     VerifiedCoverageGapRepository,
     build_coverage_recurrence_group,
 )
+from memorii.core.semantic_ingestion.coverage_validation import CoreCoverageGapValidator
 from memorii.domain.enums import (
     CommitStatus,
     MemoryDomain,
@@ -291,14 +292,14 @@ class CoverageObserverRunner:
         recurrence_repository: CoverageRecurrenceRepository,
         result_repository: OntologyObservationResultRepository,
         capability: OntologyObserverCapability,
-        signature_validator: Callable[[CoverageGapSignature], bool],
+        gap_validator: CoreCoverageGapValidator,
     ) -> None:
         self._observations = observation_repository
         self._gaps = gap_repository
         self._recurrence = recurrence_repository
         self._results = result_repository
         self._capability = capability
-        self._signature_validator = signature_validator
+        self._gap_validator = gap_validator
 
     @property
     def binding(self) -> ObserverBindingIdentity:
@@ -340,7 +341,9 @@ class CoverageObserverRunner:
                 )
                 self._observations.replace(unavailable, previous=head)
                 return CoverageObserverRunResult(observation=unavailable)
-            result = self._validated_result(raw_result, source_text=source_text)
+            result = self._validated_result(
+                raw_result, observation=head, source_text=source_text
+            )
             durable_result = self._results.create(
                 DurableOntologyObservationResult.create(
                     observation=head,
@@ -412,7 +415,11 @@ class CoverageObserverRunner:
         return tuple(results)
 
     def _validated_result(
-        self, raw_result: object, *, source_text: str
+        self,
+        raw_result: object,
+        *,
+        observation: CoverageObservation,
+        source_text: str,
     ) -> OntologyObservationResult:
         try:
             result = OntologyObservationResult.model_validate(raw_result)
@@ -427,7 +434,10 @@ class CoverageObserverRunner:
             or source_text[result.source_span.start : result.source_span.end]
             != result.source_quote
             or result.signature is None
-            or not self._signature_validator(result.signature)
+            or not self._gap_validator.validates(
+                observation=observation,
+                signature=result.signature,
+            )
         ):
             return OntologyObservationResult.create(
                 semantic_outcome=CoverageSemanticOutcome.UNCERTAIN

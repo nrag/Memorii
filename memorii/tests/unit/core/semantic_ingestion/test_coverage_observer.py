@@ -6,9 +6,18 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from memorii.core.memory_evolution.writer_admission import (
+    SemanticWriterAdmissionStore,
+    bounded_preplanning_ownership_manifest,
+)
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.memory_plane.store import InMemoryMemoryPlaneStore, JsonlMemoryPlaneStore
-from memorii.core.semantic_ingestion.catalog_authority import CatalogAuthorityScope
+from memorii.core.semantic_ingestion.catalog_authority import (
+    CatalogAuthorityScope,
+    CatalogVersion,
+    SelectedCatalogAuthorityRepository,
+    ThreePredicateSeedCatalogAuthorityRepository,
+)
 from memorii.core.semantic_ingestion.coverage_observation import (
     CoverageObservation,
     CoverageObservationRepository,
@@ -30,6 +39,7 @@ from memorii.core.semantic_ingestion.coverage_recurrence import (
     RelationGapSignature,
     VerifiedCoverageGapRepository,
 )
+from memorii.core.semantic_ingestion.coverage_validation import CoreCoverageGapValidator
 
 _BINDING = ObserverBindingIdentity(
     binding_version="observer:v1",
@@ -47,6 +57,9 @@ _SIGNATURE = RelationGapSignature.create(
     domain_id="organization",
     evidence_rule_id="direct_assertion:v1",
 )
+_CATALOG_VERSION_DIGEST = CatalogVersion.genesis(
+    catalog_digest=ThreePredicateSeedCatalogAuthorityRepository().resolve_base().catalog_digest
+).version_digest
 
 
 @dataclass
@@ -71,6 +84,7 @@ def _observation(
     *,
     lineage: str,
     session_id: str,
+    catalog_digest: str = _CATALOG_VERSION_DIGEST,
 ) -> CoverageObservation:
     return new_coverage_observation(
         source_id=f"semantic_ingestion:source:{ordinal}",
@@ -84,7 +98,7 @@ def _observation(
         observed_at=datetime(2026, 9, 27, tzinfo=UTC)
         + timedelta(minutes=ordinal),
         catalog_scope=CatalogAuthorityScope(schema_version=1, kind="base"),
-        catalog_digest="4" * 64,
+        catalog_digest=catalog_digest,
         observer_binding=_BINDING,
     )
 
@@ -92,13 +106,17 @@ def _observation(
 def _runner(
     plane: MemoryPlaneService, result: object
 ) -> CoverageObserverRunner:
+    SelectedCatalogAuthorityRepository(
+        plane,
+        SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest()),
+    ).ensure_seed_genesis()
     return CoverageObserverRunner(
         observation_repository=CoverageObservationRepository(plane),
         gap_repository=VerifiedCoverageGapRepository(plane),
         recurrence_repository=CoverageRecurrenceRepository(plane),
         result_repository=OntologyObservationResultRepository(plane),
         capability=_Observer(result),
-        signature_validator=lambda signature: signature == _SIGNATURE,
+        gap_validator=CoreCoverageGapValidator(plane),
     )
 
 
@@ -165,6 +183,58 @@ def test_invalid_span_or_signature_becomes_uncertain_without_gap() -> None:
     ) == ()
 
 
+def test_core_denies_registered_relation_alias_and_admits_unknown_relation() -> None:
+    plane = MemoryPlaneService(record_store=InMemoryMemoryPlaneStore())
+    repository = SelectedCatalogAuthorityRepository(
+        plane,
+        SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest()),
+    )
+    repository.ensure_seed_genesis()
+    observation = _observation(1, lineage="a" * 64, session_id="session:one")
+    validator = CoreCoverageGapValidator(plane)
+    covered_alias = RelationGapSignature.create(
+        normalized_relation_meaning="project owner",
+        subject_type_id="Project",
+        object_type_id="Person",
+        domain_id="organization",
+        evidence_rule_id="direct_assertion:v1",
+    )
+
+    assert validator.validates(observation=observation, signature=covered_alias) is False
+    assert validator.validates(observation=observation, signature=_SIGNATURE) is True
+
+
+def test_catalog_rotation_uses_observation_pinned_version() -> None:
+    plane = MemoryPlaneService(record_store=InMemoryMemoryPlaneStore())
+    repository = SelectedCatalogAuthorityRepository(
+        plane,
+        SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest()),
+    )
+    repository.ensure_seed_genesis()
+    seed_observation = _observation(
+        1, lineage="a" * 64, session_id="session:one"
+    )
+    repository.install_default_catalog_release()
+    selected = repository.resolve_selected_bundle()
+    default_observation = _observation(
+        2,
+        lineage="b" * 64,
+        session_id="session:two",
+        catalog_digest=selected.version.version_digest,
+    )
+    reports_to = RelationGapSignature.create(
+        normalized_relation_meaning="reports to",
+        subject_type_id="Person",
+        object_type_id="Person",
+        domain_id="organization",
+        evidence_rule_id="direct_assertion:v1",
+    )
+    validator = CoreCoverageGapValidator(plane)
+
+    assert validator.validates(observation=seed_observation, signature=reports_to) is True
+    assert validator.validates(observation=default_observation, signature=reports_to) is False
+
+
 def test_provider_outage_retries_after_jsonl_reopen(tmp_path: Path) -> None:
     storage_path = tmp_path / "memory-plane"
     plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(storage_path))
@@ -179,7 +249,7 @@ def test_provider_outage_retries_after_jsonl_reopen(tmp_path: Path) -> None:
         recurrence_repository=CoverageRecurrenceRepository(plane),
         result_repository=OntologyObservationResultRepository(plane),
         capability=_UnavailableObserver(),
-        signature_validator=lambda _signature: True,
+        gap_validator=CoreCoverageGapValidator(plane),
     )
 
     result = runner.run(

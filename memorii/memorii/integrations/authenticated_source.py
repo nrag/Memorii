@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -16,6 +17,9 @@ class AuthenticatedSourceSubmission(BaseModel):
     operation: ProviderOperation
     content: str = Field(min_length=1)
     operation_id: str = Field(min_length=1)
+    role: str | None = None
+    target: str | None = None
+    action: str | None = None
     session_id: str | None = None
     task_id: str | None = None
     user_id: str | None = None
@@ -43,6 +47,9 @@ class AuthenticatedSourceAdapter:
             operation=submission.operation,
             content=submission.content,
             operation_id=submission.operation_id,
+            role=submission.role,
+            target=submission.target,
+            action=submission.action,
             session_id=submission.session_id,
             task_id=submission.task_id,
             user_id=submission.user_id,
@@ -54,4 +61,30 @@ class AuthenticatedSourceAdapter:
         )
 
 
-__all__ = ["AuthenticatedSourceAdapter", "AuthenticatedSourceSubmission"]
+class AuthenticatedSourceRuntime:
+    """Non-Hermes composition root with a host-owned ingress issuer."""
+
+    def __init__(
+        self,
+        *,
+        adapter: AuthenticatedSourceAdapter,
+        issue_ingress: Callable[[AuthenticatedSourceSubmission], AuthenticatedHostIngress],
+    ) -> None:
+        self._adapter = adapter
+        self._issue_ingress = issue_ingress
+
+    def submit(self, submission: AuthenticatedSourceSubmission) -> ProviderSyncResult:
+        ingress = self._issue_ingress(submission)
+        if not isinstance(ingress, AuthenticatedHostIngress):
+            raise TypeError("authenticated source host returned invalid ingress")
+        return self._adapter.submit(
+            submission,
+            authenticated_host_ingress=ingress,
+        )
+
+
+__all__ = [
+    "AuthenticatedSourceAdapter",
+    "AuthenticatedSourceRuntime",
+    "AuthenticatedSourceSubmission",
+]

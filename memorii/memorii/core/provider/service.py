@@ -226,10 +226,10 @@ from memorii.core.semantic_ingestion.coverage_observer import (
     OntologyObserverCapability,
 )
 from memorii.core.semantic_ingestion.coverage_recurrence import (
-    CoverageGapSignature,
     CoverageRecurrenceRepository,
     VerifiedCoverageGapRepository,
 )
+from memorii.core.semantic_ingestion.coverage_validation import CoreCoverageGapValidator
 from memorii.core.semantic_ingestion.production_authority import (
     VerifiedCapabilityMonitoringAuthority,
     VerifiedProductionHostAuthority,
@@ -374,8 +374,6 @@ class ProviderMemoryService:
         ] = (),
         structured_submission_authority_resolver: StructuredSubmissionAuthorityResolver | None = None,
         ontology_observer_capability: OntologyObserverCapability | None = None,
-        ontology_signature_validator: Callable[[CoverageGapSignature], bool]
-        | None = None,
         ontology_observer_authorizer: Callable[
             [AuthenticatedIngressContext, ObserverBindingIdentity], bool
         ]
@@ -389,14 +387,13 @@ class ProviderMemoryService:
         self._canonical_evidence_requested = canonical_evidence_enabled
         observer_configuration = (
             ontology_observer_capability,
-            ontology_signature_validator,
             ontology_observer_authorizer,
         )
         if any(item is None for item in observer_configuration) and any(
             item is not None for item in observer_configuration
         ):
             raise ValueError(
-                "ontology observer capability, signature validator, and authorizer must be configured together"
+                "ontology observer capability and authorizer must be configured together"
             )
         verified_material = None
         verified_ingress_resolver = None
@@ -800,10 +797,9 @@ class ProviderMemoryService:
                     self._memory_plane
                 ),
                 capability=ontology_observer_capability,
-                signature_validator=ontology_signature_validator,
+                gap_validator=CoreCoverageGapValidator(self._memory_plane),
             )
             if ontology_observer_capability is not None
-            and ontology_signature_validator is not None
             else None
         )
         self._provider_ingestion = ProviderIngestionCoordinator(

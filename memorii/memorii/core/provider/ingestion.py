@@ -931,11 +931,12 @@ class ProviderIngestionCoordinator:
                     )
                     bootstrap_language_evidence = request.bootstrap_language_evidence
                     projection = step_one_material.semantic_text_projection
-                selected_catalog = (
+                selected_catalog = None
+                if self._catalog_selection_repository is not None:
                     self._catalog_selection_repository.resolve_selected_base()
-                    if self._catalog_selection_repository is not None
-                    else None
-                )
+                    selected_catalog = (
+                        self._catalog_selection_repository.resolve_selected_bundle()
+                    )
                 def build_coverage_observation(
                     source: CanonicalMemoryRecord,
                 ) -> CoverageObservation | None:
@@ -966,8 +967,8 @@ class ProviderIngestionCoordinator:
                         ),
                         agent_id=authenticated_ingress.authenticated_agent_id,
                         observed_at=source.timestamp,
-                        catalog_scope=selected_catalog.catalog_scope,
-                        catalog_digest=selected_catalog.catalog_digest,
+                        catalog_scope=selected_catalog.catalog.catalog_scope,
+                        catalog_digest=selected_catalog.version.version_digest,
                         observer_binding=(
                             self._coverage_observer_runner.binding
                             if self._coverage_observer_runner is not None

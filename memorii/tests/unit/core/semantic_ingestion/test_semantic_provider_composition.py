@@ -226,6 +226,7 @@ from memorii.domain.enums import (
 )
 from memorii.integrations.authenticated_source import (
     AuthenticatedSourceAdapter,
+    AuthenticatedSourceRuntime,
     AuthenticatedSourceSubmission,
 )
 from memorii.integrations.hermes_provider import HermesMemoryProvider
@@ -1555,17 +1556,27 @@ def test_concurrent_first_admission_recovers_across_catalog_rotation() -> None:
     selection_repository = service._provider_ingestion._catalog_selection_repository
     assert selection_repository is not None
     selected = selection_repository.resolve_selected_base()
-    catalog_digests = (selected.catalog_digest, "f" * 64)
+    selected_bundle = selection_repository.resolve_selected_bundle()
+    catalog_digests = (selected_bundle.version.version_digest, "f" * 64)
     selection_lock = Lock()
     selection_count = 0
 
     class _RotatingCatalog:
         def resolve_selected_base(self):
+            return selected
+
+        def resolve_selected_bundle(self):
             nonlocal selection_count
             with selection_lock:
                 digest = catalog_digests[min(selection_count, 1)]
                 selection_count += 1
-            return selected.model_copy(update={"catalog_digest": digest})
+            return selected_bundle.model_copy(
+                update={
+                    "version": selected_bundle.version.model_copy(
+                        update={"version_digest": digest}
+                    )
+                }
+            )
 
     service._provider_ingestion._catalog_selection_repository = _RotatingCatalog()
     replay_barrier = Barrier(2)
@@ -1714,8 +1725,8 @@ def test_configured_ontology_observer_runs_after_source_admission_and_retries_on
         output_schema_digest="6" * 64,
     )
     signature = RelationGapSignature.create(
-        normalized_relation_meaning="project owner",
-        subject_type_id="Project",
+        normalized_relation_meaning="mentors",
+        subject_type_id="Person",
         object_type_id="Person",
         domain_id="organization",
         evidence_rule_id="direct_assertion:v1",
@@ -1732,8 +1743,8 @@ def test_configured_ontology_observer_runs_after_source_admission_and_retries_on
             self.calls += 1
             return OntologyObservationResult.create(
                 semantic_outcome=CoverageSemanticOutcome.UNSUPPORTED_RELATION,
-                source_span=CoverageSourceSpan(start=0, end=18),
-                source_quote="Atlas owner is Bob",
+                source_span=CoverageSourceSpan(start=0, end=17),
+                source_quote="Alice mentors Bob",
                 signature=signature,
             )
 
@@ -1747,14 +1758,13 @@ def test_configured_ontology_observer_runs_after_source_admission_and_retries_on
         source_normalization_host_bundle_builder=builder,
         bootstrap_graph_host_bundle_builder=_deterministic_graph_bundle_builder(),
         ontology_observer_capability=observer,
-        ontology_signature_validator=lambda candidate: candidate == signature,
         ontology_observer_authorizer=lambda _ingress, candidate: candidate == binding,
     )
 
     for _ in range(2):
         service.sync_event(
             operation=ProviderOperation.CHAT_USER_TURN,
-            content="Atlas owner is Bob.",
+            content="Alice mentors Bob.",
             operation_id="provider-ontology-observer",
             task_id="task:one",
             user_id="user:alice",
@@ -1782,6 +1792,157 @@ def test_configured_ontology_observer_runs_after_source_admission_and_retries_on
     assert observer.calls == 1
 
 
+def test_observer_report_of_registered_relation_alias_becomes_uncertain() -> None:
+    binding = ObserverBindingIdentity(
+        binding_version="observer:v1",
+        provider="host",
+        model="fixture-model",
+        prompt_version="ontology-observe:v1",
+        transport="in_process",
+        egress_policy_digest="5" * 64,
+        output_schema_digest="6" * 64,
+    )
+    covered = RelationGapSignature.create(
+        normalized_relation_meaning="project owner",
+        subject_type_id="Project",
+        object_type_id="Person",
+        domain_id="organization",
+        evidence_rule_id="direct_assertion:v1",
+    )
+
+    class Observer:
+        @property
+        def binding(self):
+            return binding
+
+        def observe(self, _request):
+            return OntologyObservationResult.create(
+                semantic_outcome=CoverageSemanticOutcome.UNSUPPORTED_RELATION,
+                source_span=CoverageSourceSpan(start=0, end=18),
+                source_quote="Atlas owner is Bob",
+                signature=covered,
+            )
+
+    builder, _ = _v3_normalization_host_builder(proposal=_bob_owner_proposal())
+    service = ProviderMemoryService._from_scenario_test_host(
+        memory_plane=MemoryPlaneService(),
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=_built_in_local_capability(scenario_test=True),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        source_normalization_host_bundle_builder=builder,
+        bootstrap_graph_host_bundle_builder=_deterministic_graph_bundle_builder(),
+        ontology_observer_capability=Observer(),
+        ontology_observer_authorizer=lambda _ingress, candidate: candidate == binding,
+    )
+
+    service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="covered-ontology-alias",
+        task_id="task:one",
+        user_id="user:alice",
+        authenticated_host_ingress=_host_ingress(),
+    )
+
+    observation = CoverageObservationRepository(service._memory_plane).all()[0]
+    assert observation.processing_state == DiscoveryProcessingState.CLASSIFIED
+    assert observation.semantic_outcome == CoverageSemanticOutcome.UNCERTAIN
+    assert service._memory_plane.list_records(
+        source_kind="learned_ontology_verified_coverage_gap_v1"
+    ) == []
+    assert service._memory_plane.list_records(
+        source_kind="learned_ontology_coverage_recurrence_group_v1"
+    ) == []
+
+
+def test_observer_retry_after_catalog_rotation_uses_pinned_seed_version() -> None:
+    binding = ObserverBindingIdentity(
+        binding_version="observer:v1",
+        provider="host",
+        model="recovering-model",
+        prompt_version="ontology-observe:v1",
+        transport="in_process",
+        egress_policy_digest="5" * 64,
+        output_schema_digest="6" * 64,
+    )
+    reports_to = RelationGapSignature.create(
+        normalized_relation_meaning="reports to",
+        subject_type_id="Person",
+        object_type_id="Person",
+        domain_id="organization",
+        evidence_rule_id="direct_assertion:v1",
+    )
+
+    class Observer:
+        unavailable = True
+
+        @property
+        def binding(self):
+            return binding
+
+        def observe(self, _request):
+            if self.unavailable:
+                raise OSError("observer unavailable")
+            return OntologyObservationResult.create(
+                semantic_outcome=CoverageSemanticOutcome.UNSUPPORTED_RELATION,
+                source_span=CoverageSourceSpan(start=0, end=20),
+                source_quote="Alice reports to Bob",
+                signature=reports_to,
+            )
+
+    observer = Observer()
+    builder, _ = _v3_normalization_host_builder(proposal=_bob_owner_proposal())
+    service = ProviderMemoryService._from_scenario_test_host(
+        memory_plane=MemoryPlaneService(),
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=_built_in_local_capability(scenario_test=True),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        source_normalization_host_bundle_builder=builder,
+        bootstrap_graph_host_bundle_builder=_deterministic_graph_bundle_builder(),
+        ontology_observer_capability=observer,
+        ontology_observer_authorizer=lambda _ingress, candidate: candidate == binding,
+    )
+    ingress = _host_ingress()
+
+    service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Alice reports to Bob.",
+        operation_id="pinned-catalog-observation",
+        task_id="task:one",
+        user_id="user:alice",
+        authenticated_host_ingress=ingress,
+    )
+    unavailable = CoverageObservationRepository(service._memory_plane).all()[0]
+    assert unavailable.processing_state == DiscoveryProcessingState.UNAVAILABLE
+    repository = service._provider_ingestion._catalog_selection_repository
+    assert repository is not None
+    repository.install_default_catalog_release()
+    assert repository.resolve_selected_bundle().version.version_digest != (
+        unavailable.catalog_digest
+    )
+
+    observer.unavailable = False
+    reopened = ProviderMemoryService._from_scenario_test_host(
+        memory_plane=service._memory_plane,
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=_built_in_local_capability(scenario_test=True),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        source_normalization_host_bundle_builder=builder,
+        bootstrap_graph_host_bundle_builder=_deterministic_graph_bundle_builder(),
+        ontology_observer_capability=observer,
+        ontology_observer_authorizer=lambda _ingress, candidate: candidate == binding,
+    )
+
+    recovered = CoverageObservationRepository(reopened._memory_plane).load(
+        unavailable.observation_id
+    )
+    assert recovered is not None
+    assert recovered.semantic_outcome == CoverageSemanticOutcome.UNSUPPORTED_RELATION
+    assert len(reopened._memory_plane.list_records(
+        source_kind="learned_ontology_verified_coverage_gap_v1"
+    )) == 1
+
+
 def test_observer_outage_retries_live_and_during_service_jsonl_reopen(
     tmp_path: Path,
 ) -> None:
@@ -1795,8 +1956,8 @@ def test_observer_outage_retries_live_and_during_service_jsonl_reopen(
         output_schema_digest="6" * 64,
     )
     signature = RelationGapSignature.create(
-        normalized_relation_meaning="project owner",
-        subject_type_id="Project",
+        normalized_relation_meaning="mentors",
+        subject_type_id="Person",
         object_type_id="Person",
         domain_id="organization",
         evidence_rule_id="direct_assertion:v1",
@@ -1817,8 +1978,8 @@ def test_observer_outage_retries_live_and_during_service_jsonl_reopen(
                 raise OSError("observer transport unavailable")
             return OntologyObservationResult.create(
                 semantic_outcome=CoverageSemanticOutcome.UNSUPPORTED_RELATION,
-                source_span=CoverageSourceSpan(start=0, end=18),
-                source_quote="Atlas owner is Bob",
+                source_span=CoverageSourceSpan(start=0, end=17),
+                source_quote="Alice mentors Bob",
                 signature=signature,
             )
 
@@ -1836,7 +1997,6 @@ def test_observer_outage_retries_live_and_during_service_jsonl_reopen(
             source_normalization_host_bundle_builder=builder,
             bootstrap_graph_host_bundle_builder=_deterministic_graph_bundle_builder(),
             ontology_observer_capability=observer,
-            ontology_signature_validator=lambda candidate: candidate == signature,
             ontology_observer_authorizer=lambda _ingress, candidate: candidate == binding,
         )
 
@@ -1846,7 +2006,7 @@ def test_observer_outage_retries_live_and_during_service_jsonl_reopen(
     def sync(operation_id: str) -> None:
         service.sync_event(
             operation=ProviderOperation.CHAT_USER_TURN,
-            content="Atlas owner is Bob.",
+            content="Alice mentors Bob.",
             operation_id=operation_id,
             task_id="task:one",
             user_id="user:alice",
@@ -1911,7 +2071,10 @@ def test_framework_neutral_and_hermes_adapters_share_coverage_contract() -> None
         source_normalization_host_bundle_builder=builder,
         bootstrap_graph_host_bundle_builder=_deterministic_graph_bundle_builder(),
     )
-    generic = AuthenticatedSourceAdapter(service)
+    generic = AuthenticatedSourceRuntime(
+        adapter=AuthenticatedSourceAdapter(service),
+        issue_ingress=lambda _submission: _host_ingress(),
+    )
     hermes = HermesMemoryProvider(service)
     ingress = _host_ingress()
 
@@ -1922,8 +2085,7 @@ def test_framework_neutral_and_hermes_adapters_share_coverage_contract() -> None
             operation_id="generic-coverage-source",
             task_id="task:one",
             user_id="user:alice",
-        ),
-        authenticated_host_ingress=ingress,
+        )
     )
     hermes.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
@@ -2042,7 +2204,6 @@ def test_ontology_observer_denied_egress_remains_pending_without_call() -> None:
         source_normalization_host_bundle_builder=builder,
         bootstrap_graph_host_bundle_builder=_deterministic_graph_bundle_builder(),
         ontology_observer_capability=observer,
-        ontology_signature_validator=lambda _candidate: True,
         ontology_observer_authorizer=lambda _ingress, _binding: False,
     )
 
