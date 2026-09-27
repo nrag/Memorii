@@ -4031,82 +4031,198 @@ def test_explicit_activation_checks_current_deployment_authorization_before_atom
                 assert plane.read_write_snapshot() == before
 
 
-def test_expired_bootstrap_graph_lease_is_reclaimed_with_its_existing_duration() -> None:
+def test_near_expiry_bootstrap_graph_lease_renews_before_execution() -> None:
     now = TEST_NOW
     fence = SimpleNamespace(operation_fence_id="fence", operation_id="operation")
     writer = SimpleNamespace(binding_digest="writer")
-    expired = PreplanningLease(
+    near_expiry = PreplanningLease(
         owner_id="bootstrap-v3-recovery",
         execution_token="original-execution",
         ownership_epoch=1,
-        acquired_at=now - timedelta(minutes=20),
-        expires_at=now - timedelta(minutes=5),
+        acquired_at=now - timedelta(minutes=14),
+        expires_at=now + timedelta(minutes=1),
         renewal_interval=timedelta(minutes=7, seconds=30),
     )
-    control = SimpleNamespace(state="planned", lease=expired, writer_binding=writer)
-    refreshed_writer = SimpleNamespace(binding_digest="fresh-writer")
-    reclaimed = SimpleNamespace(
+    control = SimpleNamespace(state="planned", lease=near_expiry, writer_binding=writer)
+    renewed = SimpleNamespace(
         state="planned",
-        lease=expired.model_copy(update={"ownership_epoch": 2}),
-        writer_binding=refreshed_writer,
+        lease=near_expiry.model_copy(update={"expires_at": now + timedelta(minutes=15)}),
+        writer_binding=writer,
     )
 
     class AtomicStore:
         def __init__(self) -> None:
-            self.calls: list[dict[str, object]] = []
+            self.renewals: list[dict[str, object]] = []
+
+        def renew_lease(self, **kwargs: object) -> object:
+            self.renewals.append(kwargs)
+            return renewed
+
+    atomic = AtomicStore()
+    coordinator = object.__new__(ProviderIngestionCoordinator)
+    coordinator._atomic_store = atomic
+    coordinator._now_provider = lambda: now
+    executed: list[object] = []
+
+    assert coordinator._execute_bootstrap_graph_with_expired_lease_retry(
+        operation_fence=fence,
+        initial_control=control,
+        replay=object(),
+        execute=lambda current: executed.append(current) or "terminal",
+    ) == "terminal"
+    assert executed == [renewed]
+    assert atomic.renewals == [{
+        "operation_fence": fence,
+        "writer_binding": writer,
+        "lease": near_expiry,
+        "duration": timedelta(minutes=15),
+    }]
+
+    fresh = near_expiry.model_copy(update={"expires_at": now + timedelta(minutes=9)})
+    control.lease = fresh
+    executed.clear()
+    assert coordinator._execute_bootstrap_graph_with_expired_lease_retry(
+        operation_fence=fence,
+        initial_control=control,
+        replay=object(),
+        execute=lambda current: executed.append(current) or "terminal",
+    ) == "terminal"
+    assert executed == [renewed]
+    assert len(atomic.renewals) == 2
+    assert atomic.renewals[1]["lease"] is fresh
+
+    control.lease = near_expiry.model_copy(update={"owner_id": "foreign-owner"})
+    executed.clear()
+    assert coordinator._execute_bootstrap_graph_with_expired_lease_retry(
+        operation_fence=fence,
+        initial_control=control,
+        replay=object(),
+        execute=lambda current: executed.append(current) or "terminal",
+    ) is None
+    assert executed == []
+    assert len(atomic.renewals) == 2
+
+    control.lease = near_expiry.model_copy(update={"expires_at": now})
+    assert coordinator._execute_bootstrap_graph_with_expired_lease_retry(
+        operation_fence=fence,
+        initial_control=control,
+        replay=object(),
+        execute=lambda current: executed.append(current) or "terminal",
+    ) is None
+    assert executed == []
+    assert len(atomic.renewals) == 2
+
+
+def test_expired_bootstrap_graph_execution_error_reclaims_once() -> None:
+    now = TEST_NOW
+    fence = SimpleNamespace(operation_fence_id="fence", operation_id="operation")
+    writer = SimpleNamespace(binding_digest="writer")
+    fresh = PreplanningLease(
+        owner_id="bootstrap-v3-recovery", execution_token="first", ownership_epoch=1,
+        acquired_at=now - timedelta(minutes=6), expires_at=now + timedelta(minutes=9),
+        renewal_interval=timedelta(minutes=7, seconds=30),
+    )
+    expired = fresh.model_copy(update={"expires_at": now - timedelta(seconds=1)})
+    control = SimpleNamespace(state="planned", lease=fresh, writer_binding=writer)
+    reclaimed = SimpleNamespace(
+        state="planned",
+        lease=expired.model_copy(update={"execution_token": "reclaimed", "ownership_epoch": 2}),
+        writer_binding=writer,
+    )
+
+    class AtomicStore:
+        def __init__(self) -> None:
+            self.reclaims: list[dict[str, object]] = []
+
+        def renew_lease(self, **_kwargs: object) -> object:
+            return control
 
         def get_operation(self, observed_fence: object) -> object:
             assert observed_fence is fence
             return control
 
         def acquire_lease(self, **kwargs: object) -> object:
-            self.calls.append(kwargs)
+            self.reclaims.append(kwargs)
             return reclaimed
 
     atomic = AtomicStore()
     coordinator = object.__new__(ProviderIngestionCoordinator)
     coordinator._atomic_store = atomic
     coordinator._now_provider = lambda: now
+    executed: list[object] = []
 
-    execution_controls: list[object] = []
+    def stale_then_succeed(current: object) -> object:
+        executed.append(current)
+        if current is control:
+            control.lease = expired
+            raise PreplanningStoreError("graph authority expired")
+        return "terminal"
 
-    def execute(observed_control: object) -> object | None:
-        execution_controls.append(observed_control)
-        if observed_control is control:
-            raise PreplanningStoreError("bootstrap graph lease is stale or expired")
-        return "durable-result"
-
-    result = coordinator._execute_bootstrap_graph_with_expired_lease_retry(
-        operation_fence=fence,
-        initial_control=control,
-        replay=object(),
-        execute=execute,
-    )
-
-    assert result == "durable-result"
-    assert execution_controls == [control, reclaimed]
-    assert execution_controls[1].lease.ownership_epoch == 2
-    assert execution_controls[1].writer_binding is refreshed_writer
-    assert atomic.calls == [{
-        "operation_fence": fence,
-        "writer_binding": writer,
+    assert coordinator._execute_bootstrap_graph_with_expired_lease_retry(
+        operation_fence=fence, initial_control=control, replay=object(), execute=stale_then_succeed,
+    ) == "terminal"
+    assert executed == [control, reclaimed]
+    assert atomic.reclaims == [{
+        "operation_fence": fence, "writer_binding": writer,
         "execution_token": "bootstrap-v3-graph-retry:fence",
-        "owner_id": "bootstrap-v3-recovery",
-        "duration": timedelta(minutes=15),
+        "owner_id": "bootstrap-v3-recovery", "duration": timedelta(minutes=15),
     }]
 
-    control.lease = expired.model_copy(update={"expires_at": now + timedelta(seconds=1)})
+    control.lease = fresh
     assert coordinator._reclaim_expired_bootstrap_graph_lease(operation_fence=fence) is None
-    assert len(atomic.calls) == 1
-
-    control.lease = expired
+    assert len(atomic.reclaims) == 1
     with pytest.raises(StructuredSubmissionGrantRevokedError):
         coordinator._execute_bootstrap_graph_with_expired_lease_retry(
-            operation_fence=fence,
-            initial_control=control,
-            replay=object(),
-            execute=lambda _control: (_ for _ in ()).throw(
+            operation_fence=fence, initial_control=control, replay=object(),
+            execute=lambda _current: (_ for _ in ()).throw(
                 StructuredSubmissionGrantRevokedError("structured submission grant is revoked")
             ),
         )
-    assert len(atomic.calls) == 1
+    assert len(atomic.reclaims) == 1
+
+
+def test_provider_root_uses_preflight_renewed_lease_for_native_graph_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The ordinary provider root constructs the native request from renewed control."""
+    from memorii.core.semantic_ingestion.bootstrap_graph_host import BootstrapGraphHostBundle
+
+    clock = [TEST_NOW]
+    service = ProviderMemoryService._from_scenario_test_host(
+        memory_plane=MemoryPlaneService(),
+        now_provider=lambda: clock[0],
+        host_bootstrap_capability=_built_in_local_capability(scenario_test=True),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        source_normalization_host_bundle_builder=_bob_owner_proposal_bundle_builder(),
+    )
+    atomic = service._semantic_atomic_store
+    original_reload = atomic.reload_bootstrap_recovery_replay_v3
+    observed_lease_bindings: list[object] = []
+    observed_controls: list[object] = []
+
+    def reload_then_near_expire(**kwargs):
+        replay = original_reload(**kwargs)
+        control = atomic.get_operation(kwargs["handoff_marker"].operation_fence_binding)
+        assert control.lease is not None
+        clock[0] = control.lease.expires_at - control.lease.renewal_interval
+        return replay
+
+    def observe_request(_bundle, *, request):
+        observed_lease_bindings.append(request.operation_lease_binding)
+        observed_controls.append(atomic.get_operation(request.operation_fence_binding))
+        return None
+
+    monkeypatch.setattr(atomic, "reload_bootstrap_recovery_replay_v3", reload_then_near_expire)
+    monkeypatch.setattr(BootstrapGraphHostBundle, "execute", observe_request)
+    service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="provider-preflight-lease-renewal",
+        task_id="task:one",
+        user_id="user:alice",
+        authenticated_host_ingress=_host_ingress(),
+    )
+    assert len(observed_lease_bindings) == 1
+    control = observed_controls[0]
+    assert control.lease is not None
+    assert observed_lease_bindings[0] == atomic.lease_binding(control)

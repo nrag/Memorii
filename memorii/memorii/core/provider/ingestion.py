@@ -2081,7 +2081,11 @@ class ProviderIngestionCoordinator:
         """Re-enter a retained graph checkpoint only after its recovery lease expires."""
         control = self._atomic_store.get_operation(operation_fence)
         lease = control.lease
-        if lease is None or lease.expires_at > self._now_provider():
+        if (
+            lease is None
+            or lease.owner_id != "bootstrap-v3-recovery"
+            or lease.expires_at > self._now_provider()
+        ):
             return None
         reclaimed = self._atomic_store.acquire_lease(
             operation_fence=operation_fence,
@@ -2094,6 +2098,37 @@ class ProviderIngestionCoordinator:
             return None
         return reclaimed
 
+    def _renew_bootstrap_graph_lease_before_execution(
+        self,
+        *,
+        operation_fence: OperationFenceBinding,
+        control: PreplanningOperationControl,
+    ) -> PreplanningOperationControl | None:
+        """Refresh an owned recovery lease before the graph can create epoch zero."""
+        lease = control.lease
+        now = self._now_provider()
+        if (
+            control.state in {"terminal", "lease_recovery_exhausted"}
+            or lease is None
+            or lease.owner_id != "bootstrap-v3-recovery"
+            or lease.expires_at <= now
+        ):
+            return None
+        renewed = self._atomic_store.renew_lease(
+            operation_fence=operation_fence,
+            writer_binding=control.writer_binding,
+            lease=lease,
+            duration=lease.renewal_interval * 2,
+        )
+        if (
+            renewed.state in {"terminal", "lease_recovery_exhausted"}
+            or renewed.lease is None
+            or renewed.lease.owner_id != "bootstrap-v3-recovery"
+            or renewed.writer_binding != control.writer_binding
+        ):
+            return None
+        return renewed
+
     def _execute_bootstrap_graph_with_expired_lease_retry(
         self,
         *,
@@ -2104,6 +2139,12 @@ class ProviderIngestionCoordinator:
     ) -> object | None:
         """Retry one graph execution only from verified replay and reclaimed authority."""
         if replay is None:
+            return None
+        initial_control = self._renew_bootstrap_graph_lease_before_execution(
+            operation_fence=operation_fence,
+            control=initial_control,
+        )
+        if initial_control is None:
             return None
         try:
             result = execute(initial_control)
