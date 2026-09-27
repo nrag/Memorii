@@ -118,6 +118,7 @@ from memorii.core.semantic_ingestion.contracts import (
 )
 from memorii.core.semantic_ingestion.coverage_observation import (
     CoverageObservationRepository,
+    coverage_observation_record,
     delivery_origin_lineage_digest,
     new_coverage_observation,
 )
@@ -797,6 +798,7 @@ class ProviderIngestionCoordinator:
                     SemanticIngestionSourceReplayRequest(delivery_identity=identity),
                     authenticated_ingress=authenticated_ingress,
                 )
+                include_initial_coverage = retained_source is None
                 if retained_source is not None:
                     # Reuse is authorized only for an exact redelivery: the
                     # delivery identity alone does not bind the event bytes, so
@@ -942,6 +944,11 @@ class ProviderIngestionCoordinator:
                         catalog_digest=selected_catalog.catalog_digest,
                         observer_binding=None,
                     )
+                initial_coverage_record = (
+                    coverage_observation_record(coverage_observation)
+                    if include_initial_coverage and coverage_observation is not None
+                    else None
+                )
                 outcome = "unavailable"
                 reason = self._bootstrap_unavailable_reason
                 matched_case_id = None
@@ -964,7 +971,7 @@ class ProviderIngestionCoordinator:
                     bootstrap_language_evidence: BootstrapAuthenticatedLanguageEvidence
                     | None = bootstrap_language_evidence,
                 ) -> PreparedSourceAdmission:
-                    return self._admission_service.prepare_atomic(
+                    prepared = self._admission_service.prepare_atomic(
                         source=source,
                         delivery_identity=delivery_identity,
                         ingress=authenticated_ingress,
@@ -980,6 +987,15 @@ class ProviderIngestionCoordinator:
                             self._bootstrap_profile.verification_digest if self._bootstrap_profile else None
                         ),
                         bootstrap_language_evidence=bootstrap_language_evidence,
+                    )
+                    return (
+                        prepared
+                        if initial_coverage_record is None
+                        else prepared.model_copy(
+                            update={
+                                "records": (*prepared.records, initial_coverage_record)
+                            }
+                        )
                     )
 
                 prepared_admission = self._admit_with_writer_retry(prepare)

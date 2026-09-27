@@ -1443,6 +1443,31 @@ def test_direct_provider_root_publishes_and_reloads_bootstrap_v3_normalization()
     assert len(rotated_records) == 2
     assert coverage.observation_id in {record.memory_id for record in rotated_records}
 
+    # A crash after the first admission CAS cannot lose the initial pending
+    # member. The separate reobservation write is only a retry/backfill path.
+    service._provider_ingestion._catalog_selection_repository = selection_repository
+    with (
+        patch.object(
+            CoverageObservationRepository,
+            "create",
+            side_effect=OSError("injected post-admission failure"),
+        ),
+        pytest.raises(OSError, match="post-admission failure"),
+    ):
+        service.sync_event(
+            operation=ProviderOperation.CHAT_USER_TURN,
+            content="Atlas owner is Bob.",
+            operation_id="provider-v3-normalization-crash",
+            task_id="task:one",
+            user_id="user:alice",
+            authenticated_host_ingress=_host_ingress(),
+        )
+    assert len(
+        service._memory_plane.list_records(
+            source_kind="learned_ontology_coverage_observation_v1"
+        )
+    ) == 3
+
 
 def _retained_structured_submission(
     service: ProviderMemoryService,

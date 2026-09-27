@@ -27,7 +27,7 @@ record.
 
 | Signal | Existing production trigger | M4 insertion boundary |
 | --- | --- | --- |
-| Source admission | `ProviderMemoryService.sync_event` -> `ProviderIngestion._ingest_semantic_source` -> `GovernedSourceAdmissionService.prepare_atomic` -> `SemanticIngestionAtomicStore.publish_admitted_source` | Preserve the immutable source-admission tuple, then conditionally insert the selected-catalog observation only after verified admission. Exact retry backfills a missing observation; a changed catalog creates a new observation and preserves the old one. No observer produces durable `discovery_pending_no_capability/not_evaluated`; an authorized binding produces `queued/not_evaluated`. |
+| Source admission | `ProviderMemoryService.sync_event` -> `ProviderIngestion._ingest_semantic_source` -> `GovernedSourceAdmissionService.prepare_atomic` -> `SemanticIngestionAtomicStore.publish_admitted_source` | A new source includes its selected-catalog observation in the first admission CAS. Exact retry omits a rebuilt member and reuses the persisted tuple; a separate verified reobservation insert backfills legacy sources and adds a new identity after catalog change while preserving old observations. No observer produces durable `discovery_pending_no_capability/not_evaluated`; an authorized binding produces `queued/not_evaluated`. |
 | Extraction trajectory | `_run_semantic_ingestion` returns the closed `SemanticTerminalOutcome` after source preparation and provider/domain validation | Update only the observation trajectory after the terminal is durable; extraction failure, abstention and policy denial remain diagnostic attribution and cannot become an unsupported-relation/type classification. |
 | Protected retrieval | `ProviderMemoryService.retrieve_context` and the installed Hermes prefetch/read paths return a protected scoped result | Record a privacy-safe recall result/failure signature joined to the exact source observation only when current source/fact/catalog grants authorize that diagnostic update. Do not retain query or result text in the public status projection. |
 | Correction/retraction | Default-catalog structured correction/retraction enters `submit_structured_fact`, native planning and one group CAS | Record the authorized downstream correction coordinate after commit; it is evidence for attribution, never direct proof that the catalog lacks a type or relation. |
@@ -57,13 +57,13 @@ owner with predecessor state and attempt fence. Five contract tests pass.
 
 The direct provider root now resolves the exact selected catalog, derives the
 v1 direct-delivery origin lineage from authenticated principal and normalized
-delivery identity, and conditionally inserts the initial observation only after
-the immutable source admission is verified. Review rejected including it in the
-admission tuple because legacy-source retry and catalog rotation would become
-partial/mismatched. The corrected real-provider regression first admits a
-legacy-shaped source with no observation, backfills it on exact retry, then
-rotates the selected catalog and proves a second observation is added while the
-first remains. It passes in 31.04 seconds.
+delivery identity, and includes the initial observation in a new source's first
+admission CAS. Exact retries do not rebuild that immutable member from today's
+catalog. A separate verified reobservation insert backfills a legacy-shaped
+source, while catalog rotation adds a second observation and preserves the
+first. An injected post-admission reobservation failure proves the initial
+pending record already survived the source CAS. The combined real-provider
+regression passes in 38.96 seconds.
 
 The installed no-observer Hermes factory root passes in 20.07 seconds: exact
 redelivery leaves one pending/not-evaluated record, direct JSONL reopen returns
