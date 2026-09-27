@@ -60,6 +60,36 @@ control -> event evidence -> semantic conflict scope -> atomic projection.
 | --- | --- | --- |
 | Inspect failed snapshot admission/source/control joins | If the leading hypothesis is correct, original index fields validate but control lookup by its fence fails while a retained linked control exists. | Confirmed for all retained source admissions; two structured operation controls exist under distinct fence IDs linked to their captured sources. |
 | Inspect projection grouping and catalog read form | If conflict creation is valid, the literal relation is single-cardinality and equal-rank replacement values become `contested_top`. | Confirmed: `work_item_due_on` uses current/single semantics; the entity sibling uses set semantics. Conflict authority is required. |
+| Propagate pending operation authority through projection preparation | If both conflict-resolution passes receive the exact pending group fence and writer binding, a real retained admission/link/control chain will prepare; omitting the map or removing the link will deny. | Commit `f59261b0` passes the real-record regression in both positive and fail-closed forms; 21 focused projection/retained-operation checks pass. Independent review then found its committed-contender group-primary decoder incomplete, so the candidate is not accepted. |
+
+## production_entrypoint_bindings
+
+The required Spark `code-mapper` preflight was attempted for frozen commit
+`f59261b0` and failed before repository inspection because the configured
+`gpt-5.3-codex-spark` model is unavailable for this ChatGPT account. The
+coordinator produced this bounded replacement map from the exact searches
+`rg -n "_prepare_native_projection_publication\\(" memorii/memorii`,
+`rg -n "resolve_semantic_conflict_authority\\(" memorii/memorii`, and
+`rg -n "submit_structured_fact\\(" memorii/memorii` so the operation can
+continue without fabricating a successful delegate run.
+
+| Requirement | Canonical trigger and composition root | Exact callsite and arguments/authority | Owner chain: validation -> write/read -> outcome | Proof and caller count | Status or explicit blocker |
+| --- | --- | --- | --- | --- | --- |
+| Retained LocalDate correction conflict publication | Installed `MemoriiHermesMemoryProvider.handle_tool_call("memorii_submit_fact", correction)` composed by `build_local_level2_runtime_binding` into `HermesCompletedTurnRuntime` and `ProviderMemoryService` | `HermesCompletedTurnRuntime.handle_tool_call` validates captured pin/default-catalog lifecycle grounding and calls `ProviderMemoryService.submit_structured_fact`; that owner allocates the retained operation and calls `execute_retained_structured_proposal`; `SemanticIngestionAtomicStore.commit_or_reload_bootstrap_graph_group_v3` calls `_prepare_native_projection_publication` with `{canonical_event_batch.transaction_group_id: request.operation_fence_binding}` and `request.writer_commit_binding` | captured turn/pin and proposal validation -> retained source admission/link/control -> native group reduction -> projection conflict resolve and prepare -> same group CAS persists primary/reload, projections, replay authority and structured claim binding -> protected current/history/as-of read | `rg` finds one production structured-fact caller, one native group callsite at `atomic_store.py:16232`, and one generic terminal callsite at `atomic_store.py:17834`; 21 focused checks pass. Frozen installed probe `test_installed_default_catalog_literal_retraction_and_symmetric_reads_survive_reopen` is outstanding. | `partial`: pending path is wired; committed-contender primary verification has a confirmed P2 under remediation. |
+| Generic committed terminal conflict publication | `SemanticIngestionAtomicStore` committed terminal replay path | `atomic_store.py:17834` passes `{batch.transaction_group_id: request.operation_fence_binding}` and `request.writer_commit_binding` into the same `_prepare_native_projection_publication` owner | validated terminal group closure -> shared projection resolve/prepare -> replay aggregate/checkpoint CAS | One production caller; same shared owner and focused prepare proof. No separate default-catalog trigger reaches this path in the frozen installed scenario. | implemented supporting root; retained LocalDate closure depends on the native group root above. |
+
+## Frozen Candidate And Review
+
+- Candidate commit: `f59261b06fcd131b62a1bdabea958ee0d951cec4`.
+- Dirty tree at review: only the preserved user-owned
+  `docs/design/hermes_conversation_memory_trial.md` modification.
+- Focused evidence: `21 passed, 31 deselected in 8.90s`; targeted Ruff and
+  `git diff --check` passed.
+- Test review first blocked on the missing entrypoint ledger above. Correctness
+  review then confirmed a Level-2 P2: a committed contender's group primary
+  was accepted without closed lifecycle/content and coherent reload proof.
+- Level-3 corrupt/duplicate-primary matrices remain deferred. The ordinary
+  malformed/missing reload denial is part of the current Level-2 correction.
 
 ## Completion Contract
 
@@ -72,5 +102,6 @@ Level-2 P1/P2 in this boundary. Hostile-store permutations remain Level 3.
 
 ## One Next Action
 
-Implement the confirmed retained-operation admission join with focused direct,
-retained, and denial regressions, then run the smallest projection test set.
+Complete the committed-contender primary/reload verification remediation, then
+freeze and rerun the targeted correctness and test reviews before the installed
+LocalDate correction/retraction and symmetric-read probe.
