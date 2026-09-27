@@ -79,7 +79,10 @@ from memorii.core.semantic_ingestion.hermes_completed_turn_admission import (
     HermesCompletedTurnMessage,
     _prepare_governed_child_source,
 )
-from memorii.core.semantic_ingestion.learned_relation import validate_mentors_tool_proposal
+from memorii.core.semantic_ingestion.learned_relation import (
+    AgentLocalCatalogScope,
+    validate_mentors_tool_proposal,
+)
 from memorii.core.semantic_ingestion.reports_to_capability import (
     validate_reports_to_tool_proposal,
 )
@@ -768,6 +771,157 @@ class HermesCompletedTurnRuntime:
             with self._condition:
                 self._active_tool_calls -= 1
                 self._condition.notify_all()
+
+    def replay_retained_source(
+        self,
+        *,
+        source_id: str,
+        source_digest: str,
+        catalog_scope: AgentLocalCatalogScope,
+        catalog_digest: str,
+        replay_operation_id: str,
+    ) -> str:
+        """Replay one retained mentor sentence through the ordinary writer.
+
+        This root deliberately reconstructs the request from the retained
+        captured-turn ledger and prepared source.  It never writes graph state
+        itself, and all normal source, pin, grant, semantic, and terminal
+        checks remain inside ``ProviderMemoryService.submit_structured_fact``.
+        ``replay_operation_id`` is the durable scheduler receipt identity; the
+        writer derives its own deterministic operation identity from this same
+        reconstructed envelope.
+        """
+        if (
+            not replay_operation_id.startswith("ontology-replay:")
+            or catalog_scope.principal_id != self._authenticated_author_id
+            or catalog_scope.agent_id != self._authenticated_agent_id
+            or self._structured_authority_request is None
+            or self._structured_tool_is_current is None
+            or not self._structured_tool_is_current()
+        ):
+            return "revoked"
+        try:
+            ledger, _record, _coordination = (
+                self._service._semantic_atomic_store._load_captured_turn_coordination(
+                    source_id=source_id, source_digest=source_digest,
+                )
+            )
+        except (OSError, ValueError):
+            return "deleted"
+        if (
+            ledger.principal_id != catalog_scope.principal_id
+            or ledger.agent_id != catalog_scope.agent_id
+        ):
+            return "revoked"
+        try:
+            self._require_current_authority()
+            pin = self._service.pin_captured_turn_catalog(
+                ledger=ledger,
+                authority_request=self._structured_authority_request,
+                authenticated_host_ingress=self._issue_host_ingress(
+                    ledger.session_id, self._authenticated_author_id, datetime.now(UTC),
+                ),
+            )
+            if (
+                pin is None
+                or pin.catalog_scope != catalog_scope
+                or pin.catalog_digest != catalog_digest
+                or self._service.resolve_captured_turn_catalog_dispatch(pin=pin) != "mentors"
+            ):
+                return "revoked"
+            prepared = self._load_replay_prepared_source(ledger)
+            arguments = self._mentors_replay_arguments(prepared)
+            active = _CapturedTurnHandle(
+                session_id=ledger.session_id,
+                turn_ordinal=ledger.turn_ordinal,
+                message_digest=ledger.message_digest,
+                admission=None,
+                ledger=ledger,
+                generation=replay_operation_id,
+                expires_at=datetime.now(UTC) + _CAPTURED_TURN_TTL,
+            )
+            request = self._structured_tool_request(active=active, arguments=arguments, mentors=True)
+            request = request.model_copy(update={"captured_pin": CapturedCatalogPinReference(
+                capture_id=pin.capture_id, pin_memory_id=pin.memory_id, pin_digest=pin.pin_digest,
+                catalog_scope=pin.catalog_scope, catalog_digest=pin.catalog_digest,
+                selected_version_id=pin.selected_version_id,
+                selected_version_digest=pin.selected_version_digest,
+                runtime_bundle_digest=pin.runtime_bundle_digest,
+            )})
+            response = self._service.submit_structured_fact(
+                request,
+                authenticated_host_ingress=self._issue_host_ingress(
+                    ledger.session_id, self._authenticated_author_id, datetime.now(UTC),
+                ),
+            )
+        except (OSError, ValueError):
+            return "deleted"
+        if response.status == "committed":
+            return "committed"
+        if response.status in {"abstained", "rejected"}:
+            return "abstained"
+        return "revoked" if response.status in {
+            "denied", "authorization_revoked_before_commit"
+        } else "deleted"
+
+    def _load_replay_prepared_source(self, ledger: HermesCapturedTurnLedger) -> PreparedSource:
+        runtime = self._service._provider_ingestion._semantic_runtime
+        if runtime is None or runtime.prepared_source_repository is None:
+            raise ValueError("retained replay prepared source is unavailable")
+        prepared = runtime.prepared_source_repository.load(
+            source_id=ledger.source_id, source_digest=ledger.source_digest,
+        )
+        if (
+            prepared is None
+            or prepared.preparation_fingerprint != ledger.preparation_fingerprint
+            or prepared.source_id != ledger.source_id
+            or prepared.source_digest != ledger.source_digest
+        ):
+            raise ValueError("retained replay prepared source is unavailable")
+        return prepared
+
+    @staticmethod
+    def _mentors_replay_arguments(prepared: PreparedSource) -> dict[str, object]:
+        """Materialize only the frozen direct ``Person mentors Person`` form."""
+        matches = []
+        for span in prepared.sentence_spans:
+            quote = prepared.semantic_text[span.projection_span.start : span.projection_span.end]
+            if not quote.endswith(".") or quote.count(" mentors ") != 1:
+                continue
+            subject, object_quote = quote[:-1].split(" mentors ", 1)
+            if not subject or not object_quote:
+                continue
+            matches.append((quote, subject, object_quote, span))
+        if len(matches) != 1:
+            raise ValueError("retained replay is not a unique mentors sentence")
+        quote, subject, object_quote, span = matches[0]
+        proof = span.text_mapping_proof
+        if not isinstance(proof, VerbatimTextArtifactMappingProof):
+            raise ValueError("retained replay mapping is unavailable")
+        source_start = proof.retained_span.start + (span.projection_span.start - proof.projection_span.start)
+        return {
+            "schema_version": 1,
+            "source_quote": quote,
+            "source_quote_start": source_start,
+            "subject_quote": subject,
+            "predicate_anchor_quote": "mentors",
+            "object_quote": object_quote,
+            "proposal": {
+                "abstained": False,
+                "mentions": [
+                    {"local_id": "subject", "mention_quote": subject, "mention_context_quote": quote, "proposed_type": "Person"},
+                    {"local_id": "object", "mention_quote": object_quote, "mention_context_quote": quote, "proposed_type": "Person"},
+                ],
+                "facts": [{
+                    "kind": "fact", "local_id": "mentors", "predicate_id": "mentors",
+                    "subject_entity_ref": "subject", "object": {"kind": "entity", "entity_ref": "object"},
+                    "assertion_quote": quote, "predicate_anchor_quote": "mentors",
+                    "polarity": "positive", "commitment": "asserted",
+                    "attributed_to_entity_ref": None, "temporal_qualifier_quotes": [],
+                }],
+                "corrections": [], "retractions": [], "action_states": [], "identity_operations": [],
+            },
+        }
 
     def _acquire_active_tool_turn(self) -> _CapturedTurnHandle | None:
         with self._condition:

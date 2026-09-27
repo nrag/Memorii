@@ -80,6 +80,7 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         self._revoke_structured_submission_grant: Callable[[str], None] | None = None
         self._activate_learned_candidate: Callable[[str], object] | None = None
         self._learned_ontology_runtime: object | None = None
+        self._learned_ontology_status: Callable[[], object] | None = None
         self._origin_receipts: dict[
             tuple[str, int], HermesAuthenticatedOriginReceipt
         ] = {}
@@ -146,6 +147,7 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         self._revoke_structured_submission_grant = binding.revoke_structured_submission_grant
         self._activate_learned_candidate = binding.activate_learned_candidate
         self._learned_ontology_runtime = binding.learned_ontology_runtime
+        self._learned_ontology_status = binding.learned_ontology_status
         self._issue_origin_receipt = binding.issue_origin_receipt
         self._issue_forwarding_receipt = binding.issue_forwarding_receipt
 
@@ -172,6 +174,11 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         if action is None:
             raise RuntimeError("learned ontology activation is unavailable")
         return action(proposal_id)
+
+    def lookup_learned_ontology_status(self) -> object:
+        """Return bounded learner control status from the installed root."""
+        action = self._learned_ontology_status
+        return {"status": "unavailable"} if action is None else action()
 
     def lookup_structured_fact_status(self, operation_id: str, *, session_id: str = "") -> object:
         runtime = self._completed_turn_runtime

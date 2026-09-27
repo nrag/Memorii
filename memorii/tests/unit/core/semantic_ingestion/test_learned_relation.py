@@ -33,14 +33,15 @@ from memorii.core.semantic_ingestion.learned_relation import (
 
 
 class _ReplayWriter:
-    def __init__(self) -> None:
+    def __init__(self, outcome: str = "committed") -> None:
         self.calls: list[str] = []
+        self.outcome = outcome
 
     def replay_retained_source(self, *, source_id: str, source_digest: str,
                                catalog_scope: AgentLocalCatalogScope, catalog_digest: str,
                                replay_operation_id: str) -> str:
         self.calls.append(replay_operation_id)
-        return "committed"
+        return self.outcome
 
 
 _SCOPE = AgentLocalCatalogScope(principal_id="user:one", agent_id="agent:one")
@@ -127,6 +128,34 @@ def test_failed_evaluation_and_non_owner_never_activate_or_replay() -> None:
         runtime.approve_candidate(proposal_id=evaluated.proposal_id,
                                   principal_id="user:one", agent_id="agent:one")
     assert writer.calls == []
+
+
+def test_recovery_finalizes_both_selection_crash_windows_and_replay_receipts() -> None:
+    writer = _ReplayWriter("revoked")
+    plane = MemoryPlaneService()
+    runtime = _runtime(writer, plane)
+    proposal = runtime.prepare_candidate(_proposal())
+    proposal = runtime.record_evaluation(proposal_id=proposal.proposal_id, evaluation=_passing_evaluation())
+    proposal = runtime.approve_candidate(
+        proposal_id=proposal.proposal_id, principal_id="user:one", agent_id="agent:one",
+    )
+    version = runtime.activate_candidate(
+        proposal_id=proposal.proposal_id, principal_id="user:one", agent_id="agent:one",
+    )
+    # Rewriting the selected attempt as prepared simulates a crash after the
+    # pointer CAS and before attempt-state finalization.
+    selected = runtime._require_attempt(version.attempt_id)
+    runtime._replace_attempt(selected, selected.model_copy(update={"status": "prepared"}))
+    runtime.recover(_SCOPE)
+    assert runtime._require_attempt(version.attempt_id).status == "selected"
+    status = runtime.status(_SCOPE)
+    assert status["replay_outcomes"] == {"revoked": 2}
+    assert "source:one" not in repr(status)
+    # A second recovery has the same two durable operation receipts and does
+    # not call the ordinary writer again.
+    calls = tuple(writer.calls)
+    runtime.recover(_SCOPE)
+    assert tuple(writer.calls) == calls
 
 
 def test_agent_local_scope_and_automatic_policy_fail_closed_without_calibration() -> None:

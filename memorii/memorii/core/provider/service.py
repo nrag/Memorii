@@ -1461,6 +1461,10 @@ class ProviderMemoryService:
                 status="denied", denial_reason="source_span_denied"
             )
         try:
+            # Allocate one writer binding with the retained operation.  The
+            # replay cannot later switch to a predecessor binding while it
+            # persists grants, controls, and its terminal.
+            writer_binding = self._provider_ingestion._current_writer_binding()
             accepted = GovernedSourceAdmissionService(
                 self._memory_plane
             ).allocate_retained_source_operation(
@@ -1472,7 +1476,7 @@ class ProviderMemoryService:
                 authenticated_ingress=ingress,
             )
             self._activate_structured_submission_authority(
-                accepted=accepted, authority=authority,
+                accepted=accepted, authority=authority, writer_binding=writer_binding,
             )
         except StructuredSubmissionGrantRevokedError:
             return StructuredFactSubmissionResponse(
@@ -1502,7 +1506,7 @@ class ProviderMemoryService:
             with self._new_canonical_evidence_arena() as arena:
                 self._provider_ingestion.execute_retained_structured_proposal(
                     accepted=accepted, submission=submission, authenticated_ingress=ingress,
-                    canonical_evidence_arena=arena,
+                    canonical_evidence_arena=arena, writer_binding=writer_binding,
                     captured_catalog_pin=pin if captured_source else None,
                 )
             persisted = self._semantic_atomic_store.recover_retained_structured_terminal(
@@ -1652,7 +1656,7 @@ class ProviderMemoryService:
         return result if isinstance(result, StructuredFactReadResponse) else StructuredFactReadResponse(status="unavailable")
 
     def _activate_structured_submission_authority(
-        self, *, accepted, authority,
+        self, *, accepted, authority, writer_binding,
     ) -> None:
         """Persist only an authority issued by the configured trusted host resolver.
 
@@ -1662,7 +1666,7 @@ class ProviderMemoryService:
         self._semantic_atomic_store.publish_structured_submission_grant_states(
             accepted=accepted,
             authority=authority,
-            writer_binding=self._provider_ingestion._current_writer_binding(),
+            writer_binding=writer_binding,
         )
 
     def provision_structured_submission_authority(self, *, authority: object) -> None:

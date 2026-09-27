@@ -131,6 +131,7 @@ class HermesProviderRuntimeBinding:
     revoke_structured_submission_grant: Callable[[str], None] | None = None
     activate_learned_candidate: Callable[[str], object] | None = None
     learned_ontology_runtime: object | None = None
+    learned_ontology_status: Callable[[], object] | None = None
     issue_origin_receipt: Callable[
         [str, int, str, str], HermesAuthenticatedOriginReceipt
     ] | None = None

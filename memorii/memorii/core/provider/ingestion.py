@@ -57,6 +57,7 @@ from memorii.core.memory_evolution.source_governance import derive_source_govern
 from memorii.core.memory_evolution.writer_admission import (
     SemanticWriterAdmissionError,
     SemanticWriterAdmissionStore,
+    SemanticWriterCommitBinding,
 )
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
@@ -521,6 +522,7 @@ class ProviderIngestionCoordinator:
         submission: RetainedStructuredSubmission,
         authenticated_ingress: AuthenticatedIngressContext,
         canonical_evidence_arena: CanonicalEvidenceArena,
+        writer_binding: SemanticWriterCommitBinding,
         captured_catalog_pin: CatalogCapturedTurnPin | None = None,
     ) -> SemanticTerminalOutcome | None:
         """Run one admitted structured proposal through the native V3 terminal.
@@ -541,7 +543,6 @@ class ProviderIngestionCoordinator:
         ):
             return None
         try:
-            writer_binding = self._current_writer_binding()
             if self._atomic_store.classify_captured_turn_source(
                 source_id=accepted.source_id, source_digest=accepted.source_digest,
             ):

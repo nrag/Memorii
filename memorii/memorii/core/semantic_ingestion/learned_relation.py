@@ -398,6 +398,8 @@ class LearnedRelationRuntime:
         policy = self._policy_for_scope(proposal.catalog_scope)
         if (principal_id, agent_id) != (policy.owner_principal_id, policy.owner_agent_id):
             raise LearnedRelationError("catalog owner authorization is required")
+        if proposal.lifecycle == "active":
+            return self._selected_attempt_for_proposal(proposal)
         if proposal.lifecycle != "approved_for_activation":
             raise LearnedRelationError("candidate has not been approved")
         pointer = self._load_pointer(proposal.catalog_scope)
@@ -437,7 +439,9 @@ class LearnedRelationRuntime:
         pointer = self._load_pointer(catalog_scope)
         if pointer is None:
             raise LearnedRelationError("catalog has no selected version")
-        if target_version_digest == pointer.selected_version_digest or not self._is_ancestor(
+        if target_version_digest == pointer.selected_version_digest:
+            return self._require_attempt(pointer.selected_attempt_id)
+        if not self._is_ancestor(
                 catalog_scope, current=pointer.selected_version_digest, target=target_version_digest):
             raise LearnedRelationError("rollback target is not a selected ancestor")
         if not self._was_selected_in_scope(catalog_scope, target_version_digest):
@@ -456,10 +460,59 @@ class LearnedRelationRuntime:
     def status(self, scope: AgentLocalCatalogScope) -> dict[str, object]:
         pointer = self._load_pointer(scope)
         proposals = [self._decode_proposal(record) for record in self._plane.list_records(source_kind=_KIND_PROPOSAL)]
-        return {"active_catalog_digest": None if pointer is None else self._require_version(pointer.selected_version_digest).catalog_digest,
-                "activation_sequence": None if pointer is None else pointer.activation_sequence,
-                "candidate_count": len([item for item in proposals if item and item.catalog_scope == scope]),
-                "last_error": None}
+        outcomes: dict[str, int] = {}
+        for record in self._plane.list_records(source_kind=_KIND_REPLAY):
+            if record.content.get("scope_key") != self._scope_key(scope):
+                continue
+            outcome = record.content.get("outcome")
+            if isinstance(outcome, str):
+                outcomes[outcome] = outcomes.get(outcome, 0) + 1
+        return {
+            "active_catalog_digest": None if pointer is None else self._require_version(pointer.selected_version_digest).catalog_digest,
+            "activation_sequence": None if pointer is None else pointer.activation_sequence,
+            "candidate_count": len([item for item in proposals if item and item.catalog_scope == scope]),
+            "replay_outcomes": outcomes,
+            "last_error": None,
+        }
+
+    def recover(self, scope: AgentLocalCatalogScope) -> None:
+        """Finish one interrupted selection and retry selected catalog replay.
+
+        Recovery reads only immutable control records.  A prepared attempt is
+        never treated as selected until its pointer CAS succeeds; a pointer
+        that already names the attempt is sufficient to finalize its durable
+        selected projection after a crash.
+        """
+        attempts = []
+        for record in self._plane.list_records(source_kind=_KIND_ATTEMPT):
+            try:
+                attempt = OntologyActivation.model_validate(record.content["activation"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if attempt.catalog_scope == scope:
+                attempts.append(attempt)
+        for attempt in attempts:
+            if attempt.status == "prepared":
+                self._recover_prepared(attempt)
+        pointer = self._load_pointer(scope)
+        if pointer is None:
+            return
+        selected = self._require_attempt(pointer.selected_attempt_id)
+        if selected.status == "prepared":
+            self._finalize_selected(selected)
+            selected = self._require_attempt(selected.attempt_id)
+        if selected.status != "selected" or selected.target_version_digest != pointer.selected_version_digest:
+            raise LearnedRelationError("selected catalog activation is invalid")
+        if selected.operation == "activate_candidate":
+            if selected.proposal_id is None:
+                raise LearnedRelationError("activation proposal is unavailable")
+            proposal = self._require_proposal(selected.proposal_id)
+            if proposal.lifecycle == "approved_for_activation":
+                self._replace_proposal(proposal, proposal.model_copy(update={"lifecycle": "active"}))
+                proposal = self._require_proposal(proposal.proposal_id)
+            if proposal.lifecycle != "active":
+                raise LearnedRelationError("selected activation proposal is invalid")
+            self._replay(proposal, self._require_version(selected.target_version_digest))
 
     def _replay(self, proposal: OntologyChangeProposal, version: OntologyCatalogVersion) -> None:
         for evidence in proposal.evidence:
@@ -476,7 +529,8 @@ class LearnedRelationRuntime:
             )
             record = CanonicalMemoryRecord(memory_id=operation_id, domain=MemoryDomain.EXECUTION,
                 text=outcome, content={"source_id": evidence.source_id, "outcome": outcome,
-                "catalog_digest": version.catalog_digest}, status=CommitStatus.COMMITTED,
+                "catalog_digest": version.catalog_digest,
+                "scope_key": self._scope_key(proposal.catalog_scope)}, status=CommitStatus.COMMITTED,
                 source_kind=_KIND_REPLAY, visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
                 timestamp=datetime.now(UTC))
             with suppress(MemoryPlaneRevisionConflictError):
@@ -489,6 +543,14 @@ class LearnedRelationRuntime:
             activation_sequence=1 if expected_pointer is None else expected_pointer.activation_sequence + 1)
         record = self._pointer_record(next_pointer)
         persisted = self._plane.get_record(record.memory_id)
+        if persisted is not None:
+            try:
+                existing = CatalogPointer.model_validate(persisted.content["pointer"])
+            except (KeyError, TypeError, ValueError) as exc:
+                raise LearnedRelationError("catalog pointer is invalid") from exc
+            if existing == next_pointer:
+                self._finalize_selected(attempt)
+                return self._require_attempt(attempt.attempt_id)
         if expected_pointer is not None and persisted is None:
             raise LearnedRelationError("catalog pointer is unavailable")
         if (expected_pointer is None) != (attempt.expected_pointer_digest is None):
@@ -505,9 +567,55 @@ class LearnedRelationRuntime:
             self._plane.conditionally_write_records((record,), preconditions=conditions)
         except MemoryPlaneRevisionConflictError as exc:
             raise LearnedRelationError("catalog pointer compare-and-swap conflicted") from exc
-        selected = attempt.model_copy(update={"status": "selected"})
-        self._replace_attempt(attempt, selected)
-        return selected
+        self._finalize_selected(attempt)
+        return self._require_attempt(attempt.attempt_id)
+
+    def _recover_prepared(self, attempt: OntologyActivation) -> None:
+        pointer = self._load_pointer(attempt.catalog_scope)
+        if pointer is not None and pointer.selected_attempt_id == attempt.attempt_id:
+            self._finalize_selected(attempt)
+            return
+        expected_matches = (
+            (pointer is None and attempt.expected_pointer_digest is None)
+            or (
+                pointer is not None
+                and attempt.expected_pointer_digest == pointer.pointer_digest
+                and attempt.expected_pointer_sequence == pointer.activation_sequence
+            )
+        )
+        if expected_matches:
+            try:
+                self._select(attempt=attempt, expected_pointer=pointer)
+                return
+            except LearnedRelationError:
+                pass
+        abandoned = attempt.model_copy(update={"status": "abandoned"})
+        self._replace_attempt(attempt, abandoned)
+        if attempt.operation == "activate_candidate" and attempt.proposal_id is not None:
+            proposal = self._require_proposal(attempt.proposal_id)
+            if proposal.lifecycle == "approved_for_activation":
+                self._replace_proposal(proposal, proposal.model_copy(update={"lifecycle": "activation_conflict"}))
+
+    def _finalize_selected(self, attempt: OntologyActivation) -> None:
+        current = self._require_attempt(attempt.attempt_id)
+        if current.status == "selected":
+            return
+        if current.status != "prepared":
+            raise LearnedRelationError("activation cannot be selected")
+        self._replace_attempt(current, current.model_copy(update={"status": "selected"}))
+
+    def _selected_attempt_for_proposal(self, proposal: OntologyChangeProposal) -> OntologyActivation:
+        pointer = self._load_pointer(proposal.catalog_scope)
+        if pointer is None:
+            raise LearnedRelationError("active proposal has no selected pointer")
+        attempt = self._require_attempt(pointer.selected_attempt_id)
+        if (
+            attempt.status != "selected"
+            or attempt.operation != "activate_candidate"
+            or attempt.proposal_id != proposal.proposal_id
+        ):
+            raise LearnedRelationError("active proposal selection is invalid")
+        return attempt
 
     def _is_ancestor(self, scope: AgentLocalCatalogScope, *, current: str, target: str) -> bool:
         seen: set[str] = set()

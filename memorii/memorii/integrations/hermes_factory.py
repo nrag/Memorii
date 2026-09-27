@@ -336,15 +336,33 @@ def _build_local_level2_runtime_binding(
         bundle.profile_digests["semantic_contract_digest"],
     )
 
-    class _DeferredReplayWriter:
-        def replay_retained_source(self, **_kwargs: object) -> str:
-            # Activation only selects an immutable catalog.  Retained-source
-            # replay is reconciled by the ordinary structured writer later.
-            return "pending"
+    class _InstalledReplayWriter:
+        """Bind catalog replay to the installed completed-turn writer root."""
+
+        def __init__(self) -> None:
+            self.runtime = None
+
+        def replay_retained_source(self, **kwargs: object) -> str:
+            if self.runtime is None or structured_resolver is None:
+                return "deleted"
+            # Selection has changed the resolver's chosen catalog.  Publish
+            # that exact grant tuple before the ordinary writer resolves the
+            # captured source pin and applies its final commit fence.
+            try:
+                authority = structured_resolver.issued_authority()
+                service.provision_structured_submission_authority(authority=authority)
+                self.runtime._structured_authority_request = (
+                    structured_resolver.issued_authority_request()
+                )
+            except (OSError, ValueError):
+                return "revoked"
+            return self.runtime.replay_retained_source(**kwargs)
+
+    replay_writer = _InstalledReplayWriter()
 
     learned_runtime = LearnedRelationRuntime(
         memory_plane=memory_plane,
-        replay_writer=_DeferredReplayWriter(),
+        replay_writer=replay_writer,
         policy_for_scope=lambda scope: ActivationPolicy(
             owner_principal_id=scope.principal_id,
             owner_agent_id=scope.agent_id,
@@ -371,6 +389,13 @@ def _build_local_level2_runtime_binding(
         ),
         preference_service=preference_service,
     )
+    replay_writer.runtime = completed_runtime
+    learned_scope = AgentLocalCatalogAuthorityScope(
+        principal_id=operator_id, agent_id=agent_id,
+    )
+    # Startup owns the two selection crash windows.  Recovery only retries
+    # immutable retained evidence through the same installed writer root.
+    learned_runtime.recover(learned_scope)
 
     def activate_learned_candidate(proposal_id: str) -> OntologyActivation:
         activation = learned_runtime.activate_candidate(
@@ -378,8 +403,6 @@ def _build_local_level2_runtime_binding(
         )
         if structured_resolver is None:
             raise LocalLevel2AuthorityError("local structured tool authority is unavailable")
-        authority = structured_resolver.issued_authority()
-        service.provision_structured_submission_authority(authority=authority)
         completed_runtime._structured_authority_request = structured_resolver.issued_authority_request()
         return activation
 
@@ -393,6 +416,7 @@ def _build_local_level2_runtime_binding(
         ),
         activate_learned_candidate=activate_learned_candidate,
         learned_ontology_runtime=learned_runtime,
+        learned_ontology_status=lambda: learned_runtime.status(learned_scope),
         issue_origin_receipt=ingress_resolver.issue_origin_receipt,
         issue_forwarding_receipt=ingress_resolver.issue_forwarding_receipt,
     )

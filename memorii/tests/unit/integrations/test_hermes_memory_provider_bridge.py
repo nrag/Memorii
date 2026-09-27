@@ -1146,6 +1146,83 @@ def test_installed_no_key_bridge_reaches_learned_mentors_submission_without_mode
     reopened.shutdown()
 
 
+def test_learned_replay_of_a_preselection_capture_reopens_jsonl(
+    bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The replay control must retain the binding selected for the replay."""
+    from memorii.core.semantic_ingestion.learned_relation import (
+        AgentLocalCatalogScope,
+        OntologyChangeProposal,
+        OntologyEvidenceReference,
+        PairedEvaluation,
+        RelationDeclaration,
+    )
+    from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
+    from memorii.integrations.hermes_local_authority import (
+        authorize_local_level2,
+        authorize_local_structured_tool,
+    )
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    authorize_local_level2(hermes_home=tmp_path)
+    authorize_local_structured_tool(hermes_home=tmp_path)
+    monkeypatch.setattr(
+        bridge_module.importlib.metadata,
+        "entry_points",
+        lambda *, group: (_FactoryEntryPoint(build_local_level2_runtime_binding),),
+    )
+    provider = bridge_module.MemoriiHermesMemoryProvider()
+    provider.initialize(
+        "session:replay", hermes_home=tmp_path, user_id="raw:user:one",
+        agent_identity="profile:primary", platform="cli", agent_context="primary",
+        agent_workspace="hermes",
+    )
+    provider.on_turn_start(1, "Atlas mentors Ada.")
+    runtime = provider._completed_turn_runtime
+    learned = provider._learned_ontology_runtime
+    assert runtime is not None and learned is not None
+    active = runtime._active_turn
+    assert active is not None
+    scope = AgentLocalCatalogScope(
+        principal_id=provider._absent_author_id,
+        agent_id=runtime._authenticated_agent_id,
+    )
+    candidate = learned.prepare_candidate(OntologyChangeProposal.create(
+        catalog_scope=scope, parent_catalog_digest="a" * 64,
+        relation=RelationDeclaration(description="A person mentors another person."),
+        evidence=(OntologyEvidenceReference(
+            source_id=active.ledger.source_id, source_digest=active.ledger.source_digest,
+            origin_lineage_digest="2" * 64, source_scope_digest="3" * 64,
+        ),),
+    ))
+    candidate = learned.record_evaluation(
+        proposal_id=candidate.proposal_id,
+        evaluation=PairedEvaluation.create(
+            binding_digest="4" * 64, targeted_positive_count=2,
+            targeted_positive_committed_and_read=2, parent_regressions=0,
+            unsupported_or_misleading_failures=0, scope_or_provenance_failures=0,
+            available=True,
+        ),
+    )
+    learned.approve_candidate(
+        proposal_id=candidate.proposal_id,
+        principal_id=scope.principal_id, agent_id=scope.agent_id,
+    )
+    provider.activate_learned_candidate(candidate.proposal_id)
+    status = provider.lookup_learned_ontology_status()
+    assert status["replay_outcomes"] == {"committed": 1}
+    provider.shutdown()
+
+    reopened = bridge_module.MemoriiHermesMemoryProvider()
+    reopened.initialize(
+        "session:replay", hermes_home=tmp_path, user_id="raw:user:one",
+        agent_identity="profile:primary", platform="cli", agent_context="primary",
+        agent_workspace="hermes",
+    )
+    assert reopened.lookup_learned_ontology_status()["replay_outcomes"] == {"committed": 1}
+    reopened.shutdown()
+
+
 def test_installed_default_catalog_entity_relation_commits_and_recalls(
     bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:

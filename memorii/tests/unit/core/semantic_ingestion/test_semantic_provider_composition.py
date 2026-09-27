@@ -2305,6 +2305,7 @@ def _retained_structured_submission(
     )
     ingress = service._resolve_ingress(_host_ingress())
     assert ingress is not None
+    writer_binding = service._provider_ingestion._current_writer_binding()
     accepted = GovernedSourceAdmissionService(
         service._memory_plane
     ).allocate_retained_source_operation(
@@ -2318,12 +2319,13 @@ def _retained_structured_submission(
     if activate_authority:
         service._activate_structured_submission_authority(
             accepted=accepted, authority=submission.authority,
+            writer_binding=writer_binding,
         )
-    return accepted, submission, ingress
+    return accepted, submission, ingress, writer_binding
 
 
 def _execute_retained_structured_submission(
-    service: ProviderMemoryService, *, accepted, submission, ingress,
+    service: ProviderMemoryService, *, accepted, submission, ingress, writer_binding,
 ):
     with service._new_canonical_evidence_arena() as arena:
         return service._provider_ingestion.execute_retained_structured_proposal(
@@ -2331,6 +2333,7 @@ def _execute_retained_structured_submission(
             submission=submission,
             authenticated_ingress=ingress,
             canonical_evidence_arena=arena,
+            writer_binding=writer_binding,
         )
 
 
@@ -2405,7 +2408,7 @@ def test_public_structured_fact_rejects_substituted_authority_and_source_without
         user_id="user:alice",
         authenticated_host_ingress=_host_ingress(),
     )
-    _, submission, _ = _retained_structured_submission(service)
+    _, submission, _, _ = _retained_structured_submission(service)
     seed = ThreePredicateSeedCatalogAuthorityRepository().resolve_base()
     resolver.expected = submission.authority.model_copy(update={"catalog": seed})
     authority_request = StructuredSubmissionAuthorityRequest(
@@ -2559,7 +2562,7 @@ def test_public_structured_fact_submission_requires_current_grant_fence() -> Non
         user_id="user:alice",
         authenticated_host_ingress=_host_ingress(),
     )
-    _, submission, _ = _retained_structured_submission(service)
+    _, submission, _, _ = _retained_structured_submission(service)
     seed = ThreePredicateSeedCatalogAuthorityRepository().resolve_base()
     authority_request = StructuredSubmissionAuthorityRequest(
         authenticated=submission.authority.authenticated,
@@ -2662,7 +2665,7 @@ def test_public_structured_fact_submission_commits_before_protected_read_composi
         catalog_visibility_grant=CatalogOwnerVisibilityGrant(grant_id="catalog-grant:public-commit", grant_version=1, catalog_scope=seed.catalog_scope, authenticated=authenticated, purpose="visibility_status"),
         catalog=seed,
     )
-    _, submission, _ = _retained_structured_submission(
+    _, submission, _, _ = _retained_structured_submission(
         service, authority=authority, activate_authority=False,
     )
     authority_request = StructuredSubmissionAuthorityRequest(
@@ -2854,7 +2857,7 @@ def test_verified_production_public_structured_fact_jsonl_recovery_denies_revoke
         ),
         catalog=seed,
     )
-    _, submission, _ = _retained_structured_submission(
+    _, submission, _, _ = _retained_structured_submission(
         service, authority=authority, activate_authority=False,
     )
     authority_request = StructuredSubmissionAuthorityRequest(
@@ -3017,15 +3020,15 @@ def test_retained_structured_proposal_retries_through_v3_terminal() -> None:
         user_id="user:alice",
         authenticated_host_ingress=_host_ingress(),
     )
-    accepted, submission, ingress = _retained_structured_submission(service)
+    accepted, submission, ingress, writer_binding = _retained_structured_submission(service)
 
     calls_before_direct = dict(calls)
     first = _execute_retained_structured_submission(
-        service, accepted=accepted, submission=submission, ingress=ingress
+        service, accepted=accepted, submission=submission, ingress=ingress, writer_binding=writer_binding
     )
     calls_before_retry = dict(calls)
     second = _execute_retained_structured_submission(
-        service, accepted=accepted, submission=submission, ingress=ingress
+        service, accepted=accepted, submission=submission, ingress=ingress, writer_binding=writer_binding
     )
 
     assert first is not None
@@ -3069,13 +3072,13 @@ def test_retained_structured_proposal_retries_through_v3_terminal() -> None:
         authenticated_ingress=ingress,
     )
     assert _execute_retained_structured_submission(
-        service, accepted=accepted, submission=swapped_proposal, ingress=ingress
+        service, accepted=accepted, submission=swapped_proposal, ingress=ingress, writer_binding=writer_binding
     ) is None
     assert _execute_retained_structured_submission(
-        service, accepted=accepted, submission=swapped_artifact, ingress=ingress
+        service, accepted=accepted, submission=swapped_artifact, ingress=ingress, writer_binding=writer_binding
     ) is None
     assert _execute_retained_structured_submission(
-        service, accepted=swapped_fence, submission=submission, ingress=ingress
+        service, accepted=swapped_fence, submission=submission, ingress=ingress, writer_binding=writer_binding
     ) is None
 
 
@@ -3138,11 +3141,11 @@ def test_normal_root_structured_claim_is_readable_only_under_current_fact_and_ca
         ),
         catalog=seed,
     )
-    accepted, submission, ingress = _retained_structured_submission(
+    accepted, submission, ingress, writer_binding = _retained_structured_submission(
         service, authority=authority,
     )
     outcome = _execute_retained_structured_submission(
-        service, accepted=accepted, submission=submission, ingress=ingress,
+        service, accepted=accepted, submission=submission, ingress=ingress, writer_binding=writer_binding,
     )
     assert outcome is not None
     assert "bootstrap_graph_terminal_persisted" in outcome.reason_codes
@@ -3233,7 +3236,7 @@ def test_retained_structured_proposal_revocation_between_pin_and_v3_cas_seals_so
         user_id="user:alice",
         authenticated_host_ingress=_host_ingress(),
     )
-    accepted, submission, ingress = _retained_structured_submission(service)
+    accepted, submission, ingress, writer_binding = _retained_structured_submission(service)
     store = service._semantic_atomic_store
     original = store.commit_or_reload_bootstrap_graph_group_v3
     graph_before = store.semantic_replay_state().graph_revision
@@ -3252,7 +3255,7 @@ def test_retained_structured_proposal_revocation_between_pin_and_v3_cas_seals_so
 
     monkeypatch.setattr(store, "commit_or_reload_bootstrap_graph_group_v3", revoke_before_cas)
     outcome = _execute_retained_structured_submission(
-        service, accepted=accepted, submission=submission, ingress=ingress
+        service, accepted=accepted, submission=submission, ingress=ingress, writer_binding=writer_binding
     )
 
     assert revoked is True
@@ -3269,7 +3272,7 @@ def test_retained_structured_proposal_revocation_between_pin_and_v3_cas_seals_so
         for record in service._memory_plane.list_records()
     )
     retry = _execute_retained_structured_submission(
-        service, accepted=accepted, submission=submission, ingress=ingress
+        service, accepted=accepted, submission=submission, ingress=ingress, writer_binding=writer_binding
     )
     assert retry == outcome
     terminal = next(
@@ -3302,7 +3305,7 @@ def test_retained_structured_proposal_revocation_between_pin_and_v3_cas_seals_so
         MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path))
     )
     reopened_retry = _execute_retained_structured_submission(
-        reopened, accepted=accepted, submission=submission, ingress=ingress
+        reopened, accepted=accepted, submission=submission, ingress=ingress, writer_binding=writer_binding
     )
     assert reopened_retry == outcome
     with pytest.raises(StructuredSubmissionGrantRevokedError):
@@ -3442,19 +3445,20 @@ def test_retained_structured_proposal_reopens_from_jsonl_terminal(tmp_path: Path
         user_id="user:alice",
         authenticated_host_ingress=_host_ingress(),
     )
-    accepted, submission, ingress = _retained_structured_submission(service)
+    accepted, submission, ingress, writer_binding = _retained_structured_submission(service)
     first = _execute_retained_structured_submission(
-        service, accepted=accepted, submission=submission, ingress=ingress
+        service, accepted=accepted, submission=submission, ingress=ingress, writer_binding=writer_binding
     )
     assert first is not None and "bootstrap_graph_terminal_persisted" in first.reason_codes
 
     reopened = _full_v3_service(MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path)))
-    retried, reopened_submission, reopened_ingress = _retained_structured_submission(reopened)
+    retried, reopened_submission, reopened_ingress, reopened_binding = _retained_structured_submission(reopened)
     second = _execute_retained_structured_submission(
         reopened,
         accepted=retried,
         submission=reopened_submission,
         ingress=reopened_ingress,
+        writer_binding=reopened_binding,
     )
 
     assert retried == accepted
