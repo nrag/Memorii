@@ -66,6 +66,13 @@ States below are judged at the selected Level-2 manual-testing bar. `Complete` m
 
 **Progress snapshot (2026-09-26):** 2 of 5 Level-2 implementation milestones are ready for manual testing; the sixth release-conformance milestone is deferred to Level 3. At the current fidelity, 3 of 14 requirements are complete (OLE-05, OLE-12 and OLE-14), 4 are partial (OLE-03, OLE-07, OLE-08 and OLE-09), and 7 are not started. M1's installed no-key journey passed at frozen code/test SHA-256 `04ec877069b836204ef5b34afb0ea411cd10011fe3b167b1b73e2d1f6ecffc06`. M2's versioned `reports_to` journey passed at exact `memorii/` SHA-256 `39ebb0344f7a15f8879dc9ee07cad6e4f808f2bfa7e6b7161314f666c3065d65`, including native write, protected read, JSONL reopen/status retry, current-grant denial, seed coexistence and independent Level-2 review. M3 is active: its compiler, content-addressed literal codecs, exact 27-entity/four-literal/53-relation endpoint validator, provider dispatch, source grounding, verified seven-member package, exact 56-predicate closure, seed compatibility, installed `reports_to`, and reusable installed entity/literal harness are accepted through pushed commit `b9052820`; corpus-driven validation, aligned 15-minute capture/recovery, compact installed M/C/H/value-family evidence, lifecycle transport contracts, and the exact 53-row/25-private installed native matrix are accepted through pushed commit `8d57deaa`. Installed durable revision effects, product current/history/as-of reads, reopen, symmetric reverse reads and H8 remain open. Milestone and requirement counts do not change for these construction slices.
 
+**Progress checkpoint (2026-09-27):** counts remain 2 of 5 Level-2
+milestones and 3 of 14 requirements. The installed lifecycle path now commits a
+correction. A focused protected-reader correction reconstructs current,
+history, and transaction-time as-of state from the native group effect and
+verified immutable claim projections; 96 focused tests pass. The installed
+current/history/reopen journey is running next, so M3 remains active.
+
 ## Production Boundary And Change Map
 
 `implementation-readiness.md` contains the read-only composition-root preflight and caller counts. Current paths are generic `ProviderMemoryService.sync_event` and the installed Hermes completed-turn root, one fixed three-predicate profile, one shared semantic terminal writer, and one protected-reader core. Ontology observer, catalog registry, activation, learner, and structured-fact port have zero current production callers. No future owner counts as implemented until a mapper finds a real caller and a focused path proof reaches its durable outcome.

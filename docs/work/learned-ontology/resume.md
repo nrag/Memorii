@@ -116,4 +116,16 @@ The bounded lifecycle transport contract is independently accepted at scoped dif
 
 The frozen all-row matrix passes at pushed commit `8d57deaa`: shard 1 is `14 passed in 2902.67s`; shards 2-4 are respectively `13 passed in 2772.94s`, `13 passed in 2772.68s`, and `13 passed in 2775.44s`. Together this proves all 53 installed native assertions, schema-2 bindings, protected recalls, wrong-endpoint zero effects and all 25 private grant revocations without an API key or model call.
 
-Exactly one next action: prove installed durable entity correction, literal correction and retraction with protected current/history/as-of reads before and after JSONL reopen, then implement the two symmetric reverse views.
+The pending lifecycle scope remains durable entity correction, literal
+correction and retraction with protected current/history/as-of reads before and
+after JSONL reopen, followed by the two symmetric reverse views.
+
+The installed correction now commits at `7a5b71ae`. Its first protected read
+failed because the reader looked for nonpersisted generic claim states and the
+wrong lifecycle carrier location. The current local correction decodes the
+accepted group effect and reconstructs lifecycle state from verified immutable
+claim projections. On the exact retained failed-run snapshot, current returns
+the replacement, history returns both versions, and a pre-correction as-of read
+returns only the original. The focused reader/runtime suite passes 96 tests;
+Ruff and whitespace pass. Counts remain 2/5 and 3/14. Exactly one next action:
+rerun the installed correction/current/history/reopen journey.

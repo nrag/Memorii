@@ -40,6 +40,20 @@ class _LifecycleTransition:
     recorded_at: datetime
 
 
+@dataclass(frozen=True)
+class _ProjectedClaim:
+    claim_id: str
+    predicate_id: str
+    subject_entity_id: str
+    object_value: str
+    lifecycle_state: str
+    valid_from: datetime | None
+    valid_to: datetime | None
+    system_time: datetime
+    provenance: str
+    projection: CanonicalMemoryRecord
+
+
 class StructuredFactReadRequest(BaseModel):
     predicate_id: str = Field(min_length=1)
     subject_entity_id: str = Field(min_length=1)
@@ -98,6 +112,52 @@ def read_structured_facts_from_snapshot(
         states = _query_states(records, request=request, now=now, transitions=transitions)
     except (TypeError, ValueError):
         return StructuredFactReadResponse(status="unavailable")
+    if not states:
+        projected = _query_projected_claims(
+            records=records,
+            projections=projections,
+            request=request,
+            transitions=transitions,
+        )
+        if projected is None:
+            return StructuredFactReadResponse(status="unavailable")
+        items = _projected_items(
+            claims=projected,
+            records=records,
+            bindings=bindings,
+            grant_states=grant_states,
+            pins=pins,
+            authority=authority,
+            reverse=False,
+        )
+        if items is None:
+            return StructuredFactReadResponse(status="unavailable")
+        if row.read_derivation_policy == "symmetric_view":
+            reverse = _query_projected_claims(
+                records=records,
+                projections=projections,
+                request=request.model_copy(update={"subject_entity_id": "*"}),
+                transitions=transitions,
+            )
+            if reverse is None:
+                return StructuredFactReadResponse(status="unavailable")
+            reverse = tuple(claim for claim in reverse if claim.object_value == request.subject_entity_id)
+            reverse_items = _projected_items(
+                claims=reverse,
+                records=records,
+                bindings=bindings,
+                grant_states=grant_states,
+                pins=pins,
+                authority=authority,
+                reverse=True,
+            )
+            if reverse_items is None:
+                return StructuredFactReadResponse(status="unavailable")
+            items += reverse_items
+        return StructuredFactReadResponse(
+            status="ok",
+            items=tuple(sorted(items, key=lambda item: (item.system_time, item.claim_id, item.derived_direction))),
+        )
     items = _items(
         states=states,
         records=records,
@@ -116,7 +176,9 @@ def read_structured_facts_from_snapshot(
             reverse_states = [
                 state
                 for state in _query_states(
-                    records, request=request.model_copy(update={"subject_entity_id": None}), now=now,
+                    records,
+                    request=request.model_copy(update={"subject_entity_id": None}),
+                    now=now,
                     transitions=transitions,
                 )
                 if state.object_value == request.subject_entity_id
@@ -230,8 +292,6 @@ def _lifecycle_transitions(
         BootstrapGraphGroupCommitRequestV3,
         BootstrapNativeCorrectionEffectV3,
         BootstrapNativeRetractionEffectV3,
-        ClaimAssertion,
-        TemporalTransitionRecord,
         decode_semantic_contract,
     )
 
@@ -269,15 +329,19 @@ def _lifecycle_transitions(
                 continue
             if result.final_status != "accepted":
                 return None
-            carriers = input_item.reduction.native_compilation.accepted_carriers
             transition_records = tuple(
-                carrier for carrier in carriers
-                if isinstance(carrier, TemporalTransitionRecord)
-                and carrier.transition_kind == effect.kind
+                item
+                for item in effect.transition_records
+                if item.record_kind == "temporal_transition"
+                and item.planning_payload.planning_record.get("transition_kind") == effect.kind
             )
             if len(transition_records) != 1:
                 return None
             transition = transition_records[0]
+            transition_values = transition.planning_payload.planning_record
+            transition_id = transition_values.get("transition_id")
+            if not isinstance(transition_id, str) or transition.record_id != transition_id:
+                return None
             compared_bindings = (
                 effect.corrected_targets
                 if isinstance(effect, BootstrapNativeCorrectionEffectV3)
@@ -289,28 +353,171 @@ def _lifecycle_transitions(
                 return None
             if not compared or len(compared) != len(set(compared)):
                 return None
-            next_claims = tuple(
-                carrier.claim_assertion_id for carrier in carriers if isinstance(carrier, ClaimAssertion)
+            next_claims = (
+                tuple(
+                    item.record_id
+                    for item in effect.replacement_effect.planning_records
+                    if item.record_kind == "claim_assertion"
+                    and item.planning_payload.planning_record.get("claim_assertion_id") == item.record_id
+                )
+                if isinstance(effect, BootstrapNativeCorrectionEffectV3)
+                else ()
             )
             if isinstance(effect, BootstrapNativeCorrectionEffectV3) and len(next_claims) != 1:
                 return None
             if isinstance(effect, BootstrapNativeRetractionEffectV3) and next_claims:
                 return None
-            interval = transition.system_interval
-            if interval is None:
+            if transition_id in seen:
                 return None
-            if transition.transition_id in seen:
-                return None
-            seen.add(transition.transition_id)
-            transitions.append(_LifecycleTransition(
-                transition_id=transition.transition_id,
-                operation_id=input_item.operation_id,
-                transition_kind=effect.kind,
-                compared_claim_ids=compared,
-                next_claim_ids=next_claims,
-                recorded_at=interval.start,
-            ))
+            seen.add(transition_id)
+            transitions.append(
+                _LifecycleTransition(
+                    transition_id=transition_id,
+                    operation_id=input_item.operation_id,
+                    transition_kind=effect.kind,
+                    compared_claim_ids=compared,
+                    next_claim_ids=next_claims,
+                    recorded_at=record.timestamp,
+                )
+            )
     return tuple(sorted(transitions, key=lambda item: (item.recorded_at, item.transition_id)))
+
+
+def _query_projected_claims(
+    *,
+    records: tuple[CanonicalMemoryRecord, ...],
+    projections: dict[str, CanonicalMemoryRecord],
+    request: StructuredFactReadRequest,
+    transitions: tuple[_LifecycleTransition, ...],
+) -> tuple[_ProjectedClaim, ...] | None:
+    """Reconstruct native claim state from protected immutable projections."""
+    binding_times = {
+        record.content["binding"]["claim_assertion_id"]: record.timestamp
+        for record in records
+        if record.source_kind == "semantic_ingestion_structured_claim_catalog_binding"
+        and isinstance(record.content.get("binding"), dict)
+        and isinstance(record.content["binding"].get("claim_assertion_id"), str)
+    }
+    next_times = {
+        claim_id: transition.recorded_at for transition in transitions for claim_id in transition.next_claim_ids
+    }
+    lifecycle: dict[str, str] = {claim_id: "active" for claim_id in projections}
+    cutoff = request.system_as_of
+    for transition in transitions:
+        if cutoff is not None and transition.recorded_at > cutoff:
+            continue
+        prior_state = "superseded" if transition.transition_kind == "correction" else "retracted"
+        for claim_id in transition.compared_claim_ids:
+            lifecycle[claim_id] = prior_state
+        for claim_id in transition.next_claim_ids:
+            lifecycle[claim_id] = "active"
+
+    claims: list[_ProjectedClaim] = []
+    for claim_id, projection in projections.items():
+        identity = projection.content.get("claim_identity")
+        if not isinstance(identity, dict):
+            return None
+        key = identity.get("assertion_key_at_recording")
+        slot = key.get("slot") if isinstance(key, dict) else None
+        value = key.get("value") if isinstance(key, dict) else None
+        subject = identity.get("subject_assertion_ref")
+        if not isinstance(slot, dict) or not isinstance(value, dict) or not isinstance(subject, dict):
+            return None
+        predicate_id = slot.get("predicate_id")
+        subject_id = subject.get("logical_entity_id_at_assertion")
+        object_value = (
+            value.get("object_logical_entity_id")
+            if value.get("object_kind") == "entity"
+            else value.get("canonical_literal_value")
+        )
+        available_at = binding_times.get(claim_id)
+        if claim_id in next_times and available_at is not None:
+            available_at = max(available_at, next_times[claim_id])
+        if (
+            not isinstance(predicate_id, str)
+            or not isinstance(subject_id, str)
+            or not isinstance(object_value, str)
+        ):
+            return None
+        if available_at is None:
+            return None
+        if (
+            predicate_id != request.predicate_id
+            or (request.subject_entity_id != "*" and subject_id != request.subject_entity_id)
+            or (cutoff is not None and available_at > cutoff)
+        ):
+            continue
+        state = lifecycle.get(claim_id, "active")
+        if request.view == "current" and state != "active":
+            continue
+        claims.append(
+            _ProjectedClaim(
+                claim_id=claim_id,
+                predicate_id=predicate_id,
+                subject_entity_id=subject_id,
+                object_value=object_value,
+                lifecycle_state=state,
+                valid_from=projection.valid_from,
+                valid_to=projection.valid_to,
+                system_time=available_at,
+                provenance=str(projection.content.get("source_id", "")),
+                projection=projection,
+            )
+        )
+    return tuple(sorted(claims, key=lambda claim: (claim.system_time, claim.claim_id)))
+
+
+def _projected_items(
+    *,
+    claims: tuple[_ProjectedClaim, ...],
+    records: tuple[CanonicalMemoryRecord, ...],
+    bindings: dict[str, StructuredClaimCatalogBinding],
+    grant_states: dict[tuple[str, str], StructuredGrantState],
+    pins: dict[str, CatalogCapturedTurnPin],
+    authority: StructuredFactReadAuthority,
+    reverse: bool,
+) -> list[StructuredFactReadItem] | None:
+    locator = PackageIndexedCatalogBundleLocator()
+    items: list[StructuredFactReadItem] = []
+    for claim in claims:
+        binding = bindings.get(claim.claim_id)
+        if binding is None or binding.schema_version != 2:
+            return None
+        if not verify_structured_catalog_projection_for_read(
+            claim.projection,
+            bindings=bindings,
+            grant_states=grant_states,
+            pins=pins,
+            records=records,
+            authority=authority,
+            catalog_bundle_locator=locator,
+        ):
+            return None
+        if reverse and not _endpoint_visibility_allows(
+            claim.projection,
+            claim.object_value,
+            claim.subject_entity_id,
+            claim.object_value,
+        ):
+            return None
+        items.append(
+            StructuredFactReadItem(
+                claim_id=claim.claim_id,
+                source_claim_id=claim.claim_id,
+                predicate_id=claim.predicate_id,
+                subject_entity_id=claim.object_value if reverse else claim.subject_entity_id,
+                object_value=claim.subject_entity_id if reverse else claim.object_value,
+                lifecycle_state=claim.lifecycle_state,
+                valid_from=claim.valid_from,
+                valid_to=claim.valid_to,
+                system_time=claim.system_time,
+                provenance=claim.provenance,
+                catalog_version_id=binding.selected_version_id or "",
+                catalog_version_digest=binding.selected_version_digest or "",
+                derived_direction="reverse" if reverse else "forward",
+            )
+        )
+    return items
 
 
 def _target_claim_id(binding: object) -> str:
@@ -324,12 +531,13 @@ def _target_claim_id(binding: object) -> str:
 
 
 def _query_states(
-    records: tuple[CanonicalMemoryRecord, ...], *, request: StructuredFactReadRequest, now: datetime,
+    records: tuple[CanonicalMemoryRecord, ...],
+    *,
+    request: StructuredFactReadRequest,
+    now: datetime,
     transitions: tuple[_LifecycleTransition, ...],
 ) -> list[ClaimState]:
-    query = ClaimStateQueryService(
-        repository=EvolutionStateRepository.from_snapshot(records), now_provider=lambda: now
-    )
+    query = ClaimStateQueryService(repository=EvolutionStateRepository.from_snapshot(records), now_provider=lambda: now)
     if request.view == "current":
         # ``system_as_of`` is transaction time, while HISTORICAL_AT is valid
         # time.  Reconstruct the transaction-time image from immutable claim
@@ -345,10 +553,7 @@ def _query_states(
             # immutable transitions recorded after the requested system time.
             # This retains the pre-correction target even though its current
             # state is superseded and never confuses system time with validity.
-            active_ids = {
-                state.claim_id for state in versions
-                if state.lifecycle_state is ClaimLifecycleState.ACTIVE
-            }
+            active_ids = {state.claim_id for state in versions if state.lifecycle_state is ClaimLifecycleState.ACTIVE}
             revived_ids: set[str] = set()
             for transition in reversed(transitions):
                 if transition.recorded_at > request.system_as_of:
@@ -356,15 +561,13 @@ def _query_states(
                     active_ids.update(transition.compared_claim_ids)
                     revived_ids.update(transition.compared_claim_ids)
             versions = [
-                state for state in versions
+                state
+                for state in versions
                 if state.claim_id in active_ids
                 and (state.updated_at <= request.system_as_of or state.claim_id in revived_ids)
             ]
             return versions
-        return [
-            state for state in versions
-            if state.lifecycle_state is ClaimLifecycleState.ACTIVE
-        ]
+        return [state for state in versions if state.lifecycle_state is ClaimLifecycleState.ACTIVE]
     return [
         state
         for state in query.retrieve(
@@ -458,7 +661,9 @@ def _endpoint_visibility_allows(
 
 
 def _projection_matches_state(
-    projection: CanonicalMemoryRecord, state: ClaimState, claim_id: str,
+    projection: CanonicalMemoryRecord,
+    state: ClaimState,
+    claim_id: str,
 ) -> bool:
     """Join a state only to its immutable assertion projection.
 

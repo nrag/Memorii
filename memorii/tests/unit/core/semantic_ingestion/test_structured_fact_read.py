@@ -26,6 +26,7 @@ from memorii.core.semantic_ingestion.catalog_authority import (
 )
 from memorii.core.semantic_ingestion.structured_fact_read import (
     StructuredFactReadRequest,
+    _LifecycleTransition,
     read_structured_facts_from_snapshot,
 )
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
@@ -35,7 +36,12 @@ _DIGEST = "a" * 64
 
 
 def _state(
-    *, claim_id: str, subject: str, value: str, predicate: str, active: bool = True,
+    *,
+    claim_id: str,
+    subject: str,
+    value: str,
+    predicate: str,
+    active: bool = True,
     updated_at: datetime = NOW,
 ) -> ClaimState:
     return ClaimState(
@@ -102,7 +108,7 @@ def _records(
             text="",
             status=CommitStatus.COMMITTED,
             source_kind="semantic_ingestion_structured_claim_catalog_binding",
-            timestamp=NOW,
+            timestamp=state.updated_at,
             visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
             content={
                 "semantic_ingestion_kind": "structured_claim_catalog_binding",
@@ -132,7 +138,7 @@ def _records(
             text="",
             status=CommitStatus.COMMITTED,
             source_kind="memory_evolution",
-            timestamp=NOW,
+            timestamp=state.updated_at,
             content={
                 "runtime_context_projection_kind": "bootstrap_v3_claim_assertion",
                 "claim_assertion_id": state.claim_id,
@@ -141,6 +147,12 @@ def _records(
                     "assertion_key_at_recording": {
                         "slot": {
                             "predicate_id": state.claim_key.predicate_id,
+                        },
+                        "value": {
+                            "object_kind": "entity",
+                            "object_logical_entity_id": state.object_value,
+                            "literal_type": None,
+                            "canonical_literal_value": None,
                         },
                     },
                     "subject_assertion_ref": {
@@ -257,21 +269,99 @@ def test_system_as_of_is_transaction_time_not_valid_time(monkeypatch) -> None:
         lambda *args, **kwargs: True,
     )
     old = _state(
-        claim_id="old", subject="project", value="ada", predicate="project_owned_by",
+        claim_id="old",
+        subject="project",
+        value="ada",
+        predicate="project_owned_by",
         updated_at=NOW - timedelta(days=2),
     )
     new = _state(
-        claim_id="new", subject="project", value="bea", predicate="project_owned_by",
+        claim_id="new",
+        subject="project",
+        value="bea",
+        predicate="project_owned_by",
     )
     records, authority = _records(old, new)
     response = read_structured_facts_from_snapshot(
         records=records,
         authority=authority,
         request=StructuredFactReadRequest(
-            predicate_id="project_owned_by", subject_entity_id="project",
+            predicate_id="project_owned_by",
+            subject_entity_id="project",
             system_as_of=NOW - timedelta(days=1),
         ),
         now=NOW,
     )
     assert response.status == "ok"
     assert [item.object_value for item in response.items] == ["ada"]
+
+
+def test_native_projection_fallback_reconstructs_correction_and_as_of(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "memorii.core.semantic_ingestion.structured_fact_read.PackageIndexedCatalogBundleLocator.locate_historical",
+        _bundle,
+    )
+    monkeypatch.setattr(
+        "memorii.core.semantic_ingestion.structured_fact_read.verify_structured_catalog_projection_for_read",
+        lambda *args, **kwargs: True,
+    )
+    old = _state(
+        claim_id="old",
+        subject="project",
+        value="ada",
+        predicate="project_owned_by",
+        active=False,
+        updated_at=NOW - timedelta(days=2),
+    )
+    new = _state(
+        claim_id="new",
+        subject="project",
+        value="bea",
+        predicate="project_owned_by",
+        updated_at=NOW,
+    )
+    records, authority = _records(old, new)
+    projection_only = tuple(
+        record for record in records if record.content.get("memory_evolution_kind") != "claim_state"
+    )
+    monkeypatch.setattr(
+        "memorii.core.semantic_ingestion.structured_fact_read._lifecycle_transitions",
+        lambda _records: (
+            _LifecycleTransition(
+                transition_id="transition",
+                operation_id="correction",
+                transition_kind="correction",
+                compared_claim_ids=("old",),
+                next_claim_ids=("new",),
+                recorded_at=NOW,
+            ),
+        ),
+    )
+
+    current = read_structured_facts_from_snapshot(
+        records=projection_only,
+        authority=authority,
+        request=StructuredFactReadRequest(
+            predicate_id="project_owned_by",
+            subject_entity_id="project",
+        ),
+        now=NOW,
+    )
+    historical = read_structured_facts_from_snapshot(
+        records=projection_only,
+        authority=authority,
+        request=StructuredFactReadRequest(
+            predicate_id="project_owned_by",
+            subject_entity_id="project",
+            view="history",
+            system_as_of=NOW - timedelta(days=1),
+        ),
+        now=NOW,
+    )
+
+    assert [(item.claim_id, item.object_value, item.lifecycle_state) for item in current.items] == [
+        ("new", "bea", "active")
+    ]
+    assert [(item.claim_id, item.object_value, item.lifecycle_state) for item in historical.items] == [
+        ("old", "ada", "active")
+    ]

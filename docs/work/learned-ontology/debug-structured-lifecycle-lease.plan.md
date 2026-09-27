@@ -89,9 +89,10 @@ grammar was corrected.
 
 ## One Next Action
 
-Coordinator reruns the installed corpus correction journey after the focused
-multi-mention provenance-closure correction, then records either its first
-causal failure or the resulting reopen and reader evidence.
+Coordinator reruns the installed corpus correction journey after the protected
+reader reconstructs lifecycle state from native projection and group-effect
+records, then records either its first causal failure or the resulting reopen
+and reader evidence.
 
 ## Current Update (2026-09-26)
 
@@ -215,3 +216,25 @@ now deduplicates provenance closure tuples before sorting. This is a narrow
 construction defect; the scoped prior-claim allocator remains unchanged. The
 next action is the same installed lifecycle journey on the corrected frozen
 revision.
+
+## Current Update (2026-09-27, native projection reader)
+
+The installed rerun at `7a5b71ae` committed the correction, including the old
+and replacement claim assertions, but the public current reader returned
+`unavailable`. Two reader assumptions were false for this native path. The
+lifecycle decoder inspected `native_compilation.accepted_carriers`, while the
+committed transition and replacement claim records live under the accepted
+effect's `transition_records` and `replacement_effect.planning_records`.
+Further, this installed writer persists protected claim projections and
+schema-2 catalog bindings without generic `ClaimState` rows.
+
+The reader now decodes the committed group effect and reconstructs active,
+superseded, and retracted transaction-time views from immutable protected
+projections. Every projected result still passes the existing binding, pin,
+catalog, current-grant, and endpoint-visibility verifier; malformed projection
+identity fails closed. The exact persisted failed-run snapshot now returns the
+replacement for current, both versions for history, and only the original for
+an as-of timestamp before correction. The focused reader/runtime suite passes
+`96 in 8.55s`; targeted Ruff and whitespace pass. This is focused and retained
+snapshot evidence. The installed correction/current/history/reopen journey is
+the one next action and no parent count changes yet.

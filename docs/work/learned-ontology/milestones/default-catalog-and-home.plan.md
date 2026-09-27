@@ -147,6 +147,18 @@ builder now deduplicates that closure. No requirement or milestone count
 changes. Next action remains the installed correction/current/history/reopen
 journey on the corrected frozen revision.
 
+The rerun at `7a5b71ae` passed native correction commit and exposed the next
+ordinary-path defect at protected recall: the reader expected lifecycle
+carriers and generic claim-state rows that the native writer does not persist.
+It now reads the committed transition and replacement planning records from the
+accepted group effect and reconstructs transaction-time state from the verified
+immutable claim projections and schema-2 bindings. The exact retained failed
+snapshot yields replacement-current, two-version history, and original-only
+pre-correction as-of results; the focused reader/runtime suite passes 96 tests.
+The full installed journey and reopen remain unproved, so M3 stays active and
+the counts remain 2/5 milestones and 3/14 requirements complete. Next action:
+rerun the installed lifecycle journey on this reader correction.
+
 The first native-writer wiring pass added a typed runtime catalog coordinate to the graph-free invocation and rechecked its version/bundle through the historical package locator; 42 focused authority/pin tests and Ruff/whitespace passed. Coordinator inspection rejected this as a completed slice because the production provider did not propagate the captured pin, the coordinate omitted the capture/source/persisted-pin join, and the materializer and derivation remained on the three fixed predicates. The same writer is continuing: `submit_structured_fact` must pass the already loaded exact `CatalogCapturedTurnPin` through provider ingestion, dynamic authority must rejoin the persisted pin and selected package, and only then may selected default policies drive native planning. No completion count changes.
 
 Native-path tracing then invalidated the bounded package acceptance for a compatibility omission the package-only review did not exercise. The selected child declares 56 predicates: the existing `project_owner`, `project_status` and `project_deadline` seed plus 53 corpus relations. Its generated schema, validator and policy maps covered only the 53 new rows. Because Hermes selects the default child at startup, this would remove or reject the already working M1 seed tool path while claiming those predicates in the selected version. The writer must compose the three existing seed contracts/policies with the 53 corpus relations, require exact 56-ID capability coverage, regenerate the package, and prove existing `project_owner` remains runnable after default selection. Until then the seven-member package is not accepted and counts remain unchanged.
