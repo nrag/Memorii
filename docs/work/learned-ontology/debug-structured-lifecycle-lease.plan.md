@@ -3,7 +3,7 @@
 - Work ID: `structured-lifecycle-recovery-lease` (planning coordinate only)
 - Work type: debugging
 - Delivery fidelity: Level 2, early real-world manual testing
-- Status: active
+- Status: complete
 - Coordinator: `/root`
 - Created: 2026-09-26
 - Last updated: 2026-09-27
@@ -253,3 +253,19 @@ requires `on_turn_start` and pinned schema egress in each process. The fixture
 now starts a fresh recall turn and confirms `memorii_read_fact` schema egress
 before comparing persisted current/history/as-of results. The one next action
 is to rerun this corrected installed scenario.
+
+## Closure (2026-09-27)
+
+The corrected installed journey passes at exact commit `b3d8189d`: `1 passed
+in 1049.05s`. With model transport forbidden and no OpenAI key, it commits the
+original claim and correction, returns replacement-only current state,
+two-version history, and original-only pre-correction as-of state, closes the
+provider, reopens the same JSONL store, establishes a fresh captured recall
+turn, and returns byte-equivalent protected views and replacement prefetch.
+
+The root cause family is closed at Level 2: multi-route lifecycle ownership,
+lifecycle construction authority, canonical prior-claim identity reuse,
+interpreter provenance deduplication, native effect decoding, and protected
+projection reconstruction are all exercised through the installed entry point.
+No further action remains in this debugging WorkPlan. The parent M3 milestone
+resumes with literal correction, retraction, symmetric views, and H8.

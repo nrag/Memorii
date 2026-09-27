@@ -139,3 +139,9 @@ The first strengthened run reached reopen but the test skipped the mandatory
 captured-turn/schema step, so Hermes returned `unavailable` before entering the
 reader. The fixture now opens a recall turn and confirms read-tool schema
 egress. Exactly one next action: rerun the corrected reopen journey.
+
+The corrected journey passes at `b3d8189d`: `1 in 1049.05s`, with identical
+protected current/history/as-of and prefetch after JSONL reopen. The linked
+lifecycle lease debugging WorkPlan is complete. Counts remain 2/5 and 3/14.
+Exactly one next action: implement and run the combined installed literal
+correction/retraction and `partner_of`/`sibling_of` symmetric reverse probe.

@@ -78,6 +78,12 @@ test in `696.92s` with no API key or model transport. It covers native commit
 and protected current/history/as-of reads. Explicit JSONL reopen equality has
 been added and remains the active M3 gate; counts stay 2/5 and 3/14.
 
+The strengthened installed lifecycle journey passes at exact commit
+`b3d8189d`: `1 in 1049.05s`, including JSONL reopen and byte-equivalent
+protected current/history/as-of reads. The linked debugging operation is
+complete. M3 remains active on literal correction, retraction, two symmetric
+reverse views, and H8; counts remain 2/5 milestones and 3/14 requirements.
+
 ## Production Boundary And Change Map
 
 `implementation-readiness.md` contains the read-only composition-root preflight and caller counts. Current paths are generic `ProviderMemoryService.sync_event` and the installed Hermes completed-turn root, one fixed three-predicate profile, one shared semantic terminal writer, and one protected-reader core. Ontology observer, catalog registry, activation, learner, and structured-fact port have zero current production callers. No future owner counts as implemented until a mapper finds a real caller and a focused path proof reaches its durable outcome.
