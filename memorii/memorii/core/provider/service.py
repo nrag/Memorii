@@ -202,6 +202,7 @@ from memorii.core.semantic_ingestion.capability import (
 )
 from memorii.core.semantic_ingestion.catalog_authority import (
     SelectedCatalogAuthorityRepository,
+    StructuredFactReadAuthority,
     StructuredSubmissionAuthorityRequest,
     StructuredSubmissionAuthorityResolver,
 )
@@ -218,6 +219,11 @@ from memorii.core.semantic_ingestion.production_authority import (
 )
 from memorii.core.semantic_ingestion.source_normalization_host import (
     SourceNormalizationHostBundleBuilder,
+)
+from memorii.core.semantic_ingestion.structured_fact_read import (
+    StructuredFactReadRequest,
+    StructuredFactReadResponse,
+    read_structured_facts_from_snapshot,
 )
 from memorii.core.solver.frontier import SolverFrontierPlanner
 from memorii.core.work_state.models import WorkStateKind, WorkStateRecord, WorkStateStatus
@@ -1516,6 +1522,42 @@ class ProviderMemoryService:
                     status=submission.status, operation_id=request.operation_id,
                 )
         return StructuredFactSubmissionStatusResponse(status="unavailable")
+
+    def read_structured_facts(
+        self,
+        request: StructuredFactReadRequest,
+        *,
+        authority_request: StructuredSubmissionAuthorityRequest,
+        authenticated_host_ingress: AuthenticatedHostIngress,
+    ) -> StructuredFactReadResponse:
+        """Release structured facts only from one current, protected snapshot."""
+        ingress = self._preflight_ingress(authenticated_host_ingress)
+        resolver = self._structured_submission_authority_resolver
+        if ingress is None or resolver is None:
+            return StructuredFactReadResponse(status="denied")
+        try:
+            resolved = resolver.resolve_submission_authority(
+                authenticated_ingress=ingress, request=authority_request,
+            )
+        except (OSError, ValueError):
+            return StructuredFactReadResponse(status="unavailable")
+        if resolved is None:
+            return StructuredFactReadResponse(status="denied")
+        read_authority = StructuredFactReadAuthority(
+            authenticated=resolved.authenticated,
+            fact_grant=resolved.fact_grant,
+            catalog_visibility_grant=resolved.catalog_visibility_grant,
+        )
+        try:
+            result = self._memory_plane.read_snapshot_linearized(
+                lambda _revision, records: read_structured_facts_from_snapshot(
+                    records=records, request=request, authority=read_authority,
+                    now=self._now_provider(),
+                )
+            )
+        except (MemoryPlaneCorruptionError, OSError, ValueError):
+            return StructuredFactReadResponse(status="unavailable")
+        return result if isinstance(result, StructuredFactReadResponse) else StructuredFactReadResponse(status="unavailable")
 
     def _activate_structured_submission_authority(
         self, *, accepted, authority,

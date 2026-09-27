@@ -112,9 +112,7 @@ class ScopedContextAssembler:
     def __init__(
         self,
         *,
-        legacy_bootstrap_v3_projection_verifier: (
-            LegacyBootstrapV3ProjectionReadVerifier | None
-        ) = None,
+        legacy_bootstrap_v3_projection_verifier: (LegacyBootstrapV3ProjectionReadVerifier | None) = None,
         catalog_bundle_locator: CatalogBundleLocator | None = None,
     ) -> None:
         if catalog_bundle_locator is None:
@@ -123,9 +121,7 @@ class ScopedContextAssembler:
             )
 
             catalog_bundle_locator = PackageIndexedCatalogBundleLocator()
-        self._legacy_bootstrap_v3_projection_verifier = (
-            legacy_bootstrap_v3_projection_verifier
-        )
+        self._legacy_bootstrap_v3_projection_verifier = legacy_bootstrap_v3_projection_verifier
         self._catalog_bundle_locator = catalog_bundle_locator
 
     def assemble(
@@ -144,9 +140,7 @@ class ScopedContextAssembler:
             records,
             revision,
             grant,
-            legacy_bootstrap_v3_projection_verifier=(
-                self._legacy_bootstrap_v3_projection_verifier
-            ),
+            legacy_bootstrap_v3_projection_verifier=(self._legacy_bootstrap_v3_projection_verifier),
             catalog_bundle_locator=self._catalog_bundle_locator,
         )
         if legacy_authority_unavailable:
@@ -155,16 +149,15 @@ class ScopedContextAssembler:
         # its second (fact/catalog) authority gate.  Do not downgrade that to
         # an optional omission: omission counts or snippets would disclose the
         # existence of the protected fact.
-        if any(
-            _authorized(record, grant)
-            for record in records
-            if record.memory_id in set(catalog_visibility_missing)
-        ):
+        if any(_authorized(record, grant) for record in records if record.memory_id in set(catalog_visibility_missing)):
             return _empty(ScopedContextStatus.DENIED)
         authorized, source_provenance_missing = _provenance_closed_records(catalog_authorized, grant)
         for record in authorized:
             if record.content.get("memory_evolution_kind") in {
-                "claim_state", "entity_link", "temporal_anchor", "action",
+                "claim_state",
+                "entity_link",
+                "temporal_anchor",
+                "action",
             }:
                 _decode_owned(record)
         eligible, lifecycle_missing = _current_provenance_closed_records(authorized, request.reference_time)
@@ -190,16 +183,19 @@ class ScopedContextAssembler:
             request, eligible, {item.record_id for item in mandatory}, remaining, optional, omissions
         )
         missing_optional = tuple(
-            record_id for record_id in lexical_provenance_missing
+            record_id
+            for record_id in lexical_provenance_missing
             if any(record.memory_id == record_id and record.domain in request.optional_domains for record in records)
         )
         if missing_optional:
-            omissions.append(_omission(
-                ScopedContextChannel.SEMANTIC_BM25,
-                ScopedOmissionReason.PROVENANCE_UNAVAILABLE,
-                missing_optional,
-                request.budget.max_optional_omission_ids,
-            ))
+            omissions.append(
+                _omission(
+                    ScopedContextChannel.SEMANTIC_BM25,
+                    ScopedOmissionReason.PROVENANCE_UNAVAILABLE,
+                    missing_optional,
+                    request.budget.max_optional_omission_ids,
+                )
+            )
         structured_outcome = None
         if request.structured_query is not None:
             structured_excluded = tuple(
@@ -207,7 +203,8 @@ class ScopedContextAssembler:
                 for record_id in (*catalog_visibility_missing, *source_provenance_missing)
                 if any(
                     record.memory_id == record_id
-                    and record.content.get("memory_evolution_kind") in {"claim_state", "entity_link", "temporal_anchor", "action"}
+                    and record.content.get("memory_evolution_kind")
+                    in {"claim_state", "entity_link", "temporal_anchor", "action"}
                     for record in records
                 )
             )
@@ -370,7 +367,14 @@ class ScopedContextAssembler:
             )
         ):
             outcome = ScopedStructuredOutcome(status="no_match", claim_items=(), evidence_items=())
-            omissions.append(_omission(ScopedContextChannel.STRUCTURED_GRAPH, ScopedOmissionReason.STRUCTURED_NO_MATCH, (), request.budget.max_optional_omission_ids))
+            omissions.append(
+                _omission(
+                    ScopedContextChannel.STRUCTURED_GRAPH,
+                    ScopedOmissionReason.STRUCTURED_NO_MATCH,
+                    (),
+                    request.budget.max_optional_omission_ids,
+                )
+            )
             return outcome
         if decision.abstained:
             outcome = ScopedStructuredOutcome(
@@ -402,10 +406,7 @@ class ScopedContextAssembler:
         claim_records_in_snapshot = [
             record for record in eligible if record.content.get("memory_evolution_kind") == "claim_state"
         ]
-        by_claim = {
-            _claim_id(record): record
-            for record in claim_records_in_snapshot
-        }
+        by_claim = {_claim_id(record): record for record in claim_records_in_snapshot}
         by_id = {record.memory_id: record for record in eligible}
         claim_records = [by_claim.get(claim_id) for claim_id in decision.selected_record_ids]
         evidence_ids = sorted({item.source_id for item in decision.evidence})
@@ -457,6 +458,7 @@ class ScopedContextAssembler:
             return None
         return ScopedStructuredOutcome(status="answered", claim_items=claim_items, evidence_items=evidence_items)
 
+
 def catalog_visibility_current_at_release(
     *,
     records: tuple[CanonicalMemoryRecord, ...],
@@ -483,14 +485,17 @@ def catalog_visibility_current_at_release(
 
 
 def catalog_visibility_recheck_required(
-    *, records: tuple[CanonicalMemoryRecord, ...], activation: ScopedContextActivation,
+    *,
+    records: tuple[CanonicalMemoryRecord, ...],
+    activation: ScopedContextActivation,
 ) -> bool:
     """Avoid a second snapshot for releases without a catalog-protected projection."""
     return bool(_released_catalog_protected_ids(records, activation))
 
 
 def _released_catalog_protected_ids(
-    records: tuple[CanonicalMemoryRecord, ...], activation: ScopedContextActivation,
+    records: tuple[CanonicalMemoryRecord, ...],
+    activation: ScopedContextActivation,
 ) -> set[str]:
     released_ids = {
         *(item.record_id for item in activation.mandatory_items),
@@ -500,7 +505,8 @@ def _released_catalog_protected_ids(
         released_ids.update(item.record_id for item in activation.structured_outcome.claim_items)
         released_ids.update(item.record_id for item in activation.structured_outcome.evidence_items)
     return {
-        record.memory_id for record in records
+        record.memory_id
+        for record in records
         if (
             record.memory_id in released_ids
             and _is_new_structured_claim_projection(record)
@@ -560,9 +566,7 @@ def _catalog_protected_records(
     revision: int,
     grant: ResolvedScopedReadGrant,
     *,
-    legacy_bootstrap_v3_projection_verifier: (
-        LegacyBootstrapV3ProjectionReadVerifier | None
-    ),
+    legacy_bootstrap_v3_projection_verifier: (LegacyBootstrapV3ProjectionReadVerifier | None),
     catalog_bundle_locator: CatalogBundleLocator | None = None,
 ) -> tuple[tuple[CanonicalMemoryRecord, ...], tuple[str, ...], bool]:
     """Fail closed for new structured projections without current dual visibility grants.
@@ -717,6 +721,7 @@ def _current_catalog_read_authority(
     from memorii.core.semantic_ingestion.catalog_capture_pin import (
         CatalogCapturedTurnPin,
     )
+
     claim_id = record.content.get("claim_assertion_id")
     claim_digest = record.content.get("claim_assertion_record_digest")
     if not isinstance(claim_id, str) or not isinstance(claim_digest, str):
@@ -780,9 +785,7 @@ def _current_catalog_read_authority(
                 DefaultCatalogProtectedReader,
             )
 
-            if not DefaultCatalogProtectedReader.authorizes_version(
-                selected_version_id=bundle.version.version_id
-            ):
+            if not DefaultCatalogProtectedReader.authorizes_version(selected_version_id=bundle.version.version_id):
                 return False
     else:
         return False
@@ -807,6 +810,34 @@ def _current_catalog_read_authority(
         ):
             return True
     return False
+
+
+def verify_structured_catalog_projection_for_read(
+    projection: CanonicalMemoryRecord,
+    *,
+    bindings: Mapping[str, object],
+    grant_states: Mapping[tuple[str, str], object],
+    pins: Mapping[str, object],
+    records: tuple[CanonicalMemoryRecord, ...],
+    authority: object,
+    catalog_bundle_locator: CatalogBundleLocator,
+) -> bool:
+    """Use the scoped-context catalog join for a direct structured read.
+
+    Structured fact reads and scoped-context rendering release the same native
+    projection.  Keeping this small public bridge here prevents the direct
+    reader from reimplementing the claim digest, captured-pin, historical
+    bundle, and current-grant verification chain.
+    """
+    return _current_catalog_read_authority(
+        projection,
+        bindings,
+        grant_states,
+        pins,
+        records,
+        (authority,),
+        catalog_bundle_locator,
+    )
 
 
 def _provenance_closed_records(
@@ -857,7 +888,9 @@ def _current_provenance_closed_records(
         changed = False
         for record_id in tuple(allowed):
             sources = _source_ids(by_id[record_id])
-            if (by_id[record_id].content.get("memory_evolution_kind") in {"claim_state", "entity_link"} and not sources) or not sources.issubset(allowed):
+            if (
+                by_id[record_id].content.get("memory_evolution_kind") in {"claim_state", "entity_link"} and not sources
+            ) or not sources.issubset(allowed):
                 allowed.remove(record_id)
                 changed = True
     return tuple(record for record in records if record.memory_id in allowed), tuple(sorted(set(by_id) - allowed))
@@ -876,10 +909,7 @@ def _structured_eligible_records(
         kind = record.content.get("memory_evolution_kind")
         if kind in typed_candidates:
             sources = _source_ids(record)
-            if (
-                (kind not in {"claim_state", "entity_link"} or bool(sources))
-                and sources.issubset(current)
-            ):
+            if (kind not in {"claim_state", "entity_link"} or bool(sources)) and sources.issubset(current):
                 allowed.add(record.memory_id)
     return (
         tuple(record for record in records if record.memory_id in allowed),
@@ -889,9 +919,7 @@ def _structured_eligible_records(
 
 def _validate_unique_claim_ids(records: tuple[CanonicalMemoryRecord, ...]) -> None:
     claim_ids = [
-        _claim_id(record)
-        for record in records
-        if record.content.get("memory_evolution_kind") == "claim_state"
+        _claim_id(record) for record in records if record.content.get("memory_evolution_kind") == "claim_state"
     ]
     if any(claim_id is None for claim_id in claim_ids) or len(claim_ids) != len(set(claim_ids)):
         raise ScopedSnapshotDecodeError("invalid or duplicate logical claim ID")
@@ -964,10 +992,7 @@ def _current_eligible(record: CanonicalMemoryRecord, reference_time: datetime) -
     return not (
         record.valid_from is None
         and record.domain is not MemoryDomain.TRANSCRIPT
-        and (
-            record.status is not CommitStatus.COMMITTED
-            or record.content.get("memory_evolution_kind") is not None
-        )
+        and (record.status is not CommitStatus.COMMITTED or record.content.get("memory_evolution_kind") is not None)
     )
 
 

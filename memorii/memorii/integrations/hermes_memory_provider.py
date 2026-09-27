@@ -21,6 +21,10 @@ from agent.memory_provider import MemoryProvider  # pyright: ignore[reportMissin
 
 from memorii.core.memory_evolution.ingestion_contracts import AuthenticatedHostIngress
 from memorii.core.provider.service import ProviderMemoryService
+from memorii.core.semantic_ingestion.structured_fact_read import (
+    StructuredFactReadRequest,
+    StructuredFactReadResponse,
+)
 from memorii.integrations.hermes_provider import HermesMemoryProvider, build_started_hermes_memory_provider
 from memorii.integrations.hermes_runtime_binding import HermesProviderRuntimeBinding
 
@@ -144,6 +148,20 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
             return {"status": "unavailable"}
         return lookup(
             operation_id=operation_id,
+            session_id=self._effective_session_id(session_id),
+            authenticated_author_id=self._absent_author_id,
+            now=datetime.now(UTC),
+        )
+
+    def read_structured_facts(
+        self, request: StructuredFactReadRequest, *, session_id: str = "",
+    ) -> StructuredFactReadResponse:
+        runtime = self._completed_turn_runtime
+        reader = getattr(runtime, "read_structured_facts", None) if runtime is not None else None
+        if not callable(reader):
+            return StructuredFactReadResponse(status="unavailable")
+        return reader(
+            request=request,
             session_id=self._effective_session_id(session_id),
             authenticated_author_id=self._absent_author_id,
             now=datetime.now(UTC),

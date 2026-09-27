@@ -596,7 +596,9 @@ def test_installed_no_key_bridge_advertises_only_the_closed_structured_tool_afte
     provider.on_turn_start(1, "Atlas owner is Ada.")
     schemas = provider.get_tool_schemas()
 
-    assert [schema["function"]["name"] for schema in schemas] == ["memorii_submit_fact"]
+    assert [schema["function"]["name"] for schema in schemas] == [
+        "memorii_submit_fact", "memorii_read_fact",
+    ]
     parameters = schemas[0]["function"]["parameters"]
     assert parameters["additionalProperties"] is False
     assert provider.handle_tool_call("memorii_submit_fact", {"schema_version": 2}) == {
@@ -712,7 +714,7 @@ def test_installed_no_key_bridge_reaches_canonical_structured_submission_without
     # The schema call is the pre-tool egress boundary: it persists and
     # verifies the captured-turn catalog witness consumed below.
     assert [item["function"]["name"] for item in provider.get_tool_schemas()] == [
-        "memorii_submit_fact"
+        "memorii_submit_fact", "memorii_read_fact"
     ]
     def stage(note: str) -> None:
         print(f"installed-bridge stage={note} at={datetime.now(UTC).isoformat()}", flush=True)
@@ -821,30 +823,23 @@ def test_installed_default_catalog_entity_relation_commits_and_recalls(
         agent_identity="profile:primary", platform="cli", agent_context="primary",
         agent_workspace="hermes",
     )
-    sentence = "Alice reports to Bob."
+    row = next(
+        row for row in load_default_catalog_acceptance_corpus().rows
+        if row.relation_id == "project_owned_by"
+    )
+    fixture = build_default_catalog_proposal(row)
+    sentence = fixture.source
+    subject_quote = fixture.subject_quote
+    object_quote = fixture.object_quote
+    predicate_anchor_quote = fixture.predicate_anchor_quote
+    assert fixture.object is not None
+    subject_type = fixture.subject.proposed_type
+    object_type = fixture.object.proposed_type
     provider.on_turn_start(1, sentence)
     schemas = provider.get_tool_schemas()
     predicate_ids = schemas[0]["function"]["parameters"]["properties"]["proposal"]["properties"]["facts"]["items"]["properties"]["predicate_id"]["enum"]
     assert "reports_to" in predicate_ids
-    arguments = {
-        "schema_version": 1, "source_quote": sentence, "source_quote_start": 0,
-        "subject_quote": "Alice", "predicate_anchor_quote": "reports to", "object_quote": "Bob",
-        "proposal": {
-            "abstained": False,
-            "mentions": [
-                {"local_id": "alice", "mention_quote": "Alice", "mention_context_quote": sentence, "proposed_type": "Person"},
-                {"local_id": "bob", "mention_quote": "Bob", "mention_context_quote": sentence, "proposed_type": "Person"},
-            ],
-            "facts": [{
-                "kind": "fact", "local_id": "reports", "predicate_id": "reports_to",
-                "subject_entity_ref": "alice", "object": {"kind": "entity", "entity_ref": "bob"},
-                "assertion_quote": sentence, "predicate_anchor_quote": "reports to",
-                "polarity": "positive", "commitment": "asserted", "attributed_to_entity_ref": None,
-                "temporal_qualifier_quotes": [],
-            }],
-            "corrections": [], "retractions": [], "action_states": [], "identity_operations": [],
-        },
-    }
+    arguments = fixture.tool_arguments()
     result = provider.handle_tool_call("memorii_submit_fact", arguments)
     assert result["status"] == "committed"
     records = tuple(provider._provider._service._memory_plane.list_records())
@@ -858,9 +853,96 @@ def test_installed_default_catalog_entity_relation_commits_and_recalls(
     )
     assert binding["schema_version"] == 2
     assert binding["selected_version_id"] == "default-catalog-v1"
-    recalled = provider.prefetch("Who does Alice report to?")
+    projection = next(
+        record for record in records
+        if record.content.get("runtime_context_projection_kind") == "bootstrap_v3_claim_assertion"
+    )
+    subject_entity_id = projection.content["claim_identity"]["subject_assertion_ref"][
+        "logical_entity_id_at_assertion"
+    ]
+    direct_read = provider.handle_tool_call(
+        "memorii_read_fact",
+        {"predicate_id": "project_owned_by", "subject_entity_id": subject_entity_id, "view": "current"},
+    )
+    assert direct_read["status"] == "ok"
+    before_correction = datetime.now(UTC).isoformat()
+    provider.sync_turn(
+        sentence,
+        "Recorded.",
+        messages=[
+            {"role": "user", "content": sentence, "timestamp": before_correction},
+            {"role": "assistant", "content": "Recorded.", "timestamp": before_correction},
+        ],
+    )
+    replacement_object_quote = "Group replacement"
+    # The prepared span begins after the sentence boundary and retains its
+    # leading space. Keep that exact byte shape in the replacement grounding.
+    replacement_source = (
+        f" Correction: {subject_quote} {predicate_anchor_quote} {replacement_object_quote}."
+    )
+    replacement_sentence = sentence + replacement_source
+    provider.on_turn_start(2, replacement_sentence)
+    assert provider.get_tool_schemas()[0]["function"]["name"] == "memorii_submit_fact"
+    correction = {
+        "schema_version": 1,
+        "correction": {
+            "assertion_quote": replacement_source,
+            "correction_anchor_quote": "Correction",
+            "corrected": {
+                "source_quote": sentence, "subject_quote": subject_quote,
+                "predicate_anchor_quote": predicate_anchor_quote, "object_quote": object_quote,
+            },
+            "replacement": {
+                "source_quote": replacement_source, "subject_quote": subject_quote,
+                "predicate_anchor_quote": predicate_anchor_quote, "object_quote": replacement_object_quote,
+            },
+        },
+        "proposal": {
+            "abstained": False,
+            "mentions": [
+                {"local_id": "old_subject", "mention_quote": subject_quote, "mention_context_quote": sentence, "proposed_type": subject_type},
+                {"local_id": "old_object", "mention_quote": object_quote, "mention_context_quote": sentence, "proposed_type": object_type},
+                {"local_id": "new_subject", "mention_quote": subject_quote, "mention_context_quote": replacement_source, "proposed_type": subject_type},
+                {"local_id": "new_object", "mention_quote": replacement_object_quote, "mention_context_quote": replacement_source, "proposed_type": object_type},
+            ],
+            "facts": [],
+            "corrections": [{
+                "kind": "correction", "local_id": "correction",
+                "corrected_fact": {
+                    "kind": "fact", "local_id": "old", "predicate_id": "project_owned_by",
+                    "subject_entity_ref": "old_subject", "object": {"kind": "entity", "entity_ref": "old_object"},
+                    "assertion_quote": sentence, "predicate_anchor_quote": predicate_anchor_quote,
+                    "polarity": "positive", "commitment": "asserted", "attributed_to_entity_ref": None,
+                    "temporal_qualifier_quotes": [],
+                },
+                "replacement_fact": {
+                    "kind": "fact", "local_id": "new", "predicate_id": "project_owned_by",
+                    "subject_entity_ref": "new_subject", "object": {"kind": "entity", "entity_ref": "new_object"},
+                    "assertion_quote": replacement_source, "predicate_anchor_quote": predicate_anchor_quote,
+                    "polarity": "positive", "commitment": "asserted", "attributed_to_entity_ref": None,
+                    "temporal_qualifier_quotes": [],
+                },
+                "assertion_quote": replacement_source, "correction_anchor_quote": "Correction",
+            }],
+            "retractions": [], "action_states": [], "identity_operations": [],
+        },
+    }
+    corrected = provider.handle_tool_call("memorii_submit_fact", correction)
+    assert corrected["status"] == "committed"
+    current = provider.handle_tool_call(
+        "memorii_read_fact",
+        {"predicate_id": "project_owned_by", "subject_entity_id": subject_entity_id, "view": "current"},
+    )
+    assert current["status"] == "ok"
+    assert any(item["object_value"] != direct_read["items"][0]["object_value"] for item in current["items"])
+    historical = provider.handle_tool_call(
+        "memorii_read_fact",
+        {"predicate_id": "project_owned_by", "subject_entity_id": subject_entity_id, "view": "history", "system_as_of": before_correction},
+    )
+    assert historical["status"] == "ok"
+    recalled = provider.prefetch(f"Who owns {subject_quote}?")
     provider.shutdown()
-    assert "Alice" in recalled and "Bob" in recalled
+    assert replacement_object_quote in recalled
 
 
 def test_installed_default_catalog_money_relation_commits_reads_and_revokes(
@@ -1375,7 +1457,7 @@ def test_installed_schema_retry_after_pin_denies_each_revoked_grant(
     try:
         provider.on_turn_start(1, "Atlas owner is Ada.")
         assert [item["function"]["name"] for item in provider.get_tool_schemas()] == [
-            "memorii_submit_fact"
+            "memorii_submit_fact", "memorii_read_fact"
         ]
         service = provider._provider._service
         before = len(service._memory_plane.list_records())

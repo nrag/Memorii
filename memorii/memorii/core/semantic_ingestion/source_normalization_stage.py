@@ -87,6 +87,30 @@ def _source_span_from_reference(reference: SourceSpanReference) -> SourceSpan:
     )
 
 
+def _lifecycle_temporal_consensus_by_construction_role(
+    *, core: BootstrapNormalizationRequestCoreV3, operation_id: str, kind: str,
+) -> tuple[tuple[str, object], ...]:
+    """Bind native construction roles to the analyzer's operation-local roles."""
+    requested = (
+        (("replacement", "replacement"), ("corrected", "transition"))
+        if kind == "correction"
+        else (("retracted", "transition"),)
+        if kind == "retraction"
+        else (("assertion", "assertion"),)
+    )
+    selected = []
+    for consensus_role, construction_role in requested:
+        matches = tuple(
+            item
+            for item in core.source_alignment.temporal_attachment_consensus
+            if item.operation_id == operation_id and item.temporal_role == consensus_role
+        )
+        if len(matches) != 1:
+            raise ValueError("bootstrap native planning temporal consensus is unavailable")
+        selected.append((construction_role, matches[0]))
+    return tuple(selected)
+
+
 def _planning_construction_authority_for_operation(
     *, core: BootstrapNormalizationRequestCoreV3, operation_id: str,
     operation_execution_id: str, member: object, segment_id: str,
@@ -105,15 +129,23 @@ def _planning_construction_authority_for_operation(
     admissions = tuple(item for item in prepared_source.message_admission_carriers.identities if item.segment_governance_binding_digest == binding.binding_digest)
     artifact = prepared_source.governance_carrier_artifact
     routes = (route.route_digest,)
+    kind = getattr(member, "kind", None)
+    fact = (
+        member
+        if kind == "fact"
+        else member.replacement_fact
+        if kind == "correction"
+        else member.retracted_fact
+        if kind == "retraction"
+        else None
+    )
     if (
-        not admissions or not routes or getattr(member, "kind", None) != "fact"
+        not admissions or not routes or fact is None
         or binding not in artifact.segment_governance.bindings
         or any(item not in artifact.message_admissions.identities for item in admissions)
     ):
         raise ValueError("bootstrap native planning construction input is unavailable")
-    fact = member
     rule = policy_bundle.trust_policy.rule_for(fact.predicate_id)
-    consensus = next(item for item in core.source_alignment.temporal_attachment_consensus if item.operation_id == operation_id and item.temporal_role == "assertion")
     candidates = () if source_interval_evidence is None else (TemporalEvidenceCandidate.create(
         candidate_id=contract_digest(
             b"memorii.bootstrap-graph.native-source-interval-candidate.v3",
@@ -122,28 +154,52 @@ def _planning_construction_authority_for_operation(
         interval=source_interval_evidence.interval, source_authority=source_authority_evidence.authority,
         authenticated_source_interval_evidence=source_interval_evidence,
     ),)
-    if consensus.status != "stable":
-        raise ValueError("bootstrap native planning temporal consensus is unavailable")
-    closure = TemporalEvidenceResolver().resolve(predicate_id=fact.predicate_id, candidates=candidates,
-        trust_policy=policy_bundle.trust_policy, temporal_policy=policy_bundle.temporal_policy,
-        arbitration_as_of=policy_bundle.arbitration_as_of,
-        source_present_attachment=bool(consensus.stable_candidate_ids))
-    if closure.outcome != "pass":
-        raise ValueError("bootstrap native planning temporal authority is unavailable")
-    attachment = OperationTemporalAttachmentBinding.create(operation_id=operation_id, temporal_role="assertion",
-        stable_attachment_consensus_digest=consensus.consensus_digest,
-        candidate_ids=tuple(item.candidate_id for item in candidates), candidate_spans=())
+    role_consensuses = _lifecycle_temporal_consensus_by_construction_role(
+        core=core, operation_id=operation_id, kind=kind,
+    )
     scope = next(item for item in core.source_alignment.scope_consensus if item.operation_id == operation_id)
     parser = next(item for item in core.source_alignment.parser_consensus if item.operation_id == operation_id)
-    decision = OperationTemporalDecisionBinding.create(operation_id=operation_id, temporal_role="assertion",
-        scope_assessment_digest=scope.consensus_digest,
-        semantic_assessment_digest=parser.assessment_digest,
-        temporal_attachment=attachment, decision_closure=closure)
-    temporal = BootstrapNativeTemporalConstructionV3.create(temporal_role="assertion", temporal_consensus_digest=consensus.consensus_digest,
-        effective_time=SystemRecordedEffectiveTime(kind="system_recorded_only", temporal_policy_fingerprint=policy_bundle.temporal_policy.fingerprint,
-            temporal_policy_snapshot_digest=policy_bundle.temporal_policy.snapshot_digest),
-        accepted_temporal_evidence=AcceptedTemporalEvidence(decision_closure=closure), temporal_decision_binding=decision,
-        temporal_policy_fingerprint=policy_bundle.temporal_policy.fingerprint)
+    temporal = tuple(
+        BootstrapNativeTemporalConstructionV3.create(
+            temporal_role=construction_role,
+            temporal_consensus_digest=consensus.consensus_digest,
+            effective_time=SystemRecordedEffectiveTime(
+                kind="system_recorded_only",
+                temporal_policy_fingerprint=policy_bundle.temporal_policy.fingerprint,
+                temporal_policy_snapshot_digest=policy_bundle.temporal_policy.snapshot_digest,
+            ),
+            accepted_temporal_evidence=AcceptedTemporalEvidence(decision_closure=closure),
+            temporal_decision_binding=OperationTemporalDecisionBinding.create(
+                operation_id=operation_id,
+                temporal_role=construction_role,
+                scope_assessment_digest=scope.consensus_digest,
+                semantic_assessment_digest=parser.assessment_digest,
+                temporal_attachment=OperationTemporalAttachmentBinding.create(
+                    operation_id=operation_id,
+                    temporal_role=construction_role,
+                    stable_attachment_consensus_digest=consensus.consensus_digest,
+                    candidate_ids=tuple(item.candidate_id for item in candidates),
+                    candidate_spans=(),
+                ),
+                decision_closure=closure,
+            ),
+            temporal_policy_fingerprint=policy_bundle.temporal_policy.fingerprint,
+        )
+        for construction_role, consensus in role_consensuses
+        for closure in (
+            TemporalEvidenceResolver().resolve(
+                predicate_id=fact.predicate_id,
+                candidates=candidates,
+                trust_policy=policy_bundle.trust_policy,
+                temporal_policy=policy_bundle.temporal_policy,
+                arbitration_as_of=policy_bundle.arbitration_as_of,
+                source_present_attachment=bool(consensus.stable_candidate_ids),
+            ),
+        )
+        if consensus.status == "stable" and closure.outcome == "pass"
+    )
+    if len(temporal) != len(role_consensuses):
+        raise ValueError("bootstrap native planning temporal authority is unavailable")
     mention_digests = {fact.subject_mention_digest}
     if fact.object.kind == "entity":
         mention_digests.add(fact.object.mention_digest)
@@ -173,7 +229,7 @@ def _planning_construction_authority_for_operation(
         predicate_state_rule=planning_policy_authority.rule_for(fact.predicate_id),
         source_authority_evidence=source_authority_evidence,
         action_policy_fingerprint=planning_policy_authority.action_policy_fingerprint, action_transition=None,
-        planning_codec_entries=canonical_graph_codec_manifest().entries, temporal_constructions=(temporal,), evidence_constructions=evidence,
+        planning_codec_entries=canonical_graph_codec_manifest().entries, temporal_constructions=temporal, evidence_constructions=evidence,
         identity_construction=None)
 
 
@@ -299,7 +355,7 @@ def _native_reduction_inputs(
                     policy_bundle=policy_bundle,
                     planning_policy_authority=planning_policy_authority,
                 )
-                if member.kind == "fact"
+                if member.kind in {"fact", "correction", "retraction"}
                 else None
             )
             inputs.append(BootstrapNativeOperationReductionInputV3.create(

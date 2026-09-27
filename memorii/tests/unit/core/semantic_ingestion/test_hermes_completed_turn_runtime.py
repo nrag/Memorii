@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import queue
 import threading
+from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from types import SimpleNamespace
@@ -573,7 +574,9 @@ def test_default_catalog_handle_tool_call_validates_before_preparation_and_submi
         (first_span, second_span), key=lambda span: span.reference_digest, reverse=True,
     )
     runtime._resolve_sentence_span = lambda **kwargs: (
-        low_span if str(kwargs["source_quote"]).startswith("Correction:") else high_span
+        low_span
+        if str(kwargs["source_quote"]).lstrip().startswith("Correction:")
+        else high_span
     )
     runtime._service = SimpleNamespace(
         load_captured_turn_catalog_pin=lambda **_kwargs: pin,
@@ -678,6 +681,24 @@ def test_default_catalog_handle_tool_call_validates_before_preparation_and_submi
         tool_name="memorii_submit_fact", arguments=correction,
     )["status"] == "committed"
     assert submissions[-1].proposal.corrections[0].corrected_fact.predicate_id == "project_has_work_item"
+    assert tuple(span.reference_digest for span in submissions[-1].exact_source_spans) == (
+        low_span.reference_digest, high_span.reference_digest,
+    )
+    # Segment-local preparation retains the separator byte before the second
+    # sentence. The correction envelope, replacement fact, and replacement
+    # mention contexts must all ground against that exact persisted span.
+    leading_space_correction = deepcopy(correction)
+    leading_space_source = f" {replacement_source}"
+    leading_space_correction["correction"]["assertion_quote"] = leading_space_source
+    leading_space_correction["correction"]["replacement"]["source_quote"] = leading_space_source
+    leading_space_correction["proposal"]["mentions"][2]["mention_context_quote"] = leading_space_source
+    leading_space_correction["proposal"]["mentions"][3]["mention_context_quote"] = leading_space_source
+    leading_space_correction["proposal"]["corrections"][0]["assertion_quote"] = leading_space_source
+    leading_space_correction["proposal"]["corrections"][0]["replacement_fact"]["assertion_quote"] = leading_space_source
+    leading_result = runtime.handle_tool_call(
+        tool_name="memorii_submit_fact", arguments=leading_space_correction,
+    )
+    assert leading_result["status"] == "committed"
     assert tuple(span.reference_digest for span in submissions[-1].exact_source_spans) == (
         low_span.reference_digest, high_span.reference_digest,
     )
@@ -822,7 +843,7 @@ def test_default_catalog_handle_tool_call_validates_before_preparation_and_submi
     assert runtime.handle_tool_call(tool_name="memorii_submit_fact", arguments=wrong) == {
         "status": "rejected"
     }
-    assert (len(preparations), len(submissions)) == (7, 7)
+    assert (len(preparations), len(submissions)) == (8, 8)
     assert all(request.captured_pin is not None for request in submissions)
 
 

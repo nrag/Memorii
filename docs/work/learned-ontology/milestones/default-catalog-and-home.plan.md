@@ -22,7 +22,44 @@ The corpus must contain the exact 53 relation IDs and exact twenty persona plus 
 
 H8 closes only through the separate user-context slice above. Its real-root suite must cover candidate, agent-summary abstention, holder confirmation, duplicate, correction, expiry/retraction, delegated-agent allow, nondelegated-agent and second-user denial, and historical read. The six Level-2 blockers are: package/compiler integrity; 53-row runtime corpus including private denials; H8 suite; shared JSONL lifecycle/scope probes; existing M2 catalog/capture/runtime/reports-to regressions; and focused lint/type checks for changed modules. Full PR workflow matrices, release certification, hostile-storage families and exhaustive platform permutations remain Level-3 follow-up. Only then may OLE-09/10 be complete at Level 2. The learner remains absent and must not be reported as shipped.
 
-- Next action: prove installed durable entity correction, literal correction and retraction plus protected current/history/as-of behavior before and after JSONL reopen, then implement the two symmetric reverse views.
+- Linked debugging operation: `../debug-structured-lifecycle-lease.plan.md` owns the active captured-turn correction lease failure. It is a Level-2 dependency for installed lifecycle/reopen evidence.
+- Next action: complete the linked recovery-lease debugging operation, then resume installed durable entity correction, literal correction and retraction plus protected current/history/as-of behavior before and after JSONL reopen, followed by the two symmetric reverse views.
+
+## Active Read-Lifecycle Investigation (2026-09-26)
+
+The public Hermes `memorii_read_fact` schema/dispatch reaches the protected
+service owner, but this does not yet close the lifecycle/read slice. Inspection
+of the persisted schema-2 binding, capture pin and runtime projection records
+found the direct claim-state projection is insufficient if a later correction
+replaces it. The immutable lifecycle authority is the schema-2 group-primary
+pair: its closed `request_hex` retains target/replacement carriers and its
+closed `reload_hex` proves the same request committed atomically.
+The existing `ReportsToHistoryEntry`/`ReportsToProtectedReader` capability is
+inert and has no normal native writer/recovery path. In addition,
+`FactScopeGrant` is scope-wide and there is no typed endpoint-visibility grant
+that can authorize both identities for a symmetric reverse result. Embedded
+entity identifiers are evidence, not grants, and must not be treated as one.
+
+The current reader construction reuses the scoped-context catalog
+claim-digest/captured-pin/historical-bundle/current-grant join and its focused
+existing unit checks pass, but it is not accepted as lifecycle completion.
+The implementation decision is that the existing current `FactScopeGrant` and
+catalog-visibility grant authorize both endpoints only after the persisted
+runtime projection proves its exact immutable subject and object assertion
+references; arbitrary embedded identity lists are not authority. The remaining
+writer action is to reconstruct current/history/as-of from the existing
+immutable request/reload transition history before asserting the installed
+lifecycle journey.
+
+The direct reader now treats `system_as_of` as transaction time rather than
+forwarding it as a validity-time query. It filters immutable claim versions at
+or before that instant, excludes candidates, and joins each result back to its
+exact assertion projection and schema-2 binding. Its focused suite covers this
+transaction-time distinction and an unpatched missing-binding denial (`4
+passed`). This is a defensive partial correction only: it cannot reconstruct a
+corrected target whose persisted state has been replaced unless the group
+request/reload transition history is available, so it does not close the
+installed recovery proof.
 
 ## Pre-Coding Review (2026-09-26)
 
@@ -89,6 +126,19 @@ The all-row native gate is now an explicit Level-2 manual pytest marker with det
 The lifecycle contract slice compiles closed `read_derivation_policy` metadata into all 53 rows, with only `partner_of` and `sibling_of` registered as `symmetric_view`. The selected default tool now accepts exact assertion, correction and retraction forms through the existing Bootstrap V3 structured writer. Corrections carry independently grounded old/new entity or literal facts, allow the exact union of referenced mentions, close nested input keys, and canonicalize distinct source spans by digest. H8 `Preference` shapes remain rejected by the semantic boundary. The generated proposal-adapter descriptor and package authority bind the lifecycle-aware validator. After three convergent review rounds corrected no-op-only revisions, unsorted multi-source spans and open nested dictionaries, independent correctness review approved the bounded transport/grounding/package contract at scoped working diff SHA-256 `2480e82cbbde011cb97edef97b58977732a54677a135951346280734c3a2f3fd`; `247` focused tests, Ruff and whitespace pass. Installed durable revision effects, product current/history/as-of reads, reopen proof and symmetric reverse reads remain open, so M3 and requirement counts do not change.
 
 The frozen installed matrix is accepted as execution evidence at pushed commit `8d57deaa`. Four independent processes exercised disjoint deterministic shards: shard 1 passed `14` rows in `2902.67s`, shard 2 passed `13` in `2772.94s`, shard 3 passed `13` in `2772.68s`, and shard 4 passed `13` in `2775.44s`. Together they cover every one of the 53 canonical relations through installed schema egress, native commit, exact schema-2 default binding, protected recall, wrong-endpoint zero effect, clean reconciliation and shutdown; all 25 corpus-private rows also revoke the fact grant and prove zero protected recall. The tree remained frozen for the entire run and no API key or model transport was available. This closes the assertion/abstention/private-denial portion of the runtime corpus. Revision/history/reopen, symmetric reverse reads and H8 remain open, so M3 and requirement counts do not change yet.
+
+2026-09-27 lifecycle identity debugging: the installed correction reached a
+terminal `graph_target_missing` because canonical allocation treated all new
+source mentions as new identities. The shared Bootstrap V3 allocator now binds
+correction/retraction selector roles only through an exact scoped prior
+`ClaimAssertion.statement_digest` and immutable assertion refs; same-text roles
+within one lifecycle operation share only their local cluster, while changed
+replacement entities remain new. The direct focused planner/allocator suite
+passes `7 in 61.68s`, including prior-pending reuse, changed replacement,
+missing/ambiguous and cross-scope denials. This is a construction/debug slice;
+the installed lifecycle caller has not rerun and M3 remains active with no
+requirement or milestone count change. Next action: coordinator reruns the
+installed corpus correction journey on the frozen allocator.
 
 The first native-writer wiring pass added a typed runtime catalog coordinate to the graph-free invocation and rechecked its version/bundle through the historical package locator; 42 focused authority/pin tests and Ruff/whitespace passed. Coordinator inspection rejected this as a completed slice because the production provider did not propagate the captured pin, the coordinate omitted the capture/source/persisted-pin join, and the materializer and derivation remained on the three fixed predicates. The same writer is continuing: `submit_structured_fact` must pass the already loaded exact `CatalogCapturedTurnPin` through provider ingestion, dynamic authority must rejoin the persisted pin and selected package, and only then may selected default policies drive native planning. No completion count changes.
 
