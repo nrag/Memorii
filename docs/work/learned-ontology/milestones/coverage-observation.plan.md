@@ -16,7 +16,7 @@ Extend common source admission after `core/memory_evolution/admission.py:97` and
 
 Run source admission, provider outage, recovery, retry, changed observer binding, duplicate lineage, two-session recurrence, quoted/hypothetical/ambiguous text, wrong-domain, extraction-failure, recall-miss and cross-scope cases. Verify identical and transformed bytes with one core-verified upstream origin count as one lineage; different verified origins count independently, and adapter-claimed or forged origin IDs cannot satisfy recurrence. Assert no candidate/fact for pending or uncertain states, one group for correlated copies, and zero raw source disclosure outside grants. Run two-adapter conformance with equal core observations and one installed-root path. Execute focused tests, static/type, persistence/recovery, applicable integration gates and current workflow pins. A fake model proves only plumbing; a live host/local/remote quality result is separate and binding-specific. Do not activate a catalog in this milestone.
 
-- Next action: freeze the installed origin-receipt producer and refreshed authority package, then obtain targeted correctness approval before recurrence aggregation.
+- Next action: run specification, correctness and test review on exact remediation commit `53eb8b69`; close M4 only if all confirmed Level-2 P1/P2 findings are resolved.
 
 ## Frozen Schema And Trace Map (2026-09-27)
 
@@ -258,3 +258,21 @@ semantics, with no adapter-owned catalog authority; it passes in 47.08 seconds.
 Counts remain 3/5 and 5/14 pending exact revision review. Exactly one next
 action: freeze this production-recovery, status-isolation and two-adapter slice
 and obtain targeted correctness and test approval for M4 closure.
+
+Exact review of `c6387b7e` found two Level-2 P2 gaps. OLE-11 still delegated
+gap validity to a signature-only callback that could not resolve the
+observation's pinned catalog, and OLE-08's generic adapter had no non-test
+composition caller. Commit `53eb8b69` removes the signature callback, pins
+observations to the exact persisted catalog-version digest, and adds the
+core-owned historical validator. Registered relation/display-alias reports
+become `uncertain`; unknown relations enter recurrence only when the pinned
+version and endpoint types validate. A restart after catalog rotation proves
+the old observation uses its seed version while the current default catalog
+contains the later relation. The generic `AuthenticatedSourceRuntime` now
+owns host ingress issuance and is the direct production capture root, while
+the existing Hermes root remains independent. Nineteen observation/recurrence
+tests pass in 6.34 seconds; seven focused service/rotation/adapter tests pass in
+83.05 seconds; the two catalog-aware production-root tests pass in 42.86
+seconds; and the four-root production acceptance passes in 36.88 seconds.
+Ruff, compilation, whitespace and scoped Pyright are clean. Counts remain 3/5
+and 5/14 pending exact cohort review.

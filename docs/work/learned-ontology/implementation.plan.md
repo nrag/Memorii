@@ -210,6 +210,20 @@ that conformance case passes in 47.08 seconds. Counts remain 3/5 and 5/14
 pending exact review. Exactly one next action: freeze and review this combined
 M4 closure slice.
 
+Specification and correctness review of `c6387b7e` found two Level-2 P2s:
+signature-only validation could admit a relation already covered by the
+observation's pinned catalog, and the generic adapter had no non-test caller.
+Commit `53eb8b69` binds each observation to its persisted catalog-version
+digest, resolves that historical inventory in a core-owned validator, denies
+covered normalized aliases as uncertain, and preserves valid unknown gaps
+across catalog rotation. The direct production capture root now calls
+`AuthenticatedSourceRuntime`, whose host-owned issuer supplies ingress to the
+generic adapter; Hermes is the independent second root. Nineteen focused
+observation/recurrence tests, seven service/rotation/adapter tests, two exact
+catalog-aware production-root tests and the four-root production acceptance
+pass. Static checks pass. Counts remain 3/5 and 5/14 pending exact cohort
+review. Exactly one next action: review `53eb8b69` for M4 closure.
+
 Review of `f7ce04a6` found the installed producer accepted a caller-supplied
 digest and was unreachable from normal callbacks. The replacement uses a
 bridge-owned receipt created from an observed user turn, allows inheritance
