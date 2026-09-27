@@ -424,6 +424,88 @@ def test_first_party_factory_initializes_after_authority_validation_without_open
         )
 
 
+def test_installed_no_observer_persists_one_pending_coverage_observation_after_reopen(
+    bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from memorii.core.memory_plane.service import MemoryPlaneService
+    from memorii.core.memory_plane.store import JsonlMemoryPlaneStore
+    from memorii.core.provider.models import ProviderOperation
+    from memorii.core.semantic_ingestion.coverage_observation import (
+        CoverageObservationRepository,
+        CoverageSemanticOutcome,
+        DiscoveryProcessingState,
+    )
+    from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
+    from memorii.integrations.hermes_local_authority import authorize_local_level2
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    authorize_local_level2(hermes_home=tmp_path)
+    context = bridge_module.HermesProviderServiceContext(
+        storage_root=tmp_path / "memorii",
+        hermes_home=tmp_path,
+        session_id="session:coverage",
+        user_id="raw:user:one",
+        agent_identity="profile:primary",
+        platform="cli",
+        agent_context="primary",
+        agent_workspace="hermes",
+        parent_session_id=None,
+    )
+    binding = build_local_level2_runtime_binding(context)
+    received_at = datetime(2026, 9, 27, 12, tzinfo=UTC)
+    ingress = binding.issue_ingress(
+        bridge_module.HermesIngressRequest(
+            hook="sync_turn",
+            session_id="session:coverage",
+            user_id=binding.absent_author_id,
+            agent_identity="profile:primary",
+            turn_author=None,
+            received_at=received_at,
+        )
+    )
+    call = {
+        "operation": ProviderOperation.CHAT_USER_TURN,
+        "content": "Please remember this source for later ontology coverage.",
+        "operation_id": "coverage-observation-one",
+        "session_id": "session:coverage",
+        "user_id": binding.absent_author_id,
+        "authenticated_host_ingress": ingress,
+        "timestamp": received_at,
+    }
+    binding.service.sync_event(**call)
+    binding.service.sync_event(**call)
+    records = binding.service._memory_plane.list_records(
+        source_kind="learned_ontology_coverage_observation_v1"
+    )
+    assert len(records) == 1
+    observation = CoverageObservationRepository(binding.service._memory_plane).load(
+        records[0].memory_id
+    )
+    assert observation is not None
+    assert observation.processing_state == DiscoveryProcessingState.PENDING_NO_CAPABILITY
+    assert observation.semantic_outcome == CoverageSemanticOutcome.NOT_EVALUATED
+    binding.completed_turn_runtime.close()
+
+    reopened_plane = MemoryPlaneService(
+        record_store=JsonlMemoryPlaneStore(context.storage_root / "memory-plane")
+    )
+    reopened_records = reopened_plane.list_records(
+        source_kind="learned_ontology_coverage_observation_v1"
+    )
+    assert len(reopened_records) == 1
+    assert CoverageObservationRepository(reopened_plane).load(
+        reopened_records[0].memory_id
+    ) == observation
+    assert not [
+        record
+        for record in reopened_plane.list_records()
+        if record.source_kind in {
+            "learned_ontology_change_proposal_v1",
+            "learned_ontology_gap_fact_v1",
+        }
+    ]
+
+
 def test_factory_issues_stable_exact_local_structured_grants() -> None:
     from memorii.core.semantic_ingestion.catalog_authority import (
         AuthenticatedPrincipalAgent,

@@ -16,7 +16,7 @@ Extend common source admission after `core/memory_evolution/admission.py:97` and
 
 Run source admission, provider outage, recovery, retry, changed observer binding, duplicate lineage, two-session recurrence, quoted/hypothetical/ambiguous text, wrong-domain, extraction-failure, recall-miss and cross-scope cases. Verify identical and transformed bytes with one core-verified upstream origin count as one lineage; different verified origins count independently, and adapter-claimed or forged origin IDs cannot satisfy recurrence. Assert no candidate/fact for pending or uncertain states, one group for correlated copies, and zero raw source disclosure outside grants. Run two-adapter conformance with equal core observations and one installed-root path. Execute focused tests, static/type, persistence/recovery, applicable integration gates and current workflow pins. A fake model proves only plumbing; a live host/local/remote quality result is separate and binding-specific. Do not activate a catalog in this milestone.
 
-- Next action: bind the no-capability observation into the admitted-source atomic transaction with selected-catalog and authenticated origin-lineage authority, then prove JSONL reopen and zero candidate/fact through one installed root.
+- Next action: add the authenticated upstream-origin receipt and core lineage derivation contract, then prove direct and forwarded adapter deliveries coalesce correctly before recurrence counting.
 
 ## Frozen Schema And Trace Map (2026-09-27)
 
@@ -27,7 +27,7 @@ record.
 
 | Signal | Existing production trigger | M4 insertion boundary |
 | --- | --- | --- |
-| Source admission | `ProviderMemoryService.sync_event` -> `ProviderIngestion._ingest_semantic_source` -> `GovernedSourceAdmissionService.prepare_atomic` -> `SemanticIngestionAtomicStore.publish_admitted_source` | Append the initial coverage record to the same admitted-source transaction after resolving the exact selected catalog and core-derived origin lineage. No observer produces durable `discovery_pending_no_capability/not_evaluated`; an authorized binding produces `queued/not_evaluated`. |
+| Source admission | `ProviderMemoryService.sync_event` -> `ProviderIngestion._ingest_semantic_source` -> `GovernedSourceAdmissionService.prepare_atomic` -> `SemanticIngestionAtomicStore.publish_admitted_source` | Preserve the immutable source-admission tuple, then conditionally insert the selected-catalog observation only after verified admission. Exact retry backfills a missing observation; a changed catalog creates a new observation and preserves the old one. No observer produces durable `discovery_pending_no_capability/not_evaluated`; an authorized binding produces `queued/not_evaluated`. |
 | Extraction trajectory | `_run_semantic_ingestion` returns the closed `SemanticTerminalOutcome` after source preparation and provider/domain validation | Update only the observation trajectory after the terminal is durable; extraction failure, abstention and policy denial remain diagnostic attribution and cannot become an unsupported-relation/type classification. |
 | Protected retrieval | `ProviderMemoryService.retrieve_context` and the installed Hermes prefetch/read paths return a protected scoped result | Record a privacy-safe recall result/failure signature joined to the exact source observation only when current source/fact/catalog grants authorize that diagnostic update. Do not retain query or result text in the public status projection. |
 | Correction/retraction | Default-catalog structured correction/retraction enters `submit_structured_fact`, native planning and one group CAS | Record the authorized downstream correction coordinate after commit; it is evidence for attribution, never direct proof that the catalog lacks a type or relation. |
@@ -46,10 +46,8 @@ INTERNAL_CONTROL repository. Four focused tests pass in 4.43 seconds; Ruff,
 scoped Pyright and whitespace pass. It proves idempotent durable pending state,
 zero semantic/user fact records, a distinct queued identity for an authorized
 binding, and fail-closed tamper/false-gap validation. It has no production
-caller yet and does not change any milestone or requirement count. Exactly one
-next action: bind the no-capability record into the admitted-source atomic
-transaction with selected-catalog and authenticated origin-lineage authority,
-then prove JSONL reopen and zero candidate/fact through one installed root.
+caller yet and does not change any milestone or requirement count. The next
+revision supersedes its original same-transaction proposal.
 
 The first review found that the general constructor could skip directly to a
 classified unsupported gap. The corrected initial constructor can create only
@@ -59,13 +57,20 @@ owner with predecessor state and attempt fence. Five contract tests pass.
 
 The direct provider root now resolves the exact selected catalog, derives the
 v1 direct-delivery origin lineage from authenticated principal and normalized
-delivery identity, and appends the initial observation record to the same
-admitted-source transaction. Its focused real-provider test passes in 31.61
-seconds and proves exact retry leaves one pending observation and zero ontology
-candidate/gap-fact records. Ruff and whitespace pass. Scoped Pyright reports no
-observation-contract errors; seven existing diagnostics remain in unrelated
-later ingestion recovery branches. This is one generic provider caller, not yet
-the installed Hermes JSONL/restart proof. Counts remain 3/5 milestones and 5/14
-requirements. Exactly one next action: prove the same pending observation,
-idempotent retry, JSONL reopen and zero candidate/fact through the installed
-Hermes root with no model capability.
+delivery identity, and conditionally inserts the initial observation only after
+the immutable source admission is verified. Review rejected including it in the
+admission tuple because legacy-source retry and catalog rotation would become
+partial/mismatched. The corrected real-provider regression first admits a
+legacy-shaped source with no observation, backfills it on exact retry, then
+rotates the selected catalog and proves a second observation is added while the
+first remains. It passes in 31.04 seconds.
+
+The installed no-observer Hermes factory root passes in 20.07 seconds: exact
+redelivery leaves one pending/not-evaluated record, direct JSONL reopen returns
+the same digest-verified record, and no ontology candidate or gap fact exists.
+Ruff and whitespace pass. Scoped Pyright reports no observation-contract
+errors; seven existing diagnostics remain in unrelated later ingestion recovery
+branches. Counts remain 3/5 milestones and 5/14 requirements. Exactly one next
+action: add the authenticated upstream-origin receipt and core lineage
+derivation contract, then prove direct and forwarded adapter deliveries
+coalesce correctly before recurrence counting.

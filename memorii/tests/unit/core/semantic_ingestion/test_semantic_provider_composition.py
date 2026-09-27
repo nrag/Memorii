@@ -1342,6 +1342,11 @@ def test_direct_provider_root_publishes_and_reloads_bootstrap_v3_normalization()
         source_normalization_host_bundle_builder=builder,
         bootstrap_graph_host_bundle_builder=_deterministic_graph_bundle_builder(),
     )
+    selection_repository = service._provider_ingestion._catalog_selection_repository
+    assert selection_repository is not None
+    # Simulate a source retained by a pre-observation revision. Its exact retry
+    # must preserve the admission tuple and backfill the current observation.
+    service._provider_ingestion._catalog_selection_repository = None
     result = service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="Atlas owner is Bob.",
@@ -1385,13 +1390,7 @@ def test_direct_provider_root_publishes_and_reloads_bootstrap_v3_normalization()
     coverage_records = service._memory_plane.list_records(
         source_kind="learned_ontology_coverage_observation_v1"
     )
-    assert len(coverage_records) == 1
-    coverage = CoverageObservationRepository(service._memory_plane).load(
-        coverage_records[0].memory_id
-    )
-    assert coverage is not None
-    assert coverage.processing_state == DiscoveryProcessingState.PENDING_NO_CAPABILITY
-    assert coverage.semantic_outcome == CoverageSemanticOutcome.NOT_EVALUATED
+    assert coverage_records == []
     assert not [
         record
         for record in service._memory_plane.list_records()
@@ -1402,6 +1401,7 @@ def test_direct_provider_root_publishes_and_reloads_bootstrap_v3_normalization()
     ]
     # A lost acknowledgement retries the same public operation.  Found must
     # reload the V3 closure before authority or any of the five learned lanes.
+    service._provider_ingestion._catalog_selection_repository = selection_repository
     retry = service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="Atlas owner is Bob.",
@@ -1412,11 +1412,36 @@ def test_direct_provider_root_publishes_and_reloads_bootstrap_v3_normalization()
     )
     assert retry.blocked_reasons.get("semantic_ingestion") != "source_alignment_authority_unavailable"
     assert calls == {"proposal": 1, "stanza": 1, "spacy": 1, "predicate": 1, "temporal": 1}
-    assert len(
-        service._memory_plane.list_records(
-            source_kind="learned_ontology_coverage_observation_v1"
-        )
-    ) == 1
+    coverage_records = service._memory_plane.list_records(
+        source_kind="learned_ontology_coverage_observation_v1"
+    )
+    assert len(coverage_records) == 1
+    coverage = CoverageObservationRepository(service._memory_plane).load(
+        coverage_records[0].memory_id
+    )
+    assert coverage is not None
+    assert coverage.processing_state == DiscoveryProcessingState.PENDING_NO_CAPABILITY
+    assert coverage.semantic_outcome == CoverageSemanticOutcome.NOT_EVALUATED
+
+    class _RotatedCatalog:
+        def resolve_selected_base(self):
+            selected = selection_repository.resolve_selected_base()
+            return selected.model_copy(update={"catalog_digest": "f" * 64})
+
+    service._provider_ingestion._catalog_selection_repository = _RotatedCatalog()
+    service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="provider-v3-normalization",
+        task_id="task:one",
+        user_id="user:alice",
+        authenticated_host_ingress=_host_ingress(),
+    )
+    rotated_records = service._memory_plane.list_records(
+        source_kind="learned_ontology_coverage_observation_v1"
+    )
+    assert len(rotated_records) == 2
+    assert coverage.observation_id in {record.memory_id for record in rotated_records}
 
 
 def _retained_structured_submission(

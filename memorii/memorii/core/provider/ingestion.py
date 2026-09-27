@@ -117,7 +117,7 @@ from memorii.core.semantic_ingestion.contracts import (
     encode_semantic_contract_result,
 )
 from memorii.core.semantic_ingestion.coverage_observation import (
-    coverage_observation_record,
+    CoverageObservationRepository,
     delivery_origin_lineage_digest,
     new_coverage_observation,
 )
@@ -917,34 +917,30 @@ class ProviderIngestionCoordinator:
                     if self._catalog_selection_repository is not None
                     else None
                 )
-                coverage_record = None
+                coverage_observation = None
                 if selected_catalog is not None:
-                    coverage_record = coverage_observation_record(
-                        new_coverage_observation(
-                            source_id=governed_source.memory_id,
-                            source_digest=source_admission_source_digest(governed_source),
-                            source_span=None,
-                            source_scope_digest=(
-                                authenticated_ingress.required_outcome_scopes.required_scope_set_digest
+                    coverage_observation = new_coverage_observation(
+                        source_id=governed_source.memory_id,
+                        source_digest=source_admission_source_digest(governed_source),
+                        source_span=None,
+                        source_scope_digest=(
+                            authenticated_ingress.required_outcome_scopes.required_scope_set_digest
+                        ),
+                        origin_lineage_digest=delivery_origin_lineage_digest(
+                            principal_binding_digest=identity.delivery_principal_binding_digest,
+                            normalized_delivery_id_digest=(
+                                identity.normalized_delivery_id.normalized_delivery_id_digest
                             ),
-                            origin_lineage_digest=delivery_origin_lineage_digest(
-                                principal_binding_digest=(
-                                    identity.delivery_principal_binding_digest
-                                ),
-                                normalized_delivery_id_digest=(
-                                    identity.normalized_delivery_id.normalized_delivery_id_digest
-                                ),
-                            ),
-                            session_id=delivery_event.session_id,
-                            principal_id=(
-                                authenticated_ingress.delivery_principal_binding.principal_subject_id
-                            ),
-                            agent_id=authenticated_ingress.authenticated_agent_id,
-                            observed_at=governed_source.timestamp,
-                            catalog_scope=selected_catalog.catalog_scope,
-                            catalog_digest=selected_catalog.catalog_digest,
-                            observer_binding=None,
-                        )
+                        ),
+                        session_id=delivery_event.session_id,
+                        principal_id=(
+                            authenticated_ingress.delivery_principal_binding.principal_subject_id
+                        ),
+                        agent_id=authenticated_ingress.authenticated_agent_id,
+                        observed_at=governed_source.timestamp,
+                        catalog_scope=selected_catalog.catalog_scope,
+                        catalog_digest=selected_catalog.catalog_digest,
+                        observer_binding=None,
                     )
                 outcome = "unavailable"
                 reason = self._bootstrap_unavailable_reason
@@ -968,7 +964,7 @@ class ProviderIngestionCoordinator:
                     bootstrap_language_evidence: BootstrapAuthenticatedLanguageEvidence
                     | None = bootstrap_language_evidence,
                 ) -> PreparedSourceAdmission:
-                    prepared = self._admission_service.prepare_atomic(
+                    return self._admission_service.prepare_atomic(
                         source=source,
                         delivery_identity=delivery_identity,
                         ingress=authenticated_ingress,
@@ -985,15 +981,12 @@ class ProviderIngestionCoordinator:
                         ),
                         bootstrap_language_evidence=bootstrap_language_evidence,
                     )
-                    return (
-                        prepared
-                        if coverage_record is None
-                        else prepared.model_copy(
-                            update={"records": (*prepared.records, coverage_record)}
-                        )
-                    )
 
                 prepared_admission = self._admit_with_writer_retry(prepare)
+                if coverage_observation is not None:
+                    CoverageObservationRepository(self._memory_plane).create(
+                        coverage_observation
+                    )
                 if outcome == "selected_pipeline_pending":
                     handoff_with_lease = self._bootstrap_prepare_and_handoff(
                         prepared_admission=prepared_admission,

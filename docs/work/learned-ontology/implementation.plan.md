@@ -109,11 +109,12 @@ delegate to read the exact confirmed record, and denies never-granted, revoked,
 reopened and second-user callers. The H8 specification, correctness and test
 reviews report no remaining Level-2 P1/P2. M4 coverage observation and recurrence
 is now active. Its typed observation repository and trace map pass focused
-construction checks. The direct provider now writes the pending observation
-atomically with source admission and exact retry leaves one record; the
-installed root remains open, so counts remain 3/5 and 5/14. Exactly one next
-action: prove pending observation, idempotent retry, JSONL reopen and zero
-candidate/fact through installed Hermes with no observer capability.
+construction checks. The generic provider conditionally backfills the pending
+observation after verified admission, preserves it across catalog rotation, and
+the installed Hermes trigger survives JSONL reopen with zero candidate/fact.
+Counts remain 3/5 and 5/14. Exactly one next action: add authenticated upstream
+origin receipt and core lineage derivation, then prove direct and forwarded
+adapter coalescing before recurrence counting.
 
 ## Production Boundary And Change Map
 
