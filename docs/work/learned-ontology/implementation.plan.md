@@ -3,10 +3,10 @@
 - Work ID: `learned-ontology-implementation` (planning coordinate only)
 - Work type: implementation
 - Delivery fidelity: Level 2, early real-world manual testing. The user explicitly clarified that Levels 2/3/4 control implementation and review rigor: this operation must produce usable manual-test journeys and common-failure handling, while production rollout, scale, exhaustive hardening, and release ceremony wait until manual validation is complete.
-- Status: active; milestones 1 through 4 are ready for manual testing, milestone 5 is the only active implementation milestone; progress table below is current
+- Status: complete at Level 2; milestones 1 through 5 are ready for manual testing and milestone 6 remains deferred to Level 3
 - Coordinator: `/root`
 - Created: 2026-09-25
-- Last updated: 2026-09-27
+- Last updated: 2026-09-28
 - Parent: `docs/work/learned-ontology/design.plan.md` (complete)
 - Related WorkPlans: `docs/work/learned-ontology/debug-native-graph-authority.plan.md`, `docs/work/learned-ontology/debug-structured-restart-preparation.plan.md`, `docs/work/learned-ontology/design-compatibility-and-hermes.plan.md`, `docs/work/learned-ontology/design-projection-era-compatibility.plan.md`, `docs/work/learned-ontology/design-hermes-tool-authority.plan.md`, `docs/work/learned-ontology/design-captured-turn-completion.plan.md`
 - Canonical inputs: the approved design and base catalog identified below
@@ -40,19 +40,19 @@ States below are judged at the selected Level-2 manual-testing bar. `Complete` m
 
 | Requirement | Primary owner milestone | Level-2 manual-test state | Deferred Level-3 breadth |
 | --- | --- | --- | --- |
-| OLE-01 retained source, observation, candidate, fact separation | coverage-observation | partial: retention, inert observation and recurrence are ready; candidate/activation separation is being completed in M5 | exhaustive isolation and migration matrix |
-| OLE-02 scope, provenance, origin lineage | coverage-observation | partial: scoped observation and lineage coalescing are ready; candidate activation scope proof remains in M5 | hostile lineage and platform breadth |
-| OLE-03 closed additive relation/subtype grammar | learning-activation-replay | partial: fourth-relation typed grammar, verified package, activated `mentors(Person, Person)` path and selected-version dispatch are evidenced; final cohort review remains | full compatibility and abuse matrix |
-| OLE-04 evaluation and authorized activation | learning-activation-replay | partial: paired evaluation, owner approval, immutable selected version and owner-bound rollback are evidenced; final cohort review remains | production rollout gates |
+| OLE-01 retained source, observation, candidate, fact separation | coverage-observation | complete for Level 2: retained sources, inert observations, recurrence groups, candidates, catalog control and semantic facts remain distinct through activation/replay | exhaustive isolation and migration matrix |
+| OLE-02 scope, provenance, origin lineage | coverage-observation | complete for Level 2: source scope and verified lineage remain attached through recurrence, candidate evaluation, activation, replay and protected read | hostile lineage and platform breadth |
+| OLE-03 closed additive relation/subtype grammar | learning-activation-replay | complete for Level 2: the closed additive grammar activates `mentors(Person, Person)` and preserves the full inherited default catalog | full compatibility and abuse matrix |
+| OLE-04 evaluation and authorized activation | learning-activation-replay | complete for Level 2: isolated paired evaluation, owner approval, immutable selection and owner-bound rollback are runnable | production rollout gates |
 | OLE-05 pinned historical meaning and grant fence | catalog-version-and-fourth-relation | complete for Level 2: selected child pin, native write, historical protected read, restart/status retry and current-grant denial work | exhaustive rollback/tamper families |
-| OLE-06 authorized replay through normal writer | learning-activation-replay | partial: installed retained-source replay commits through the ordinary writer; revoked/deleted replay writes one durable skip receipt with no fact and remains idempotent after recovery/reopen | production replay breadth |
-| OLE-07 durable status and recovery | learning-activation-replay | partial: learner recovery, restart-safe replay receipts, selected rollback and scope-bounded status are evidenced; final cohort review remains | scale and platform recovery matrices |
-| OLE-08 adapter/provider neutrality | coverage-observation | partial: first-party installed structured port works; second adapter open | full adapter certification |
+| OLE-06 authorized replay through normal writer | learning-activation-replay | complete for Level 2: generic and installed retained-source replay use the ordinary writer; revoked/deleted sources durably skip without facts and recovery is idempotent | production replay breadth |
+| OLE-07 durable status and recovery | learning-activation-replay | complete for Level 2: learner recovery, restart-safe replay receipts, rollback and scope-bounded status survive JSONL reopen | scale and platform recovery matrices |
+| OLE-08 adapter/provider neutrality | coverage-observation | complete for Level 2: generic authenticated-source and Hermes roots produce the same candidate and selected-version identities through core-owned learning/replay services | full adapter certification |
 | OLE-09 broad workplace base | default-catalog-and-home | complete for Level 2: all 53 default relations, twenty personas, typed literals, lifecycle/history/reopen and symmetric reads work through the installed no-key root | exhaustive per-relation certification |
 | OLE-10 single-account home and preference | default-catalog-and-home | complete for Level 2: home catalog plus canonical-topic Preference lifecycle, protected reads and durable delegation work within one signed-in user scope | production migration and compatibility |
-| OLE-11 monitoring, attribution, recurrence | coverage-observation | partial: idempotent observation, core lineage and recurrence are ready; candidate suppression/activation join remains in M5 | scale calibration and abuse resistance |
+| OLE-11 monitoring, attribution, recurrence | coverage-observation | complete for Level 2: idempotent monitoring, verified lineage recurrence, duplicate/fourth-source suppression and candidate admission are joined end to end | scale calibration and abuse resistance |
 | OLE-12 optional model and structured fact port | structured-fact-no-key | complete for Level 2: installed no-key structured submit/read/restart works and absent model remains explicit | provider certification and broad conformance |
-| OLE-13 calibrated/owner-reviewed promotion | learning-activation-replay | partial: owner-reviewed activation and the exact automatic-policy boundary are implemented; automatic promotion remains disabled absent a passing calibrated cohort and final review | production thresholds and rollout evidence |
+| OLE-13 calibrated/owner-reviewed promotion | learning-activation-replay | complete for Level 2: owner-reviewed promotion works and automatic promotion stays disabled unless the exact calibrated cohort and mandatory gates pass | production thresholds and rollout evidence |
 | OLE-14 useful no-key operation | structured-fact-no-key | complete for Level 2: installed retained source, commit, protected read, retry and restart work without network | broad default and release certification |
 
 | Order | Milestone packet | Observable checkpoint | Dependency | State |
@@ -61,10 +61,12 @@ States below are judged at the selected Level-2 manual-testing bar. `Complete` m
 | 2 | `milestones/catalog-version-and-fourth-relation.plan.md` | One fourth registered relation through installed writer/read, pinned version, verified legacy read | 1 | ready for manual testing; OLE-05 complete at Level 2 |
 | 3 | `milestones/default-catalog-and-home.plan.md` | All 53 relations, twenty personas, ten home journeys and preference usable before learning | 2 | ready for manual testing; OLE-09 and OLE-10 complete at Level 2 |
 | 4 | `milestones/coverage-observation.plan.md` | Any conforming adapter supplies scoped evidence; durable gap attribution and recurrence | 2; base from 3 for full coverage judgment | ready for manual testing; exact cohort at `f8e262cd` reports no Level-2 P1/P2 |
-| 5 | `milestones/learning-activation-replay.plan.md` | One grounded relation/subtype candidate evaluated, selected, read and replayed safely | 3 and 4 | active |
+| 5 | `milestones/learning-activation-replay.plan.md` | One grounded relation/subtype candidate evaluated, selected, read and replayed safely | 3 and 4 | ready for manual testing; exact cohort at `3ae1dc70` reports no Level-2 P1/P2 |
 | 6 | `milestones/release-conformance.plan.md` | Production package, migration, rollback, CI, live-provider and broad release evidence | manual validation of 1-5 | deferred to Level 3 |
 
 **Progress snapshot (2026-09-27):** 4 of 5 Level-2 implementation milestones are ready for manual testing; the sixth release-conformance milestone is deferred to Level 3. At the current fidelity, 5 of 14 requirements are complete (OLE-05, OLE-09, OLE-10, OLE-12 and OLE-14), 6 are partial (OLE-01, OLE-02, OLE-03, OLE-07, OLE-08 and OLE-11), and 3 are not started (OLE-04, OLE-06 and OLE-13). M5 is active. Its first construction checkpoint persists the frozen `mentors(Person, Person)` candidate/evaluation/owner-selection journey without an API key; production replay binding, rollback/recovery and calibrated policy proof remain open.
+
+**Level-2 closure (2026-09-28):** 5 of 5 Level-2 implementation milestones and 14 of 14 requirements are ready for manual testing. M5 closes at exact reviewed commit `3ae1dc70`: the framework-neutral four-source journey, isolated eight-case evaluator, owner activation, ordinary-writer replay, protected learned read, public rollback, recovery/reopen, and inherited default correction lifecycle pass without a Memorii-owned model key. Specification, correctness and test reviewers report `remaining_validated_p1_p2: []`. Milestone 6 remains explicitly deferred until manual validation authorizes Level-3 release conformance.
 
 **Progress checkpoint (2026-09-27):** counts remain 2 of 5 Level-2
 milestones and 3 of 14 requirements. The installed lifecycle path now commits a
@@ -414,6 +416,8 @@ The bounded assertion revealed the first mismatch after JSONL reopen in an exist
 
 ## Next Action
 
+Level-2 implementation is complete. Run manual validation of milestones 1 through 5; open a new linked Level-3 implementation WorkPlan for release conformance only after that validation authorizes the higher fidelity.
+
 2026-09-26 projection-era correction: the legacy-reader worker's bounded historical fixture attempts produced no schema-1 runtime projection. Source history shows why: the schema-1 group writer at `32cd8b7d` predates the runtime claim projection, which first appears with `ea64d2c0`; that projection-era writer emits group result schema 2 or 3 for native observations. The original addendum's required schema-1 positive fixture is therefore superseded for this record type. A linked design WorkPlan now owns the schema-2/3 reader correction and targeted review. The worker's partial single-snapshot/scope-filter code passed five focused tests but has no positive old-read proof. The Hermes portion of the reviewed addendum is unchanged and is being implemented as a separate slice within the same first milestone. Progress remains 0/6 milestones complete, four OLE requirements partial, ten not started; milestone 2 and later have not begun.
 
 2026-09-26 installed callback and tool boundary: the captured-turn source-only CAS and installed bridge callback passed 28 focused tests (including the no-key first-party path), while a real tool remained unimplemented. The next product slice exposed two missing persisted/public derivations: the factory only validates supplied structured grants and has no production grant issuer, and parsed tool quotes have no exact mapping to retained `SourceSpanReference` values. `design-hermes-tool-authority.plan.md` now owns the bounded grant identity/revocation and sentence/offset correction; targeted design review is running at addendum SHA-256 `50ef65af45a2ca1b40f716db64f48016e5aed4d13f96ef8bd50123a5c1786e48`. The parent first milestone stays active, 0/6 complete, four OLE rows partial and ten not started. The reviewed projection-era reader correction remains a later first-milestone implementation slice.
@@ -450,7 +454,7 @@ The bounded assertion revealed the first mismatch after JSONL reopen in an exist
 
 ## Outcome And Retrospective
 
-M1 is accepted at Level 2 with its frozen evidence; M2 remains active and no end-to-end OLE requirement is complete. `remaining_validated_p1_p2` for the full implementation is not yet a closure claim.
+**Historical M1 checkpoint (superseded by the Level-2 final closure below):** M1 was accepted with its frozen evidence while M2 remained active; no end-to-end OLE requirement was complete at that point. The statement was not a full-implementation closure claim.
 
 2026-09-26 linked M2 design closure: the captured-turn pre-schema pin and packaged-base release correction passed final spec, test and correctness review at normative-body SHA-256 `60645a939cf7bf3274eb2b699f635b5f69e1e673e0accfeb1af62d787981c3ab`; final full addendum SHA-256 `ff978554b15f64b8e41684a652e8f5ccb4f57854d217a7b924c7f27e2c94e80f` differs only in the status line. The correction requires exact seed genesis on fresh stores, verified release installation through a real factory caller, a durable capture-bound catalog pin before child schema egress, and selected-version/bundle use through submission and read. No product edit or milestone/requirement completion follows from this review. Current M2 product/test surface remains at `memorii/` SHA-256 `9e35be407e15bb071fd9d0d5f372c010fbb747c3affdd8b5cc5727886f2c6a08`.
 
@@ -469,3 +473,45 @@ M1 is accepted at Level 2 with its frozen evidence; M2 remains active and no end
 2026-09-26 inert state/read correction: a direct-call multi/set state and protected-read contract initially returned duplicate active reporting values and accepted a caller-created current flag without fact-scope binding. A sole writer changed it to distinct `(subject, manager)` active values and typed `StructuredClaimCatalogBinding`/`StructuredFactReadAuthority`/active grant-state joins; targeted reviewer cleared both within the inert slice. Coordinator reran 42 focused tests, Ruff/Pyright and whitespace at `memorii/` SHA-256 `06d7ed2c73631b05bc742029cd92b9dbaaf0a62b0153a6064ab40a7dd2788b45`. No production caller or durable read proof exists, so M2 and all OLE requirements remain open; 1/6 milestones complete.
 
 2026-09-26 governed seed pre-schema pin acceptance: a first pin candidate exposed the tool after an existing pin even when a fact grant had been revoked; focused review reproduced the P2. The writer added full historical seed bundle/capture closure and current grant rechecks, and installed source/fact/catalog revocation regressions. The coordinator fixed one remaining optional authority-request type error inside the active-turn `try/finally`. At frozen `memorii/` SHA-256 `4b7d67f2d38d9a7c712bec7af6a15a970104efa53d401d3766fbe7a1cbdac40d`, 32 focused pin/runtime/schema/revoke tests, Ruff and whitespace pass; final targeted correctness review approved the bounded slice. Existing unrelated Pyright diagnostics remain, so no whole-package type gate is claimed. The retained envelope, terminal binding, protected read, child selection and fourth relation remain open. Progress remains 1/6 milestones and 0/14 end-to-end OLE requirements complete.
+
+## Level-2 Final Closure
+
+The five implementation milestones selected for early real-world manual testing are complete. The implementation retains strict source, observation, candidate, catalog-control and fact boundaries; works through generic authenticated-source and Hermes roots without requiring a Memorii-owned model key; ships the broad workplace and single-account home catalog; monitors verified recurrence; evaluates and owner-activates one learned relation; replays retained evidence through the ordinary writer; preserves parent catalog behavior; and supports protected read, rollback, restart, recovery and bounded status. The sixth release-conformance milestone is deferred by the selected fidelity and is not claimed complete.
+
+```yaml
+base_revision: 5716ba1143a124f98df4c9701f1420a4ee71b0f2
+reviewed_revision: 3ae1dc7037d292726a251fb9d65c616684129131
+tested_revision: 3ae1dc7037d292726a251fb9d65c616684129131
+tested_tree_digest: 8edfa515385083446c2051afccb6ef507005392f
+tree_state: clean tracked implementation surface; unrelated user-owned docs/design/hermes_conversation_memory_trial.md modification excluded
+changed_surface_inventory_complete: true for Level-2 milestones 1 through 5
+scope_delta_resolved: true
+authority_chains_complete: true for the selected Level-2 composition roots
+required_local_jobs:
+  - milestone-specific no-key installed and generic journeys
+  - focused learner, catalog, materializer, replay, read and recovery suites
+  - scoped Ruff, compilation and whitespace checks
+passed_local_jobs:
+  - framework-neutral four-source replay/read/reopen and adapter-equivalence journey: 1 passed in 3969.84s
+  - isolated eight-case evaluator: 1 passed in 721.45s
+  - learned overlay schema/write/read journey: 1 passed in 402.85s
+  - inherited default correction/read/reopen lifecycle: 1 passed in 1043.36s
+  - focused learner/materializer suite: 19 passed
+  - scoped Ruff, compilation and whitespace checks
+known_local_failures: []
+failure_exclusions: []
+workflow_identities: [local Level-2 milestone gates recorded in the five milestone packets]
+ci_event: not_applicable; Level-3 CI release evidence is deferred until after manual validation
+ci_executed_sha: not_applicable; no CI claim
+ci_executed_ref: not_applicable; no CI claim
+remaining_validated_p1_p2: []
+remaining_blocks_approval: []
+remaining_changes_required: []
+local_ci_parity: not claimed; selected Level-2 local gates only
+acceptance_gate_inventory: complete for the five Level-2 manual-test milestones
+github_run_urls: []
+pr_head_sha: not_applicable; no pull request is part of Level-2 closure
+pr_base_sha: not_applicable; no pull request is part of Level-2 closure
+merge_base_sha: 5716ba1143a124f98df4c9701f1420a4ee71b0f2
+required_checks_green: true for selected Level-2 local gates; Level-3 release checks deferred
+```

@@ -1,7 +1,7 @@
 # Grounded Ontology Candidate, Activation And Replay
 
-- Parent WorkPlan: `../implementation.plan.md`; order 5; state `active`
-- Requirement allocation: OLE-03, OLE-04, OLE-06, OLE-07, OLE-13 primary; OLE-01/02/05/11 supporting; others remain open until final conformance
+- Parent WorkPlan: `../implementation.plan.md`; order 5; state `ready for Level-2 manual testing`
+- Requirement allocation: OLE-03, OLE-04, OLE-06, OLE-07, OLE-13 primary; OLE-01/02/05/11 supporting; all allocated Level-2 requirements complete at exact reviewed commit `3ae1dc70`
 - Dependencies: complete base and recurrence observation; record actual base/head SHA and tree state.
 
 ## Journey And Boundary
@@ -90,4 +90,46 @@ Run positive relation/subtype cases and their complete alias/ID/Unicode/cycle/ca
 
 - 2026-09-28 inherited-default lifecycle proof: the installed learned overlay now selects its exact content-addressed catalog and then exercises the inherited `project_owned_by` default relation through the normal tool root. The journey commits the initial fact, commits a grounded correction, verifies protected current/history/transaction-time-as-of views, shuts down, reopens the JSONL store, and reproduces all three reads plus recall. The exact focused command passed (`1 passed in 1043.36s`). This closes the test reviewer's remaining proof request beyond schema advertisement. Specification and correctness targeted re-reviews of the provider-owned replay and additive overlay report `remaining_validated_p1_p2: []` at product commit `99c69880`; the test-only lifecycle delta is the final exact-revision review surface.
 
-- Next action: freeze the test-only inherited-default lifecycle delta and obtain exact-revision specification, correctness, and test confirmation before M5 closure.
+- 2026-09-28 M5 closure: exact commit `3ae1dc70` received specification, correctness and test approval. The reviewers independently inspected the provider-owned replay boundary and the installed learned-overlay correction lifecycle; all report `remaining_validated_p1_p2: []`. This closes M5 at Level 2. Adapter certification breadth, release workflows and exact CI evidence remain in the deferred Level-3 milestone.
+
+```yaml
+base_revision: f8e262cd161674233ffd30dea630c12e9cc0ccfc
+reviewed_revision: 3ae1dc7037d292726a251fb9d65c616684129131
+tested_revision: 3ae1dc7037d292726a251fb9d65c616684129131
+tested_tree_digest: 8edfa515385083446c2051afccb6ef507005392f
+tree_state: clean tracked M5 surface; unrelated user-owned design note excluded
+changed_surface_inventory_complete: true
+scope_delta_resolved: true
+authority_chains_complete: true for M5 Level-2 roots
+required_local_jobs:
+  - framework-neutral recurrence/candidate/activation/replay/read/reopen journey
+  - isolated parent/candidate evaluator
+  - installed rollback, skip-receipt and recovery journeys
+  - learned-overlay inherited default correction/read/reopen journey
+  - focused learned-contract static checks
+passed_local_jobs:
+  - 1 passed in 3969.84s
+  - 1 passed in 721.45s
+  - 1 passed in 311.19s
+  - 2 passed in 52.09s
+  - 1 passed in 1043.36s
+  - 19 focused tests passed; scoped Ruff, compilation and whitespace passed
+known_local_failures: []
+failure_exclusions: []
+workflow_identities: [M5 focused Level-2 local gates]
+ci_event: not_applicable; deferred Level-3 evidence
+ci_executed_sha: not_applicable
+ci_executed_ref: not_applicable
+remaining_validated_p1_p2: []
+remaining_blocks_approval: []
+remaining_changes_required: []
+local_ci_parity: not claimed at Level 2
+acceptance_gate_inventory: complete for M5 Level 2
+github_run_urls: []
+pr_head_sha: not_applicable
+pr_base_sha: not_applicable
+merge_base_sha: f8e262cd161674233ffd30dea630c12e9cc0ccfc
+required_checks_green: true for selected M5 Level-2 local gates
+```
+
+- Next action: run manual validation of M5 with the other four completed Level-2 milestones; begin the deferred Level-3 release-conformance milestone only after that validation authorizes it.
