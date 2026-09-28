@@ -3620,7 +3620,9 @@ class SemanticIngestionAtomicStore:
         return "semantic_ingestion:structured-grant:" + sha256((grant_kind + "\0" + grant_id).encode("utf-8")).hexdigest()
 
     def _structured_grant_state_record(self, state: object, *, timestamp: datetime) -> CanonicalMemoryRecord:
-        from memorii.core.semantic_ingestion.catalog_authority import StructuredGrantState
+        from memorii.core.semantic_ingestion.catalog_authority import (
+            StructuredGrantState,
+        )
         if not isinstance(state, StructuredGrantState):
             raise PreplanningStoreError("structured submission grant state has an invalid type")
         return CanonicalMemoryRecord(
@@ -3684,6 +3686,10 @@ class SemanticIngestionAtomicStore:
             authority, ResolvedStructuredSubmissionAuthority
         ):
             raise PreplanningStoreError("captured catalog pin authority is invalid")
+        if authority.paired_evaluation_authority is not None:
+            return self._pin_paired_evaluation_catalog(
+                ledger=ledger, authority=authority, writer_binding=writer_binding,
+            )
         pin_id = CatalogCapturedTurnPin.memory_id_for_capture(ledger.capture_id)
         existing = self._memory_plane.get_record(pin_id)
         if existing is not None:
@@ -3859,6 +3865,177 @@ class SemanticIngestionAtomicStore:
                 raise PreplanningStoreError("captured catalog pin CAS winner is substituted") from exc
             return persisted
 
+    def _paired_evaluation_bundle(self, authority: object):
+        """Return the one inert bundle named by an internal evaluation authority."""
+        from memorii.core.semantic_ingestion.catalog_authority import (
+            ResolvedStructuredSubmissionAuthority,
+        )
+        from memorii.core.semantic_ingestion.catalog_capture_pin import VerifiedCatalogBundle
+        from memorii.core.semantic_ingestion.learned_relation import (
+            PairedEvaluationCatalogBundle,
+            learned_runtime_bundle_digest,
+        )
+
+        if not isinstance(authority, ResolvedStructuredSubmissionAuthority):
+            raise PreplanningStoreError("paired evaluation authority is invalid")
+        evaluation = authority.paired_evaluation_authority
+        if evaluation is None or authority.paired_evaluation_bundle is None:
+            raise PreplanningStoreError("paired evaluation authority is unavailable")
+        try:
+            bundle = PairedEvaluationCatalogBundle.model_validate(authority.paired_evaluation_bundle)
+        except (TypeError, ValueError) as exc:
+            raise PreplanningStoreError("paired evaluation bundle is invalid") from exc
+        if (
+            bundle.bundle_digest != evaluation.evaluation_bundle_digest
+            or bundle.proposal_id != evaluation.proposal_id
+            or bundle.parent_catalog_digest != evaluation.parent_catalog_digest
+            or bundle.catalog_scope != evaluation.catalog_scope
+            or bundle.version.catalog_scope != authority.catalog.catalog_scope
+            or bundle.version.catalog_digest != authority.catalog.catalog_digest
+        ):
+            raise PreplanningStoreError("paired evaluation bundle is substituted")
+        return bundle, VerifiedCatalogBundle(
+            catalog=authority.catalog,
+            version=bundle.version,
+            runtime_bundle_digest=learned_runtime_bundle_digest(bundle.version),
+        )
+
+    def _paired_evaluation_predecessors(self, *, ledger: object, authority: object,
+                                        writer_binding: SemanticWriterCommitBinding):
+        """Load the ordinary capture/grant fence without consulting selection state."""
+        from memorii.core.semantic_ingestion.catalog_authority import (
+            StructuredGrantState,
+        )
+        from memorii.core.semantic_ingestion.hermes_captured_turn import (
+            HermesCapturedTurnCoordination,
+            HermesCapturedTurnLedger,
+        )
+
+        if not isinstance(ledger, HermesCapturedTurnLedger):
+            raise PreplanningStoreError("paired evaluation ledger is invalid")
+        ledger_record = self._memory_plane.get_record(
+            "semantic_ingestion:hermes_captured_turn:" + sha256(ledger.capture_id.encode()).hexdigest()
+        )
+        prepared_record = self._memory_plane.get_record(
+            "semantic_ingestion:prepared_source:" + sha256(ledger.source_id.encode()).hexdigest()
+        )
+        coordination_record = self._memory_plane.get_record(
+            HermesCapturedTurnCoordination.memory_id_for_source(ledger.source_id)
+        )
+        source_record = self._memory_plane.get_record(ledger.source_id)
+        grant_specs = (("source", authority.source_grant), ("fact", authority.fact_grant),
+                       ("catalog_visibility", authority.catalog_visibility_grant))
+        grant_records = tuple(self._memory_plane.get_record(
+            self._structured_grant_state_record_id(kind, grant.grant_id)
+        ) for kind, grant in grant_specs)
+        writer_record = self._writers.require_current(writer_binding)
+        if any(item is None for item in (
+            ledger_record, prepared_record, coordination_record, source_record, *grant_records,
+        )):
+            raise PreplanningStoreError("paired evaluation pin predecessors are unavailable")
+        assert ledger_record is not None and prepared_record is not None
+        assert coordination_record is not None and source_record is not None
+        try:
+            persisted_ledger = HermesCapturedTurnLedger.model_validate(ledger_record.content)
+            coordination = HermesCapturedTurnCoordination.model_validate(coordination_record.content["coordination"])
+            states = tuple(StructuredGrantState.model_validate(item.content["state"]) for item in grant_records if item is not None)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PreplanningStoreError("paired evaluation pin predecessors are invalid") from exc
+        expected = HermesCapturedTurnCoordination.captured(ledger)
+        pending = (
+            coordination.state == "structured_pending" and coordination.capture_id == expected.capture_id
+            and coordination.source_id == expected.source_id and coordination.source_digest == expected.source_digest
+            and coordination.installation_id == expected.installation_id and coordination.session_id == expected.session_id
+            and coordination.principal_id == expected.principal_id and coordination.agent_id == expected.agent_id
+            and coordination.turn_ordinal == expected.turn_ordinal and coordination.message_digest == expected.message_digest
+            and coordination.completion_digest is None and coordination.assistant_source_id is None
+            and coordination.assistant_source_digest is None and coordination.ordinary_operation_fence_id is None
+        )
+        if pending:
+            self._validate_captured_structured_witness(
+                coordination=coordination, source_id=ledger.source_id, source_digest=ledger.source_digest,
+            )
+        if (
+            persisted_ledger != ledger or (coordination != expected and not pending)
+            or source_admission_source_digest(source_record) != ledger.source_digest
+            or self._load_prepared_source_record(prepared_record, ledger.source_id, ledger.source_digest) is None
+            or tuple((state.grant_kind, state.grant, state.active) for state in states)
+            != tuple((kind, grant, True) for kind, grant in grant_specs)
+        ):
+            raise PreplanningStoreError("paired evaluation pin predecessors are substituted")
+        return (ledger_record, source_record, prepared_record, coordination_record,
+                *(item for item in grant_records if item is not None), writer_record)
+
+    def _pin_paired_evaluation_catalog(self, *, ledger: object, authority: object,
+                                       writer_binding: SemanticWriterCommitBinding):
+        """Persist an evaluation-only pin.  It cannot read or write a selection pointer."""
+        from memorii.core.semantic_ingestion.catalog_capture_pin import CatalogCapturedTurnPin
+
+        bundle, verified = self._paired_evaluation_bundle(authority)
+        evaluation = authority.paired_evaluation_authority
+        assert evaluation is not None
+        pin_id = CatalogCapturedTurnPin.memory_id_for_capture(ledger.capture_id)
+        existing = self._memory_plane.get_record(pin_id)
+        if existing is not None:
+            return self._load_paired_evaluation_catalog_pin(ledger=ledger, authority=authority)
+        predecessors = self._paired_evaluation_predecessors(
+            ledger=ledger, authority=authority, writer_binding=writer_binding,
+        )
+        pin = CatalogCapturedTurnPin.from_bundle(
+            ledger=ledger, bundle=verified, selection_pointer_digest=evaluation.authority_digest,
+            paired_evaluation_authority_digest=evaluation.authority_digest,
+        )
+        record = CanonicalMemoryRecord(
+            memory_id=pin.memory_id, domain=MemoryDomain.EXECUTION, text="",
+            content={"catalog_capture_pin": pin.model_dump(mode="json")},
+            status=CommitStatus.COMMITTED, source_kind="semantic_ingestion_catalog_capture_pin",
+            timestamp=self._now(), visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+        )
+        try:
+            self._memory_plane.conditionally_write_records(
+                (record,), preconditions=(RecordAbsentPrecondition(memory_id=record.memory_id),
+                *(RecordDigestPrecondition(memory_id=item.memory_id, expected_digest=record_digest(item)) for item in predecessors)),
+                authorization=self._writers._authorize_atomic(writer_binding, capability=self._write_capability),
+            )
+            return pin
+        except MemoryPlaneRevisionConflictError as exc:
+            winner = self._memory_plane.get_record(record.memory_id)
+            if winner is None:
+                raise PreplanningStoreError("paired evaluation pin CAS conflicted") from exc
+            loaded = self._load_paired_evaluation_catalog_pin(ledger=ledger, authority=authority)
+            if loaded != pin:
+                raise PreplanningStoreError("paired evaluation pin CAS winner is substituted") from exc
+            return loaded
+
+    def _load_paired_evaluation_catalog_pin(self, *, ledger: object, authority: object):
+        """Verify an evaluation-only pin against the reissued internal authority."""
+        from memorii.core.semantic_ingestion.catalog_capture_pin import CatalogCapturedTurnPin
+
+        bundle, verified = self._paired_evaluation_bundle(authority)
+        evaluation = authority.paired_evaluation_authority
+        assert evaluation is not None
+        pin_id = CatalogCapturedTurnPin.memory_id_for_capture(ledger.capture_id)
+        record = self._memory_plane.get_record(pin_id)
+        if record is None:
+            return None
+        try:
+            pin = CatalogCapturedTurnPin.model_validate(record.content["catalog_capture_pin"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PreplanningStoreError("paired evaluation pin is invalid") from exc
+        if (
+            record.memory_id != pin.memory_id or record.source_kind != "semantic_ingestion_catalog_capture_pin"
+            or record.domain is not MemoryDomain.EXECUTION or record.visibility is not MemoryRecordVisibility.INTERNAL_CONTROL
+            or record.status is not CommitStatus.COMMITTED or pin.capture_id != ledger.capture_id
+            or pin.source_id != ledger.source_id or pin.source_digest != ledger.source_digest
+            or pin.catalog_scope != verified.catalog.catalog_scope or pin.catalog_digest != verified.catalog.catalog_digest
+            or pin.selected_version_id != bundle.version.version_id or pin.selected_version_digest != bundle.version.version_digest
+            or pin.runtime_bundle_digest != verified.runtime_bundle_digest
+            or pin.selection_pointer_digest != evaluation.authority_digest
+            or pin.paired_evaluation_authority_digest != evaluation.authority_digest
+        ):
+            raise PreplanningStoreError("paired evaluation pin is substituted")
+        return pin
+
     def load_captured_turn_catalog_pin(
         self, *, ledger: object, authority: object,
     ) -> CatalogCapturedTurnPin | None:
@@ -3882,6 +4059,8 @@ class SemanticIngestionAtomicStore:
             authority, ResolvedStructuredSubmissionAuthority
         ):
             raise PreplanningStoreError("captured catalog pin authority is invalid")
+        if authority.paired_evaluation_authority is not None:
+            return self._load_paired_evaluation_catalog_pin(ledger=ledger, authority=authority)
         pin_id = CatalogCapturedTurnPin.memory_id_for_capture(ledger.capture_id)
         existing = self._memory_plane.get_record(pin_id)
         if existing is None:
@@ -4012,6 +4191,11 @@ class SemanticIngestionAtomicStore:
 
         if not isinstance(pin, CatalogCapturedTurnPin):
             raise PreplanningStoreError("captured catalog dispatch pin is invalid")
+        # A paired-evaluation pin is independently bound to an inert bundle
+        # by the internal authority at load/submit time.  It intentionally
+        # never asks the selected-catalog locator for a pointer.
+        if pin.paired_evaluation_authority_digest is not None:
+            return "mentors"
         _revision, records = self._memory_plane.read_snapshot()
         try:
             bundle = self._catalog_bundle_locator.locate_historical(
@@ -4594,19 +4778,23 @@ class SemanticIngestionAtomicStore:
                 pin_record.content["catalog_capture_pin"] if pin_record is not None else None
             )
             _revision, records = self._memory_plane.read_snapshot()
-            bundle = self._catalog_bundle_locator.locate_historical(
-                records,
-                scope=pin.catalog_scope,
-                authenticated=(
-                    AuthenticatedPrincipalAgent(
-                        principal_id=pin.catalog_scope.principal_id,
-                        agent_id=pin.catalog_scope.agent_id,
-                    )
-                    if isinstance(pin.catalog_scope, AgentLocalCatalogAuthorityScope)
-                    else None
-                ),
-                version_id=pin.selected_version_id,
-                version_digest=pin.selected_version_digest,
+            bundle = (
+                self._paired_evaluation_bundle(authority)[1]
+                if authority.paired_evaluation_authority is not None
+                else self._catalog_bundle_locator.locate_historical(
+                    records,
+                    scope=pin.catalog_scope,
+                    authenticated=(
+                        AuthenticatedPrincipalAgent(
+                            principal_id=pin.catalog_scope.principal_id,
+                            agent_id=pin.catalog_scope.agent_id,
+                        )
+                        if isinstance(pin.catalog_scope, AgentLocalCatalogAuthorityScope)
+                        else None
+                    ),
+                    version_id=pin.selected_version_id,
+                    version_digest=pin.selected_version_digest,
+                )
             )
         except (AttributeError, CatalogAuthorityError, KeyError, TypeError, ValueError) as exc:
             raise PreplanningStoreError("captured catalog pin is unavailable") from exc
@@ -4634,6 +4822,11 @@ class SemanticIngestionAtomicStore:
             or pin.selected_version_id != bundle.version.version_id
             or pin.selected_version_digest != bundle.version.version_digest
             or pin.runtime_bundle_digest != bundle.runtime_bundle_digest
+            or (
+                authority.paired_evaluation_authority is not None
+                and pin.paired_evaluation_authority_digest
+                != authority.paired_evaluation_authority.authority_digest
+            )
         ):
             raise PreplanningStoreError("captured catalog pin is substituted")
         return pin

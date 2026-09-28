@@ -23,6 +23,7 @@ from memorii.core.semantic_ingestion.learned_relation import (
     ActivationPolicy,
     AgentLocalCatalogScope,  # noqa: I001
     FrozenMentorsPairedEvaluator,
+    IsolatedMentorsEvaluationExecutor,
     LearnedRelationCandidateService,
     LearnedRelationError,
     LearnedRelationRuntime,
@@ -31,6 +32,7 @@ from memorii.core.semantic_ingestion.learned_relation import (
     OntologyChangeProposal,
     OntologyEvidenceReference,
     PairedEvaluation,
+    PairedEvaluationCaseOutcome,
     RelationDeclaration,
     validate_mentors_tool_proposal,
 )
@@ -112,6 +114,34 @@ def _passing_evaluation() -> PairedEvaluation:
     )
 
 
+def _isolated_case_executor(*, veto_case: str | None = None) -> IsolatedMentorsEvaluationExecutor:
+    """A deterministic isolated-root stand-in for evaluator contract proof."""
+    def run(
+        _proposal: OntologyChangeProposal,
+        cases: tuple[tuple[str, str, str], ...],
+        binding_digest: str,
+        corpus_digest: str,
+        budget_digest: str,
+    ) -> tuple[PairedEvaluationCaseOutcome, ...]:
+        outcomes: list[PairedEvaluationCaseOutcome] = []
+        for case_id, _text, expected in cases:
+            if expected == "candidate_commit_and_read":
+                parent, candidate, read = "unavailable", "committed", "read"
+            else:
+                parent, candidate, read = "unavailable", "abstained", "unavailable"
+            if case_id == veto_case:
+                candidate = "committed"
+            outcomes.append(PairedEvaluationCaseOutcome(
+                case_id=case_id, expected=expected, parent_status=parent,
+                candidate_status=candidate, candidate_read_status=read,
+                binding_digest=binding_digest, corpus_digest=corpus_digest,
+                budget_digest=budget_digest,
+            ))
+        return tuple(outcomes)
+
+    return IsolatedMentorsEvaluationExecutor(run_isolated_cases=run)
+
+
 def _approve_and_activate(runtime: LearnedRelationRuntime, proposal: OntologyChangeProposal):
     prepared = runtime.prepare_candidate(proposal)
     evaluated = runtime.record_evaluation(
@@ -180,13 +210,31 @@ def test_candidate_owner_rejects_missing_recurrence_without_control_or_fact_stat
 
 
 def test_registered_evaluator_derives_frozen_paired_counts() -> None:
-    evaluation = FrozenMentorsPairedEvaluator().evaluate(_proposal())
+    evaluation = FrozenMentorsPairedEvaluator(
+        _isolated_case_executor()
+    ).evaluate(_proposal())
 
     assert evaluation.available
     assert evaluation.targeted_positive_count == 2
-    assert evaluation.targeted_positive_committed_and_read == 0
-    assert evaluation.parent_regressions == 1
-    assert evaluation.unsupported_or_misleading_failures == 1
+    assert evaluation.targeted_positive_committed_and_read == 2
+    assert evaluation.parent_regressions == 0
+    assert evaluation.unsupported_or_misleading_failures == 0
+    assert evaluation.scope_or_provenance_failures == 0
+    assert len(evaluation.case_outcomes) == 8
+    assert evaluation.case_outcomes[0].binding_digest == evaluation.binding_digest
+
+
+def test_registered_evaluator_is_unavailable_before_root_is_bound_or_when_vetoed() -> None:
+    unavailable = FrozenMentorsPairedEvaluator().evaluate(_proposal())
+    vetoed = FrozenMentorsPairedEvaluator(
+        _isolated_case_executor(veto_case="scope-provenance-veto")
+    ).evaluate(_proposal())
+
+    assert unavailable.available is False
+    assert unavailable.case_outcomes == ()
+    assert vetoed.available
+    assert vetoed.scope_or_provenance_failures == 1
+    assert vetoed.passes is False
 
 
 def test_recovery_finalizes_both_selection_crash_windows_and_replay_receipts() -> None:

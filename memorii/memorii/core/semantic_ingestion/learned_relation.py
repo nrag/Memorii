@@ -141,13 +141,25 @@ class PairedEvaluation(BaseModel):
     unsupported_or_misleading_failures: int = Field(ge=0)
     scope_or_provenance_failures: int = Field(ge=0)
     available: bool
+    # These values make an evaluated proposal independently auditable.  In
+    # particular, a caller cannot replace a fixed corpus with an aggregate
+    # success count after the candidate was persisted.
+    corpus_digest: str = Field(default="0" * 64, pattern=_DIGEST)
+    budget_digest: str = Field(default="0" * 64, pattern=_DIGEST)
+    case_outcomes: tuple[PairedEvaluationCaseOutcome, ...] = ()
     evaluation_digest: str = Field(pattern=_DIGEST)
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     @classmethod
     def create(cls, **body: object) -> PairedEvaluation:
-        canonical = {"schema_version": 1, **body}
+        canonical = {
+            "schema_version": 1,
+            "corpus_digest": "0" * 64,
+            "budget_digest": "0" * 64,
+            "case_outcomes": (),
+            **body,
+        }
         digest = _digest(b"memorii.learned-ontology.paired-evaluation.v1", canonical)
         return cls(**canonical, evaluation_digest=digest)
 
@@ -170,6 +182,21 @@ class PairedEvaluation(BaseModel):
             and self.unsupported_or_misleading_failures == 0
             and self.scope_or_provenance_failures == 0
         )
+
+
+class PairedEvaluationCaseOutcome(BaseModel):
+    """One immutable parent/candidate execution result from a frozen corpus."""
+
+    case_id: str = Field(min_length=1, max_length=128)
+    expected: Literal["candidate_commit_and_read", "deny_or_abstain"]
+    parent_status: Literal["committed", "read", "denied", "abstained", "unavailable"]
+    candidate_status: Literal["committed", "read", "denied", "abstained", "unavailable"]
+    candidate_read_status: Literal["read", "denied", "abstained", "unavailable"]
+    binding_digest: str = Field(pattern=_DIGEST)
+    corpus_digest: str = Field(pattern=_DIGEST)
+    budget_digest: str = Field(pattern=_DIGEST)
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
 
 class OntologyChangeProposal(BaseModel):
@@ -260,6 +287,67 @@ class OntologyCatalogVersion(BaseModel):
         expected = _digest(b"memorii.learned-ontology.learned-catalog-version.v1", body)
         if self.version_digest != expected or self.version_id != f"ontology-catalog:{expected}":
             raise ValueError("catalog version identity is invalid")
+        return self
+
+
+class PairedEvaluationCatalogBundle(BaseModel):
+    """Inert candidate catalog bytes usable only by an isolated evaluator.
+
+    This is deliberately not a selected catalog version: it has no pointer,
+    activation attempt, owner decision, or production selection API.
+    """
+
+    schema_version: Literal[1] = 1
+    purpose: Literal["paired_evaluation"] = "paired_evaluation"
+    proposal_id: str = Field(pattern=r"^ocp_[0-9a-f]{64}$")
+    parent_catalog_digest: str = Field(pattern=_DIGEST)
+    catalog_scope: AgentLocalCatalogScope
+    version: OntologyCatalogVersion
+    bundle_digest: str = Field(pattern=_DIGEST)
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @classmethod
+    def from_proposal(cls, *, proposal: OntologyChangeProposal) -> PairedEvaluationCatalogBundle:
+        version = OntologyCatalogVersion.create(
+            catalog_scope=proposal.catalog_scope,
+            catalog_digest=_digest(
+                b"memorii.learned-ontology.paired-evaluation-catalog.v1",
+                {
+                    "proposal_id": proposal.proposal_id,
+                    "parent_catalog_digest": proposal.parent_catalog_digest,
+                    "relation": proposal.relation.model_dump(mode="json"),
+                },
+            ),
+            parent_version_digest=proposal.parent_catalog_digest,
+            relation_ids=(proposal.relation.relation_id,),
+            introduced_proposal_id=proposal.proposal_id,
+        )
+        body = {
+            "schema_version": 1, "purpose": "paired_evaluation",
+            "proposal_id": proposal.proposal_id,
+            "parent_catalog_digest": proposal.parent_catalog_digest,
+            "catalog_scope": proposal.catalog_scope, "version": version,
+        }
+        return cls(
+            **body,
+            bundle_digest=_digest(b"memorii.learned-ontology.paired-evaluation-bundle.v1", body),
+        )
+
+    @model_validator(mode="after")
+    def validate_identity(self) -> PairedEvaluationCatalogBundle:
+        body = self.model_dump(mode="json", exclude={"bundle_digest"})
+        if self.bundle_digest != _digest(
+            b"memorii.learned-ontology.paired-evaluation-bundle.v1", body,
+        ):
+            raise ValueError("paired evaluation catalog bundle is invalid")
+        if (
+            self.version.catalog_scope != self.catalog_scope
+            or self.version.introduced_proposal_id != self.proposal_id
+            or self.version.parent_version_digest != self.parent_catalog_digest
+            or self.version.relation_ids != (_RELATION_ID,)
+        ):
+            raise ValueError("paired evaluation catalog bundle is invalid")
         return self
 
 
@@ -362,6 +450,67 @@ class RegisteredPairedEvaluator(Protocol):
     def evaluate(self, proposal: OntologyChangeProposal) -> PairedEvaluation: ...
 
 
+class PairedEvaluationExecutor(Protocol):
+    """Execute the fixed corpus through isolated parent and candidate roots.
+
+    The evaluator owns the corpus and derives aggregates.  The executor owns
+    construction of short lived stores and must never receive the live memory
+    plane, grants, or selected pointer from the production candidate.
+    """
+
+    def execute(
+        self,
+        *,
+        proposal: OntologyChangeProposal,
+        cases: tuple[tuple[str, str, Literal["candidate_commit_and_read", "deny_or_abstain"]], ...],
+        binding_digest: str,
+        corpus_digest: str,
+        budget_digest: str,
+    ) -> tuple[PairedEvaluationCaseOutcome, ...]: ...
+
+
+class IsolatedMentorsEvaluationExecutor:
+    """Adapt a factory-owned isolated root to the core evaluator protocol.
+
+    The callable is intentionally per evaluation rather than a service object:
+    every invocation must create separate parent and candidate stores.  This
+    keeps an evaluation unable to observe or mutate a production catalog,
+    writer grant, or semantic fact.
+    """
+
+    def __init__(
+        self,
+        *,
+        run_isolated_cases: Callable[
+            [
+                OntologyChangeProposal,
+                tuple[tuple[str, str, Literal["candidate_commit_and_read", "deny_or_abstain"]], ...],
+                str,
+                str,
+                str,
+            ],
+            tuple[PairedEvaluationCaseOutcome, ...],
+        ],
+    ) -> None:
+        self._run_isolated_cases = run_isolated_cases
+
+    def execute(
+        self,
+        *,
+        proposal: OntologyChangeProposal,
+        cases: tuple[tuple[str, str, Literal["candidate_commit_and_read", "deny_or_abstain"]], ...],
+        binding_digest: str,
+        corpus_digest: str,
+        budget_digest: str,
+    ) -> tuple[PairedEvaluationCaseOutcome, ...]:
+        outcomes = self._run_isolated_cases(
+            proposal, cases, binding_digest, corpus_digest, budget_digest,
+        )
+        if not isinstance(outcomes, tuple):
+            raise LearnedRelationError("isolated paired evaluation outcomes are invalid")
+        return outcomes
+
+
 class FrozenMentorsPairedEvaluator:
     """Deterministic Level-2 corpus for the only learned relation currently supported.
 
@@ -369,15 +518,49 @@ class FrozenMentorsPairedEvaluator:
     Its aggregate is derived here; callers cannot present a success count.
     """
 
-    _CASES = (
-        ("Ada mentors Bea.", True), ("Cora mentors Dax.", True),
-        ('"Ada mentors Bea."', False), ("Ada might mentor Bea.", False),
-        ("Ada no longer mentors Bea.", False), ("Ada mentors Bea for team X.", False),
+    _CASES: tuple[tuple[str, str, Literal["candidate_commit_and_read", "deny_or_abstain"]], ...] = (
+        ("direct-positive-ada", "Ada mentors Bea.", "candidate_commit_and_read"),
+        ("direct-positive-cora", "Cora mentors Dax.", "candidate_commit_and_read"),
+        ("quoted-claim", '"Ada mentors Bea."', "deny_or_abstain"),
+        ("hypothetical", "Ada might mentor Bea.", "deny_or_abstain"),
+        ("ambiguous-role", "Ada mentors Bea for team X.", "deny_or_abstain"),
+        ("correction", "Ada no longer mentors Bea.", "deny_or_abstain"),
+        ("scope-provenance-veto", "Ada mentors Bea.", "deny_or_abstain"),
+        ("parent-regression", "Ada reports to Bea.", "deny_or_abstain"),
     )
+
+    _BUDGET = {
+        "schema_version": 1,
+        "max_cases": len(_CASES),
+        "network": "forbidden",
+        "model_transport": "forbidden",
+        "parent_store": "isolated",
+        "candidate_store": "isolated",
+    }
+
+    def __init__(self, executor: PairedEvaluationExecutor | None = None) -> None:
+        self._executor = executor
+
+    def bind_executor(self, executor: PairedEvaluationExecutor) -> None:
+        """Attach the installed isolated execution root after it is composed."""
+        if self._executor is not None:
+            raise LearnedRelationError("paired evaluator executor is already bound")
+        self._executor = executor
+
+    @property
+    def corpus_digest(self) -> str:
+        return _digest(b"memorii.learned-ontology.mentors-paired-corpus.v2", self._CASES)
+
+    @property
+    def budget_digest(self) -> str:
+        return _digest(b"memorii.learned-ontology.mentors-paired-budget.v1", self._BUDGET)
 
     @property
     def binding_digest(self) -> str:
-        return _digest(b"memorii.learned-ontology.mentors-paired-corpus.v1", self._CASES)
+        return _digest(
+            b"memorii.learned-ontology.mentors-paired-binding.v1",
+            {"corpus_digest": self.corpus_digest, "budget_digest": self.budget_digest},
+        )
 
     def evaluate(self, proposal: OntologyChangeProposal) -> PairedEvaluation:
         valid = (
@@ -385,19 +568,76 @@ class FrozenMentorsPairedEvaluator:
             and proposal.relation.relation_id == _RELATION_ID
             and proposal.relation.subject_type == "Person"
             and proposal.relation.object_type == "Person"
-            and len(proposal.evidence) >= 3
+            and len(proposal.evidence) >= 1
         )
-        # The fixed harness models the normal writer/read result for direct
-        # positives and verifies that the parent has no mentors grammar.
-        positives = sum(1 for _text, positive in self._CASES if positive)
+        if not valid or self._executor is None:
+            return PairedEvaluation.create(
+                binding_digest=self.binding_digest,
+                targeted_positive_count=2,
+                targeted_positive_committed_and_read=0,
+                parent_regressions=0,
+                unsupported_or_misleading_failures=0,
+                scope_or_provenance_failures=0,
+                available=False,
+                corpus_digest=self.corpus_digest,
+                budget_digest=self.budget_digest,
+                case_outcomes=(),
+            )
+        try:
+            outcomes = self._executor.execute(
+                proposal=proposal, cases=self._CASES, binding_digest=self.binding_digest,
+                corpus_digest=self.corpus_digest, budget_digest=self.budget_digest,
+            )
+        except (OSError, ValueError, LearnedRelationError):
+            outcomes = ()
+        expected_ids = tuple(case_id for case_id, _text, _expected in self._CASES)
+        complete = (
+            tuple(item.case_id for item in outcomes) == expected_ids
+            and all(
+                item.binding_digest == self.binding_digest
+                and item.corpus_digest == self.corpus_digest
+                and item.budget_digest == self.budget_digest
+                and item.expected == expected
+                for item, (_case_id, _text, expected) in zip(outcomes, self._CASES, strict=True)
+            )
+            and all(
+                item.candidate_status == "committed" and item.candidate_read_status == "read"
+                if item.expected == "candidate_commit_and_read"
+                else item.candidate_status in {"denied", "abstained"}
+                for item in outcomes
+            )
+        )
+        positives = tuple(item for item in outcomes if item.expected == "candidate_commit_and_read")
+        positive_successes = sum(
+            item.parent_status in {"denied", "abstained", "unavailable"}
+            and item.candidate_status == "committed"
+            and item.candidate_read_status == "read"
+            for item in positives
+        )
+        parent_regressions = sum(
+            item.case_id == "parent-regression" and item.parent_status == "committed"
+            for item in outcomes
+        )
+        unsupported_failures = sum(
+            item.case_id in {"quoted-claim", "hypothetical", "ambiguous-role", "correction"}
+            and item.candidate_status == "committed"
+            for item in outcomes
+        )
+        scope_failures = sum(
+            item.case_id == "scope-provenance-veto" and item.candidate_status == "committed"
+            for item in outcomes
+        )
         return PairedEvaluation.create(
             binding_digest=self.binding_digest,
-            targeted_positive_count=positives,
-            targeted_positive_committed_and_read=positives if valid else 0,
-            parent_regressions=0 if valid else 1,
-            unsupported_or_misleading_failures=0 if valid else 1,
-            scope_or_provenance_failures=0,
-            available=True,
+            targeted_positive_count=2,
+            targeted_positive_committed_and_read=positive_successes,
+            parent_regressions=parent_regressions,
+            unsupported_or_misleading_failures=unsupported_failures,
+            scope_or_provenance_failures=scope_failures,
+            available=complete,
+            corpus_digest=self.corpus_digest,
+            budget_digest=self.budget_digest,
+            case_outcomes=outcomes,
         )
 
 
@@ -1054,8 +1294,9 @@ __all__ = [
     "ActivationPolicy", "AgentLocalCatalogScope", "CatalogPointer", "LearnedRelationError", "LearnedRelationRuntime",
     "OntologyActivation", "OntologyCatalogVersion", "OntologyChangeProposal",
     "FrozenMentorsPairedEvaluator", "LearnedRelationCandidateService",
-    "OntologyEvidenceReference", "OrdinarySemanticReplayWriter", "PairedEvaluation",
-    "RegisteredPairedEvaluator",
+    "IsolatedMentorsEvaluationExecutor", "OntologyEvidenceReference",
+    "OrdinarySemanticReplayWriter", "PairedEvaluation", "PairedEvaluationCaseOutcome",
+    "PairedEvaluationExecutor", "RegisteredPairedEvaluator",
     "RelationDeclaration", "learned_catalog_pointer_memory_id",
     "learned_runtime_bundle_digest", "locate_historical_learned_catalog",
     "locate_selected_learned_catalog",

@@ -363,6 +363,9 @@ class CatalogCapturedTurnPin(BaseModel):
     selected_version_digest: str = Field(pattern=_DIGEST)
     runtime_bundle_digest: str = Field(pattern=_DIGEST)
     selection_pointer_digest: str = Field(pattern=_DIGEST)
+    # Present only for the private paired-evaluation route.  It is an
+    # authority witness, never a catalog-selection pointer.
+    paired_evaluation_authority_digest: str | None = Field(default=None, pattern=_DIGEST)
     pin_digest: str = Field(pattern=_DIGEST)
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -416,7 +419,7 @@ class CatalogCapturedTurnPin(BaseModel):
     @classmethod
     def from_bundle(
         cls, *, ledger: HermesCapturedTurnLedger, bundle: VerifiedCatalogBundle,
-        selection_pointer_digest: str,
+        selection_pointer_digest: str, paired_evaluation_authority_digest: str | None = None,
     ) -> CatalogCapturedTurnPin:
         if isinstance(bundle.catalog.catalog_scope, AgentLocalCatalogAuthorityScope) and (
             ledger.principal_id != bundle.catalog.catalog_scope.principal_id
@@ -431,6 +434,7 @@ class CatalogCapturedTurnPin(BaseModel):
             "selected_version_digest": bundle.version.version_digest,
             "runtime_bundle_digest": bundle.runtime_bundle_digest,
             "selection_pointer_digest": selection_pointer_digest,
+            "paired_evaluation_authority_digest": paired_evaluation_authority_digest,
         }
         return cls(**body, pin_digest=contract_digest(b"memorii.catalog.capture-pin.v1", body))
 

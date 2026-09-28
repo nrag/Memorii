@@ -753,19 +753,54 @@ def _current_catalog_read_authority(
         ):
             return False
         pin = pins.get(binding.pin_memory_id)
-        try:
-            bundle = catalog_bundle_locator.locate_historical(
-                records,
-                scope=binding.catalog_scope,
-                authenticated=AuthenticatedPrincipalAgent(
-                    principal_id=binding.authenticated.principal_id,
-                    agent_id=binding.authenticated.agent_id,
-                ),
-                version_id=binding.selected_version_id,
-                version_digest=binding.selected_version_digest,
-            )
-        except (CatalogAuthorityError, ValueError):
-            return False
+        evaluation_authority = next((
+            item.paired_evaluation_authority for item in authorities
+            if isinstance(item, StructuredFactReadAuthority)
+            and item.paired_evaluation_authority is not None
+        ), None)
+        evaluation_bundle_data = next((
+            item.paired_evaluation_bundle for item in authorities
+            if isinstance(item, StructuredFactReadAuthority)
+            and item.paired_evaluation_authority is not None
+        ), None)
+        if evaluation_authority is not None:
+            from memorii.core.semantic_ingestion.learned_relation import PairedEvaluationCatalogBundle
+
+            try:
+                evaluation_bundle = PairedEvaluationCatalogBundle.model_validate(evaluation_bundle_data)
+            except (TypeError, ValueError):
+                return False
+            if (
+                not isinstance(pin, CatalogCapturedTurnPin)
+                or pin.paired_evaluation_authority_digest != evaluation_authority.authority_digest
+                or evaluation_bundle.bundle_digest != evaluation_authority.evaluation_bundle_digest
+                or evaluation_bundle.catalog_scope != binding.catalog_scope
+                or evaluation_bundle.version.version_id != binding.selected_version_id
+                or evaluation_bundle.version.version_digest != binding.selected_version_digest
+            ):
+                return False
+            bundle = type("_EvaluationBundle", (), {
+                "catalog": type("_Catalog", (), {
+                    "catalog_scope": evaluation_bundle.catalog_scope,
+                    "catalog_digest": evaluation_bundle.version.catalog_digest,
+                })(),
+                "version": evaluation_bundle.version,
+                "runtime_bundle_digest": binding.runtime_bundle_digest,
+            })()
+        else:
+            try:
+                bundle = catalog_bundle_locator.locate_historical(
+                    records,
+                    scope=binding.catalog_scope,
+                    authenticated=AuthenticatedPrincipalAgent(
+                        principal_id=binding.authenticated.principal_id,
+                        agent_id=binding.authenticated.agent_id,
+                    ),
+                    version_id=binding.selected_version_id,
+                    version_digest=binding.selected_version_digest,
+                )
+            except (CatalogAuthorityError, ValueError):
+                return False
         if not isinstance(pin, CatalogCapturedTurnPin) or (
             binding.capture_id != pin.capture_id
             or binding.pin_memory_id != pin.memory_id

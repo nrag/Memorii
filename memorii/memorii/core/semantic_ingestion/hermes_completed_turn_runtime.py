@@ -56,6 +56,7 @@ from memorii.core.semantic_ingestion.contracts import (
     VerbatimTextArtifactMappingProof,
 )
 from memorii.core.semantic_ingestion.coverage_observation import (
+    CoverageObservationRepository,
     coverage_observation_record,
     delivery_origin_lineage_digest,
     new_coverage_observation,
@@ -1574,7 +1575,15 @@ class HermesCompletedTurnRuntime:
                 observed_at=received_at,
                 catalog_scope=selected_catalog.catalog.catalog_scope,
                 catalog_digest=selected_catalog.version.version_digest,
-                observer_binding=None,
+                observer_binding=(
+                    self._service._coverage_observer_runner.binding
+                    if self._service._coverage_observer_runner is not None
+                    and self._service._provider_ingestion._coverage_observer_authorizer is not None
+                    and self._service._provider_ingestion._coverage_observer_authorizer(
+                        ingress, self._service._coverage_observer_runner.binding,
+                    )
+                    else None
+                ),
             )
             prepared_admission = prepared_admission.model_copy(
                 update={
@@ -1611,6 +1620,19 @@ class HermesCompletedTurnRuntime:
             ),
         )
         owner.capture(admission=prepared_admission, ledger=ledger)
+        observer = self._service._coverage_observer_runner
+        authorizer = self._service._provider_ingestion._coverage_observer_authorizer
+        if observation is not None and observer is not None and authorizer is not None and authorizer(
+            ingress, observer.binding,
+        ):
+            persisted_observation = CoverageObservationRepository(
+                self._service._memory_plane
+            ).load(observation.observation_id)
+            if persisted_observation is not None:
+                observer.run(
+                    observation=persisted_observation,
+                    source_text=prepared_admission.accepted.observation.text,
+                )
         with self._condition:
             if self._active_turn is not None:
                 self._active_turn_ambiguous = True

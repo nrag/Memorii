@@ -3999,6 +3999,16 @@ def _is_catalog_captured_turn_pin_write(
         pin = CatalogCapturedTurnPin.model_validate(record.content["catalog_capture_pin"])
         if not isinstance(catalog_bundle_locator, PackageIndexedCatalogBundleLocator):
             return False
+        # Paired evaluation deliberately has no selected-catalog pointer.  Its
+        # inert candidate bundle is instead revalidated by the atomic owner
+        # against the internal evaluation authority before this policy runs.
+        # Treat it as a separate, non-selecting write shape so an activated
+        # writer can persist the capture pin without admitting a production
+        # catalog selection.
+        if pin.paired_evaluation_authority_digest is not None:
+            return _is_paired_evaluation_catalog_captured_turn_pin_write(
+                record=record, pin=pin, current=current,
+            )
         bundle, selected_pointer = catalog_bundle_locator.locate_selected(
             current,
             scope=pin.catalog_scope,
@@ -4093,6 +4103,75 @@ def _is_catalog_captured_turn_pin_write(
     try:
         states = tuple(StructuredGrantState.model_validate(item.content["state"]) for item in grants)
     except (KeyError, TypeError, ValueError):
+        return False
+    matching = tuple(
+        state for state in states
+        if state.active
+        and state.grant.authenticated.principal_id == ledger.principal_id
+        and state.grant.authenticated.agent_id == ledger.agent_id
+    )
+    return {state.grant_kind for state in matching} == {
+        "source", "fact", "catalog_visibility",
+    }
+
+
+def _is_paired_evaluation_catalog_captured_turn_pin_write(
+    *, record: CanonicalMemoryRecord, pin: object,
+    current: tuple[CanonicalMemoryRecord, ...],
+) -> bool:
+    """Recognize the inert evaluation pin without consulting selection state."""
+    try:
+        from memorii.core.semantic_ingestion.catalog_authority import StructuredGrantState
+        from memorii.core.semantic_ingestion.catalog_capture_pin import CatalogCapturedTurnPin
+        from memorii.core.semantic_ingestion.hermes_captured_turn import (
+            HermesCapturedTurnCoordination,
+            HermesCapturedTurnLedger,
+        )
+    except ImportError:
+        return False
+    if not isinstance(pin, CatalogCapturedTurnPin) or (
+        getattr(pin.catalog_scope, "kind", None) != "agent_local"
+        or pin.paired_evaluation_authority_digest is None
+        or pin.selection_pointer_digest != pin.paired_evaluation_authority_digest
+        or record.memory_id != pin.memory_id
+    ):
+        return False
+    by_id = {item.memory_id: item for item in current}
+    ledger_record = by_id.get(
+        "semantic_ingestion:hermes_captured_turn:" + sha256(pin.capture_id.encode()).hexdigest()
+    )
+    prepared_record = by_id.get(
+        "semantic_ingestion:prepared_source:" + sha256(pin.source_id.encode()).hexdigest()
+    )
+    coordination_record = by_id.get(
+        HermesCapturedTurnCoordination.memory_id_for_source(pin.source_id)
+    )
+    source_record = by_id.get(pin.source_id)
+    if any(item is None for item in (
+        ledger_record, prepared_record, coordination_record, source_record,
+    )):
+        return False
+    assert ledger_record is not None and coordination_record is not None
+    try:
+        ledger = HermesCapturedTurnLedger.model_validate(ledger_record.content)
+        coordination = HermesCapturedTurnCoordination.model_validate(
+            coordination_record.content["coordination"]
+        )
+        states = tuple(
+            StructuredGrantState.model_validate(item.content["state"])
+            for item in current
+            if item.source_kind == "semantic_ingestion_structured_grant_state"
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
+    if (
+        ledger.capture_id != pin.capture_id
+        or ledger.source_id != pin.source_id
+        or ledger.source_digest != pin.source_digest
+        or coordination != HermesCapturedTurnCoordination.captured(ledger)
+        or ledger.principal_id != pin.catalog_scope.principal_id
+        or ledger.agent_id != pin.catalog_scope.agent_id
+    ):
         return False
     matching = tuple(
         state for state in states

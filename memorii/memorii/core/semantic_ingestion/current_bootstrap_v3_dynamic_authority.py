@@ -198,7 +198,8 @@ class CurrentBootstrapV3DynamicAuthorityProvider:
                 pin = CatalogCapturedTurnPin.model_validate(
                     pin_record.content["catalog_capture_pin"]
                 )
-                bundle = PackageIndexedCatalogBundleLocator().locate_historical(
+                evaluation_pin = pin.paired_evaluation_authority_digest is not None
+                bundle = None if evaluation_pin else PackageIndexedCatalogBundleLocator().locate_historical(
                     records,
                     scope=coordinate.catalog_scope,
                     authenticated=(
@@ -222,16 +223,18 @@ class CurrentBootstrapV3DynamicAuthorityProvider:
                 or pin.source_digest != coordinate.source_digest
                 or pin.source_id != invocation.source.source_id
                 or pin.source_digest != invocation.source.source_digest
-                or coordinate.catalog_scope != bundle.catalog.catalog_scope
-                or coordinate.catalog_digest != bundle.catalog.catalog_digest
-                or coordinate.selected_version_id != bundle.version.version_id
-                or coordinate.selected_version_digest != bundle.version.version_digest
-                or coordinate.runtime_bundle_digest != bundle.runtime_bundle_digest
+                or (not evaluation_pin and (
+                    coordinate.catalog_scope != bundle.catalog.catalog_scope
+                    or coordinate.catalog_digest != bundle.catalog.catalog_digest
+                    or coordinate.selected_version_id != bundle.version.version_id
+                    or coordinate.selected_version_digest != bundle.version.version_digest
+                    or coordinate.runtime_bundle_digest != bundle.runtime_bundle_digest
+                ))
             ):
                 return None
             # The persisted learned version is the authority for this narrow
             # M5 grammar.  No caller-selected predicate can reach this path.
-            learned_mentors = (
+            learned_mentors = evaluation_pin or (
                 isinstance(bundle.catalog.catalog_scope, AgentLocalCatalogAuthorityScope)
                 and getattr(bundle.version, "relation_ids", ()) == ("mentors",)
             )

@@ -1654,6 +1654,8 @@ class ProviderMemoryService:
             authenticated=resolved.authenticated,
             fact_grant=resolved.fact_grant,
             catalog_visibility_grant=resolved.catalog_visibility_grant,
+            paired_evaluation_authority=resolved.paired_evaluation_authority,
+            paired_evaluation_bundle=resolved.paired_evaluation_bundle,
         )
         try:
             result = self._memory_plane.read_snapshot_linearized(

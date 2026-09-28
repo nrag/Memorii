@@ -1277,6 +1277,99 @@ def test_installed_no_key_bridge_reaches_learned_mentors_submission_without_mode
     reopened.shutdown()
 
 
+def test_installed_no_key_paired_evaluator_executes_all_cases_without_control_mutation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The installed isolated evaluator reaches writer and protected-reader roots."""
+    from memorii.core.semantic_ingestion.learned_relation import (
+        AgentLocalCatalogScope,
+        FrozenMentorsPairedEvaluator,
+        IsolatedMentorsEvaluationExecutor,
+        OntologyChangeProposal,
+        OntologyEvidenceReference,
+        RelationDeclaration,
+    )
+    from memorii.integrations.hermes_factory import (
+        _isolated_mentors_evaluation_cases,
+        build_local_level2_runtime_binding,
+    )
+    from memorii.integrations.hermes_local_authority import (
+        authorize_local_level2,
+        authorize_local_structured_tool,
+    )
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    def network_forbidden(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        raise AssertionError("paired evaluator attempted network access")
+
+    monkeypatch.setattr(socket, "getaddrinfo", network_forbidden)
+    monkeypatch.setattr(socket, "create_connection", network_forbidden)
+    monkeypatch.setattr(socket.socket, "connect", network_forbidden)
+    monkeypatch.setattr(socket.socket, "connect_ex", network_forbidden)
+    authorize_local_level2(hermes_home=tmp_path)
+    authorize_local_structured_tool(hermes_home=tmp_path)
+    context = SimpleNamespace(
+        storage_root=tmp_path / "production", hermes_home=tmp_path,
+        session_id="session:evaluator", user_id="raw:user:one",
+        agent_identity="profile:primary", platform="cli", agent_context="primary",
+        agent_workspace="hermes", parent_session_id=None,
+    )
+    binding = build_local_level2_runtime_binding(context)
+    runtime = binding.completed_turn_runtime
+    assert runtime is not None
+    proposal = OntologyChangeProposal.create(
+        catalog_scope=AgentLocalCatalogScope(
+            principal_id=binding.absent_author_id,
+            agent_id=runtime._authenticated_agent_id,
+        ),
+        parent_catalog_digest="a" * 64,
+        relation=RelationDeclaration(description="A person mentors another person."),
+        evidence=(OntologyEvidenceReference(
+            source_id="evaluator:evidence", source_digest="1" * 64,
+            origin_lineage_digest="2" * 64, source_scope_digest="3" * 64,
+        ),),
+    )
+    executor = IsolatedMentorsEvaluationExecutor(
+        run_isolated_cases=lambda proposal, cases, binding_digest, corpus_digest, budget_digest: (
+            _isolated_mentors_evaluation_cases(
+                proposal, cases, binding_digest, corpus_digest, budget_digest, context,
+            )
+        ),
+    )
+    evaluator = FrozenMentorsPairedEvaluator(executor)
+    try:
+        evaluation = evaluator.evaluate(proposal)
+        assert evaluation.available and evaluation.passes, [
+            (item.case_id, item.parent_status, item.candidate_status, item.candidate_read_status)
+            for item in evaluation.case_outcomes
+        ]
+        assert [item.case_id for item in evaluation.case_outcomes] == [
+            "direct-positive-ada", "direct-positive-cora", "quoted-claim",
+            "hypothetical", "ambiguous-role", "correction", "scope-provenance-veto",
+            "parent-regression",
+        ]
+        assert all(
+            item.candidate_status == "committed" and item.candidate_read_status == "read"
+            for item in evaluation.case_outcomes[:2]
+        )
+        assert all(
+            item.candidate_status in {"abstained", "denied"}
+            for item in evaluation.case_outcomes[2:]
+        )
+        assert all(
+            item.parent_status in {"abstained", "denied", "unavailable"}
+            for item in evaluation.case_outcomes
+        )
+        assert binding.learned_ontology_status() == {
+            "active_catalog_digest": None, "active_version_digest": None,
+            "activation_sequence": None, "candidate_count": 0,
+            "replay_outcomes": {}, "last_error": None,
+        }
+    finally:
+        runtime.close()
+
+
 def test_learned_replay_of_a_preselection_capture_reopens_jsonl(
     bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:

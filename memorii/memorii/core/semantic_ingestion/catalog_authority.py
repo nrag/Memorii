@@ -184,6 +184,40 @@ class ResolvedCatalogAuthority(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+class PairedEvaluationAuthority(BaseModel):
+    """Internal, non-selecting authority for an isolated paired evaluation."""
+
+    schema_version: Literal[1] = 1
+    purpose: Literal["paired_evaluation"] = "paired_evaluation"
+    proposal_id: str = Field(pattern=r"^ocp_[0-9a-f]{64}$")
+    parent_catalog_digest: str = Field(pattern=_DIGEST)
+    evaluation_bundle_digest: str = Field(pattern=_DIGEST)
+    catalog_scope: AgentLocalCatalogAuthorityScope
+    isolated_store_digest: str = Field(pattern=_DIGEST)
+    authority_digest: str = Field(pattern=_DIGEST)
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @classmethod
+    def create(cls, **body: object) -> PairedEvaluationAuthority:
+        canonical = {"schema_version": 1, "purpose": "paired_evaluation", **body}
+        return cls(
+            **canonical,
+            authority_digest=contract_digest(
+                b"memorii.learned-ontology.paired-evaluation-authority.v1", canonical,
+            ),
+        )
+
+    @model_validator(mode="after")
+    def validate_digest(self) -> PairedEvaluationAuthority:
+        body = self.model_dump(mode="python", exclude={"authority_digest"})
+        if self.authority_digest != contract_digest(
+            b"memorii.learned-ontology.paired-evaluation-authority.v1", body,
+        ):
+            raise ValueError("paired evaluation authority is invalid")
+        return self
+
+
 class CatalogVersion(BaseModel):
     """An immutable catalog declaration whose parent is content-addressed."""
 
@@ -807,6 +841,11 @@ class ResolvedStructuredSubmissionAuthority(BaseModel):
     catalog_visibility_grant: CatalogOwnerVisibilityGrant
     catalog: ResolvedCatalogAuthority
     provider_model_prompt_provenance_digest: str | None = Field(default=None, pattern=_DIGEST)
+    paired_evaluation_authority: PairedEvaluationAuthority | None = None
+    # The only copy of the inert candidate bytes travels beside the internal
+    # authority.  Production resolvers leave both fields absent; a digest by
+    # itself must never be expanded into a candidate catalog.
+    paired_evaluation_bundle: dict[str, object] | None = None
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -820,6 +859,33 @@ class ResolvedStructuredSubmissionAuthority(BaseModel):
             raise ValueError("structured submission grants do not bind the authenticated principal and agent")
         if self.catalog_visibility_grant.catalog_scope != self.catalog.catalog_scope:
             raise ValueError("catalog visibility grant does not bind the selected catalog scope")
+        evaluation = self.paired_evaluation_authority
+        bundle_data = self.paired_evaluation_bundle
+        if (evaluation is None) != (bundle_data is None):
+            raise ValueError("paired evaluation authority and bundle must travel together")
+        if evaluation is not None and (
+            evaluation.catalog_scope != self.catalog.catalog_scope
+            or evaluation.catalog_scope.principal_id != self.authenticated.principal_id
+            or evaluation.catalog_scope.agent_id != self.authenticated.agent_id
+        ):
+            raise ValueError("paired evaluation authority does not bind the selected catalog")
+        if evaluation is not None:
+            # Import lazily: learned_relation depends on this authority module.
+            from memorii.core.semantic_ingestion.learned_relation import PairedEvaluationCatalogBundle
+
+            try:
+                bundle = PairedEvaluationCatalogBundle.model_validate(bundle_data)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("paired evaluation bundle is invalid") from exc
+            if (
+                bundle.bundle_digest != evaluation.evaluation_bundle_digest
+                or bundle.proposal_id != evaluation.proposal_id
+                or bundle.parent_catalog_digest != evaluation.parent_catalog_digest
+                or bundle.catalog_scope != evaluation.catalog_scope
+                or bundle.version.catalog_scope != self.catalog.catalog_scope
+                or bundle.version.catalog_digest != self.catalog.catalog_digest
+            ):
+                raise ValueError("paired evaluation bundle does not bind the authority")
         return self
 
 
@@ -887,6 +953,8 @@ class StructuredFactReadAuthority(BaseModel):
     authenticated: AuthenticatedPrincipalAgent
     fact_grant: FactScopeGrant
     catalog_visibility_grant: CatalogOwnerVisibilityGrant
+    paired_evaluation_authority: PairedEvaluationAuthority | None = None
+    paired_evaluation_bundle: dict[str, object] | None = None
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -897,6 +965,22 @@ class StructuredFactReadAuthority(BaseModel):
             or self.catalog_visibility_grant.authenticated != self.authenticated
         ):
             raise ValueError("structured read grants do not bind the authenticated principal and agent")
+        if (self.paired_evaluation_authority is None) != (self.paired_evaluation_bundle is None):
+            raise ValueError("paired evaluation read authority and bundle must travel together")
+        if self.paired_evaluation_authority is not None:
+            from memorii.core.semantic_ingestion.learned_relation import PairedEvaluationCatalogBundle
+
+            try:
+                bundle = PairedEvaluationCatalogBundle.model_validate(self.paired_evaluation_bundle)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("paired evaluation read bundle is invalid") from exc
+            evaluation = self.paired_evaluation_authority
+            if (
+                bundle.bundle_digest != evaluation.evaluation_bundle_digest
+                or bundle.proposal_id != evaluation.proposal_id
+                or bundle.catalog_scope != evaluation.catalog_scope
+            ):
+                raise ValueError("paired evaluation read bundle is substituted")
         return self
 
 
@@ -1328,6 +1412,7 @@ __all__ = [
     "FactScopeGrant",
     "PackagedBaseCatalogReleaseDecision",
     "PackagedBaseCatalogReleaseManifest",
+    "PairedEvaluationAuthority",
     "ResolvedCatalogAuthority",
     "ResolvedStructuredSubmissionAuthority",
     "SourceScopeGrant",

@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import tempfile
 import time
 import unicodedata
 from dataclasses import dataclass
@@ -43,6 +45,8 @@ from memorii.core.semantic_ingestion.catalog_authority import (
     CatalogAuthorityScope,
     CatalogOwnerVisibilityGrant,
     FactScopeGrant,
+    PairedEvaluationAuthority,
+    ResolvedCatalogAuthority,
     ResolvedStructuredSubmissionAuthority,
     SourceScopeGrant,
     StructuredFactReadAuthority,
@@ -50,6 +54,16 @@ from memorii.core.semantic_ingestion.catalog_authority import (
     ThreePredicateSeedCatalogAuthorityRepository,
 )
 from memorii.core.semantic_ingestion.catalog_capture_pin import PackageIndexedCatalogBundleLocator
+from memorii.core.semantic_ingestion.coverage_observation import (
+    CoverageSemanticOutcome,
+    CoverageSourceSpan,
+    ObserverBindingIdentity,
+)
+from memorii.core.semantic_ingestion.coverage_observer import (
+    OntologyObservationRequest,
+    OntologyObservationResult,
+)
+from memorii.core.semantic_ingestion.coverage_recurrence import RelationGapSignature
 from memorii.core.semantic_ingestion.current_bootstrap_v3_authority import (
     CurrentReleaseBootstrapV3HostMaterialBuilder,
     local_level2_bootstrap_authorization_from_sidecar,
@@ -57,10 +71,14 @@ from memorii.core.semantic_ingestion.current_bootstrap_v3_authority import (
 from memorii.core.semantic_ingestion.learned_relation import (
     ActivationPolicy,
     FrozenMentorsPairedEvaluator,
+    IsolatedMentorsEvaluationExecutor,
     LearnedRelationCandidateService,
     LearnedRelationRuntime,
     OntologyActivation,
     OntologyCatalogVersion,
+    OntologyChangeProposal,
+    PairedEvaluationCaseOutcome,
+    PairedEvaluationCatalogBundle,
     learned_catalog_pointer_memory_id,
 )
 from memorii.core.semantic_ingestion.project_assertions_profile import load_project_assertions_bundle
@@ -86,6 +104,44 @@ _PREFERENCE_TOPIC_TYPES = {
     "Asset": EntityType.ASSET,
     "Place": EntityType.PLACE,
 }
+
+
+class _LocalNoKeyMentorsObserver:
+    """Closed local observer for direct `Person mentors Person` evidence."""
+
+    _DIRECT_MENTORS = re.compile(
+        r"(?P<subject>[A-Z][A-Za-z'-]{0,63}) mentors (?P<object>[A-Z][A-Za-z'-]{0,63})\\."
+    )
+    binding = ObserverBindingIdentity(
+        binding_version="memorii.hermes.local-no-key-mentors-observer.v1",
+        provider="memorii_local", model="none", prompt_version="direct-mentors:v1",
+        transport="deterministic_local", egress_policy_digest=sha256(
+            b"memorii.hermes.local-no-key-mentors-observer.egress.v1"
+        ).hexdigest(),
+        output_schema_digest=sha256(
+            b"memorii.hermes.local-no-key-mentors-observer.schema.v1"
+        ).hexdigest(),
+    )
+
+    def observe(self, request: OntologyObservationRequest) -> OntologyObservationResult:
+        match = self._DIRECT_MENTORS.fullmatch(request.source_text)
+        if match is None:
+            return OntologyObservationResult.create(
+                semantic_outcome=CoverageSemanticOutcome.UNCERTAIN
+            )
+        quote = request.source_text[:-1]
+        return OntologyObservationResult.create(
+            semantic_outcome=CoverageSemanticOutcome.UNSUPPORTED_RELATION,
+            source_span=CoverageSourceSpan(start=0, end=len(quote)),
+            source_quote=quote,
+            signature=RelationGapSignature.create(
+                normalized_relation_meaning="mentors",
+                subject_type_id="Person",
+                object_type_id="Person",
+                domain_id="organization",
+                evidence_rule_id="direct_assertion:v1",
+            ),
+        )
 
 
 def _preference_topic_identity_resolver(
@@ -115,6 +171,202 @@ def _preference_topic_identity_resolver(
     return identity_is_current
 
 
+def _isolated_mentors_evaluation_cases(
+    proposal: OntologyChangeProposal,
+    cases: tuple[tuple[str, str, str], ...],
+    binding_digest: str,
+    corpus_digest: str,
+    budget_digest: str,
+    context: object,
+) -> tuple[PairedEvaluationCaseOutcome, ...]:
+    """Run the frozen corpus through separate parent and candidate roots."""
+    from memorii.core.semantic_ingestion.structured_fact_read import StructuredFactReadRequest
+
+    def build_root(path: Path, *, candidate: bool):
+        # The factory is the canonical composition root.  A fresh storage
+        # directory gives each arm its own memory plane, grant records, pin
+        # records, writer state, and protected-reader snapshot.
+        isolated_context = SimpleNamespace(**(vars(context) | {"storage_root": path}))
+        if not candidate:
+            return _build_local_level2_runtime_binding(
+                isolated_context, _enable_ontology_observer=False,
+            )
+        # The private root derives its account identity through ordinary
+        # factory composition, then reopens the same isolated store with the
+        # exact inert bundle authority.  Nothing is selected or activated.
+        identity_root = _build_local_level2_runtime_binding(
+            isolated_context, _enable_ontology_observer=False,
+        )
+        identity_runtime = identity_root.completed_turn_runtime
+        if identity_runtime is None:
+            raise ValueError("isolated completed-turn runtime is unavailable")
+        try:
+            scope = proposal.catalog_scope
+            if (
+                identity_runtime._authenticated_author_id != scope.principal_id
+                or identity_runtime._authenticated_agent_id != scope.agent_id
+            ):
+                raise ValueError("paired evaluation proposal is outside the isolated owner scope")
+        finally:
+            identity_runtime.close()
+        bundle = PairedEvaluationCatalogBundle.from_proposal(proposal=proposal)
+        authority = PairedEvaluationAuthority.create(
+            proposal_id=proposal.proposal_id,
+            parent_catalog_digest=proposal.parent_catalog_digest,
+            evaluation_bundle_digest=bundle.bundle_digest,
+            catalog_scope=proposal.catalog_scope,
+            isolated_store_digest=sha256(str(path).encode("utf-8")).hexdigest(),
+        )
+        return _build_local_level2_runtime_binding(
+            isolated_context,
+            _paired_evaluation_authority=authority,
+            _paired_evaluation_bundle=bundle,
+            _enable_ontology_observer=False,
+        )
+
+    def arguments(
+        sentence: str, *, expected: str,
+    ) -> dict[str, object]:
+        # The fixed corpus has no model output.  The normal structured runtime
+        # still validates the typed proposal, exact source span, materializes
+        # a request, and runs the ordinary atomic terminal.
+        subject, object_quote = "Ada", "Bea"
+        if sentence == "Cora mentors Dax.":
+            subject, object_quote = "Cora", "Dax"
+        proposal: dict[str, object] = {
+            "abstained": True,
+            "mentions": [], "facts": [], "corrections": [], "retractions": [],
+            "action_states": [], "identity_operations": [],
+        }
+        if expected == "candidate_commit_and_read":
+            proposal = {
+                "abstained": False,
+                "mentions": [
+                    {"local_id": "subject", "mention_quote": subject, "mention_context_quote": sentence, "proposed_type": "Person"},
+                    {"local_id": "object", "mention_quote": object_quote, "mention_context_quote": sentence, "proposed_type": "Person"},
+                ],
+                "facts": [{
+                    "kind": "fact", "local_id": "mentors", "predicate_id": "mentors",
+                    "subject_entity_ref": "subject", "object": {"kind": "entity", "entity_ref": "object"},
+                    "assertion_quote": sentence, "predicate_anchor_quote": "mentors",
+                    "polarity": "positive", "commitment": "asserted",
+                    "attributed_to_entity_ref": None, "temporal_qualifier_quotes": [],
+                }],
+                "corrections": [], "retractions": [], "action_states": [], "identity_operations": [],
+            }
+        return {
+            "schema_version": 1,
+            "source_quote": sentence,
+            "source_quote_start": 0,
+            "subject_quote": subject,
+            "predicate_anchor_quote": "mentors",
+            "object_quote": object_quote,
+            "proposal": proposal,
+        }
+
+    def execute(
+        runtime: object, *, case_id: str, sentence: str, expected: str,
+        ordinal: int, candidate: bool,
+    ) -> tuple[str, str]:
+        author = runtime._authenticated_author_id
+        session_id = f"isolated-evaluation:{'candidate' if candidate else 'parent'}:{ordinal}"
+        captured_at = datetime.now(UTC)
+        runtime.capture_user_turn(
+            session_id=session_id,
+            turn_ordinal=1,
+            message=sentence,
+            authenticated_author_id=author,
+            received_at=captured_at,
+        )
+        runtime.get_tool_schemas()
+        call_arguments = arguments(
+            sentence,
+            expected=("candidate_commit_and_read" if case_id == "scope-provenance-veto" else expected),
+        )
+        if case_id == "scope-provenance-veto" and candidate:
+            active = runtime._active_turn
+            if active is None:
+                raise ValueError("isolated paired evaluation capture is unavailable")
+            result = runtime._service.submit_structured_fact(
+                runtime._structured_tool_request(
+                    active=active, arguments=call_arguments, mentors=True,
+                ),
+                authenticated_host_ingress=runtime._issue_host_ingress(
+                    session_id, author, datetime.now(UTC),
+                ),
+            )
+        else:
+            result = runtime.handle_tool_call(
+                tool_name="memorii_submit_fact", arguments=call_arguments,
+            )
+        # The scope/provenance veto intentionally calls the service root
+        # directly, whose closed response is a typed model rather than the
+        # Hermes JSON dictionary returned by ``handle_tool_call``.  Preserve
+        # its terminal denial instead of converting it to ``unavailable``.
+        status = (
+            result.get("status") if isinstance(result, dict)
+            else getattr(result, "status", "unavailable")
+        )
+        if status == "rejected":
+            status = "denied"
+        if status != "committed":
+            return str(status), "unavailable"
+        records = runtime._service._memory_plane.list_records()
+        claim = next(
+            record for record in records
+            if record.content.get("runtime_context_projection_kind") == "bootstrap_v3_claim_assertion"
+        )
+        subject_id = claim.content["claim_identity"]["subject_assertion_ref"]["logical_entity_id_at_assertion"]
+        read = runtime.read_structured_facts(
+            request=StructuredFactReadRequest(predicate_id="mentors", subject_entity_id=subject_id),
+            session_id=session_id,
+            authenticated_author_id=author,
+            now=datetime.now(UTC),
+        )
+        return str(status), "read" if read.status == "ok" and read.items else str(read.status)
+
+    outcomes: list[PairedEvaluationCaseOutcome] = []
+    forbidden_control_kinds = {
+        "learned_ontology_change_proposal_v1",
+        "learned_ontology_catalog_version_v1",
+        "learned_ontology_activation_attempt_v1",
+    }
+    for ordinal, (case_id, sentence, expected) in enumerate(cases, start=1):
+        with tempfile.TemporaryDirectory(prefix="memorii-paired-parent-") as parent_root, tempfile.TemporaryDirectory(prefix="memorii-paired-candidate-") as candidate_root:
+            parent = build_root(Path(parent_root), candidate=False)
+            candidate = build_root(Path(candidate_root), candidate=True)
+            parent_runtime = parent.completed_turn_runtime
+            candidate_runtime = candidate.completed_turn_runtime
+            if parent_runtime is None or candidate_runtime is None:
+                raise ValueError("isolated completed-turn runtime is unavailable")
+            try:
+                parent_status, _parent_read = execute(
+                    parent_runtime, case_id=case_id, sentence=sentence, expected=expected,
+                    ordinal=ordinal, candidate=False,
+                )
+                candidate_status, candidate_read = execute(
+                    candidate_runtime, case_id=case_id, sentence=sentence, expected=expected,
+                    ordinal=ordinal, candidate=True,
+                )
+                outcomes.append(PairedEvaluationCaseOutcome(
+                    case_id=case_id, expected=expected,
+                    parent_status=parent_status if parent_status in {"committed", "read", "denied", "abstained", "unavailable"} else "unavailable",
+                    candidate_status=candidate_status if candidate_status in {"committed", "read", "denied", "abstained", "unavailable"} else "unavailable",
+                    candidate_read_status=candidate_read if candidate_read in {"read", "denied", "abstained", "unavailable"} else "unavailable",
+                    binding_digest=binding_digest, corpus_digest=corpus_digest, budget_digest=budget_digest,
+                ))
+                for runtime in (parent_runtime, candidate_runtime):
+                    records = runtime._service._memory_plane.list_records()
+                    if any(record.source_kind in forbidden_control_kinds for record in records):
+                        raise ValueError("isolated paired evaluation created learned activation control")
+                    if any(record.memory_id.startswith("learned-catalog-pointer:") for record in records):
+                        raise ValueError("isolated paired evaluation selected a catalog")
+            finally:
+                parent_runtime.close()
+                candidate_runtime.close()
+    return tuple(outcomes)
+
+
 def build_local_level2_runtime_binding(context: object) -> object:
     """Construct the standard verified first-party Hermes runtime binding."""
     return _build_local_level2_runtime_binding(context)
@@ -125,6 +377,9 @@ def _build_local_level2_runtime_binding(
     *,
     _provision_structured_authority: bool = True,
     _allow_existing_operator_binding: bool = False,
+    _paired_evaluation_authority: PairedEvaluationAuthority | None = None,
+    _paired_evaluation_bundle: PairedEvaluationCatalogBundle | None = None,
+    _enable_ontology_observer: bool = True,
 ) -> object:
     """Construct one verified, first-party Hermes binding without model I/O.
 
@@ -206,6 +461,8 @@ def _build_local_level2_runtime_binding(
             authority_is_current=authority_is_current,
             structured_tool_is_current=lambda: _structured_tool_is_current(hermes_home),
             memory_plane=memory_plane,
+            paired_evaluation_authority=_paired_evaluation_authority,
+            paired_evaluation_bundle=_paired_evaluation_bundle,
         )
 
     capability, verifier = CurrentReleaseBootstrapV3HostMaterialBuilder.build_capability(
@@ -219,11 +476,19 @@ def _build_local_level2_runtime_binding(
     if context_kind == "delegated" and not delegation_repository.active(operator_id, agent_id):
         raise LocalLevel2AuthorityError("Hermes preference agent delegation is unavailable")
     scoped_read_authority = InProcessScopedReadAuthority(now_provider=lambda: datetime.now(UTC))
+    observer = _LocalNoKeyMentorsObserver() if _enable_ontology_observer else None
     service = build_provider_memory_service_from_env(
         memory_plane=memory_plane,
         host_bootstrap_capability=capability,
         host_bootstrap_material_verifier=verifier,
         scoped_read_authority=scoped_read_authority,
+        ontology_observer_capability=observer,
+        ontology_observer_authorizer=(lambda ingress, binding: (
+            observer is not None
+            and binding == observer.binding
+            and ingress.delivery_principal_binding.principal_subject_id == operator_id
+            and ingress.authenticated_agent_id == agent_id
+        )) if observer is not None else None,
     )
     if service._composed_semantic_runtime is None:
         raise RuntimeError(
@@ -373,10 +638,11 @@ def _build_local_level2_runtime_binding(
             owner_agent_id=scope.agent_id,
         ),
     )
+    paired_evaluator = FrozenMentorsPairedEvaluator()
     candidate_service = LearnedRelationCandidateService(
         memory_plane=memory_plane,
         runtime=learned_runtime,
-        evaluator=FrozenMentorsPairedEvaluator(),
+        evaluator=paired_evaluator,
     )
 
     class _InstalledRecurrenceCandidateAdmitter:
@@ -393,9 +659,14 @@ def _build_local_level2_runtime_binding(
             )
 
     agent_id_outer = agent_id
-    service.install_eligible_recurrence_candidate_admitter(
-        _InstalledRecurrenceCandidateAdmitter()
-    )
+    # A missing model/API key leaves observation pending by design.  The
+    # candidate admitter belongs to the service-owned observer runner and is
+    # installed only when that runner (and its durable repositories) exists.
+    # The evaluation/replay path itself remains fully local and no-key.
+    if service._coverage_observer_runner is not None:
+        service.install_eligible_recurrence_candidate_admitter(
+            _InstalledRecurrenceCandidateAdmitter()
+        )
     completed_runtime = HermesCompletedTurnRuntime(
         service=service,
         installation_id=authorization.installation_id,
@@ -418,6 +689,13 @@ def _build_local_level2_runtime_binding(
         preference_service=preference_service,
     )
     replay_writer.runtime = completed_runtime
+    paired_evaluator.bind_executor(IsolatedMentorsEvaluationExecutor(
+        run_isolated_cases=lambda proposal, cases, binding_digest, corpus_digest, budget_digest: (
+            _isolated_mentors_evaluation_cases(
+                proposal, cases, binding_digest, corpus_digest, budget_digest, context,
+            )
+        ),
+    ))
     learned_scope = AgentLocalCatalogAuthorityScope(
         principal_id=operator_id, agent_id=agent_id,
     )
@@ -549,6 +827,8 @@ class _LocalLevel2StructuredSubmissionResolver:
         authority_is_current,
         structured_tool_is_current,
         memory_plane: MemoryPlaneService,
+        paired_evaluation_authority: PairedEvaluationAuthority | None = None,
+        paired_evaluation_bundle: PairedEvaluationCatalogBundle | None = None,
     ) -> None:
         self._installation_id = installation_id
         self._operator_id = operator_id
@@ -556,6 +836,10 @@ class _LocalLevel2StructuredSubmissionResolver:
         self._authority_is_current = authority_is_current
         self._structured_tool_is_current = structured_tool_is_current
         self._memory_plane = memory_plane
+        if (paired_evaluation_authority is None) != (paired_evaluation_bundle is None):
+            raise LocalLevel2AuthorityError("paired evaluation authority is incomplete")
+        self._paired_evaluation_authority = paired_evaluation_authority
+        self._paired_evaluation_bundle = paired_evaluation_bundle
         expected = AuthenticatedPrincipalAgent(principal_id=operator_id, agent_id=agent_id)
         catalog_scope = CatalogAuthorityScope(schema_version=1, kind="base")
         self._issued_request = StructuredSubmissionAuthorityRequest(
@@ -588,6 +872,21 @@ class _LocalLevel2StructuredSubmissionResolver:
         ).hexdigest()
 
     def _selected_catalog(self):
+        if self._paired_evaluation_authority is not None:
+            bundle = self._paired_evaluation_bundle
+            assert bundle is not None
+            authority = self._paired_evaluation_authority
+            if (
+                bundle.bundle_digest != authority.evaluation_bundle_digest
+                or bundle.proposal_id != authority.proposal_id
+                or bundle.catalog_scope != authority.catalog_scope
+            ):
+                raise CatalogAuthorityError("paired evaluation bundle is unavailable")
+            return ResolvedCatalogAuthority(
+                catalog_scope=bundle.catalog_scope,
+                catalog_digest=bundle.version.catalog_digest,
+                genesis_selection_digest=authority.authority_digest,
+            )
         scope = AgentLocalCatalogAuthorityScope(
             principal_id=self._operator_id, agent_id=self._agent_id,
         )
@@ -657,6 +956,11 @@ class _LocalLevel2StructuredSubmissionResolver:
             catalog_visibility_grant=request.catalog_visibility_grant,
             catalog=catalog,
             provider_model_prompt_provenance_digest=(request.provider_model_prompt_provenance_digest),
+            paired_evaluation_authority=self._paired_evaluation_authority,
+            paired_evaluation_bundle=(
+                self._paired_evaluation_bundle.model_dump(mode="python")
+                if self._paired_evaluation_bundle is not None else None
+            ),
         )
 
     def issued_authority(self) -> ResolvedStructuredSubmissionAuthority:
@@ -670,6 +974,11 @@ class _LocalLevel2StructuredSubmissionResolver:
             fact_grant=self._issued_request.fact_grant,
             catalog_visibility_grant=self._request_for_catalog(catalog).catalog_visibility_grant,
             catalog=catalog,
+            paired_evaluation_authority=self._paired_evaluation_authority,
+            paired_evaluation_bundle=(
+                self._paired_evaluation_bundle.model_dump(mode="python")
+                if self._paired_evaluation_bundle is not None else None
+            ),
         )
 
     def issued_authority_request(self) -> StructuredSubmissionAuthorityRequest:
@@ -687,6 +996,11 @@ class _LocalLevel2StructuredSubmissionResolver:
             authenticated=request.authenticated,
             fact_grant=request.fact_grant,
             catalog_visibility_grant=request.catalog_visibility_grant,
+            paired_evaluation_authority=self._paired_evaluation_authority,
+            paired_evaluation_bundle=(
+                self._paired_evaluation_bundle.model_dump(mode="python")
+                if self._paired_evaluation_bundle is not None else None
+            ),
         )
 
 
