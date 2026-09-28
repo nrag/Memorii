@@ -961,7 +961,7 @@ def test_installed_bridge_turn_start_reaches_source_only_capture_owner_without_o
     provider.shutdown()
 
 
-def test_installed_no_key_bridge_advertises_only_the_closed_structured_tool_after_capture(
+def test_installed_no_key_bridge_advertises_only_closed_local_tools_after_capture(
     bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
@@ -990,7 +990,13 @@ def test_installed_no_key_bridge_advertises_only_the_closed_structured_tool_afte
     schemas = provider.get_tool_schemas()
 
     assert [schema["function"]["name"] for schema in schemas] == [
-        "memorii_submit_fact", "memorii_read_fact",
+        "memorii_submit_fact",
+        "memorii_read_fact",
+        "memorii_create_preference_candidate",
+        "memorii_confirm_preference",
+        "memorii_close_preference",
+        "memorii_set_preference_delegation",
+        "memorii_read_preference",
     ]
     parameters = schemas[0]["function"]["parameters"]
     assert parameters["additionalProperties"] is False

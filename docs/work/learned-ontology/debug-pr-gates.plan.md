@@ -65,6 +65,7 @@ No fix is accepted yet. Candidate owners include package data configuration/reso
 - Hermes Level 2 Product showed that the local signed-in account fence incorrectly rejected a second primary agent identity. The binding now continues to deny a different raw user while returning the current primary agent identity for same-user agent-scoped authority. Existing activation verification is performed before the new agent's catalog and structured-grant startup writes can change its live view. The full clean Hermes product regression passes (`1 passed in 590.65s`).
 - Refreshed the 1,909-member release-preparation candidate only for its five admitted changed sources. Every member digest and the sidecar verify locally; candidate SHA-256 is `ca31f222a9e7b2e9348ed894339e06ce676578d7979d1c783057c09ffb6af86b`. Whole-package Pyright remains clean (`0 errors, 0 warnings, 0 informations`).
 - The full observation activation module exposed the same predecessor ordering boundary in graph execution and three retained-tamper cases. Reference integrity now bootstraps immediately after the historical predecessor cutover under the activated binding; ordinary startup retains its pre-cutover idempotent bootstrap. The focused family passes (`4 passed in 199.05s`) and the complete module passes (`44 passed in 334.89s`).
+- Before cancellation completed, superseded run `36464091702` exposed a stale Unit Shard 3 expectation: the installed no-key bridge test still required only fact submit/read even though the shipped local preference lifecycle deliberately advertises five additional closed tools. The assertion now names the complete seven-tool contract and passes (`1 passed in 19.46s`). That run's Package Smoke failure was the pre-refresh `atomic_store.py` candidate digest, and its Semantic Ingestion aggregate failure was caused by the already-corrected Hermes Level 2 job.
 
 ## Verification Matrix
 
@@ -72,4 +73,4 @@ Run the exact failed workflow command for each confirmed family first, followed 
 
 ## Next Action
 
-Run the final changed-surface checks, commit and push this correction without the user-owned Hermes design edit, then monitor every PR check on the replacement revision.
+Commit and push the corrected Unit Shard 3 expectation without the user-owned Hermes design edit, cancel the superseded run, then monitor every PR check on the replacement revision.
