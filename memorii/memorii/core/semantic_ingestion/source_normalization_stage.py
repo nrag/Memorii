@@ -145,7 +145,13 @@ def _planning_construction_authority_for_operation(
         or any(item not in artifact.message_admissions.identities for item in admissions)
     ):
         raise ValueError("bootstrap native planning construction input is unavailable")
-    rule = policy_bundle.trust_policy.rule_for(fact.predicate_id)
+    try:
+        rule = policy_bundle.trust_policy.rule_for(fact.predicate_id)
+    except ValueError as exc:
+        raise ValueError(
+            f"predicate {fact.predicate_id!r} has no trust rule; available predicates are "
+            f"{tuple(item.predicate_id for item in policy_bundle.trust_policy.rules)!r}"
+        ) from exc
     candidates = () if source_interval_evidence is None else (TemporalEvidenceCandidate.create(
         candidate_id=contract_digest(
             b"memorii.bootstrap-graph.native-source-interval-candidate.v3",

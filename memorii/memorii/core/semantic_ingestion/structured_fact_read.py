@@ -318,32 +318,39 @@ def verified_lifecycle_transitions(
             continue
         try:
             request, reload = decode_verified_bootstrap_graph_group_commit_primary(
-                record, require_committed_result=True,
+                record, require_committed_result=False,
             )
         except BootstrapGroupPrimaryVerificationError:
             return None
         core = reload.persisted_result.core
         if (
-            reload.group_result_schema_version < 2
-            or reload.transaction_group_id != request.transaction_group_id
+            reload.transaction_group_id != request.transaction_group_id
             or reload.operation_ids != request.operation_ids
             or reload.request_ctv_digest != request.request_ctv_digest
             or core.request_ctv_digest != request.request_ctv_digest
-            or core.disposition != "committed"
             or tuple(item.operation_id for item in core.ordered_operation_results) != request.operation_ids
         ):
             return None
         results = {item.operation_id: item for item in core.ordered_operation_results}
+        if any(
+            (result := results.get(input_item.operation_id)) is None
+            or result.final_status != input_item.reduction.native_terminal.status
+            for input_item in request.ordered_operation_inputs
+        ):
+            return None
+        if core.disposition != "committed":
+            continue
+        if reload.group_result_schema_version < 2:
+            return None
         for input_item in request.ordered_operation_inputs:
             materialization = input_item.reduction.effect_materialization
             effect = materialization.accepted_effect
             result = results.get(input_item.operation_id)
-            if result is None or result.final_status != input_item.reduction.native_terminal.status:
-                return None
+            assert result is not None
             if not isinstance(effect, (BootstrapNativeCorrectionEffectV3, BootstrapNativeRetractionEffectV3)):
                 continue
             if result.final_status != "accepted":
-                return None
+                continue
             transition_records = tuple(
                 item
                 for item in effect.transition_records

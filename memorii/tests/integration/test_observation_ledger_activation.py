@@ -284,7 +284,7 @@ def test_activation_rejects_recomputed_same_revision_writer_manifest_without_wri
     )
     _replace_jsonl_writer_manifest(backing, plane, foreign)
     before = backing._records_path.read_bytes()
-    with pytest.raises(SemanticWriterAdmissionError, match="not an activation predecessor"):
+    with pytest.raises(SemanticWriterAdmissionError, match="semantic writer manifest is mismatched"):
         service.activate_observation_ledger()
     assert backing._records_path.read_bytes() == before
     reopened = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "foreign-predecessor"))

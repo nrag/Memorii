@@ -159,6 +159,7 @@ def test_captured_reports_to_child_reaches_native_claim_and_catalog_binding(
         installation_id="scenario-installation", operator_id="scenario-principal",
         agent_id="scenario-agent", project_task_id="scenario-task",
         authority_is_current=lambda: True, structured_tool_is_current=lambda: True,
+        memory_plane=plane,
     )
     service = build_scenario_test_provider_service(
         memory_plane=plane, now_provider=lambda: now,
@@ -243,7 +244,7 @@ def test_captured_reports_to_child_reaches_native_claim_and_catalog_binding(
 
     runtime = HermesCompletedTurnRuntime(
         service=service, installation_id="scenario-installation",
-        issue_host_ingress=lambda session_id, _author_id, received_at: AuthenticatedHostIngress(
+        issue_host_ingress=lambda session_id, _author_id, received_at, *_args: AuthenticatedHostIngress(
             provider_identity="scenario-test-host",
             principal_handle=("scenario-principal", session_id),
             session_handle=(session_id, 1), received_at=received_at,
@@ -303,6 +304,7 @@ def test_captured_reports_to_child_reaches_native_claim_and_catalog_binding(
         installation_id="scenario-installation", operator_id="scenario-principal",
         agent_id="scenario-agent", project_task_id="scenario-task",
         authority_is_current=lambda: True, structured_tool_is_current=lambda: True,
+        memory_plane=reopened_plane,
     )
     reopened_scoped_read_authority = InProcessScopedReadAuthority(
         now_provider=lambda: now
@@ -315,7 +317,7 @@ def test_captured_reports_to_child_reaches_native_claim_and_catalog_binding(
     )
     reopened_runtime = HermesCompletedTurnRuntime(
         service=reopened_service, installation_id="scenario-installation",
-        issue_host_ingress=lambda session_id, _author_id, received_at: AuthenticatedHostIngress(
+        issue_host_ingress=lambda session_id, _author_id, received_at, *_args: AuthenticatedHostIngress(
             provider_identity="scenario-test-host",
             principal_handle=("scenario-principal", session_id),
             session_handle=(session_id, 1), received_at=received_at,

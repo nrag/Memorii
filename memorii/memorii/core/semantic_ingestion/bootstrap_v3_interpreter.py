@@ -272,11 +272,11 @@ class BootstrapV3GraphFreeInterpreter:
                 ),
             )
 
-        grouped: dict[str, list[BootstrapSourcePrePartitionMentionV3]] = {}
+        grouped: dict[str, dict[str, BootstrapSourcePrePartitionMentionV3]] = {}
         for row in mentions:
-            grouped.setdefault(root(row.mention_digest), []).append(row)
+            grouped.setdefault(root(row.mention_digest), {})[row.mention_digest] = row
         clusters = tuple(
-            cluster(tuple(sorted(rows, key=lambda row: row.mention_digest)))
+            cluster(tuple(sorted(rows.values(), key=lambda row: row.mention_digest)))
             for _, rows in sorted(grouped.items())
         )
         identity = BootstrapSourceLocalIdentityResolutionV3.create(

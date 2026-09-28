@@ -206,18 +206,20 @@ class PackageIndexedCatalogBundleLocator:
                 catalog=seed.catalog, version=seed.version,
                 runtime_bundle_digest=seed.runtime_bundle_digest,
             )
-        releases = (
-            self._release_authority_loader(),
-            self._default_release_authority_loader(),
+        default_release = self._default_release_authority_loader()
+        release = (
+            default_release
+            if default_release.child_version.version_id == version_id
+            and default_release.child_version.version_digest == version_digest
+            else None
         )
-        release = next(
-            (
-                candidate for candidate in releases
-                if candidate.child_version.version_id == version_id
-                and candidate.child_version.version_digest == version_digest
-            ),
-            None,
-        )
+        if release is None:
+            legacy_release = self._release_authority_loader()
+            if (
+                legacy_release.child_version.version_id == version_id
+                and legacy_release.child_version.version_digest == version_digest
+            ):
+                release = legacy_release
         if release is None:
             raise CatalogAuthorityError("catalog version is unavailable")
         version = release.child_version

@@ -1,3 +1,3 @@
 """Compiled trust anchor for the bundled reports-to product release."""
 
-REPORTS_TO_RELEASE_MANIFEST_ROOT = "fe66ad77178050f53f3faaea55a654e6c4c10884fb862c8fe47ec3b15b127c57"
+REPORTS_TO_RELEASE_MANIFEST_ROOT = "451dc8d17e0a0bd97136045b725eeab383a26a3c9b8f409dc5b297252701eb47"

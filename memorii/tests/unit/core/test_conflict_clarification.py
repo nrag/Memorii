@@ -1058,7 +1058,7 @@ def _exercise_public_accepted_clarification_race(
     conditional_attempts = []
     real_conditional_write = plane.conditionally_write_records
 
-    def pause_first_group_cas(records, *, preconditions, authorization, **kwargs):
+    def pause_first_group_cas(records, *, preconditions, authorization=None, **kwargs):
         primary = next(
             (
                 record

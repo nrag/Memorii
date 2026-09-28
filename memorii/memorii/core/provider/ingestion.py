@@ -80,6 +80,7 @@ from memorii.core.semantic_ingestion.capability import (
 )
 from memorii.core.semantic_ingestion.catalog_authority import (
     CatalogAuthorityCoordinate,
+    CatalogAuthorityError,
     ResolvedStructuredSubmissionAuthority,
     SelectedCatalogAuthorityRepository,
     StructuredSubmissionAuthorityRequest,
@@ -936,10 +937,13 @@ class ProviderIngestionCoordinator:
                     projection = step_one_material.semantic_text_projection
                 selected_catalog = None
                 if self._catalog_selection_repository is not None:
-                    self._catalog_selection_repository.resolve_selected_base()
-                    selected_catalog = (
-                        self._catalog_selection_repository.resolve_selected_bundle()
-                    )
+                    try:
+                        self._catalog_selection_repository.resolve_selected_base()
+                        selected_catalog = (
+                            self._catalog_selection_repository.resolve_selected_bundle()
+                        )
+                    except CatalogAuthorityError:
+                        logger.warning("catalog_authority_unavailable_for_coverage_observation")
                 def build_coverage_observation(
                     source: CanonicalMemoryRecord,
                 ) -> CoverageObservation | None:
@@ -1398,6 +1402,8 @@ class ProviderIngestionCoordinator:
             if {
                 "source_alignment_authority_unavailable",
                 "authenticated_source_or_deployment_authority_unavailable",
+                "graph_transaction_authority_unavailable",
+                "bootstrap_graph_retry_persisted",
             }.intersection(terminal.reason_codes):
                 # Missing retained prerequisites stay retryable rather than
                 # becoming a success-shaped terminal during startup recovery.
@@ -2274,13 +2280,12 @@ class ProviderIngestionCoordinator:
             return None
         return reclaimed
 
-    def _renew_bootstrap_graph_lease_before_execution(
+    def _validate_bootstrap_graph_lease_before_execution(
         self,
         *,
-        operation_fence: OperationFenceBinding,
         control: PreplanningOperationControl,
     ) -> PreplanningOperationControl | None:
-        """Refresh an owned recovery lease before the graph can create epoch zero."""
+        """Keep the retained graph lease identity stable across execution and recovery."""
         lease = control.lease
         now = self._now_provider()
         if (
@@ -2290,20 +2295,7 @@ class ProviderIngestionCoordinator:
             or lease.expires_at <= now
         ):
             return None
-        renewed = self._atomic_store.renew_lease(
-            operation_fence=operation_fence,
-            writer_binding=control.writer_binding,
-            lease=lease,
-            duration=lease.renewal_interval * 2,
-        )
-        if (
-            renewed.state in {"terminal", "lease_recovery_exhausted"}
-            or renewed.lease is None
-            or renewed.lease.owner_id != "bootstrap-v3-recovery"
-            or renewed.writer_binding != control.writer_binding
-        ):
-            return None
-        return renewed
+        return control
 
     def _execute_bootstrap_graph_with_expired_lease_retry(
         self,
@@ -2318,17 +2310,17 @@ class ProviderIngestionCoordinator:
         """Retry one graph execution only from verified replay and reclaimed authority."""
         if replay is None:
             return None
-        renewed_control = self._renew_bootstrap_graph_lease_before_execution(
-            operation_fence=operation_fence,
+        execution_control = self._validate_bootstrap_graph_lease_before_execution(
             control=initial_control,
         )
-        if renewed_control is None:
+        if execution_control is None:
             return None
         try:
-            result = execute(renewed_control)
+            result = execute(execution_control)
         except StructuredSubmissionGrantRevokedError:
             raise
         except (AttributeError, TypeError, ValueError, PreplanningStoreError):
+            logger.exception("bootstrap_graph_recovery_execution_failed")
             result = None
         if result is not None:
             return result
@@ -2340,6 +2332,7 @@ class ProviderIngestionCoordinator:
         except StructuredSubmissionGrantRevokedError:
             raise
         except (AttributeError, TypeError, ValueError, PreplanningStoreError):
+            logger.exception("bootstrap_graph_reclaimed_execution_failed")
             return None
 
     def _load_admitted_observation(self, fence: OperationFenceBinding) -> SourceObservation:

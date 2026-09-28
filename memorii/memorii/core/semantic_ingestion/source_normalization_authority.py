@@ -75,7 +75,11 @@ class BootstrapPlanningPolicyAuthority(BaseModel):
         for rule in self.predicate_state_rules:
             if rule.predicate_id == predicate_id:
                 return rule
-        raise ValueError("bootstrap planning predicate state rule is unavailable")
+        raise ValueError(
+            "bootstrap planning predicate state rule is unavailable for "
+            f"{predicate_id!r}; available predicates are "
+            f"{tuple(rule.predicate_id for rule in self.predicate_state_rules)!r}"
+        )
 
 
 class BootstrapV3RuntimeAuthority(BaseModel):

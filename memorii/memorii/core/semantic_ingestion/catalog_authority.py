@@ -22,6 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from memorii.core.memory_evolution.ingestion_contracts import AuthenticatedIngressContext
 from memorii.core.memory_evolution.writer_admission import (
+    CatalogBundleLocator,
     SemanticCatalogAuthorityAdministrationAuthorization,
     SemanticWriterAdmissionError,
     SemanticWriterAdmissionStore,
@@ -1098,6 +1099,8 @@ class SelectedCatalogAuthorityRepository:
         self,
         memory_plane: MemoryPlaneService,
         writer_admission: SemanticWriterAdmissionStore,
+        *,
+        catalog_bundle_locator: CatalogBundleLocator | None = None,
     ) -> None:
         self._memory_plane = memory_plane
         self._writer_admission = writer_admission
@@ -1105,6 +1108,13 @@ class SelectedCatalogAuthorityRepository:
         self._administration_grant = (
             writer_admission.claim_catalog_authority_administration(owner=self._owner)
         )
+        if catalog_bundle_locator is None:
+            from memorii.core.semantic_ingestion.catalog_capture_pin import (
+                PackageIndexedCatalogBundleLocator,
+            )
+
+            catalog_bundle_locator = PackageIndexedCatalogBundleLocator()
+        self._catalog_bundle_locator = catalog_bundle_locator
 
     def resolve_selected_base(
         self, *, expected_catalog_digest: str | None = None,
@@ -1125,12 +1135,8 @@ class SelectedCatalogAuthorityRepository:
         Once a pointer exists this resolver follows that exact version and lets
         the package locator reject an incomplete child before schema egress.
         """
-        from memorii.core.semantic_ingestion.catalog_capture_pin import (
-            PackageIndexedCatalogBundleLocator,
-        )
-
         _revision, records = self._memory_plane.read_snapshot()
-        bundle, _pointer = PackageIndexedCatalogBundleLocator().locate_selected(
+        bundle, _pointer = self._catalog_bundle_locator.locate_selected(
             records, scope=CatalogAuthorityScope(schema_version=1, kind="base"),
         )
         return bundle
@@ -1187,28 +1193,13 @@ class SelectedCatalogAuthorityRepository:
                     pointer = CatalogSelectionPointer.model_validate(
                         pointer_records[0].content["catalog_selection_pointer"]
                     )
-                    from memorii.core.semantic_ingestion.catalog_capture_pin import (
-                        PackageIndexedCatalogBundleLocator,
+                    bundle, selected_pointer = self._catalog_bundle_locator.locate_selected(
+                        records, scope=expected_version.catalog_scope,
                     )
-                    from memorii.core.semantic_ingestion.default_catalog_package import (
-                        load_packaged_default_catalog_release,
-                    )
-                    releases = (
-                        load_packaged_reports_to_release(),
-                        load_packaged_default_catalog_release(),
-                    )
-                    selected = next(
-                        (
-                            release for release in releases
-                            if release.child_version.version_id == pointer.selected_version_id
-                            and release.child_version.version_digest == pointer.selected_version_digest
-                        ),
-                        None,
-                    )
-                    known_versions = (
-                        {expected_version.version_digest, selected.child_version_digest}
-                        if selected is not None else set()
-                    )
+                    known_versions = {
+                        expected_version.version_digest,
+                        bundle.version.version_digest,
+                    }
                     persisted_digests = {
                         CatalogVersion.model_validate(record.content["catalog_version"]).version_digest
                         if record.content.get("catalog_version", {}).get("schema_version") == 1
@@ -1217,16 +1208,9 @@ class SelectedCatalogAuthorityRepository:
                     }
                 except (AttributeError, KeyError, TypeError, ValueError) as exc:
                     raise CatalogAuthorityError("catalog genesis control inventory is invalid") from exc
-                if (
-                    selected is None
-                    or persisted_digests != known_versions
-                ):
+                if persisted_digests != known_versions:
                     raise CatalogAuthorityError("catalog genesis control inventory is invalid")
-                locator = PackageIndexedCatalogBundleLocator()
-                bundle, selected_pointer = locator.locate_selected(
-                    records, scope=expected_version.catalog_scope
-                )
-                if selected_pointer != pointer or bundle.version != selected.child_version:
+                if selected_pointer != pointer:
                     raise CatalogAuthorityError("catalog genesis control inventory is invalid")
                 return bundle.catalog
             return self._verify_selected_genesis(

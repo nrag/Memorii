@@ -307,9 +307,12 @@ def test_cli_revokes_factory_derived_grant_before_provisioning(
     states = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "memorii" / "memory-plane")).list_records(
         source_kind="semantic_ingestion_structured_grant_state"
     )
-    assert len(states) == 1
-    assert states[0].content["state"]["grant_kind"] == "fact"
-    assert states[0].content["state"]["active"] is False
+    assert len(states) == 3
+    fact_state = next(
+        state for state in states
+        if state.content["state"]["grant_kind"] == "fact"
+    )
+    assert fact_state.content["state"]["active"] is False
     with pytest.raises(StructuredSubmissionGrantRevokedError, match="revoked"):
         build_local_level2_runtime_binding(
             SimpleNamespace(

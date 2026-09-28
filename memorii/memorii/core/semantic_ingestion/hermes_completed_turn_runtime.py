@@ -2022,14 +2022,12 @@ class HermesCompletedTurnRuntime:
         read_authority = (
             self._structured_fact_read_authority() if self._structured_fact_read_authority is not None else None
         )
-        if read_authority is None:
-            return ""
         handle = self._scoped_read_authority.provision(
             host_task_id=task_id,
             host_state_id=state_id,
             rows=rows,
             expires_at=now.replace(microsecond=0) + timedelta(minutes=1),
-            structured_fact_read_authorities=(read_authority,),
+            structured_fact_read_authorities=(() if read_authority is None else (read_authority,)),
         )
         try:
             activation = self._service.retrieve_context(

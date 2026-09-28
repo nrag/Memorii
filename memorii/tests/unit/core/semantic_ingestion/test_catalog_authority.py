@@ -123,13 +123,13 @@ def test_factored_release_verifier_matches_installed_reader_and_rejects_wrong_ro
 
     expected = load_packaged_reports_to_release()
     assert catalog_authority._load_packaged_reports_to_release(
-        resource_bytes=catalog_authority._catalog_resource_bytes,
+        resource_bytes=catalog_authority.catalog_resource_bytes,
         package_resource_names=catalog_authority._catalog_package_resource_names,
         release_root=catalog_release_root.REPORTS_TO_RELEASE_MANIFEST_ROOT,
     ) == expected
     with pytest.raises(CatalogAuthorityError, match="release decision is invalid"):
         catalog_authority._load_packaged_reports_to_release(
-            resource_bytes=catalog_authority._catalog_resource_bytes,
+            resource_bytes=catalog_authority.catalog_resource_bytes,
             package_resource_names=catalog_authority._catalog_package_resource_names,
             release_root="0" * 64,
         )
@@ -171,13 +171,13 @@ def test_packaged_reports_to_release_rejects_a_stale_descendant_byte(
 ) -> None:
     from memorii.core.semantic_ingestion import catalog_authority
 
-    original = catalog_authority._catalog_resource_bytes
+    original = catalog_authority.catalog_resource_bytes
 
     def stale_byte(name: str) -> bytes:
         payload = original(name)
         return payload + b"\n" if name == "reports_to.tool_grammar.v1.json" else payload
 
-    monkeypatch.setattr(catalog_authority, "_catalog_resource_bytes", stale_byte)
+    monkeypatch.setattr(catalog_authority, "catalog_resource_bytes", stale_byte)
     with pytest.raises(CatalogAuthorityError, match="bytes are not canonical"):
         load_packaged_reports_to_release()
 
@@ -187,14 +187,14 @@ def test_packaged_reports_to_release_rejects_duplicate_or_unknown_descriptor_fie
 ) -> None:
     from memorii.core.semantic_ingestion import catalog_authority
 
-    original = catalog_authority._catalog_resource_bytes
+    original = catalog_authority.catalog_resource_bytes
     payload = original("reports_to.tool_grammar.v1.json")
     duplicate = payload[:-1] + b',"status":"unavailable"}'
 
     def duplicate_field(name: str) -> bytes:
         return duplicate if name == "reports_to.tool_grammar.v1.json" else original(name)
 
-    monkeypatch.setattr(catalog_authority, "_catalog_resource_bytes", duplicate_field)
+    monkeypatch.setattr(catalog_authority, "catalog_resource_bytes", duplicate_field)
     with pytest.raises(CatalogAuthorityError, match="resource is invalid"):
         load_packaged_reports_to_release()
 
@@ -203,7 +203,7 @@ def test_packaged_reports_to_release_rejects_duplicate_or_unknown_descriptor_fie
     unknown = json.dumps(decoded, sort_keys=True, separators=(",", ":")).encode()
     monkeypatch.setattr(
         catalog_authority,
-        "_catalog_resource_bytes",
+        "catalog_resource_bytes",
         lambda name: unknown if name == "reports_to.tool_grammar.v1.json" else original(name),
     )
     with pytest.raises(CatalogAuthorityError, match="resource is invalid"):
@@ -214,9 +214,12 @@ def test_catalog_runtime_bundle_rejects_a_substituted_member_path() -> None:
     from memorii.core.semantic_ingestion import catalog_authority
     from memorii.core.semantic_ingestion.catalog_authority import CatalogRuntimeBundle
 
-    original = catalog_authority._catalog_resource_bytes
+    original = catalog_authority.catalog_resource_bytes
     bundle = CatalogRuntimeBundle.model_validate(
-        catalog_authority._catalog_json("reports_to.runtime-bundle.v1.json", original("reports_to.runtime-bundle.v1.json"))
+        catalog_authority.catalog_resource_json(
+            "reports_to.runtime-bundle.v1.json",
+            original("reports_to.runtime-bundle.v1.json"),
+        )
     )
     members = list(bundle.members)
     first_path, second_path = members[0].resource_path, members[1].resource_path
@@ -237,9 +240,12 @@ def test_packaged_reports_to_release_rejects_a_valid_but_substituted_index_mappi
     from memorii.core.semantic_ingestion import catalog_authority
     from memorii.core.semantic_ingestion.catalog_authority import CatalogPackageIndex
 
-    original = catalog_authority._catalog_resource_bytes
+    original = catalog_authority.catalog_resource_bytes
     index = CatalogPackageIndex.model_validate(
-        catalog_authority._catalog_json("catalog-package-index.v1.json", original("catalog-package-index.v1.json"))
+        catalog_authority.catalog_resource_json(
+            "catalog-package-index.v1.json",
+            original("catalog-package-index.v1.json"),
+        )
     )
     body = {"schema_version": 1, "entries": ()}
     substituted = CatalogPackageIndex(
@@ -251,7 +257,7 @@ def test_packaged_reports_to_release_rejects_a_valid_but_substituted_index_mappi
         return catalog_authority._canonical_json_bytes(substituted) if name == "catalog-package-index.v1.json" else original(name)
 
     assert index.entries
-    monkeypatch.setattr(catalog_authority, "_catalog_resource_bytes", substituted_index)
+    monkeypatch.setattr(catalog_authority, "catalog_resource_bytes", substituted_index)
     with pytest.raises(CatalogAuthorityError, match="catalog package index is invalid"):
         load_packaged_reports_to_release()
 

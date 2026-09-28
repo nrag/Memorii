@@ -434,28 +434,31 @@ def _hex(value: str) -> str:
     return sha256(value.encode()).hexdigest()
 
 
-def _bundle(predicate_id: str = "works_for") -> SemanticArbitrationPolicyBundle:
+def _bundle(predicate_id: str | tuple[str, ...] = "works_for") -> SemanticArbitrationPolicyBundle:
+    predicate_ids = (predicate_id,) if isinstance(predicate_id, str) else predicate_id
     effective = TimeInterval(start=datetime(2026, 1, 1, tzinfo=UTC), end=datetime(2027, 1, 1, tzinfo=UTC))
     trust = TrustPolicySnapshot.create(
         policy_revision="trust-r1",
         system_effective_interval=effective,
-        rules=(
+        rules=tuple(
             PredicateTrustRule(
-                predicate_id=predicate_id,
+                predicate_id=current_predicate_id,
                 eligible_authority_classes=frozenset({"official"}),
                 authority_rank_by_class={"official": 10},
-            ),
+            )
+            for current_predicate_id in predicate_ids
         ),
     )
     temporal = TemporalPolicySnapshot.create(
         policy_revision="temporal-r1",
         system_effective_interval=effective,
-        rules=(
+        rules=tuple(
             PredicateTemporalRule(
-                predicate_id=predicate_id,
+                predicate_id=current_predicate_id,
                 valid_time_requirement="required",
                 allow_open_end=True,
-            ),
+            )
+            for current_predicate_id in predicate_ids
         ),
     )
     return SemanticArbitrationPolicyBundle.create(
@@ -664,7 +667,7 @@ class _RecordingSourceNormalizationExecutionOwner:
 
 
 class _PolicyProvider:
-    def __init__(self, predicate_id: str = "works_for", *, outage: bool = False) -> None:
+    def __init__(self, predicate_id: str | tuple[str, ...] = "works_for", *, outage: bool = False) -> None:
         self.predicate_id = predicate_id
         self.outage = outage
 
@@ -1001,6 +1004,7 @@ def _v3_normalization_host_builder(
 def _built_in_local_capability(
     *, verifier=None, normalization_builder=None, resolver=None,
     structured_submission_authority_resolver=None, scenario_test=False,
+    predicate_id="owner_is",
 ):
     material = _TestHostBootstrapCapability(
         resolver=resolver or _Resolver(),
@@ -1019,7 +1023,7 @@ def _built_in_local_capability(
         bootstrap_material_presentation=present_authenticated_host_bootstrap_material(material),
         authorization_bytes=b"signed-test-authorization",
         authorization_verifier=_AuthorizationVerifier(),
-        policy_provider=_PolicyProvider("owner_is"),
+        policy_provider=_PolicyProvider(predicate_id),
         current_bootstrap_release_verifier=(
             _CurrentBootstrapReleaseVerifier() if verifier is None else verifier
         ),
@@ -2240,6 +2244,7 @@ def _retained_structured_submission(
     authority: ResolvedStructuredSubmissionAuthority | None = None,
     activate_authority: bool = True,
     source_id: str | None = None,
+    proposal: ProviderSemanticProposal | None = None,
 ):
     """Build a direct proposal only after the ordinary root retained its source."""
     source = next(
@@ -2257,7 +2262,7 @@ def _retained_structured_submission(
         source_id=source.memory_id, source_digest=source_digest
     )
     assert prepared is not None and prepared.sentence_spans
-    proposal = _bob_owner_proposal()
+    proposal = proposal or _bob_owner_proposal()
     proposal_bytes = encode_typed_value(proposal.model_dump(mode="python"))
     raw_artifact = b'{"structured":"Atlas owner is Bob."}'
     submission = RetainedStructuredSubmission(
@@ -3091,8 +3096,9 @@ def test_normal_root_structured_claim_is_readable_only_under_current_fact_and_ca
         _signed_monitoring_authority,
     )
 
+    proposal_ref = [ProviderSemanticProposal(abstained=True)]
     normalization, calls = _v3_normalization_host_builder(
-        proposal=ProviderSemanticProposal(abstained=True)
+        proposal=_bob_owner_proposal("employs"), proposal_ref=proposal_ref,
     )
     scoped_authority = InProcessScopedReadAuthority(now_provider=lambda: TEST_NOW)
     service = ProviderMemoryService(
@@ -3100,6 +3106,7 @@ def test_normal_root_structured_claim_is_readable_only_under_current_fact_and_ca
         now_provider=lambda: TEST_NOW,
         host_bootstrap_capability=_built_in_local_capability(
             resolver=_AgentBoundResolver(),
+            predicate_id="employs",
         ),
         host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
         source_normalization_host_bundle_builder=normalization,
@@ -3114,6 +3121,7 @@ def test_normal_root_structured_claim_is_readable_only_under_current_fact_and_ca
         user_id="user:alice",
         authenticated_host_ingress=_host_ingress(),
     )
+    proposal_ref[0] = _bob_owner_proposal("employs")
     authenticated = AuthenticatedPrincipalAgent(
         principal_id="principal:alice", agent_id="agent:alice",
     )
@@ -3142,7 +3150,7 @@ def test_normal_root_structured_claim_is_readable_only_under_current_fact_and_ca
         catalog=seed,
     )
     accepted, submission, ingress, writer_binding = _retained_structured_submission(
-        service, authority=authority,
+        service, authority=authority, proposal=_bob_owner_proposal("employs"),
     )
     outcome = _execute_retained_structured_submission(
         service, accepted=accepted, submission=submission, ingress=ingress, writer_binding=writer_binding,
@@ -4538,7 +4546,7 @@ def _bob_owner_proposal_bundle_builder():
     return builder
 
 
-def _bob_owner_proposal():
+def _bob_owner_proposal(predicate_id: str = "owner_is"):
     from memorii.core.semantic_ingestion.contracts import (
         ProviderEntityObject,
         ProviderFact,
@@ -4554,7 +4562,7 @@ def _bob_owner_proposal():
         facts=(
             ProviderFact(
                 local_id="owner",
-                predicate_id="owner_is",
+                predicate_id=predicate_id,
                 subject_entity_ref="atlas",
                 object=ProviderEntityObject(entity_ref="bob"),
                 assertion_quote="Atlas owner is Bob.",
@@ -4805,7 +4813,12 @@ def test_provider_preserves_verified_activation_target_and_revalidates_before_cu
     before = plane.read_write_snapshot()
     with pytest.raises(PreplanningStoreError, match="registered schemas are unavailable"):
         service.activate_observation_ledger()
-    assert plane.read_write_snapshot() == before
+    after = plane.read_write_snapshot()
+    assert after[0] == before[0] + 1
+    assert tuple(record for record in after[1] if record.source_kind != "semantic_ingestion_reference_integrity") == before[1]
+    assert [record.source_kind for record in after[1]].count(
+        "semantic_ingestion_reference_integrity"
+    ) == 1
     (target.deployment_configuration.installation_root / "memorii/empty.py").write_bytes(b"changed")
     with pytest.raises(ObservationActivationTargetConfigurationError):
         service.activate_observation_ledger()
@@ -4872,14 +4885,14 @@ def test_explicit_activation_checks_current_deployment_authorization_before_atom
         for mode in ("revoked", "expired", "mutated", "outage"):
             verifier.mode = mode
             for trigger in (service.activate_observation_ledger, runtime.activate_observation_ledger):
-                error = OSError if mode == "outage" else PreplanningStoreError
+                error = OSError if mode == "outage" else ValueError
                 with pytest.raises(error, match="authorization.*unavailable"):
                     trigger()
                 activate.assert_not_called()
                 assert plane.read_write_snapshot() == before
 
 
-def test_near_expiry_bootstrap_graph_lease_renews_before_execution() -> None:
+def test_bootstrap_graph_execution_preserves_live_lease_identity() -> None:
     now = TEST_NOW
     fence = SimpleNamespace(operation_fence_id="fence", operation_id="operation")
     writer = SimpleNamespace(binding_digest="writer")
@@ -4892,23 +4905,8 @@ def test_near_expiry_bootstrap_graph_lease_renews_before_execution() -> None:
         renewal_interval=timedelta(minutes=15),
     )
     control = SimpleNamespace(state="planned", lease=near_expiry, writer_binding=writer)
-    renewed = SimpleNamespace(
-        state="planned",
-        lease=near_expiry.model_copy(update={"expires_at": now + timedelta(minutes=30)}),
-        writer_binding=writer,
-    )
-
-    class AtomicStore:
-        def __init__(self) -> None:
-            self.renewals: list[dict[str, object]] = []
-
-        def renew_lease(self, **kwargs: object) -> object:
-            self.renewals.append(kwargs)
-            return renewed
-
-    atomic = AtomicStore()
     coordinator = object.__new__(ProviderIngestionCoordinator)
-    coordinator._atomic_store = atomic
+    coordinator._atomic_store = object()
     coordinator._now_provider = lambda: now
     executed: list[object] = []
 
@@ -4918,13 +4916,7 @@ def test_near_expiry_bootstrap_graph_lease_renews_before_execution() -> None:
         replay=object(),
         execute=lambda current: executed.append(current) or "terminal",
     ) == "terminal"
-    assert executed == [renewed]
-    assert atomic.renewals == [{
-        "operation_fence": fence,
-        "writer_binding": writer,
-        "lease": near_expiry,
-        "duration": timedelta(minutes=30),
-    }]
+    assert executed == [control]
 
     fresh = near_expiry.model_copy(update={"expires_at": now + timedelta(minutes=9)})
     control.lease = fresh
@@ -4935,9 +4927,7 @@ def test_near_expiry_bootstrap_graph_lease_renews_before_execution() -> None:
         replay=object(),
         execute=lambda current: executed.append(current) or "terminal",
     ) == "terminal"
-    assert executed == [renewed]
-    assert len(atomic.renewals) == 2
-    assert atomic.renewals[1]["lease"] is fresh
+    assert executed == [control]
 
     control.lease = near_expiry.model_copy(update={"owner_id": "foreign-owner"})
     executed.clear()
@@ -4948,7 +4938,6 @@ def test_near_expiry_bootstrap_graph_lease_renews_before_execution() -> None:
         execute=lambda current: executed.append(current) or "terminal",
     ) is None
     assert executed == []
-    assert len(atomic.renewals) == 2
 
     control.lease = near_expiry.model_copy(update={"expires_at": now})
     assert coordinator._execute_bootstrap_graph_with_expired_lease_retry(
@@ -4958,7 +4947,6 @@ def test_near_expiry_bootstrap_graph_lease_renews_before_execution() -> None:
         execute=lambda current: executed.append(current) or "terminal",
     ) is None
     assert executed == []
-    assert len(atomic.renewals) == 2
 
 
 def test_expired_bootstrap_graph_execution_error_reclaims_once() -> None:

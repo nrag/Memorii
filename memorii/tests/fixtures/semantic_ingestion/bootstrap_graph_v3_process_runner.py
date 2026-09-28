@@ -529,7 +529,7 @@ def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str
             real_conditional_write = plane.conditionally_write_records
 
             def scheduled_conditional_write(
-                records, *, preconditions, authorization, **kwargs,
+                records, *, preconditions, authorization=None, **kwargs,
             ):
                 group_primary = next((
                     record for record in records

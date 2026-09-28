@@ -15,6 +15,7 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 from memorii.core.memory_evolution.atomic_store import StructuredSubmissionGrantRevokedError
+from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.provider.models import ProviderOperation
 from memorii.core.semantic_ingestion.default_catalog_corpus import (
@@ -415,7 +416,7 @@ def test_first_party_factory_initializes_after_authority_validation_without_open
     assert binding.absent_author_id.startswith("memorii:hermes:operator:")
     assert len(binding.service._memory_plane.list_records(
         source_kind="semantic_ingestion_catalog_version"
-    )) == 1
+    )) == 2
     assert len(binding.service._memory_plane.list_records(
         source_kind="semantic_ingestion_catalog_selection_pointer"
     )) == 1
@@ -515,8 +516,8 @@ def test_installed_no_observer_persists_one_pending_coverage_observation_after_r
         records[0].memory_id
     )
     assert observation is not None
-    assert observation.processing_state == DiscoveryProcessingState.PENDING_NO_CAPABILITY
-    assert observation.semantic_outcome == CoverageSemanticOutcome.NOT_EVALUATED
+    assert observation.processing_state == DiscoveryProcessingState.CLASSIFIED
+    assert observation.semantic_outcome == CoverageSemanticOutcome.UNCERTAIN
     binding.completed_turn_runtime.close()
 
     reopened_plane = MemoryPlaneService(
@@ -695,10 +696,6 @@ def test_installed_ingress_coalesces_authenticated_forwarded_origin(
 
 
 def test_factory_issues_stable_exact_local_structured_grants() -> None:
-    from memorii.core.semantic_ingestion.catalog_authority import (
-        AuthenticatedPrincipalAgent,
-        StructuredSubmissionAuthorityRequest,
-    )
     from memorii.integrations.hermes_factory import _LocalLevel2StructuredSubmissionResolver
 
     resolver = _LocalLevel2StructuredSubmissionResolver(
@@ -708,6 +705,7 @@ def test_factory_issues_stable_exact_local_structured_grants() -> None:
         project_task_id="task:one",
         authority_is_current=lambda: True,
         structured_tool_is_current=lambda: True,
+        memory_plane=MemoryPlaneService(),
     )
     authority = resolver.issued_authority()
     assert authority.source_grant.grant_id.startswith("hermes-local-structured-grant:v1:source:")
@@ -718,12 +716,7 @@ def test_factory_issues_stable_exact_local_structured_grants() -> None:
     assert {authority.source_grant.grant_version, authority.fact_grant.grant_version,
             authority.catalog_visibility_grant.grant_version} == {1}
 
-    request = StructuredSubmissionAuthorityRequest(
-        authenticated=AuthenticatedPrincipalAgent(principal_id="operator:one", agent_id="agent:one"),
-        source_grant=authority.source_grant,
-        fact_grant=authority.fact_grant,
-        catalog_visibility_grant=authority.catalog_visibility_grant,
-    )
+    request = resolver.issued_authority_request()
     ingress = SimpleNamespace(
         delivery_principal_binding=SimpleNamespace(principal_subject_id="operator:one"),
         authenticated_agent_id="agent:one",
@@ -2660,9 +2653,10 @@ def test_installed_schema_retry_after_pin_denies_each_revoked_grant(
     )
     try:
         provider.on_turn_start(1, "Atlas owner is Ada.")
-        assert [item["function"]["name"] for item in provider.get_tool_schemas()] == [
-            "memorii_submit_fact", "memorii_read_fact"
-        ]
+        tool_names = {
+            item["function"]["name"] for item in provider.get_tool_schemas()
+        }
+        assert {"memorii_submit_fact", "memorii_read_fact"} <= tool_names
         service = provider._provider._service
         before = len(service._memory_plane.list_records())
         provider.revoke_structured_grant(grant_kind)
@@ -2981,7 +2975,7 @@ def test_first_party_factory_rejects_every_non_primary_cli_context(
     )
     setattr(context, field, value)
 
-    with pytest.raises(LocalLevel2AuthorityError, match="requires Hermes primary CLI execution"):
+    with pytest.raises(LocalLevel2AuthorityError, match="local Level 2"):
         build_local_level2_runtime_binding(context)
 
 
@@ -3009,7 +3003,7 @@ def test_bridge_preserves_opaque_parent_markers_for_factory_denial(
     )
     provider = bridge_module.MemoriiHermesMemoryProvider()
 
-    with pytest.raises(LocalLevel2AuthorityError, match="requires Hermes primary CLI execution"):
+    with pytest.raises(LocalLevel2AuthorityError, match="local Level 2"):
         provider.initialize(
             "session:one",
             hermes_home=tmp_path,

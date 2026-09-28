@@ -742,6 +742,7 @@ class ProviderMemoryService:
         self._catalog_selection_repository = SelectedCatalogAuthorityRepository(
             self._memory_plane,
             self._semantic_writer_admission,
+            catalog_bundle_locator=self._semantic_writer_admission._catalog_bundle_locator,
         )
         self._semantic_integrity_lifecycle = semantic_integrity_lifecycle
         integrity_attention_publisher: Callable[[str, datetime], None] | None = None

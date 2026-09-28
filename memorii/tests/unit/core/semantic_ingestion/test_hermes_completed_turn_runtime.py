@@ -12,6 +12,7 @@ import memorii.core.semantic_ingestion.hermes_completed_turn_runtime as hermes_r
 import pytest
 from jsonschema import Draft202012Validator
 from memorii.core.memory_plane.service import MemoryPlaneService
+from memorii.core.scoped_context.contracts import ScopedContextStatus
 from memorii.core.semantic_ingestion.catalog_authority import (
     StructuredSubmissionAuthorityRequest,
     ThreePredicateSeedCatalogAuthorityRepository,
@@ -125,6 +126,37 @@ def _active_capture_runtime() -> HermesCompletedTurnRuntime:
         resolve_captured_turn_catalog_dispatch=lambda **_kwargs: "seed",
     )
     return runtime
+
+
+def test_prefetch_reads_ordinary_claims_without_structured_tool_authority() -> None:
+    runtime = object.__new__(HermesCompletedTurnRuntime)
+    runtime._authenticated_author_id = "operator:ada"
+    runtime._authenticated_agent_id = "agent:a"
+    runtime._project_task_id = "task:a"
+    runtime._require_current_authority = lambda: None
+    runtime._structured_fact_read_authority = None
+    provisioned: list[tuple[object, ...]] = []
+    runtime._scoped_read_authority = SimpleNamespace(
+        provision=lambda **kwargs: provisioned.append(kwargs["structured_fact_read_authorities"])
+        or "read-handle",
+        revoke=lambda handle: None,
+    )
+    runtime._service = SimpleNamespace(
+        retrieve_context=lambda request, *, opaque_host_ingress: SimpleNamespace(
+            status=ScopedContextStatus.COMPLETE,
+            optional_items=(SimpleNamespace(rendered_text="Atlas owner is Ada."),),
+        )
+    )
+
+    recalled = runtime.prefetch(
+        query="Who owns Atlas?",
+        session_id="session:a",
+        authenticated_author_id="operator:ada",
+        now=datetime(2026, 9, 28, tzinfo=UTC),
+    )
+
+    assert recalled == "Atlas owner is Ada."
+    assert provisioned == [()]
 
 
 def test_captured_turn_tool_access_last_thirty_minutes(
