@@ -1151,8 +1151,15 @@ def test_installed_no_key_bridge_reaches_learned_mentors_submission_without_mode
     )
     # The schema call is the pre-tool egress boundary: it persists and
     # verifies the captured-turn catalog witness consumed below.
-    schema_names = [item["function"]["name"] for item in provider.get_tool_schemas()]
+    schemas = provider.get_tool_schemas()
+    schema_names = [item["function"]["name"] for item in schemas]
     assert schema_names[:2] == ["memorii_submit_fact", "memorii_read_fact"]
+    learned_parameters = schemas[0]["function"]["parameters"]
+    assert "correction" in learned_parameters["properties"]
+    assert {tuple(item["required"]) for item in learned_parameters["oneOf"]} == {
+        ("source_quote", "subject_quote", "predicate_anchor_quote", "object_quote"),
+        ("correction",),
+    }
     assert set(schema_names[2:]) == {
         "memorii_create_preference_candidate", "memorii_confirm_preference",
         "memorii_close_preference", "memorii_read_preference",

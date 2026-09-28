@@ -29,6 +29,7 @@ from memorii.core.provider.ingestion import (
     StructuredFactSubmissionRequest,
     StructuredFactSubmissionStatusRequest,
 )
+from memorii.core.provider.learned_replay import mentors_replay_arguments
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.scoped_context.authority import (
     InProcessScopedReadAuthority,
@@ -673,7 +674,7 @@ class HermesCompletedTurnRuntime:
             return []
         parameters = (
             _default_catalog_tool_parameters(proposal_schema)
-            if dispatch == "default_catalog"
+            if dispatch in {"default_catalog", "learned_overlay"}
             else _ordinary_fact_tool_parameters(proposal_schema)
         )
         submit_schema = {
@@ -860,7 +861,7 @@ class HermesCompletedTurnRuntime:
             ):
                 return "revoked"
             prepared = self._load_replay_prepared_source(ledger)
-            arguments = self._mentors_replay_arguments(prepared)
+            arguments = mentors_replay_arguments(prepared)
             active = _CapturedTurnHandle(
                 session_id=ledger.session_id,
                 turn_ordinal=ledger.turn_ordinal,
@@ -909,49 +910,6 @@ class HermesCompletedTurnRuntime:
         ):
             raise ValueError("retained replay prepared source is unavailable")
         return prepared
-
-    @staticmethod
-    def _mentors_replay_arguments(prepared: PreparedSource) -> dict[str, object]:
-        """Materialize only the frozen direct ``Person mentors Person`` form."""
-        matches = []
-        for span in prepared.sentence_spans:
-            quote = prepared.semantic_text[span.projection_span.start : span.projection_span.end]
-            if not quote.endswith(".") or quote.count(" mentors ") != 1:
-                continue
-            subject, object_quote = quote[:-1].split(" mentors ", 1)
-            if not subject or not object_quote:
-                continue
-            matches.append((quote, subject, object_quote, span))
-        if len(matches) != 1:
-            raise ValueError("retained replay is not a unique mentors sentence")
-        quote, subject, object_quote, span = matches[0]
-        proof = span.text_mapping_proof
-        if not isinstance(proof, VerbatimTextArtifactMappingProof):
-            raise ValueError("retained replay mapping is unavailable")
-        source_start = proof.retained_span.start + (span.projection_span.start - proof.projection_span.start)
-        return {
-            "schema_version": 1,
-            "source_quote": quote,
-            "source_quote_start": source_start,
-            "subject_quote": subject,
-            "predicate_anchor_quote": "mentors",
-            "object_quote": object_quote,
-            "proposal": {
-                "abstained": False,
-                "mentions": [
-                    {"local_id": "subject", "mention_quote": subject, "mention_context_quote": quote, "proposed_type": "Person"},
-                    {"local_id": "object", "mention_quote": object_quote, "mention_context_quote": quote, "proposed_type": "Person"},
-                ],
-                "facts": [{
-                    "kind": "fact", "local_id": "mentors", "predicate_id": "mentors",
-                    "subject_entity_ref": "subject", "object": {"kind": "entity", "entity_ref": "object"},
-                    "assertion_quote": quote, "predicate_anchor_quote": "mentors",
-                    "polarity": "positive", "commitment": "asserted",
-                    "attributed_to_entity_ref": None, "temporal_qualifier_quotes": [],
-                }],
-                "corrections": [], "retractions": [], "action_states": [], "identity_operations": [],
-            },
-        }
 
     def _acquire_active_tool_turn(self) -> _CapturedTurnHandle | None:
         with self._condition:

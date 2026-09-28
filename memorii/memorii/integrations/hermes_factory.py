@@ -36,6 +36,7 @@ from memorii.core.memory_evolution.models import EntityType
 from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.memory_plane.store import JsonlMemoryPlaneStore
 from memorii.core.provider.factory import build_provider_memory_service_from_env
+from memorii.core.provider.learned_replay import LearnedRetainedSourceReplayService
 from memorii.core.scoped_context.authority import InProcessScopedReadAuthority
 from memorii.core.semantic_ingestion.catalog_authority import (
     AgentLocalCatalogAuthorityScope,
@@ -723,127 +724,22 @@ def _build_local_level2_runtime_binding(
             return self._replay_generic_retained_source(**kwargs)
 
         def _replay_generic_retained_source(self, **kwargs: object) -> str:
-            from memorii.core.provider.ingestion import (
-                CapturedCatalogPinReference,
-                StructuredFactSubmissionRequest,
-            )
-            from memorii.core.semantic_ingestion.contracts import (
-                ProviderSemanticProposal,
-                VerbatimTextArtifactMappingProof,
-            )
-            from memorii.core.semantic_ingestion.hermes_completed_turn_runtime import (
-                HermesCompletedTurnRuntime,
-                _json_arrays_to_tuples,
-            )
-
-            source_id = kwargs.get("source_id")
-            source_digest = kwargs.get("source_digest")
-            catalog_scope = kwargs.get("catalog_scope")
-            catalog_digest = kwargs.get("catalog_digest")
-            replay_operation_id = kwargs.get("replay_operation_id")
-            if (
-                not isinstance(source_id, str)
-                or not isinstance(source_digest, str)
-                or not isinstance(catalog_scope, AgentLocalCatalogAuthorityScope)
-                or not isinstance(catalog_digest, str)
-                or not isinstance(replay_operation_id, str)
-                or not replay_operation_id.startswith("ontology-replay:")
-            ):
+            if generic_replay is None:
                 return "revoked"
-            runtime = service._provider_ingestion._semantic_runtime
-            repository = None if runtime is None else runtime.prepared_source_repository
-            if repository is None:
-                return "deleted"
-            prepared = repository.load(source_id=source_id, source_digest=source_digest)
-            if prepared is None:
-                return "deleted"
             try:
-                arguments = HermesCompletedTurnRuntime._mentors_replay_arguments(prepared)
-                proposal = ProviderSemanticProposal.model_validate(
-                    _json_arrays_to_tuples(arguments["proposal"])
-                )
-                source_quote = arguments["source_quote"]
-                source_start = arguments["source_quote_start"]
-                spans = tuple(
-                    span
-                    for span in prepared.sentence_spans
-                    if isinstance(
-                        span.text_mapping_proof,
-                        VerbatimTextArtifactMappingProof,
-                    )
-                    if prepared.semantic_text[
-                        span.projection_span.start : span.projection_span.end
-                    ]
-                    == source_quote
-                    and span.text_mapping_proof.retained_span.start
-                    + (
-                        span.projection_span.start
-                        - span.text_mapping_proof.projection_span.start
-                    )
-                    == source_start
-                )
-                if len(spans) != 1:
-                    return "deleted"
-                authority_request = structured_resolver.issued_authority_request()
-                source_record = service._memory_plane.get_record(source_id)
-                if source_record is None or not isinstance(source_record.session_id, str):
-                    return "deleted"
-                ingress = self.runtime._issue_host_ingress(
-                    source_record.session_id,
-                    catalog_scope.principal_id,
-                    datetime.now(UTC),
-                )
-                pin = service.pin_retained_source_catalog(
-                    source_id=source_id,
-                    source_digest=source_digest,
-                    authority_request=authority_request,
-                    authenticated_host_ingress=ingress,
-                )
-                if (
-                    pin is None
-                    or pin.catalog_scope != catalog_scope
-                    or pin.catalog_digest != catalog_digest
-                    or service.resolve_captured_turn_catalog_dispatch(pin=pin)
-                    != "learned_overlay"
-                ):
-                    return "revoked"
-                raw = encode_typed_value(arguments)
-                request = StructuredFactSubmissionRequest(
-                    source_id=source_id,
-                    source_digest=source_digest,
-                    authority_request=authority_request,
-                    captured_pin=CapturedCatalogPinReference(
-                        capture_id=pin.capture_id,
-                        pin_memory_id=pin.memory_id,
-                        pin_digest=pin.pin_digest,
-                        catalog_scope=pin.catalog_scope,
-                        catalog_digest=pin.catalog_digest,
-                        selected_version_id=pin.selected_version_id,
-                        selected_version_digest=pin.selected_version_digest,
-                        runtime_bundle_digest=pin.runtime_bundle_digest,
-                    ),
-                    exact_source_spans=spans,
-                    raw_proposal_artifact=raw,
-                    raw_proposal_artifact_digest=sha256(raw).hexdigest(),
-                    protocol_version="memorii.authenticated-source.learned-replay.v1",
-                    parser_version="memorii.retained-sentence-parser.v1",
-                    proposal=proposal,
-                    proposal_bytes=encode_typed_value(proposal.model_dump(mode="python")),
-                )
-                response = service.submit_structured_fact(
-                    request,
-                    authenticated_host_ingress=ingress,
-                )
-            except (AttributeError, OSError, TypeError, ValueError):
-                return "deleted"
-            if response.status == "committed":
-                return "committed"
-            if response.status in {"abstained", "rejected"}:
-                return "abstained"
-            if response.status not in {"denied", "authorization_revoked_before_commit"}:
-                return "deleted"
-            return "revoked"
+                return generic_replay.replay_retained_source(**kwargs)
+            except TypeError:
+                return "revoked"
 
+    generic_replay = (
+        None
+        if structured_resolver is None
+        else LearnedRetainedSourceReplayService(
+            service=service,
+            authority_request=structured_resolver.issued_authority_request,
+            issue_ingress=issue_completed_turn_ingress,
+        )
+    )
     replay_writer = _InstalledReplayWriter()
 
     learned_runtime = LearnedRelationRuntime(

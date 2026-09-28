@@ -37,6 +37,7 @@ from memorii.core.memory_evolution.admission import (
     SemanticIngestionOutcomeLookupRequest,
     SemanticIngestionOutcomeLookupResponse,
     source_admission_source_bytes,
+    source_admission_source_digest,
 )
 from memorii.core.memory_evolution.atomic_store import (
     PreplanningOperationMismatchError,
@@ -213,7 +214,11 @@ from memorii.core.semantic_ingestion.catalog_authority import (
     StructuredSubmissionAuthorityResolver,
 )
 from memorii.core.semantic_ingestion.catalog_capture_pin import CatalogCapturedTurnPin
-from memorii.core.semantic_ingestion.contracts import ClaimAssertion, ProviderSemanticProposal
+from memorii.core.semantic_ingestion.contracts import (
+    ClaimAssertion,
+    PreparedSource,
+    ProviderSemanticProposal,
+)
 from memorii.core.semantic_ingestion.coverage_observation import (
     CoverageObservationRepository,
     CoverageObservationStatus,
@@ -1780,6 +1785,46 @@ class ProviderMemoryService:
             )
         except (MemoryPlaneCorruptionError, OSError, ValueError, PreplanningStoreError):
             return None
+
+    def load_retained_prepared_source(
+        self, *, source_id: str, source_digest: str,
+    ) -> PreparedSource | None:
+        """Load exact prepared evidence for a provider-owned retained replay."""
+        runtime = self._provider_ingestion._semantic_runtime
+        repository = None if runtime is None else runtime.prepared_source_repository
+        if repository is None:
+            return None
+        try:
+            prepared = repository.load(
+                source_id=source_id,
+                source_digest=source_digest,
+            )
+        except (OSError, ValueError):
+            return None
+        if (
+            prepared is None
+            or prepared.source_id != source_id
+            or prepared.source_digest != source_digest
+        ):
+            return None
+        return prepared
+
+    def retained_source_session_id(
+        self, *, source_id: str, source_digest: str,
+    ) -> str | None:
+        """Return the immutable source session after exact retained-source join."""
+        try:
+            source = self._memory_plane.get_record(source_id)
+            if (
+                source is None
+                or source.source_kind != "semantic_ingestion_source"
+                or source_admission_source_digest(source) != source_digest
+                or not isinstance(source.session_id, str)
+            ):
+                return None
+        except (OSError, TypeError, ValueError):
+            return None
+        return source.session_id
 
     def load_captured_turn_catalog_pin(
         self, *, ledger: object, authority_request: StructuredSubmissionAuthorityRequest,
