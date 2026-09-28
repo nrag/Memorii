@@ -657,6 +657,7 @@ def test_independent_hosts_converge_on_one_durable_deferred_baseline(tmp_path, m
         independent_current_use,
     )
     entered, second_committed, release = Event(), Event(), Event()
+    race_timeout_seconds = 30
     attempts = []
     apply = store_a.apply_batch
 
@@ -672,7 +673,7 @@ def test_independent_hosts_converge_on_one_durable_deferred_baseline(tmp_path, m
         if is_baseline_batch(records):
             attempts.append("a")
             entered.set()
-            assert release.wait(timeout=30), "baseline race was not released"
+            assert release.wait(timeout=race_timeout_seconds), "baseline race was not released"
         return apply(records, **kwargs)
 
     apply_b = store_b.apply_batch
@@ -688,15 +689,20 @@ def test_independent_hosts_converge_on_one_durable_deferred_baseline(tmp_path, m
     monkeypatch.setattr(store_b, "apply_batch", commit_second_baseline)
     with ThreadPoolExecutor(max_workers=2) as executor:
         first_future = executor.submit(service_a.activate_observation_ledger)
-        assert entered.wait(timeout=30), "host A did not reach the baseline CAS"
+        assert entered.wait(timeout=race_timeout_seconds), "host A did not reach the baseline CAS"
         second_future = executor.submit(service_b.activate_observation_ledger)
-        assert second_committed.wait(timeout=30), "host B did not commit the winning baseline"
+        if not second_committed.wait(timeout=5) and second_future.done():
+            second_future.result()
+        assert second_committed.wait(
+            timeout=race_timeout_seconds - 5
+        ), "host B did not commit the winning baseline"
         winner_tick = service_b.run_capability_monitor_tick(
             evidence=authority._initial_evidence,
         )
         assert winner_tick.status.status == "active"
         release.set()
-        first, second = first_future.result(timeout=60), second_future.result(timeout=60)
+        first = first_future.result(timeout=race_timeout_seconds)
+        second = second_future.result(timeout=race_timeout_seconds)
     assert first == second
     status = [record for record in service_a._memory_plane.list_records(
         source_kind="semantic_ingestion_capability_status",

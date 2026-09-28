@@ -609,6 +609,28 @@ def _build_local_level2_runtime_binding(
         raise RuntimeError(
             "Hermes local Level 2 semantic runtime is unavailable: " + service._bootstrap_unavailable_reason
         )
+    has_observation_ledger_activation = any(
+        record.source_kind == "semantic_ingestion_observation_ledger_activation"
+        for record in memory_plane.list_records()
+    )
+
+    def recover_pending_semantic_work() -> None:
+        recovery_deadline = time.monotonic() + 65.0
+        while True:
+            if not authority_is_current():
+                raise LocalLevel2AuthorityError("local Level 2 authority is unavailable")
+            recovery_outcomes = service.reconcile_memory_evolution()
+            if not any(outcome.retryable for outcome in recovery_outcomes):
+                return
+            if time.monotonic() >= recovery_deadline:
+                raise RuntimeError("Hermes semantic recovery remained pending")
+            time.sleep(1.0)
+
+    # Verify an existing activation before agent-scoped startup writes change
+    # the live catalog or grant view used by this new runtime instance.
+    if has_observation_ledger_activation and _recover_pending_semantic_work:
+        recover_pending_semantic_work()
+        service.activate_observation_ledger()
     # Both the seed and generated default bundle are governed startup fences.
     # A captured turn therefore pins one persisted catalog version before the
     # tool schema is advertised.
@@ -638,17 +660,8 @@ def _build_local_level2_runtime_binding(
     # A prior process can stop after atomic callback admission but before the
     # worker creates its handoff. Drain that retained operation before the
     # activation reload verifies that every active control is terminal.
-    if _recover_pending_semantic_work:
-        recovery_deadline = time.monotonic() + 65.0
-        while True:
-            if not authority_is_current():
-                raise LocalLevel2AuthorityError("local Level 2 authority is unavailable")
-            recovery_outcomes = service.reconcile_memory_evolution()
-            if not any(outcome.retryable for outcome in recovery_outcomes):
-                break
-            if time.monotonic() >= recovery_deadline:
-                raise RuntimeError("Hermes semantic recovery remained pending")
-            time.sleep(1.0)
+    if not has_observation_ledger_activation and _recover_pending_semantic_work:
+        recover_pending_semantic_work()
     # The current Bootstrap capability owns the canonical registry and the
     # installation-bound local activation target. Complete the cutover before
     # Hermes can admit a completed turn, so no source can enter a partial
@@ -657,11 +670,7 @@ def _build_local_level2_runtime_binding(
     # completed-turn recovery. Its no-model observations may retain retryable
     # bootstrap work for a future capable host, while the already-activated
     # writer and learned replay/read roots remain usable across restart.
-    has_observation_ledger_activation = any(
-        record.source_kind == "semantic_ingestion_observation_ledger_activation"
-        for record in memory_plane.list_records()
-    )
-    if _recover_pending_semantic_work or not has_observation_ledger_activation:
+    if not has_observation_ledger_activation:
         service.activate_observation_ledger()
     from memorii.core.semantic_ingestion.hermes_completed_turn_runtime import (
         HermesCompletedTurnRuntime,
@@ -1505,9 +1514,11 @@ def _bind_single_local_operator_context(
             raise LocalLevel2AuthorityError(
                 "local Level 2 profile is already bound to another Hermes user context"
             ) from None
-        if context_kind == "primary" and existing["primary_agent_id"] != agent_id:
-            raise LocalLevel2AuthorityError("local Level 2 primary agent identity is substituted") from None
-        return existing["primary_agent_id"]
+        # The profile belongs to the signed-in local user. Distinct primary
+        # agents under that same account keep their own agent-scoped memory and
+        # preference authority; delegated contexts still inherit the original
+        # primary agent for delegation checks.
+        return agent_id if context_kind == "primary" else existing["primary_agent_id"]
     if raw_user_id is None and allow_existing_operator_binding:
         os.close(descriptor)
         path.unlink(missing_ok=True)

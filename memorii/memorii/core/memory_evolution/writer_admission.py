@@ -5890,8 +5890,8 @@ def _is_activated_preterminal_write(
     """
     if any(record.source_kind.startswith("semantic_ingestion_observation_ledger_") for record in governed):
         return False
-        if _is_reference_integrity_bootstrap_write(governed):
-            return True
+    if _is_reference_integrity_bootstrap_write(governed):
+        return True
     controls = [
         record for record in governed
         if record.content.get("semantic_ingestion_kind") == "preplanning_operation_control"

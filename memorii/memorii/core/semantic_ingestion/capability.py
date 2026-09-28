@@ -197,9 +197,16 @@ class AuthorizedSemanticIngestionRuntime:
             profile=self.bootstrap_profile, use_point="activation", server_time=self.now_provider()
         ) is None:
             raise PreplanningStoreError("observation ledger activation deployment authorization is unavailable")
-        return self.atomic_store.activate_observation_ledger(
+        activated = self.atomic_store.activate_observation_ledger(
             writer_binding=self.writer_admission.observation_ledger_activation_binding()
         )
+        # A retained capability-monitoring predecessor cannot admit this
+        # ledger while it is still on the historical manifest. Complete the
+        # cutover first, then install the ledger under the activated binding.
+        # Ordinary startup already performed the same idempotent bootstrap in
+        # validate(), before the cutover closes administration authority.
+        self.atomic_store.bootstrap_reference_integrity(writer_binding=activated)
+        return activated
 
     def verify_authorization(
         self,
@@ -273,10 +280,11 @@ class AuthorizedSemanticIngestionRuntime:
                 # Resolver authority must be installed while the writer remains
                 # evidence-only; post-activation administration is forbidden.
                 self.conflict_authority_bootstrap(grant)
-            binding = self.writer_admission.commit_binding(
-                self.writer_admission.current()
-            )
-            self.atomic_store.bootstrap_reference_integrity(writer_binding=binding)
+            if not self.writer_admission.has_retained_capability_monitoring_predecessor():
+                binding = self.writer_admission.commit_binding(
+                    self.writer_admission.current()
+                )
+                self.atomic_store.bootstrap_reference_integrity(writer_binding=binding)
 
     def conflict_authority_administration_grant(
         self,
