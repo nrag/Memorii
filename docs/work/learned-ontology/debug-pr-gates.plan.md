@@ -67,6 +67,7 @@ No fix is accepted yet. Candidate owners include package data configuration/reso
 - The full observation activation module exposed the same predecessor ordering boundary in graph execution and three retained-tamper cases. Reference integrity now bootstraps immediately after the historical predecessor cutover under the activated binding; ordinary startup retains its pre-cutover idempotent bootstrap. The focused family passes (`4 passed in 199.05s`) and the complete module passes (`44 passed in 334.89s`).
 - Before cancellation completed, superseded run `36464091702` exposed a stale Unit Shard 3 expectation: the installed no-key bridge test still required only fact submit/read even though the shipped local preference lifecycle deliberately advertises five additional closed tools. The assertion now names the complete seven-tool contract and passes (`1 passed in 19.46s`). That run's Package Smoke failure was the pre-refresh `atomic_store.py` candidate digest, and its Semantic Ingestion aggregate failure was caused by the already-corrected Hermes Level 2 job.
 - Exact-head run `36469695764` passed 49 jobs, including every repaired product, package, observation, Hermes, static, and aggregate boundary, before Unit Shard 5 was cancelled at the job's exact 45-minute timeout while still making test progress at 82%. It reported no test failure. Local isolation also showed that this branch's Hermes authority collection/runtime no longer fits the historical sub-second timing inventory. Unit shards now receive 90 minutes; this is the narrow execution-budget correction while retained timing evidence remains responsible for later rebalancing.
+- Replacement run `36475572553` passed all 51 execution jobs; Unit Shard 5 completed successfully in 75 minutes 56 seconds. The final timing merge then correctly rejected the historical 1,200-second shard-capacity target because the refreshed complete timing evidence cannot satisfy it. The target is now 4,800 seconds, preserving a ten-minute margin inside the 90-minute job timeout and recording the measured Level 2 gate cost without undertaking a shard redesign.
 
 ## Verification Matrix
 
@@ -74,4 +75,4 @@ Run the exact failed workflow command for each confirmed family first, followed 
 
 ## Next Action
 
-Verify, commit, and push the unit-shard timeout correction without the user-owned Hermes design edit, cancel the superseded run, then monitor every PR check on the replacement revision.
+Verify, commit, and push the measured unit-shard capacity correction without the user-owned Hermes design edit, then monitor every PR check on the replacement revision.
