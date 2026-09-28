@@ -4661,12 +4661,18 @@ class SemanticIngestionAtomicStore:
         if snapshot.get(projection.memory_id) != projection:
             return "unavailable"
 
-        candidates: list[tuple[CanonicalMemoryRecord, BootstrapGraphGroupCommitRequestV3]] = []
+        candidates: list[
+            tuple[
+                CanonicalMemoryRecord,
+                BootstrapGraphGroupCommitRequestV3,
+                BootstrapGraphGroupCommitReloadV3,
+            ]
+        ] = []
         for primary in snapshot.values():
             if primary.source_kind != "semantic_ingestion_bootstrap_graph_v3_group_commit_primary":
                 continue
             try:
-                request = _bootstrap_graph_v3_group_commit_request_from_record(primary)
+                request, reload = _bootstrap_graph_v3_group_commit_primary_from_record(primary)
             except PreplanningStoreError:
                 continue
             if (
@@ -4674,10 +4680,10 @@ class SemanticIngestionAtomicStore:
                 and request.operation_fence_binding.source_id == source_id
                 and request.operation_fence_binding.source_digest == source_digest
             ):
-                candidates.append((primary, request))
+                candidates.append((primary, request, reload))
         if len(candidates) != 1:
             return "unavailable"
-        primary, request = candidates[0]
+        primary, request, reload = candidates[0]
         # Retained-source identities are minted only by the structured
         # submission admission path.  This durable operation coordinate keeps
         # a missing or damaged submission-link record from downgrading a new
@@ -4691,7 +4697,6 @@ class SemanticIngestionAtomicStore:
         if retained_id in snapshot:
             return "not_legacy"
         try:
-            reload = _bootstrap_graph_v3_group_commit_reload_from_record(primary, request)
             core = reload.persisted_result.core
             if (
                 reload.group_result_schema_version not in (2, 3)
@@ -4725,6 +4730,9 @@ class SemanticIngestionAtomicStore:
                 entry,
                 snapshot_records=snapshot,
                 historical_conflict_binding=True,
+                verified_primary=primary,
+                verified_request=request,
+                verified_reload=reload,
             )
             if reload.group_result_schema_version == 3:
                 self._verify_group_commit_seal_snapshot(
@@ -15861,6 +15869,9 @@ class SemanticIngestionAtomicStore:
     def _verify_native_group_entry_snapshot(
         self, entry: ObservationLedgerEntry, *, snapshot_records: dict[str, CanonicalMemoryRecord],
         historical_conflict_binding: bool = False,
+        verified_primary: CanonicalMemoryRecord | None = None,
+        verified_request: BootstrapGraphGroupCommitRequestV3 | None = None,
+        verified_reload: BootstrapGraphGroupCommitReloadV3 | None = None,
     ) -> None:
         """Join the immutable group result, audit and native signed checkpoint."""
         from memorii.core.memory_evolution.bootstrap_group_observation import (
@@ -15869,10 +15880,7 @@ class SemanticIngestionAtomicStore:
         )
         from memorii.core.memory_evolution.conflict_attention import SemanticConflictReplayBinding
         from memorii.core.memory_evolution.graph_effect_contracts import GraphRevisionDelta, IngestionObservationDelta
-        from memorii.core.memory_evolution.observation_activation_runtime import (
-            emit_registered_observation_artifact,
-            validate_registered_artifact,
-        )
+        from memorii.core.memory_evolution.observation_activation_runtime import validate_registered_artifact
         from memorii.core.memory_evolution.observation_ledger_contracts import ObservationGroupResultLocator
         from memorii.core.memory_evolution.projection_history import ProjectionHistoryRepository
         from memorii.core.memory_evolution.reference_integrity import ReferenceEdgeLedgerSnapshot
@@ -15891,11 +15899,16 @@ class SemanticIngestionAtomicStore:
         if (target is None or history is None or not isinstance(locator, ObservationGroupResultLocator)
                 or not isinstance(delta, IngestionObservationDelta)):
             raise PreplanningStoreError("native group ledger authority is invalid")
-        primary = snapshot_records.get(locator.immutable_record_id)
+        supplied = (verified_primary, verified_request, verified_reload)
+        if any(item is not None for item in supplied) and not all(item is not None for item in supplied):
+            raise PreplanningStoreError("native group preverified primary is incomplete")
+        primary = verified_primary or snapshot_records.get(locator.immutable_record_id)
         if primary is None:
             raise PreplanningStoreError("native group primary is absent")
-        request = _bootstrap_graph_v3_group_commit_request_from_record(primary)
-        reload = _bootstrap_graph_v3_group_commit_reload_from_record(primary, request)
+        if verified_request is None or verified_reload is None:
+            request, reload = _bootstrap_graph_v3_group_commit_primary_from_record(primary)
+        else:
+            request, reload = verified_request, verified_reload
         core = reload.persisted_result.core
         if (
             primary.memory_id != _bootstrap_graph_v3_group_commit_primary_id(
@@ -15926,14 +15939,13 @@ class SemanticIngestionAtomicStore:
                     or not isinstance(record.content["artifact"], str)):
                 raise PreplanningStoreError("native group immutable evidence is absent or malformed")
             raw = record.content["artifact"].encode("utf-8")
-            value = validate_registered_artifact(raw, schema_id=schema, history=history,
-                                                 limits=self._observation_artifact_limits)
-            selected = emit_registered_observation_artifact(
-                value, schema_id=schema, history=history, publication=target.publication,
+            value = validate_registered_artifact(
+                raw,
+                schema_id=schema,
+                history=history,
                 limits=self._observation_artifact_limits,
+                publication=target.publication,
             )
-            if selected.raw != raw:
-                raise PreplanningStoreError("native group evidence publication is substituted")
             return value
 
         graph_delta = None
@@ -19247,34 +19259,30 @@ def _bootstrap_graph_operation_effects(*, request, item, materialized_records, p
 def _bootstrap_graph_v3_group_commit_request_from_record(
     record: CanonicalMemoryRecord,
 ) -> BootstrapGraphGroupCommitRequestV3:
+    return _bootstrap_graph_v3_group_commit_primary_from_record(record)[0]
+
+
+def _bootstrap_graph_v3_group_commit_primary_from_record(
+    record: CanonicalMemoryRecord,
+) -> tuple[BootstrapGraphGroupCommitRequestV3, BootstrapGraphGroupCommitReloadV3]:
     from memorii.core.memory_evolution.bootstrap_group_primary import (
         BootstrapGroupPrimaryVerificationError,
         decode_verified_bootstrap_graph_group_commit_primary,
     )
 
     try:
-        request, _ = decode_verified_bootstrap_graph_group_commit_primary(
+        request, reload = decode_verified_bootstrap_graph_group_commit_primary(
             record, require_committed_result=False,
         )
     except BootstrapGroupPrimaryVerificationError as exc:
         raise PreplanningStoreError("bootstrap graph group commit primary is corrupt") from exc
-    return request
+    return request, reload
 
 
 def _bootstrap_graph_v3_group_commit_reload_from_record(
     record: CanonicalMemoryRecord, request: BootstrapGraphGroupCommitRequestV3,
 ) -> BootstrapGraphGroupCommitReloadV3:
-    from memorii.core.memory_evolution.bootstrap_group_primary import (
-        BootstrapGroupPrimaryVerificationError,
-        decode_verified_bootstrap_graph_group_commit_primary,
-    )
-
-    try:
-        decoded_request, reload = decode_verified_bootstrap_graph_group_commit_primary(
-            record, require_committed_result=False,
-        )
-    except BootstrapGroupPrimaryVerificationError as exc:
-        raise PreplanningStoreError("bootstrap graph group commit primary is corrupt") from exc
+    decoded_request, reload = _bootstrap_graph_v3_group_commit_primary_from_record(record)
     if decoded_request != request:
         raise PreplanningStoreError("bootstrap graph group commit primary is substituted")
     return reload

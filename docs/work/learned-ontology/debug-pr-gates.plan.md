@@ -9,7 +9,7 @@
 - Last updated: 2026-09-28
 - Parent WorkPlan: `docs/work/learned-ontology/implementation.plan.md` (Level-2 implementation complete; this operation repairs its failing PR gates)
 - Related WorkPlans: `docs/work/learned-ontology/milestones/learning-activation-replay.plan.md`
-- Canonical inputs: PR `https://github.com/nrag/Memorii/pull/123`, latest inspected Actions run `36444723670`, pushed head `f1137c59`
+- Canonical inputs: PR `https://github.com/nrag/Memorii/pull/123`, active Actions run `36458247040`, pushed head `a2a3c0ed`
 - Expected outputs: green scope-required PR gates on the corrected pushed revision, focused regressions for confirmed defects, and an exact revision-bound closure record
 
 ## Objective
@@ -56,6 +56,11 @@ No fix is accepted yet. Candidate owners include package data configuration/reso
 - Final local gate evidence at the dirty candidate: whole Pyright reports `0 errors, 0 warnings, 0 informations`; whole Ruff and `git diff --check` pass; bootstrap source admission passes (`28 passed`); package-smoke bootstrap/release-tool tests pass (`19 passed`); catalog pin and coverage observer tests pass (`17 passed`); the corruption/recovery race passes (`1 passed in 195.70s`).
 - Refreshed the 1,909-member observation-ledger release-preparation candidate after the final source and publication-evidence changes. Every member digest and the sidecar verify locally; candidate SHA-256 is `d0071aea5662f13650333ca18a60ee619d93306a5118ef1cc7357dfe78cef69b`.
 - PR run `36457503282` exposed one Package Smoke failure after the wheel installed successfully: the installed publication verified to the current digest, but `independent-positive-parity.json` still pinned the predecessor publication digest after `project_assertions.py` changed in `f1137c59`. Reproduced the publication with both compilers, refreshed the independent output/parity and vector manifests, and passed all 58 registry vectors with 181 entries and 1,269 roles. The refreshed pin now equals the packaged publication digest `9164dff33af04f68472a447f8158fd1476ddbfab501a1500f81d432ff4c0c453` and registry digest `722acb5858a6eaed37ac55a92d7efadb369ab8c906b1070ba1d9e54ec3a86f08`.
+- Pushed refreshed publication evidence as `a2a3c0ed`; Package Smoke and Static Analysis pass on replacement run `36458247040`. The superseded queued run `36457503282` was cancelled so the current revision could acquire the workflow concurrency slot.
+- Unit Test Shard 4 on run `36458247040` found two stale assertions in `test_semantic_provider_composition.py`: its rotated-catalog fake omitted the selected-bundle resolver required by the exercised interface, and its second failed activation compared against the snapshot before the intentionally persisted reference-integrity ledger. The fake now supplies the complete bundle surface and the no-write assertion uses the post-bootstrap snapshot. Both exact failed tests pass locally (`2 passed in 35.61s`).
+- Hermes Installed Image Lifecycle on run `36458247040` reached the reopened valid-memory recall but exceeded Hermes MemoryManager's eight-second provider timeout. A stage-timed local reproduction measured the reopened prefetch at `29.240s`; profiling localized the cost to repeated native-group primary decoding and registered-artifact re-emission inside `verify_legacy_bootstrap_v3_runtime_projection`.
+- The verifier now decodes each native primary once per legacy-projection verification, carries that verified request/reload pair into the native-entry verifier, and validates the persisted artifact's embedded publication binding after the same protected integrity/materialization path instead of emitting the large artifact again. The immutable-primary codec retains its exact byte-closure check while reusing the strict decoder's canonical-byte proof inside the bounded operation-local verification scope. Reopened recall is `6.131s`, down from `29.240s` and below the Hermes eight-second boundary.
+- Focused post-fix evidence: whole-package Pyright reports `0 errors, 0 warnings, 0 informations`; Ruff and `git diff --check` pass; the two Shard 4 nodes pass (`2 passed in 36.19s`); corrupt immutable-primary denial plus the intact sibling path pass (`2 passed in 159.42s`); and the exact Docker installed-image lifecycle passes (`1 passed in 520.16s`).
 
 ## Verification Matrix
 
@@ -63,4 +68,4 @@ Run the exact failed workflow command for each confirmed family first, followed 
 
 ## Next Action
 
-Commit and push the refreshed publication evidence, then monitor every PR check on the new revision and repair any remaining exact gate failure.
+Commit and push the verified corrections without the user-owned Hermes design edit, then monitor every PR check on the replacement revision.

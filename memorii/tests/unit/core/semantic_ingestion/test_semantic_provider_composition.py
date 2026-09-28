@@ -1506,6 +1506,13 @@ def test_direct_provider_root_publishes_and_reloads_bootstrap_v3_normalization()
             selected = selection_repository.resolve_selected_base()
             return selected.model_copy(update={"catalog_digest": "f" * 64})
 
+        def resolve_selected_bundle(self):
+            selected = self.resolve_selected_base()
+            return SimpleNamespace(
+                catalog=selected,
+                version=SimpleNamespace(version_digest="f" * 64),
+            )
+
     service._provider_ingestion._catalog_selection_repository = _RotatedCatalog()
     service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
@@ -4822,7 +4829,7 @@ def test_provider_preserves_verified_activation_target_and_revalidates_before_cu
     (target.deployment_configuration.installation_root / "memorii/empty.py").write_bytes(b"changed")
     with pytest.raises(ObservationActivationTargetConfigurationError):
         service.activate_observation_ledger()
-    assert plane.read_write_snapshot() == before
+    assert plane.read_write_snapshot() == after
 
 
 def test_invalid_activation_target_never_falls_back_to_legacy_provider(

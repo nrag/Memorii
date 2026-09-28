@@ -341,6 +341,7 @@ def validate_registered_artifact(
     raw: bytes, *, schema_id: str, history: ProtectedTypedValueRegistryHistory,
     limits: ProtectedTypedValueArtifactReaderLimits = _LIMITS,
     verification_key: TrustedTypedValueArtifactVerificationKey | None = None,
+    publication: VerifiedTypedValuePublication | None = None,
 ) -> BaseModel:
     checked = verify_protected_typed_value_artifact_integrity(
         raw, history=history, route=TypedValueRegistryReadRoute.INTERNAL_REPLAY, limits=limits,
@@ -348,7 +349,15 @@ def validate_registered_artifact(
     )
     value = checked.materialization.materialized.value
     expected = _ROOT_TYPES.get(schema_id)
-    if expected is None or type(value) is not expected:
+    if (
+        expected is None
+        or type(value) is not expected
+        or (
+            publication is not None
+            and checked.materialization.checked_artifact.binding
+            != _binding(_entry(history, schema_id, publication))
+        )
+    ):
         raise ObservationActivationRuntimeError("registered observation artifact schema is invalid")
     return value
 
