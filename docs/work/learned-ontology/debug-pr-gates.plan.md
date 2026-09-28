@@ -54,7 +54,8 @@ No fix is accepted yet. Candidate owners include package data configuration/reso
 - Confirmed lifecycle coexistence defect: the native lifecycle reader treated every valid noncommitting graph primary as corrupt because it required a schema-2 committed result before determining whether the primary could contain an accepted lifecycle effect. It now verifies the closed request/reload/result joins for every primary, ignores verified noncommitting results, and continues to require schema 2 for committed lifecycle authority.
 - Confirmed scenario identity defect: multiple normalized proposals could retain proposal-specific partition rows for the same stable mention digest, then feed duplicate mention digests into a source-local identity cluster. Clustering now deduplicates only by stable mention digest while retaining the full partition evidence. The exact public scenario runner passes (`1 passed in 147.70s`).
 - Final local gate evidence at the dirty candidate: whole Pyright reports `0 errors, 0 warnings, 0 informations`; whole Ruff and `git diff --check` pass; bootstrap source admission passes (`28 passed`); package-smoke bootstrap/release-tool tests pass (`19 passed`); catalog pin and coverage observer tests pass (`17 passed`); the corruption/recovery race passes (`1 passed in 195.70s`).
-- Refreshed the 1,909-member observation-ledger release-preparation candidate after the final source changes. Every member digest and the sidecar verify locally; candidate SHA-256 is `167672d75fc3ffd6ffbe2f8ecc7add4a1ba018c372bdd5e93e4e3e89fb850db8`.
+- Refreshed the 1,909-member observation-ledger release-preparation candidate after the final source and publication-evidence changes. Every member digest and the sidecar verify locally; candidate SHA-256 is `d0071aea5662f13650333ca18a60ee619d93306a5118ef1cc7357dfe78cef69b`.
+- PR run `36457503282` exposed one Package Smoke failure after the wheel installed successfully: the installed publication verified to the current digest, but `independent-positive-parity.json` still pinned the predecessor publication digest after `project_assertions.py` changed in `f1137c59`. Reproduced the publication with both compilers, refreshed the independent output/parity and vector manifests, and passed all 58 registry vectors with 181 entries and 1,269 roles. The refreshed pin now equals the packaged publication digest `9164dff33af04f68472a447f8158fd1476ddbfab501a1500f81d432ff4c0c453` and registry digest `722acb5858a6eaed37ac55a92d7efadb369ab8c906b1070ba1d9e54ec3a86f08`.
 
 ## Verification Matrix
 
@@ -62,4 +63,4 @@ Run the exact failed workflow command for each confirmed family first, followed 
 
 ## Next Action
 
-Commit and push the verified runtime/gate repair slice, then monitor every PR check on the pushed revision and repair any remaining exact gate failure.
+Commit and push the refreshed publication evidence, then monitor every PR check on the new revision and repair any remaining exact gate failure.
