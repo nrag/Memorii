@@ -104,7 +104,7 @@ def _observation(
 
 
 def _runner(
-    plane: MemoryPlaneService, result: object
+    plane: MemoryPlaneService, result: object, *, candidate_admitter: object | None = None,
 ) -> CoverageObserverRunner:
     SelectedCatalogAuthorityRepository(
         plane,
@@ -117,6 +117,7 @@ def _runner(
         result_repository=OntologyObservationResultRepository(plane),
         capability=_Observer(result),
         gap_validator=CoreCoverageGapValidator(plane),
+        candidate_admitter=candidate_admitter,
     )
 
 
@@ -157,6 +158,33 @@ def test_authorized_observer_updates_recurrence_at_exact_threshold() -> None:
         for record in plane.list_records()
         if record.domain.value in {"semantic", "user"}
     ]
+
+
+def test_eligible_recurrence_enters_the_host_bound_candidate_owner() -> None:
+    class _Admitter:
+        calls: list[tuple[str, str, str]] = []
+
+        def admit_recurrence_for_observation(
+            self, *, group_id: str, principal_id: str, agent_id: str,
+        ) -> object:
+            self.calls.append((group_id, principal_id, agent_id))
+            return object()
+
+    plane = MemoryPlaneService(record_store=InMemoryMemoryPlaneStore())
+    repository = CoverageObservationRepository(plane)
+    admitter = _Admitter()
+    runner = _runner(plane, _gap_result(), candidate_admitter=admitter)
+    for observation in (
+        _observation(1, lineage="a" * 64, session_id="session:one"),
+        _observation(2, lineage="b" * 64, session_id="session:one"),
+        _observation(3, lineage="c" * 64, session_id="session:two"),
+    ):
+        repository.create(observation)
+        runner.run(observation=observation, source_text="Alice mentors Bob.")
+
+    assert len(admitter.calls) == 1
+    _group_id, principal_id, agent_id = admitter.calls[0]
+    assert (principal_id, agent_id) == ("user:one", "agent:one")
 
 
 def test_invalid_span_or_signature_becomes_uncertain_without_gap() -> None:

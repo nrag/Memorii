@@ -22,6 +22,8 @@ from memorii.core.semantic_ingestion.hermes_captured_turn import HermesCapturedT
 from memorii.core.semantic_ingestion.learned_relation import (
     ActivationPolicy,
     AgentLocalCatalogScope,  # noqa: I001
+    FrozenMentorsPairedEvaluator,
+    LearnedRelationCandidateService,
     LearnedRelationError,
     LearnedRelationRuntime,
     OntologyActivation,
@@ -159,6 +161,32 @@ def test_failed_evaluation_and_non_owner_never_activate_or_replay() -> None:
         runtime.approve_candidate(proposal_id=evaluated.proposal_id,
                                   principal_id="user:one", agent_id="agent:one")
     assert writer.calls == []
+
+
+def test_candidate_owner_rejects_missing_recurrence_without_control_or_fact_state() -> None:
+    """A caller cannot fabricate a proposal when no durable group exists."""
+    writer = _ReplayWriter()
+    plane = MemoryPlaneService()
+    service = LearnedRelationCandidateService(
+        memory_plane=plane, runtime=_runtime(writer, plane),
+        evaluator=FrozenMentorsPairedEvaluator(),
+    )
+
+    with pytest.raises(LearnedRelationError, match="not eligible"):
+        service.admit_recurrence(group_id="coverage-recurrence-group:v1:missing", authenticated=_authenticated())
+
+    assert writer.calls == []
+    assert plane.list_records() == []
+
+
+def test_registered_evaluator_derives_frozen_paired_counts() -> None:
+    evaluation = FrozenMentorsPairedEvaluator().evaluate(_proposal())
+
+    assert evaluation.available
+    assert evaluation.targeted_positive_count == 2
+    assert evaluation.targeted_positive_committed_and_read == 0
+    assert evaluation.parent_regressions == 1
+    assert evaluation.unsupported_or_misleading_failures == 1
 
 
 def test_recovery_finalizes_both_selection_crash_windows_and_replay_receipts() -> None:

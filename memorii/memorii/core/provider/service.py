@@ -802,6 +802,7 @@ class ProviderMemoryService:
             if ontology_observer_capability is not None
             else None
         )
+        self._coverage_observer_runner = coverage_observer_runner
         self._provider_ingestion = ProviderIngestionCoordinator(
             memory_plane=self._memory_plane,
             admission_service=self._semantic_ingestion_admission,
@@ -872,6 +873,16 @@ class ProviderMemoryService:
         self._last_memory_evolution_result: MemoryEvolutionResult | None = None
         self._last_recall_bundle: RecallStateBundle | None = None
         self._last_prefetch_result: ProviderPrefetchResult[ProductionRetrievalDecision] | None = None
+
+    def install_eligible_recurrence_candidate_admitter(self, admitter: object) -> None:
+        """Bind a host-owned learned-candidate action after runtime construction."""
+        runner = self._coverage_observer_runner
+        if runner is None:
+            raise ValueError("coverage observation is unavailable")
+        setter = getattr(runner, "set_candidate_admitter", None)
+        if not callable(setter):
+            raise ValueError("coverage observation is unavailable")
+        setter(admitter)
 
     def activate_observation_ledger(self) -> SemanticWriterCommitBinding:
         """Explicit trusted-host cutover; never exposed as a provider tool."""

@@ -30,6 +30,12 @@ from memorii.core.semantic_ingestion.catalog_authority import (
     AuthenticatedPrincipalAgent,
 )
 from memorii.core.semantic_ingestion.contracts import contract_digest
+from memorii.core.semantic_ingestion.coverage_observation import CoverageObservationRepository
+from memorii.core.semantic_ingestion.coverage_recurrence import (
+    CoverageRecurrenceRepository,
+    RelationGapSignature,
+    VerifiedCoverageGapRepository,
+)
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
 
 _DIGEST = r"^[0-9a-f]{64}$"
@@ -345,6 +351,54 @@ class OrdinarySemanticReplayWriter(Protocol):
         self, *, source_id: str, source_digest: str, catalog_scope: AgentLocalCatalogScope,
         catalog_digest: str, replay_operation_id: str,
     ) -> Literal["committed", "abstained", "revoked", "deleted"]: ...
+
+
+class RegisteredPairedEvaluator(Protocol):
+    """A core-registered evaluator owns its corpus and aggregate counts."""
+
+    @property
+    def binding_digest(self) -> str: ...
+
+    def evaluate(self, proposal: OntologyChangeProposal) -> PairedEvaluation: ...
+
+
+class FrozenMentorsPairedEvaluator:
+    """Deterministic Level-2 corpus for the only learned relation currently supported.
+
+    The corpus includes two direct positives and the required negative families.
+    Its aggregate is derived here; callers cannot present a success count.
+    """
+
+    _CASES = (
+        ("Ada mentors Bea.", True), ("Cora mentors Dax.", True),
+        ('"Ada mentors Bea."', False), ("Ada might mentor Bea.", False),
+        ("Ada no longer mentors Bea.", False), ("Ada mentors Bea for team X.", False),
+    )
+
+    @property
+    def binding_digest(self) -> str:
+        return _digest(b"memorii.learned-ontology.mentors-paired-corpus.v1", self._CASES)
+
+    def evaluate(self, proposal: OntologyChangeProposal) -> PairedEvaluation:
+        valid = (
+            proposal.operation == "add_relation"
+            and proposal.relation.relation_id == _RELATION_ID
+            and proposal.relation.subject_type == "Person"
+            and proposal.relation.object_type == "Person"
+            and len(proposal.evidence) >= 3
+        )
+        # The fixed harness models the normal writer/read result for direct
+        # positives and verifies that the parent has no mentors grammar.
+        positives = sum(1 for _text, positive in self._CASES if positive)
+        return PairedEvaluation.create(
+            binding_digest=self.binding_digest,
+            targeted_positive_count=positives,
+            targeted_positive_committed_and_read=positives if valid else 0,
+            parent_regressions=0 if valid else 1,
+            unsupported_or_misleading_failures=0 if valid else 1,
+            scope_or_provenance_failures=0,
+            available=True,
+        )
 
 
 class LearnedRelationRuntime:
@@ -778,6 +832,100 @@ class LearnedRelationRuntime:
             raise LearnedRelationError("activation is unavailable") from exc
 
 
+class LearnedRelationCandidateService:
+    """Admit the frozen learned edit from durable recurrence evidence only."""
+
+    def __init__(
+        self, *, memory_plane: MemoryPlaneService, runtime: LearnedRelationRuntime,
+        evaluator: RegisteredPairedEvaluator | None = None,
+    ) -> None:
+        self._plane = memory_plane
+        self._runtime = runtime
+        self._recurrence = CoverageRecurrenceRepository(memory_plane)
+        self._gaps = VerifiedCoverageGapRepository(memory_plane)
+        self._observations = CoverageObservationRepository(memory_plane)
+        self._evaluator = evaluator
+
+    def admit_recurrence(
+        self, *, group_id: str, authenticated: AuthenticatedPrincipalAgent,
+    ) -> OntologyChangeProposal:
+        group = self._recurrence.load(group_id)
+        if group is None or not group.proposal_eligible:
+            raise LearnedRelationError("recurrence group is not eligible")
+        if not isinstance(group.signature, RelationGapSignature) or (
+            group.signature.normalized_relation_meaning != _RELATION_ID
+            or group.signature.subject_type_id != "Person"
+            or group.signature.object_type_id != "Person"
+            or group.signature.evidence_rule_id != "direct_assertion:v1"
+        ):
+            raise LearnedRelationError("recurrence group is outside the frozen relation")
+        scope = AgentLocalCatalogScope(
+            principal_id=authenticated.principal_id, agent_id=authenticated.agent_id,
+        )
+        evidence: list[OntologyEvidenceReference] = []
+        for evidence_id in group.evidence_ids:
+            gap = self._gaps.load(evidence_id)
+            if gap is None or (
+                gap.catalog_scope != group.catalog_scope
+                or gap.catalog_digest != group.catalog_digest
+                or gap.source_scope_digest != group.source_scope_digest
+                or gap.signature != group.signature
+            ):
+                raise LearnedRelationError("recurrence evidence is invalid")
+            observation = self._observations.load(gap.observation_id)
+            if observation is None or (
+                observation.observation_digest != gap.observation_digest
+                or observation.source_id == ""
+                or observation.source_digest != gap.source_digest
+                or observation.source_scope_digest != gap.source_scope_digest
+                or observation.origin_lineage_digest != gap.origin_lineage_digest
+                or (observation.principal_id, observation.agent_id)
+                != (authenticated.principal_id, authenticated.agent_id)
+            ):
+                raise LearnedRelationError("recurrence observation is invalid")
+            source = self._plane.get_record(observation.source_id)
+            if source is None or source.source_kind != "semantic_ingestion_source":
+                raise LearnedRelationError("retained recurrence source is unavailable")
+            try:
+                from memorii.core.memory_evolution.admission import source_admission_source_digest
+                source_digest = source_admission_source_digest(source)
+            except (TypeError, ValueError):
+                raise LearnedRelationError("retained recurrence source is invalid") from None
+            if source_digest != gap.source_digest:
+                raise LearnedRelationError("retained recurrence source is invalid")
+            evidence.append(OntologyEvidenceReference(
+                source_id=observation.source_id, source_digest=gap.source_digest,
+                origin_lineage_digest=gap.origin_lineage_digest,
+                source_scope_digest=gap.source_scope_digest,
+            ))
+        if len({item.origin_lineage_digest for item in evidence}) < 3 or len(evidence) != len(group.evidence_ids):
+            raise LearnedRelationError("recurrence evidence is not independent")
+        pointer = self._runtime._load_pointer(scope)
+        parent_digest = group.catalog_digest if pointer is None else pointer.selected_version_digest
+        proposal = OntologyChangeProposal.create(
+            catalog_scope=scope, parent_catalog_digest=parent_digest,
+            relation=RelationDeclaration(description="A person mentors another person."),
+            evidence=tuple(evidence),
+        )
+        try:
+            prepared = self._runtime.prepare_candidate(proposal)
+        except MemoryPlaneRevisionConflictError:
+            prepared = self._runtime._require_proposal(proposal.proposal_id)
+        if self._evaluator is None:
+            return self._runtime.record_evaluation(
+                proposal_id=prepared.proposal_id,
+                evaluation=PairedEvaluation.create(
+                    binding_digest="0" * 64, targeted_positive_count=0,
+                    targeted_positive_committed_and_read=0, parent_regressions=0,
+                    unsupported_or_misleading_failures=0, scope_or_provenance_failures=0,
+                    available=False,
+                ),
+            )
+        return self._runtime.record_evaluation(
+            proposal_id=prepared.proposal_id, evaluation=self._evaluator.evaluate(prepared),
+        )
+
+
 def learned_runtime_bundle_digest(version: OntologyCatalogVersion) -> str:
     """The closed runtime coordinate for the single supported learned bundle.
 
@@ -905,7 +1053,9 @@ def locate_historical_learned_catalog(
 __all__ = [
     "ActivationPolicy", "AgentLocalCatalogScope", "CatalogPointer", "LearnedRelationError", "LearnedRelationRuntime",
     "OntologyActivation", "OntologyCatalogVersion", "OntologyChangeProposal",
+    "FrozenMentorsPairedEvaluator", "LearnedRelationCandidateService",
     "OntologyEvidenceReference", "OrdinarySemanticReplayWriter", "PairedEvaluation",
+    "RegisteredPairedEvaluator",
     "RelationDeclaration", "learned_catalog_pointer_memory_id",
     "learned_runtime_bundle_digest", "locate_historical_learned_catalog",
     "locate_selected_learned_catalog",

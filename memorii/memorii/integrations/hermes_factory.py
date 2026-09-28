@@ -56,6 +56,8 @@ from memorii.core.semantic_ingestion.current_bootstrap_v3_authority import (
 )
 from memorii.core.semantic_ingestion.learned_relation import (
     ActivationPolicy,
+    FrozenMentorsPairedEvaluator,
+    LearnedRelationCandidateService,
     LearnedRelationRuntime,
     OntologyActivation,
     OntologyCatalogVersion,
@@ -370,6 +372,29 @@ def _build_local_level2_runtime_binding(
             owner_principal_id=scope.principal_id,
             owner_agent_id=scope.agent_id,
         ),
+    )
+    candidate_service = LearnedRelationCandidateService(
+        memory_plane=memory_plane,
+        runtime=learned_runtime,
+        evaluator=FrozenMentorsPairedEvaluator(),
+    )
+
+    class _InstalledRecurrenceCandidateAdmitter:
+        def admit_recurrence_for_observation(
+            self, *, group_id: str, principal_id: str, agent_id: str,
+        ) -> object:
+            if (principal_id, agent_id) != (operator_id, agent_id_outer):
+                raise LocalLevel2AuthorityError("learned recurrence owner is unavailable")
+            return candidate_service.admit_recurrence(
+                group_id=group_id,
+                authenticated=AuthenticatedPrincipalAgent(
+                    principal_id=principal_id, agent_id=agent_id,
+                ),
+            )
+
+    agent_id_outer = agent_id
+    service.install_eligible_recurrence_candidate_admitter(
+        _InstalledRecurrenceCandidateAdmitter()
     )
     completed_runtime = HermesCompletedTurnRuntime(
         service=service,

@@ -168,6 +168,14 @@ class OntologyObserverUnavailableError(OSError):
     """The configured observer transport cannot complete this attempt."""
 
 
+class EligibleRecurrenceCandidateAdmitter(Protocol):
+    """Host-bound owner for moving an eligible group into inert candidate state."""
+
+    def admit_recurrence_for_observation(
+        self, *, group_id: str, principal_id: str, agent_id: str
+    ) -> object: ...
+
+
 class DurableOntologyObservationResult(BaseModel):
     record_id: str = Field(min_length=1)
     observation_id: str = Field(min_length=1)
@@ -293,6 +301,7 @@ class CoverageObserverRunner:
         result_repository: OntologyObservationResultRepository,
         capability: OntologyObserverCapability,
         gap_validator: CoreCoverageGapValidator,
+        candidate_admitter: EligibleRecurrenceCandidateAdmitter | None = None,
     ) -> None:
         self._observations = observation_repository
         self._gaps = gap_repository
@@ -300,6 +309,12 @@ class CoverageObserverRunner:
         self._results = result_repository
         self._capability = capability
         self._gap_validator = gap_validator
+        self._candidate_admitter = candidate_admitter
+
+    def set_candidate_admitter(
+        self, candidate_admitter: EligibleRecurrenceCandidateAdmitter | None,
+    ) -> None:
+        self._candidate_admitter = candidate_admitter
 
     @property
     def binding(self) -> ObserverBindingIdentity:
@@ -377,6 +392,12 @@ class CoverageObserverRunner:
         group = build_coverage_recurrence_group(gaps)
         previous = self._recurrence.load(group.group_id)
         self._recurrence.write(group, previous=previous)
+        if group.proposal_eligible and self._candidate_admitter is not None:
+            self._candidate_admitter.admit_recurrence_for_observation(
+                group_id=group.group_id,
+                principal_id=head.principal_id,
+                agent_id=head.agent_id,
+            )
         return CoverageObserverRunResult(
             observation=head,
             recurrence_group=group,
