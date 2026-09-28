@@ -1377,8 +1377,6 @@ def test_learned_replay_of_a_preselection_capture_reopens_jsonl(
     """The replay control must retain the binding selected for the replay."""
     from memorii.core.semantic_ingestion.learned_relation import (
         AgentLocalCatalogScope,
-        OntologyActivation,
-        OntologyCatalogVersion,
         OntologyChangeProposal,
         OntologyEvidenceReference,
         PairedEvaluation,
@@ -1464,41 +1462,43 @@ def test_learned_replay_of_a_preselection_capture_reopens_jsonl(
     )
     assert first_read.status == "ok"
     assert len(first_read.items) == 1
-    # Publish a later selected catalog generation, then roll back through the
-    # installed owner root.  Rollback only moves the selection pointer: the
-    # first fact must still resolve under its original pinned catalog.
-    first_pointer = learned._load_pointer(scope)
-    assert first_pointer is not None
-    successor_version = OntologyCatalogVersion.create(
-        catalog_scope=scope, catalog_digest="8" * 64,
-        parent_version_digest=first_activation.target_version_digest,
-        relation_ids=("mentors",), introduced_proposal_id=None,
-    )
-    learned._write_version(successor_version)
-    successor_attempt = OntologyActivation.create(
-        schema_version=1, catalog_scope=scope, operation="select_prior_version",
-        proposal_id=None, target_version_digest=successor_version.version_digest,
-        expected_pointer_digest=first_pointer.pointer_digest,
-        expected_pointer_sequence=first_pointer.activation_sequence,
-        authorizing_decision_digest="7" * 64, status="prepared",
-    )
-    learned._write_attempt(successor_attempt)
-    learned._select(attempt=successor_attempt, expected_pointer=first_pointer)
-    before_rollback_versions = len(learned._plane.list_records(
-        source_kind="learned_ontology_catalog_version_v1",
+    # Select a later generation through the same public candidate lifecycle,
+    # then roll back through the installed owner root. Rollback moves only the
+    # pointer; the first fact keeps its original pinned catalog authority.
+    successor = learned.prepare_candidate(OntologyChangeProposal.create(
+        catalog_scope=scope,
+        parent_catalog_digest=first_activation.target_version_digest,
+        relation=RelationDeclaration(description="A person mentors another person."),
+        evidence=(OntologyEvidenceReference(
+            source_id=active.ledger.source_id,
+            source_digest=active.ledger.source_digest,
+            origin_lineage_digest="5" * 64,
+            source_scope_digest="6" * 64,
+        ),),
     ))
-    before_rollback_proposals = len(learned._plane.list_records(
-        source_kind="learned_ontology_change_proposal_v1",
-    ))
+    successor = learned.record_evaluation(
+        proposal_id=successor.proposal_id,
+        evaluation=PairedEvaluation.create(
+            binding_digest="4" * 64,
+            targeted_positive_count=2,
+            targeted_positive_committed_and_read=2,
+            parent_regressions=0,
+            unsupported_or_misleading_failures=0,
+            scope_or_provenance_failures=0,
+            available=True,
+        ),
+    )
+    provider.approve_learned_candidate(successor.proposal_id)
+    successor_activation = provider.activate_learned_candidate(successor.proposal_id)
+    assert successor_activation.status == "selected"
+    before_rollback = provider.lookup_learned_ontology_status()
+    assert before_rollback["active_version_digest"] == successor_activation.target_version_digest
+    assert before_rollback["candidate_count"] == 2
     rollback = provider.select_prior_learned_version(first_activation.target_version_digest)
     assert rollback.status == "selected"
-    assert len(learned._plane.list_records(
-        source_kind="learned_ontology_catalog_version_v1",
-    )) == before_rollback_versions
-    assert len(learned._plane.list_records(
-        source_kind="learned_ontology_change_proposal_v1",
-    )) == before_rollback_proposals
-    assert provider.lookup_learned_ontology_status()["active_version_digest"] == first_activation.target_version_digest
+    after_rollback = provider.lookup_learned_ontology_status()
+    assert after_rollback["active_version_digest"] == first_activation.target_version_digest
+    assert after_rollback["candidate_count"] == before_rollback["candidate_count"]
     assert runtime.read_structured_facts(
         request=StructuredFactReadRequest(
             predicate_id="mentors", subject_entity_id=subject_entity_id,
@@ -1515,7 +1515,11 @@ def test_learned_replay_of_a_preselection_capture_reopens_jsonl(
         agent_identity="profile:primary", platform="cli", agent_context="primary",
         agent_workspace="hermes",
     )
-    assert reopened.lookup_learned_ontology_status()["replay_outcomes"] == {"committed": 1}
+    assert (
+        reopened.lookup_learned_ontology_status()["replay_outcomes"]
+        == after_rollback["replay_outcomes"]
+        == {"committed": 1, "revoked": 1}
+    )
     reopened_records = tuple(reopened._provider._service._memory_plane.list_records())
     reopened_claims = tuple(
         record for record in reopened_records
@@ -1527,7 +1531,7 @@ def test_learned_replay_of_a_preselection_capture_reopens_jsonl(
         if record.source_kind == "learned_ontology_replay_operation_v1"
     )
     assert len(reopened_claims) == 1
-    assert len(reopened_receipts) == 1
+    assert len(reopened_receipts) == 2
     reopened_subject_entity_id = reopened_claims[0].content["claim_identity"]["subject_assertion_ref"][
         "logical_entity_id_at_assertion"
     ]
