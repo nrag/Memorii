@@ -217,11 +217,14 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         reader = getattr(runtime, "read_structured_facts", None) if runtime is not None else None
         if not callable(reader):
             return StructuredFactReadResponse(status="unavailable")
-        return reader(
+        result = reader(
             request=request,
             session_id=self._effective_session_id(session_id),
             authenticated_author_id=self._absent_author_id,
             now=datetime.now(UTC),
+        )
+        return result if isinstance(result, StructuredFactReadResponse) else StructuredFactReadResponse(
+            status="unavailable"
         )
 
     def revoke_structured_grant(self, grant_kind: str) -> None:

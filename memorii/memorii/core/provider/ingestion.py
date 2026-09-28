@@ -89,6 +89,7 @@ from memorii.core.semantic_ingestion.contracts import (
     AuthenticatedSourceIntervalEvidence,
     AuthorizationStageSnapshot,
     AuthorizationUsePoint,
+    BootstrapGraphDependentCoordinatorResultV3,
     BootstrapGraphDependentCoordinatorSucceededV3,
     BootstrapGraphDependentPreGraphNonCommitV3,
     BootstrapGraphDurableRetryProgressV3,
@@ -98,6 +99,7 @@ from memorii.core.semantic_ingestion.contracts import (
     BootstrapRecoveryFoundV3,
     BootstrapRecoveryKeyV3,
     BootstrapRecoveryProbeV3,
+    BootstrapRecoveryReplayRecordV3,
     BootstrapSourceNormalizationResultV3,
     GovernanceCarrierArtifact,
     MessageAdmissionCarrierSet,
@@ -2009,15 +2011,22 @@ class ProviderIngestionCoordinator:
                         temporal_closures=(),
                         attempt_count=0,
                     ), None
+                verified_replay = replay
+                if verified_replay is None:
+                    return SemanticTerminalOutcome.create(
+                        operation_id=operation_id, status="evidence_only",
+                        reason_codes=("graph_transaction_authority_unavailable",),
+                        candidates=(), temporal_closures=(), attempt_count=0,
+                    ), None
                 try:
                     control = self._atomic_store.get_operation(operation_fence)
                     graph_result = self._execute_bootstrap_graph_with_expired_lease_retry(
                         operation_fence=operation_fence,
                         initial_control=control,
-                        replay=replay,
+                        replay=verified_replay,
                         execute=lambda current: graph_bundle.execute(
                             request=BootstrapGraphAuthorityRequestV3(
-                                normalization_replay=replay,
+                                normalization_replay=verified_replay,
                                 prepared_source=prepared_source,
                                 required_outcome_scopes=(
                                     prepared_source.governance_carrier_artifact.required_outcome_scopes
@@ -2048,7 +2057,7 @@ class ProviderIngestionCoordinator:
                         temporal_closures=(),
                         attempt_count=0,
                     ), authorization_guard
-                if graph_result is not None and graph_result.kind == "durable_retry":
+                if isinstance(graph_result, BootstrapGraphDurableRetryProgressV3):
                     return self._bootstrap_graph_durable_retry_terminal(
                         operation_id=operation_id,
                         retry=graph_result,
@@ -2172,6 +2181,8 @@ class ProviderIngestionCoordinator:
                         prepared_source.governance_carrier_artifact.required_outcome_scopes.tenant_partition_id
                     ),
                 )
+                if replay is None:
+                    raise PreplanningStoreError("bootstrap recovery replay is unavailable")
                 control = self._atomic_store.get_operation(operation_fence)
                 graph_result = self._execute_bootstrap_graph_with_expired_lease_retry(
                     operation_fence=operation_fence,
@@ -2210,7 +2221,7 @@ class ProviderIngestionCoordinator:
                     temporal_closures=(),
                     attempt_count=0,
                 ), authorization_guard
-            if graph_result is not None and graph_result.kind == "durable_retry":
+            if isinstance(graph_result, BootstrapGraphDurableRetryProgressV3):
                 return self._bootstrap_graph_durable_retry_terminal(
                     operation_id=operation_id,
                     retry=graph_result,
@@ -2299,20 +2310,22 @@ class ProviderIngestionCoordinator:
         *,
         operation_fence: OperationFenceBinding,
         initial_control: PreplanningOperationControl,
-        replay: object | None,
-        execute: Callable[[PreplanningOperationControl], object],
-    ) -> object | None:
+        replay: BootstrapRecoveryReplayRecordV3 | None,
+        execute: Callable[
+            [PreplanningOperationControl], BootstrapGraphDependentCoordinatorResultV3 | None
+        ],
+    ) -> BootstrapGraphDependentCoordinatorResultV3 | None:
         """Retry one graph execution only from verified replay and reclaimed authority."""
         if replay is None:
             return None
-        initial_control = self._renew_bootstrap_graph_lease_before_execution(
+        renewed_control = self._renew_bootstrap_graph_lease_before_execution(
             operation_fence=operation_fence,
             control=initial_control,
         )
-        if initial_control is None:
+        if renewed_control is None:
             return None
         try:
-            result = execute(initial_control)
+            result = execute(renewed_control)
         except StructuredSubmissionGrantRevokedError:
             raise
         except (AttributeError, TypeError, ValueError, PreplanningStoreError):
@@ -2487,10 +2500,9 @@ class ProviderIngestionCoordinator:
     def recover_coverage_observations(self) -> None:
         """Resume observer work only after revalidating retained source authority."""
 
-        if (
-            self._coverage_observer_runner is None
-            or self._coverage_observer_authorizer is None
-        ):
+        runner = self._coverage_observer_runner
+        authorizer = self._coverage_observer_authorizer
+        if runner is None or authorizer is None:
             return
 
         def load_authorized_source(source_id: str) -> str | None:
@@ -2502,14 +2514,14 @@ class ProviderIngestionCoordinator:
                 source_id=source_id,
                 source_digest=source_digest,
             )
-            if ingress is None or not self._coverage_observer_authorizer(
+            if ingress is None or not authorizer(
                 ingress,
-                self._coverage_observer_runner.binding,
+                runner.binding,
             ):
                 return None
             return source.text
 
-        self._coverage_observer_runner.recover_interrupted(
+        runner.recover_interrupted(
             source_loader=load_authorized_source
         )
 

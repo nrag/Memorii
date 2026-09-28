@@ -20,6 +20,7 @@ from hashlib import sha256
 from pathlib import Path
 from threading import RLock
 from types import SimpleNamespace
+from typing import Literal
 
 from memorii.core.memory_evolution.ingestion_contracts import (
     AuthenticatedHostIngress,
@@ -69,8 +70,12 @@ from memorii.core.semantic_ingestion.current_bootstrap_v3_authority import (
     CurrentReleaseBootstrapV3HostMaterialBuilder,
     local_level2_bootstrap_authorization_from_sidecar,
 )
+from memorii.core.semantic_ingestion.hermes_completed_turn_runtime import (
+    HermesCompletedTurnRuntime,
+)
 from memorii.core.semantic_ingestion.learned_relation import (
     ActivationPolicy,
+    AgentLocalCatalogScope,
     FrozenMentorsPairedEvaluator,
     IsolatedMentorsEvaluationExecutor,
     LearnedRelationCandidateService,
@@ -106,6 +111,41 @@ _PREFERENCE_TOPIC_TYPES = {
     "Asset": EntityType.ASSET,
     "Place": EntityType.PLACE,
 }
+
+_PairedStatus = Literal["committed", "read", "denied", "abstained", "unavailable"]
+_PairedReadStatus = Literal["read", "denied", "abstained", "unavailable"]
+
+
+def _paired_status(value: str) -> _PairedStatus:
+    if value == "committed":
+        return "committed"
+    if value == "read":
+        return "read"
+    if value == "denied":
+        return "denied"
+    if value == "abstained":
+        return "abstained"
+    return "unavailable"
+
+
+def _paired_read_status(value: str) -> _PairedReadStatus:
+    if value == "read":
+        return "read"
+    if value == "denied":
+        return "denied"
+    if value == "abstained":
+        return "abstained"
+    return "unavailable"
+
+
+def _replay_status(value: str) -> Literal["committed", "abstained", "revoked", "deleted"]:
+    if value == "committed":
+        return "committed"
+    if value == "abstained":
+        return "abstained"
+    if value == "revoked":
+        return "revoked"
+    return "deleted"
 
 
 class _LocalNoKeyMentorsObserver:
@@ -175,7 +215,9 @@ def _preference_topic_identity_resolver(
 
 def _isolated_mentors_evaluation_cases(
     proposal: OntologyChangeProposal,
-    cases: tuple[tuple[str, str, str], ...],
+    cases: tuple[
+        tuple[str, str, Literal["candidate_commit_and_read", "deny_or_abstain"]], ...
+    ],
     binding_digest: str,
     corpus_digest: str,
     budget_digest: str,
@@ -184,7 +226,7 @@ def _isolated_mentors_evaluation_cases(
     """Run the frozen corpus through separate parent and candidate roots."""
     from memorii.core.semantic_ingestion.structured_fact_read import StructuredFactReadRequest
 
-    def build_root(path: Path, *, candidate: bool):
+    def build_root(path: Path, *, candidate: bool) -> HermesProviderRuntimeBinding:
         # The factory is the canonical composition root.  A fresh storage
         # directory gives each arm its own memory plane, grant records, pin
         # records, writer state, and protected-reader snapshot.
@@ -200,7 +242,7 @@ def _isolated_mentors_evaluation_cases(
             isolated_context, _enable_ontology_observer=False,
         )
         identity_runtime = identity_root.completed_turn_runtime
-        if identity_runtime is None:
+        if not isinstance(identity_runtime, HermesCompletedTurnRuntime):
             raise ValueError("isolated completed-turn runtime is unavailable")
         try:
             scope = proposal.catalog_scope
@@ -227,7 +269,7 @@ def _isolated_mentors_evaluation_cases(
         )
 
     def arguments(
-        sentence: str, *, expected: str,
+        sentence: str, *, expected: Literal["candidate_commit_and_read", "deny_or_abstain"],
     ) -> dict[str, object]:
         # The fixed corpus has no model output.  The normal structured runtime
         # still validates the typed proposal, exact source span, materializes
@@ -263,7 +305,8 @@ def _isolated_mentors_evaluation_cases(
         }
 
     def execute(
-        runtime: object, *, case_id: str, sentence: str, expected: str,
+        runtime: HermesCompletedTurnRuntime, *, case_id: str, sentence: str,
+        expected: Literal["candidate_commit_and_read", "deny_or_abstain"],
         ordinal: int, candidate: bool,
     ) -> tuple[str, str]:
         author = runtime._authenticated_author_id
@@ -338,7 +381,9 @@ def _isolated_mentors_evaluation_cases(
             candidate = build_root(Path(candidate_root), candidate=True)
             parent_runtime = parent.completed_turn_runtime
             candidate_runtime = candidate.completed_turn_runtime
-            if parent_runtime is None or candidate_runtime is None:
+            if not isinstance(parent_runtime, HermesCompletedTurnRuntime) or not isinstance(
+                candidate_runtime, HermesCompletedTurnRuntime
+            ):
                 raise ValueError("isolated completed-turn runtime is unavailable")
             try:
                 parent_status, parent_read = execute(
@@ -356,12 +401,10 @@ def _isolated_mentors_evaluation_cases(
                         if case_id == "parent-regression"
                         and parent_status == "committed"
                         and parent_read == "read"
-                        else parent_status
-                        if parent_status in {"committed", "read", "denied", "abstained", "unavailable"}
-                        else "unavailable"
+                        else _paired_status(parent_status)
                     ),
-                    candidate_status=candidate_status if candidate_status in {"committed", "read", "denied", "abstained", "unavailable"} else "unavailable",
-                    candidate_read_status=candidate_read if candidate_read in {"read", "denied", "abstained", "unavailable"} else "unavailable",
+                    candidate_status=_paired_status(candidate_status),
+                    candidate_read_status=_paired_read_status(candidate_read),
                     binding_digest=binding_digest, corpus_digest=corpus_digest, budget_digest=budget_digest,
                 ))
                 for runtime in (parent_runtime, candidate_runtime):
@@ -376,7 +419,7 @@ def _isolated_mentors_evaluation_cases(
     return tuple(outcomes)
 
 
-def build_local_level2_runtime_binding(context: object) -> object:
+def build_local_level2_runtime_binding(context: object) -> HermesProviderRuntimeBinding:
     """Construct the standard verified first-party Hermes runtime binding."""
     return _build_local_level2_runtime_binding(context)
 
@@ -407,8 +450,8 @@ def build_local_level2_authenticated_source_runtime(context: object) -> object:
         or binding.completed_turn_runtime is None
     ):
         raise LocalLevel2AuthorityError("local learned ontology is unavailable")
-    reader = getattr(binding.completed_turn_runtime, "read_structured_facts", None)
-    if not callable(reader):
+    completed_runtime = binding.completed_turn_runtime
+    if not isinstance(completed_runtime, HermesCompletedTurnRuntime):
         raise LocalLevel2AuthorityError("local structured reader is unavailable")
 
     def issue_ingress(submission: AuthenticatedSourceSubmission) -> AuthenticatedHostIngress:
@@ -434,13 +477,11 @@ def build_local_level2_authenticated_source_runtime(context: object) -> object:
             activate_candidate=binding.activate_learned_candidate,
             approve_candidate=binding.approve_learned_candidate,
             status=binding.learned_ontology_status,
-            read_structured_facts=lambda request: reader(
-                request=request,
-                session_id="generic-authenticated-source",
-                authenticated_author_id=binding.absent_author_id,
-                now=datetime.now(UTC),
+            read_structured_facts=lambda request: completed_runtime.read_structured_facts(
+                request=request, session_id="generic-authenticated-source",
+                authenticated_author_id=binding.absent_author_id, now=datetime.now(UTC),
             ),
-            close=binding.completed_turn_runtime.close,
+            close=completed_runtime.close,
         ),
     )
 
@@ -454,7 +495,7 @@ def _build_local_level2_runtime_binding(
     _paired_evaluation_bundle: PairedEvaluationCatalogBundle | None = None,
     _enable_ontology_observer: bool = True,
     _recover_pending_semantic_work: bool = True,
-) -> object:
+) -> HermesProviderRuntimeBinding:
     """Construct one verified, first-party Hermes binding without model I/O.
 
     The bridge supplies a typed context, but this module avoids importing the
@@ -694,9 +735,13 @@ def _build_local_level2_runtime_binding(
         """Bind catalog replay to the installed completed-turn writer root."""
 
         def __init__(self) -> None:
-            self.runtime = None
+            self.runtime: HermesCompletedTurnRuntime | None = None
 
-        def replay_retained_source(self, **kwargs: object) -> str:
+        def replay_retained_source(
+            self, *, source_id: str, source_digest: str,
+            catalog_scope: AgentLocalCatalogScope, catalog_digest: str,
+            replay_operation_id: str,
+        ) -> Literal["committed", "abstained", "revoked", "deleted"]:
             if self.runtime is None or structured_resolver is None:
                 return "deleted"
             # Selection has changed the resolver's chosen catalog.  Publish
@@ -710,8 +755,6 @@ def _build_local_level2_runtime_binding(
                 )
             except (OSError, ValueError):
                 return "revoked"
-            source_id = kwargs.get("source_id")
-            source_digest = kwargs.get("source_digest")
             try:
                 captured = service._semantic_atomic_store.classify_captured_turn_source(
                     source_id=source_id,
@@ -720,14 +763,30 @@ def _build_local_level2_runtime_binding(
             except (OSError, TypeError, ValueError):
                 return "deleted"
             if captured:
-                return self.runtime.replay_retained_source(**kwargs)
-            return self._replay_generic_retained_source(**kwargs)
+                return _replay_status(self.runtime.replay_retained_source(
+                    source_id=source_id, source_digest=source_digest,
+                    catalog_scope=catalog_scope, catalog_digest=catalog_digest,
+                    replay_operation_id=replay_operation_id,
+                ))
+            return self._replay_generic_retained_source(
+                source_id=source_id, source_digest=source_digest,
+                catalog_scope=catalog_scope, catalog_digest=catalog_digest,
+                replay_operation_id=replay_operation_id,
+            )
 
-        def _replay_generic_retained_source(self, **kwargs: object) -> str:
+        def _replay_generic_retained_source(
+            self, *, source_id: str, source_digest: str,
+            catalog_scope: AgentLocalCatalogScope, catalog_digest: str,
+            replay_operation_id: str,
+        ) -> Literal["committed", "abstained", "revoked", "deleted"]:
             if generic_replay is None:
                 return "revoked"
             try:
-                return generic_replay.replay_retained_source(**kwargs)
+                return _replay_status(generic_replay.replay_retained_source(
+                    source_id=source_id, source_digest=source_digest,
+                    catalog_scope=catalog_scope, catalog_digest=catalog_digest,
+                    replay_operation_id=replay_operation_id,
+                ))
             except TypeError:
                 return "revoked"
 

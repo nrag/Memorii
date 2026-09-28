@@ -8,6 +8,8 @@ reconstructing a target later in the reducer.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from memorii.core.memory_evolution.graph_planning import (
     AbsentPlanningPrecondition,
     DurablePlanningStateRecord,
@@ -74,7 +76,11 @@ from memorii.core.semantic_ingestion.contracts import (
     BootstrapNewCanonicalIdentityAllocationV3,
     BootstrapNewFirstUseTargetAuthorityV3,
     BootstrapPendingTargetAuthorityV3,
+    BootstrapProposalCorrectionV3,
+    BootstrapProposalFactV3,
+    BootstrapProposalMentionV3,
     BootstrapProposalOperationMemberV3,
+    BootstrapProposalRetractionV3,
     BootstrapSnapshotTargetAuthorityV3,
     BootstrapSourceLocalIdentityResolutionV3,
     BootstrapSourceOperationMembershipV3,
@@ -195,8 +201,12 @@ class BuiltInBootstrapGraphTargetMaterializationPlannerV3:
         """
         operation = request.operation_input
         member = operation.operation_member
-        assert member.kind in {"correction", "retraction"}
-        selector_fact = member.corrected_fact if member.kind == "correction" else member.retracted_fact
+        if isinstance(member, BootstrapProposalCorrectionV3):
+            selector_fact = member.corrected_fact
+        elif isinstance(member, BootstrapProposalRetractionV3):
+            selector_fact = member.retracted_fact
+        else:
+            return self._unavailable(request=request, reason="graph_target_missing")
         authority = operation.planning_construction_authority
         assert authority is not None
         selector_identity = _resolved_fact_identity(
@@ -221,7 +231,7 @@ class BuiltInBootstrapGraphTargetMaterializationPlannerV3:
         )
         transition_temporal = _one_transition_temporal(authority)
 
-        if member.kind == "correction":
+        if isinstance(member, BootstrapProposalCorrectionV3):
             replacement_operation = operation.model_copy(
                 update={"operation_member": member.replacement_fact}
             )
@@ -875,7 +885,10 @@ def _claim_assertion(*, operation, fact, claim_id: str, authority, temporal, sub
     })
 
 
-def _fact_statement_selector_digest(*, fact, mentions: dict[str, object]) -> str:
+def _fact_statement_selector_digest(
+    *, fact: BootstrapProposalFactV3,
+    mentions: Mapping[str, BootstrapProposalMentionV3],
+) -> str:
     """Bind a lifecycle selector to grounded source content, never local IDs."""
     def mention_substring(mention_digest: str) -> str:
         mention = mentions.get(mention_digest)
@@ -987,7 +1000,12 @@ def _lifecycle_existing_identity_targets(
             values = payload.planning_record
             if values.get("logical_entity_id") != ref.logical_entity_id_at_assertion:
                 continue
-            membership = member_by_operation_id.get(values.get("operation_id"))
+            operation_id = values.get("operation_id")
+            membership = (
+                member_by_operation_id.get(operation_id)
+                if isinstance(operation_id, str)
+                else None
+            )
             if membership is None:
                 continue
             target = BootstrapGraphTargetReferenceV3.create(
@@ -1051,9 +1069,15 @@ def _lifecycle_existing_identity_targets(
     denied: set[str] = set()
     for operation in operation_inputs:
         member = operation.operation_member
-        if member.kind not in {"correction", "retraction"}:
+        if not isinstance(
+            member, (BootstrapProposalCorrectionV3, BootstrapProposalRetractionV3)
+        ):
             continue
-        selector_fact = member.corrected_fact if member.kind == "correction" else member.retracted_fact
+        selector_fact = (
+            member.corrected_fact
+            if isinstance(member, BootstrapProposalCorrectionV3)
+            else member.retracted_fact
+        )
         selector_mentions = {item.mention_digest: item for item in operation.normalized_proposal.mentions}
         selector_digest = _fact_statement_selector_digest(fact=selector_fact, mentions=selector_mentions)
         matches = {
@@ -1064,22 +1088,40 @@ def _lifecycle_existing_identity_targets(
                 and identity.assertion_key_at_recording.slot.scope_identity == authorized_scope_identity
             )
         }
-        selector_roles = [(selector_fact.subject_mention_digest, matches and next(iter(matches.values())).subject_assertion_ref)]
+        if len(matches) != 1:
+            denied.update(
+                cluster_by_mention[mention]
+                for mention in (
+                    selector_fact.subject_mention_digest,
+                    *(
+                        (selector_fact.object.mention_digest,)
+                        if selector_fact.object.kind == "entity"
+                        else ()
+                    ),
+                )
+                if mention in cluster_by_mention
+            )
+            continue
+        matched_identity = next(iter(matches.values()))
+        selector_roles: list[tuple[str, ImmutableAssertionEntityRef | None]] = [
+            (selector_fact.subject_mention_digest, matched_identity.subject_assertion_ref)
+        ]
         if selector_fact.object.kind == "entity":
             selector_roles.append((
                 selector_fact.object.mention_digest,
-                matches and next(iter(matches.values())).object_assertion_ref,
+                matched_identity.object_assertion_ref,
             ))
-        if len(matches) != 1 or any(ref is None for _, ref in selector_roles):
+        if any(ref is None for _, ref in selector_roles):
             denied.update(cluster_by_mention[mention] for mention, _ in selector_roles if mention in cluster_by_mention)
             continue
         for mention, ref in selector_roles:
             assert ref is not None
             cluster_id = cluster_by_mention.get(mention)
-            target = None if cluster_id is None else entity_target(ref, cluster_id)
+            if cluster_id is None:
+                continue
+            target = entity_target(ref, cluster_id)
             if target is None:
-                if cluster_id is not None:
-                    denied.add(cluster_id)
+                denied.add(cluster_id)
                 continue
             previous = resolved.get(cluster_id)
             if previous is not None and previous[0] != target[0]:

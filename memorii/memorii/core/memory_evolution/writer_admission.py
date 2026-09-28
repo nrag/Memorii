@@ -71,8 +71,10 @@ if TYPE_CHECKING:
     from memorii.core.semantic_ingestion.catalog_authority import (
         AuthenticatedPrincipalAgent,
         CatalogAuthorityCoordinate,
+        CatalogSelectionPointer,
     )
     from memorii.core.semantic_ingestion.catalog_capture_pin import VerifiedCatalogBundle
+    from memorii.core.semantic_ingestion.learned_relation import CatalogPointer
 
 
 if TYPE_CHECKING:
@@ -3982,8 +3984,11 @@ def _is_catalog_captured_turn_pin_write(
         return False
     try:
         from memorii.core.semantic_ingestion.catalog_authority import (
+            AgentLocalCatalogAuthorityScope,
             AuthenticatedPrincipalAgent,
+            CatalogChildVersionV2,
             CatalogSelectionPointer,
+            CatalogVersion,
             StructuredGrantState,
             catalog_selection_pointer_memory_id,
             catalog_version_memory_id,
@@ -3995,6 +4000,10 @@ def _is_catalog_captured_turn_pin_write(
         from memorii.core.semantic_ingestion.hermes_captured_turn import (
             HermesCapturedTurnCoordination,
             HermesCapturedTurnLedger,
+        )
+        from memorii.core.semantic_ingestion.learned_relation import (
+            CatalogPointer,
+            OntologyCatalogVersion,
         )
         pin = CatalogCapturedTurnPin.model_validate(record.content["catalog_capture_pin"])
         if not isinstance(catalog_bundle_locator, PackageIndexedCatalogBundleLocator):
@@ -4017,7 +4026,7 @@ def _is_catalog_captured_turn_pin_write(
                     principal_id=pin.catalog_scope.principal_id,
                     agent_id=pin.catalog_scope.agent_id,
                 )
-                if getattr(pin.catalog_scope, "kind", None) == "agent_local"
+                if isinstance(pin.catalog_scope, AgentLocalCatalogAuthorityScope)
                 else None
             ),
         )
@@ -4026,6 +4035,12 @@ def _is_catalog_captured_turn_pin_write(
     if record.memory_id != pin.memory_id:
         return False
     if pin.capture_id.startswith("retained-source:"):
+        from memorii.core.semantic_ingestion.learned_relation import CatalogPointer
+
+        if not isinstance(
+            selected_pointer, (CatalogSelectionPointer, CatalogPointer)
+        ):
+            return False
         return _is_retained_source_catalog_pin_write(
             pin=pin,
             current=current,
@@ -4041,15 +4056,21 @@ def _is_catalog_captured_turn_pin_write(
     )
     coordination_record = by_id.get(HermesCapturedTurnCoordination.memory_id_for_source(pin.source_id))
     source_record = by_id.get(pin.source_id)
-    if getattr(pin.catalog_scope, "kind", None) == "agent_local":
+    if isinstance(pin.catalog_scope, AgentLocalCatalogAuthorityScope):
         from memorii.core.semantic_ingestion.learned_relation import (
             learned_catalog_pointer_memory_id,
             learned_catalog_version_memory_id,
         )
+        if not isinstance(bundle.version, OntologyCatalogVersion) or not isinstance(
+            selected_pointer, CatalogPointer
+        ):
+            return False
 
         pointer_record = by_id.get(learned_catalog_pointer_memory_id(pin.catalog_scope))
         version_record = by_id.get(learned_catalog_version_memory_id(bundle.version))
     else:
+        if isinstance(bundle.version, OntologyCatalogVersion):
+            return False
         pointer_record = by_id.get(catalog_selection_pointer_memory_id(pin.catalog_scope))
         version_record = by_id.get(catalog_version_memory_id(bundle.version))
     if any(
@@ -4070,15 +4091,16 @@ def _is_catalog_captured_turn_pin_write(
         ledger = HermesCapturedTurnLedger.model_validate(ledger_record.content)
         coordination = HermesCapturedTurnCoordination.model_validate(coordination_record.content["coordination"])
         pointer = (
-            selected_pointer.__class__.model_validate(pointer_record.content["pointer"])
-            if getattr(pin.catalog_scope, "kind", None) == "agent_local"
+            CatalogPointer.model_validate(pointer_record.content["pointer"])
+            if isinstance(selected_pointer, CatalogPointer)
             else CatalogSelectionPointer.model_validate(pointer_record.content["catalog_selection_pointer"])
         )
-        version = type(bundle.version).model_validate(
-            version_record.content[
-                "version" if getattr(pin.catalog_scope, "kind", None) == "agent_local" else "catalog_version"
-            ]
-        )
+        if isinstance(bundle.version, OntologyCatalogVersion):
+            version = OntologyCatalogVersion.model_validate(version_record.content["version"])
+        elif isinstance(bundle.version, CatalogVersion):
+            version = CatalogVersion.model_validate(version_record.content["catalog_version"])
+        else:
+            version = CatalogChildVersionV2.model_validate(version_record.content["catalog_version"])
     except (AttributeError, KeyError, TypeError, ValueError):
         return False
     if (
@@ -4095,7 +4117,7 @@ def _is_catalog_captured_turn_pin_write(
         or pin.runtime_bundle_digest != bundle.runtime_bundle_digest
         or pin.selection_pointer_digest != pointer.pointer_digest
         or (
-            getattr(pin.catalog_scope, "kind", None) == "agent_local"
+            isinstance(pin.catalog_scope, AgentLocalCatalogAuthorityScope)
             and (
                 ledger.principal_id != pin.catalog_scope.principal_id
                 or ledger.agent_id != pin.catalog_scope.agent_id
@@ -4124,24 +4146,33 @@ def _is_catalog_captured_turn_pin_write(
 
 def _is_retained_source_catalog_pin_write(
     *, pin: object, current: tuple[CanonicalMemoryRecord, ...],
-    bundle: object, selected_pointer: object,
+    bundle: VerifiedCatalogBundle,
+    selected_pointer: CatalogSelectionPointer | CatalogPointer,
 ) -> bool:
     """Recognize a generic retained-source pin without a Hermes ledger."""
     try:
         from memorii.core.memory_evolution.admission import (
             source_admission_source_digest,
         )
-        from memorii.core.semantic_ingestion.catalog_authority import StructuredGrantState
+        from memorii.core.semantic_ingestion.catalog_authority import (
+            AgentLocalCatalogAuthorityScope,
+            CatalogOwnerVisibilityGrant,
+            StructuredGrantState,
+        )
         from memorii.core.semantic_ingestion.catalog_capture_pin import CatalogCapturedTurnPin
         from memorii.core.semantic_ingestion.learned_relation import (
+            CatalogPointer,
+            OntologyCatalogVersion,
             learned_catalog_pointer_memory_id,
             learned_catalog_version_memory_id,
         )
     except ImportError:
         return False
     if not isinstance(pin, CatalogCapturedTurnPin) or (
-        getattr(pin.catalog_scope, "kind", None) != "agent_local"
+        not isinstance(pin.catalog_scope, AgentLocalCatalogAuthorityScope)
         or pin.paired_evaluation_authority_digest is not None
+    ) or not isinstance(bundle.version, OntologyCatalogVersion) or not isinstance(
+        selected_pointer, CatalogPointer
     ):
         return False
     try:
@@ -4167,8 +4198,8 @@ def _is_retained_source_catalog_pin_write(
     assert source is not None and prepared is not None
     assert pointer_record is not None and version_record is not None
     try:
-        pointer = type(selected_pointer).model_validate(pointer_record.content["pointer"])
-        version = type(bundle.version).model_validate(version_record.content["version"])
+        pointer = CatalogPointer.model_validate(pointer_record.content["pointer"])
+        version = OntologyCatalogVersion.model_validate(version_record.content["version"])
         states = tuple(
             StructuredGrantState.model_validate(item.content["state"])
             for item in current
@@ -4195,7 +4226,10 @@ def _is_retained_source_catalog_pin_write(
         and state.grant.authenticated.agent_id == pin.catalog_scope.agent_id
         and (
             state.grant_kind != "catalog_visibility"
-            or state.grant.catalog_scope == pin.catalog_scope
+            or (
+                isinstance(state.grant, CatalogOwnerVisibilityGrant)
+                and state.grant.catalog_scope == pin.catalog_scope
+            )
         )
     )
     return {state.grant_kind for state in matching} == {
@@ -4209,7 +4243,10 @@ def _is_paired_evaluation_catalog_captured_turn_pin_write(
 ) -> bool:
     """Recognize the inert evaluation pin without consulting selection state."""
     try:
-        from memorii.core.semantic_ingestion.catalog_authority import StructuredGrantState
+        from memorii.core.semantic_ingestion.catalog_authority import (
+            AgentLocalCatalogAuthorityScope,
+            StructuredGrantState,
+        )
         from memorii.core.semantic_ingestion.catalog_capture_pin import CatalogCapturedTurnPin
         from memorii.core.semantic_ingestion.hermes_captured_turn import (
             HermesCapturedTurnCoordination,
@@ -4218,7 +4255,7 @@ def _is_paired_evaluation_catalog_captured_turn_pin_write(
     except ImportError:
         return False
     if not isinstance(pin, CatalogCapturedTurnPin) or (
-        getattr(pin.catalog_scope, "kind", None) != "agent_local"
+        not isinstance(pin.catalog_scope, AgentLocalCatalogAuthorityScope)
         or pin.paired_evaluation_authority_digest is None
         or pin.selection_pointer_digest != pin.paired_evaluation_authority_digest
         or record.memory_id != pin.memory_id

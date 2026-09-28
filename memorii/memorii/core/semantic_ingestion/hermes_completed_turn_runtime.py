@@ -79,7 +79,7 @@ from memorii.core.semantic_ingestion.hermes_completed_turn_admission import (
     HermesCompletedTurnAdmissionRequest,
     HermesCompletedTurnAdmissionService,
     HermesCompletedTurnMessage,
-    _prepare_governed_child_source,
+    prepare_governed_child_source,
 )
 from memorii.core.semantic_ingestion.learned_relation import (
     AgentLocalCatalogScope,
@@ -131,10 +131,17 @@ def _structured_fact_read_request(arguments: dict[str, object]) -> StructuredFac
         system_as_of = datetime.fromisoformat(system_as_of.replace("Z", "+00:00"))
         if system_as_of.tzinfo is None:
             raise ValueError("structured fact read system time is invalid")
+    predicate_id = arguments["predicate_id"]
+    subject_entity_id = arguments["subject_entity_id"]
+    view = arguments["view"]
+    if not isinstance(predicate_id, str) or not isinstance(subject_entity_id, str):
+        raise ValueError("structured fact read arguments are invalid")
+    if view not in {"current", "history"}:
+        raise ValueError("structured fact read arguments are invalid")
     return StructuredFactReadRequest(
-        predicate_id=arguments.get("predicate_id"),
-        subject_entity_id=arguments.get("subject_entity_id"),
-        view=arguments.get("view"),
+        predicate_id=predicate_id,
+        subject_entity_id=subject_entity_id,
+        view=view,
         system_as_of=system_as_of,
     )
 
@@ -144,12 +151,12 @@ def _parse_project_assertions_literal(*, predicate_id: str, value_quote: object)
     if not isinstance(value_quote, str):
         raise ValueError("structured tool literal quote is invalid")
     from memorii.core.semantic_ingestion.project_assertions import (
+        ProjectAssertionHint,
         ProjectAssertionProviderProposalAdapter,
-        _Hint,
     )
 
     literal_type, canonical_value = ProjectAssertionProviderProposalAdapter._literal(
-        _Hint(
+        ProjectAssertionHint(
             predicate_id=predicate_id,
             assertion_quote=value_quote,
             subject_quote=value_quote,
@@ -588,7 +595,7 @@ class HermesCompletedTurnRuntime:
         self._active_turn: _CapturedTurnHandle | None = None
         self._active_turn_ambiguous = False
         self._active_tool_calls = 0
-        self._active_turn_condition = threading.Condition(self._condition)
+        self._active_turn_condition = threading.Condition()
         self._worker = threading.Thread(
             target=self._worker_loop,
             name="memorii-hermes-semantic-worker",
@@ -970,6 +977,7 @@ class HermesCompletedTurnRuntime:
                 state = arguments.get("state")
                 if state not in {"expired", "retracted", "rejected"}:
                     raise ValueError("preference close state is invalid")
+                assert isinstance(state, str)
                 preference = service.close(
                     preference_id=_required_string(arguments, "preference_id"),
                     holder_user_id=self._authenticated_author_id,
@@ -1011,6 +1019,7 @@ class HermesCompletedTurnRuntime:
                 state = arguments.get("state")
                 if state not in {"active", "revoked"}:
                     raise ValueError("preference delegation state is invalid")
+                assert isinstance(state, str)
                 quote = _required_string(arguments, "approval_quote")
                 if quote != preference_delegation_sentence(
                     delegated_agent_id=delegated_agent_id,
@@ -1522,7 +1531,7 @@ class HermesCompletedTurnRuntime:
         )
         child_delivery_id = derive_composite_child_delivery_id(request.delivery_id, "hermes-completed-turn-user")
         identity = DeliveryIdentity.create(ingress.delivery_principal_binding, child_delivery_id)
-        child = _prepare_governed_child_source(
+        child = prepare_governed_child_source(
             request=request,
             message=request.completed_messages[0],
             child_delivery_id=child_delivery_id,
@@ -1708,7 +1717,7 @@ class HermesCompletedTurnRuntime:
                 request.delivery_id, "hermes-completed-turn-assistant"
             )
             assistant_identity = DeliveryIdentity.create(ingress.delivery_principal_binding, assistant_delivery)
-            assistant = _prepare_governed_child_source(
+            assistant = prepare_governed_child_source(
                 request=request,
                 message=request.completed_messages[1],
                 child_delivery_id=assistant_delivery,
@@ -1812,7 +1821,7 @@ class HermesCompletedTurnRuntime:
                 request.delivery_id, "hermes-completed-turn-assistant"
             )
             assistant_identity = DeliveryIdentity.create(ingress.delivery_principal_binding, assistant_delivery)
-            assistant = _prepare_governed_child_source(
+            assistant = prepare_governed_child_source(
                 request=request,
                 message=request.completed_messages[1],
                 child_delivery_id=assistant_delivery,

@@ -18,7 +18,7 @@ from memorii.core.memory_plane.store import (
     RecordDigestPrecondition,
     record_digest,
 )
-from memorii.core.semantic_ingestion.catalog_authority import CatalogAuthorityScope
+from memorii.core.semantic_ingestion.catalog_authority import CatalogAuthorityCoordinate
 from memorii.domain.enums import (
     CommitStatus,
     MemoryDomain,
@@ -93,7 +93,7 @@ class CoverageObservation(BaseModel):
     principal_id: str = Field(min_length=1)
     agent_id: str | None = None
     observed_at: datetime
-    catalog_scope: CatalogAuthorityScope
+    catalog_scope: CatalogAuthorityCoordinate
     catalog_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     observer_binding: ObserverBindingIdentity | None = None
     semantic_outcome: CoverageSemanticOutcome
@@ -148,7 +148,7 @@ class CoverageObservationStatus(BaseModel):
     processing_state: DiscoveryProcessingState
     semantic_outcome: CoverageSemanticOutcome
     attempt_count: int = Field(ge=0)
-    catalog_scope: CatalogAuthorityScope
+    catalog_scope: CatalogAuthorityCoordinate
     catalog_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     downstream_failure_signature: str | None = Field(default=None, max_length=256)
 
@@ -212,7 +212,7 @@ def new_coverage_observation(
     principal_id: str,
     agent_id: str | None,
     observed_at: datetime,
-    catalog_scope: CatalogAuthorityScope,
+    catalog_scope: CatalogAuthorityCoordinate,
     catalog_digest: str,
     observer_binding: ObserverBindingIdentity | None,
     downstream_failure_signature: str | None = None,

@@ -90,7 +90,10 @@ class MemoryPlaneService:
             self._active_unit_of_work.reset(token)
 
     def _record_store(self) -> MemoryPlaneStore | MemoryPlaneUnitOfWork:
-        return self._active_unit_of_work.get() or self._records
+        active_unit_of_work = self._active_unit_of_work.get()
+        if active_unit_of_work is not None:
+            return active_unit_of_work
+        return self._records
 
     def install_governed_write_policy(self, policy: GovernedWritePolicy) -> None:
         installer = getattr(self._records, "install_governed_write_policy", None)

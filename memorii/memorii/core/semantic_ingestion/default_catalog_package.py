@@ -8,6 +8,7 @@ it can become a selected catalog version.
 from __future__ import annotations
 
 import hashlib
+import importlib
 import inspect
 import json
 from pathlib import Path
@@ -24,6 +25,8 @@ from memorii.core.semantic_ingestion.catalog_authority import (
     CatalogVersion,
     ThreePredicateSeedCatalogAuthorityRepository,
     VerifiedPackagedBaseCatalogRelease,
+    catalog_resource_bytes,
+    catalog_resource_json,
 )
 from memorii.core.semantic_ingestion.contracts import contract_digest
 from memorii.core.semantic_ingestion.default_catalog_corpus import (
@@ -77,11 +80,9 @@ def _policy_history_digest() -> str:
 
 
 def _read_descriptor(name: str) -> tuple[CatalogCapabilityDescriptor, bytes]:
-    from memorii.core.semantic_ingestion.catalog_authority import _catalog_json, _catalog_resource_bytes
-
-    payload = _catalog_resource_bytes(name)
+    payload = catalog_resource_bytes(name)
     try:
-        descriptor = CatalogCapabilityDescriptor.model_validate(_catalog_json(name, payload))
+        descriptor = CatalogCapabilityDescriptor.model_validate(catalog_resource_json(name, payload))
     except ValueError as exc:
         raise CatalogAuthorityError("default catalog descriptor is invalid") from exc
     canonical = json.dumps(
@@ -93,7 +94,7 @@ def _read_descriptor(name: str) -> tuple[CatalogCapabilityDescriptor, bytes]:
 
 
 def _implementation_source_sha256(module_name: str, symbol_name: str) -> str:
-    module = __import__(module_name, fromlist=[symbol_name])
+    module = importlib.import_module(module_name)
     symbol = getattr(module, symbol_name)
     try:
         source = inspect.getsourcefile(symbol)

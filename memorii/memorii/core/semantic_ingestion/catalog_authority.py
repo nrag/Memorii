@@ -69,14 +69,14 @@ class VerifiedPackagedBaseCatalogRelease:
     selectable: bool
 
 
-def _catalog_resource_bytes(name: str) -> bytes:
+def catalog_resource_bytes(name: str) -> bytes:
     try:
         return importlib.resources.files("memorii.core.semantic_ingestion.resources").joinpath(name).read_bytes()
     except (FileNotFoundError, ModuleNotFoundError, OSError) as exc:
         raise CatalogAuthorityError("packaged catalog resource is unavailable") from exc
 
 
-def _catalog_json(name: str, payload: bytes) -> dict[str, object]:
+def catalog_resource_json(name: str, payload: bytes) -> dict[str, object]:
     try:
         value = json.loads(payload.decode("utf-8"), object_pairs_hook=_reject_duplicate_json_keys)
     except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
@@ -95,7 +95,7 @@ def load_packaged_reports_to_release() -> VerifiedPackagedBaseCatalogRelease:
     from memorii.core.semantic_ingestion.catalog_release_root import REPORTS_TO_RELEASE_MANIFEST_ROOT
 
     return _load_packaged_reports_to_release(
-        resource_bytes=_catalog_resource_bytes,
+        resource_bytes=catalog_resource_bytes,
         package_resource_names=_catalog_package_resource_names,
         release_root=REPORTS_TO_RELEASE_MANIFEST_ROOT,
     )
@@ -601,8 +601,8 @@ class PackagedBaseCatalogReleaseManifest(BaseModel):
 
 
 def _read_typed_catalog_resource(name: str, model: type[BaseModel]) -> tuple[BaseModel, bytes]:
-    payload = _catalog_resource_bytes(name)
-    decoded = _catalog_json(name, payload)
+    payload = catalog_resource_bytes(name)
+    decoded = catalog_resource_json(name, payload)
     try:
         value = model.model_validate(decoded)
     except ValueError as exc:
@@ -641,7 +641,7 @@ def _load_packaged_reports_to_release(
 
     def read(name: str, model: type[BaseModel]) -> tuple[BaseModel, bytes]:
         payload = resource_bytes(name)
-        decoded = _catalog_json(name, payload)
+        decoded = catalog_resource_json(name, payload)
         try:
             value = model.model_validate(decoded)
         except ValueError as exc:

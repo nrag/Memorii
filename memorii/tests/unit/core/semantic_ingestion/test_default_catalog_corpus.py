@@ -15,6 +15,13 @@ from memorii.core.semantic_ingestion.default_catalog_corpus import (
 )
 from scripts.generate_default_catalog_corpus import _entity_declarations, generate
 
+REPO_ROOT = Path(__file__).resolve().parents[5]
+DESIGN_PATH = REPO_ROOT / "docs/design/learned_ontology_base_catalog.md"
+PACKAGED_CORPUS_PATH = (
+    REPO_ROOT
+    / "memorii/memorii/core/semantic_ingestion/resources/default_catalog_acceptance_corpus.v1.json"
+)
+
 
 def _body() -> dict[str, object]:
     return load_default_catalog_acceptance_corpus().model_dump(mode="json")
@@ -54,15 +61,11 @@ def test_packaged_default_catalog_corpus_has_exact_inventory_and_coverage() -> N
 def test_default_catalog_corpus_regenerates_byte_identically(tmp_path: Path) -> None:
     output = tmp_path / "corpus.json"
     generate(
-        design_path=Path("docs/design/learned_ontology_base_catalog.md"),
+        design_path=DESIGN_PATH,
         output_path=output,
     )
 
-    packaged = Path(
-        "memorii/memorii/core/semantic_ingestion/resources/"
-        "default_catalog_acceptance_corpus.v1.json"
-    )
-    assert output.read_bytes() == packaged.read_bytes()
+    assert output.read_bytes() == PACKAGED_CORPUS_PATH.read_bytes()
 
 
 @pytest.mark.parametrize(
@@ -76,7 +79,7 @@ def test_default_catalog_corpus_regenerates_byte_identically(tmp_path: Path) -> 
 def test_entity_declaration_compiler_observes_normative_table_drift(
     old: str, new: str, type_id: str, field: str, expected: str,
 ) -> None:
-    design = Path("docs/design/learned_ontology_base_catalog.md").read_text()
+    design = DESIGN_PATH.read_text()
     assert old in design
     declarations = {
         item["type_id"]: item for item in _entity_declarations(design.replace(old, new))
@@ -174,8 +177,5 @@ def test_packaged_default_catalog_corpus_is_canonical_json() -> None:
         corpus.model_dump(mode="json"), ensure_ascii=False, sort_keys=True,
         separators=(",", ":"), allow_nan=False,
     ).encode("utf-8") + b"\n"
-    packaged = Path(
-        "memorii/memorii/core/semantic_ingestion/resources/"
-        "default_catalog_acceptance_corpus.v1.json"
-    ).read_bytes()
+    packaged = PACKAGED_CORPUS_PATH.read_bytes()
     assert encoded == packaged

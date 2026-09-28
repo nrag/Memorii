@@ -40,6 +40,11 @@ from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibil
 
 if TYPE_CHECKING:
     from memorii.core.memory_evolution.writer_admission import CatalogBundleLocator
+    from memorii.core.semantic_ingestion.catalog_authority import (
+        StructuredClaimCatalogBinding,
+        StructuredGrantState,
+    )
+    from memorii.core.semantic_ingestion.catalog_capture_pin import CatalogCapturedTurnPin
 
 
 class ScopedSnapshotBackendError(RuntimeError):
@@ -693,7 +698,7 @@ def _is_new_structured_claim_projection(record: CanonicalMemoryRecord) -> bool:
 
 def _has_catalog_binding(
     record: CanonicalMemoryRecord,
-    bindings: Mapping[str, object],
+    bindings: Mapping[str, StructuredClaimCatalogBinding],
 ) -> bool:
     """Reserve malformed or mismatched new bindings for the new-claim gate."""
     claim_id = record.content.get("claim_assertion_id")
@@ -704,9 +709,9 @@ def _has_catalog_binding(
 
 def _current_catalog_read_authority(
     record: CanonicalMemoryRecord,
-    bindings: Mapping[str, object],
-    states: Mapping[tuple[str, str], object],
-    pins: Mapping[str, object],
+    bindings: Mapping[str, StructuredClaimCatalogBinding],
+    states: Mapping[tuple[str, str], StructuredGrantState],
+    pins: Mapping[str, CatalogCapturedTurnPin],
     records: tuple[CanonicalMemoryRecord, ...],
     authorities: tuple[object, ...],
     catalog_bundle_locator: CatalogBundleLocator,
@@ -764,6 +769,8 @@ def _current_catalog_read_authority(
             and item.paired_evaluation_authority is not None
         ), None)
         if evaluation_authority is not None:
+            from memorii.core.semantic_ingestion.catalog_authority import ResolvedCatalogAuthority
+            from memorii.core.semantic_ingestion.catalog_capture_pin import VerifiedCatalogBundle
             from memorii.core.semantic_ingestion.learned_relation import PairedEvaluationCatalogBundle
 
             try:
@@ -779,14 +786,15 @@ def _current_catalog_read_authority(
                 or evaluation_bundle.version.version_digest != binding.selected_version_digest
             ):
                 return False
-            bundle = type("_EvaluationBundle", (), {
-                "catalog": type("_Catalog", (), {
-                    "catalog_scope": evaluation_bundle.catalog_scope,
-                    "catalog_digest": evaluation_bundle.version.catalog_digest,
-                })(),
-                "version": evaluation_bundle.version,
-                "runtime_bundle_digest": binding.runtime_bundle_digest,
-            })()
+            bundle = VerifiedCatalogBundle(
+                catalog=ResolvedCatalogAuthority(
+                    catalog_scope=evaluation_bundle.catalog_scope,
+                    catalog_digest=evaluation_bundle.version.catalog_digest,
+                    genesis_selection_digest=evaluation_authority.authority_digest,
+                ),
+                version=evaluation_bundle.version,
+                runtime_bundle_digest=binding.runtime_bundle_digest,
+            )
         else:
             try:
                 bundle = catalog_bundle_locator.locate_historical(
@@ -856,9 +864,9 @@ def _current_catalog_read_authority(
 def verify_structured_catalog_projection_for_read(
     projection: CanonicalMemoryRecord,
     *,
-    bindings: Mapping[str, object],
-    grant_states: Mapping[tuple[str, str], object],
-    pins: Mapping[str, object],
+    bindings: Mapping[str, StructuredClaimCatalogBinding],
+    grant_states: Mapping[tuple[str, str], StructuredGrantState],
+    pins: Mapping[str, CatalogCapturedTurnPin],
     records: tuple[CanonicalMemoryRecord, ...],
     authority: object,
     catalog_bundle_locator: CatalogBundleLocator,

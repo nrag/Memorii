@@ -3668,7 +3668,9 @@ class SemanticIngestionAtomicStore:
         """
         from memorii.core.semantic_ingestion.catalog_authority import (
             AgentLocalCatalogAuthorityScope,
+            CatalogChildVersionV2,
             CatalogSelectionPointer,
+            CatalogVersion,
             ResolvedStructuredSubmissionAuthority,
             StructuredGrantState,
             catalog_selection_pointer_memory_id,
@@ -3704,6 +3706,10 @@ class SemanticIngestionAtomicStore:
             return persisted
 
         _revision, selection_records = self._memory_plane.read_snapshot()
+        from memorii.core.semantic_ingestion.learned_relation import (
+            CatalogPointer,
+            OntologyCatalogVersion,
+        )
         bundle, selected_pointer = self._catalog_bundle_locator.locate_selected(
             selection_records,
             scope=authority.catalog.catalog_scope,
@@ -3714,6 +3720,8 @@ class SemanticIngestionAtomicStore:
                 learned_catalog_pointer_memory_id,
                 learned_catalog_version_memory_id,
             )
+            if not isinstance(bundle.version, OntologyCatalogVersion):
+                raise PreplanningStoreError("learned catalog version is invalid")
 
             pointer_record = self._memory_plane.get_record(
                 learned_catalog_pointer_memory_id(bundle.catalog.catalog_scope)
@@ -3722,6 +3730,8 @@ class SemanticIngestionAtomicStore:
                 learned_catalog_version_memory_id(bundle.version)
             )
         else:
+            if isinstance(bundle.version, OntologyCatalogVersion):
+                raise PreplanningStoreError("base catalog version is invalid")
             pointer_record = self._memory_plane.get_record(
                 catalog_selection_pointer_memory_id(bundle.catalog.catalog_scope)
             )
@@ -3768,13 +3778,12 @@ class SemanticIngestionAtomicStore:
         assert coordination_record is not None
         assert source_record is not None
         try:
-            version = type(bundle.version).model_validate(
-                version_record.content[
-                    "version"
-                    if isinstance(bundle.catalog.catalog_scope, AgentLocalCatalogAuthorityScope)
-                    else "catalog_version"
-                ]
-            )
+            if isinstance(bundle.version, OntologyCatalogVersion):
+                version = OntologyCatalogVersion.model_validate(version_record.content["version"])
+            elif isinstance(bundle.version, CatalogVersion):
+                version = CatalogVersion.model_validate(version_record.content["catalog_version"])
+            else:
+                version = CatalogChildVersionV2.model_validate(version_record.content["catalog_version"])
             persisted_ledger = HermesCapturedTurnLedger.model_validate(ledger_record.content)
             coordination = HermesCapturedTurnCoordination.model_validate(coordination_record.content["coordination"])
             states = tuple(StructuredGrantState.model_validate(record.content["state"]) for record in resolved_grant_records)
@@ -3819,8 +3828,8 @@ class SemanticIngestionAtomicStore:
         try:
             assert pointer_record is not None
             pointer = (
-                selected_pointer.__class__.model_validate(pointer_record.content["pointer"])
-                if isinstance(bundle.catalog.catalog_scope, AgentLocalCatalogAuthorityScope)
+                CatalogPointer.model_validate(pointer_record.content["pointer"])
+                if isinstance(selected_pointer, CatalogPointer)
                 else CatalogSelectionPointer.model_validate(pointer_record.content["catalog_selection_pointer"])
             )
         except (AttributeError, KeyError, TypeError, ValueError) as exc:
@@ -3918,6 +3927,8 @@ class SemanticIngestionAtomicStore:
             CatalogCapturedTurnPin,
         )
         from memorii.core.semantic_ingestion.learned_relation import (
+            CatalogPointer,
+            OntologyCatalogVersion,
             learned_catalog_pointer_memory_id,
             learned_catalog_version_memory_id,
         )
@@ -3936,6 +3947,11 @@ class SemanticIngestionAtomicStore:
         )
         if authority.catalog != bundle.catalog:
             raise PreplanningStoreError("retained-source catalog authority is stale")
+        catalog_scope = bundle.catalog.catalog_scope
+        if not isinstance(catalog_scope, AgentLocalCatalogAuthorityScope):
+            raise PreplanningStoreError("retained-source catalog scope is invalid")
+        if not isinstance(bundle.version, OntologyCatalogVersion) or not isinstance(pointer, CatalogPointer):
+            raise PreplanningStoreError("retained-source learned catalog version is invalid")
         pin = CatalogCapturedTurnPin.from_retained_source(
             source_id=source_id,
             source_digest=source_digest,
@@ -3947,7 +3963,7 @@ class SemanticIngestionAtomicStore:
             "semantic_ingestion:prepared_source:" + sha256(source_id.encode()).hexdigest()
         )
         pointer_record = self._memory_plane.get_record(
-            learned_catalog_pointer_memory_id(bundle.catalog.catalog_scope)
+            learned_catalog_pointer_memory_id(catalog_scope)
         )
         version_record = self._memory_plane.get_record(
             learned_catalog_version_memory_id(bundle.version)
@@ -3979,8 +3995,8 @@ class SemanticIngestionAtomicStore:
         assert pointer_record is not None and version_record is not None
         resolved_grants = tuple(item for item in grant_records if item is not None)
         try:
-            persisted_pointer = type(pointer).model_validate(pointer_record.content["pointer"])
-            persisted_version = type(bundle.version).model_validate(version_record.content["version"])
+            persisted_pointer = CatalogPointer.model_validate(pointer_record.content["pointer"])
+            persisted_version = OntologyCatalogVersion.model_validate(version_record.content["version"])
             states = tuple(
                 StructuredGrantState.model_validate(item.content["state"])
                 for item in resolved_grants
@@ -4060,6 +4076,7 @@ class SemanticIngestionAtomicStore:
                                         writer_binding: SemanticWriterCommitBinding):
         """Load the ordinary capture/grant fence without consulting selection state."""
         from memorii.core.semantic_ingestion.catalog_authority import (
+            ResolvedStructuredSubmissionAuthority,
             StructuredGrantState,
         )
         from memorii.core.semantic_ingestion.hermes_captured_turn import (
@@ -4067,7 +4084,9 @@ class SemanticIngestionAtomicStore:
             HermesCapturedTurnLedger,
         )
 
-        if not isinstance(ledger, HermesCapturedTurnLedger):
+        if not isinstance(ledger, HermesCapturedTurnLedger) or not isinstance(
+            authority, ResolvedStructuredSubmissionAuthority
+        ):
             raise PreplanningStoreError("paired evaluation ledger is invalid")
         ledger_record = self._memory_plane.get_record(
             "semantic_ingestion:hermes_captured_turn:" + sha256(ledger.capture_id.encode()).hexdigest()
@@ -4125,8 +4144,14 @@ class SemanticIngestionAtomicStore:
     def _pin_paired_evaluation_catalog(self, *, ledger: object, authority: object,
                                        writer_binding: SemanticWriterCommitBinding):
         """Persist an evaluation-only pin.  It cannot read or write a selection pointer."""
+        from memorii.core.semantic_ingestion.catalog_authority import ResolvedStructuredSubmissionAuthority
         from memorii.core.semantic_ingestion.catalog_capture_pin import CatalogCapturedTurnPin
+        from memorii.core.semantic_ingestion.hermes_captured_turn import HermesCapturedTurnLedger
 
+        if not isinstance(ledger, HermesCapturedTurnLedger) or not isinstance(
+            authority, ResolvedStructuredSubmissionAuthority
+        ):
+            raise PreplanningStoreError("paired evaluation catalog pin input is invalid")
         bundle, verified = self._paired_evaluation_bundle(authority)
         evaluation = authority.paired_evaluation_authority
         assert evaluation is not None
@@ -4165,7 +4190,14 @@ class SemanticIngestionAtomicStore:
 
     def _load_paired_evaluation_catalog_pin(self, *, ledger: object, authority: object):
         """Verify an evaluation-only pin against the reissued internal authority."""
+        from memorii.core.semantic_ingestion.catalog_authority import ResolvedStructuredSubmissionAuthority
         from memorii.core.semantic_ingestion.catalog_capture_pin import CatalogCapturedTurnPin
+        from memorii.core.semantic_ingestion.hermes_captured_turn import HermesCapturedTurnLedger
+
+        if not isinstance(ledger, HermesCapturedTurnLedger) or not isinstance(
+            authority, ResolvedStructuredSubmissionAuthority
+        ):
+            raise PreplanningStoreError("paired evaluation catalog pin input is invalid")
 
         bundle, verified = self._paired_evaluation_bundle(authority)
         evaluation = authority.paired_evaluation_authority
@@ -4210,6 +4242,7 @@ class SemanticIngestionAtomicStore:
             HermesCapturedTurnCoordination,
             HermesCapturedTurnLedger,
         )
+        from memorii.core.semantic_ingestion.learned_relation import OntologyCatalogVersion
 
         if not isinstance(ledger, HermesCapturedTurnLedger) or not isinstance(
             authority, ResolvedStructuredSubmissionAuthority
@@ -4238,11 +4271,15 @@ class SemanticIngestionAtomicStore:
             raise PreplanningStoreError("captured catalog pin is unavailable") from exc
         if isinstance(bundle.catalog.catalog_scope, AgentLocalCatalogAuthorityScope):
             from memorii.core.semantic_ingestion.learned_relation import learned_catalog_version_memory_id
+            if not isinstance(bundle.version, OntologyCatalogVersion):
+                raise PreplanningStoreError("captured learned catalog version is invalid")
 
             version_record = self._memory_plane.get_record(
                 learned_catalog_version_memory_id(bundle.version)
             )
         else:
+            if isinstance(bundle.version, OntologyCatalogVersion):
+                raise PreplanningStoreError("captured base catalog version is invalid")
             version_record = self._memory_plane.get_record(catalog_version_memory_id(bundle.version))
         ledger_record = self._memory_plane.get_record(
             "semantic_ingestion:hermes_captured_turn:" + sha256(ledger.capture_id.encode()).hexdigest()
