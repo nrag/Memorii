@@ -234,9 +234,13 @@ class CurrentBootstrapV3DynamicAuthorityProvider:
                 return None
             # The persisted learned version is the authority for this narrow
             # M5 grammar.  No caller-selected predicate can reach this path.
+            from memorii.core.semantic_ingestion.learned_relation import (
+                learned_overlay_relation_ids,
+            )
             learned_mentors = evaluation_pin or (
                 isinstance(bundle.catalog.catalog_scope, AgentLocalCatalogAuthorityScope)
-                and getattr(bundle.version, "relation_ids", ()) == ("mentors",)
+                and getattr(bundle.version, "relation_ids", ())
+                == learned_overlay_relation_ids()
             )
         try:
             progress, publication_coordinate, lease, operation_generation, artifact_generation = (
@@ -326,6 +330,12 @@ class CurrentBootstrapV3DynamicAuthorityProvider:
                 arbitration_as_of=policy.arbitration_as_of,
             )
         elif learned_mentors:
+            from memorii.core.semantic_ingestion.default_catalog_capability import (
+                selected_default_catalog_state_rules,
+                selected_default_catalog_temporal_rules,
+                selected_default_catalog_trust_rules,
+            )
+
             mentors_trust = PredicateTrustRule(
                 predicate_id="mentors",
                 eligible_authority_classes=frozenset({"official"}),
@@ -339,14 +349,16 @@ class CurrentBootstrapV3DynamicAuthorityProvider:
                     policy_revision="memorii.learned-ontology.mentors-trust.v1",
                     system_effective_interval=policy.trust_policy.system_effective_interval,
                     rules=tuple(sorted(
-                        (*policy.trust_policy.rules, mentors_trust), key=lambda rule: rule.predicate_id,
+                        (*selected_default_catalog_trust_rules().values(), mentors_trust),
+                        key=lambda rule: rule.predicate_id,
                     )),
                 ),
                 temporal_policy=TemporalPolicySnapshot.create(
                     policy_revision="memorii.learned-ontology.mentors-temporal.v1",
                     system_effective_interval=policy.temporal_policy.system_effective_interval,
                     rules=tuple(sorted(
-                        (*policy.temporal_policy.rules, mentors_temporal), key=lambda rule: rule.predicate_id,
+                        (*selected_default_catalog_temporal_rules().values(), mentors_temporal),
+                        key=lambda rule: rule.predicate_id,
                     )),
                 ),
                 arbitration_as_of=policy.arbitration_as_of,
@@ -391,11 +403,11 @@ class CurrentBootstrapV3DynamicAuthorityProvider:
                 for predicate_id in sorted(selected_default_catalog_state_rules())
             )
         elif learned_mentors:
-            state_rules = tuple(sorted((*tuple(PredicateStateRule(
-                predicate_id=predicate_id, cardinality="single", conflict_behavior="compete_within_slot",
-                qualifier_partition_fields=(), value_identity_policy_id="memorii.project-assertions.value.v1",
-                policy_fingerprint=self._digest(f"predicate-state:{predicate_id}"),
-            ) for predicate_id in ("project_deadline", "project_owner", "project_status")),
+            from memorii.core.semantic_ingestion.default_catalog_capability import (
+                selected_default_catalog_state_rules,
+            )
+
+            state_rules = tuple(sorted((*selected_default_catalog_state_rules().values(),
             PredicateStateRule(
                 predicate_id="mentors", cardinality="multi", conflict_behavior="accumulate_distinct_values",
                 qualifier_partition_fields=(), value_identity_policy_id="memorii.learned-ontology.mentors.value.v1",

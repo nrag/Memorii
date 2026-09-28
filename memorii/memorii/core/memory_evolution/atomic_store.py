@@ -3900,6 +3900,162 @@ class SemanticIngestionAtomicStore:
             runtime_bundle_digest=learned_runtime_bundle_digest(bundle.version),
         )
 
+    def pin_retained_source_catalog(
+        self,
+        *,
+        source_id: str,
+        source_digest: str,
+        authority: object,
+        writer_binding: SemanticWriterCommitBinding,
+    ) -> CatalogCapturedTurnPin:
+        """Persist a catalog pin for a framework-neutral retained source."""
+        from memorii.core.semantic_ingestion.catalog_authority import (
+            AgentLocalCatalogAuthorityScope,
+            ResolvedStructuredSubmissionAuthority,
+            StructuredGrantState,
+        )
+        from memorii.core.semantic_ingestion.catalog_capture_pin import (
+            CatalogCapturedTurnPin,
+        )
+        from memorii.core.semantic_ingestion.learned_relation import (
+            learned_catalog_pointer_memory_id,
+            learned_catalog_version_memory_id,
+        )
+
+        if (
+            not isinstance(authority, ResolvedStructuredSubmissionAuthority)
+            or not isinstance(authority.catalog.catalog_scope, AgentLocalCatalogAuthorityScope)
+            or authority.paired_evaluation_authority is not None
+        ):
+            raise PreplanningStoreError("retained-source catalog pin authority is invalid")
+        _revision, records = self._memory_plane.read_snapshot()
+        bundle, pointer = self._catalog_bundle_locator.locate_selected(
+            records,
+            scope=authority.catalog.catalog_scope,
+            authenticated=authority.authenticated,
+        )
+        if authority.catalog != bundle.catalog:
+            raise PreplanningStoreError("retained-source catalog authority is stale")
+        pin = CatalogCapturedTurnPin.from_retained_source(
+            source_id=source_id,
+            source_digest=source_digest,
+            bundle=bundle,
+            selection_pointer_digest=pointer.pointer_digest,
+        )
+        source_record = self._memory_plane.get_record(source_id)
+        prepared_record = self._memory_plane.get_record(
+            "semantic_ingestion:prepared_source:" + sha256(source_id.encode()).hexdigest()
+        )
+        pointer_record = self._memory_plane.get_record(
+            learned_catalog_pointer_memory_id(bundle.catalog.catalog_scope)
+        )
+        version_record = self._memory_plane.get_record(
+            learned_catalog_version_memory_id(bundle.version)
+        )
+        writer_record = self._writers.require_current(writer_binding)
+        grant_specs = (
+            ("source", authority.source_grant),
+            ("fact", authority.fact_grant),
+            ("catalog_visibility", authority.catalog_visibility_grant),
+        )
+        grant_records = tuple(
+            self._memory_plane.get_record(
+                self._structured_grant_state_record_id(kind, grant.grant_id)
+            )
+            for kind, grant in grant_specs
+        )
+        if any(
+            item is None
+            for item in (
+                source_record,
+                prepared_record,
+                pointer_record,
+                version_record,
+                *grant_records,
+            )
+        ):
+            raise PreplanningStoreError("retained-source catalog pin predecessors are unavailable")
+        assert source_record is not None and prepared_record is not None
+        assert pointer_record is not None and version_record is not None
+        resolved_grants = tuple(item for item in grant_records if item is not None)
+        try:
+            persisted_pointer = type(pointer).model_validate(pointer_record.content["pointer"])
+            persisted_version = type(bundle.version).model_validate(version_record.content["version"])
+            states = tuple(
+                StructuredGrantState.model_validate(item.content["state"])
+                for item in resolved_grants
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PreplanningStoreError("retained-source catalog pin predecessors are invalid") from exc
+        if (
+            source_record.source_kind != "semantic_ingestion_source"
+            or source_admission_source_digest(source_record) != source_digest
+            or self._load_prepared_source_record(prepared_record, source_id, source_digest) is None
+            or persisted_pointer != pointer
+            or persisted_version != bundle.version
+            or tuple((state.grant_kind, state.grant, state.active) for state in states)
+            != tuple((kind, grant, True) for kind, grant in grant_specs)
+        ):
+            raise PreplanningStoreError("retained-source catalog pin predecessors are substituted")
+        existing = self._memory_plane.get_record(pin.memory_id)
+        if existing is not None:
+            try:
+                persisted = CatalogCapturedTurnPin.model_validate(
+                    existing.content["catalog_capture_pin"]
+                )
+            except (KeyError, TypeError, ValueError) as exc:
+                raise PreplanningStoreError("retained-source catalog pin is invalid") from exc
+            if persisted != pin:
+                raise PreplanningStoreError("retained-source catalog pin is substituted")
+            return persisted
+        record = CanonicalMemoryRecord(
+            memory_id=pin.memory_id,
+            domain=MemoryDomain.EXECUTION,
+            text="",
+            content={"catalog_capture_pin": pin.model_dump(mode="json")},
+            status=CommitStatus.COMMITTED,
+            source_kind="semantic_ingestion_catalog_capture_pin",
+            timestamp=self._now(),
+            visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+        )
+        predecessors = (
+            source_record,
+            prepared_record,
+            pointer_record,
+            version_record,
+            *resolved_grants,
+            writer_record,
+        )
+        try:
+            self._memory_plane.conditionally_write_records(
+                (record,),
+                preconditions=(
+                    RecordAbsentPrecondition(memory_id=record.memory_id),
+                    *(
+                        RecordDigestPrecondition(
+                            memory_id=item.memory_id,
+                            expected_digest=record_digest(item),
+                        )
+                        for item in predecessors
+                    ),
+                ),
+                authorization=self._writers._authorize_atomic(
+                    writer_binding, capability=self._write_capability,
+                ),
+            )
+        except MemoryPlaneRevisionConflictError as exc:
+            winner = self._memory_plane.get_record(pin.memory_id)
+            try:
+                persisted = CatalogCapturedTurnPin.model_validate(
+                    winner.content["catalog_capture_pin"] if winner is not None else None
+                )
+            except (TypeError, ValueError) as reload_exc:
+                raise PreplanningStoreError("retained-source catalog pin CAS conflicted") from reload_exc
+            if persisted != pin:
+                raise PreplanningStoreError("retained-source catalog pin CAS winner is substituted") from exc
+            return persisted
+        return pin
+
     def _paired_evaluation_predecessors(self, *, ledger: object, authority: object,
                                         writer_binding: SemanticWriterCommitBinding):
         """Load the ordinary capture/grant fence without consulting selection state."""
@@ -4195,7 +4351,7 @@ class SemanticIngestionAtomicStore:
         # by the internal authority at load/submit time.  It intentionally
         # never asks the selected-catalog locator for a pointer.
         if pin.paired_evaluation_authority_digest is not None:
-            return "mentors"
+            return "learned_overlay"
         _revision, records = self._memory_plane.read_snapshot()
         try:
             bundle = self._catalog_bundle_locator.locate_historical(
@@ -4224,11 +4380,13 @@ class SemanticIngestionAtomicStore:
             raise PreplanningStoreError("captured catalog dispatch is substituted")
         if isinstance(bundle.version, CatalogVersion):
             return "seed"
-        if (
-            isinstance(bundle.catalog.catalog_scope, AgentLocalCatalogAuthorityScope)
-            and getattr(bundle.version, "relation_ids", ()) == ("mentors",)
-        ):
-            return "mentors"
+        if isinstance(bundle.catalog.catalog_scope, AgentLocalCatalogAuthorityScope):
+            from memorii.core.semantic_ingestion.learned_relation import (
+                learned_overlay_relation_ids,
+            )
+
+            if getattr(bundle.version, "relation_ids", ()) == learned_overlay_relation_ids():
+                return "learned_overlay"
         from memorii.core.semantic_ingestion.default_catalog_package import (
             load_packaged_default_catalog_release,
         )

@@ -1405,6 +1405,7 @@ class ProviderMemoryService:
                 status="denied", denial_reason="authority_denied"
             )
         captured_pin = request.captured_pin
+        pin = None
         try:
             captured_source = self._semantic_atomic_store.classify_captured_turn_source(
                 source_id=request.source_id, source_digest=request.source_digest,
@@ -1448,9 +1449,30 @@ class ProviderMemoryService:
                     status="denied", denial_reason="retained_source_denied"
                 )
         elif captured_pin is not None:
-            return StructuredFactSubmissionResponse(
-                status="denied", denial_reason="retained_source_denied"
-            )
+            try:
+                pin = self._semantic_atomic_store.pin_retained_source_catalog(
+                    source_id=request.source_id,
+                    source_digest=request.source_digest,
+                    authority=authority,
+                    writer_binding=self._provider_ingestion._current_writer_binding(),
+                )
+            except (OSError, ValueError, PreplanningStoreError):
+                return StructuredFactSubmissionResponse(
+                    status="denied", denial_reason="retained_source_denied"
+                )
+            if (
+                pin.capture_id != captured_pin.capture_id
+                or pin.memory_id != captured_pin.pin_memory_id
+                or pin.pin_digest != captured_pin.pin_digest
+                or pin.catalog_scope != captured_pin.catalog_scope
+                or pin.catalog_digest != captured_pin.catalog_digest
+                or pin.selected_version_id != captured_pin.selected_version_id
+                or pin.selected_version_digest != captured_pin.selected_version_digest
+                or pin.runtime_bundle_digest != captured_pin.runtime_bundle_digest
+            ):
+                return StructuredFactSubmissionResponse(
+                    status="denied", denial_reason="retained_source_denied"
+                )
         else:
             try:
                 seed = self._catalog_selection_repository.resolve_selected_base(
@@ -1518,7 +1540,7 @@ class ProviderMemoryService:
                 self._provider_ingestion.execute_retained_structured_proposal(
                     accepted=accepted, submission=submission, authenticated_ingress=ingress,
                     canonical_evidence_arena=arena, writer_binding=writer_binding,
-                    captured_catalog_pin=pin if captured_source else None,
+                    captured_catalog_pin=pin,
                 )
             persisted = self._semantic_atomic_store.recover_retained_structured_terminal(
                 accepted=accepted, authority=authority,
@@ -1715,6 +1737,45 @@ class ProviderMemoryService:
         try:
             return self._semantic_atomic_store.pin_captured_turn_catalog(
                 ledger=ledger, authority=authority,
+                writer_binding=self._provider_ingestion._current_writer_binding(),
+            )
+        except (MemoryPlaneCorruptionError, OSError, ValueError, PreplanningStoreError):
+            return None
+
+    def pin_retained_source_catalog(
+        self,
+        *,
+        source_id: str,
+        source_digest: str,
+        authority_request: StructuredSubmissionAuthorityRequest,
+        authenticated_host_ingress: AuthenticatedHostIngress,
+    ) -> CatalogCapturedTurnPin | None:
+        """Authorize and pin a generic retained source for learned replay."""
+        ingress = self._preflight_ingress(authenticated_host_ingress)
+        resolver = self._structured_submission_authority_resolver
+        if ingress is None or resolver is None:
+            return None
+        try:
+            authority = resolver.resolve_submission_authority(
+                authenticated_ingress=ingress,
+                request=authority_request,
+            )
+        except (OSError, ValueError):
+            return None
+        if (
+            authority is None
+            or authority.authenticated != authority_request.authenticated
+            or authority.source_grant != authority_request.source_grant
+            or authority.fact_grant != authority_request.fact_grant
+            or authority.catalog_visibility_grant
+            != authority_request.catalog_visibility_grant
+        ):
+            return None
+        try:
+            return self._semantic_atomic_store.pin_retained_source_catalog(
+                source_id=source_id,
+                source_digest=source_digest,
+                authority=authority,
                 writer_binding=self._provider_ingestion._current_writer_binding(),
             )
         except (MemoryPlaneCorruptionError, OSError, ValueError, PreplanningStoreError):

@@ -41,6 +41,21 @@ from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibil
 
 _DIGEST = r"^[0-9a-f]{64}$"
 _RELATION_ID = "mentors"
+
+
+def learned_overlay_relation_ids() -> tuple[str, ...]:
+    """Return the complete parent catalog plus the learned relation."""
+    from memorii.core.semantic_ingestion.default_catalog_corpus import (
+        EXPECTED_DEFAULT_RELATION_IDS,
+    )
+
+    return tuple(sorted({
+        *EXPECTED_DEFAULT_RELATION_IDS,
+        "project_deadline",
+        "project_owner",
+        "project_status",
+        _RELATION_ID,
+    }))
 _KIND_PROPOSAL = "learned_ontology_change_proposal_v1"
 _KIND_VERSION = "learned_ontology_catalog_version_v1"
 _KIND_POINTER = "learned_ontology_catalog_pointer_v1"
@@ -321,7 +336,7 @@ class PairedEvaluationCatalogBundle(BaseModel):
                 },
             ),
             parent_version_digest=proposal.parent_catalog_digest,
-            relation_ids=(proposal.relation.relation_id,),
+            relation_ids=learned_overlay_relation_ids(),
             introduced_proposal_id=proposal.proposal_id,
         )
         body = {
@@ -346,7 +361,7 @@ class PairedEvaluationCatalogBundle(BaseModel):
             self.version.catalog_scope != self.catalog_scope
             or self.version.introduced_proposal_id != self.proposal_id
             or self.version.parent_version_digest != self.parent_catalog_digest
-            or self.version.relation_ids != (_RELATION_ID,)
+            or self.version.relation_ids != learned_overlay_relation_ids()
         ):
             raise ValueError("paired evaluation catalog bundle is invalid")
         return self
@@ -604,7 +619,13 @@ class FrozenMentorsPairedEvaluator:
             and all(
                 item.candidate_status == "committed" and item.candidate_read_status == "read"
                 if item.expected == "candidate_commit_and_read"
-                else item.candidate_status in {"denied", "abstained"}
+                else (
+                    item.parent_status == "read"
+                    and item.candidate_status == "committed"
+                    and item.candidate_read_status == "read"
+                )
+                if item.case_id == "parent-regression"
+                else item.candidate_status != "unavailable"
                 for item in outcomes
             )
         )
@@ -616,7 +637,12 @@ class FrozenMentorsPairedEvaluator:
             for item in positives
         )
         parent_regressions = sum(
-            item.case_id == "parent-regression" and item.parent_status == "committed"
+            item.case_id == "parent-regression"
+            and not (
+                item.parent_status == "read"
+                and item.candidate_status == "committed"
+                and item.candidate_read_status == "read"
+            )
             for item in outcomes
         )
         unsupported_failures = sum(
@@ -668,7 +694,12 @@ class LearnedRelationRuntime:
             raise LearnedRelationError("proposal is not awaiting evaluation")
         evaluating = proposal.model_copy(update={"lifecycle": "evaluating"})
         self._replace_proposal(proposal, evaluating)
-        lifecycle = "evaluated" if evaluation.passes else "evaluation_unavailable"
+        if not evaluation.available:
+            lifecycle = "evaluation_unavailable"
+        elif evaluation.passes:
+            lifecycle = "evaluated"
+        else:
+            lifecycle = "rejected"
         updated = evaluating.model_copy(update={"lifecycle": lifecycle, "evaluation": evaluation})
         self._replace_proposal(evaluating, updated)
         if lifecycle != "evaluated":
@@ -707,7 +738,8 @@ class LearnedRelationRuntime:
             catalog_digest=_digest(b"memorii.learned-ontology.catalog-content.v1", {
                 "parent": proposal.parent_catalog_digest, "relation": proposal.relation.model_dump(mode="json")}),
             parent_version_digest=(pointer.selected_version_digest if pointer else None),
-            relation_ids=(_RELATION_ID,), introduced_proposal_id=proposal.proposal_id,
+            relation_ids=learned_overlay_relation_ids(),
+            introduced_proposal_id=proposal.proposal_id,
         )
         self._write_version(version)
         attempt = OntologyActivation.create(
@@ -1157,9 +1189,33 @@ class LearnedRelationCandidateService:
             evidence=tuple(evidence),
         )
         try:
+            existing = self._runtime._require_proposal(proposal.proposal_id)
+        except LearnedRelationError:
+            existing = None
+        if existing is not None:
+            if (
+                existing.catalog_scope != proposal.catalog_scope
+                or existing.parent_catalog_digest != proposal.parent_catalog_digest
+                or existing.operation != proposal.operation
+                or existing.relation != proposal.relation
+                or existing.proposal_digest != proposal.proposal_digest
+            ):
+                raise LearnedRelationError("proposal identity collides")
+            return existing
+        try:
             prepared = self._runtime.prepare_candidate(proposal)
-        except MemoryPlaneRevisionConflictError:
+        except (LearnedRelationError, MemoryPlaneRevisionConflictError):
             prepared = self._runtime._require_proposal(proposal.proposal_id)
+            if (
+                prepared.catalog_scope != proposal.catalog_scope
+                or prepared.parent_catalog_digest != proposal.parent_catalog_digest
+                or prepared.operation != proposal.operation
+                or prepared.relation != proposal.relation
+                or prepared.proposal_digest != proposal.proposal_digest
+            ):
+                raise LearnedRelationError("proposal identity collides") from None
+            if prepared.lifecycle != "validated":
+                return prepared
         if self._evaluator is None:
             return self._runtime.record_evaluation(
                 proposal_id=prepared.proposal_id,
@@ -1182,7 +1238,7 @@ def learned_runtime_bundle_digest(version: OntologyCatalogVersion) -> str:
     Person-to-Person runtime family.  Its digest names the immutable version
     and relation declaration, rather than a mutable process-local callback.
     """
-    if version.relation_ids != (_RELATION_ID,):
+    if version.relation_ids != learned_overlay_relation_ids():
         raise LearnedRelationError("learned catalog runtime is unavailable")
     return _digest(
         b"memorii.learned-ontology.mentors-runtime-bundle.v1",

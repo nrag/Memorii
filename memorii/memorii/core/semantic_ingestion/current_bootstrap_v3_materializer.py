@@ -296,7 +296,7 @@ class CurrentBootstrapV3RequestMaterializer:
     def _learned_mentors_predicate_catalog(self) -> PredicateProposalCatalog:
         """Issue the sole M5 learned relation grammar from a pinned version."""
         predicates = tuple(sorted(
-            (*self._predicate_catalog.predicates, PredicatePromptContract.create(
+            (*self._default_predicate_catalog().predicates, PredicatePromptContract.create(
                 predicate_id="mentors",
                 description="a person mentors another person",
                 subject_value_kind="entity",

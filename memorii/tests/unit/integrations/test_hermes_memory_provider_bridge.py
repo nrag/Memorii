@@ -1356,15 +1356,20 @@ def test_installed_no_key_paired_evaluator_executes_all_cases_without_control_mu
         )
         assert all(
             item.candidate_status in {"abstained", "denied"}
-            for item in evaluation.case_outcomes[2:]
+            for item in evaluation.case_outcomes[2:7]
         )
+        parent_control = evaluation.case_outcomes[7]
+        assert parent_control.parent_status == "read"
+        assert parent_control.candidate_status == "committed"
+        assert parent_control.candidate_read_status == "read"
         assert all(
             item.parent_status in {"abstained", "denied", "unavailable"}
-            for item in evaluation.case_outcomes
+            for item in evaluation.case_outcomes[:7]
         )
         assert binding.learned_ontology_status() == {
             "active_catalog_digest": None, "active_version_digest": None,
             "activation_sequence": None, "candidate_count": 0,
+            "candidate_ids": (),
             "replay_outcomes": {}, "last_error": None,
         }
     finally:
@@ -3149,6 +3154,7 @@ def test_generic_authenticated_source_reaches_the_local_candidate_and_owner_path
 ) -> None:
     """A non-Hermes envelope reaches the same core recurrence/candidate owner."""
     from memorii.core.semantic_ingestion.learned_relation import LearnedRelationError
+    from memorii.core.semantic_ingestion.structured_fact_read import StructuredFactReadRequest
     from memorii.integrations.authenticated_source import AuthenticatedSourceSubmission
     from memorii.integrations.hermes_factory import (
         build_local_level2_authenticated_source_runtime,
@@ -3179,22 +3185,58 @@ def test_generic_authenticated_source_reaches_the_local_candidate_and_owner_path
         ("generic:one", "Ada mentors Bea."),
         ("generic:two", "Cora mentors Dax."),
         ("generic:one", "Eve mentors Finn."),
+        ("generic:two", "Gia mentors Hugo."),
     ), start=1):
-        results.append(runtime.submit(AuthenticatedSourceSubmission(
+        submission = AuthenticatedSourceSubmission(
             operation=ProviderOperation.CHAT_USER_TURN,
             content=sentence, operation_id=f"generic-mentors:{ordinal}",
             session_id=session_id, user_id="raw:user:one",
             timestamp=datetime(2026, 9, 27, ordinal, tzinfo=UTC),
-        )))
+        )
+        results.append(runtime.submit(submission))
+        if ordinal == 4:
+            results.append(runtime.submit(submission))
     status = runtime.lookup_learned_ontology_status()
     assert status["candidate_count"] == 1, [item.model_dump(mode="json") for item in results]
     assert len(status["candidate_ids"]) == 1
+    proposal_records = runtime._adapter._service._memory_plane.list_records(
+        source_kind="learned_ontology_change_proposal_v1",
+    )
+    assert len(proposal_records) == 1
+    assert proposal_records[0].content["proposal"]["lifecycle"] == "awaiting_decision"
     proposal_id = status["candidate_ids"][0]
     runtime.approve_learned_candidate(proposal_id)
     activation = runtime.activate_learned_candidate(proposal_id)
     assert activation.status == "selected"
     selected = runtime.lookup_learned_ontology_status()
     assert selected["active_version_digest"] == activation.target_version_digest
+    assert selected["replay_outcomes"] == {"committed": 3}
+    claims = [
+        record
+        for record in runtime._adapter._service._memory_plane.list_records()
+        if record.content.get("runtime_context_projection_kind")
+        == "bootstrap_v3_claim_assertion"
+        and record.content.get("claim_identity", {})
+        .get("assertion_key_at_recording", {})
+        .get("slot", {})
+        .get("predicate_id")
+        == "mentors"
+    ]
+    assert len(claims) == 3
+    subject_id = claims[0].content["claim_identity"]["subject_assertion_ref"][
+        "logical_entity_id_at_assertion"
+    ]
+    read_request = StructuredFactReadRequest(
+        predicate_id="mentors",
+        subject_entity_id=subject_id,
+    )
+    read = runtime.read_structured_facts(read_request)
+    assert read.status == "ok" and len(read.items) == 1
+    runtime.close()
+    runtime = build_local_level2_authenticated_source_runtime(context)
+    reopened = runtime.read_structured_facts(read_request)
+    assert reopened == read
+    assert runtime.lookup_learned_ontology_status() == selected
 
     before = selected
     with pytest.raises(LearnedRelationError):
@@ -3234,3 +3276,4 @@ def test_generic_authenticated_source_reaches_the_local_candidate_and_owner_path
     hermes_activation = hermes.activate_learned_candidate(proposal_id)
     assert hermes_activation.target_version_digest == activation.target_version_digest
     hermes.shutdown()
+    runtime.close()

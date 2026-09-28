@@ -84,6 +84,7 @@ class AuthenticatedSourceLearnedOntologyBinding:
     approve_candidate: Callable[[str], object]
     status: Callable[[], object]
     read_structured_facts: Callable[[StructuredFactReadRequest], StructuredFactReadResponse]
+    close: Callable[[], None] | None = None
 
 
 class AuthenticatedSourceRuntime:
@@ -134,6 +135,11 @@ class AuthenticatedSourceRuntime:
         if self._learned_ontology is None:
             return StructuredFactReadResponse(status="unavailable")
         return self._learned_ontology.read_structured_facts(request)
+
+    def close(self) -> None:
+        """Release resources owned by the installed learned runtime."""
+        if self._learned_ontology is not None and self._learned_ontology.close is not None:
+            self._learned_ontology.close()
 
 
 def build_authenticated_source_runtime(

@@ -4025,6 +4025,13 @@ def _is_catalog_captured_turn_pin_write(
         return False
     if record.memory_id != pin.memory_id:
         return False
+    if pin.capture_id.startswith("retained-source:"):
+        return _is_retained_source_catalog_pin_write(
+            pin=pin,
+            current=current,
+            bundle=bundle,
+            selected_pointer=selected_pointer,
+        )
     by_id = {item.memory_id: item for item in current}
     ledger_record = by_id.get(
         "semantic_ingestion:hermes_captured_turn:" + sha256(pin.capture_id.encode()).hexdigest()
@@ -4109,6 +4116,87 @@ def _is_catalog_captured_turn_pin_write(
         if state.active
         and state.grant.authenticated.principal_id == ledger.principal_id
         and state.grant.authenticated.agent_id == ledger.agent_id
+    )
+    return {state.grant_kind for state in matching} == {
+        "source", "fact", "catalog_visibility",
+    }
+
+
+def _is_retained_source_catalog_pin_write(
+    *, pin: object, current: tuple[CanonicalMemoryRecord, ...],
+    bundle: object, selected_pointer: object,
+) -> bool:
+    """Recognize a generic retained-source pin without a Hermes ledger."""
+    try:
+        from memorii.core.memory_evolution.admission import (
+            source_admission_source_digest,
+        )
+        from memorii.core.semantic_ingestion.catalog_authority import StructuredGrantState
+        from memorii.core.semantic_ingestion.catalog_capture_pin import CatalogCapturedTurnPin
+        from memorii.core.semantic_ingestion.learned_relation import (
+            learned_catalog_pointer_memory_id,
+            learned_catalog_version_memory_id,
+        )
+    except ImportError:
+        return False
+    if not isinstance(pin, CatalogCapturedTurnPin) or (
+        getattr(pin.catalog_scope, "kind", None) != "agent_local"
+        or pin.paired_evaluation_authority_digest is not None
+    ):
+        return False
+    try:
+        expected = CatalogCapturedTurnPin.from_retained_source(
+            source_id=pin.source_id,
+            source_digest=pin.source_digest,
+            bundle=bundle,
+            selection_pointer_digest=selected_pointer.pointer_digest,
+        )
+    except (AttributeError, TypeError, ValueError):
+        return False
+    if pin != expected:
+        return False
+    by_id = {item.memory_id: item for item in current}
+    source = by_id.get(pin.source_id)
+    prepared = by_id.get(
+        "semantic_ingestion:prepared_source:" + sha256(pin.source_id.encode()).hexdigest()
+    )
+    pointer_record = by_id.get(learned_catalog_pointer_memory_id(pin.catalog_scope))
+    version_record = by_id.get(learned_catalog_version_memory_id(bundle.version))
+    if any(item is None for item in (source, prepared, pointer_record, version_record)):
+        return False
+    assert source is not None and prepared is not None
+    assert pointer_record is not None and version_record is not None
+    try:
+        pointer = type(selected_pointer).model_validate(pointer_record.content["pointer"])
+        version = type(bundle.version).model_validate(version_record.content["version"])
+        states = tuple(
+            StructuredGrantState.model_validate(item.content["state"])
+            for item in current
+            if item.source_kind == "semantic_ingestion_structured_grant_state"
+        )
+        source_digest = source_admission_source_digest(source)
+    except (AttributeError, KeyError, TypeError, ValueError):
+        return False
+    if (
+        source.source_kind != "semantic_ingestion_source"
+        or source_digest != pin.source_digest
+        or prepared.source_kind != "semantic_ingestion_prepared_source"
+        or prepared.content.get("source_id") != pin.source_id
+        or prepared.content.get("source_digest") != pin.source_digest
+        or pointer != selected_pointer
+        or version != bundle.version
+    ):
+        return False
+    matching = tuple(
+        state
+        for state in states
+        if state.active
+        and state.grant.authenticated.principal_id == pin.catalog_scope.principal_id
+        and state.grant.authenticated.agent_id == pin.catalog_scope.agent_id
+        and (
+            state.grant_kind != "catalog_visibility"
+            or state.grant.catalog_scope == pin.catalog_scope
+        )
     )
     return {state.grant_kind for state in matching} == {
         "source", "fact", "catalog_visibility",

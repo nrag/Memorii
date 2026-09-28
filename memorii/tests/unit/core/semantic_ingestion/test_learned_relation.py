@@ -127,6 +127,8 @@ def _isolated_case_executor(*, veto_case: str | None = None) -> IsolatedMentorsE
         for case_id, _text, expected in cases:
             if expected == "candidate_commit_and_read":
                 parent, candidate, read = "unavailable", "committed", "read"
+            elif case_id == "parent-regression":
+                parent, candidate, read = "read", "committed", "read"
             else:
                 parent, candidate, read = "unavailable", "abstained", "unavailable"
             if case_id == veto_case:
@@ -184,6 +186,7 @@ def test_failed_evaluation_and_non_owner_never_activate_or_replay() -> None:
         available=True,
     )
     evaluated = runtime.record_evaluation(proposal_id=proposal.proposal_id, evaluation=failed)
+    assert evaluated.lifecycle == "rejected"
     with pytest.raises(LearnedRelationError, match="authorization"):
         runtime.approve_candidate(proposal_id=evaluated.proposal_id,
                                   principal_id="user:two", agent_id="agent:two")
@@ -364,6 +367,11 @@ def test_status_is_scope_bounded_and_exposes_only_closed_operational_values() ->
         "active_version_digest": selected.target_version_digest,
         "activation_sequence": 1,
         "candidate_count": 1,
+        "candidate_ids": (_proposal_from_parent(
+            parent_catalog_digest="a" * 64,
+            source_id="source:private",
+            source_digit="8",
+        ).proposal_id,),
         "replay_outcomes": {"deleted": 1},
         "last_error": "replay_deleted",
     }
@@ -371,6 +379,7 @@ def test_status_is_scope_bounded_and_exposes_only_closed_operational_values() ->
     assert other == {
         "active_catalog_digest": None, "active_version_digest": None,
         "activation_sequence": None, "candidate_count": 0,
+        "candidate_ids": (),
         "replay_outcomes": {}, "last_error": None,
     }
 

@@ -438,6 +438,48 @@ class CatalogCapturedTurnPin(BaseModel):
         }
         return cls(**body, pin_digest=contract_digest(b"memorii.catalog.capture-pin.v1", body))
 
+    @classmethod
+    def from_retained_source(
+        cls,
+        *,
+        source_id: str,
+        source_digest: str,
+        bundle: VerifiedCatalogBundle,
+        selection_pointer_digest: str,
+    ) -> CatalogCapturedTurnPin:
+        """Pin a non-captured authenticated source to one selected catalog.
+
+        Generic adapters do not have a Hermes capture ledger. Their replay
+        pin therefore derives an opaque capture coordinate from the retained
+        source and selected version while preserving the same downstream
+        runtime-coordinate and writer-fence contract.
+        """
+        capture_id = "retained-source:" + contract_digest(
+            b"memorii.catalog.retained-source-pin.v1",
+            {
+                "source_id": source_id,
+                "source_digest": source_digest,
+                "selected_version_digest": bundle.version.version_digest,
+            },
+        )
+        body = {
+            "schema_version": 1,
+            "capture_id": capture_id,
+            "source_id": source_id,
+            "source_digest": source_digest,
+            "catalog_scope": bundle.catalog.catalog_scope,
+            "catalog_digest": bundle.catalog.catalog_digest,
+            "selected_version_id": bundle.version.version_id,
+            "selected_version_digest": bundle.version.version_digest,
+            "runtime_bundle_digest": bundle.runtime_bundle_digest,
+            "selection_pointer_digest": selection_pointer_digest,
+            "paired_evaluation_authority_digest": None,
+        }
+        return cls(
+            **body,
+            pin_digest=contract_digest(b"memorii.catalog.capture-pin.v1", body),
+        )
+
 
 class CatalogRuntimeCoordinate(BaseModel):
     """Typed, capture-derived runtime catalog identity; never a caller choice."""

@@ -410,6 +410,25 @@ def _mentors_fact_only_proposal_schema() -> dict[str, object]:
     return schema
 
 
+def _learned_overlay_fact_only_proposal_schema() -> dict[str, object]:
+    """Expose the complete default parent plus the learned relation."""
+    schema = _default_catalog_fact_only_proposal_schema()
+    properties = schema["properties"]
+    assert isinstance(properties, dict)
+    facts = properties["facts"]
+    assert isinstance(facts, dict)
+    items = facts["items"]
+    assert isinstance(items, dict)
+    fact_properties = items["properties"]
+    assert isinstance(fact_properties, dict)
+    predicate = fact_properties["predicate_id"]
+    assert isinstance(predicate, dict)
+    values = predicate["enum"]
+    assert isinstance(values, list)
+    predicate["enum"] = sorted({*values, "mentors"})
+    return schema
+
+
 def _default_catalog_fact_only_proposal_schema() -> dict[str, object]:
     """Project default predicates and their closed lifecycle grammar to transport."""
     schema = deepcopy(_FACT_ONLY_PROPOSAL_SCHEMA)
@@ -545,6 +564,7 @@ class HermesCompletedTurnRuntime:
         structured_tool_is_current: Callable[[], bool] | None = None,
         structured_fact_read_authority: Callable[[], StructuredFactReadAuthority | None] | None = None,
         preference_service: PreferenceService | None = None,
+        recover_pending_on_start: bool = True,
     ) -> None:
         self._service = service
         self._installation_id = installation_id
@@ -574,7 +594,8 @@ class HermesCompletedTurnRuntime:
             daemon=True,
         )
         self._worker.start()
-        self._enqueue(_RecoverySweep())
+        if recover_pending_on_start:
+            self._enqueue(_RecoverySweep())
 
     def get_tool_schemas(self) -> list[dict[str, object]]:
         """Persist an authorized catalog pin before advertising the fact tool."""
@@ -640,11 +661,15 @@ class HermesCompletedTurnRuntime:
             proposal_schema = _REPORTS_TO_FACT_ONLY_PROPOSAL_SCHEMA
         elif dispatch == "mentors":
             proposal_schema = _mentors_fact_only_proposal_schema()
+        elif dispatch == "learned_overlay":
+            proposal_schema = _learned_overlay_fact_only_proposal_schema()
         elif dispatch == "default_catalog":
             proposal_schema = _default_catalog_fact_only_proposal_schema()
         else:
             proposal_schema = _FACT_ONLY_PROPOSAL_SCHEMA
-        if dispatch not in {"seed", "reports_to", "default_catalog", "mentors"}:
+        if dispatch not in {
+            "seed", "reports_to", "default_catalog", "mentors", "learned_overlay",
+        }:
             return []
         parameters = (
             _default_catalog_tool_parameters(proposal_schema)
@@ -730,7 +755,9 @@ class HermesCompletedTurnRuntime:
             if not isinstance(pin, CatalogCapturedTurnPin):
                 return {"status": "unavailable"}
             dispatch = self._service.resolve_captured_turn_catalog_dispatch(pin=pin)
-            if dispatch not in {"seed", "reports_to", "default_catalog", "mentors"}:
+            if dispatch not in {
+                "seed", "reports_to", "default_catalog", "mentors", "learned_overlay",
+            }:
                 return {"status": "denied"}
             try:
                 request = self._structured_tool_request(
@@ -739,6 +766,7 @@ class HermesCompletedTurnRuntime:
                     reports_to=dispatch == "reports_to",
                     default_catalog=dispatch == "default_catalog",
                     mentors=dispatch == "mentors",
+                    learned_overlay=dispatch == "learned_overlay",
                 )
             except (TypeError, ValueError):
                 return {"status": "rejected"}
@@ -827,7 +855,8 @@ class HermesCompletedTurnRuntime:
                 pin is None
                 or pin.catalog_scope != catalog_scope
                 or pin.catalog_digest != catalog_digest
-                or self._service.resolve_captured_turn_catalog_dispatch(pin=pin) != "mentors"
+                or self._service.resolve_captured_turn_catalog_dispatch(pin=pin)
+                not in {"mentors", "learned_overlay"}
             ):
                 return "revoked"
             prepared = self._load_replay_prepared_source(ledger)
@@ -1181,6 +1210,7 @@ class HermesCompletedTurnRuntime:
         reports_to: bool = False,
         default_catalog: bool = False,
         mentors: bool = False,
+        learned_overlay: bool = False,
     ) -> StructuredFactSubmissionRequest:
         ordinary_allowed = {
             "schema_version",
@@ -1193,7 +1223,7 @@ class HermesCompletedTurnRuntime:
         }
         proposal_value = arguments.get("proposal")
         is_default_correction = (
-            default_catalog
+            (default_catalog or learned_overlay)
             and type(proposal_value) is dict
             and type(proposal_value.get("corrections")) is list
             and bool(proposal_value["corrections"])
@@ -1220,14 +1250,14 @@ class HermesCompletedTurnRuntime:
         proposal_value = arguments["proposal"]
         if type(proposal_value) is not dict:
             raise ValueError("structured tool proposal is invalid")
-        if default_catalog:
+        if default_catalog or learned_overlay:
             _validate_default_catalog_argument_shape(proposal_value)
         else:
             _validate_fact_only_argument_shape(proposal_value)
         # Hermes function arguments arrive from JSON, while the typed proposal
         # contract deliberately models ordered collections as tuples.
         proposal = ProviderSemanticProposal.model_validate(_json_arrays_to_tuples(proposal_value))
-        if sum((reports_to, default_catalog, mentors)) > 1:
+        if sum((reports_to, default_catalog, mentors, learned_overlay)) > 1:
             raise ValueError("structured tool dispatch is ambiguous")
         if reports_to:
             validate_reports_to_tool_proposal(proposal)
@@ -1238,6 +1268,14 @@ class HermesCompletedTurnRuntime:
             )
         elif mentors:
             validate_mentors_tool_proposal(proposal, arguments=arguments)
+        elif learned_overlay:
+            if proposal.facts and proposal.facts[0].predicate_id == "mentors":
+                validate_mentors_tool_proposal(proposal, arguments=arguments)
+            else:
+                self._validate_default_catalog_tool_proposal(
+                    proposal=proposal,
+                    arguments=arguments,
+                )
         else:
             HermesCompletedTurnRuntime._validate_fact_only_proposal(proposal=proposal, arguments=arguments)
         prepared = self._load_active_prepared_source(active)
@@ -1246,7 +1284,7 @@ class HermesCompletedTurnRuntime:
                 proposal=proposal,
                 arguments=arguments,
             )
-            if default_catalog and proposal.corrections
+            if (default_catalog or learned_overlay) and proposal.corrections
             else ((arguments["source_quote"], source_start),)
         )
         resolved_spans = tuple(

@@ -234,22 +234,18 @@ def _isolated_mentors_evaluation_cases(
         subject, object_quote = "Ada", "Bea"
         if sentence == "Cora mentors Dax.":
             subject, object_quote = "Cora", "Dax"
+        predicate_id = "reports_to" if sentence == "Ada reports to Bea." else "mentors"
+        anchor = "reports to" if predicate_id == "reports_to" else "mentors"
         proposal: dict[str, object] = {
-            "abstained": True,
-            "mentions": [], "facts": [], "corrections": [], "retractions": [],
-            "action_states": [], "identity_operations": [],
-        }
-        if expected == "candidate_commit_and_read":
-            proposal = {
                 "abstained": False,
                 "mentions": [
                     {"local_id": "subject", "mention_quote": subject, "mention_context_quote": sentence, "proposed_type": "Person"},
                     {"local_id": "object", "mention_quote": object_quote, "mention_context_quote": sentence, "proposed_type": "Person"},
                 ],
                 "facts": [{
-                    "kind": "fact", "local_id": "mentors", "predicate_id": "mentors",
+                    "kind": "fact", "local_id": predicate_id, "predicate_id": predicate_id,
                     "subject_entity_ref": "subject", "object": {"kind": "entity", "entity_ref": "object"},
-                    "assertion_quote": sentence, "predicate_anchor_quote": "mentors",
+                    "assertion_quote": sentence, "predicate_anchor_quote": anchor,
                     "polarity": "positive", "commitment": "asserted",
                     "attributed_to_entity_ref": None, "temporal_qualifier_quotes": [],
                 }],
@@ -260,7 +256,7 @@ def _isolated_mentors_evaluation_cases(
             "source_quote": sentence,
             "source_quote_start": 0,
             "subject_quote": subject,
-            "predicate_anchor_quote": "mentors",
+            "predicate_anchor_quote": anchor,
             "object_quote": object_quote,
             "proposal": proposal,
         }
@@ -319,7 +315,10 @@ def _isolated_mentors_evaluation_cases(
         )
         subject_id = claim.content["claim_identity"]["subject_assertion_ref"]["logical_entity_id_at_assertion"]
         read = runtime.read_structured_facts(
-            request=StructuredFactReadRequest(predicate_id="mentors", subject_entity_id=subject_id),
+            request=StructuredFactReadRequest(
+                predicate_id=("reports_to" if case_id == "parent-regression" else "mentors"),
+                subject_entity_id=subject_id,
+            ),
             session_id=session_id,
             authenticated_author_id=author,
             now=datetime.now(UTC),
@@ -341,7 +340,7 @@ def _isolated_mentors_evaluation_cases(
             if parent_runtime is None or candidate_runtime is None:
                 raise ValueError("isolated completed-turn runtime is unavailable")
             try:
-                parent_status, _parent_read = execute(
+                parent_status, parent_read = execute(
                     parent_runtime, case_id=case_id, sentence=sentence, expected=expected,
                     ordinal=ordinal, candidate=False,
                 )
@@ -351,7 +350,15 @@ def _isolated_mentors_evaluation_cases(
                 )
                 outcomes.append(PairedEvaluationCaseOutcome(
                     case_id=case_id, expected=expected,
-                    parent_status=parent_status if parent_status in {"committed", "read", "denied", "abstained", "unavailable"} else "unavailable",
+                    parent_status=(
+                        "read"
+                        if case_id == "parent-regression"
+                        and parent_status == "committed"
+                        and parent_read == "read"
+                        else parent_status
+                        if parent_status in {"committed", "read", "denied", "abstained", "unavailable"}
+                        else "unavailable"
+                    ),
                     candidate_status=candidate_status if candidate_status in {"committed", "read", "denied", "abstained", "unavailable"} else "unavailable",
                     candidate_read_status=candidate_read if candidate_read in {"read", "denied", "abstained", "unavailable"} else "unavailable",
                     binding_digest=binding_digest, corpus_digest=corpus_digest, budget_digest=budget_digest,
@@ -386,7 +393,10 @@ def build_local_level2_authenticated_source_runtime(context: object) -> object:
         build_authenticated_source_runtime,
     )
 
-    binding = _build_local_level2_runtime_binding(context)
+    binding = _build_local_level2_runtime_binding(
+        context,
+        _recover_pending_semantic_work=False,
+    )
     if not isinstance(binding, HermesProviderRuntimeBinding):
         raise TypeError("local Level 2 runtime binding is invalid")
     if (
@@ -429,6 +439,7 @@ def build_local_level2_authenticated_source_runtime(context: object) -> object:
                 authenticated_author_id=binding.absent_author_id,
                 now=datetime.now(UTC),
             ),
+            close=binding.completed_turn_runtime.close,
         ),
     )
 
@@ -441,6 +452,7 @@ def _build_local_level2_runtime_binding(
     _paired_evaluation_authority: PairedEvaluationAuthority | None = None,
     _paired_evaluation_bundle: PairedEvaluationCatalogBundle | None = None,
     _enable_ontology_observer: bool = True,
+    _recover_pending_semantic_work: bool = True,
 ) -> object:
     """Construct one verified, first-party Hermes binding without model I/O.
 
@@ -584,21 +596,31 @@ def _build_local_level2_runtime_binding(
     # A prior process can stop after atomic callback admission but before the
     # worker creates its handoff. Drain that retained operation before the
     # activation reload verifies that every active control is terminal.
-    recovery_deadline = time.monotonic() + 65.0
-    while True:
-        if not authority_is_current():
-            raise LocalLevel2AuthorityError("local Level 2 authority is unavailable")
-        recovery_outcomes = service.reconcile_memory_evolution()
-        if not any(outcome.retryable for outcome in recovery_outcomes):
-            break
-        if time.monotonic() >= recovery_deadline:
-            raise RuntimeError("Hermes semantic recovery remained pending")
-        time.sleep(1.0)
+    if _recover_pending_semantic_work:
+        recovery_deadline = time.monotonic() + 65.0
+        while True:
+            if not authority_is_current():
+                raise LocalLevel2AuthorityError("local Level 2 authority is unavailable")
+            recovery_outcomes = service.reconcile_memory_evolution()
+            if not any(outcome.retryable for outcome in recovery_outcomes):
+                break
+            if time.monotonic() >= recovery_deadline:
+                raise RuntimeError("Hermes semantic recovery remained pending")
+            time.sleep(1.0)
     # The current Bootstrap capability owns the canonical registry and the
     # installation-bound local activation target. Complete the cutover before
     # Hermes can admit a completed turn, so no source can enter a partial
     # semantic runtime.
-    service.activate_observation_ledger()
+    # The generic authenticated-source composition does not own Hermes
+    # completed-turn recovery. Its no-model observations may retain retryable
+    # bootstrap work for a future capable host, while the already-activated
+    # writer and learned replay/read roots remain usable across restart.
+    has_observation_ledger_activation = any(
+        record.source_kind == "semantic_ingestion_observation_ledger_activation"
+        for record in memory_plane.list_records()
+    )
+    if _recover_pending_semantic_work or not has_observation_ledger_activation:
+        service.activate_observation_ledger()
     from memorii.core.semantic_ingestion.hermes_completed_turn_runtime import (
         HermesCompletedTurnRuntime,
     )
@@ -687,7 +709,140 @@ def _build_local_level2_runtime_binding(
                 )
             except (OSError, ValueError):
                 return "revoked"
-            return self.runtime.replay_retained_source(**kwargs)
+            source_id = kwargs.get("source_id")
+            source_digest = kwargs.get("source_digest")
+            try:
+                captured = service._semantic_atomic_store.classify_captured_turn_source(
+                    source_id=source_id,
+                    source_digest=source_digest,
+                )
+            except (OSError, TypeError, ValueError):
+                return "deleted"
+            if captured:
+                return self.runtime.replay_retained_source(**kwargs)
+            return self._replay_generic_retained_source(**kwargs)
+
+        def _replay_generic_retained_source(self, **kwargs: object) -> str:
+            from memorii.core.provider.ingestion import (
+                CapturedCatalogPinReference,
+                StructuredFactSubmissionRequest,
+            )
+            from memorii.core.semantic_ingestion.contracts import (
+                ProviderSemanticProposal,
+                VerbatimTextArtifactMappingProof,
+            )
+            from memorii.core.semantic_ingestion.hermes_completed_turn_runtime import (
+                HermesCompletedTurnRuntime,
+                _json_arrays_to_tuples,
+            )
+
+            source_id = kwargs.get("source_id")
+            source_digest = kwargs.get("source_digest")
+            catalog_scope = kwargs.get("catalog_scope")
+            catalog_digest = kwargs.get("catalog_digest")
+            replay_operation_id = kwargs.get("replay_operation_id")
+            if (
+                not isinstance(source_id, str)
+                or not isinstance(source_digest, str)
+                or not isinstance(catalog_scope, AgentLocalCatalogAuthorityScope)
+                or not isinstance(catalog_digest, str)
+                or not isinstance(replay_operation_id, str)
+                or not replay_operation_id.startswith("ontology-replay:")
+            ):
+                return "revoked"
+            runtime = service._provider_ingestion._semantic_runtime
+            repository = None if runtime is None else runtime.prepared_source_repository
+            if repository is None:
+                return "deleted"
+            prepared = repository.load(source_id=source_id, source_digest=source_digest)
+            if prepared is None:
+                return "deleted"
+            try:
+                arguments = HermesCompletedTurnRuntime._mentors_replay_arguments(prepared)
+                proposal = ProviderSemanticProposal.model_validate(
+                    _json_arrays_to_tuples(arguments["proposal"])
+                )
+                source_quote = arguments["source_quote"]
+                source_start = arguments["source_quote_start"]
+                spans = tuple(
+                    span
+                    for span in prepared.sentence_spans
+                    if isinstance(
+                        span.text_mapping_proof,
+                        VerbatimTextArtifactMappingProof,
+                    )
+                    if prepared.semantic_text[
+                        span.projection_span.start : span.projection_span.end
+                    ]
+                    == source_quote
+                    and span.text_mapping_proof.retained_span.start
+                    + (
+                        span.projection_span.start
+                        - span.text_mapping_proof.projection_span.start
+                    )
+                    == source_start
+                )
+                if len(spans) != 1:
+                    return "deleted"
+                authority_request = structured_resolver.issued_authority_request()
+                source_record = service._memory_plane.get_record(source_id)
+                if source_record is None or not isinstance(source_record.session_id, str):
+                    return "deleted"
+                ingress = self.runtime._issue_host_ingress(
+                    source_record.session_id,
+                    catalog_scope.principal_id,
+                    datetime.now(UTC),
+                )
+                pin = service.pin_retained_source_catalog(
+                    source_id=source_id,
+                    source_digest=source_digest,
+                    authority_request=authority_request,
+                    authenticated_host_ingress=ingress,
+                )
+                if (
+                    pin is None
+                    or pin.catalog_scope != catalog_scope
+                    or pin.catalog_digest != catalog_digest
+                    or service.resolve_captured_turn_catalog_dispatch(pin=pin)
+                    != "learned_overlay"
+                ):
+                    return "revoked"
+                raw = encode_typed_value(arguments)
+                request = StructuredFactSubmissionRequest(
+                    source_id=source_id,
+                    source_digest=source_digest,
+                    authority_request=authority_request,
+                    captured_pin=CapturedCatalogPinReference(
+                        capture_id=pin.capture_id,
+                        pin_memory_id=pin.memory_id,
+                        pin_digest=pin.pin_digest,
+                        catalog_scope=pin.catalog_scope,
+                        catalog_digest=pin.catalog_digest,
+                        selected_version_id=pin.selected_version_id,
+                        selected_version_digest=pin.selected_version_digest,
+                        runtime_bundle_digest=pin.runtime_bundle_digest,
+                    ),
+                    exact_source_spans=spans,
+                    raw_proposal_artifact=raw,
+                    raw_proposal_artifact_digest=sha256(raw).hexdigest(),
+                    protocol_version="memorii.authenticated-source.learned-replay.v1",
+                    parser_version="memorii.retained-sentence-parser.v1",
+                    proposal=proposal,
+                    proposal_bytes=encode_typed_value(proposal.model_dump(mode="python")),
+                )
+                response = service.submit_structured_fact(
+                    request,
+                    authenticated_host_ingress=ingress,
+                )
+            except (AttributeError, OSError, TypeError, ValueError):
+                return "deleted"
+            if response.status == "committed":
+                return "committed"
+            if response.status in {"abstained", "rejected"}:
+                return "abstained"
+            if response.status not in {"denied", "authorization_revoked_before_commit"}:
+                return "deleted"
+            return "revoked"
 
     replay_writer = _InstalledReplayWriter()
 
@@ -748,6 +903,7 @@ def _build_local_level2_runtime_binding(
             structured_resolver.issued_read_authority if structured_resolver is not None else None
         ),
         preference_service=preference_service,
+        recover_pending_on_start=_recover_pending_semantic_work,
     )
     replay_writer.runtime = completed_runtime
     paired_evaluator.bind_executor(IsolatedMentorsEvaluationExecutor(
