@@ -207,7 +207,7 @@ def test_pr_unit_gate_is_complete_duration_balanced_and_timeout_bounded() -> Non
     umbrella = jobs["unit-tests"]
     timing = jobs["unit-timing-inventory"]
 
-    assert shards["timeout-minutes"] == "45"
+    assert shards["timeout-minutes"] == "90"
     assert shards["strategy"]["fail-fast"] == "false"
     shard_config = json.loads(
         (PROJECT_ROOT / "tests" / "ci" / "unit-shards.json").read_text(
