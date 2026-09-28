@@ -1672,10 +1672,10 @@ def test_installed_learned_replay_skip_receipt_is_durable_and_idempotent(
         reopened.shutdown()
 
 
-def test_installed_default_catalog_entity_relation_commits_and_recalls(
+def test_installed_learned_overlay_preserves_default_entity_relation_lifecycle(
     bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Exercise selected default dispatch through the installed Hermes root."""
+    """An additive learned overlay preserves default correction/read behavior."""
     from memorii.core.semantic_ingestion.openai_responses_project_assertions import OpenAIResponsesApiClient
     from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
     from memorii.integrations.hermes_local_authority import (
@@ -1702,6 +1702,52 @@ def test_installed_default_catalog_entity_relation_commits_and_recalls(
         agent_identity="profile:primary", platform="cli", agent_context="primary",
         agent_workspace="hermes",
     )
+    from memorii.core.semantic_ingestion.learned_relation import (
+        AgentLocalCatalogScope,
+        OntologyChangeProposal,
+        OntologyEvidenceReference,
+        PairedEvaluation,
+        RelationDeclaration,
+    )
+
+    learned = provider._learned_ontology_runtime
+    active_runtime = provider._completed_turn_runtime
+    assert learned is not None and active_runtime is not None
+    scope = AgentLocalCatalogScope(
+        principal_id=provider._absent_author_id,
+        agent_id=active_runtime._authenticated_agent_id,
+    )
+    candidate = learned.prepare_candidate(OntologyChangeProposal.create(
+        catalog_scope=scope,
+        parent_catalog_digest="a" * 64,
+        relation=RelationDeclaration(
+            description="A person mentors another person."
+        ),
+        evidence=(OntologyEvidenceReference(
+            source_id="overlay-correction:evidence",
+            source_digest="1" * 64,
+            origin_lineage_digest="2" * 64,
+            source_scope_digest="3" * 64,
+        ),),
+    ))
+    candidate = learned.record_evaluation(
+        proposal_id=candidate.proposal_id,
+        evaluation=PairedEvaluation.create(
+            binding_digest="4" * 64,
+            targeted_positive_count=2,
+            targeted_positive_committed_and_read=2,
+            parent_regressions=0,
+            unsupported_or_misleading_failures=0,
+            scope_or_provenance_failures=0,
+            available=True,
+        ),
+    )
+    learned.approve_candidate(
+        proposal_id=candidate.proposal_id,
+        principal_id=scope.principal_id,
+        agent_id=scope.agent_id,
+    )
+    activation = provider.activate_learned_candidate(candidate.proposal_id)
     row = next(
         row for row in load_default_catalog_acceptance_corpus().rows
         if row.relation_id == "project_owned_by"
@@ -1731,7 +1777,10 @@ def test_installed_default_catalog_entity_relation_commits_and_recalls(
         if record.source_kind == "semantic_ingestion_structured_claim_catalog_binding"
     )
     assert binding["schema_version"] == 2
-    assert binding["selected_version_id"] == "default-catalog-v1"
+    assert binding["selected_version_id"] == (
+        f"ontology-catalog:{activation.target_version_digest}"
+    )
+    assert binding["selected_version_digest"] == activation.target_version_digest
     projection = next(
         record for record in records
         if record.content.get("runtime_context_projection_kind") == "bootstrap_v3_claim_assertion"
