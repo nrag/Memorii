@@ -2,6 +2,7 @@
 
 from memorii.integrations.authenticated_source import (
     AuthenticatedSourceAdapter,
+    AuthenticatedSourceLearnedOntologyBinding,
     AuthenticatedSourceRuntime,
     AuthenticatedSourceSubmission,
     build_authenticated_source_runtime,
@@ -11,6 +12,7 @@ from memorii.integrations.provider_interface import MemoryProviderInterface
 
 __all__ = [
     "AuthenticatedSourceAdapter",
+    "AuthenticatedSourceLearnedOntologyBinding",
     "AuthenticatedSourceRuntime",
     "AuthenticatedSourceSubmission",
     "build_authenticated_source_runtime",

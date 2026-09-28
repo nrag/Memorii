@@ -35,6 +35,7 @@ from memorii.core.semantic_ingestion.coverage_recurrence import (
     CoverageRecurrenceRepository,
     RelationGapSignature,
     VerifiedCoverageGapRepository,
+    recurrence_owner_scope_digest,
 )
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
 
@@ -774,6 +775,10 @@ class LearnedRelationRuntime:
             "active_version_digest": None if pointer is None else pointer.selected_version_digest,
             "activation_sequence": None if pointer is None else pointer.activation_sequence,
             "candidate_count": len([item for item in proposals if item and item.catalog_scope == scope]),
+            "candidate_ids": tuple(
+                item.proposal_id for item in proposals
+                if item is not None and item.catalog_scope == scope
+            ),
             "replay_outcomes": outcomes,
             "last_error": None if latest_error is None else latest_error[1],
         }
@@ -1102,13 +1107,17 @@ class LearnedRelationCandidateService:
         scope = AgentLocalCatalogScope(
             principal_id=authenticated.principal_id, agent_id=authenticated.agent_id,
         )
+        if group.source_scope_digest != recurrence_owner_scope_digest(
+            principal_id=authenticated.principal_id,
+            agent_id=authenticated.agent_id,
+        ):
+            raise LearnedRelationError("recurrence group is outside the authenticated owner")
         evidence: list[OntologyEvidenceReference] = []
         for evidence_id in group.evidence_ids:
             gap = self._gaps.load(evidence_id)
             if gap is None or (
                 gap.catalog_scope != group.catalog_scope
                 or gap.catalog_digest != group.catalog_digest
-                or gap.source_scope_digest != group.source_scope_digest
                 or gap.signature != group.signature
             ):
                 raise LearnedRelationError("recurrence evidence is invalid")

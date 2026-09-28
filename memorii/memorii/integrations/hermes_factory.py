@@ -97,6 +97,7 @@ from memorii.integrations.hermes_runtime_binding import (
     HermesAuthenticatedForwardingReceipt,
     HermesAuthenticatedOriginReceipt,
     HermesOriginReceipt,
+    HermesProviderRuntimeBinding,
 )
 
 _PREFERENCE_TOPIC_TYPES = {
@@ -110,7 +111,7 @@ class _LocalNoKeyMentorsObserver:
     """Closed local observer for direct `Person mentors Person` evidence."""
 
     _DIRECT_MENTORS = re.compile(
-        r"(?P<subject>[A-Z][A-Za-z'-]{0,63}) mentors (?P<object>[A-Z][A-Za-z'-]{0,63})\\."
+        r"(?P<subject>[A-Z][A-Za-z'-]{0,63}) mentors (?P<object>[A-Z][A-Za-z'-]{0,63})\."
     )
     binding = ObserverBindingIdentity(
         binding_version="memorii.hermes.local-no-key-mentors-observer.v1",
@@ -370,6 +371,66 @@ def _isolated_mentors_evaluation_cases(
 def build_local_level2_runtime_binding(context: object) -> object:
     """Construct the standard verified first-party Hermes runtime binding."""
     return _build_local_level2_runtime_binding(context)
+
+
+def build_local_level2_authenticated_source_runtime(context: object) -> object:
+    """Expose the Level-2 authority chain through the non-Hermes adapter.
+
+    This is deliberately a composition bridge, not a second learner.  The
+    generic adapter receives only an authenticated source envelope; the
+    factory retains selection, evaluation, and protected-read authority.
+    """
+    from memorii.integrations.authenticated_source import (
+        AuthenticatedSourceLearnedOntologyBinding,
+        AuthenticatedSourceSubmission,
+        build_authenticated_source_runtime,
+    )
+
+    binding = _build_local_level2_runtime_binding(context)
+    if not isinstance(binding, HermesProviderRuntimeBinding):
+        raise TypeError("local Level 2 runtime binding is invalid")
+    if (
+        binding.activate_learned_candidate is None
+        or binding.approve_learned_candidate is None
+        or binding.learned_ontology_status is None
+        or binding.completed_turn_runtime is None
+    ):
+        raise LocalLevel2AuthorityError("local learned ontology is unavailable")
+    reader = getattr(binding.completed_turn_runtime, "read_structured_facts", None)
+    if not callable(reader):
+        raise LocalLevel2AuthorityError("local structured reader is unavailable")
+
+    def issue_ingress(submission: AuthenticatedSourceSubmission) -> AuthenticatedHostIngress:
+        if (
+            submission.session_id is None
+            or submission.user_id != getattr(context, "user_id", None)
+        ):
+            raise ValueError("authenticated source submission lacks session identity")
+        return binding.issue_ingress(
+            SimpleNamespace(
+                hook="sync_turn",
+                session_id=submission.session_id,
+                user_id=binding.absent_author_id,
+                received_at=submission.timestamp or datetime.now(UTC),
+                agent_id=_canonical_agent_id(getattr(context, "agent_identity", None)),
+            )
+        )
+
+    return build_authenticated_source_runtime(
+        issue_ingress=issue_ingress,
+        provider_service=binding.service,
+        learned_ontology=AuthenticatedSourceLearnedOntologyBinding(
+            activate_candidate=binding.activate_learned_candidate,
+            approve_candidate=binding.approve_learned_candidate,
+            status=binding.learned_ontology_status,
+            read_structured_facts=lambda request: reader(
+                request=request,
+                session_id="generic-authenticated-source",
+                authenticated_author_id=binding.absent_author_id,
+                now=datetime.now(UTC),
+            ),
+        ),
+    )
 
 
 def _build_local_level2_runtime_binding(
@@ -712,6 +773,11 @@ def _build_local_level2_runtime_binding(
         completed_runtime._structured_authority_request = structured_resolver.issued_authority_request()
         return activation
 
+    def approve_learned_candidate(proposal_id: str) -> OntologyChangeProposal:
+        return learned_runtime.approve_candidate(
+            proposal_id=proposal_id, principal_id=operator_id, agent_id=agent_id,
+        )
+
     def select_prior_learned_version(target_version_digest: str) -> OntologyActivation:
         """Select a prior version through the installed owner authority."""
         activation = learned_runtime.select_prior_version(
@@ -736,6 +802,7 @@ def _build_local_level2_runtime_binding(
             revoke_current_structured_grant if structured_resolver is not None else None
         ),
         activate_learned_candidate=activate_learned_candidate,
+        approve_learned_candidate=approve_learned_candidate,
         select_prior_learned_version=select_prior_learned_version,
         learned_ontology_runtime=learned_runtime,
         learned_ontology_status=lambda: learned_runtime.status(learned_scope),

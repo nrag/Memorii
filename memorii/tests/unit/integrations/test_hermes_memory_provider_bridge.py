@@ -16,6 +16,7 @@ from types import ModuleType, SimpleNamespace
 import pytest
 from memorii.core.memory_evolution.atomic_store import StructuredSubmissionGrantRevokedError
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
+from memorii.core.provider.models import ProviderOperation
 from memorii.core.semantic_ingestion.default_catalog_corpus import (
     EXPECTED_DEFAULT_RELATION_IDS,
     DefaultCatalogCorpusRow,
@@ -3137,3 +3138,95 @@ def test_bridge_separates_equal_text_positions_and_redelivery_reuses_the_second_
     assert authority_checks >= 2
     assert len([record for record in records if record.source_kind == "semantic_ingestion_source"]) == 4
     assert len([record for record in records if record.visibility.value == "runtime_context"]) == 2
+
+
+def test_generic_authenticated_source_reaches_the_local_candidate_and_owner_path(
+    bridge_module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A non-Hermes envelope reaches the same core recurrence/candidate owner."""
+    from memorii.core.semantic_ingestion.learned_relation import LearnedRelationError
+    from memorii.integrations.authenticated_source import AuthenticatedSourceSubmission
+    from memorii.integrations.hermes_factory import (
+        build_local_level2_authenticated_source_runtime,
+    )
+    from memorii.integrations.hermes_local_authority import (
+        authorize_local_level2,
+        authorize_local_structured_tool,
+    )
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    def forbid_network(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("generic no-key ontology journey attempted network I/O")
+    monkeypatch.setattr(socket, "getaddrinfo", forbid_network)
+    monkeypatch.setattr(socket, "create_connection", forbid_network)
+    monkeypatch.setattr(socket.socket, "connect", forbid_network)
+    monkeypatch.setattr(socket.socket, "connect_ex", forbid_network)
+    authorize_local_level2(hermes_home=tmp_path)
+    authorize_local_structured_tool(hermes_home=tmp_path)
+    context = SimpleNamespace(
+        storage_root=tmp_path / "generic", hermes_home=tmp_path,
+        session_id="generic:one", user_id="raw:user:one",
+        agent_identity="profile:primary", platform="cli", agent_context="primary",
+        agent_workspace="hermes", parent_session_id=None,
+    )
+    runtime = build_local_level2_authenticated_source_runtime(context)
+    results = []
+    for ordinal, (session_id, sentence) in enumerate((
+        ("generic:one", "Ada mentors Bea."),
+        ("generic:two", "Cora mentors Dax."),
+        ("generic:one", "Eve mentors Finn."),
+    ), start=1):
+        results.append(runtime.submit(AuthenticatedSourceSubmission(
+            operation=ProviderOperation.CHAT_USER_TURN,
+            content=sentence, operation_id=f"generic-mentors:{ordinal}",
+            session_id=session_id, user_id="raw:user:one",
+            timestamp=datetime(2026, 9, 27, ordinal, tzinfo=UTC),
+        )))
+    status = runtime.lookup_learned_ontology_status()
+    assert status["candidate_count"] == 1, [item.model_dump(mode="json") for item in results]
+    assert len(status["candidate_ids"]) == 1
+    proposal_id = status["candidate_ids"][0]
+    runtime.approve_learned_candidate(proposal_id)
+    activation = runtime.activate_learned_candidate(proposal_id)
+    assert activation.status == "selected"
+    selected = runtime.lookup_learned_ontology_status()
+    assert selected["active_version_digest"] == activation.target_version_digest
+
+    before = selected
+    with pytest.raises(LearnedRelationError):
+        runtime.approve_learned_candidate("ocp_" + "0" * 64)
+    assert runtime.lookup_learned_ontology_status() == before
+
+    # The independently composed Hermes adapter receives the same source
+    # evidence. Both adapters leave proposal/version identity to core.
+    from memorii.integrations.hermes_factory import build_local_level2_runtime_binding
+    monkeypatch.setattr(
+        bridge_module.importlib.metadata,
+        "entry_points",
+        lambda *, group: (_FactoryEntryPoint(build_local_level2_runtime_binding),),
+    )
+    hermes = None
+    for ordinal, (session_id, sentence) in enumerate((
+        ("generic:one", "Ada mentors Bea."),
+        ("generic:two", "Cora mentors Dax."),
+        ("generic:one", "Eve mentors Finn."),
+    ), start=1):
+        hermes = bridge_module.MemoriiHermesMemoryProvider()
+        hermes.initialize(
+            session_id, hermes_home=tmp_path, user_id="raw:user:one",
+            agent_identity="profile:primary", platform="cli", agent_context="primary",
+            agent_workspace="hermes",
+        )
+        # Coverage observation happens at the public authenticated capture
+        # boundary. A fresh host instance per retained turn also proves restart
+        # recovery without creating overlapping live tool handles.
+        hermes.on_turn_start(ordinal, sentence)
+        if ordinal < 3:
+            hermes.shutdown()
+    assert hermes is not None
+    hermes_status = hermes.lookup_learned_ontology_status()
+    assert hermes_status["candidate_ids"] == (proposal_id,)
+    hermes.approve_learned_candidate(proposal_id)
+    hermes_activation = hermes.activate_learned_candidate(proposal_id)
+    assert hermes_activation.target_version_digest == activation.target_version_digest
+    hermes.shutdown()

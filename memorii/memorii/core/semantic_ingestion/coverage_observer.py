@@ -35,6 +35,7 @@ from memorii.core.semantic_ingestion.coverage_recurrence import (
     VerifiedCoverageGap,
     VerifiedCoverageGapRepository,
     build_coverage_recurrence_group,
+    recurrence_owner_scope_digest,
 )
 from memorii.core.semantic_ingestion.coverage_validation import CoreCoverageGapValidator
 from memorii.domain.enums import (
@@ -383,13 +384,20 @@ class CoverageObserverRunner:
             head, signature=result.signature
         )
         self._gaps.create(gap)
+        grouping_scope = recurrence_owner_scope_digest(
+            principal_id=head.principal_id,
+            agent_id=head.agent_id,
+        )
         gaps = self._gaps.for_group(
             catalog_scope=gap.catalog_scope,
             catalog_digest=gap.catalog_digest,
-            source_scope_digest=gap.source_scope_digest,
+            recurrence_scope_digest=grouping_scope,
             signature=gap.signature,
         )
-        group = build_coverage_recurrence_group(gaps)
+        group = build_coverage_recurrence_group(
+            gaps,
+            recurrence_scope_digest=grouping_scope,
+        )
         previous = self._recurrence.load(group.group_id)
         self._recurrence.write(group, previous=previous)
         if group.proposal_eligible and self._candidate_admitter is not None:

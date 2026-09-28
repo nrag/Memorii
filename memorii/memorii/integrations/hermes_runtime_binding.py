@@ -130,6 +130,7 @@ class HermesProviderRuntimeBinding:
     absent_author_id: str = "memorii.hermes.author.absent.v1"
     revoke_structured_submission_grant: Callable[[str], None] | None = None
     activate_learned_candidate: Callable[[str], object] | None = None
+    approve_learned_candidate: Callable[[str], object] | None = None
     select_prior_learned_version: Callable[[str], object] | None = None
     learned_ontology_runtime: object | None = None
     learned_ontology_status: Callable[[], object] | None = None

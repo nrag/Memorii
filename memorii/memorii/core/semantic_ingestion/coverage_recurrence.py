@@ -20,6 +20,7 @@ from memorii.core.memory_plane.store import (
 from memorii.core.semantic_ingestion.catalog_authority import CatalogAuthorityScope
 from memorii.core.semantic_ingestion.coverage_observation import (
     CoverageObservation,
+    CoverageObservationRepository,
     DiscoveryProcessingState,
 )
 from memorii.domain.enums import (
@@ -309,24 +310,40 @@ def recurrence_group_id(
     return f"coverage-recurrence-group:v1:{digest}"
 
 
+def recurrence_owner_scope_digest(*, principal_id: str, agent_id: str | None) -> str:
+    """Derive the learner grouping scope without weakening source-scope gates."""
+
+    return _digest(
+        b"memorii.learned-ontology.coverage-recurrence-owner-scope.v1",
+        (principal_id, agent_id),
+    )
+
+
 def build_coverage_recurrence_group(
     gaps: tuple[VerifiedCoverageGap, ...],
+    *,
+    recurrence_scope_digest: str | None = None,
 ) -> CoverageRecurrenceGroup:
     if not gaps:
         raise ValueError("recurrence group requires verified gaps")
     ordered = tuple(sorted(gaps, key=lambda gap: (gap.observed_at, gap.evidence_id)))
     first = ordered[0]
+    grouping_scope = recurrence_scope_digest or first.source_scope_digest
     expected_id = recurrence_group_id(
         catalog_scope=first.catalog_scope,
         catalog_digest=first.catalog_digest,
-        source_scope_digest=first.source_scope_digest,
+        source_scope_digest=grouping_scope,
         signature=first.signature,
     )
     if any(
         recurrence_group_id(
             catalog_scope=gap.catalog_scope,
             catalog_digest=gap.catalog_digest,
-            source_scope_digest=gap.source_scope_digest,
+            source_scope_digest=(
+                grouping_scope
+                if recurrence_scope_digest is not None
+                else gap.source_scope_digest
+            ),
             signature=gap.signature,
         )
         != expected_id
@@ -352,7 +369,7 @@ def build_coverage_recurrence_group(
         "group_id": expected_id,
         "catalog_scope": first.catalog_scope,
         "catalog_digest": first.catalog_digest,
-        "source_scope_digest": first.source_scope_digest,
+        "source_scope_digest": grouping_scope,
         "signature": first.signature,
         "evidence_ids": tuple(sorted({gap.evidence_id for gap in ordered})),
         "lineage_sessions": lineage_sessions,
@@ -488,24 +505,39 @@ class VerifiedCoverageGapRepository:
         *,
         catalog_scope: CatalogAuthorityScope,
         catalog_digest: str,
-        source_scope_digest: str,
+        source_scope_digest: str | None = None,
+        recurrence_scope_digest: str | None = None,
         signature: CoverageGapSignature,
     ) -> tuple[VerifiedCoverageGap, ...]:
+        if (source_scope_digest is None) == (recurrence_scope_digest is None):
+            raise ValueError("exactly one recurrence grouping scope is required")
+        grouping_scope = recurrence_scope_digest or source_scope_digest
+        assert grouping_scope is not None
         group_id = recurrence_group_id(
             catalog_scope=catalog_scope,
             catalog_digest=catalog_digest,
-            source_scope_digest=source_scope_digest,
+            source_scope_digest=grouping_scope,
             signature=signature,
         )
+        observations = CoverageObservationRepository(self._plane)
         gaps: list[VerifiedCoverageGap] = []
         for record in self._plane.list_records():
             if record.source_kind != self._KIND:
                 continue
             gap = self.load(record.memory_id)
-            if gap is not None and recurrence_group_id(
+            observation = None if gap is None else observations.load(gap.observation_id)
+            candidate_scope = (
+                recurrence_owner_scope_digest(
+                    principal_id=observation.principal_id,
+                    agent_id=observation.agent_id,
+                )
+                if recurrence_scope_digest is not None and observation is not None
+                else gap.source_scope_digest if gap is not None else None
+            )
+            if gap is not None and candidate_scope is not None and recurrence_group_id(
                 catalog_scope=gap.catalog_scope,
                 catalog_digest=gap.catalog_digest,
-                source_scope_digest=gap.source_scope_digest,
+                source_scope_digest=candidate_scope,
                 signature=gap.signature,
             ) == group_id:
                 gaps.append(gap)
