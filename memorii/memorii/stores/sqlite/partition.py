@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     # memory plane, which imports this module back).
     from memorii.core.memory_evolution.semantic_index import SemanticIndexProjection
     from memorii.core.persistence.contracts import MaterializationCatalogEntry
+    from memorii.core.semantic_ingestion.ontology_index import OntologyIndexProjection
 
 PARTITION_SCHEMA_VERSION = 1
 _DEFAULT_BUSY_TIMEOUT_MS = 5_000
@@ -136,6 +137,42 @@ _SCHEMA_STATEMENTS = (
         data_revision INTEGER NOT NULL
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS ontology_candidates (
+        proposal_id TEXT PRIMARY KEY,
+        lifecycle TEXT NOT NULL,
+        record_digest TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS ontology_versions (
+        version_digest TEXT PRIMARY KEY,
+        record_id TEXT NOT NULL,
+        record_digest TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS ontology_selections (
+        scope_key TEXT PRIMARY KEY,
+        selected_version_digest TEXT NOT NULL,
+        selected_attempt_id TEXT NOT NULL,
+        activation_sequence INTEGER NOT NULL,
+        record_digest TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS ontology_activation_attempts (
+        attempt_id TEXT PRIMARY KEY,
+        status TEXT NOT NULL,
+        record_digest TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS ontology_replay_receipts (
+        operation_id TEXT PRIMARY KEY,
+        record_digest TEXT NOT NULL
+    )
+    """,
 )
 
 # Authoritative materialized catalogs covered by the signed manifest. The
@@ -166,6 +203,16 @@ _MATERIALIZATION_CATALOGS = (
         "claim_assertion_id || ':' || source_id",
         "source_digest || ':' || evidence_digest",
     ),
+    ("ontology_candidates", "proposal_id", "lifecycle || ':' || record_digest"),
+    ("ontology_versions", "version_digest", "record_id || ':' || record_digest"),
+    (
+        "ontology_selections",
+        "scope_key",
+        "selected_version_digest || ':' || selected_attempt_id || ':'"
+        " || activation_sequence || ':' || record_digest",
+    ),
+    ("ontology_activation_attempts", "attempt_id", "status || ':' || record_digest"),
+    ("ontology_replay_receipts", "operation_id", "record_digest"),
 )
 _CATALOG_SEED_DOMAIN = b"memorii.materialization-catalog.v1\x00"
 
@@ -432,6 +479,72 @@ class PartitionDataRepository:
                 data_revision,
             ),
         )
+
+    def replace_derived_ontology_index(
+        self,
+        connection: sqlite3.Connection,
+        projection: OntologyIndexProjection,
+    ) -> None:
+        """Replace the derived ontology index generation atomically."""
+        connection.execute("DELETE FROM ontology_candidates")
+        connection.execute("DELETE FROM ontology_versions")
+        connection.execute("DELETE FROM ontology_selections")
+        connection.execute("DELETE FROM ontology_activation_attempts")
+        connection.execute("DELETE FROM ontology_replay_receipts")
+        for candidate in projection.candidates:
+            connection.execute(
+                "INSERT INTO ontology_candidates (proposal_id, lifecycle, record_digest)"
+                " VALUES (?, ?, ?)",
+                (candidate.proposal_id, candidate.lifecycle, candidate.record_digest),
+            )
+        for version in projection.versions:
+            connection.execute(
+                "INSERT INTO ontology_versions (version_digest, record_id, record_digest)"
+                " VALUES (?, ?, ?)",
+                (version.version_digest, version.record_id, version.record_digest),
+            )
+        for selection in projection.selections:
+            connection.execute(
+                "INSERT INTO ontology_selections (scope_key, selected_version_digest,"
+                " selected_attempt_id, activation_sequence, record_digest)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (
+                    selection.scope_key,
+                    selection.selected_version_digest,
+                    selection.selected_attempt_id,
+                    selection.activation_sequence,
+                    selection.record_digest,
+                ),
+            )
+        for attempt in projection.attempts:
+            connection.execute(
+                "INSERT INTO ontology_activation_attempts (attempt_id, status, record_digest)"
+                " VALUES (?, ?, ?)",
+                (attempt.attempt_id, attempt.status, attempt.record_digest),
+            )
+        for receipt in projection.replay_receipts:
+            connection.execute(
+                "INSERT INTO ontology_replay_receipts (operation_id, record_digest)"
+                " VALUES (?, ?)",
+                (receipt.operation_id, receipt.record_digest),
+            )
+
+    def query_catalog_history(
+        self, connection: sqlite3.Connection
+    ) -> Sequence[sqlite3.Row]:
+        """Immutable catalog versions in digest order (catalog history)."""
+        return connection.execute(
+            "SELECT version_digest, record_id, record_digest FROM ontology_versions"
+            " ORDER BY version_digest"
+        ).fetchall()
+
+    def read_current_catalog_selections(
+        self, connection: sqlite3.Connection
+    ) -> Sequence[sqlite3.Row]:
+        return connection.execute(
+            "SELECT scope_key, selected_version_digest, selected_attempt_id,"
+            " activation_sequence FROM ontology_selections ORDER BY scope_key"
+        ).fetchall()
 
     def read_semantic_index_state(
         self, connection: sqlite3.Connection

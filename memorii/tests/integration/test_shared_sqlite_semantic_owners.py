@@ -263,3 +263,59 @@ def test_derived_semantic_index_publishes_and_queries(tmp_path: Path) -> None:
 
         with pytest.raises(InstallationIntegrityError):
             fresh_service.acquire_verified_snapshot()
+
+
+def test_ontology_activation_projects_into_derived_index(tmp_path: Path) -> None:
+    from memorii.core.semantic_ingestion.ontology_index import (
+        KIND_ATTEMPT,
+        KIND_POINTER,
+        KIND_PROPOSAL,
+        KIND_REPLAY,
+        KIND_VERSION,
+        project_ontology_index,
+    )
+    from tests.unit.core.semantic_ingestion.test_learned_relation import (
+        _approve_and_activate,
+        _proposal,
+        _ReplayWriter,
+        _runtime,
+    )
+
+    root = tmp_path / "installation"
+    with StorageAdministrationService(root) as service:
+        service.initialize()
+        selection = select_persistent_memory_plane(root)
+        try:
+            writer = _ReplayWriter()
+            runtime = _runtime(writer, plane=selection.memory_plane)
+            activated = _approve_and_activate(runtime, _proposal())
+            assert activated is not None
+            partition_store = SqliteMemoryPlaneStore(service.partition())
+            ontology_records = [
+                record
+                for record in partition_store.list_records()
+                if record.source_kind
+                in {KIND_PROPOSAL, KIND_VERSION, KIND_POINTER, KIND_ATTEMPT, KIND_REPLAY}
+            ]
+            assert ontology_records
+            projection = project_ontology_index(ontology_records)
+            assert any(row.status == "selected" for row in projection.attempts)
+            assert projection.selections and projection.versions
+            outcome = service.publish_memory_plane_batch(
+                (),
+                store=service.memory_plane_store(),
+                derived_ontology_index=projection,
+            )
+            assert outcome.ordinal >= 1
+            partition = service.partition()
+            with partition.transaction(write=False) as connection:
+                selections = partition.read_current_catalog_selections(connection)
+                history = partition.query_catalog_history(connection)
+            assert len(selections) == len(projection.selections)
+            assert [str(row["version_digest"]) for row in history] == [
+                row.version_digest for row in projection.versions
+            ]
+            snapshot = service.acquire_verified_snapshot()
+            assert snapshot.ordinal == outcome.ordinal
+        finally:
+            selection.administration.close()

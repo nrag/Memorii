@@ -468,15 +468,17 @@ class StorageAdministrationService:
         transaction_precondition: Callable[[], None] | None = None,
         operation_binding: str = "memory_plane_batch",
         derived_semantic_index: object | None = None,
+        derived_ontology_index: object | None = None,
     ) -> PublicationOutcome:
         """Commit one memory-plane batch and its signed publication atomically.
 
-        ``derived_semantic_index`` is an optional
+        ``derived_semantic_index`` and ``derived_ontology_index`` are optional
         :class:`~memorii.core.memory_evolution.semantic_index.SemanticIndexProjection`
-        supplied by the semantic owner from its replay authority for the
-        post-batch state; it replaces the derived index generation inside
-        the same publication transaction so the signed manifest covers the
-        records and the derived rows together.
+        / :class:`~memorii.core.semantic_ingestion.ontology_index.OntologyIndexProjection`
+        supplied by their owners from replay authority for the post-batch
+        state; each replaces its derived index generation inside the same
+        publication transaction so the signed manifest covers the records
+        and the derived rows together.
         """
         state = self._require_operational()
         memory_store = store if store is not None else self.memory_plane_store()
@@ -518,6 +520,10 @@ class StorageAdministrationService:
                         derived_semantic_index,
                         write_revision=index_write_revision,
                         data_revision=index_data_revision,
+                    )
+                if derived_ontology_index is not None:
+                    partition.replace_derived_ontology_index(
+                        connection, derived_ontology_index
                     )
                 candidate = self._candidate_from_transaction(
                     connection,
