@@ -226,13 +226,21 @@ class PartitionDataRepository:
                     + row["payload"].encode("utf-8")
                 ).digest()
                 chain = hashlib.sha256(chain + b"\x00" + row_digest).digest()
-        entries.append(
-            MaterializationCatalogEntry(
-                catalog=catalog,
-                row_count=len(rows),
-                digest=chain.hex(),
+            entries.append(
+                MaterializationCatalogEntry(
+                    catalog=catalog,
+                    row_count=len(rows),
+                    digest=chain.hex(),
+                )
             )
-        )
+        # Closed rule: the manifest covers exactly the declared catalogs —
+        # one entry per name, no silent subset.
+        if {entry.catalog for entry in entries} != {
+            catalog for catalog, _, _ in _MATERIALIZATION_CATALOGS
+        }:
+            raise sqlite3.DatabaseError(
+                "materialization manifest does not cover the declared catalogs"
+            )
         return tuple(sorted(entries, key=lambda entry: entry.catalog))
 
     def read_publication_row(self, connection: sqlite3.Connection) -> sqlite3.Row | None:

@@ -78,10 +78,6 @@ class PublishedMemoryPlaneStore:
     def durable(self) -> bool:
         return True
 
-    @property
-    def partition_store(self) -> SqliteMemoryPlaneStore:
-        return self._inner
-
     def load_or_create_protected_secret(self, *, purpose: str, length: int) -> bytes:
         return self._inner.load_or_create_protected_secret(purpose=purpose, length=length)
 

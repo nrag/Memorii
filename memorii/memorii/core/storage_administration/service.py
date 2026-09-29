@@ -185,7 +185,7 @@ class StorageAdministrationService:
             existing_state = self._control.read_control_state()
             if existing_state is not None:
                 return self._resume_or_conflict(existing_state)
-            if self.partition_path().exists():
+            if self._partition_holds_data():
                 raise InitializationNotPossibleError(
                     "partition data exists without control authority"
                 )
@@ -203,11 +203,27 @@ class StorageAdministrationService:
     def _resume_or_conflict(
         self, state: InstallationControlState
     ) -> InitializationReceipt:
-        self.resolve_pending_publication()
-        finalized = self._control.read_publication_state(self._repository_id())
+        # Resolve and resume under the publication fence so a duplicate init
+        # cannot abort a live publisher's intent.
+        with self._publication_fence():
+            resolution = self.resolve_pending_publication()
+            finalized = self._control.read_publication_state(self._repository_id())
+            if finalized is None and state.quarantined_reason is None:
+                if resolution.disposition not in ("clean", "aborted", "aborted_initialization"):
+                    raise StorageAdministrationError(
+                        "initialization is incomplete and could not be resumed"
+                    )
+                # Interrupted bootstrap with no committed generation: the
+                # owner-authorized retry the design mandates.
+                self._retry_interrupted_initialization(state)
+                finalized = self._control.read_publication_state(self._repository_id())
+            if finalized is not None and state.initialization_receipt_digest is None:
+                # Crash between finalize and the receipt write: complete it.
+                self._record_initialization_receipt(finalized)
+                state = self._control_state()
         if finalized is None:
             raise StorageAdministrationError(
-                "initialization is incomplete; resolve before retrying"
+                "initialization is incomplete and could not be resumed"
             )
         if state.initialization_receipt_digest is None:
             raise StorageAdministrationError(
@@ -220,6 +236,31 @@ class StorageAdministrationService:
             receipt_digest=state.initialization_receipt_digest,
         )
 
+    def _retry_interrupted_initialization(
+        self, state: InstallationControlState
+    ) -> None:
+        """Re-stage and complete an interrupted bootstrap from control state."""
+        with self._partition_read() as connection:
+            row = self.partition().read_publication_row(connection)
+            batches = self.partition().read_batch_rows(connection)
+        if row is not None or batches:
+            raise StorageAdministrationError(
+                "partition holds data without a finalized generation; refusing retry"
+            )
+        self._stage_initial_intent(
+            installation_id=state.installation_id,
+            repository_id=self._repository_id(),
+            generation_id=uuid.uuid4().hex,
+            resume=True,
+        )
+        self._stage_initial_data()
+        return self.finalize_installation()
+
+    @contextmanager
+    def _partition_read(self):
+        with self.partition().transaction(write=False) as connection:
+            yield connection
+
     def _reject_foreign_root_content(self) -> None:
         for entry in self._root.iterdir():
             if entry.name not in _KNOWN_LAYOUT:
@@ -230,6 +271,20 @@ class StorageAdministrationService:
                 raise InitializationNotPossibleError(
                     f"installation root entry is a symlink: {entry.name}"
                 )
+        # Known-layout interior paths must be real directories/files too:
+        # a symlinked control database, key directory or partition redirects
+        # authority and is rejected before any state is trusted.
+        for interior in (
+            self._root / "control",
+            self._root / "control" / "control.sqlite3",
+            self._root / "control" / "keys",
+            self._root / "partition",
+            self._root / "partition" / "partition.sqlite3",
+        ):
+            if interior.is_symlink():
+                raise InitializationNotPossibleError(
+                    f"installation state is a symlink: {interior.name}"
+                )
 
     def _stage_initial_intent(
         self,
@@ -237,8 +292,13 @@ class StorageAdministrationService:
         installation_id: str,
         repository_id: str,
         generation_id: str,
+        resume: bool = False,
     ) -> RuntimePublicationState:
-        """First control transaction: state, trust, journal, prepared intent."""
+        """First control transaction: state, trust, journal, prepared intent.
+
+        With ``resume`` set, control state already exists from an interrupted
+        bootstrap and only a fresh prepared intent is written.
+        """
         fingerprint = self._ensure_signing_key()
         trust_entry = TrustRegistryEntry(
             key_id=self._signer_key_id,
@@ -286,7 +346,18 @@ class StorageAdministrationService:
                 {"installation_id": installation_id, "intent_id": intent.intent_id}
             ),
         )
-        self._control.initialize_installation(state, trust_entry, intent, journal)
+        if resume:
+            self._control.write_intent(
+                intent,
+                self._journal_entry(
+                    operation="initialize",
+                    after_digest=canonical_json_digest(
+                        {"intent_id": intent.intent_id, "resumed": True}
+                    ),
+                ),
+            )
+        else:
+            self._control.initialize_installation(state, trust_entry, intent, journal)
         return candidate
 
     def _stage_initial_data(self) -> None:
@@ -335,6 +406,12 @@ class StorageAdministrationService:
                 after_digest=candidate.payload_digest(),
             ),
         )
+        return self._record_initialization_receipt(candidate)
+
+    def _record_initialization_receipt(
+        self, candidate: RuntimePublicationState
+    ) -> InitializationReceipt:
+        repository_id = self._repository_id()
         receipt_digest = hashlib.sha256(
             ":".join(
                 (
@@ -369,6 +446,14 @@ class StorageAdministrationService:
             receipt_digest=receipt_digest,
         )
 
+    def _partition_holds_data(self) -> bool:
+        if not self.partition_path().exists():
+            return False
+        with self._partition_read() as connection:
+            row = self.partition().read_publication_row(connection)
+            batches = self.partition().read_batch_rows(connection)
+        return row is not None or bool(batches)
+
     # --- publication ---------------------------------------------------
 
     def publish_memory_plane_batch(
@@ -393,9 +478,19 @@ class StorageAdministrationService:
             finalized = self._control.read_publication_state(self._repository_id())
             if finalized is None:
                 raise StorageAdministrationError("installation is not initialized")
+            # Anchor the publisher on verified state: publication extends the
+            # last signed tuple, never unverified rows (anti-laundering rule).
+            self._verified_snapshot_locked(state)
             partition = self.partition()
             with partition.manual_write_transaction() as handle:
                 connection = handle.connection
+                pre_state = partition.read_publication_row(connection)
+                if pre_state is None or str(pre_state["tuple_digest"]) != (
+                    finalized.payload_digest()
+                ):
+                    raise InstallationIntegrityError(
+                        "partition pre-state does not match the finalized control tuple"
+                    )
                 memory_store.apply_batch_in_transaction(
                     connection,
                     records,
@@ -501,13 +596,24 @@ class StorageAdministrationService:
         return Resolution(disposition="quarantined", tuple_digest=data_digest)
 
     def acquire_verified_snapshot(self) -> PartitionVerificationSnapshot:
-        """Tier A plus Tier B verification of the released partition state."""
+        """Tier A plus Tier B verification of the released partition state.
+
+        The whole verification (recovery resolution, control read, data read,
+        manifest comparison) is linearized under the publication fence, so a
+        concurrent publisher can never produce a torn old-control/new-data
+        view; readers see one coherent finalized tuple.
+        """
         state = self._require_operational()
-        repository_id = self._repository_id()
         with self._publication_fence():
-            resolution = self.resolve_pending_publication()
-            if resolution.disposition == "quarantined":
-                raise InstallationQuarantinedError("pending publication quarantined")
+            return self._verified_snapshot_locked(state)
+
+    def _verified_snapshot_locked(
+        self, state: InstallationControlState
+    ) -> PartitionVerificationSnapshot:
+        repository_id = self._repository_id()
+        resolution = self.resolve_pending_publication()
+        if resolution.disposition == "quarantined":
+            raise InstallationQuarantinedError("pending publication quarantined")
         finalized = self._control.read_publication_state(repository_id)
         if finalized is None:
             raise StorageAdministrationError("installation is not initialized")
@@ -623,11 +729,14 @@ class StorageAdministrationService:
 
     def _quarantine(self, intent: RuntimePublicationIntent) -> None:
         reason = "prepared publication intent does not match old or new data state"
+        # Quarantine state first: if the process dies between the two control
+        # writes, the installation is already fail-closed; the intent record
+        # merely documents the decision.
+        self._quarantine_state(reason)
         self._control.write_intent(
             intent.model_copy(update={"phase": "quarantined"}),
             self._journal_entry(operation="publication_quarantined"),
         )
-        self._quarantine_state(reason)
 
     def _quarantine_manifest_mismatch(
         self, finalized: RuntimePublicationState

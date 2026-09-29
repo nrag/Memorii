@@ -9,6 +9,7 @@ from threading import Event, Thread
 import pytest
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
+from memorii.core.memory_plane.sqlite_store import SqliteMemoryPlaneStore
 from memorii.core.memory_plane.store import (
     InMemoryMemoryPlaneStore,
     JsonlMemoryPlaneStore,
@@ -22,10 +23,12 @@ from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibil
 StoreFactory = Callable[[Path], MemoryPlaneStore]
 
 
-@pytest.fixture(params=["memory", "jsonl"])
+@pytest.fixture(params=["memory", "jsonl", "sqlite"])
 def store_factory(request: pytest.FixtureRequest) -> StoreFactory:
     if request.param == "memory":
         return lambda _: InMemoryMemoryPlaneStore()
+    if request.param == "sqlite":
+        return lambda path: SqliteMemoryPlaneStore(path)
     return lambda path: JsonlMemoryPlaneStore(path)
 
 

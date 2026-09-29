@@ -7,6 +7,7 @@ revision counters without any in-process state from A.
 
 from __future__ import annotations
 
+import signal
 import subprocess
 import sys
 from datetime import UTC, datetime
@@ -360,3 +361,130 @@ def test_semantic_owner_control_writes_persist_on_the_managed_partition(
     finally:
         administration.close()
     del memory_plane
+
+
+_CONCURRENT_PUBLISHER_PROGRAM = '''
+import sys
+from datetime import UTC, datetime
+from pathlib import Path
+
+from memorii.core.memory_plane.models import CanonicalMemoryRecord
+from memorii.core.persistence.factory import open_managed_partition
+from memorii.domain.enums import CommitStatus, MemoryDomain
+
+root = Path(sys.argv[1])
+index = sys.argv[2]
+administration, memory_plane = open_managed_partition(root)
+try:
+    outcome = memory_plane._records.apply_batch(
+        (
+            CanonicalMemoryRecord(
+                memory_id=f"mem:concurrent:{index}",
+                domain=MemoryDomain.SEMANTIC,
+                text=f"concurrent:{index}",
+                status=CommitStatus.COMMITTED,
+                source_kind="partition_recovery",
+                timestamp=datetime(2026, 1, 1, tzinfo=UTC),
+            ),
+        ),
+        expected_revision=None,
+    )
+    print(outcome)
+finally:
+    administration.close()
+'''
+
+
+def test_concurrent_publishers_serialize_on_the_publication_fence(tmp_path: Path) -> None:
+    from memorii.core.storage_administration.service import StorageAdministrationService
+
+    root = tmp_path / "installation"
+    with StorageAdministrationService(root) as service:
+        service.initialize()
+
+    processes = [
+        subprocess.Popen(
+            [sys.executable, "-c", _CONCURRENT_PUBLISHER_PROGRAM, str(root), str(index)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            cwd=Path(__file__).resolve().parents[2],
+        )
+        for index in range(2)
+    ]
+    outputs = []
+    for process in processes:
+        stdout, stderr = process.communicate(timeout=120)
+        assert process.returncode == 0, stderr
+        outputs.append(stdout.strip())
+
+    assert sorted(outputs) == ["1", "2"]
+    with StorageAdministrationService(root) as verifier:
+        snapshot = verifier.acquire_verified_snapshot()
+        assert snapshot.ordinal == 2
+        assert snapshot.vector.memory_write_revision == 2
+        store = SqliteMemoryPlaneStore(verifier.partition())
+        assert {r.memory_id for r in store.list_records()} == {
+            "mem:concurrent:0",
+            "mem:concurrent:1",
+        }
+
+
+_KILLED_MID_TRANSACTION_PROGRAM = '''
+import os
+import signal
+import sys
+from datetime import UTC, datetime
+from pathlib import Path
+
+from memorii.core.memory_plane.models import CanonicalMemoryRecord
+from memorii.core.persistence.factory import open_managed_partition
+from memorii.domain.enums import CommitStatus, MemoryDomain
+
+root = Path(sys.argv[1])
+administration, memory_plane = open_managed_partition(root)
+partition = administration.partition()
+store = memory_plane._records._inner
+# Open a write transaction, mutate rows, then die before commit: the next
+# opener must observe the exact old state with no partial batch.
+with partition.manual_write_transaction() as handle:
+    connection = handle.connection
+    store.apply_batch_in_transaction(
+        connection,
+        (
+            CanonicalMemoryRecord(
+                memory_id="mem:killed:uncommitted",
+                domain=MemoryDomain.SEMANTIC,
+                text="uncommitted",
+                status=CommitStatus.COMMITTED,
+                source_kind="partition_recovery",
+                timestamp=datetime(2026, 1, 1, tzinfo=UTC),
+            ),
+        ),
+        expected_revision=None,
+    )
+    os.kill(os.getpid(), signal.SIGKILL)
+'''
+
+
+def test_sigkill_mid_transaction_leaves_exact_old_state(tmp_path: Path) -> None:
+    from memorii.core.storage_administration.service import StorageAdministrationService
+
+    root = tmp_path / "installation"
+    with StorageAdministrationService(root) as service:
+        service.initialize()
+
+    killed = subprocess.run(
+        [sys.executable, "-c", _KILLED_MID_TRANSACTION_PROGRAM, str(root)],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[2],
+    )
+    assert killed.returncode == -signal.SIGKILL
+
+    with StorageAdministrationService(root) as verifier:
+        snapshot = verifier.acquire_verified_snapshot()
+        assert snapshot.ordinal == 0
+        store = SqliteMemoryPlaneStore(verifier.partition())
+        assert store.get_record("mem:killed:uncommitted") is None
+        assert store.read_write_snapshot()[0] == 0

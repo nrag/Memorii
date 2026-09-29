@@ -33,6 +33,7 @@ from memorii.core.memory_evolution.conflict_integrity import (
 from memorii.core.memory_plane import JsonlMemoryPlaneStore, MemoryPlaneService
 from memorii.core.memory_plane.sqlite_store import SqliteMemoryPlaneStore
 from memorii.core.memory_plane.store import MemoryPlaneStore
+from memorii.core.persistence.factory import PublishedMemoryPlaneStore
 from memorii.core.provider.factory import build_provider_memory_service_from_env
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.scoped_context.authority import ScopedHostReadAuthority
@@ -102,7 +103,10 @@ class FilesystemStorageBundle:
             policy=resolved_policy,
             work_state_store=JsonlWorkStateStore(resolved_root / "work_state"),
             decision_state_store=JsonlDecisionStateStore(resolved_root / "decision_state"),
-            memory_plane_store=SqliteMemoryPlaneStore(administration.partition()),
+            memory_plane_store=PublishedMemoryPlaneStore(
+                administration,
+                SqliteMemoryPlaneStore(administration.partition()),
+            ),
             llm_trace_store=JsonlLLMDecisionTraceStore(resolved_root / "llm_decision" / "traces.jsonl"),
             eval_snapshot_store=JsonlEvalSnapshotStore(resolved_root / "llm_decision" / "eval_snapshots.jsonl"),
             golden_candidate_store=JsonlGoldenCandidateStore(

@@ -10,6 +10,7 @@ This database is never part of a replaceable application-data generation.
 from __future__ import annotations
 
 import contextlib
+import os
 import sqlite3
 import threading
 from collections.abc import Callable, Iterator, Sequence
@@ -94,7 +95,8 @@ class ControlDatabase:
         journal_verifier: JournalVerifier | None = None,
     ) -> None:
         path = Path(database_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
+        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        os.chmod(path.parent, 0o700)
         self._lock_path = path.parent / (path.name + ".lock")
         self._thread_lock = threading.RLock()
         self._journal_verifier = journal_verifier
@@ -104,12 +106,17 @@ class ControlDatabase:
             isolation_level=None,
             check_same_thread=False,
         )
+        os.chmod(path, 0o600)
         self._connection.row_factory = sqlite3.Row
         self._connection.execute("PRAGMA journal_mode = WAL")
         self._connection.execute("PRAGMA synchronous = FULL")
         self._connection.execute("PRAGMA foreign_keys = ON")
         self._connection.execute("PRAGMA busy_timeout = 5000")
         self._initialize_schema()
+        for suffix in ("-wal", "-shm"):
+            sidecar = path.with_name(path.name + suffix)
+            if sidecar.exists():
+                os.chmod(sidecar, 0o600)
 
     def close(self) -> None:
         with self._thread_lock, contextlib.suppress(sqlite3.ProgrammingError):

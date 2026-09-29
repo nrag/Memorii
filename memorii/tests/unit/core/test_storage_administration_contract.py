@@ -278,6 +278,151 @@ def test_row_tampering_with_preserved_head_quarantines(tmp_path: Path) -> None:
             )
 
 
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "UPDATE memory_batches SET batch_json = '{\"tampered\": true}' WHERE revision = 1",
+        "UPDATE memory_record_versions SET record_json = '{\"tampered\": true}'"
+        " WHERE memory_id = 'mem:one'",
+    ],
+)
+def test_tampering_any_authoritative_catalog_quarantines(
+    tmp_path: Path, statement: str
+) -> None:
+    root = tmp_path / "installation"
+    with StorageAdministrationService(root) as service:
+        service.initialize()
+        service.publish_memory_plane_batch(
+            (_record("mem:one"),), store=service.memory_plane_store()
+        )
+    connection = sqlite3.connect(root / "partition" / "partition.sqlite3")
+    try:
+        connection.execute(statement)
+        connection.commit()
+    finally:
+        connection.close()
+    with StorageAdministrationService(root) as fresh_service, pytest.raises(InstallationIntegrityError):
+        fresh_service.acquire_verified_snapshot()
+
+
+def test_publish_refuses_after_out_of_band_row_tampering(tmp_path: Path) -> None:
+    root = tmp_path / "installation"
+    with StorageAdministrationService(root) as service:
+        service.initialize()
+        service.publish_memory_plane_batch(
+            (_record("mem:one"),), store=service.memory_plane_store()
+        )
+    connection = sqlite3.connect(root / "partition" / "partition.sqlite3")
+    try:
+        connection.execute(
+            "UPDATE memory_current_records SET record_json = '{\"tampered\": true}'"
+            " WHERE memory_id = 'mem:one'"
+        )
+        connection.commit()
+    finally:
+        connection.close()
+    with (
+        StorageAdministrationService(root) as fresh_service,
+        pytest.raises((InstallationIntegrityError, InstallationQuarantinedError)),
+    ):
+        fresh_service.publish_memory_plane_batch(
+            (_record("mem:two"),), store=fresh_service.memory_plane_store()
+        )
+
+
+def test_publish_refuses_on_rolled_back_partition(tmp_path: Path) -> None:
+    root = tmp_path / "installation"
+    with StorageAdministrationService(root) as service:
+        service.initialize()
+        service.publish_memory_plane_batch(
+            (_record("mem:one"),), store=service.memory_plane_store()
+        )
+    connection = sqlite3.connect(root / "partition" / "partition.sqlite3")
+    try:
+        connection.execute(
+            "UPDATE partition_publication SET ordinal = 0, position_kind = 'genesis',"
+            " tuple_digest = '0000000000000000000000000000000000000000000000000000000000000000'"
+            " WHERE id = 1"
+        )
+        connection.commit()
+    finally:
+        connection.close()
+    with StorageAdministrationService(root) as fresh_service, pytest.raises(InstallationIntegrityError):
+        fresh_service.publish_memory_plane_batch(
+            (_record("mem:two"),), store=fresh_service.memory_plane_store()
+        )
+
+
+def test_interrupted_initialization_retry_completes_after_intent_only(tmp_path: Path) -> None:
+    root = tmp_path / "installation"
+    root.mkdir()
+    with StorageAdministrationService(root) as service:
+        service._stage_initial_intent(
+            installation_id="installation-retry",
+            repository_id="installation-retry:default-partition",
+            generation_id="generation-retry",
+        )
+    with StorageAdministrationService(root) as resumer:
+        receipt = resumer.initialize()
+        assert receipt.installation_id == "installation-retry"
+        assert resumer.acquire_verified_snapshot().ordinal == 0
+    with StorageAdministrationService(root) as again:
+        assert again.initialize().receipt_digest == receipt.receipt_digest
+
+
+def test_interrupted_initialization_retry_completes_after_data_commit(tmp_path: Path) -> None:
+    root = tmp_path / "installation"
+    root.mkdir()
+    with StorageAdministrationService(root) as service:
+        service._stage_initial_intent(
+            installation_id="installation-retry",
+            repository_id="installation-retry:default-partition",
+            generation_id="generation-retry",
+        )
+        service._stage_initial_data()
+    with StorageAdministrationService(root) as resumer:
+        receipt = resumer.initialize()
+        assert receipt.installation_id == "installation-retry"
+        assert resumer.acquire_verified_snapshot().ordinal == 0
+    with StorageAdministrationService(root) as again:
+        assert again.initialize().receipt_digest == receipt.receipt_digest
+
+
+def test_empty_partition_file_without_control_initializes_cleanly(tmp_path: Path) -> None:
+    root = tmp_path / "installation"
+    with StorageAdministrationService(root) as service:
+        service.partition()
+    with StorageAdministrationService(root) as resumer:
+        receipt = resumer.initialize()
+        assert resumer.acquire_verified_snapshot().ordinal == 0
+    with StorageAdministrationService(root) as again:
+        assert again.initialize().receipt_digest == receipt.receipt_digest
+
+
+def test_third_state_intent_quarantines_and_blocks_publication(tmp_path: Path) -> None:
+    with StorageAdministrationService(tmp_path / "installation") as service:
+        service.initialize()
+        store = service.memory_plane_store()
+        service.publish_memory_plane_batch((_record("mem:one"),), store=store)
+        _stage_publication(service, store, (_record("mem:kept"),), commit=True)
+        # Corrupt the data publication row to a value that is neither the
+        # exact-old nor the exact-new tuple digest: the third-state rule.
+        connection = sqlite3.connect(service.partition_path())
+        try:
+            connection.execute(
+                "UPDATE partition_publication SET tuple_digest ="
+                " '3333333333333333333333333333333333333333333333333333333333333333'"
+                " WHERE id = 1"
+            )
+            connection.commit()
+        finally:
+            connection.close()
+        resolution = service.resolve_pending_publication()
+        assert resolution.disposition == "quarantined"
+        with pytest.raises(InstallationQuarantinedError):
+            service.publish_memory_plane_batch((_record("mem:two"),), store=store)
+
+
 def test_tampered_control_journal_rejects_service_use(tmp_path: Path) -> None:
     root = tmp_path / "installation"
     with StorageAdministrationService(root) as service:
