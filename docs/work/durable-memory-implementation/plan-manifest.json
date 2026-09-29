@@ -1,15 +1,15 @@
 {
   "kind": "planning_artifact_snapshot_not_product_evidence",
-  "design_sha256": "22e29f90ab90fa9b67b489d8f293b4a9ecbe4e5bf1dad7c0d6d3f2a7697706ad",
+  "design_sha256": "ef478a2e765360d4e607ea5c8d756e42c92c19633e8956df3edafa7615e55907",
   "files": {
     "authority-inventory.json": "4b8869f399e05dbbf482b4e32a84d017306de1472c1ca416d15dedb5d926f7e6",
     "baseline.json": "d8ed0d74da503a3ab453effb8a52ada22a5a0180d9a03d10546373f26984fe7a",
-    "coverage.md": "832f440a48df8edfd8e31b572101ba5bb915800e83ea89e2d8d090a0a6f8bb28",
-    "design-identity-inventory.md": "4447deb1f6cffb4bef21891129268021e3a2b2f998f83ee526cf2ff455c7e38e",
+    "coverage.md": "be2ab0f353929a9cb88233d0fd0334f1854c54936c80abc625019742e0ea9f5f",
+    "design-identity-inventory.md": "cf780502dc303d92f57e17062ecf28d891a98b6107313c05fc9707a1360549ba",
     "gates.md": "59b3207a706cd74dcb6c22ba48ff2d8c912c03d9e5ec6a74631955c8a2a702dd",
     "identity-and-changes.md": "75e812bfa6a6bc918931179815cee4ad795ef8bf8372b387df0d93c54f162914",
-    "implementation.plan.md": "b2c30cbd893b2f47b579aca9dc020d981ea74cc1ab6a1fa9494458f779e27fdb",
-    "milestones/additional-harnesses.plan.md": "5411ddaf0995095ff95c07f8d2eb76f5e57ce0c4bd88840a8ed09f5c947c71a4",
+    "implementation.plan.md": "3058902c2b39edada9a00c4f7fcac46c2722680d78841d658012bf8cd6304256",
+    "milestones/additional-harnesses.plan.md": "bb73b9c91114764e74082db97da5eb6a11c80200d3d43e124ab70ace40fae4db",
     "milestones/harness-state.plan.md": "669b96febc722ecdb686e712bdbf9816ea58affbc4b6fef603db325ef17531e7",
     "milestones/legacy-migration.plan.md": "803d650946c18c2253d38d751d10d5b6e7a7b29fa0ea4e253e8474039f0065c8",
     "milestones/operator-controls.plan.md": "a6b269b00eb36dd6774ab90d58ed0230a8b16e5de85a0016a0951b115cec23bc",
@@ -19,8 +19,8 @@
     "milestones/storage-foundation.plan.md": "1c915865267afc7fe6af6e4c2a6d5b2c4b5a482bfa54997e036722497af3843c",
     "planning-review.md": "674e032ea1799fdaa6db68334b65cdcd7f010a2f9960efcbf8be6e4fefe1e9cd",
     "production_entrypoint_bindings.md": "950830be062ab98b399c6334d85931b25c721c65385ea5f55c19c003e3cbf006",
-    "resume.md": "6315331e04b55456b55accc24e93f77b3554c59974f4752edb8d9c1c4be3bb07",
-    "validation.md": "85d1823a041e40c143040820f517eb8b925ffb8724ec26de81056663c2e21d9b",
+    "resume.md": "c050b98d6f221753130bfc1291a149117c7f8f0e792744bd550a822034c7f727",
+    "validation.md": "bb07ab999e719abb321e5110385239ef5b824fa6476ec8d5413c01136ee8866c",
     "workflow-inventory.json": "a83fbffe2a684a18822f183788a3c8093c171576ee4cac4b30e1c8eafeab8bc3"
   }
 }
