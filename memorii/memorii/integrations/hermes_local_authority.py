@@ -18,6 +18,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Final, NoReturn, cast
 
 from memorii.core.memory_plane import JsonlMemoryPlaneStore, MemoryPlaneService
@@ -35,6 +36,10 @@ _PROFILE_SELECTION: Final = "memorii.project_assertions@1"
 _MODEL_ID: Final = "gpt-4.1-nano"
 _ACKNOWLEDGEMENT: Final = "local_level2_openai_egress"
 _AUTHORIZATION_LIFETIME: Final = timedelta(days=7)
+_STRUCTURED_TOOL_SCHEMA: Final = "memorii.hermes.local_structured_tool_authorization"
+_STRUCTURED_TOOL_DOMAIN: Final = b"memorii.hermes.local-structured-tool-authorization.v1\0"
+_STRUCTURED_TOOL_ACK: Final = "local_structured_fact_no_egress"
+_STRUCTURED_TOOL_FIELDS: Final = frozenset({"schema_id", "schema_version", "installation_id", "hermes_home_digest", "bootstrap_sidecar_digest", "profile_selection", "profile_manifest_digest", "issued_at", "expires_at", "operator_acknowledgement", "authorization_digest"})
 _PROFILE_DIGEST_FIELDS: Final = frozenset({
     "profile_manifest_digest",
     "semantic_contract_digest",
@@ -112,6 +117,51 @@ def authorize_local_level2(*, hermes_home: Path, now: datetime | None = None) ->
         )
     except OSError as error:
         raise LocalLevel2AuthorityError("local Level 2 authority storage is unavailable") from error
+
+
+def authorize_local_structured_tool(*, hermes_home: Path, now: datetime | None = None) -> dict[str, object]:
+    """Authorize only the no-egress structured-fact operation for one verified installation."""
+    issued = _utc_now(now)
+    home = _canonical_home(hermes_home)
+    sidecar = load_local_level2_authority(hermes_home=home, now=issued)
+    authorization = sidecar.get("authorization")
+    if not isinstance(authorization, Mapping):
+        raise LocalLevel2AuthorityError("structured tool bootstrap binding is invalid")
+    manifest_digest = authorization.get("profile_manifest_digest")
+    if not isinstance(manifest_digest, str):
+        raise LocalLevel2AuthorityError("structured tool bootstrap binding is invalid")
+    body = {
+        "schema_id": _STRUCTURED_TOOL_SCHEMA, "schema_version": 1,
+        "installation_id": sidecar["installation_id"], "hermes_home_digest": sidecar["hermes_home_digest"],
+        "bootstrap_sidecar_digest": sidecar["sidecar_digest"], "profile_selection": sidecar["profile_selection"],
+        "profile_manifest_digest": manifest_digest,
+        "issued_at": _format_time(issued), "expires_at": _format_time(issued + _AUTHORIZATION_LIFETIME),
+        "operator_acknowledgement": _STRUCTURED_TOOL_ACK,
+    }
+    body["authorization_digest"] = _digest(_STRUCTURED_TOOL_DOMAIN, body)
+    _atomic_write(home / "memorii" / "local-structured-tool.json", _canonical_json(body) + b"\n")
+    return load_local_structured_tool_authority(hermes_home=home, now=issued)
+
+
+def load_local_structured_tool_authority(*, hermes_home: Path, now: datetime | None = None) -> dict[str, object]:
+    value = _parse_canonical_sidecar(_canonical_home(hermes_home) / "memorii" / "local-structured-tool.json")
+    sidecar = load_local_level2_authority(hermes_home=hermes_home, now=now)
+    _exact_fields(value, _STRUCTURED_TOOL_FIELDS, "structured tool authorization")
+    if value.get("schema_id") != _STRUCTURED_TOOL_SCHEMA or value.get("schema_version") != 1 or value.get("operator_acknowledgement") != _STRUCTURED_TOOL_ACK:
+        raise LocalLevel2AuthorityError("structured tool authorization is invalid")
+    for key in ("installation_id", "hermes_home_digest", "profile_selection"):
+        if value.get(key) != sidecar.get(key):
+            raise LocalLevel2AuthorityError("structured tool bootstrap binding is invalid")
+    if value.get("bootstrap_sidecar_digest") != sidecar.get("sidecar_digest"):
+        raise LocalLevel2AuthorityError("structured tool bootstrap binding is invalid")
+    authorization = sidecar.get("authorization")
+    if not isinstance(authorization, Mapping):
+        raise LocalLevel2AuthorityError("structured tool bootstrap binding is invalid")
+    if value.get("profile_manifest_digest") != authorization.get("profile_manifest_digest") or not secrets.compare_digest(_string(value.get("authorization_digest"), "authorization_digest"), _digest(_STRUCTURED_TOOL_DOMAIN, _without(value, "authorization_digest"))):
+        raise LocalLevel2AuthorityError("structured tool authorization is invalid")
+    if _utc_now(now) >= _parse_time(value.get("expires_at"), "expires_at"):
+        raise LocalLevel2AuthorityError("structured tool authorization is expired")
+    return value
 
 
 def _authorize_local_level2_with_profile(
@@ -261,6 +311,12 @@ def main(argv: list[str] | None = None) -> int:
     authorize = commands.add_parser("authorize-local-level2")
     authorize.add_argument("--hermes-home", type=Path, required=True)
     authorize.add_argument("--acknowledge-openai-egress", action="store_true")
+    structured = commands.add_parser("authorize-local-structured-tool")
+    structured.add_argument("--hermes-home", type=Path, required=True)
+    structured.add_argument("--acknowledge-local-memory", action="store_true")
+    revoke = commands.add_parser("revoke-local-structured-grant")
+    revoke.add_argument("--hermes-home", type=Path, required=True)
+    revoke.add_argument("--grant-kind", choices=("source", "fact", "catalog_visibility"), required=True)
     status = commands.add_parser("status")
     status.add_argument("--hermes-home", type=Path, required=True)
     inspect = commands.add_parser("inspect")
@@ -275,6 +331,38 @@ def main(argv: list[str] | None = None) -> int:
         except LocalLevel2AuthorityError as error:
             result = LocalLevel2Status(False, str(error), None, None, None, None, None, False)
             print(result.as_json())
+            return 1
+    elif args.command == "authorize-local-structured-tool":
+        if not args.acknowledge_local_memory:
+            parser.error("authorize-local-structured-tool requires --acknowledge-local-memory")
+        try:
+            print(_canonical_json(authorize_local_structured_tool(hermes_home=args.hermes_home)).decode("ascii"))
+            return 0
+        except LocalLevel2AuthorityError as error:
+            print(_canonical_json({"available": False, "reason": str(error)}).decode("ascii"))
+            return 1
+    elif args.command == "revoke-local-structured-grant":
+        try:
+            from memorii.integrations.hermes_factory import revoke_local_level2_structured_grant
+
+            revoke_local_level2_structured_grant(
+                context=SimpleNamespace(
+                    storage_root=args.hermes_home / "memorii",
+                    hermes_home=args.hermes_home,
+                    session_id="memorii:local-operator-revocation",
+                    user_id=None,
+                    agent_identity="profile:primary",
+                    platform="cli",
+                    agent_context="primary",
+                    agent_workspace="hermes",
+                    parent_session_id=None,
+                ),
+                grant_kind=args.grant_kind,
+            )
+            print(_canonical_json({"grant_kind": args.grant_kind, "status": "revoked"}).decode("ascii"))
+            return 0
+        except (LocalLevel2AuthorityError, OSError, RuntimeError, ValueError) as error:
+            print(_canonical_json({"available": False, "reason": str(error)}).decode("ascii"))
             return 1
     elif args.command == "status":
         result = local_level2_status(hermes_home=args.hermes_home)

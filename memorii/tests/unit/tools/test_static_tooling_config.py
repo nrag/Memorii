@@ -207,7 +207,7 @@ def test_pr_unit_gate_is_complete_duration_balanced_and_timeout_bounded() -> Non
     umbrella = jobs["unit-tests"]
     timing = jobs["unit-timing-inventory"]
 
-    assert shards["timeout-minutes"] == "45"
+    assert shards["timeout-minutes"] == "90"
     assert shards["strategy"]["fail-fast"] == "false"
     shard_config = json.loads(
         (PROJECT_ROOT / "tests" / "ci" / "unit-shards.json").read_text(
@@ -666,7 +666,7 @@ def test_projection_history_job_is_exact_and_disjoint_from_broad_unit_shards() -
     count_command = next(
         step["run"] for step in steps if step["name"] == "Verify exact projection-history collection count"
     )
-    assert '"88 tests collected in "*' in count_command
+    assert '"90 tests collected in "*' in count_command
     assert all(count_command.count(path) == 1 for path in expected_files)
 
     shard_config = json.loads((PROJECT_ROOT / "tests" / "ci" / "unit-shards.json").read_text())

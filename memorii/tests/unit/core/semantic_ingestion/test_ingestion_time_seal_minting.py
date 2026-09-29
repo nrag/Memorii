@@ -16,6 +16,7 @@ from types import SimpleNamespace
 import pytest
 from memorii.core.memory_evolution.admission import (
     GovernedSourceAdmissionService,
+    RetainedSourceOperationRequest,
 )
 from memorii.core.memory_evolution.atomic_store import (
     PreplanningStoreError,
@@ -349,6 +350,53 @@ def test_terminal_digest_accessor_joins_the_sealed_member(tmp_path) -> None:
         store.source_retention_attestation_digest(
             delivery_key_digest=prepared.accepted.delivery_identity.delivery_key_digest,
             operation_fence=fence.model_copy(update={"operation_fence_id": "other:fence"}),
+        )
+
+
+def test_terminal_digest_accessor_joins_a_retained_operation_to_its_original_seal(
+    tmp_path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plane, store, binding, _clock = _sealed_store(tmp_path)
+    prepared = _prepared(plane)
+    store.publish_admitted_source(prepared=prepared, writer_binding=binding)
+    principal = DeliveryPrincipalBinding.create(
+        principal_subject_id="principal:a", tenant_partition_id="tenant:a", provider_identity="provider:test",
+    )
+    ingress = AuthenticatedIngressContext(
+        delivery_principal_binding=principal,
+        required_outcome_scopes=prepared.accepted.required_outcome_scopes,
+        current_authorized_scopes=prepared.accepted.required_outcome_scopes,
+    )
+    retained = GovernedSourceAdmissionService(plane).allocate_retained_source_operation(
+        request=RetainedSourceOperationRequest(
+            source_id=prepared.accepted.source_id,
+            source_digest=prepared.accepted.source_digest,
+            canonical_envelope=b"retained-seal-fixture",
+        ),
+        authenticated_ingress=ingress,
+    )
+    store.publish_retained_source_operation(accepted=retained, writer_binding=binding)
+    digest = store.source_retention_attestation_digest(
+        delivery_key_digest=retained.delivery_identity.delivery_key_digest,
+        operation_fence=retained.operation_fence_binding,
+    )
+    assert digest == _decoded_seal(plane, store, prepared).attestation_digest
+
+    link_id = "semantic_ingestion:retained-source-operation:" + retained.operation_fence_binding.operation_fence_id
+    link = plane.get_record(link_id)
+    assert link is not None
+    substituted_link = link.model_copy(update={"content": {
+        **link.content, "source_admission_index_digest": "0" * 64,
+    }})
+    real_get = plane.get_record
+    monkeypatch.setattr(
+        plane, "get_record",
+        lambda memory_id: substituted_link if memory_id == link_id else real_get(memory_id),
+    )
+    with pytest.raises(PreplanningStoreError, match="substituted"):
+        store.source_retention_attestation_digest(
+            delivery_key_digest=retained.delivery_identity.delivery_key_digest,
+            operation_fence=retained.operation_fence_binding,
         )
 
 

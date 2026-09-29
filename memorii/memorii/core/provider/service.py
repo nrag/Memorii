@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from collections.abc import Callable, Iterator
 from contextlib import ExitStack, contextmanager
 from dataclasses import replace
@@ -32,14 +33,17 @@ from memorii.core.memory_evolution import (
 )
 from memorii.core.memory_evolution.admission import (
     GovernedSourceAdmissionService,
+    RetainedSourceOperationRequest,
     SemanticIngestionOutcomeLookupRequest,
     SemanticIngestionOutcomeLookupResponse,
     source_admission_source_bytes,
+    source_admission_source_digest,
 )
 from memorii.core.memory_evolution.atomic_store import (
     PreplanningOperationMismatchError,
     PreplanningStoreError,
     SemanticIngestionAtomicStore,
+    StructuredSubmissionGrantRevokedError,
 )
 from memorii.core.memory_evolution.bootstrap_profile import (
     BootstrapProfileVerificationError,
@@ -107,6 +111,9 @@ from memorii.core.memory_evolution.graph_observation_public_contracts import (
     IngestionTimeAttestationRequest,
     IngestionTimeAttestationResponse,
 )
+from memorii.core.memory_evolution.graph_records import (
+    EntityRevision,
+)
 from memorii.core.memory_evolution.identity_lineage import (
     IdentityLineageAuditScopeSnapshot,
     IdentityLineageAuditView,
@@ -118,6 +125,7 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     AuthenticatedIngressResolutionError,
     DeliveryIdentity,
     SemanticWriterCommitBinding,
+    decode_typed_value,
 )
 from memorii.core.memory_evolution.ingestion_time_clock import (
     PRODUCTION_INGESTION_TIME_CLOCK_IDENTITY,
@@ -138,6 +146,7 @@ from memorii.core.memory_evolution.writer_admission import (
     writer_admission_memory_id,
 )
 from memorii.core.memory_plane import MemoryPlaneService
+from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.store import MemoryPlaneCorruptionError
 from memorii.core.next_step import NextStepEngine
 from memorii.core.promotion.provider import PromotionAssessmentProvider
@@ -147,7 +156,14 @@ from memorii.core.provider.attention_models import (
     ProviderToolAttentionEnvelope,
 )
 from memorii.core.provider.classifier import make_event
-from memorii.core.provider.ingestion import ProviderIngestionCoordinator
+from memorii.core.provider.ingestion import (
+    CapturedCatalogPinReference,
+    ProviderIngestionCoordinator,
+    StructuredFactSubmissionRequest,
+    StructuredFactSubmissionResponse,
+    StructuredFactSubmissionStatusRequest,
+    StructuredFactSubmissionStatusResponse,
+)
 from memorii.core.provider.models import (
     ProviderEvent,
     ProviderEvolutionOutcome,
@@ -177,6 +193,8 @@ from memorii.core.scoped_context.service import (
     ScopedContextAssembler,
     ScopedSnapshotBackendError,
     ScopedSnapshotDecodeError,
+    catalog_visibility_current_at_release,
+    catalog_visibility_recheck_required,
 )
 from memorii.core.semantic_ingestion.bootstrap_graph_host import BootstrapGraphHostBundleBuilder
 from memorii.core.semantic_ingestion.canonical_evidence_arena import (
@@ -188,6 +206,35 @@ from memorii.core.semantic_ingestion.capability import (
     BuiltInLocalHostSemanticIngestionCapability,
     HostSemanticIngestionRuntimeBuilder,
 )
+from memorii.core.semantic_ingestion.catalog_authority import (
+    SelectedCatalogAuthorityRepository,
+    StructuredClaimCatalogBinding,
+    StructuredFactReadAuthority,
+    StructuredSubmissionAuthorityRequest,
+    StructuredSubmissionAuthorityResolver,
+)
+from memorii.core.semantic_ingestion.catalog_capture_pin import CatalogCapturedTurnPin
+from memorii.core.semantic_ingestion.contracts import (
+    ClaimAssertion,
+    PreparedSource,
+    ProviderSemanticProposal,
+)
+from memorii.core.semantic_ingestion.coverage_observation import (
+    CoverageObservationRepository,
+    CoverageObservationStatus,
+    CoverageObservationStatusResponse,
+    ObserverBindingIdentity,
+)
+from memorii.core.semantic_ingestion.coverage_observer import (
+    CoverageObserverRunner,
+    OntologyObservationResultRepository,
+    OntologyObserverCapability,
+)
+from memorii.core.semantic_ingestion.coverage_recurrence import (
+    CoverageRecurrenceRepository,
+    VerifiedCoverageGapRepository,
+)
+from memorii.core.semantic_ingestion.coverage_validation import CoreCoverageGapValidator
 from memorii.core.semantic_ingestion.production_authority import (
     VerifiedCapabilityMonitoringAuthority,
     VerifiedProductionHostAuthority,
@@ -196,9 +243,15 @@ from memorii.core.semantic_ingestion.production_authority import (
     capability_monitoring_authority_is_current,
     verified_capability_monitoring_authority_inputs,
     verified_production_authority_inputs,
+    verified_production_structured_submission_authority_resolver,
 )
 from memorii.core.semantic_ingestion.source_normalization_host import (
     SourceNormalizationHostBundleBuilder,
+)
+from memorii.core.semantic_ingestion.structured_fact_read import (
+    StructuredFactReadRequest,
+    StructuredFactReadResponse,
+    read_structured_facts_from_snapshot,
 )
 from memorii.core.solver.frontier import SolverFrontierPlanner
 from memorii.core.work_state.models import WorkStateKind, WorkStateRecord, WorkStateStatus
@@ -324,16 +377,40 @@ class ProviderMemoryService:
         verified_capability_monitoring_authorities: tuple[
             VerifiedCapabilityMonitoringAuthority, ...
         ] = (),
+        structured_submission_authority_resolver: StructuredSubmissionAuthorityResolver | None = None,
+        ontology_observer_capability: OntologyObserverCapability | None = None,
+        ontology_observer_authorizer: Callable[
+            [AuthenticatedIngressContext, ObserverBindingIdentity], bool
+        ]
+        | None = None,
         _host_construction: object | None = None,
     ) -> None:
         self._memory_plane = memory_plane or MemoryPlaneService()
         self._bootstrap_release_evidence = None
         self._scoped_read_authority = scoped_read_authority
+        self._structured_submission_authority_resolver = structured_submission_authority_resolver
         self._canonical_evidence_requested = canonical_evidence_enabled
+        observer_configuration = (
+            ontology_observer_capability,
+            ontology_observer_authorizer,
+        )
+        if any(item is None for item in observer_configuration) and any(
+            item is not None for item in observer_configuration
+        ):
+            raise ValueError(
+                "ontology observer capability and authorizer must be configured together"
+            )
         verified_material = None
         verified_ingress_resolver = None
         monitoring_initializations: tuple[CapabilityEvidenceWindow, ...] = ()
         self._verified_capability_monitoring_authorities = verified_capability_monitoring_authorities
+        if (
+            structured_submission_authority_resolver is not None
+            and _host_construction is not self._SCENARIO_TEST_CONSTRUCTION
+        ):
+            raise ValueError(
+                "structured submission authority resolver is restricted to a verified host authority"
+            )
         if verified_capability_monitoring_authorities:
             if (
                 capability_monitoring_policies
@@ -357,6 +434,7 @@ class ProviderMemoryService:
                     host_bootstrap_capability,
                     host_bootstrap_material_verifier,
                     source_normalization_host_bundle_builder,
+                    structured_submission_authority_resolver,
                 )
             ) or _host_construction is not None:
                 raise ValueError(
@@ -368,6 +446,15 @@ class ProviderMemoryService:
                 verified_ingress_resolver,
             ) = verified_production_authority_inputs(
                 verified_production_host_authority
+            )
+            structured_submission_authority_resolver = cast(
+                StructuredSubmissionAuthorityResolver | None,
+                verified_production_structured_submission_authority_resolver(
+                    verified_production_host_authority
+                ),
+            )
+            self._structured_submission_authority_resolver = (
+                structured_submission_authority_resolver
             )
         elif host_bootstrap_capability is None:
             capability_provider = InstalledHostBootstrapCapabilityProvider()
@@ -454,6 +541,28 @@ class ProviderMemoryService:
                     verified_material.authenticated_ingress_resolver,
                 )
             )
+            # Local Level 2 uses the same verified material presentation for
+            # its structured-fact resolver as it does for ingress.  A public
+            # constructor argument remains forbidden; an unsealed resolver is
+            # never promoted from this host path.
+            local_structured_resolver = (
+                verified_material.structured_submission_authority_resolver
+            )
+            local_structured_resolver_digest = (
+                verified_material.structured_submission_authority_resolver_binding_digest
+            )
+            if local_structured_resolver is not None:
+                if (
+                    not hasattr(local_structured_resolver, "resolve_submission_authority")
+                    or not isinstance(local_structured_resolver_digest, str)
+                    or getattr(local_structured_resolver, "resolver_binding_digest", None)
+                    != local_structured_resolver_digest
+                ):
+                    self._bootstrap_unavailable_reason = "invalid_structured_submission_authority"
+                else:
+                    self._structured_submission_authority_resolver = cast(
+                        StructuredSubmissionAuthorityResolver, local_structured_resolver
+                    )
             try:
                 self._bootstrap_profile = verify_bootstrap_profile(verified_material)
                 self._bootstrap_release_evidence = verified_material.release_evidence
@@ -630,6 +739,11 @@ class ProviderMemoryService:
             # canonical writer owner. Its durable admission is validated only
             # after authenticated ingress, never during construction.
             self._semantic_writer_admission = runtime_writer
+        self._catalog_selection_repository = SelectedCatalogAuthorityRepository(
+            self._memory_plane,
+            self._semantic_writer_admission,
+            catalog_bundle_locator=self._semantic_writer_admission._catalog_bundle_locator,
+        )
         self._semantic_integrity_lifecycle = semantic_integrity_lifecycle
         integrity_attention_publisher: Callable[[str, datetime], None] | None = None
         if isinstance(conflict_attention_repository, FileConflictAttentionRepository):
@@ -664,6 +778,7 @@ class ProviderMemoryService:
                 else None
             ),
         )
+        self._catalog_bundle_locator = self._semantic_atomic_store._catalog_bundle_locator
         if (
             runtime_store is not None
             and semantic_integrity_lifecycle is not None
@@ -675,6 +790,25 @@ class ProviderMemoryService:
             )
         if semantic_integrity_lifecycle is not None:
             semantic_integrity_lifecycle.reconcile_pending_recovery()
+        coverage_observer_runner = (
+            CoverageObserverRunner(
+                observation_repository=CoverageObservationRepository(
+                    self._memory_plane
+                ),
+                gap_repository=VerifiedCoverageGapRepository(self._memory_plane),
+                recurrence_repository=CoverageRecurrenceRepository(
+                    self._memory_plane
+                ),
+                result_repository=OntologyObservationResultRepository(
+                    self._memory_plane
+                ),
+                capability=ontology_observer_capability,
+                gap_validator=CoreCoverageGapValidator(self._memory_plane),
+            )
+            if ontology_observer_capability is not None
+            else None
+        )
+        self._coverage_observer_runner = coverage_observer_runner
         self._provider_ingestion = ProviderIngestionCoordinator(
             memory_plane=self._memory_plane,
             admission_service=self._semantic_ingestion_admission,
@@ -687,7 +821,12 @@ class ProviderMemoryService:
             semantic_policy_provider=semantic_runtime.policy_provider if semantic_runtime is not None else None,
             semantic_runtime=semantic_runtime,
             canonical_evidence_arena_factory=self._new_canonical_evidence_arena,
+            catalog_selection_repository=self._catalog_selection_repository,
+            coverage_observer_runner=coverage_observer_runner,
+            coverage_observer_authorizer=ontology_observer_authorizer,
         )
+        if coverage_observer_runner is not None:
+            self._provider_ingestion.recover_coverage_observations()
         self._capability_monitor = CapabilityMonitor(
             writers=self._semantic_writer_admission,
             now=self._clock.now_utc,
@@ -741,10 +880,24 @@ class ProviderMemoryService:
         self._last_recall_bundle: RecallStateBundle | None = None
         self._last_prefetch_result: ProviderPrefetchResult[ProductionRetrievalDecision] | None = None
 
+    def install_eligible_recurrence_candidate_admitter(self, admitter: object) -> None:
+        """Bind a host-owned learned-candidate action after runtime construction."""
+        runner = self._coverage_observer_runner
+        if runner is None:
+            raise ValueError("coverage observation is unavailable")
+        setter = getattr(runner, "set_candidate_admitter", None)
+        if not callable(setter):
+            raise ValueError("coverage observation is unavailable")
+        setter(admitter)
+
     def activate_observation_ledger(self) -> SemanticWriterCommitBinding:
         """Explicit trusted-host cutover; never exposed as a provider tool."""
         if self._composed_semantic_runtime is None:
             raise PreplanningStoreError("observation ledger activation target authority is not configured")
+        # Runtime validation installs any host-owned resolver authority while
+        # the writer is still evidence-only.  Its administration path is
+        # intentionally unavailable after this cutover.
+        self._validate_semantic_runtime_after_ingress()
         activated = self._composed_semantic_runtime.activate_observation_ledger()
         self._writer_admission_record_initialized = True
         self._initialize_pending_capability_monitoring()
@@ -932,20 +1085,71 @@ class ProviderMemoryService:
             return _scoped_empty(ScopedContextStatus.DENIED)
         try:
             revision, records = self._memory_plane.read_snapshot()
-        except (ScopedSnapshotBackendError, ScopedSnapshotDecodeError, MemoryPlaneCorruptionError, OSError):
+            activation = ScopedContextAssembler(
+                legacy_bootstrap_v3_projection_verifier=self._semantic_atomic_store,
+                catalog_bundle_locator=self._catalog_bundle_locator,
+            ).assemble(request=request, revision=revision, records=records, grant=grant)
+        except (
+            ScopedSnapshotBackendError,
+            ScopedSnapshotDecodeError,
+            MemoryPlaneCorruptionError,
+            OSError,
+        ):
             return _scoped_empty(ScopedContextStatus.UNAVAILABLE)
+
+        def release_current_grants(
+            _revision: int, release_records: tuple[CanonicalMemoryRecord, ...],
+        ) -> ScopedContextActivation:
+            # This callback has no write or recursive store access. The
+            # durable grant-state proof and host receipt share the store lock,
+            # so a cross-process revoke serializes before this snapshot or
+            # after its completed release.
+            if not catalog_visibility_current_at_release(
+                records=release_records, original_records=records,
+                grant=grant, activation=activation,
+                catalog_bundle_locator=self._catalog_bundle_locator,
+            ):
+                return _scoped_empty(ScopedContextStatus.DENIED)
+            receipt = authority.authorize_release(grant)
+            if receipt is None:
+                return _scoped_empty(ScopedContextStatus.DENIED)
+            if activation.status not in {
+                ScopedContextStatus.COMPLETE,
+                ScopedContextStatus.PARTIAL_OPTIONAL,
+            }:
+                return activation
+            return ScopedContextActivation.model_validate(
+                activation.model_dump(mode="python") | {
+                    "authority_binding_receipt": receipt,
+                }
+            )
+
+        if not catalog_visibility_recheck_required(records=records, activation=activation):
+            receipt = authority.authorize_release(grant)
+            if receipt is None:
+                return _scoped_empty(ScopedContextStatus.DENIED)
+            if activation.status not in {
+                ScopedContextStatus.COMPLETE,
+                ScopedContextStatus.PARTIAL_OPTIONAL,
+            }:
+                return activation
+            return ScopedContextActivation.model_validate(
+                activation.model_dump(mode="python") | {
+                    "authority_binding_receipt": receipt,
+                }
+            )
         try:
-            activation = ScopedContextAssembler().assemble(request=request, revision=revision, records=records, grant=grant)
-        except ScopedSnapshotDecodeError:
+            result = self._memory_plane.read_snapshot_linearized(release_current_grants)
+            if not isinstance(result, ScopedContextActivation):
+                return _scoped_empty(ScopedContextStatus.UNAVAILABLE)
+            return result
+        except (
+            ScopedSnapshotBackendError,
+            ScopedSnapshotDecodeError,
+            MemoryPlaneCorruptionError,
+            OSError,
+        ):
             return _scoped_empty(ScopedContextStatus.UNAVAILABLE)
-        receipt = authority.authorize_release(grant)
-        if receipt is None:
-            return _scoped_empty(ScopedContextStatus.DENIED)
-        if activation.status not in {ScopedContextStatus.COMPLETE, ScopedContextStatus.PARTIAL_OPTIONAL}:
-            return activation
-        return ScopedContextActivation.model_validate(
-            activation.model_dump(mode="python") | {"authority_binding_receipt": receipt}
-        )
 
     def _ensure_writer_admission_record(self) -> None:
         if not self._owns_writer_admission_record:
@@ -1156,6 +1360,651 @@ class ProviderMemoryService:
         if ingress is None:
             return SemanticIngestionOutcomeLookupResponse()
         return self._semantic_ingestion_admission.lookup(request, authenticated_ingress=ingress)
+
+    def submit_structured_fact(
+        self,
+        request: StructuredFactSubmissionRequest,
+        *,
+        authenticated_host_ingress: AuthenticatedHostIngress,
+    ) -> StructuredFactSubmissionResponse:
+        """Run an authenticated no-key fact through the retained V3 terminal."""
+
+        try:
+            ingress = self._preflight_ingress(authenticated_host_ingress)
+        except MemoryPlaneCorruptionError:
+            # A newly composed service validates durable writer admission
+            # before catalog selection.  Keep this public no-key boundary
+            # fail-closed when that JSONL image cannot be decoded.
+            return StructuredFactSubmissionResponse(
+                status="denied", denial_reason="base_catalog_unavailable"
+            )
+        resolver = self._structured_submission_authority_resolver
+        if ingress is None:
+            return StructuredFactSubmissionResponse(
+                status="denied", denial_reason="ingress_unavailable"
+            )
+        if resolver is None:
+            return StructuredFactSubmissionResponse(
+                status="denied", denial_reason="authority_unavailable"
+            )
+        try:
+            authority = resolver.resolve_submission_authority(
+                authenticated_ingress=ingress,
+                request=request.authority_request,
+            )
+        except (OSError, ValueError):
+            return StructuredFactSubmissionResponse(
+                status="denied", denial_reason="authority_unavailable"
+            )
+        if authority is None:
+            return StructuredFactSubmissionResponse(
+                status="denied", denial_reason="authority_denied"
+            )
+        if (
+            authority.authenticated != request.authority_request.authenticated
+            or authority.source_grant != request.authority_request.source_grant
+            or authority.fact_grant != request.authority_request.fact_grant
+            or authority.catalog_visibility_grant
+            != request.authority_request.catalog_visibility_grant
+        ):
+            return StructuredFactSubmissionResponse(
+                status="denied", denial_reason="authority_denied"
+            )
+        captured_pin = request.captured_pin
+        pin = None
+        try:
+            captured_source = self._semantic_atomic_store.classify_captured_turn_source(
+                source_id=request.source_id, source_digest=request.source_digest,
+            )
+        except (OSError, ValueError, PreplanningStoreError):
+            return StructuredFactSubmissionResponse(
+                status="denied", denial_reason="retained_source_denied"
+            )
+        if captured_source:
+            if not isinstance(captured_pin, CapturedCatalogPinReference):
+                return StructuredFactSubmissionResponse(
+                    status="denied", denial_reason="retained_source_denied"
+                )
+            try:
+                ledger, _coordination_record, _coordination = (
+                    self._semantic_atomic_store._load_captured_turn_coordination(
+                        source_id=request.source_id, source_digest=request.source_digest,
+                    )
+                )
+                pin = self._semantic_atomic_store.load_captured_turn_catalog_pin(
+                    ledger=ledger, authority=authority,
+                )
+            except (OSError, ValueError, PreplanningStoreError):
+                return StructuredFactSubmissionResponse(
+                    status="denied", denial_reason="retained_source_denied"
+                )
+            if (
+                pin is None
+                or pin.capture_id != captured_pin.capture_id
+                or pin.memory_id != captured_pin.pin_memory_id
+                or pin.pin_digest != captured_pin.pin_digest
+                or pin.catalog_scope != captured_pin.catalog_scope
+                or pin.catalog_digest != captured_pin.catalog_digest
+                or pin.selected_version_id != captured_pin.selected_version_id
+                or pin.selected_version_digest != captured_pin.selected_version_digest
+                or pin.runtime_bundle_digest != captured_pin.runtime_bundle_digest
+                or authority.catalog.catalog_scope != pin.catalog_scope
+                or authority.catalog.catalog_digest != pin.catalog_digest
+            ):
+                return StructuredFactSubmissionResponse(
+                    status="denied", denial_reason="retained_source_denied"
+                )
+        elif captured_pin is not None:
+            try:
+                pin = self._semantic_atomic_store.pin_retained_source_catalog(
+                    source_id=request.source_id,
+                    source_digest=request.source_digest,
+                    authority=authority,
+                    writer_binding=self._provider_ingestion._current_writer_binding(),
+                )
+            except (OSError, ValueError, PreplanningStoreError):
+                return StructuredFactSubmissionResponse(
+                    status="denied", denial_reason="retained_source_denied"
+                )
+            if (
+                pin.capture_id != captured_pin.capture_id
+                or pin.memory_id != captured_pin.pin_memory_id
+                or pin.pin_digest != captured_pin.pin_digest
+                or pin.catalog_scope != captured_pin.catalog_scope
+                or pin.catalog_digest != captured_pin.catalog_digest
+                or pin.selected_version_id != captured_pin.selected_version_id
+                or pin.selected_version_digest != captured_pin.selected_version_digest
+                or pin.runtime_bundle_digest != captured_pin.runtime_bundle_digest
+            ):
+                return StructuredFactSubmissionResponse(
+                    status="denied", denial_reason="retained_source_denied"
+                )
+        else:
+            try:
+                seed = self._catalog_selection_repository.resolve_selected_base(
+                    expected_catalog_digest=request.authority_request.expected_catalog_digest
+                )
+            except (MemoryPlaneCorruptionError, OSError, ValueError):
+                return StructuredFactSubmissionResponse(
+                    status="denied", denial_reason="base_catalog_unavailable"
+                )
+            if authority.catalog != seed:
+                return StructuredFactSubmissionResponse(
+                    status="denied", denial_reason="authority_denied"
+                )
+        try:
+            submission = request.bind_authority(authority=authority)
+            self._validate_structured_source_spans(submission)
+        except (OSError, ValueError):
+            return StructuredFactSubmissionResponse(
+                status="denied", denial_reason="source_span_denied"
+            )
+        try:
+            # Allocate one writer binding with the retained operation.  The
+            # replay cannot later switch to a predecessor binding while it
+            # persists grants, controls, and its terminal.
+            writer_binding = self._provider_ingestion._current_writer_binding()
+            accepted = GovernedSourceAdmissionService(
+                self._memory_plane
+            ).allocate_retained_source_operation(
+                request=RetainedSourceOperationRequest(
+                    source_id=submission.source_id,
+                    source_digest=submission.source_digest,
+                    canonical_envelope=submission.canonical_envelope(),
+                ),
+                authenticated_ingress=ingress,
+            )
+            self._activate_structured_submission_authority(
+                accepted=accepted, authority=authority, writer_binding=writer_binding,
+            )
+        except StructuredSubmissionGrantRevokedError:
+            return StructuredFactSubmissionResponse(
+                status="denied", denial_reason="authorization_revoked"
+            )
+        except (OSError, ValueError, PreplanningStoreError):
+            return StructuredFactSubmissionResponse(
+                status="denied", denial_reason="retained_source_denied"
+            )
+        try:
+            terminal = self._semantic_atomic_store.recover_retained_structured_terminal(
+                accepted=accepted, authority=authority,
+            )
+        except StructuredSubmissionGrantRevokedError:
+            return StructuredFactSubmissionResponse(
+                status="denied", denial_reason="authorization_revoked"
+            )
+        except (OSError, ValueError, PreplanningStoreError):
+            return StructuredFactSubmissionResponse(
+                status="denied", denial_reason="retained_source_denied"
+            )
+        if terminal is not None:
+            return self._structured_submission_response(
+                terminal=terminal, operation_id=accepted.operation_fence_binding.operation_id,
+            )
+        try:
+            with self._new_canonical_evidence_arena() as arena:
+                self._provider_ingestion.execute_retained_structured_proposal(
+                    accepted=accepted, submission=submission, authenticated_ingress=ingress,
+                    canonical_evidence_arena=arena, writer_binding=writer_binding,
+                    captured_catalog_pin=pin,
+                )
+            persisted = self._semantic_atomic_store.recover_retained_structured_terminal(
+                accepted=accepted, authority=authority,
+            )
+        except StructuredSubmissionGrantRevokedError:
+            return StructuredFactSubmissionResponse(status="denied", denial_reason="authorization_revoked")
+        except (OSError, ValueError, PreplanningStoreError):
+            return StructuredFactSubmissionResponse(status="unavailable")
+        if persisted is None:
+            return StructuredFactSubmissionResponse(status="unavailable")
+        return self._structured_submission_response(
+            terminal=persisted, operation_id=accepted.operation_fence_binding.operation_id,
+        )
+
+    @staticmethod
+    def _structured_submission_response(*, terminal, operation_id: str) -> StructuredFactSubmissionResponse:
+        if (
+            terminal.terminal_member_schema_version == 4
+            and terminal.pre_group_noncommit is not None
+            and terminal.pre_group_noncommit.reason == "authorization_revoked_before_commit"
+        ):
+            return StructuredFactSubmissionResponse(status="authorization_revoked_before_commit", operation_id=operation_id)
+        final_status = terminal.canonical_source_result.canonical_source_result.final_status
+        if final_status in {"fully_committed", "partially_committed"}:
+            return StructuredFactSubmissionResponse(status="committed", operation_id=operation_id)
+        if final_status in {"unresolved", "evidence_only"}:
+            return StructuredFactSubmissionResponse(status="abstained", operation_id=operation_id)
+        if final_status == "rejected":
+            return StructuredFactSubmissionResponse(status="rejected", operation_id=operation_id)
+        return StructuredFactSubmissionResponse(status="unavailable")
+
+    def lookup_structured_fact_status(
+        self,
+        request: StructuredFactSubmissionStatusRequest,
+        *,
+        authenticated_host_ingress: AuthenticatedHostIngress,
+    ) -> StructuredFactSubmissionStatusResponse:
+        """Return a protected native terminal classification for one operation."""
+        ingress = self._preflight_ingress(authenticated_host_ingress)
+        resolver = self._structured_submission_authority_resolver
+        if ingress is None:
+            return StructuredFactSubmissionStatusResponse(
+                status="denied", denial_reason="ingress_unavailable"
+            )
+        if resolver is None:
+            return StructuredFactSubmissionStatusResponse(
+                status="denied", denial_reason="authority_unavailable"
+            )
+        try:
+            authority = resolver.resolve_submission_authority(
+                authenticated_ingress=ingress, request=request.authority_request,
+            )
+        except (OSError, ValueError):
+            return StructuredFactSubmissionStatusResponse(
+                status="denied", denial_reason="authority_unavailable"
+            )
+        if authority is None:
+            return StructuredFactSubmissionStatusResponse(
+                status="denied", denial_reason="authority_denied"
+            )
+        try:
+            terminal = self._semantic_atomic_store.recover_retained_structured_terminal_by_operation(
+                operation_id=request.operation_id, authority=authority,
+            )
+        except StructuredSubmissionGrantRevokedError:
+            return StructuredFactSubmissionStatusResponse(
+                status="denied", denial_reason="authorization_revoked"
+            )
+        except (OSError, ValueError, PreplanningStoreError):
+            return StructuredFactSubmissionStatusResponse(status="unavailable")
+        if terminal is not None:
+            submission = self._structured_submission_response(
+                terminal=terminal, operation_id=request.operation_id,
+            )
+            if submission.status != "unavailable":
+                return StructuredFactSubmissionStatusResponse(
+                    status=submission.status, operation_id=request.operation_id,
+                )
+        return StructuredFactSubmissionStatusResponse(status="unavailable")
+
+    def list_ontology_coverage_statuses(
+        self,
+        *,
+        authenticated_host_ingress: AuthenticatedHostIngress,
+    ) -> CoverageObservationStatusResponse:
+        """Return source-text-free discovery state within the caller's exact scope."""
+
+        ingress = self._preflight_ingress(authenticated_host_ingress)
+        if ingress is None:
+            return CoverageObservationStatusResponse(status="denied")
+        principal_id = ingress.delivery_principal_binding.principal_subject_id
+        agent_id = ingress.authenticated_agent_id
+        source_scope_digest = (
+            ingress.required_outcome_scopes.required_scope_set_digest
+        )
+        try:
+            observations = tuple(
+                CoverageObservationStatus.from_observation(observation)
+                for observation in CoverageObservationRepository(
+                    self._memory_plane
+                ).all()
+                if observation.principal_id == principal_id
+                and observation.agent_id == agent_id
+                and observation.source_scope_digest == source_scope_digest
+            )
+        except (OSError, ValueError):
+            return CoverageObservationStatusResponse(status="unavailable")
+        return CoverageObservationStatusResponse(
+            status="ok", observations=observations
+        )
+
+    def read_structured_facts(
+        self,
+        request: StructuredFactReadRequest,
+        *,
+        authority_request: StructuredSubmissionAuthorityRequest,
+        authenticated_host_ingress: AuthenticatedHostIngress,
+    ) -> StructuredFactReadResponse:
+        """Release structured facts only from one current, protected snapshot."""
+        ingress = self._preflight_ingress(authenticated_host_ingress)
+        resolver = self._structured_submission_authority_resolver
+        if ingress is None or resolver is None:
+            return StructuredFactReadResponse(status="denied")
+        try:
+            resolved = resolver.resolve_submission_authority(
+                authenticated_ingress=ingress, request=authority_request,
+            )
+        except (OSError, ValueError):
+            return StructuredFactReadResponse(status="unavailable")
+        if resolved is None:
+            return StructuredFactReadResponse(status="denied")
+        read_authority = StructuredFactReadAuthority(
+            authenticated=resolved.authenticated,
+            fact_grant=resolved.fact_grant,
+            catalog_visibility_grant=resolved.catalog_visibility_grant,
+            paired_evaluation_authority=resolved.paired_evaluation_authority,
+            paired_evaluation_bundle=resolved.paired_evaluation_bundle,
+        )
+        try:
+            result = self._memory_plane.read_snapshot_linearized(
+                lambda _revision, records: read_structured_facts_from_snapshot(
+                    records=records, request=request, authority=read_authority,
+                    now=self._now_provider(),
+                )
+            )
+        except (MemoryPlaneCorruptionError, OSError, ValueError):
+            return StructuredFactReadResponse(status="unavailable")
+        return result if isinstance(result, StructuredFactReadResponse) else StructuredFactReadResponse(status="unavailable")
+
+    def _activate_structured_submission_authority(
+        self, *, accepted, authority, writer_binding,
+    ) -> None:
+        """Persist only an authority issued by the configured trusted host resolver.
+
+        The untrusted proposal executor deliberately cannot call this boundary;
+        it only reuses the current same-store grants at final V3 commit.
+        """
+        self._semantic_atomic_store.publish_structured_submission_grant_states(
+            accepted=accepted,
+            authority=authority,
+            writer_binding=writer_binding,
+        )
+
+    def provision_structured_submission_authority(self, *, authority: object) -> None:
+        """Publish a factory-verified local grant trio before tool advertisement."""
+        self._semantic_atomic_store.provision_structured_submission_grant_states(
+            authority=authority,
+            writer_binding=self._provider_ingestion._current_writer_binding(),
+        )
+
+    def pin_captured_turn_catalog(
+        self, *, ledger: object, authority_request: StructuredSubmissionAuthorityRequest,
+        authenticated_host_ingress: AuthenticatedHostIngress,
+    ) -> CatalogCapturedTurnPin | None:
+        """Authorize and persist a captured-turn catalog witness before egress."""
+        ingress = self._preflight_ingress(authenticated_host_ingress)
+        resolver = self._structured_submission_authority_resolver
+        if ingress is None or resolver is None:
+            return None
+        try:
+            authority = resolver.resolve_submission_authority(
+                authenticated_ingress=ingress, request=authority_request,
+            )
+        except (OSError, ValueError):
+            return None
+        if (
+            authority is None
+            or authority.authenticated != authority_request.authenticated
+            or authority.source_grant != authority_request.source_grant
+            or authority.fact_grant != authority_request.fact_grant
+            or authority.catalog_visibility_grant != authority_request.catalog_visibility_grant
+        ):
+            return None
+        try:
+            return self._semantic_atomic_store.pin_captured_turn_catalog(
+                ledger=ledger, authority=authority,
+                writer_binding=self._provider_ingestion._current_writer_binding(),
+            )
+        except (MemoryPlaneCorruptionError, OSError, ValueError, PreplanningStoreError):
+            return None
+
+    def pin_retained_source_catalog(
+        self,
+        *,
+        source_id: str,
+        source_digest: str,
+        authority_request: StructuredSubmissionAuthorityRequest,
+        authenticated_host_ingress: AuthenticatedHostIngress,
+    ) -> CatalogCapturedTurnPin | None:
+        """Authorize and pin a generic retained source for learned replay."""
+        ingress = self._preflight_ingress(authenticated_host_ingress)
+        resolver = self._structured_submission_authority_resolver
+        if ingress is None or resolver is None:
+            return None
+        try:
+            authority = resolver.resolve_submission_authority(
+                authenticated_ingress=ingress,
+                request=authority_request,
+            )
+        except (OSError, ValueError):
+            return None
+        if (
+            authority is None
+            or authority.authenticated != authority_request.authenticated
+            or authority.source_grant != authority_request.source_grant
+            or authority.fact_grant != authority_request.fact_grant
+            or authority.catalog_visibility_grant
+            != authority_request.catalog_visibility_grant
+        ):
+            return None
+        try:
+            return self._semantic_atomic_store.pin_retained_source_catalog(
+                source_id=source_id,
+                source_digest=source_digest,
+                authority=authority,
+                writer_binding=self._provider_ingestion._current_writer_binding(),
+            )
+        except (MemoryPlaneCorruptionError, OSError, ValueError, PreplanningStoreError):
+            return None
+
+    def load_retained_prepared_source(
+        self, *, source_id: str, source_digest: str,
+    ) -> PreparedSource | None:
+        """Load exact prepared evidence for a provider-owned retained replay."""
+        runtime = self._provider_ingestion._semantic_runtime
+        repository = None if runtime is None else runtime.prepared_source_repository
+        if repository is None:
+            return None
+        try:
+            prepared = repository.load(
+                source_id=source_id,
+                source_digest=source_digest,
+            )
+        except (OSError, ValueError):
+            return None
+        if (
+            prepared is None
+            or prepared.source_id != source_id
+            or prepared.source_digest != source_digest
+        ):
+            return None
+        return prepared
+
+    def retained_source_session_id(
+        self, *, source_id: str, source_digest: str,
+    ) -> str | None:
+        """Return the immutable source session after exact retained-source join."""
+        try:
+            source = self._memory_plane.get_record(source_id)
+            if (
+                source is None
+                or source.source_kind != "semantic_ingestion_source"
+                or source_admission_source_digest(source) != source_digest
+                or not isinstance(source.session_id, str)
+            ):
+                return None
+        except (OSError, TypeError, ValueError):
+            return None
+        return source.session_id
+
+    def load_captured_turn_catalog_pin(
+        self, *, ledger: object, authority_request: StructuredSubmissionAuthorityRequest,
+        authenticated_host_ingress: AuthenticatedHostIngress,
+    ) -> CatalogCapturedTurnPin | None:
+        """Authorize and verify an already-emitted captured-turn catalog pin."""
+        ingress = self._preflight_ingress(authenticated_host_ingress)
+        resolver = self._structured_submission_authority_resolver
+        if ingress is None or resolver is None:
+            return None
+        try:
+            authority = resolver.resolve_submission_authority(
+                authenticated_ingress=ingress, request=authority_request,
+            )
+        except (OSError, ValueError):
+            return None
+        if (
+            authority is None
+            or authority.authenticated != authority_request.authenticated
+            or authority.source_grant != authority_request.source_grant
+            or authority.fact_grant != authority_request.fact_grant
+            or authority.catalog_visibility_grant != authority_request.catalog_visibility_grant
+        ):
+            return None
+        try:
+            return self._semantic_atomic_store.load_captured_turn_catalog_pin(
+                ledger=ledger, authority=authority,
+            )
+        except (MemoryPlaneCorruptionError, OSError, ValueError, PreplanningStoreError):
+            return None
+
+    def resolve_captured_turn_catalog_dispatch(
+        self, *, pin: CatalogCapturedTurnPin,
+    ) -> str | None:
+        """Resolve tool grammar through the same verified historical bundle locator."""
+        try:
+            return self._semantic_atomic_store.resolve_captured_turn_catalog_dispatch(pin=pin)
+        except (MemoryPlaneCorruptionError, OSError, ValueError, PreplanningStoreError):
+            return None
+
+    def ensure_catalog_seed_genesis(self) -> None:
+        """Establish the exact selected seed after writer admission.
+
+        This is an installation action for verified host composition.  It
+        cannot select a child catalog or make a package artifact active.
+        """
+        self._ensure_writer_admission_record()
+        self._catalog_selection_repository.ensure_seed_genesis()
+
+    def ensure_default_catalog_release(self) -> None:
+        """Install the verified generated catalog before captured tool egress."""
+        self._ensure_writer_admission_record()
+        self._catalog_selection_repository.install_default_catalog_release()
+
+    def current_semantic_entity_matches(
+        self,
+        *,
+        canonical_entity_id: str,
+        asserted_type: str,
+        normalized_alias_key: str,
+        expected_fact_scope: str,
+    ) -> bool:
+        """Verify one active typed entity and alias in canonical graph state."""
+        snapshot = self._semantic_atomic_store.graph_state_snapshot()
+        entities = [
+            record.payload
+            for record in snapshot.records
+            if isinstance(record.payload, EntityRevision)
+            and record.payload.logical_entity_id == canonical_entity_id
+            and record.payload.lifecycle == "active"
+        ]
+        if len(entities) != 1:
+            return False
+        claims = [
+            record.payload
+            for record in snapshot.records
+            if isinstance(record.payload, ClaimAssertion)
+            and record.payload.claim_identity is not None
+            and record.payload.source_authority_evidence is not None
+            and canonical_entity_id
+            in {
+                record.payload.claim_identity.subject_assertion_ref.logical_entity_id_at_assertion,
+                (
+                    record.payload.claim_identity.object_assertion_ref.logical_entity_id_at_assertion
+                    if record.payload.claim_identity.object_assertion_ref is not None
+                    else None
+                ),
+            }
+        ]
+        expected_type_key = asserted_type.replace("_", "").casefold()
+        records = tuple(self._memory_plane.list_records())
+        for claim in claims:
+            identity = claim.claim_identity
+            source_authority = claim.source_authority_evidence
+            assert identity is not None and source_authority is not None
+            binding_record = self._memory_plane.get_record(
+                "semantic_ingestion:structured-claim-catalog:" + claim.claim_assertion_id
+            )
+            if binding_record is None:
+                continue
+            try:
+                binding = StructuredClaimCatalogBinding.model_validate(binding_record.content["binding"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if (
+                binding.claim_record_digest != claim.record_digest
+                or binding.fact_scope != expected_fact_scope
+            ):
+                continue
+            retained = [
+                record
+                for record in records
+                if record.source_kind == "semantic_ingestion_retained_structured_submission"
+                and record.content.get("operation_fence_binding", {}).get("source_id")
+                == source_authority.source_id
+                and record.content.get("operation_fence_binding", {}).get("source_digest")
+                == source_authority.source_digest
+            ]
+            if len(retained) != 1:
+                continue
+            try:
+                proposal_bytes = base64.b64decode(
+                    retained[0].content["proposal_bytes"], validate=True
+                )
+                if retained[0].content.get("proposal_bytes_digest") != sha256(proposal_bytes).hexdigest():
+                    continue
+                proposal = ProviderSemanticProposal.model_validate(decode_typed_value(proposal_bytes))
+            except (KeyError, TypeError, ValueError):
+                continue
+            predicate_id = identity.assertion_key_at_recording.slot.predicate_id
+            facts = [fact for fact in proposal.facts if fact.predicate_id == predicate_id]
+            if len(facts) != 1:
+                continue
+            fact = facts[0]
+            if identity.subject_assertion_ref.logical_entity_id_at_assertion == canonical_entity_id:
+                local_id = fact.subject_entity_ref
+            elif fact.object.kind == "entity":
+                local_id = fact.object.entity_ref
+            else:
+                continue
+            mentions = [mention for mention in proposal.mentions if mention.local_id == local_id]
+            if len(mentions) != 1:
+                continue
+            mention = mentions[0]
+            proposed_type = mention.proposed_type
+            if proposed_type is None:
+                continue
+            type_key = proposed_type.replace("_", "").casefold()
+            quote_key = " ".join(mention.mention_quote.casefold().split())
+            if type_key == expected_type_key and quote_key == normalized_alias_key:
+                return True
+        return False
+
+    def revoke_structured_submission_authority_grant(
+        self, *, grant_kind: str, grant: object,
+    ) -> None:
+        """Expose the typed durable revocation owner to a verified factory issuer."""
+        self._semantic_atomic_store.revoke_structured_submission_grant(
+            grant_kind=grant_kind,
+            grant=grant,
+            writer_binding=self._provider_ingestion._current_writer_binding(),
+        )
+
+    def _validate_structured_source_spans(self, submission) -> None:
+        """Require each submitted span to be one exact retained preparation span."""
+        runtime = self._provider_ingestion._semantic_runtime
+        if runtime is None or runtime.prepared_source_repository is None:
+            raise ValueError("structured source preparation authority is unavailable")
+        prepared = runtime.prepared_source_repository.load(
+            source_id=submission.source_id, source_digest=submission.source_digest,
+        )
+        if prepared is None:
+            raise ValueError("structured source preparation authority is unavailable")
+        retained = {
+            span.reference_digest: span
+            for span in (*prepared.sentence_spans, *prepared.token_spans)
+        }
+        if any(retained.get(span.reference_digest) != span for span in submission.exact_source_spans):
+            raise ValueError("structured source span is not an exact retained source span")
 
     @property
     def memory_evolution_service(self) -> MemoryEvolutionService:

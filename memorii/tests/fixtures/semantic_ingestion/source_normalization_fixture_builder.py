@@ -11,6 +11,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from hashlib import sha256
+from typing import Protocol
 
 from memorii.core.memory_evolution.atomic_store import BootstrapWriterHandoffResult, OperationLeaseBinding
 from memorii.core.memory_evolution.ingestion_contracts import (
@@ -55,7 +56,10 @@ from memorii.core.semantic_ingestion.contracts import (
     ParserConsensusPolicy,
     ParserOperationPolicyAuthority,
     PredicateEventManifest,
+    PredicateProposalCatalog,
     PredicateSemanticPolicyBinding,
+    PredicateTemporalRule,
+    PredicateTrustRule,
     PreparedSource,
     PrePlanningSourceIngestionProgress,
     ProviderSemanticProposal,
@@ -86,6 +90,14 @@ from memorii.core.semantic_ingestion.source_normalization_execution import (
     SourceNormalizationPublicationAuthority,
 )
 from memorii.core.semantic_ingestion.source_normalization_stage import GraphFreeSourceNormalizationInvocation
+
+
+class ScenarioRequestCatalog(Protocol):
+    """Typed fixture authority allowed to extend one V3 predicate catalog."""
+
+    def augment_predicate_catalog(
+        self, base: PredicateProposalCatalog
+    ) -> PredicateProposalCatalog: ...
 
 
 @dataclass(frozen=True)
@@ -465,7 +477,11 @@ class BootstrapV3FixtureAuthority:
     temporal_request: Callable[[BootstrapSemanticProposalRequestV3], BootstrapTemporalResolutionRequestV3]
 
 
-def build_bootstrap_v3_fixture_authority(*, source: PreparedSource) -> BootstrapV3FixtureAuthority:
+def build_bootstrap_v3_fixture_authority(
+    *,
+    source: PreparedSource,
+    scenario_request_catalog: ScenarioRequestCatalog | None = None,
+) -> BootstrapV3FixtureAuthority:
     """Issue one complete V3 runtime authority from a free-form prepared source.
 
     The helper has no V2 recovery/request bridge: callers receive the exact
@@ -492,6 +508,11 @@ def build_bootstrap_v3_fixture_authority(*, source: PreparedSource) -> Bootstrap
         source_digest=source.source_digest,
         source_text=source.semantic_text,
         require_text_digest=False,
+    )
+    predicate_catalog = (
+        base.predicate_catalog
+        if scenario_request_catalog is None
+        else scenario_request_catalog.augment_predicate_catalog(base.predicate_catalog)
     )
 
     def manifest(label: str, kind: str) -> AnalyzerManifest:
@@ -583,7 +604,7 @@ def build_bootstrap_v3_fixture_authority(*, source: PreparedSource) -> Bootstrap
             semantic_context_fingerprint=segment.segment_governance.message_semantic_context_digest,
             provider_egress_decision_digest=None,
             proposal_capability_fingerprint=base.proposal_capability_fingerprint,
-            predicate_catalog=base.predicate_catalog,
+            predicate_catalog=predicate_catalog,
             action_proposal_catalog=base.action_proposal_catalog,
             registered_prompt=base.registered_prompt, proposer_manifest=base.proposer_manifest,
             bootstrap_analysis_provenance=provenance,
@@ -715,6 +736,18 @@ def build_source_normalization_authority_bundle(
             key=lambda binding: binding.resource_binding_digest,
         )
     )
+    if planning_predicate_id == "reports_to":
+        from memorii.core.semantic_ingestion.reports_to_state import reports_to_state_rule
+
+        state_rule = reports_to_state_rule()
+    else:
+        state_rule = PredicateStateRule(
+            predicate_id=planning_predicate_id, cardinality="single",
+            conflict_behavior="compete_within_slot",
+            qualifier_partition_fields=(),
+            value_identity_policy_id="memorii.fixture.entity-value.v1",
+            policy_fingerprint=_fixture_digest("predicate-state", source.source_id),
+        )
     derivation_body = {
         "source_id": source.source_id, "source_digest": source.source_digest,
         "preparation_fingerprint": source.preparation_fingerprint,
@@ -728,25 +761,13 @@ def build_source_normalization_authority_bundle(
         "graph_dependent_execution_policy": graph_dependent_execution_policy,
         "bootstrap_planning_policy_authority": BootstrapPlanningPolicyAuthority(
             predicate_registry_fingerprint=_fixture_digest("predicate-registry", source.source_id),
-            predicate_state_rules=(PredicateStateRule(
-                predicate_id=planning_predicate_id, cardinality="single",
-                conflict_behavior="compete_within_slot",
-                qualifier_partition_fields=(),
-                value_identity_policy_id="memorii.fixture.entity-value.v1",
-                policy_fingerprint=_fixture_digest("predicate-state", source.source_id),
-            ),),
+            predicate_state_rules=(state_rule,),
             action_policy_fingerprint=_fixture_digest("action-policy", source.source_id),
             authority_digest=contract_digest(
                 b"memorii.semantic-ingestion.bootstrap-planning-policy-authority.v3",
                 {
                     "predicate_registry_fingerprint": _fixture_digest("predicate-registry", source.source_id),
-                    "predicate_state_rules": (PredicateStateRule(
-                        predicate_id=planning_predicate_id, cardinality="single",
-                        conflict_behavior="compete_within_slot",
-                        qualifier_partition_fields=(),
-                        value_identity_policy_id="memorii.fixture.entity-value.v1",
-                        policy_fingerprint=_fixture_digest("predicate-state", source.source_id),
-                    ),),
+                    "predicate_state_rules": (state_rule,),
                     "action_policy_fingerprint": _fixture_digest("action-policy", source.source_id),
                 },
             ),
@@ -899,6 +920,7 @@ class DynamicSourceNormalizationAuthorityProvider:
         retry_policy_fingerprint: str,
         language_policy_builder: Callable[..., LanguageConstructionPolicyAuthorityBundle] = build_normal_fact_language_policies,
         publication_factory: Callable[[PreparedSource, str, BootstrapWriterHandoffResult], SourceNormalizationPublicationFixture] | None = None,
+        scenario_request_catalog: ScenarioRequestCatalog | None = None,
     ) -> None:
         if len(retry_policy_fingerprint) != 64:
             raise ValueError("fixture retry policy fingerprint must be a digest")
@@ -910,11 +932,18 @@ class DynamicSourceNormalizationAuthorityProvider:
                 source=source, operation_id=operation_id, bootstrap_handoff=handoff
             )
         )
+        self._scenario_request_catalog = scenario_request_catalog
         self._issued: dict[
             tuple[str, str, str, str, str],
             tuple[SourceNormalizationAuthorityBundle, DynamicSourceNormalizationProposalMaterials],
         ] = {}
+        self._issued_invocations: dict[
+            tuple[str, str, str, str, str], GraphFreeSourceNormalizationInvocation
+        ] = {}
         self._publication_lease_lookup: Callable[..., OperationLeaseBinding] | None = None
+        self._bootstrap_v3_proposal_transport: Callable[
+            [BootstrapSemanticProposalRequestV3], tuple[ProviderSemanticProposal, bytes] | None
+        ] | None = None
 
     def bind_publication_lease_lookup(
         self, lookup: Callable[..., OperationLeaseBinding]
@@ -924,6 +953,17 @@ class DynamicSourceNormalizationAuthorityProvider:
             raise ValueError("fixture publication lease authority is already bound")
         self._publication_lease_lookup = lookup
         self._bootstrap_v3_issued: dict[str, BootstrapV3FixtureAuthority] = {}
+
+    def bind_bootstrap_v3_proposal_transport(
+        self,
+        transport: Callable[
+            [BootstrapSemanticProposalRequestV3], tuple[ProviderSemanticProposal, bytes] | None
+        ],
+    ) -> None:
+        """Retain the explicit scenario host transport for issued-request proof."""
+        if self._bootstrap_v3_proposal_transport is not None:
+            raise ValueError("fixture bootstrap V3 proposal transport is already bound")
+        self._bootstrap_v3_proposal_transport = transport
 
     def build(
         self,
@@ -956,7 +996,10 @@ class DynamicSourceNormalizationAuthorityProvider:
             isinstance(route, BootstrapFreeformSegmentLanguageRoute)
             for route in source.segment_language_routes.routes
         ):
-            v3 = build_bootstrap_v3_fixture_authority(source=source)
+            v3 = build_bootstrap_v3_fixture_authority(
+                source=source,
+                scenario_request_catalog=self._scenario_request_catalog,
+            )
             request = v3.runtime_authority.proposal_requests[0]
             proposal = ProviderSemanticProposal.model_validate(
                 self._proposal_factory(source, request).model_dump(mode="python")
@@ -979,7 +1022,9 @@ class DynamicSourceNormalizationAuthorityProvider:
                 expected_artifact_generation=control.artifact_generation,
                 progress=progress,
             )
-            consensus, temporal, trust, registry, execution_policy = _dynamic_fixture_authorities(request)
+            consensus, temporal, trust, registry, execution_policy = (
+                _dynamic_fixture_authorities(request, proposal=proposal)
+            )
             bundle = build_source_normalization_authority_bundle(
                 source=source,
                 publication=publication,
@@ -1001,6 +1046,7 @@ class DynamicSourceNormalizationAuthorityProvider:
                 ),
             )
             self._issued[key] = (bundle, DynamicSourceNormalizationProposalMaterials(request, proposal))
+            self._issued_invocations[key] = invocation
             for issued_request in v3.runtime_authority.proposal_requests:
                 self._bootstrap_v3_issued[issued_request.request_digest] = v3
             return bundle
@@ -1025,6 +1071,22 @@ class DynamicSourceNormalizationAuthorityProvider:
             raise ValueError("dynamic fixture proposal materials were not issued")
         return issued[1]
 
+    def issued_invocations(self) -> tuple[GraphFreeSourceNormalizationInvocation, ...]:
+        """Return the actual fixture invocations admitted by ``build``."""
+        return tuple(self._issued_invocations.values())
+
+    def transport_issued_request(
+        self, *, invocation: GraphFreeSourceNormalizationInvocation
+    ) -> tuple[ProviderSemanticProposal, bytes] | None:
+        """Call the host-bound transport only for the request issued to this invocation."""
+        if self._bootstrap_v3_proposal_transport is None:
+            raise ValueError("fixture bootstrap V3 proposal transport is unavailable")
+        materials = self.materials_for(invocation=invocation)
+        request = materials.request
+        if not isinstance(request, BootstrapSemanticProposalRequestV3):
+            raise ValueError("fixture issued proposal request is invalid")
+        return self._bootstrap_v3_proposal_transport(request)
+
     def bootstrap_v3_authority_for(
         self, request: BootstrapSemanticProposalRequestV3
     ) -> BootstrapV3FixtureAuthority:
@@ -1037,6 +1099,8 @@ class DynamicSourceNormalizationAuthorityProvider:
 
 def _dynamic_fixture_authorities(
     request: BootstrapSemanticProposalRequestV3,
+    *,
+    proposal: ProviderSemanticProposal,
 ) -> tuple[
     ConsensusPolicyAuthority,
     TemporalPolicySnapshot,
@@ -1064,11 +1128,46 @@ def _dynamic_fixture_authorities(
     interval = TimeInterval(
         start=datetime(2026, 1, 1, tzinfo=UTC), end=datetime(2027, 1, 1, tzinfo=UTC)
     )
+    predicates = {
+        item.predicate_id for item in request.predicate_catalog.predicates
+    } | {fact.predicate_id for fact in proposal.facts}
+    temporal_by_predicate = {
+        predicate_id: PredicateTemporalRule(
+            predicate_id=predicate_id,
+            valid_time_requirement="optional",
+            allow_open_end=True,
+        )
+        for predicate_id in predicates
+    }
+    trust_by_predicate = {
+        predicate_id: PredicateTrustRule(
+            predicate_id=predicate_id,
+            eligible_authority_classes=frozenset({"official"}),
+            authority_rank_by_class={"official": 10},
+        )
+        for predicate_id in predicates
+    }
+    if "reports_to" in predicates:
+        from memorii.core.semantic_ingestion.reports_to_state import (
+            reports_to_temporal_rule,
+            reports_to_trust_rule,
+        )
+
+        temporal_by_predicate["reports_to"] = reports_to_temporal_rule()
+        trust_by_predicate["reports_to"] = reports_to_trust_rule()
+    temporal_rules = tuple(
+        temporal_by_predicate[predicate_id] for predicate_id in sorted(predicates)
+    )
+    trust_rules = tuple(
+        trust_by_predicate[predicate_id] for predicate_id in sorted(predicates)
+    )
     temporal = TemporalPolicySnapshot.create(
-        policy_revision="dynamic-fixture-temporal", system_effective_interval=interval, rules=()
+        policy_revision="dynamic-fixture-temporal", system_effective_interval=interval,
+        rules=temporal_rules,
     )
     trust = TrustPolicySnapshot.create(
-        policy_revision="dynamic-fixture-trust", system_effective_interval=interval, rules=()
+        policy_revision="dynamic-fixture-trust", system_effective_interval=interval,
+        rules=trust_rules,
     )
     registry_body = {
         "registry_revision": "dynamic-fixture",

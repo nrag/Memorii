@@ -169,12 +169,18 @@ def _probe_from_service(service: ProviderMemoryService) -> BootstrapRecoveryProb
     )
 
 
-def _pending_claim_service(tmp_path) -> tuple[ProviderMemoryService, object]:
+def _pending_claim_service(
+    tmp_path, *, recovery_lease_duration: timedelta | None = None,
+) -> tuple[ProviderMemoryService, object]:
     builder, calls = _v3_normalization_host_builder()
     service = _service(
         storage=tmp_path / "pending-claim",
         builder=replace(builder, authority_provider=_NoBootstrapDerivationAuthority()),
     )
+    if recovery_lease_duration is not None:
+        service._semantic_atomic_store._bootstrap_recovery_operation_lease_duration = (
+            recovery_lease_duration
+        )
     result = _sync(service)
     assert result.blocked_reasons["semantic_ingestion"] == "source_alignment_authority_unavailable"
     assert calls == {"proposal": 0, "stanza": 0, "spacy": 0, "predicate": 0, "temporal": 0}
@@ -316,6 +322,34 @@ def test_jsonl_expired_claim_reclaims_ready_control_with_a_new_nonce(tmp_path) -
     )
     assert isinstance(before_expiry, BootstrapRecoveryUnavailableV3)
     assert before_expiry.reason == "foreign_live_claim"
+
+
+def test_fifteen_minute_recovery_lease_expires_before_a_new_claim_is_issued(tmp_path) -> None:
+    """The local fifteen-minute recovery window fails closed at its exact expiry."""
+    service, repository = _pending_claim_service(
+        tmp_path, recovery_lease_duration=timedelta(minutes=15),
+    )
+    first = _pending_claim(service)
+    probe = _probe_from_service(service)
+
+    assert first.control_snapshot.control_record.operation_lease_binding.lease_expires_at == (
+        TEST_NOW + timedelta(minutes=15)
+    )
+    before_expiry = repository.probe(
+        probe=probe,
+        server_time=first.expires_server_time - timedelta(microseconds=1),
+        monotonic_tick=first.expires_monotonic_tick - 1,
+    )
+    assert isinstance(before_expiry, BootstrapRecoveryUnavailableV3)
+    assert before_expiry.reason == "foreign_live_claim"
+
+    exact_expiry = repository.probe(
+        probe=probe,
+        server_time=first.expires_server_time,
+        monotonic_tick=first.expires_monotonic_tick,
+    )
+    assert isinstance(exact_expiry, BootstrapRecoveryClaimedV3)
+    assert exact_expiry.claim.claim_nonce != first.claim_nonce
 
 
 def test_jsonl_crash_before_publish_cas_keeps_only_the_live_claim(tmp_path) -> None:

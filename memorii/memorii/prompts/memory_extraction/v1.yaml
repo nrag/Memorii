@@ -25,7 +25,9 @@ output_schema:
         properties:
           entity_ref: {type: string, minLength: 1}
           mention_text: {type: string}
-          entity_type: {type: string, enum: [project, person, service, task, preference, unknown]}
+          entity_type:
+            type: string
+            enum: [account, agreement, animal, appointment, asset, bill, chore, decision, document, event, goal, group, household, issue, message, obligation, opportunity, organization, project, person, place, product_service, recipe, role, service, subscription, task, vehicle, work_item, preference, unknown]
           source_id: {type: string}
           quote: {type: string}
           confidence: {type: number, minimum: 0.0, maximum: 1.0}

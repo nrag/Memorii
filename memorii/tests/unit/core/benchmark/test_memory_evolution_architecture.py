@@ -48,6 +48,18 @@ DYNAMIC_IMPORT_OWNERS = {
         frozenset({"importlib", "importlib.metadata", "importlib.resources"}),
         "installed Memorii package resource and distribution-byte verification for the project assertion profile",
     ),
+    PACKAGE_ROOT / "semantic_ingestion" / "default_catalog_corpus.py": (
+        frozenset({"importlib.resources"}),
+        "installed default catalog acceptance corpus verification",
+    ),
+    PACKAGE_ROOT / "semantic_ingestion" / "catalog_authority.py": (
+        frozenset({"importlib", "importlib.resources"}),
+        "packaged catalog resource verification and manifest-bound implementation loading",
+    ),
+    PACKAGE_ROOT / "semantic_ingestion" / "default_catalog_package.py": (
+        frozenset({"importlib"}),
+        "generated default catalog package implementation source verification",
+    ),
     SOURCE_ROOT / "tools" / "semantic_ingestion_activation_target_release.py": (
         frozenset({"importlib"}),
         "host-supplied module:callable activation preparation factory loading in the release CLI",

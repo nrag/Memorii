@@ -12,6 +12,7 @@ from memorii.core.memory_evolution.atomic_store import (
     BootstrapGraphRelatedConflictError,
     BootstrapGraphSourceProgressRecoveryUnavailableError,
     PreplanningStoreError,
+    StructuredSubmissionGrantRevokedError,
 )
 from memorii.core.memory_evolution.ingestion_contracts import encode_typed_value
 from memorii.core.semantic_ingestion.bootstrap_graph_artifact_assembler import BootstrapGraphArtifactAssemblerV3
@@ -87,7 +88,11 @@ class BootstrapGraphDependentCoordinatorV3:
                     kind="finalized_failure",
                     terminal_reload=terminal,
                     control_epoch_digest=terminal.control_epoch_digest,
-                    reason="related_conflict_exhausted",
+                    reason=(
+                        terminal.pre_group_noncommit.reason
+                        if terminal.pre_group_noncommit is not None
+                        else "related_conflict_exhausted"
+                    ),
                 )
             return BootstrapGraphDependentCoordinatorSucceededV3.create(
                 kind="succeeded",
@@ -578,6 +583,20 @@ class BootstrapGraphDependentCoordinatorV3:
                 )
             except SemanticEventReplayError:
                 raise
+            except StructuredSubmissionGrantRevokedError:
+                # The group request was fully constructed under the current
+                # lease, but the authoritative grant fence denied the first
+                # group CAS.  Seal a source-only terminal using that same
+                # fence rather than leaking a retry that could later commit.
+                return self._finalize_attempt(
+                    request=request, epoch=epoch, compilation=compilation,
+                    authorizations=authorizations, attempt=attempt,
+                    lineage=lineage, pre_execution=pre_execution,
+                    constructions=tuple(constructions),
+                    current_generation=current_generation,
+                    finalized_failure_group_id=member.transaction_group_id,
+                    finalized_failure_reason="authorization_revoked_before_commit",
+                )
             except (PreplanningStoreError, ValueError):
                 logger.warning("bootstrap_graph_group_commit_storage_retry", exc_info=True)
                 reason = "storage_retry"
@@ -1011,6 +1030,7 @@ class BootstrapGraphDependentCoordinatorV3:
         attempt: object, lineage: object, pre_execution: object,
         constructions: tuple[object, ...], current_generation: object,
         finalized_failure_group_id: str | None = None,
+        finalized_failure_reason: str | None = None,
     ) -> BootstrapGraphDependentCoordinatorResultV3:
         bindings = (
             epoch.operation_lease_binding,
@@ -1025,6 +1045,7 @@ class BootstrapGraphDependentCoordinatorV3:
             complete_lineage=lineage,
             group_constructions=constructions,
             finalized_failure_group_id=finalized_failure_group_id,
+            pre_group_noncommit_reason=finalized_failure_reason,
         )
         graph_validation_attempts = tuple(
             value
@@ -1089,6 +1110,7 @@ class BootstrapGraphDependentCoordinatorV3:
                 group_constructions=constructions,
                 host_authority=self._host,
                 finalized_failure_group_id=finalized_failure_group_id,
+                pre_group_noncommit_reason=finalized_failure_reason,
             )
         except (PreplanningStoreError, ValueError):
             logger.warning(
@@ -1129,7 +1151,11 @@ class BootstrapGraphDependentCoordinatorV3:
                 kind="finalized_failure",
                 terminal_reload=reload,
                 control_epoch_digest=epoch.epoch_digest,
-                reason="related_conflict_exhausted",
+                reason=(
+                    finalized_failure_reason
+                    if finalized_failure_reason is not None
+                    else "related_conflict_exhausted"
+                ),
             )
         return BootstrapGraphDependentCoordinatorSucceededV3.create(
             kind="succeeded",

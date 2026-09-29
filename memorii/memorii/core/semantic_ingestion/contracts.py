@@ -11977,6 +11977,19 @@ class BootstrapGraphCanonicalSourceResultV3(_BootstrapV3Contract):
         return self
 
 
+class BootstrapGraphPreGroupNonCommitV3(_BootstrapV3Contract):
+    """Closed denial which prevented every transaction-group effect."""
+    request_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    operation_fence_binding_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    operation_lease_binding_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    writer_commit_binding_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    control_epoch_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    reason: Literal["authorization_revoked_before_commit"]
+    result_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    _digest_domain = b"memorii.semantic-ingestion.bootstrap-graph-pre-group-noncommit.v3"
+    _digest_field = "result_digest"
+
+
 class BootstrapGraphTerminalHandoffCoreV3(_BootstrapV3Contract):
     request_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     normalization_replay_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -11997,7 +12010,7 @@ class BootstrapGraphTerminalHandoffCoreV3(_BootstrapV3Contract):
 
 
 class BootstrapGraphTerminalMemberIntentV3(_BootstrapV3Contract):
-    kind: Literal["bootstrap_graph_coordinator_request", "bootstrap_graph_control_epoch", "bootstrap_graph_dependent_attempt", "bootstrap_transaction_group_plan", "bootstrap_source_plan_lineage_entry", "ingestion_execution_manifest", "transaction_group_result", "bootstrap_graph_terminal_handoff", "bootstrap_graph_canonical_source_result", "bootstrap_graph_source_finalization_observation_delta", "source_observation_intent"]
+    kind: Literal["bootstrap_graph_coordinator_request", "bootstrap_graph_control_epoch", "bootstrap_graph_dependent_attempt", "bootstrap_transaction_group_plan", "bootstrap_source_plan_lineage_entry", "ingestion_execution_manifest", "transaction_group_result", "bootstrap_graph_terminal_handoff", "bootstrap_graph_canonical_source_result", "bootstrap_graph_pre_group_noncommit", "bootstrap_graph_source_finalization_observation_delta", "source_observation_intent"]
     member_id: str = Field(min_length=1)
     construction_input_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     intent_member_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -12006,7 +12019,7 @@ class BootstrapGraphTerminalMemberIntentV3(_BootstrapV3Contract):
 
 
 class BootstrapGraphTerminalPublicationIntentV3(_BootstrapV3Contract):
-    terminal_member_schema_version: Literal[1, 2, 3] = 1
+    terminal_member_schema_version: Literal[1, 2, 3, 4] = 1
     source_id: str = Field(min_length=1)
     source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     preparation_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -12077,6 +12090,7 @@ class BootstrapGraphTerminalPublicationIntentV3(_BootstrapV3Contract):
             "bootstrap_source_plan_lineage_entry": 4, "ingestion_execution_manifest": 5,
             "transaction_group_result": 6, "bootstrap_graph_terminal_handoff": 7,
             "bootstrap_graph_canonical_source_result": 8,
+            "bootstrap_graph_pre_group_noncommit": 9,
             "bootstrap_graph_source_finalization_observation_delta": 9,
             "source_observation_intent": 9,
         }
@@ -12087,9 +12101,16 @@ class BootstrapGraphTerminalPublicationIntentV3(_BootstrapV3Contract):
             required.remove("source_observation_intent")
         if self.terminal_member_schema_version == 1:
             required.remove("bootstrap_graph_source_finalization_observation_delta")
+            required.remove("bootstrap_graph_pre_group_noncommit")
         elif self.terminal_member_schema_version == 3:
             required.remove("bootstrap_graph_source_finalization_observation_delta")
+            required.remove("bootstrap_graph_pre_group_noncommit")
             required.add("source_observation_intent")
+        elif self.terminal_member_schema_version == 2:
+            required.remove("bootstrap_graph_pre_group_noncommit")
+        elif self.terminal_member_schema_version == 4:
+            required.remove("bootstrap_graph_source_finalization_observation_delta")
+            required.remove("source_observation_intent")
         repeated = {"bootstrap_source_plan_lineage_entry", "transaction_group_result"}
         present = set(kinds)
         allowed_member_sets = (
@@ -12177,8 +12198,9 @@ class BootstrapGraphTerminalReloadV3(_BootstrapV3Contract):
     final_write_identity: BootstrapGraphPlanAtomicWriteIdentityV3
     terminal_control: BootstrapGraphTerminalControlV3
     canonical_source_result: BootstrapGraphCanonicalSourceResultV3
+    pre_group_noncommit: BootstrapGraphPreGroupNonCommitV3 | None = None
     source_finalization_observation_delta: SourceFinalizationObservationDelta | None = None
-    terminal_member_schema_version: Literal[1, 2, 3] = 1
+    terminal_member_schema_version: Literal[1, 2, 3, 4] = 1
     ledger_entry_id: str | None = Field(default=None, min_length=1)
     ledger_entry_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     delivery_principal_binding_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -12204,20 +12226,21 @@ class BootstrapGraphTerminalReloadV3(_BootstrapV3Contract):
         version = values.get("terminal_member_schema_version", 1)
         return (
             (cls._legacy_v1_digest_excluded_fields if version == 1 else frozenset())
-            | (frozenset({"ledger_entry_id", "ledger_entry_digest"}) if version in {1, 2} else frozenset())
+            | (frozenset({"ledger_entry_id", "ledger_entry_digest"}) if version in {1, 2, 4} else frozenset())
+            | (frozenset({"pre_group_noncommit"}) if values.get("pre_group_noncommit") is None else frozenset())
         )
 
     def _canonical_contract_field_names(self) -> tuple[str, ...]:
         names = tuple(type(self).model_fields)
-        return (
-            tuple(name for name in names if name not in {
-                "terminal_member_schema_version",
-                "source_finalization_observation_delta", "ledger_entry_id", "ledger_entry_digest",
-            }) if self.terminal_member_schema_version == 1 else (
-                tuple(name for name in names if name not in {"ledger_entry_id", "ledger_entry_digest"})
-                if self.terminal_member_schema_version == 2 else names
-            )
+        omitted = (
+            {"terminal_member_schema_version", "source_finalization_observation_delta", "ledger_entry_id", "ledger_entry_digest"}
+            if self.terminal_member_schema_version == 1 else
+            {"ledger_entry_id", "ledger_entry_digest"}
+            if self.terminal_member_schema_version in {2, 4} else set()
         )
+        if self.pre_group_noncommit is None:
+            omitted.add("pre_group_noncommit")
+        return tuple(name for name in names if name not in omitted)
 
     @model_serializer(mode="wrap")
     def serialize_terminal_reload(self, handler):  # type: ignore[no-untyped-def]
@@ -12225,7 +12248,9 @@ class BootstrapGraphTerminalReloadV3(_BootstrapV3Contract):
         if self.terminal_member_schema_version == 1:
             value.pop("terminal_member_schema_version", None)
             value.pop("source_finalization_observation_delta", None)
-        if self.terminal_member_schema_version in {1, 2}:
+        if self.pre_group_noncommit is None:
+            value.pop("pre_group_noncommit", None)
+        if self.terminal_member_schema_version in {1, 2, 4}:
             value.pop("ledger_entry_id", None)
             value.pop("ledger_entry_digest", None)
         return value
@@ -12250,12 +12275,28 @@ class BootstrapGraphTerminalReloadV3(_BootstrapV3Contract):
                 and self.source_finalization_observation_delta is not None
             )
             or (
+                self.terminal_member_schema_version == 4
+                and self.source_finalization_observation_delta is not None
+            )
+            or (
                 self.terminal_member_schema_version == 3
                 and (self.ledger_entry_id is None or self.ledger_entry_digest is None)
             )
             or (
-                self.terminal_member_schema_version in {1, 2}
+                self.terminal_member_schema_version in {1, 2, 4}
                 and (self.ledger_entry_id is not None or self.ledger_entry_digest is not None)
+            )
+            or (
+                self.terminal_member_schema_version == 4
+                and (
+                    self.pre_group_noncommit is None
+                    or self.pre_group_noncommit.request_digest
+                    != self.canonical_source_result.request_digest
+                )
+            )
+            or (
+                self.terminal_member_schema_version != 4
+                and self.pre_group_noncommit is not None
             )
         ):
             raise ValueError("bootstrap graph terminal reload receipt is substituted")
@@ -12311,6 +12352,7 @@ class BootstrapGraphTerminalPublicationRequestV3(_BootstrapV3Contract):
     ordered_group_result_constructions: tuple[BootstrapNativeGroupCommitTerminalConstructionV3, ...]
     ordered_group_commit_reload_digests: tuple[str, ...]
     canonical_source_result_input: BootstrapGraphCanonicalSourceResultInputV3
+    pre_group_noncommit: BootstrapGraphPreGroupNonCommitV3 | None = None
     source_finalization_observation_delta: SourceFinalizationObservationDelta | None = None
     source_observation_intent: SourceObservationIntent | None = None
     handoff_core: BootstrapGraphTerminalHandoffCoreV3
@@ -12339,12 +12381,14 @@ class BootstrapGraphTerminalPublicationRequestV3(_BootstrapV3Contract):
         return (
             (frozenset({"source_finalization_observation_delta"}) if values.get("source_finalization_observation_delta") is None else frozenset())
             | (frozenset({"source_observation_intent"}) if values.get("source_observation_intent") is None else frozenset())
+            | (frozenset({"pre_group_noncommit"}) if values.get("pre_group_noncommit") is None else frozenset())
         )
 
     def _canonical_contract_field_names(self) -> tuple[str, ...]:
         omitted = self._versioned_digest_excluded_fields({
             "source_finalization_observation_delta": self.source_finalization_observation_delta,
             "source_observation_intent": self.source_observation_intent,
+            "pre_group_noncommit": self.pre_group_noncommit,
         })
         return tuple(name for name in type(self).model_fields if name not in omitted)
 
@@ -12355,6 +12399,8 @@ class BootstrapGraphTerminalPublicationRequestV3(_BootstrapV3Contract):
             value.pop("source_finalization_observation_delta", None)
         if self.source_observation_intent is None:
             value.pop("source_observation_intent", None)
+        if self.pre_group_noncommit is None:
+            value.pop("pre_group_noncommit", None)
         return value
 
     @model_validator(mode="after")
@@ -12450,6 +12496,29 @@ class BootstrapGraphTerminalPublicationRequestV3(_BootstrapV3Contract):
             )
         ):
             raise ValueError("bootstrap graph source observation intent is invalid")
+        if (
+            self.publication_intent.terminal_member_schema_version == 4
+            and (
+                self.pre_group_noncommit is None
+                or self.source_finalization_observation_delta is not None
+                or self.source_observation_intent is not None
+                or self.ordered_group_result_constructions
+                or self.canonical_source_result_input.source_status != "failed"
+                or self.pre_group_noncommit.request_digest
+                != self.coordinator_request.request_digest
+                or self.pre_group_noncommit.operation_fence_binding_digest
+                != self.operation_fence_binding.binding_digest
+                or self.pre_group_noncommit.operation_lease_binding_digest
+                != self.operation_lease_binding.binding_digest
+                or self.pre_group_noncommit.writer_commit_binding_digest
+                != self.writer_commit_binding.binding_digest
+                or self.pre_group_noncommit.control_epoch_digest
+                != self.control_epoch.epoch_digest
+            )
+        ):
+            raise ValueError("bootstrap graph pre-group noncommit is invalid")
+        if self.publication_intent.terminal_member_schema_version != 4 and self.pre_group_noncommit is not None:
+            raise ValueError("historical terminal request forbids pre-group noncommit")
         return self
 
 
@@ -12743,6 +12812,7 @@ BootstrapGraphPlanAtomicMemberKindV3: TypeAlias = Literal[
     "bootstrap_graph_retry_progress", "bootstrap_graph_final_stage_evidence",
     "ingestion_execution_manifest", "transaction_group_result",
     "bootstrap_graph_terminal_handoff", "bootstrap_graph_canonical_source_result",
+    "bootstrap_graph_pre_group_noncommit",
     "bootstrap_graph_source_finalization_observation_delta",
     "bootstrap_graph_replay_bundle", "bootstrap_graph_observed_counters",
     "bootstrap_graph_source_progress", "bootstrap_graph_successor_attempt_authority",
@@ -12775,6 +12845,7 @@ BOOTSTRAP_GRAPH_V3_ATOMIC_MEMBER_CODECS: dict[str, str] = {
     "transaction_group_result": "bootstrap_graph_v3/transaction_group_result/native",
     "bootstrap_graph_terminal_handoff": "bootstrap_graph_v3/bootstrap_graph_terminal_handoff/native",
     "bootstrap_graph_canonical_source_result": "bootstrap_graph_v3/bootstrap_graph_canonical_source_result/native",
+    "bootstrap_graph_pre_group_noncommit": "bootstrap_graph_v3/bootstrap_graph_pre_group_noncommit/native",
     "bootstrap_graph_source_finalization_observation_delta": "bootstrap_graph_v3/bootstrap_graph_source_finalization_observation_delta/native",
     "bootstrap_graph_replay_bundle": "bootstrap_graph_v3/bootstrap_graph_replay_bundle/native",
     "bootstrap_graph_observed_counters": "bootstrap_graph_v3/bootstrap_graph_observed_counters/native",
@@ -12836,6 +12907,7 @@ def encode_bootstrap_graph_atomic_member_payload_v3(
         "bootstrap_graph_source_finalization_observation_delta": (
             SourceFinalizationObservationDelta
         ),
+        "bootstrap_graph_pre_group_noncommit": BootstrapGraphPreGroupNonCommitV3,
     }
     expected_type = expected_types.get(kind)
     if expected_type is not None and not isinstance(artifact, expected_type):
@@ -12893,6 +12965,15 @@ def decode_bootstrap_graph_atomic_member_payload_v3(
         except (TypeError, ValueError) as exc:
             raise SemanticContractCodecError(
                 "native source finalization observation is incompatible"
+            ) from exc
+    if kind == "bootstrap_graph_pre_group_noncommit":
+        try:
+            return canonical_contract_value(
+                BootstrapGraphPreGroupNonCommitV3.model_validate(payload, strict=False)
+            )
+        except (TypeError, ValueError) as exc:
+            raise SemanticContractCodecError(
+                "native bootstrap graph pre-group noncommit is incompatible"
             ) from exc
     return payload
 
@@ -13669,7 +13750,7 @@ class BootstrapGraphFinalizedFailureV3(_BootstrapV3Contract):
     kind: Literal["finalized_failure"]
     terminal_reload: BootstrapGraphTerminalReloadV3
     control_epoch_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    reason: Literal["related_conflict_exhausted", "lease_expired", "fence_superseded", "writer_superseded", "publication_conflict", "storage_unavailable"]
+    reason: Literal["related_conflict_exhausted", "lease_expired", "fence_superseded", "writer_superseded", "publication_conflict", "storage_unavailable", "authorization_revoked_before_commit"]
     response_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     _digest_domain = b"memorii.semantic-ingestion.bootstrap-graph-finalized-failure.v3"
     _digest_field = "response_digest"
@@ -13978,6 +14059,7 @@ def rebuild_bootstrap_graph_effect_contracts() -> None:
         BootstrapGraphGroupCasOutcomeV3,
         BootstrapNativeGroupCommitTerminalConstructionV3,
         BootstrapGraphCanonicalSourceResultV3,
+        BootstrapGraphPreGroupNonCommitV3,
         BootstrapGraphCanonicalSourceResultInputV3,
         BootstrapGraphTerminalPublicationRequestV3,
         BootstrapGraphTerminalReloadV3,
@@ -14240,6 +14322,7 @@ _CONTRACT_KINDS: dict[type[BaseModel], str] = {
     BootstrapGraphGroupExecutionResultV3: "bootstrap_graph_group_execution_result_v3",
     BootstrapGraphGroupResultConstructionV3: "bootstrap_graph_group_result_construction_v3",
     BootstrapGraphCanonicalSourceResultV3: "bootstrap_graph_canonical_source_result_v3",
+    BootstrapGraphPreGroupNonCommitV3: "bootstrap_graph_pre_group_noncommit_v3",
     BootstrapGraphCanonicalSourceResultInputV3: "bootstrap_graph_canonical_source_result_input_v3",
     BootstrapGraphTerminalPublicationRequestV3: "bootstrap_graph_terminal_publication_request_v3",
     BootstrapGraphTerminalHostAuthorityV3: "bootstrap_graph_terminal_host_authority_v3",
@@ -14862,6 +14945,7 @@ __all__ = [
     "BootstrapGraphGroupExecutionResultV3",
     "BootstrapGraphGroupResultConstructionV3",
     "BootstrapGraphCanonicalSourceResultV3",
+    "BootstrapGraphPreGroupNonCommitV3",
     "BootstrapGraphCanonicalSourceResultInputV3",
     "BootstrapGraphTerminalPublicationRequestV3",
     "BootstrapGraphTerminalHostAuthorityV3",

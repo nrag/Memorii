@@ -116,9 +116,14 @@ def _replace_jsonl_writer_manifest(
     )])
 
 
-def _registry_configuration(tmp_path: Path, *, complete=False):
+def _registry_configuration(tmp_path: Path, *, complete=False, without_ingestion_time_seals=False):
     schemas = (tuple(sorted(path.name for path in (_ROOT / "schema").iterdir() if path.is_dir()))
                if complete else ("ObservationLedgerActivation", "ObservationLedgerHead"))
+    if without_ingestion_time_seals:
+        schemas = tuple(schema for schema in schemas if schema not in {
+            "SourceRetentionTimeAttestation", "TransactionGroupCommitTimeAttestation",
+            "IngestionTimeObservationSnapshot", "IngestionTimeAttestationPage",
+        })
     limits = replace(
         _PUBLICATION_LIMITS,
         decoder_source_limits=replace(_PUBLICATION_LIMITS.decoder_source_limits, maximum_files=max(8, len(schemas))),
@@ -155,6 +160,10 @@ def _provider_factory(
     *,
     normalization=False,
     complete_registry=False,
+    without_ingestion_time_seals=False,
+    agent_bound=False,
+    structured_submission_authority_resolver=None,
+    normalization_proposal_ref=None,
     verified_capability_monitoring_authorities: tuple[
         VerifiedCapabilityMonitoringAuthority, ...
     ] | None = None,
@@ -165,7 +174,7 @@ def _provider_factory(
         )
     elif verified_capability_monitoring_authorities is None:
         verified_capability_monitoring_authorities = ()
-    registry = _registry_configuration(tmp_path, complete=complete_registry)
+    registry = _registry_configuration(tmp_path, complete=complete_registry, without_ingestion_time_seals=without_ingestion_time_seals)
     target, _, _ = _signed_package(tmp_path, monkeypatch, verify_configured_typed_value_registry_history(registry))
     clock = [TEST_NOW]
     def build(plane):
@@ -175,9 +184,16 @@ def _provider_factory(
             from tests.unit.core.semantic_ingestion.test_semantic_provider_composition import (
                 _v3_normalization_host_builder,
             )
-            normalization_builder, _ = _v3_normalization_host_builder(proposal=graph_fact_proposal())
+            normalization_builder, _ = _v3_normalization_host_builder(
+                proposal=graph_fact_proposal(),
+                proposal_ref=normalization_proposal_ref,
+            )
+        from tests.unit.core.semantic_ingestion.test_semantic_provider_composition import _AgentBoundResolver
         capability = replace(
-            _built_in_local_capability(),
+            _built_in_local_capability(
+                resolver=_AgentBoundResolver() if agent_bound else None,
+                structured_submission_authority_resolver=structured_submission_authority_resolver,
+            ),
             typed_value_registry_configuration=registry,
             observation_activation_target_configuration=target,
         )
@@ -268,7 +284,7 @@ def test_activation_rejects_recomputed_same_revision_writer_manifest_without_wri
     )
     _replace_jsonl_writer_manifest(backing, plane, foreign)
     before = backing._records_path.read_bytes()
-    with pytest.raises(SemanticWriterAdmissionError, match="not an activation predecessor"):
+    with pytest.raises(SemanticWriterAdmissionError, match="semantic writer manifest is mismatched"):
         service.activate_observation_ledger()
     assert backing._records_path.read_bytes() == before
     reopened = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "foreign-predecessor"))
@@ -641,6 +657,7 @@ def test_independent_hosts_converge_on_one_durable_deferred_baseline(tmp_path, m
         independent_current_use,
     )
     entered, second_committed, release = Event(), Event(), Event()
+    race_timeout_seconds = 30
     attempts = []
     apply = store_a.apply_batch
 
@@ -656,7 +673,7 @@ def test_independent_hosts_converge_on_one_durable_deferred_baseline(tmp_path, m
         if is_baseline_batch(records):
             attempts.append("a")
             entered.set()
-            assert release.wait(timeout=30), "baseline race was not released"
+            assert release.wait(timeout=race_timeout_seconds), "baseline race was not released"
         return apply(records, **kwargs)
 
     apply_b = store_b.apply_batch
@@ -672,15 +689,20 @@ def test_independent_hosts_converge_on_one_durable_deferred_baseline(tmp_path, m
     monkeypatch.setattr(store_b, "apply_batch", commit_second_baseline)
     with ThreadPoolExecutor(max_workers=2) as executor:
         first_future = executor.submit(service_a.activate_observation_ledger)
-        assert entered.wait(timeout=30), "host A did not reach the baseline CAS"
+        assert entered.wait(timeout=race_timeout_seconds), "host A did not reach the baseline CAS"
         second_future = executor.submit(service_b.activate_observation_ledger)
-        assert second_committed.wait(timeout=30), "host B did not commit the winning baseline"
+        if not second_committed.wait(timeout=5) and second_future.done():
+            second_future.result()
+        assert second_committed.wait(
+            timeout=race_timeout_seconds - 5
+        ), "host B did not commit the winning baseline"
         winner_tick = service_b.run_capability_monitor_tick(
             evidence=authority._initial_evidence,
         )
         assert winner_tick.status.status == "active"
         release.set()
-        first, second = first_future.result(timeout=60), second_future.result(timeout=60)
+        first = first_future.result(timeout=race_timeout_seconds)
+        second = second_future.result(timeout=race_timeout_seconds)
     assert first == second
     status = [record for record in service_a._memory_plane.list_records(
         source_kind="semantic_ingestion_capability_status",

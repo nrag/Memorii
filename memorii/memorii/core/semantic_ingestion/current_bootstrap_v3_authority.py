@@ -37,10 +37,19 @@ from memorii.core.memory_evolution.capability_monitoring import (
     CapabilityMonitoringPolicy,
     SequentialTestManifest,
 )
+from memorii.core.memory_evolution.conflict_attention import (
+    ActiveSemanticConflictResolverAuthority,
+    SemanticConflictAuthorityResolutionRequest,
+    SemanticConflictResolverAuthority,
+)
+from memorii.core.memory_evolution.ingestion_contracts import encode_typed_value
 from memorii.core.memory_evolution.observation_activation_configuration import (
     LocalLevel2ObservationActivationTargetConfiguration,
     local_level2_package_root_digest,
     resolve_verified_observation_activation_target,
+)
+from memorii.core.memory_evolution.projection_history import (
+    SemanticConflictResolverAuthorityRepository,
 )
 from memorii.core.memory_evolution.typed_value_declarations import (
     ProtectedDeclarationParseLimits,
@@ -60,7 +69,10 @@ from memorii.core.memory_evolution.typed_value_registry_configuration import (
     verify_configured_typed_value_registry_history,
 )
 from memorii.core.memory_evolution.typed_value_registry_history import ProtectedTypedValueRegistryHistory
-from memorii.core.memory_evolution.writer_admission import SemanticWriterAdmissionStore
+from memorii.core.memory_evolution.writer_admission import (
+    SemanticConflictAuthorityAdministrationGrant,
+    SemanticWriterAdmissionStore,
+)
 from memorii.core.semantic_ingestion.capability import (
     AuthorizedSemanticIngestionRuntime,
     BuiltInLocalHostSemanticIngestionCapability,
@@ -530,6 +542,81 @@ def _verified_local_level2_registry_history(
     return history
 
 
+class _LocalLevel2ConflictAuthorityResolver:
+    """Install the local resolver's first authority before ledger activation.
+
+    The local host has no automatic conflict decision path.  Its resolver
+    therefore retains the verified authority needed for ordinary uncontested
+    commits and fails closed if a contested projection requires a decision.
+    """
+
+    _RENDERER_SCHEMA = "memorii-hermes-local-level2-v1"
+
+    def __init__(self, *, authorization: LocalLevel2BootstrapV3Authorization) -> None:
+        self._authorization = authorization
+        authority_id = "local-level2-" + sha256(
+            ("memorii.local-level2.conflict-authority.v1:\0" + authorization.authorization_digest).encode()
+        ).hexdigest()
+        policy_fingerprint = sha256(
+            ("memorii.local-level2.conflict-renderer.v1:\0" + authorization.authorization_digest).encode()
+        ).hexdigest()
+        owner_digest = sha256(
+            ("memorii.local-level2.conflict-owner.v1:\0" + authorization.authorization_digest).encode()
+        ).hexdigest()
+        authority_body = {
+            "authority_record_id": authority_id,
+            "tenant_partition_id": f"local:{authorization.installation_id}",
+            "renderer_schema": self._RENDERER_SCHEMA,
+            "renderer_policy_fingerprint": policy_fingerprint,
+            "owner_capability_digest": owner_digest,
+            "status": "active",
+            "authority_revision": 1,
+            "valid_from": authorization.issued_at,
+            "valid_until": authorization.expires_at,
+            "predecessor_authority_record_digest": None,
+        }
+        self.authority = SemanticConflictResolverAuthority(
+            **authority_body,
+            authority_record_digest=sha256(
+                b"memorii.semantic-conflict-resolver-authority.v1\0"
+                + encode_typed_value(authority_body)
+            ).hexdigest(),
+        )
+        pointer_body = {
+            "tenant_partition_id": self.authority.tenant_partition_id,
+            "renderer_schema": self.authority.renderer_schema,
+            "authority_record_id": self.authority.authority_record_id,
+            "authority_record_digest": self.authority.authority_record_digest,
+            "pointer_revision": 1,
+            "predecessor_pointer_digest": None,
+        }
+        self.pointer = ActiveSemanticConflictResolverAuthority(
+            **pointer_body,
+            pointer_digest=sha256(
+                b"memorii.semantic-conflict-resolver-pointer.v1\0"
+                + encode_typed_value(pointer_body)
+            ).hexdigest(),
+        )
+
+    def install(
+        self, memory_plane: object, admissions: SemanticWriterAdmissionStore,
+        grant: SemanticConflictAuthorityAdministrationGrant,
+    ) -> None:
+        SemanticConflictResolverAuthorityRepository(
+            memory_plane,
+            admissions,
+            administration_capability=grant,
+            now_provider=lambda: self._authorization.issued_at,
+        ).install(authority=self.authority, pointer=self.pointer, capability=grant)
+
+    def resolve_semantic_conflicts(
+        self, requests: tuple[SemanticConflictAuthorityResolutionRequest, ...]
+    ) -> tuple[object, ...]:
+        if requests:
+            raise ValueError("local Level 2 conflict resolution is unavailable")
+        return ()
+
+
 class CurrentReleaseBootstrapV3HostMaterialBuilder:
     """Verify installed current-release bytes and build the complete static host material."""
 
@@ -575,6 +662,7 @@ class CurrentReleaseBootstrapV3HostMaterialBuilder:
         authorization: LocalLevel2BootstrapV3Authorization,
         now: datetime,
         authenticated_ingress_resolver: object,
+        structured_submission_authority_resolver: object | None = None,
         authorization_is_current: Callable[[], bool] | None = None,
     ) -> tuple[LocalLevel2BootstrapV3HostCapability, LocalLevel2BootstrapV3MaterialVerifier]:
         """Build the sole local host presentation after sidecar verification.
@@ -592,6 +680,12 @@ class CurrentReleaseBootstrapV3HostMaterialBuilder:
             authenticated_ingress_resolver=authenticated_ingress_resolver,
             profile_enabled=True,
             trust_domain="local_level2",
+            structured_submission_authority_resolver=structured_submission_authority_resolver,
+            structured_submission_authority_resolver_binding_digest=(
+                getattr(structured_submission_authority_resolver, "resolver_binding_digest", None)
+                if structured_submission_authority_resolver is not None
+                else None
+            ),
         )
         presentation = HostBootstrapMaterialPresentation(
             material=material,
@@ -611,6 +705,9 @@ class CurrentReleaseBootstrapV3HostMaterialBuilder:
             registry_configuration=registry_configuration,
             target_configuration=observation_activation_target_configuration,
         )
+        conflict_resolver = _LocalLevel2ConflictAuthorityResolver(
+            authorization=authorization
+        )
         runtime = BuiltInLocalHostSemanticIngestionCapability(
             bootstrap_material_presentation=presentation,
             authorization_bytes=envelope.authorization_bytes,
@@ -621,9 +718,15 @@ class CurrentReleaseBootstrapV3HostMaterialBuilder:
             typed_value_registry_configuration=registry_configuration,
             verified_typed_value_registry_history=verified_registry_history,
             observation_activation_target_configuration=observation_activation_target_configuration,
-            bootstrap_recovery_operation_lease_duration=timedelta(minutes=10),
+            bootstrap_recovery_operation_lease_duration=timedelta(minutes=30),
             capability_status_activation=LocalLevel2MonitoredCapabilityActivation(
                 authorization=authorization, resource_policy=envelope.resource_policy
+            ),
+            semantic_conflict_authority_resolver=conflict_resolver,
+            conflict_authority_bootstrap_factory=(
+                lambda memory_plane, admissions: lambda grant: conflict_resolver.install(
+                    memory_plane, admissions, grant
+                )
             ),
         )
         capability = LocalLevel2BootstrapV3HostCapability(

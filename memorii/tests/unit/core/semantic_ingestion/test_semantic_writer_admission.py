@@ -2,6 +2,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from memorii.core.memory_evolution.atomic_store import SemanticIngestionAtomicStore
@@ -14,6 +15,7 @@ from memorii.core.memory_evolution.writer_admission import (
     SemanticWriterAdmissionStore,
     _is_atomic_clarification_projection_write,
     _is_bootstrap_graph_v3_epoch_transition_write,
+    _is_bootstrap_graph_v3_terminal_write,
     bounded_preplanning_ownership_manifest,
 )
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
@@ -549,3 +551,59 @@ def test_mismatched_bootstrap_recovery_namespace_stays_unknown() -> None:
     )
 
     assert semantic_control_class(record) == "unknown"
+
+
+def test_schema4_terminal_writer_closure_requires_exact_revocation_member() -> None:
+    """Schema 4 is source-only only when its member binds to this terminal."""
+    operation_id = "operation:revoked"
+    control_id = "semantic_ingestion:operation:" + operation_id
+    terminal = {
+        "state": "terminal_published", "request_digest": "r" * 64,
+        "operation_fence_binding_digest": "f" * 64,
+        "completed_lease_binding_digest": "l" * 64,
+        "writer_commit_binding_digest": "w" * 64,
+        "control_epoch_digest": "e" * 64, "locator_digest": "x" * 64,
+        "terminal_control_digest": "t" * 64,
+        "publication_operation_generation": 2,
+        "publication_artifact_generation": 2,
+    }
+    identity = {
+        "member_manifest_digest": "m" * 64,
+        "terminal_control_digest": "t" * 64,
+        "locator_digest": "x" * 64,
+        "normalization_replay_digest": "n" * 64,
+    }
+    noncommit = {
+        "reason": "authorization_revoked_before_commit",
+        "request_digest": "r" * 64,
+        "operation_fence_binding_digest": "f" * 64,
+        "operation_lease_binding_digest": "l" * 64,
+        "writer_commit_binding_digest": "w" * 64,
+        "control_epoch_digest": "e" * 64,
+    }
+    member = {"member_id": "pre-group-noncommit", "kind": "bootstrap_graph_pre_group_noncommit"}
+    reload = {
+        "final_write_identity": identity, "terminal_control": terminal,
+        "terminal_member_schema_version": 4,
+        "pre_group_noncommit": noncommit,
+    }
+
+    def record(memory_id: str, kind: str, **content: object) -> SimpleNamespace:
+        return SimpleNamespace(memory_id=memory_id, content={"semantic_ingestion_kind": kind, **content})
+
+    control = record(control_id, "preplanning_operation_control", control={"generation": 2, "state": "terminal", "lease": None})
+    governed = [
+        control,
+        record("manifest", "bootstrap_graph_v3_terminal_manifest", members=(member,), manifest_digest="m" * 64),
+        record("terminal", "bootstrap_graph_v3_terminal_control", terminal_control=terminal),
+        record("identity", "bootstrap_graph_v3_terminal_identity", identity=identity),
+        record("locator", "bootstrap_graph_v3_terminal_locator", handoff_digest="h" * 64, locator_digest="x" * 64, reload=reload),
+        record("request", "bootstrap_graph_v3_terminal_locator", coordinator_request_digest="r" * 64, locator_digest="x" * 64, reload=reload),
+        record("recovery", "bootstrap_graph_v3_terminal_locator", normalization_recovery_key_digest="k" * 64, normalization_replay_digest="n" * 64, locator_digest="x" * 64, reload=reload),
+        record("member", "bootstrap_graph_v3_member", member=member),
+    ]
+    current = (record(control_id, "preplanning_operation_control", control={"generation": 1}),)
+
+    assert _is_bootstrap_graph_v3_terminal_write(governed, current)
+    reload["pre_group_noncommit"] = {**noncommit, "reason": "forged"}
+    assert not _is_bootstrap_graph_v3_terminal_write(governed, current)

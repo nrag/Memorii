@@ -216,19 +216,53 @@ class BootstrapV3GraphFreeInterpreter:
             source_id=proposal_payload.source_id, source_digest=proposal_payload.source_digest,
             preparation_fingerprint=proposal_payload.preparation_fingerprint,
             bootstrap_analysis_provenances=provenances, mentions=tuple(sorted(mentions, key=lambda row: row.partition_mention_digest)), assertions=())
-        def singleton_cluster(
-            row: BootstrapSourcePrePartitionMentionV3,
+        rows_by_digest = {row.mention_digest: row for row in mentions}
+        parents = {row.mention_digest: row.mention_digest for row in mentions}
+
+        def root(mention_digest: str) -> str:
+            while parents[mention_digest] != mention_digest:
+                parents[mention_digest] = parents[parents[mention_digest]]
+                mention_digest = parents[mention_digest]
+            return mention_digest
+
+        def join(first: str, second: str) -> None:
+            first_root, second_root = root(first), root(second)
+            if first_root != second_root:
+                parents[max(first_root, second_root)] = min(first_root, second_root)
+
+        # Repetition is scoped to paired lifecycle roles in one operation. It
+        # is not a generic same-name or same-text identity rule.
+        for proposal in proposal_payload.normalized_proposals:
+            for member in proposal.operation_members:
+                if member.kind != "correction":
+                    continue
+                pairs = [(member.corrected_fact.subject_mention_digest, member.replacement_fact.subject_mention_digest)]
+                if (
+                    member.corrected_fact.object.kind == "entity"
+                    and member.replacement_fact.object.kind == "entity"
+                ):
+                    pairs.append((
+                        member.corrected_fact.object.mention_digest,
+                        member.replacement_fact.object.mention_digest,
+                    ))
+                for old, replacement in pairs:
+                    old_row, replacement_row = rows_by_digest[old], rows_by_digest[replacement]
+                    if old_row.mention.mention_quote == replacement_row.mention.mention_quote:
+                        join(old, replacement)
+
+        def cluster(
+            rows: tuple[BootstrapSourcePrePartitionMentionV3, ...],
         ) -> BootstrapSourceLocalIdentityClusterDecisionV3:
             values = {
-                "decision": "singleton_distinct",
+                "decision": "singleton_distinct" if len(rows) == 1 else "same_source_entity",
                 "proof_kind": "certified_unambiguous_repetition",
-                "mention_digests": (row.mention_digest,),
+                "mention_digests": tuple(sorted(row.mention_digest for row in rows)),
                 "source_evidence": (),
-                "provenance_closure": ((
+                "provenance_closure": tuple(sorted({(
                     row.bootstrap_analysis_provenance.segment_id,
                     row.bootstrap_analysis_provenance.provenance_digest,
                     payload_limit_authority.policy.policy_digest,
-                ),),
+                ) for row in rows})),
             }
             return BootstrapSourceLocalIdentityClusterDecisionV3.create(
                 **values,
@@ -238,7 +272,13 @@ class BootstrapV3GraphFreeInterpreter:
                 ),
             )
 
-        clusters = tuple(singleton_cluster(row) for row in mentions)
+        grouped: dict[str, dict[str, BootstrapSourcePrePartitionMentionV3]] = {}
+        for row in mentions:
+            grouped.setdefault(root(row.mention_digest), {})[row.mention_digest] = row
+        clusters = tuple(
+            cluster(tuple(sorted(rows.values(), key=lambda row: row.mention_digest)))
+            for _, rows in sorted(grouped.items())
+        )
         identity = BootstrapSourceLocalIdentityResolutionV3.create(
             source_id=proposal_payload.source_id, source_digest=proposal_payload.source_digest,
             preparation_fingerprint=proposal_payload.preparation_fingerprint,

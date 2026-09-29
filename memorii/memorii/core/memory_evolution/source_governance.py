@@ -23,8 +23,6 @@ from memorii.core.provider.models import ProviderEvent
 from memorii.domain.enums import SourceModality
 
 if TYPE_CHECKING:
-    # Annotation-only contract import: a runtime import here would close a
-    # semantic_ingestion -> memory_evolution import cycle through atomic_store.
     from memorii.core.semantic_ingestion.contracts import (
         RequiredOutcomeScopeSet as SemanticRequiredOutcomeScopeSet,
     )
@@ -192,7 +190,9 @@ def derive_source_governance_material(
         return SourceGovernanceMaterialResult(
             kind="nonpromoting", reason_codes=("semantic_source_interval_policy_mismatch",)
         )
-    scopes = _semantic_required_scopes(ingress.required_outcome_scopes)
+    scopes = semantic_required_outcome_scopes_for_retained_source(
+        ingress.required_outcome_scopes
+    )
     if scopes is None:
         return SourceGovernanceMaterialResult(
             kind="nonpromoting", reason_codes=("required_scope_projection_unavailable",)
@@ -323,7 +323,7 @@ def derive_source_governance_material(
     )
 
 
-def _semantic_required_scopes(
+def semantic_required_outcome_scopes_for_retained_source(
     scopes: RequiredOutcomeScopeSet,
 ) -> SemanticRequiredOutcomeScopeSet | None:
     from memorii.core.semantic_ingestion.contracts import (
@@ -367,4 +367,5 @@ __all__ = [
     "SourceGovernanceMaterialResult",
     "derive_source_governance_material",
     "require_complete_scope_authorization",
+    "semantic_required_outcome_scopes_for_retained_source",
 ]

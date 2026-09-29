@@ -1268,6 +1268,7 @@ class BootstrapGraphArtifactAssemblerV3:
         ordered_group_result_constructions: tuple[BootstrapNativeGroupCommitTerminalConstructionV3, ...],
         canonical_source_result_input: object, handoff_core: BootstrapGraphTerminalHandoffCoreV3,
         source_finalization_observation_delta: object,
+        pre_group_noncommit: object = None,
         source_observation_intent: object = None,
         publication_intent: BootstrapGraphTerminalPublicationIntentV3,
         handoff: BootstrapGraphTerminalPersistenceHandoffV3, predecessor_generation: object,
@@ -1385,6 +1386,7 @@ class BootstrapGraphArtifactAssemblerV3:
                 for item in ordered_group_result_constructions
             ),
             canonical_source_result_input=canonical_source_result_input,
+            pre_group_noncommit=pre_group_noncommit,
             source_finalization_observation_delta=source_finalization_observation_delta,
             source_observation_intent=source_observation_intent,
             handoff_core=handoff_core, publication_intent=publication_intent, handoff=handoff,

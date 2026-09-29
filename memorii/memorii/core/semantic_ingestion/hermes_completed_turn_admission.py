@@ -196,7 +196,7 @@ class HermesCompletedTurnAdmissionService:
             for child_delivery_id in child_delivery_ids
         )
         prepared = tuple(
-            _prepare_governed_child_source(
+            prepare_governed_child_source(
                 request=request,
                 message=message,
                 child_delivery_id=child_delivery_id,
@@ -271,7 +271,7 @@ class _PreparedGovernedChild:
         self.source = source
 
 
-def _prepare_governed_child_source(
+def prepare_governed_child_source(
     *,
     request: HermesCompletedTurnAdmissionRequest,
     message: HermesCompletedTurnMessage,

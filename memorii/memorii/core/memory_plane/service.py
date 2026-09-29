@@ -89,8 +89,11 @@ class MemoryPlaneService:
         finally:
             self._active_unit_of_work.reset(token)
 
-    def _record_store(self) -> MemoryPlaneStore:
-        return self._active_unit_of_work.get() or self._records
+    def _record_store(self) -> MemoryPlaneStore | MemoryPlaneUnitOfWork:
+        active_unit_of_work = self._active_unit_of_work.get()
+        if active_unit_of_work is not None:
+            return active_unit_of_work
+        return self._records
 
     def install_governed_write_policy(self, policy: GovernedWritePolicy) -> None:
         installer = getattr(self._records, "install_governed_write_policy", None)
@@ -167,6 +170,16 @@ class MemoryPlaneService:
         """Return one detached canonical snapshot for a read-only consumer."""
 
         return self._record_store().read_snapshot()
+
+    def read_snapshot_linearized(
+        self,
+        callback: Callable[[int, tuple[CanonicalMemoryRecord, ...]], object],
+    ) -> object:
+        """Run a protected release while concurrent store writers are excluded."""
+
+        if self._active_unit_of_work.get() is not None:
+            raise RuntimeError("linearized reads require the root memory-plane store")
+        return self._records.read_snapshot_linearized(callback)
 
     def read_write_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]:
         """Return one detached full-write snapshot for a conditional writer."""

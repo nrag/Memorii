@@ -1,0 +1,241 @@
+# Complete Default Catalog For Work And Home
+
+- Parent WorkPlan: `../implementation.plan.md`; order 3; state `ready for manual testing`
+- Requirement allocation: OLE-09 and OLE-10 primary, OLE-14 `partial`; OLE-03 and OLE-05 supporting; learning requirements remain open
+- Dependency: versioned fourth-relation root proof; record actual base/head SHA and tree state at start/closure.
+
+## Journey And Boundary
+
+Before any learning runs, the same default bundle handles all 53 semantic relations, twenty organizational personas, ten home journeys, twenty root types, seven home subtypes, and separate `Preference` user-context record. A signed-in user can recall local household chores, appointments, bills, pets and preferences within their own scope; a `Household` graph edge grants no second-account read. No OpenAI key is required for a host-structured base assertion, retention or protected recall.
+
+## Owners And Changes
+
+Compile the normative `learned_ontology_base_catalog.md` ledger into versioned typed declarations and package authority. Extend `core/memory_evolution/models.py:35,44` and canonical semantic contracts with registered entity identity, subtype, `TimeInterval`, `Money`, `LocalDate`, and relation-specific `StatusText` policies; implement the closed `Preference` candidate/confirmation/correction/expiry lifecycle in user-context memory, not as a semantic edge. Bind 53 catalog rows to prompt/schema, trust, temporal, state, writer/read policies and protected count/snippet rules through the versioned bundle. Generate exact assertion/abstention/revision/read fixtures and persona/home coverage graph. Package fingerprint, schema, prompt, policy manifest, frozen corpus, and CI gate must all cite one catalog digest and reject a stale dependent node. Search existing helper/registry ownership before creating new modules or identifiers.
+
+The H8 slice has its own user-context owner and must not reuse the legacy semantic `preference` predicate. Add a typed `Preference` record, event/state repository, holder-confirmation writer and protected reader under `MemoryDomain.USER`; its suite owns candidate creation, agent-summary abstention, exact holder confirmation, duplicate coalescing, correction, expiry/retraction, delegated-agent allow, nondelegated-agent and second-user denial, and historical read.
+
+## Level-2 Corpus And Closure
+
+Freeze one typed 53-row corpus. Every row carries the relation and endpoint declarations, scope/evidence/lifecycle/read/value-policy IDs, coverage codes, direct source and expected native claim, misleading source and exact zero effect, revision input and current/as-of result, and protected current/historical query expectations. Run all 53 rows through the captured-turn `HermesCompletedTurnRuntime` root and require a committed native projection plus schema-2 catalog binding. Generated schema or an adapter-shaped proposal alone is insufficient. For every private row, the same read case must bind the current fact grant, catalog visibility grant and authenticated agent, then prove current-grant revocation releases no result, snippet or count.
+
+The corpus must contain the exact 53 relation IDs and exact twenty persona plus ten home coverage codes. Missing, duplicate, orphan, mismatched-predicate and stale schema/prompt/policy artifacts fail the compiler/package gate. Add compact shared-mechanic probes: JSONL reopen/retry for each M/C/H lifecycle and public/private authority path; same-title distinct Role identities; unknown status; decimal/currency rejection; date-only handling; timezone-aware interval enforcement; unregistered subtype denial; and symmetric `partner_of`/`sibling_of` reverse reads that persist no inverse fact.
+
+H8 closes only through the separate user-context slice above. Its real-root suite must cover candidate, agent-summary abstention, holder confirmation, duplicate, correction, expiry/retraction, delegated-agent allow, nondelegated-agent and second-user denial, and historical read. The six Level-2 blockers are: package/compiler integrity; 53-row runtime corpus including private denials; H8 suite; shared JSONL lifecycle/scope probes; existing M2 catalog/capture/runtime/reports-to regressions; and focused lint/type checks for changed modules. Full PR workflow matrices, release certification, hostile-storage families and exhaustive platform permutations remain Level-3 follow-up. Only then may OLE-09/10 be complete at Level 2. The learner remains absent and must not be reported as shipped.
+
+- Completed linked debugging operation: `../debug-structured-lifecycle-lease.plan.md` closed the captured-turn correction lease failure.
+- Completed linked debugging operation: `../debug-literal-lifecycle-projection.plan.md` closed the LocalDate correction projection-history failure.
+- Next action: none for M3; continue with M4 coverage observation and recurrence.
+
+## Active Read-Lifecycle Investigation (2026-09-26)
+
+The public Hermes `memorii_read_fact` schema/dispatch reaches the protected
+service owner, but this does not yet close the lifecycle/read slice. Inspection
+of the persisted schema-2 binding, capture pin and runtime projection records
+found the direct claim-state projection is insufficient if a later correction
+replaces it. The immutable lifecycle authority is the schema-2 group-primary
+pair: its closed `request_hex` retains target/replacement carriers and its
+closed `reload_hex` proves the same request committed atomically.
+The existing `ReportsToHistoryEntry`/`ReportsToProtectedReader` capability is
+inert and has no normal native writer/recovery path. In addition,
+`FactScopeGrant` is scope-wide and there is no typed endpoint-visibility grant
+that can authorize both identities for a symmetric reverse result. Embedded
+entity identifiers are evidence, not grants, and must not be treated as one.
+
+The current reader construction reuses the scoped-context catalog
+claim-digest/captured-pin/historical-bundle/current-grant join and its focused
+existing unit checks pass, but it is not accepted as lifecycle completion.
+The implementation decision is that the existing current `FactScopeGrant` and
+catalog-visibility grant authorize both endpoints only after the persisted
+runtime projection proves its exact immutable subject and object assertion
+references; arbitrary embedded identity lists are not authority. The remaining
+writer action is to reconstruct current/history/as-of from the existing
+immutable request/reload transition history before asserting the installed
+lifecycle journey.
+
+The direct reader now treats `system_as_of` as transaction time rather than
+forwarding it as a validity-time query. It filters immutable claim versions at
+or before that instant, excludes candidates, and joins each result back to its
+exact assertion projection and schema-2 binding. Its focused suite covers this
+transaction-time distinction and an unpatched missing-binding denial (`4
+passed`). This is a defensive partial correction only: it cannot reconstruct a
+corrected target whose persisted state has been replaced unless the group
+request/reload transition history is available, so it does not close the
+installed recovery proof.
+
+## Pre-Coding Review (2026-09-26)
+
+The codec/runtime inventory found reusable identity, grounding, typed-value, catalog-version, capture-pin, atomic-write and protected-read owners. `EntityType` currently has six values and `ClaimValueType` five; semantic claim codecs for Money, LocalDate, TimeInterval and relation-bound StatusText are absent. The existing generic `TimeInterval` and canonical decimal types are primitives, not finished claim codecs. There is no closed H8 preference lifecycle.
+
+Targeted test review required four corrections, all incorporated above: an executable 53-row real-runtime corpus contract; an explicit H8 user-context writer/reader slice; exact current fact/catalog/agent authorization and revocation denial for every private row; and removal of Level-3 PR/release matrices from this milestone's blocking bar. No code started before these corrections. The first bounded construction is the typed corpus/compiler gate, followed sequentially by codecs and runtime families, then H8.
+
+First construction candidate: `default_catalog_corpus.py` defines a frozen typed inventory and behavior-case contract, the generator compiles the normative Markdown ledger into canonical package bytes, and the loader verifies the approved source-contract hash, exact 53 relation IDs, exact 29 semantic coverage codes plus H8, 25 private-denial rows, canonical relation-bound case text and the corpus digest. Missing, duplicate, orphan-coverage, wrong-case, stale-digest and substituted-source mutations deny. Regeneration is byte-identical. Eight focused tests, Ruff and whitespace passed at exact `memorii/` SHA `580b32580102a30b479e63dd7b4e44a4dd437ac67fc6681bfbdcee659fa2e09a`. Targeted review is pending. This is compiler/corpus construction only; no broad runtime relation or H8 behavior is claimed.
+
+Initial review found three compiler gaps: prose-only endpoints, coverage validation only at aggregate level, and untyped case strings. The corrected candidate carries exact 27 root/subtype declarations with parent, identity and scope policies; typed subject alternatives; typed entity or literal objects; literal value-policy IDs; nonempty per-row coverage; and five ordered behavior cases with explicit role, expected effect and exact predicate. It rejects shared-code row omission and unknown typed endpoints. The regenerated resource passed 10 focused tests, Ruff and whitespace at exact `memorii/` SHA `78417e56482ffa6064f02183464eec524e7886b6a1811e96c3a4cd323e32b7be`. Independent delta review is pending; runtime behavior remains unclaimed.
+
+Delta review found one remaining source-binding gap: the typed entity declarations were copied from a second map rather than compiled from the normative table. The generator now parses grouped roots, subtype parents, identity policies, scope exceptions and named scopes from the same approved Markdown source. Parent, identity-policy and scope drift regressions prove those design fields change the compiled declarations. The regenerated package passed 13 focused tests, Ruff and whitespace at exact `memorii/` SHA `4db284fedd3f4f829e358ec6591e96d2eba3875587c8c8c7da047ef8f6780209`. Final delta review is pending; no runtime relation is claimed.
+
+Final independent delta review accepted the bounded compiler/corpus slice at the same exact `4db284fedd3f4f829e358ec6591e96d2eba3875587c8c8c7da047ef8f6780209` identity with no remaining Level-2 P1/P2. This establishes the typed 53-relation, 27-type, coverage and behavior-case compiler authority only. Real ingestion, protected reads and H8 remain open. The next sequential slice owns LocalDate, TimeInterval, Money and relation-bound StatusText codecs required by the accepted corpus.
+
+Shared literal-codec candidate: `default_catalog_values.py` adds date-only LocalDate with retained source calendar; TimeInterval with timezone-aware closed start/exclusive end or explicit open bounds; exact decimal-string Money with uppercase three-letter currency; and closed work-item/opportunity StatusText vocabularies and aliases. Unknown/cross-policy statuses, noncanonical decimals, malformed currency, naive/reversed time and inconsistent open bounds reject. Initial review found that policy name alone could silently reinterpret a persisted status after alias or vocabulary changes. The correction makes every literal policy content-addressed, binds its digest into every literal corpus row and typed status value, and rejects stale bindings. The codec and accepted corpus suites passed 32 tests in 6.15 seconds; Ruff and whitespace passed at exact `memorii/` SHA `f50bf76d462c9afb5121be5071c9785a18d34d018edb0f85560d3b3437d1f407`. Targeted delta review is pending; the codecs are not yet wired to runtime claims.
+
+Delta review then found that validating only against the active declaration would make a previously valid persisted status unreadable after a vocabulary update. The corrected decoder resolves the exact `(value_policy_id, value_policy_digest)` from declarations supplied by the selected historical bundle, keeps current construction fail closed, and rejects an unknown digest. A regression writes under policy A, selects policy B as active, and still decodes A through retained historical declarations. The codec/corpus suites passed 33 tests in 5.70 seconds; Ruff and whitespace passed at exact `memorii/` SHA `98f926cf3a2b5a59bcabc4e6a000b2034ceb46a907661dd5790bbefa30d4864a`. Targeted delta review is pending.
+
+The next delta review confirmed historical decode but found that accepting an arbitrary declaration during parsing let a caller mint a current value under an unselected policy. Current parsing now resolves only the module's selected default declaration; noncurrent declarations are accepted only by the explicit historical decoder. A caller-created `paused` policy cannot mint a current value, while retained policy A still decodes after policy B exists. The suites passed 34 tests in 5.75 seconds; Ruff and whitespace passed at exact `memorii/` SHA `bca6a381ac1f4df8d95650210ed091533c6df091c685200447e2560e0187413e`. Targeted delta review is pending.
+
+Independent delta review accepted the shared literal codec/corpus slice at the same exact `bca6a381ac1f4df8d95650210ed091533c6df091c685200447e2560e0187413e` identity with no remaining Level-2 P1/P2. This establishes current-write versus historical-read value-policy behavior only; the types are not yet wired into runtime relation validation.
+
+The next construction registers all 27 compiled entity types and four literal claim types in the canonical enums, then loads runtime relation rows from the accepted corpus rather than a parallel predicate table. The validator accepts all 53 typed endpoint rows, decodes canonical LocalDate, Money, TimeInterval and catalog-bound StatusText values, and denies unknown relations, wrong endpoints, noncanonical literal bytes and stale status digests. The combined corpus/codec/runtime suites passed 90 tests in 7.16 seconds; the runtime-only suite passed 56 in 5.97 seconds; production Pyright, Ruff and whitespace passed at exact `memorii/` SHA `c02bbf153a0b80f96bebcc48c6a58724430b69ccd21eebc28c3d7cb8ba66f02d`. Targeted review is pending. This is a callable runtime validator, not yet a provider-path wiring claim.
+
+Targeted review found the coverage test did not independently prove mapping values, so swapped enum registrations could pass. The corrected test asserts every one of the 27 `type_id -> EntityType` and four `type_id -> ClaimValueType` pairs explicitly, then separately checks corpus key coverage. The combined suites passed 90 tests in 6.63 seconds; production Pyright, Ruff and whitespace passed at exact `memorii/` SHA `4843293cd66e89156af09a04462f80e89977acb52b4cea74356083a43aa52438`. Delta review is pending.
+
+Independent delta review accepted the registration/validator slice at exact `4843293cd66e89156af09a04462f80e89977acb52b4cea74356083a43aa52438` with no remaining Level-2 P1/P2. The provider bridge now recognizes a distinct `default_catalog` dispatch, projects the 53 relation IDs and four literal types into its tool schema, and validates fact-only shape, endpoints, typed literal, commitment, exact mention set and exact source grounding before Bootstrap normalization. A focused composed test proves the schema and positive/wrong-endpoint paths. The runtime/default-catalog suites passed 91 tests in 8.11 seconds; the new runtime module Pyright, Ruff and whitespace passed at exact `memorii/` SHA `95676a96b4272070c8108edefd659a81de2790e2a1de9b9ed8357456131017a7`. The broader Hermes module retains eight pre-existing Pyright diagnostics and is not claimed clean. Targeted review is pending. No installed catalog locator can yet return this dispatch, so the 53-row path remains unreachable and M3 is not complete.
+
+Provider-dispatch review required the actual `handle_tool_call -> _structured_tool_request` trigger rather than a direct validator call. The added composed proof sends valid entity and LocalDate proposals through that trigger and verifies pinned submissions, then sends a wrong endpoint and verifies rejection before source preparation with zero additional submissions. The complete corpus/codec/runtime/Hermes focus passed 126 tests in 7.57 seconds; Ruff and whitespace passed at exact `memorii/` SHA `cb58faa425fb4f49e83c868fc26f60926fbc9019aaf42322926e6d86f7aed63e`. Delta review is pending; the real bundle/pin remains absent.
+
+The next review confirmed the trigger order but found typed literal bytes were not proposition-grounded to the quoted source. The runtime now applies deterministic per-policy source forms before preparation: ISO date, `CURRENCY decimal`, explicit interval bounds, or a selected status alias/canonical value. The real trigger accepts quoted `2026-10-03` and rejects a substituted `2027-10-03` payload with unchanged source and zero additional preparation/submission. The focused suite passed 126 tests in 7.70 seconds; the runtime module Pyright, Ruff and whitespace passed at exact `memorii/` SHA `cad4812fdbdbb9042e11bb000c96d7ffcdd29eb77e2b0d4fb987d3ce2945116f`. Delta review is pending.
+
+The following delta required composed proof for every remaining literal policy. The same `handle_tool_call` fixture now accepts matching Money, TimeInterval and StatusText values and rejects a changed amount, interval end or status canonical value while the quoted source stays fixed; every denial occurs with unchanged preparation and submission counts. All 126 focused tests passed in 7.32 seconds; Ruff and whitespace passed at exact `memorii/` SHA `63a4d2a01f3b3edf4fa568c47dbdd5827ac244cc78c81ffb9ca73fc2fb008d96`. Final delta review is pending.
+
+The StatusText proof now uses the declared source alias `completed`, verifies normalization to canonical `done`, and rejects canonical `blocked` against that unchanged alias quote. All 126 focused tests passed in 7.45 seconds; Ruff and whitespace passed at exact `memorii/` SHA `2922d5393952d1ccb13d8e77f2eb829bc0ad16cd8851d91db837a53e1a15954e`. Delta review is pending.
+
+Independent review accepted the bounded provider-dispatch and literal-grounding slice at the same exact `2922d5393952d1ccb13d8e77f2eb829bc0ad16cd8851d91db837a53e1a15954e` identity with no remaining Level-2 P1/P2. It independently reran 126 focused tests. This approval covers the pre-normalization provider boundary only. No verified package locator returns `default_catalog` yet, so no 53-relation native write/read or M3 completion is claimed.
+
+The first package-selection construction added a generated trust anchor, governed default child installation, selected/historical locator support and Hermes startup installation. The coordinator reproduced its 82 focused tests in 14.42 seconds, then rejected the candidate before review: `load_packaged_default_catalog_release()` returned `selectable=True` with an empty `CatalogRuntimeBundle.members`, so selection did not prove the required prompt, grammar, adapter, state, trust, temporal and protected-reader closure. This is a confirmed capability-closure defect in the construction slice. No milestone or requirement count changes. The sole writer is correcting the package to bind and verify all seven exact members before native lifecycle work begins.
+
+The corrected bundle candidate contains seven generated, content-addressed descriptors; canonical Memorii `PredicateStateRule`, `PredicateTrustRule` and `PredicateTemporalRule` maps for all 53 corpus relations; exact corpus/value-policy/descriptor/source bindings; selected and historical locator verification; a default-version adapter reached by the generic current-grant protected-read gate; and JSONL reopen support for the selected default child. Coordinator reproduction passed 108 focused tests in 22.93 seconds, byte-identical regeneration, targeted Ruff, targeted Pyright with zero diagnostics and whitespace checks. The current complete `memorii/` file-tree SHA-256 is `5828d457ff8c97102697a38541cafc64b64196ddeea358676d9bdc9aebb2fd0c`; this differs from the writer's pre-validation hash because the shared tree continued changing during handoff. Independent Level-2 review is active. This remains a package-selection construction slice and does not claim a default native write/read.
+
+Independent Level-2 review accepted the corrected package-selection slice with no P1/P2 findings. The reviewer independently ran 117 selected tests with 33 deselected, targeted Ruff and whitespace checks, and confirmed seven-capability closure, fail-closed descriptor and persisted-child integrity, JSONL reopen, seed/default history and the canonical protected-read hook. Acceptance is bounded to package installation and selection; it explicitly does not establish native default-catalog write/read behavior. Milestone and requirement counts remain unchanged.
+
+Native-path tracing invalidated that bounded package acceptance for one compatibility omission: the selected child declares the three existing seed predicates plus 53 corpus relations, while the first generated capabilities covered only the 53 corpus rows. The correction now materializes 56 predicates and composes the seed trust and temporal policies with the default policy rows. The first installed-root attempt stopped before catalog selection because the in-scope enum expansion changed `memory_evolution/models.py` without regenerating its content-addressed typed-value decoder publication and activation authority. This is an affected-authority-chain failure, not an external dependency. The sole writer is regenerating those artifacts through their canonical authoring workflow before rerunning the real bridge. M3 remains active; counts remain 2/5 milestones and 3/14 complete requirements.
+
+The corrected 56-predicate closure regenerated the typed-value publication, decoder, registry and activation artifacts from 1,087 declarations and 6,516 finite source selections. Native execution then exposed and corrected seed-schema omission, noncanonical state-rule ordering and repeated immutable-corpus decoding. At exact `memorii/` tree SHA-256 `38b11ca4b616390c9c9a38829db66b7cf9c75e6b61bd0fd5db2c5287ca12ec40`, 45 focused package/corpus/materializer tests, Ruff and whitespace pass, and the installed no-key Hermes `project_owner` journey passes `1 in 364.66s` while the default child is selected. This proves retained seed compatibility through the real factory, captured turn, native terminal, schema-2 binding and protected recall. It does not yet prove a new corpus relation, all 53 corpus cases or H8; milestone and requirement counts remain unchanged.
+
+The first real default-corpus relation then reached native normalization and exposed a static-policy leak: execution passed the seed invocation policy instead of the dynamically verified selected trust and temporal snapshots. After correction, `test_installed_default_catalog_entity_relation_commits_and_recalls` passes `1 in 236.46s` at exact `memorii/` tree SHA-256 `d7f7e5a152b4b85175d6f263e7c640486f1e03dc3fcab5bd35f32a4bbf88762b`. It captures `Alice reports to Bob`, receives the selected default schema, commits a native projection with schema-2 default-catalog binding and protected-recalls both entities. Focused Ruff and whitespace pass. Independent review is active. This is representative native proof; the complete 53-row behavior matrix, H8 and shared lifecycle/symmetry probes remain open, so M3 and OLE-09/10 remain incomplete.
+
+Independent review found no product defect in the representative native slice. It required one verification correction because a runtime test still asserted 53 advertised predicates after the selected bundle correctly composed 53 corpus and three seed predicates. At exact `memorii/` tree SHA-256 `7a331871f40977b9fd118519e06834d2343eb04bf4c6e43339e1aba4e6aea9c8`, the corrected assertion requires the exact 56 set and explicit seed IDs; 67 focused tests pass. The reviewer independently reproduced the runtime schema, installed no-key seed journey and installed `reports_to` journey: `3 passed in 758.90s`, with no remaining Level-2 P1/P2 finding for this bounded slice. The complete matrix is now the active sequential slice; counts remain 2/5 milestones and 3/14 requirements.
+
+The reusable installed corpus harness now passes cleanly at exact `memorii/` tree SHA-256 `3402d015bb8dfeddb3c9a7bbf0658748b43b218fce8f951bd7b50ac65477aa3b`: `1 passed in 471.96s`. One installed provider processes distinct captured turns for `project_owned_by` and typed-literal `work_item_due_on`, commits native projections with independent schema-2 default bindings, completes cumulative public transcripts, and protected-recalls both results. A final wrong-endpoint trigger rejects in under a second and adds no claim projection or catalog binding. The harness deliberately does not complete that rejected tool turn into no-model free-text recovery; M4 owns durable no-capability discovery. Focused Ruff and whitespace pass. Independent review is pending. The remaining 51 corpus rows, full misleading matrix, 25 private revocations, lifecycle/symmetry probes and H8 remain open; M3 counts do not change.
+
+Independent review accepted the reusable harness on pushed commit `b9052820` with no Level-2 P1/P2. The reviewer traced the ordinary installed provider path, per-turn pins, independent schema-2 bindings, protected reads, same-boundary negative, recovery and shutdown, found no test-only production branch, and reproduced the harness: `1 passed in 456.91s`. This accepts the matrix mechanism only. The corpus-driven proposal builder and remaining native rows, private revocations, lifecycle/symmetry probes and H8 remain open; counts stay 2/5 milestones and 3/14 requirements.
+
+The corpus-driven construction slice now generates a typed proposal and a deliberately wrong-endpoint near miss from every one of the 53 canonical rows. All 53 positive proposals pass the selected default runtime validator and all four literal grounding policies; all 53 near misses reject before prepared-source normalization or submission. A compact installed matrix reached native commit and protected recall for M/C/H, public/private, entity, `TimeInterval`, `LocalDate`, `StatusText`, and `Money` representatives. The final `obligation_amount` row exposed a real Level-2 duration mismatch: the captured turn remained valid for five minutes while ordinary local no-key normalization could exceed ten minutes. Capture and local bootstrap recovery now use one 15-minute window, with an exact-expiry fail-closed regression. The dedicated installed Money path passes in `154.38s`, and the exact recovery expiry passes in `8.20s`. Review also exposed a stale test authority that built trust/temporal rules from its unrelated request catalog while executing an injected proposal; the fixture now seals every actual proposal predicate and preserves the specialized `reports_to` rules. Both recovery-reopen regressions pass `2 in 48.59s`; the complete focused group passes `210 in 67.97s`, with Ruff and whitespace clean. Independent delta review is pending. The full isolated 53-row native matrix, 25 private revocations, revision/history/symmetry probes and H8 remain open, so M3 and requirement counts do not change.
+
+Independent correctness review approved this bounded corpus/lease slice at frozen code/test diff SHA-256 `a6633450d66a306bc7318fce737b8622769db8d926e2d824b16f4d6e843263b9` with no remaining Level-2 P1/P2. The reviewer withdrew its initial production-policy diagnosis after tracing the failing path to the scenario-only authority, verified that production native planning consumes the issued typed derivation policy, and accepted the fixture correction plus the 210-test/Ruff/whitespace evidence. This does not close M3; the next action remains the isolated all-row native/revocation matrix.
+
+The all-row native gate is now an explicit Level-2 manual pytest marker with deterministic `INDEX/TOTAL` selection. Its inventory test locks the 53 installed cases and 25 private-revocation cases to the normative corpus while ordinary fast runs deselect the multi-minute matrix. An initial four-process run was invalidated after its first rows because the concurrently active lifecycle writer regenerated catalog authority bytes; later processes correctly failed closed on the changed package digest. On the subsequent frozen tree, isolated private `animal_care_task` and public `decision_supersedes` rows both pass native commit, schema-2 binding, protected recall, zero-effect near miss, reconciliation and the private revocation case in `197.24s` and `196.80s`. The complete four shards must be rerun without concurrent catalog edits before the gate is accepted.
+
+The lifecycle contract slice compiles closed `read_derivation_policy` metadata into all 53 rows, with only `partner_of` and `sibling_of` registered as `symmetric_view`. The selected default tool now accepts exact assertion, correction and retraction forms through the existing Bootstrap V3 structured writer. Corrections carry independently grounded old/new entity or literal facts, allow the exact union of referenced mentions, close nested input keys, and canonicalize distinct source spans by digest. H8 `Preference` shapes remain rejected by the semantic boundary. The generated proposal-adapter descriptor and package authority bind the lifecycle-aware validator. After three convergent review rounds corrected no-op-only revisions, unsorted multi-source spans and open nested dictionaries, independent correctness review approved the bounded transport/grounding/package contract at scoped working diff SHA-256 `2480e82cbbde011cb97edef97b58977732a54677a135951346280734c3a2f3fd`; `247` focused tests, Ruff and whitespace pass. Installed durable revision effects, product current/history/as-of reads, reopen proof and symmetric reverse reads remain open, so M3 and requirement counts do not change.
+
+The frozen installed matrix is accepted as execution evidence at pushed commit `8d57deaa`. Four independent processes exercised disjoint deterministic shards: shard 1 passed `14` rows in `2902.67s`, shard 2 passed `13` in `2772.94s`, shard 3 passed `13` in `2772.68s`, and shard 4 passed `13` in `2775.44s`. Together they cover every one of the 53 canonical relations through installed schema egress, native commit, exact schema-2 default binding, protected recall, wrong-endpoint zero effect, clean reconciliation and shutdown; all 25 corpus-private rows also revoke the fact grant and prove zero protected recall. The tree remained frozen for the entire run and no API key or model transport was available. This closes the assertion/abstention/private-denial portion of the runtime corpus. Revision/history/reopen, symmetric reverse reads and H8 remain open, so M3 and requirement counts do not change yet.
+
+2026-09-27 lifecycle identity debugging: the installed correction reached a
+terminal `graph_target_missing` because canonical allocation treated all new
+source mentions as new identities. The shared Bootstrap V3 allocator now binds
+correction/retraction selector roles only through an exact scoped prior
+`ClaimAssertion.statement_digest` and immutable assertion refs; same-text roles
+within one lifecycle operation share only their local cluster, while changed
+replacement entities remain new. The direct focused planner/allocator suite
+passes `7 in 61.68s`, including prior-pending reuse, changed replacement,
+missing/ambiguous and cross-scope denials. This is a construction/debug slice;
+the installed lifecycle caller has not rerun and M3 remains active with no
+requirement or milestone count change. Next action: coordinator reruns the
+installed corpus correction journey on the frozen allocator.
+
+The first rerun at `6a7ebb48` exposed one interpreter-only canonicalization
+defect before allocation: paired lifecycle mentions produced duplicate segment
+provenance tuples, which the closed identity-cluster contract rejects. The
+builder now deduplicates that closure. No requirement or milestone count
+changes. Next action remains the installed correction/current/history/reopen
+journey on the corrected frozen revision.
+
+The rerun at `7a5b71ae` passed native correction commit and exposed the next
+ordinary-path defect at protected recall: the reader expected lifecycle
+carriers and generic claim-state rows that the native writer does not persist.
+It now reads the committed transition and replacement planning records from the
+accepted group effect and reconstructs transaction-time state from the verified
+immutable claim projections and schema-2 bindings. The exact retained failed
+snapshot yields replacement-current, two-version history, and original-only
+pre-correction as-of results; the focused reader/runtime suite passes 96 tests.
+The full installed journey and reopen remain unproved, so M3 stays active and
+the counts remain 2/5 milestones and 3/14 requirements complete. Next action:
+rerun the installed lifecycle journey on this reader correction.
+
+At exact commit `27bf3e87`, the installed no-key entity correction journey
+passes `1 in 696.92s`, including native correction commit and protected current,
+two-version history, pre-correction as-of, and prefetch behavior. Explicit
+post-shutdown JSONL read equality is now added and must pass before this entity
+lifecycle probe is accepted. M3 and requirement counts remain unchanged.
+
+The first reopen run failed at the Hermes active-turn guard rather than the
+reader: it issued a tool call immediately after initialization without capturing
+a turn or advertising its pinned schema. The corrected scenario starts a fresh
+recall turn and confirms read-tool schema egress before the persisted view
+comparisons. Counts remain unchanged pending that rerun.
+
+The corrected reopen scenario passes at exact commit `b3d8189d`: `1 in
+1049.05s`. It proves the no-key installed entity assertion and correction,
+replacement-only current, active/superseded history, pre-correction as-of,
+shutdown, JSONL reopen, fresh pinned read-tool turn, and identical protected
+views and prefetch. The linked lifecycle lease debugging WorkPlan is complete.
+M3 remains active because literal correction, retraction, both symmetric reverse
+views, and H8 are still open; counts remain 2/5 and 3/14. Next action: the
+combined literal correction/retraction and symmetric installed probe.
+
+The combined shared-mechanics candidate now exercises one installed no-key
+provider through LocalDate assertion, correction, retraction, protected
+current/history/two as-of cutoffs, both `partner_of` and `sibling_of` reverse
+views with zero read-side persistence, shutdown, JSONL reopen, and equality of
+the retained lifecycle and reverse views. Fast projection/retraction/symmetric
+reader coverage and the affected runtime suite pass 97 tests in 8.56 seconds;
+Ruff and whitespace pass. The long installed candidate is the one next action;
+M3 and requirement counts do not change before it passes.
+
+The first long shared-mechanics run at `902df81b` failed after `250.34s` on the
+LocalDate correction. The original assertion committed, but projection-history
+conflict scope rejected the retained-source admission/control join with
+`projection_history_integrity_error`; the later lease error is downstream.
+Pause parent product edits. Linked debugging WorkPlan
+`../debug-literal-lifecycle-projection.plan.md` owns causal isolation and the
+fix. Counts remain 2/5 and 3/14.
+
+The first native-writer wiring pass added a typed runtime catalog coordinate to the graph-free invocation and rechecked its version/bundle through the historical package locator; 42 focused authority/pin tests and Ruff/whitespace passed. Coordinator inspection rejected this as a completed slice because the production provider did not propagate the captured pin, the coordinate omitted the capture/source/persisted-pin join, and the materializer and derivation remained on the three fixed predicates. The same writer is continuing: `submit_structured_fact` must pass the already loaded exact `CatalogCapturedTurnPin` through provider ingestion, dynamic authority must rejoin the persisted pin and selected package, and only then may selected default policies drive native planning. No completion count changes.
+
+The linked literal lifecycle debugging operation is complete. At frozen code
+candidate `caf1bf5c`, the combined installed no-key gate passes `1 in 4120.90s`
+and proves LocalDate assertion/correction/retraction, protected current/history
+and two transaction-time views, both symmetric reverse reads with zero read-side
+persistence, shutdown, JSONL reopen and identical reopened results. Independent
+correctness review found no Level-2 P1/P2. Test review's sole verification gap
+was closed by a provider-root durable-retry regression (`1 passed, 63
+deselected in 10.77s`) proving no reclaim or reexecution of persisted retry
+progress. The relation/lifecycle/reopen portion of M3 is complete. H8 is now the
+only open M3 product slice; counts remain 2/5 milestones and 3/14 requirements
+until its acceptance contract passes.
+
+Native-path tracing then invalidated the bounded package acceptance for a compatibility omission the package-only review did not exercise. The selected child declares 56 predicates: the existing `project_owner`, `project_status` and `project_deadline` seed plus 53 corpus relations. Its generated schema, validator and policy maps covered only the 53 new rows. Because Hermes selects the default child at startup, this would remove or reject the already working M1 seed tool path while claiming those predicates in the selected version. The writer must compose the three existing seed contracts/policies with the 53 corpus relations, require exact 56-ID capability coverage, regenerate the package, and prove existing `project_owner` remains runnable after default selection. Until then the seven-member package is not accepted and counts remain unchanged.
+
+## Level-2 Closure (2026-09-27)
+
+M3 is ready for manual testing. The later corrections and accepted evidence
+supersede the historical open-state entries above:
+
+- package/compiler integrity and exact 56-predicate seed compatibility pass;
+- the frozen installed four-shard matrix passes all 53 canonical relations,
+  wrong-endpoint zero effects, protected recalls and all 25 private revocations;
+- installed entity and LocalDate correction/retraction, protected
+  current/history/transaction-time reads, both symmetric reverse views, zero
+  inverse persistence and JSONL reopen pass;
+- H8 at product commit `ca647222` uses only existing canonical
+  `ProductService|Asset|Place` identities and the signed-in user's scope. Its
+  unmocked installed path commits a real canonical topic, proves unknown and
+  wrong-type zero effect, persists and reopens the Preference lifecycle, and
+  enforces holder/delegated authorization; and
+- test commit `f5f4f265` closes the final delegated-read gap by asserting the
+  exact confirmed preference ID, topic, key, value and state before live revoke
+  denial and reopened binding refusal. The focused journey passed `1 in
+  1040.91s`; Ruff and diff checks passed. Independent specification,
+  correctness and test reviewers report no remaining Level-2 P1/P2.
+
+OLE-09 and OLE-10 are complete at Level 2. Overall progress is 3/5 milestones
+and 5/14 requirements. Production migration, exhaustive matrices and release
+certification remain assigned to Level 3. M4 is the sole active milestone.

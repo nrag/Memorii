@@ -65,7 +65,7 @@ def render_project_assertions_prompt() -> str:
     return PROJECT_ASSERTIONS_PROMPT
 
 
-class _Hint(BaseModel):
+class ProjectAssertionHint(BaseModel):
     predicate_id: str
     assertion_quote: str = Field(min_length=1, max_length=1024)
     subject_quote: str = Field(min_length=1, max_length=128)
@@ -75,20 +75,20 @@ class _Hint(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     @model_validator(mode="after")
-    def _catalog_predicate(self) -> _Hint:
+    def _catalog_predicate(self) -> ProjectAssertionHint:
         if self.predicate_id not in _PREDICATES:
             raise ValueError("project-facts predicate is unsupported")
         return self
 
 
-class _HintResponse(BaseModel):
+class ProjectAssertionHintResponse(BaseModel):
     abstained: bool
-    candidates: tuple[_Hint, ...] = Field(max_length=8)
+    candidates: tuple[ProjectAssertionHint, ...] = Field(max_length=8)
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     @model_validator(mode="after")
-    def _closed_outcome(self) -> _HintResponse:
+    def _closed_outcome(self) -> ProjectAssertionHintResponse:
         if self.abstained != (not self.candidates):
             raise ValueError("project-facts abstention and candidates disagree")
         return self
@@ -113,7 +113,7 @@ class ProjectAssertionProviderProposalAdapter:
     ) -> ProviderSemanticProposal | None:
         try:
             raw = json.loads(response_text)
-            parsed = _HintResponse.model_validate(raw)
+            parsed = ProjectAssertionHintResponse.model_validate(raw)
         except (json.JSONDecodeError, ValidationError):
             # The provider returned bytes, but they do not form a usable
             # source-grounded proposal.  Represent that closed validation
@@ -170,7 +170,7 @@ class ProjectAssertionProviderProposalAdapter:
             ))
         return ProviderSemanticProposal(mentions=tuple(mentions), facts=tuple(facts), abstained=False)
 
-    def _quotes_are_exact(self, *, request: BootstrapSemanticProposalRequestV3, hint: _Hint) -> bool:
+    def _quotes_are_exact(self, *, request: BootstrapSemanticProposalRequestV3, hint: ProjectAssertionHint) -> bool:
         try:
             assertion = self._resolve(hint.assertion_quote, request.segment.context_text)
             for quote in (hint.subject_quote, hint.predicate_anchor_quote, hint.value_quote):
@@ -187,7 +187,7 @@ class ProjectAssertionProviderProposalAdapter:
         return span
 
     @staticmethod
-    def _literal(hint: _Hint) -> tuple[ClaimValueType, str | None]:
+    def _literal(hint: ProjectAssertionHint) -> tuple[ClaimValueType, str | None]:
         if hint.predicate_id == "project_status":
             value = hint.value_quote.strip()
             return ClaimValueType.TEXT, value if value else None

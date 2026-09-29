@@ -46,6 +46,29 @@ def test_materializes_closed_current_v3_request_and_lanes() -> None:
     assert material.temporal_request(request).resolver_manifest == material.temporal_manifest
 
 
+def test_default_catalog_materialization_composes_seed_and_corpus_predicates() -> None:
+    material = _materializer().materialize(source=_source(), default_catalog=True)
+    request = material.runtime_authority.proposal_requests[0]
+
+    predicates = {item.predicate_id: item for item in request.predicate_catalog.predicates}
+    assert len(predicates) == 56
+    assert {"project_deadline", "project_owner", "project_status", "member_of"}.issubset(predicates)
+    assert predicates["work_item_due_on"].object_literal_type == "local_date"
+    assert predicates["obligation_amount"].object_literal_type == "money"
+
+
+def test_learned_mentors_materialization_extends_the_complete_parent_catalog() -> None:
+    material = _materializer().materialize(source=_source(), learned_mentors=True)
+    predicates = {item.predicate_id: item for item in material.runtime_authority.proposal_requests[0].predicate_catalog.predicates}
+
+    assert len(predicates) == 57
+    assert {"project_deadline", "project_owner", "project_status", "reports_to", "mentors"}.issubset(predicates)
+    assert predicates["mentors"].subject_value_kind == "entity"
+    assert predicates["mentors"].object_value_kind == "entity"
+    with pytest.raises(CurrentBootstrapV3MaterializationError, match="ambiguous"):
+        _materializer().materialize(source=_source(), default_catalog=True, learned_mentors=True)
+
+
 def test_rejects_source_without_current_bootstrap_freeform_routes() -> None:
     source = _source()
     route = source.segment_language_routes.routes[0]

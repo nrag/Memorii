@@ -29,6 +29,11 @@ from memorii.core.semantic_ingestion.production_authority import (
     build_verified_production_host_authority,
 )
 from memorii.domain.enums import SourceModality
+from memorii.integrations.authenticated_source import (
+    AuthenticatedSourceRuntime,
+    AuthenticatedSourceSubmission,
+    build_authenticated_source_runtime,
+)
 from memorii.integrations.hermes_provider import HermesMemoryProvider
 
 CaptureRoot = Literal["direct", "factory", "filesystem", "hermes"]
@@ -128,22 +133,43 @@ def _capture_child(
         authority=authority,
         monitoring_authorities=monitoring_authorities,
     )
-    result = service.sync_event(
-        operation=cell.operation,
-        content=cell.content,
-        operation_id=cell.operation_identity,
-        role=cell.role,
-        target=cell.target,
-        action=cell.action,
-        session_id=cell.session_id,
-        task_id=cell.task_id,
-        user_id=cell.user_id,
-        language=cell.language,
-        speaker_id=cell.speaker_id,
-        timestamp=cell.server_time,
-        source_modality=cell.source_modality,
-        authenticated_host_ingress=cell.authenticated_host_ingress,
-    )
+    if cell.root == "direct":
+        assert isinstance(service, AuthenticatedSourceRuntime)
+        result = service.submit(
+            AuthenticatedSourceSubmission(
+                operation=cell.operation,
+                content=cell.content,
+                operation_id=cell.operation_identity,
+                role=cell.role,
+                target=cell.target,
+                action=cell.action,
+                session_id=cell.session_id,
+                task_id=cell.task_id,
+                user_id=cell.user_id,
+                language=cell.language,
+                speaker_id=cell.speaker_id,
+                timestamp=cell.server_time,
+                source_modality=cell.source_modality,
+            )
+        )
+    else:
+        assert isinstance(service, (ProviderMemoryService, HermesMemoryProvider))
+        result = service.sync_event(
+            operation=cell.operation,
+            content=cell.content,
+            operation_id=cell.operation_identity,
+            role=cell.role,
+            target=cell.target,
+            action=cell.action,
+            session_id=cell.session_id,
+            task_id=cell.task_id,
+            user_id=cell.user_id,
+            language=cell.language,
+            speaker_id=cell.speaker_id,
+            timestamp=cell.server_time,
+            source_modality=cell.source_modality,
+            authenticated_host_ingress=cell.authenticated_host_ingress,
+        )
     queue.put(
         CanonicalEvidenceCaptureResult(
             root=cell.root,
@@ -160,7 +186,7 @@ def _build_root(
     storage_root: Path,
     authority: VerifiedProductionHostAuthority,
     monitoring_authorities: tuple[VerifiedCapabilityMonitoringAuthority, ...],
-) -> ProviderMemoryService | HermesMemoryProvider:
+) -> ProviderMemoryService | HermesMemoryProvider | AuthenticatedSourceRuntime:
     if cell.backend == "memory":
         memory_plane = MemoryPlaneService()
     else:
@@ -169,7 +195,8 @@ def _build_root(
             record_store=JsonlMemoryPlaneStore(storage_root / "memory_plane")
         )
     if cell.root == "direct":
-        return ProviderMemoryService(
+        return build_authenticated_source_runtime(
+            issue_ingress=lambda _submission: cell.authenticated_host_ingress,
             memory_plane=memory_plane,
             verified_production_host_authority=authority,
             verified_capability_monitoring_authorities=monitoring_authorities,

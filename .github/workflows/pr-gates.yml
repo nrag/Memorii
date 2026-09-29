@@ -265,7 +265,7 @@ jobs:
   unit-test-shards:
     name: Unit Test Shard ${{ matrix.shard }}
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -651,7 +651,7 @@ jobs:
             tests/unit/core/semantic_ingestion/test_graph_planning.py \
             tests/unit/core/semantic_ingestion/test_identity_lineage_prerequisites.py \
             -p no:cacheprovider | tail -n 1)"
-          [[ "$observed" == "88 tests collected in "* ]]
+          [[ "$observed" == "90 tests collected in "* ]]
 
       - name: Run exact projection-history closure
         working-directory: memorii

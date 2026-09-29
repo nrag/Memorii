@@ -21,8 +21,17 @@ from agent.memory_provider import MemoryProvider  # pyright: ignore[reportMissin
 
 from memorii.core.memory_evolution.ingestion_contracts import AuthenticatedHostIngress
 from memorii.core.provider.service import ProviderMemoryService
+from memorii.core.semantic_ingestion.structured_fact_read import (
+    StructuredFactReadRequest,
+    StructuredFactReadResponse,
+)
 from memorii.integrations.hermes_provider import HermesMemoryProvider, build_started_hermes_memory_provider
-from memorii.integrations.hermes_runtime_binding import HermesProviderRuntimeBinding
+from memorii.integrations.hermes_runtime_binding import (
+    HermesAuthenticatedForwardingReceipt,
+    HermesAuthenticatedOriginReceipt,
+    HermesOriginReceipt,
+    HermesProviderRuntimeBinding,
+)
 
 _SERVICE_FACTORY_ENTRY_POINT_GROUP = "memorii.hermes.provider_service"
 _FIRST_PARTY_FACTORY_VALUE = "memorii.integrations.hermes_factory:build_local_level2_runtime_binding"
@@ -53,6 +62,7 @@ class HermesIngressRequest:
     agent_identity: object | None
     turn_author: dict[str, Any] | None
     received_at: datetime
+    upstream_origin_receipt: HermesOriginReceipt | None = None
 
 
 class MemoriiHermesMemoryProvider(MemoryProvider):
@@ -67,6 +77,25 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         self._issue_ingress: Callable[[HermesIngressRequest], AuthenticatedHostIngress] | None = None
         self._completed_turn_runtime: object | None = None
         self._absent_author_id = "memorii.hermes.author.absent.v1"
+        self._revoke_structured_submission_grant: Callable[[str], None] | None = None
+        self._activate_learned_candidate: Callable[[str], object] | None = None
+        self._approve_learned_candidate: Callable[[str], object] | None = None
+        self._select_prior_learned_version: Callable[[str], object] | None = None
+        self._learned_ontology_runtime: object | None = None
+        self._learned_ontology_status: Callable[[], object] | None = None
+        self._origin_receipts: dict[
+            tuple[str, int], HermesAuthenticatedOriginReceipt
+        ] = {}
+        self._pending_forwarding_receipts: dict[
+            tuple[str, str], HermesAuthenticatedForwardingReceipt
+        ] = {}
+        self._issue_origin_receipt: Callable[
+            [str, int, str, str], HermesAuthenticatedOriginReceipt
+        ] | None = None
+        self._issue_forwarding_receipt: Callable[
+            [HermesAuthenticatedOriginReceipt, str, str],
+            HermesAuthenticatedForwardingReceipt,
+        ] | None = None
 
     @property
     def name(self) -> str:
@@ -117,13 +146,93 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         self._issue_ingress = binding.issue_ingress
         self._completed_turn_runtime = binding.completed_turn_runtime
         self._absent_author_id = binding.absent_author_id
+        self._revoke_structured_submission_grant = binding.revoke_structured_submission_grant
+        self._activate_learned_candidate = binding.activate_learned_candidate
+        self._approve_learned_candidate = binding.approve_learned_candidate
+        self._select_prior_learned_version = binding.select_prior_learned_version
+        self._learned_ontology_runtime = binding.learned_ontology_runtime
+        self._learned_ontology_status = binding.learned_ontology_status
+        self._issue_origin_receipt = binding.issue_origin_receipt
+        self._issue_forwarding_receipt = binding.issue_forwarding_receipt
 
     def get_tool_schemas(self) -> list[dict[str, object]]:
-        return []
+        runtime = self._completed_turn_runtime
+        schemas = getattr(runtime, "get_tool_schemas", None) if runtime is not None else None
+        if not callable(schemas):
+            return []
+        value = schemas()
+        if not isinstance(value, list) or not all(type(item) is dict for item in value):
+            raise TypeError("Memorii completed-turn runtime returned invalid tool schemas")
+        return value
 
     def handle_tool_call(self, tool_name: str, arguments: dict[str, object]) -> object:
-        del arguments
+        runtime = self._completed_turn_runtime
+        handler = getattr(runtime, "handle_tool_call", None) if runtime is not None else None
+        if callable(handler):
+            return handler(tool_name=tool_name, arguments=arguments)
         raise ValueError(f"Memorii does not provide Hermes tool {tool_name!r}")
+
+    def activate_learned_candidate(self, proposal_id: str) -> object:
+        """Select an evaluated candidate through the signed-in local owner binding."""
+        action = self._activate_learned_candidate
+        if action is None:
+            raise RuntimeError("learned ontology activation is unavailable")
+        return action(proposal_id)
+
+    def approve_learned_candidate(self, proposal_id: str) -> object:
+        """Record the signed-in owner's candidate decision."""
+        action = self._approve_learned_candidate
+        if action is None:
+            raise RuntimeError("learned ontology approval is unavailable")
+        return action(proposal_id)
+
+    def select_prior_learned_version(self, target_version_digest: str) -> object:
+        """Roll back through the factory-bound owner and refresh reader authority."""
+        action = self._select_prior_learned_version
+        if action is None:
+            raise RuntimeError("learned ontology rollback is unavailable")
+        return action(target_version_digest)
+
+    def lookup_learned_ontology_status(self) -> object:
+        """Return bounded learner control status from the installed root."""
+        action = self._learned_ontology_status
+        return {"status": "unavailable"} if action is None else action()
+
+    def lookup_structured_fact_status(self, operation_id: str, *, session_id: str = "") -> object:
+        runtime = self._completed_turn_runtime
+        lookup = getattr(runtime, "lookup_structured_fact_status", None) if runtime is not None else None
+        if not callable(lookup):
+            return {"status": "unavailable"}
+        return lookup(
+            operation_id=operation_id,
+            session_id=self._effective_session_id(session_id),
+            authenticated_author_id=self._absent_author_id,
+            now=datetime.now(UTC),
+        )
+
+    def read_structured_facts(
+        self, request: StructuredFactReadRequest, *, session_id: str = "",
+    ) -> StructuredFactReadResponse:
+        runtime = self._completed_turn_runtime
+        reader = getattr(runtime, "read_structured_facts", None) if runtime is not None else None
+        if not callable(reader):
+            return StructuredFactReadResponse(status="unavailable")
+        result = reader(
+            request=request,
+            session_id=self._effective_session_id(session_id),
+            authenticated_author_id=self._absent_author_id,
+            now=datetime.now(UTC),
+        )
+        return result if isinstance(result, StructuredFactReadResponse) else StructuredFactReadResponse(
+            status="unavailable"
+        )
+
+    def revoke_structured_grant(self, grant_kind: str) -> None:
+        """Run the factory-authorized local operator revocation action."""
+        action = self._revoke_structured_submission_grant
+        if not callable(action):
+            raise RuntimeError("Memorii structured grant revocation is unavailable")
+        action(grant_kind)
 
     def prefetch(self, query: str, *, session_id: str = "") -> str:
         user_id = self._current_user_id()
@@ -154,12 +263,40 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         message: str,
         **kwargs: Any,
     ) -> None:
-        del turn_number, message
         self._require_provider()
         observed = _optional_text(kwargs.get("author_id"))
         if self._completed_turn_runtime is not None and observed is not None and observed != self._default_user_id:
             raise ValueError("Hermes local Level 2 author identity changed")
         self._turn_user_id.set(observed or self._default_user_id)
+        session_id = self._effective_session_id("")
+        source_digest = hashlib.sha256(message.encode("utf-8")).hexdigest()
+        receipt: HermesOriginReceipt | None = self._pending_forwarding_receipts.pop(
+            (session_id, source_digest), None
+        )
+        if receipt is None and self._issue_origin_receipt is not None:
+            receipt = self._issue_origin_receipt(
+                session_id,
+                turn_number,
+                self._absent_author_id,
+                source_digest,
+            )
+        if isinstance(receipt, HermesAuthenticatedForwardingReceipt):
+            self._origin_receipts[(session_id, turn_number)] = receipt.origin_receipt
+        elif receipt is not None:
+            self._origin_receipts[(session_id, turn_number)] = receipt
+        runtime = self._completed_turn_runtime
+        if runtime is not None:
+            capture = getattr(runtime, "capture_user_turn", None)
+            if not callable(capture):
+                raise TypeError("Memorii completed-turn runtime is invalid")
+            capture(
+                session_id=self._effective_session_id(""),
+                turn_ordinal=turn_number,
+                message=message,
+                authenticated_author_id=self._absent_author_id,
+                received_at=datetime.now(UTC),
+                origin_receipt=receipt,
+            )
 
     def sync_turn(
         self,
@@ -169,19 +306,23 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         session_id: str = "",
         messages: list[dict[str, object]] | None = None,
         turn_author: dict[str, Any] | None = None,
+        parent_session_id: str = "",
+        parent_turn_number: int | None = None,
     ) -> None:
         effective_session_id = self._effective_session_id(session_id)
         effective_user_id = (
             _optional_text(turn_author.get("id")) if turn_author is not None else None
         ) or self._current_user_id()
         runtime = self._completed_turn_runtime
+        del parent_session_id, parent_turn_number
         if runtime is not None:
             if effective_user_id is not None and effective_user_id != self._default_user_id:
                 raise ValueError("Hermes local Level 2 author identity changed")
+            complete = getattr(runtime, "complete_captured_turn", None)
             sync = getattr(runtime, "sync_completed_turn", None)
-            if not callable(sync):
+            if not callable(complete) or not callable(sync):
                 raise TypeError("Memorii completed-turn runtime is invalid")
-            sync(
+            arguments = dict(
                 user_content=user_content,
                 assistant_content=assistant_content,
                 messages=messages,
@@ -189,6 +330,8 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
                 authenticated_author_id=self._absent_author_id,
                 received_at=datetime.now(UTC),
             )
+            if not complete(**arguments):
+                sync(**arguments)
             return
         self._require_provider().sync_turn(
             user_content,
@@ -203,8 +346,12 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
             authenticated_host_ingress=self._require_ingress(
                 hook="sync_turn",
                 session_id=effective_session_id,
-                user_id=effective_user_id,
+                user_id=self._absent_author_id,
                 turn_author=turn_author,
+                upstream_origin_receipt=self._latest_origin_receipt(
+                    session_id=effective_session_id,
+                    source_content=user_content,
+                ),
             ),
         )
 
@@ -264,19 +411,43 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         child_session_id: str = "",
         **kwargs: Any,
     ) -> None:
-        del kwargs
         if self._completed_turn_runtime is not None:
             self._require_provider()
             self._wait_for_completed_runtime()
+            issuer = self._issue_forwarding_receipt
+            if issuer is None:
+                return
+            parent_receipts = tuple(
+                receipt
+                for (session_id, _), receipt in self._origin_receipts.items()
+                if session_id == self._session_id
+            )
+            # Hermes reports only the completed delegation result.  Without a
+            # dispatch-time parent envelope, more than one observed turn is
+            # ambiguous and must not be correlated to whichever finished last.
+            if len(parent_receipts) != 1:
+                return
+            child = self._effective_session_id(child_session_id)
+            digest = hashlib.sha256(result.encode("utf-8")).hexdigest()
+            self._pending_forwarding_receipts[(child, digest)] = issuer(
+                parent_receipts[0],
+                child,
+                digest,
+            )
             return
         effective_session_id = self._effective_session_id(child_session_id)
+        del kwargs
         self._require_provider().on_delegation(
             task,
             result,
             operation_id=_operation_id("delegation", effective_session_id, [task, result]),
             session_id=effective_session_id,
-            user_id=self._current_user_id(),
-            authenticated_host_ingress=self._require_ingress(hook="delegation", session_id=effective_session_id),
+            user_id=self._absent_author_id,
+            authenticated_host_ingress=self._require_ingress(
+                hook="delegation",
+                session_id=effective_session_id,
+                user_id=self._absent_author_id,
+            ),
         )
 
     def on_session_switch(
@@ -316,6 +487,11 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
             self._issue_ingress = None
             self._completed_turn_runtime = None
             self._absent_author_id = "memorii.hermes.author.absent.v1"
+            self._revoke_structured_submission_grant = None
+            self._origin_receipts.clear()
+            self._pending_forwarding_receipts.clear()
+            self._issue_origin_receipt = None
+            self._issue_forwarding_receipt = None
 
     def _wait_for_completed_runtime(self) -> None:
         runtime = self._completed_turn_runtime
@@ -344,6 +520,7 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
         session_id: str | None = None,
         user_id: str | None = None,
         turn_author: dict[str, Any] | None = None,
+        upstream_origin_receipt: HermesOriginReceipt | None = None,
     ) -> AuthenticatedHostIngress:
         issuer = self._issue_ingress
         if issuer is None:
@@ -356,11 +533,23 @@ class MemoriiHermesMemoryProvider(MemoryProvider):
                 agent_identity=self._agent_identity,
                 turn_author=turn_author,
                 received_at=datetime.now(UTC),
+                upstream_origin_receipt=upstream_origin_receipt,
             )
         )
         if not isinstance(ingress, AuthenticatedHostIngress):
             raise TypeError("Memorii Hermes ingress issuer must return AuthenticatedHostIngress")
         return ingress
+
+    def _latest_origin_receipt(
+        self, *, session_id: str, source_content: str
+    ) -> HermesAuthenticatedOriginReceipt | None:
+        digest = hashlib.sha256(source_content.encode("utf-8")).hexdigest()
+        matches = tuple(
+            receipt
+            for (receipt_session, _), receipt in self._origin_receipts.items()
+            if receipt_session == session_id and receipt.source_content_digest == digest
+        )
+        return max(matches, key=lambda receipt: receipt.turn_ordinal) if matches else None
 
 
 def _resolve_storage_root(*, hermes_home: object) -> Path:

@@ -30,12 +30,15 @@ from memorii.core.memory_evolution.identity_lineage import (
     IdentityLineageAuditGrant,
 )
 from memorii.core.memory_evolution.ingestion_contracts import (
+    AuthenticatedIngressContext,
     AuthenticatedIngressContextResolver,
 )
 from memorii.core.memory_evolution.ingestion_time_clock import IngestionTimeClock
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.scoped_context.authority import ScopedHostReadAuthority
+from memorii.core.semantic_ingestion.coverage_observation import ObserverBindingIdentity
+from memorii.core.semantic_ingestion.coverage_observer import OntologyObserverCapability
 from memorii.core.semantic_ingestion.production_authority import (
     VerifiedCapabilityMonitoringAuthority,
     VerifiedProductionHostAuthority,
@@ -79,6 +82,8 @@ def build_provider_memory_service_from_env(
         VerifiedCapabilityMonitoringAuthority, ...
     ] = (),
     installed_capability_monitoring_configuration: object | None = None,
+    ontology_observer_capability: OntologyObserverCapability | None = None,
+    ontology_observer_authorizer: Callable[[AuthenticatedIngressContext, ObserverBindingIdentity], bool] | None = None,
 ) -> ProviderMemoryService:
     """Build the source-only governed-source admission provider composition without ambient model dependencies."""
 
@@ -156,6 +161,8 @@ def build_provider_memory_service_from_env(
         scoped_read_authority=scoped_read_authority,
         graph_observation_runtime=graph_observation_runtime,
         verified_capability_monitoring_authorities=verified_capability_monitoring_authorities,
+        ontology_observer_capability=ontology_observer_capability,
+        ontology_observer_authorizer=ontology_observer_authorizer,
     )
 
 

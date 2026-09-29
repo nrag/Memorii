@@ -89,6 +89,7 @@ testpaths = ["tests"]
 pythonpath = [".", ".."]
 markers = [
   "integration: tests that cross component boundaries and may require an explicitly enabled external provider",
+  "default_catalog_installed: opt-in installed Hermes default-catalog matrix; select a shard with --default-catalog-installed-shard",
 ]
 
 [tool.ruff]

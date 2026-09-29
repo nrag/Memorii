@@ -8,7 +8,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from memorii.core.memory_evolution.delivery_coordinate_migration import (
     DeliveryCoordinateMigrationActivation,
@@ -68,6 +68,13 @@ if TYPE_CHECKING:
         ObservationLedgerActivation,
         ObservationLedgerHead,
     )
+    from memorii.core.semantic_ingestion.catalog_authority import (
+        AuthenticatedPrincipalAgent,
+        CatalogAuthorityCoordinate,
+        CatalogSelectionPointer,
+    )
+    from memorii.core.semantic_ingestion.catalog_capture_pin import VerifiedCatalogBundle
+    from memorii.core.semantic_ingestion.learned_relation import CatalogPointer
 
 
 if TYPE_CHECKING:
@@ -165,7 +172,22 @@ class SemanticConflictAuthorityAdministrationAuthorization(
 
 
 @dataclass(frozen=True)
+class SemanticCatalogAuthorityAdministrationAuthorization(
+    MemoryPlaneWriteAuthorization
+):
+    """Permit the catalog repository's one immutable genesis closure."""
+
+    owner: object
+
+
+@dataclass(frozen=True)
 class SemanticConflictAuthorityAdministrationGrant:
+    _issuer: object
+    _owner: object
+
+
+@dataclass(frozen=True)
+class SemanticCatalogAuthorityAdministrationGrant:
     _issuer: object
     _owner: object
 
@@ -254,6 +276,25 @@ def observation_ledger_head_memory_id(repository_id: str) -> str:
     ).hexdigest()
 
 
+class CatalogBundleLocator(Protocol):
+    def locate_selected(
+        self,
+        records: Sequence[CanonicalMemoryRecord],
+        *,
+        scope: CatalogAuthorityCoordinate,
+        authenticated: AuthenticatedPrincipalAgent | None = None,
+    ) -> tuple[VerifiedCatalogBundle, object]: ...
+    def locate_historical(
+        self,
+        records: Sequence[CanonicalMemoryRecord],
+        *,
+        version_id: str,
+        version_digest: str,
+        scope: CatalogAuthorityCoordinate | None = None,
+        authenticated: AuthenticatedPrincipalAgent | None = None,
+    ) -> VerifiedCatalogBundle: ...
+
+
 class SemanticWriterAdmissionStore:
     def __init__(
         self,
@@ -263,10 +304,18 @@ class SemanticWriterAdmissionStore:
         now_provider=lambda: datetime.now(UTC),
         typed_value_registry_history: ProtectedTypedValueRegistryHistory | None = None,
         observation_activation_target: VerifiedObservationActivationTargetVariant | None = None,
+        catalog_bundle_locator: CatalogBundleLocator | None = None,
     ) -> None:
         if not _is_ledger_activation_predecessor_manifest(manifest):
             raise SemanticWriterAdmissionError("unsupported semantic ownership manifest")
         self._memory_plane, self._manifest, self._now = memory_plane, manifest, now_provider
+        if catalog_bundle_locator is None:
+            from memorii.core.semantic_ingestion.catalog_capture_pin import (
+                PackageIndexedCatalogBundleLocator,
+            )
+            catalog_bundle_locator = PackageIndexedCatalogBundleLocator()
+        assert catalog_bundle_locator is not None
+        self._catalog_bundle_locator = catalog_bundle_locator
         if typed_value_registry_history is not None and type(typed_value_registry_history) is not ProtectedTypedValueRegistryHistory:
             raise TypedValueRegistryConfigurationError("typed value registry history is invalid")
         if observation_activation_target is not None and (
@@ -293,6 +342,10 @@ class SemanticWriterAdmissionStore:
         self._conflict_authority_administration_owner: object | None = None
         self._conflict_authority_administration_grant: (
             SemanticConflictAuthorityAdministrationGrant | None
+        ) = None
+        self._catalog_authority_administration_owner: object | None = None
+        self._catalog_authority_administration_grant: (
+            SemanticCatalogAuthorityAdministrationGrant | None
         ) = None
         self._transition_owner = object()
         self._memory_plane.install_governed_write_policy(SemanticGovernedWritePolicy(self))
@@ -368,6 +421,25 @@ class SemanticWriterAdmissionStore:
             )
         assert self._conflict_authority_administration_grant is not None
         return self._conflict_authority_administration_grant
+
+    def claim_catalog_authority_administration(
+        self, *, owner: object
+    ) -> SemanticCatalogAuthorityAdministrationGrant:
+        """Bind the immutable catalog genesis writer to this runtime owner."""
+
+        if self._catalog_authority_administration_owner is None:
+            self._catalog_authority_administration_owner = owner
+            self._catalog_authority_administration_grant = (
+                SemanticCatalogAuthorityAdministrationGrant(
+                    _issuer=self, _owner=owner
+                )
+            )
+        elif self._catalog_authority_administration_owner is not owner:
+            raise SemanticWriterAdmissionError(
+                "catalog authority administration is already owned"
+            )
+        assert self._catalog_authority_administration_grant is not None
+        return self._catalog_authority_administration_grant
 
     def create_initial_evidence_only(
         self, *, admission_id: str, writer_implementation_fingerprint: str, graph_schema_fingerprint: str
@@ -1000,6 +1072,31 @@ class SemanticGovernedWritePolicy:
                 tuple(conflict_authority_records), current
             )
             return
+        if isinstance(
+            authorization,
+            SemanticCatalogAuthorityAdministrationAuthorization,
+        ):
+            catalog_records = [
+                record
+                for record in governed
+                if record.source_kind
+                in {
+                    "semantic_ingestion_catalog_version",
+                    "semantic_ingestion_catalog_selection_pointer",
+                }
+            ]
+            if (
+                authorization.owner
+                is not self._admissions._catalog_authority_administration_grant
+                or len(catalog_records) != len(governed)
+            ):
+                raise SemanticWriterAdmissionError(
+                    "catalog authority administration is not authorized"
+                )
+            _validate_catalog_authority_administration_write(
+                tuple(catalog_records), current
+            )
+            return
         if not isinstance(authorization, SemanticWriterWriteAuthorization):
             raise SemanticWriterAdmissionError("governed semantic write is not authorized")
         if not self._admissions._is_supported_manifest(authorization.manifest) and not (
@@ -1139,6 +1236,28 @@ class SemanticGovernedWritePolicy:
             or is_capability_monitor_status_initialization_write(governed)
         ):
             return
+        if _is_hermes_captured_turn_atomic_write(
+            governed,
+            self._admissions.commit_binding(current_admission),
+        ):
+            return
+        if _is_catalog_captured_turn_pin_write(
+            governed, current, self._admissions.commit_binding(current_admission),
+            self._admissions._catalog_bundle_locator,
+        ):
+            return
+        if _is_captured_retained_structured_submission_write(
+            governed,
+            self._admissions.commit_binding(current_admission),
+            current,
+        ):
+            return
+        if _is_hermes_captured_turn_completion_write(
+            governed,
+            self._admissions.commit_binding(current_admission),
+            current,
+        ):
+            return
         if current_admission.activation_digest is not None:
             registered_snapshot_validator = self._admissions._activated_observation_snapshot_validators.get(authorization.owner)
             if _is_activated_observation_ledger_write(
@@ -1153,6 +1272,10 @@ class SemanticGovernedWritePolicy:
                 ),
             ) or _is_activated_preterminal_write(
                 governed, current, admissions=self._admissions
+            ) or _is_activated_structured_grant_revocation_write(
+                governed, current,
+            ) or _is_activated_agent_local_catalog_visibility_grant_write(
+                governed, current,
             ):
                 if authorization.lease_expires_at is not None and (
                     authorization.server_now is None
@@ -1180,6 +1303,14 @@ class SemanticGovernedWritePolicy:
         if all(record.source_kind == "semantic_ingestion_authorization_authority" for record in governed):
             if len(governed) != 1:
                 raise SemanticWriterAdmissionError("authorization authority transition is not isolated")
+            return
+        if _is_retained_structured_submission_write(
+            governed, self._admissions.commit_binding(current_admission)
+        ):
+            return
+        if _is_structured_grant_state_write(
+            governed, self._admissions.commit_binding(current_admission)
+        ):
             return
         controls = [
             record
@@ -1271,6 +1402,8 @@ class SemanticGovernedWritePolicy:
             _validate_initial_preplanning_generation(preplanning, controls[0], operation_fence, operation_namespace)
             admission_records = [record for record in governed if record not in preplanning]
             if admission_records:
+                if _is_retained_source_operation_link(admission_records, operation_fence):
+                    return
                 _validate_atomic_admission_records(admission_records, operation_fence, binding)
             return
         current_generation = [
@@ -1340,6 +1473,100 @@ class SemanticGovernedWritePolicy:
             _validate_replay_authority_closure(replay_authority_records)
         elif replay_authority_records:
             _validate_non_event_replay_authority_closure(replay_authority_records)
+
+
+def _validate_catalog_authority_administration_write(
+    records: tuple[CanonicalMemoryRecord, ...],
+    current: tuple[CanonicalMemoryRecord, ...],
+) -> None:
+    """Allow seed genesis or the one verified generated default release closure."""
+
+    from memorii.core.semantic_ingestion.catalog_authority import (
+        CatalogChildVersionV2,
+        CatalogSelectionPointer,
+        CatalogVersion,
+        catalog_selection_pointer_memory_id,
+        catalog_version_memory_id,
+    )
+
+    try:
+        version_record = next(
+            record
+            for record in records
+            if record.source_kind == "semantic_ingestion_catalog_version"
+        )
+        pointer_record = next(
+            record
+            for record in records
+            if record.source_kind == "semantic_ingestion_catalog_selection_pointer"
+        )
+        raw_version = version_record.content["catalog_version"]
+        version = (
+            CatalogVersion.model_validate(raw_version)
+            if raw_version.get("schema_version") == 1
+            else CatalogChildVersionV2.model_validate(raw_version)
+        )
+        pointer = CatalogSelectionPointer.model_validate(
+            pointer_record.content["catalog_selection_pointer"]
+        )
+    except (AttributeError, KeyError, StopIteration, TypeError, ValueError) as exc:
+        raise SemanticWriterAdmissionError(
+            "catalog authority administration closure is invalid"
+        ) from exc
+    if len(records) != 2 or (
+        version_record.memory_id != catalog_version_memory_id(version)
+        or pointer_record.memory_id != catalog_selection_pointer_memory_id(
+            pointer.catalog_scope
+        )
+    ):
+        raise SemanticWriterAdmissionError(
+            "catalog authority administration closure is invalid"
+        )
+    if isinstance(version, CatalogVersion):
+        valid = (
+            pointer.selected_version_id == version.version_id
+            and pointer.selected_version_digest == version.version_digest
+            and pointer.pointer_revision == 1
+            and pointer.predecessor_pointer_digest is None
+            and not any(record.source_kind in {
+                "semantic_ingestion_catalog_version",
+                "semantic_ingestion_catalog_selection_pointer",
+            } for record in current)
+        )
+    else:
+        from memorii.core.semantic_ingestion.default_catalog_package import (
+            load_packaged_default_catalog_release,
+        )
+        try:
+            release = load_packaged_default_catalog_release()
+            current_versions = [
+                item for item in current
+                if item.source_kind == "semantic_ingestion_catalog_version"
+            ]
+            current_pointers = [
+                item for item in current
+                if item.source_kind == "semantic_ingestion_catalog_selection_pointer"
+            ]
+            seed = CatalogVersion.genesis(catalog_digest=release.catalog_digest)
+            seed_pointer = CatalogSelectionPointer.genesis(version=seed)
+            valid = (
+                version == release.child_version
+                and pointer.selected_version_id == version.version_id
+                and pointer.selected_version_digest == version.version_digest
+                and pointer.pointer_revision == 2
+                and pointer.predecessor_pointer_digest == seed_pointer.pointer_digest
+                and len(current_versions) == len(current_pointers) == 1
+                and CatalogVersion.model_validate(current_versions[0].content["catalog_version"]) == seed
+                and CatalogSelectionPointer.model_validate(
+                    current_pointers[0].content["catalog_selection_pointer"]
+                ) == seed_pointer
+            )
+        except (KeyError, TypeError, ValueError):
+            valid = False
+    if not valid:
+        raise SemanticWriterAdmissionError(
+            "catalog authority administration closure is invalid"
+        )
 
 
 def _validate_conflict_authority_administration_write(
@@ -2843,8 +3070,12 @@ def _is_prepared_source_publication_write(
     if (
         not isinstance(source_id, str)
         or not isinstance(source_digest, str)
-        or record.memory_id
-        != "semantic_ingestion:prepared_source:" + sha256(source_id.encode("utf-8")).hexdigest()
+        or not (
+            record.memory_id == "semantic_ingestion:prepared_source:" + sha256(source_id.encode("utf-8")).hexdigest()
+            or record.memory_id.startswith(
+                "semantic_ingestion:prepared_source:" + sha256(source_id.encode("utf-8")).hexdigest() + ":"
+            )
+        )
     ):
         return False
     # The atomic-store owner validates and encodes the complete closed
@@ -3289,6 +3520,358 @@ def _validate_atomic_admission_records(
         raise SemanticWriterAdmissionError("atomic admission indexes must cover every source")
 
 
+def _is_retained_source_operation_link(
+    records: list[CanonicalMemoryRecord], fence: OperationFenceBinding
+) -> bool:
+    """Allow only the atomic-store link for a second retained-source operation."""
+    if len(records) != 1:
+        return False
+    record = records[0]
+    expected_id = "semantic_ingestion:retained-source-operation:" + fence.operation_fence_id
+    content = record.content
+    return (
+        record.memory_id == expected_id
+        and record.source_kind == "semantic_ingestion_retained_source_operation"
+        and record.domain == MemoryDomain.EXECUTION
+        and record.visibility == MemoryRecordVisibility.INTERNAL_CONTROL
+        and record.status == CommitStatus.COMMITTED
+        and content.get("source_id") == fence.source_id
+        and content.get("source_digest") == fence.source_digest
+        and content.get("delivery_key_digest") == fence.delivery_key_digest
+        and content.get("operation_fence_binding") == fence.model_dump(mode="json")
+        and isinstance(content.get("source_admission_index_digest"), str)
+        and isinstance(content.get("required_scope_set_digest"), str)
+        and isinstance(content.get("canonical_envelope_digest"), str)
+    )
+
+
+def has_activated_operation_admission(
+    *,
+    operation_fence: OperationFenceBinding,
+    binding: SemanticWriterCommitBinding,
+    current: tuple[CanonicalMemoryRecord, ...],
+    governed: list[CanonicalMemoryRecord],
+) -> bool:
+    """Resolve the sole admission that may authorize an activated operation.
+
+    A normal operation carries an admission index under its own fence.  A
+    retained-source operation instead proves its distinct fence through the
+    persisted link back to the original capture admission.  The latter is a
+    complete join, never a source-id lookup: it binds the original index bytes,
+    delivery principal/key, required scope set, source digest, and writer epoch.
+    """
+    from memorii.core.memory_evolution.admission import source_admission_source_digest
+    from memorii.core.memory_evolution.ingestion_contracts import RequiredOutcomeScopeSet
+
+    visible = {record.memory_id: record for record in (*current, *governed)}
+    current_fence_indexes = [
+        record
+        for record in visible.values()
+        if (
+            record.source_kind == "semantic_ingestion_admission_index"
+            and record.content.get("operation_fence_binding")
+            == operation_fence.model_dump(mode="json")
+        )
+    ]
+    if current_fence_indexes:
+        return (
+            len(current_fence_indexes) == 1
+            and current_fence_indexes[0].content.get("admitted_writer_epoch")
+            == binding.expected_writer_epoch
+            and current_fence_indexes[0].content.get("writer_admission_digest")
+            == binding.admission_digest
+        )
+
+    link = visible.get(
+        "semantic_ingestion:retained-source-operation:"
+        + operation_fence.operation_fence_id
+    )
+    source = visible.get(operation_fence.source_id)
+    index = visible.get(
+        "semantic_ingestion:admission:"
+        + operation_fence.delivery_identity.delivery_key_digest
+    )
+    if (
+        link is None
+        or source is None
+        or index is None
+        or not _is_retained_source_operation_link([link], operation_fence)
+        or index.source_kind != "semantic_ingestion_admission_index"
+    ):
+        return False
+    try:
+        original_fence = OperationFenceBinding.model_validate(
+            index.content["operation_fence_binding"]
+        )
+        scopes = RequiredOutcomeScopeSet.create(
+            tenant_partition_id=index.content["tenant_partition_id"],
+            scopes=tuple(index.content["required_scopes"]),
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
+    return (
+        source_admission_source_digest(source) == operation_fence.source_digest
+        and sha256(encode_typed_value(index.content)).hexdigest()
+        == link.content.get("source_admission_index_digest")
+        and original_fence.source_id == operation_fence.source_id
+        and original_fence.source_digest == operation_fence.source_digest
+        and original_fence.delivery_identity == operation_fence.delivery_identity
+        and index.content.get("principal_binding_digest")
+        == operation_fence.delivery_principal_binding_digest
+        and index.content.get("delivery_key_digest")
+        == operation_fence.delivery_key_digest
+        and index.content.get("tenant_partition_id") == scopes.tenant_partition_id
+        and tuple(index.content.get("required_scopes", ())) == scopes.scopes
+        and index.content.get("required_scope_set_digest")
+        == scopes.required_scope_set_digest
+        and link.content.get("required_scope_set_digest")
+        == scopes.required_scope_set_digest
+        and index.content.get("admitted_writer_epoch") == binding.expected_writer_epoch
+        and index.content.get("writer_admission_digest") == binding.admission_digest
+    )
+
+
+# Kept as a private compatibility alias for the existing admission write paths.
+_has_activated_operation_admission = has_activated_operation_admission
+
+
+def _is_retained_structured_submission_write(
+    records: list[CanonicalMemoryRecord], binding: SemanticWriterCommitBinding,
+) -> bool:
+    if len(records) != 1:
+        return False
+    record = records[0]
+    fence = record.content.get("operation_fence_binding")
+    if not isinstance(fence, dict):
+        return False
+    try:
+        operation = OperationFenceBinding.model_validate(fence)
+    except ValueError:
+        return False
+    return (
+        record.memory_id == "semantic_ingestion:retained-structured-submission:" + operation.operation_fence_id
+        and record.source_kind == "semantic_ingestion_retained_structured_submission"
+        and record.domain == MemoryDomain.EXECUTION
+        and record.visibility == MemoryRecordVisibility.INTERNAL_CONTROL
+        and record.status == CommitStatus.COMMITTED
+        and isinstance(record.content.get("canonical_envelope"), str)
+        and isinstance(record.content.get("proposal_bytes"), str)
+        and isinstance(record.content.get("raw_proposal_artifact"), str)
+        and isinstance(record.content.get("canonical_envelope_digest"), str)
+        and isinstance(record.content.get("proposal_bytes_digest"), str)
+        and isinstance(record.content.get("raw_proposal_artifact_digest"), str)
+    )
+
+
+def _is_captured_retained_structured_submission_write(
+    records: list[CanonicalMemoryRecord], binding: SemanticWriterCommitBinding,
+    current: tuple[CanonicalMemoryRecord, ...],
+) -> bool:
+    """Permit the one-CAS captured-source structured publication shape."""
+    controls = [
+        record for record in records
+        if record.content.get("semantic_ingestion_kind") == "preplanning_operation_control"
+    ]
+    links = [record for record in records if record.source_kind == "semantic_ingestion_retained_source_operation"]
+    submissions = [record for record in records if record.source_kind == "semantic_ingestion_retained_structured_submission"]
+    coordinates = [record for record in records if record.source_kind == "semantic_ingestion_hermes_capture_coordination"]
+    if len(controls) != 1 or len(links) != 1 or len(submissions) != 1 or len(coordinates) != 1:
+        return False
+    try:
+        fence = OperationFenceBinding.model_validate(controls[0].content["control"]["operation_fence"])
+        control_binding = SemanticWriterCommitBinding.model_validate(controls[0].content["control"]["writer_binding"])
+        from memorii.core.semantic_ingestion.hermes_captured_turn import HermesCapturedTurnCoordination
+        coordination = HermesCapturedTurnCoordination.model_validate(coordinates[0].content["coordination"])
+    except (ImportError, KeyError, TypeError, ValueError):
+        return False
+    if control_binding != binding or not _is_retained_source_operation_link(links, fence):
+        return False
+    if not _is_retained_structured_submission_write(submissions, binding):
+        return False
+    if (
+        coordinates[0].memory_id != coordination.memory_id
+        or coordinates[0].source_kind != "semantic_ingestion_hermes_capture_coordination"
+        or coordinates[0].domain != MemoryDomain.EXECUTION
+        or coordinates[0].status != CommitStatus.COMMITTED
+        or coordinates[0].visibility != MemoryRecordVisibility.INTERNAL_CONTROL
+        or coordination.state != "structured_pending"
+        or not coordination.first_structured_operation_fence_id
+        or coordination.source_id != fence.source_id
+        or coordination.source_digest != fence.source_digest
+    ):
+        return False
+    prior_record = next(
+        (record for record in current if record.memory_id == coordinates[0].memory_id), None
+    )
+    try:
+        prior = HermesCapturedTurnCoordination.model_validate(
+            prior_record.content["coordination"] if prior_record is not None else None
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
+    if prior_record is None or prior.memory_id != coordination.memory_id:
+        return False
+    if prior.state == "captured":
+        if (
+            prior.first_structured_operation_fence_id is not None
+            or coordination.first_structured_operation_fence_id != fence.operation_fence_id
+        ):
+            return False
+    elif prior.state == "structured_pending":
+        if coordination != prior:
+            return False
+    else:
+        return False
+    operation_namespace = controls[0].content["control"].get("persistence_namespace_id") or fence.operation_id
+    try:
+        _validate_initial_preplanning_generation(
+            [record for record in records if record.source_kind.startswith("semantic_ingestion_preplanning")],
+            controls[0], fence, operation_namespace,
+        )
+    except (SemanticWriterAdmissionError, ValueError, TypeError):
+        return False
+    return True
+
+
+def _is_structured_grant_state_write(
+    records: list[CanonicalMemoryRecord], binding: SemanticWriterCommitBinding,
+) -> bool:
+    """Allow only typed same-store grant activation or idempotent revocation."""
+    from memorii.core.semantic_ingestion.catalog_authority import StructuredGrantState
+
+    if not records or len(records) > 3:
+        return False
+    seen: set[str] = set()
+    for record in records:
+        if (
+            record.source_kind != "semantic_ingestion_structured_grant_state"
+            or record.domain != MemoryDomain.EXECUTION
+            or record.visibility != MemoryRecordVisibility.INTERNAL_CONTROL
+            or record.status != CommitStatus.COMMITTED
+        ):
+            return False
+        try:
+            state = StructuredGrantState.model_validate(record.content["state"])
+        except (KeyError, TypeError, ValueError):
+            return False
+        expected_id = "semantic_ingestion:structured-grant:" + sha256(
+            (state.grant_kind + "\0" + state.grant.grant_id).encode("utf-8")
+        ).hexdigest()
+        if record.memory_id != expected_id or expected_id in seen:
+            return False
+        seen.add(expected_id)
+    return True
+
+
+def _is_activated_structured_grant_revocation_write(
+    records: list[CanonicalMemoryRecord],
+    current: tuple[CanonicalMemoryRecord, ...],
+) -> bool:
+    """Allow only one typed active-to-revoked grant transition after activation."""
+    from memorii.core.semantic_ingestion.catalog_authority import StructuredGrantState
+
+    if len(records) != 1:
+        return False
+    replacement = records[0]
+    if (
+        replacement.source_kind != "semantic_ingestion_structured_grant_state"
+        or replacement.domain != MemoryDomain.EXECUTION
+        or replacement.visibility != MemoryRecordVisibility.INTERNAL_CONTROL
+        or replacement.status != CommitStatus.COMMITTED
+    ):
+        return False
+    try:
+        revoked = StructuredGrantState.model_validate(replacement.content["state"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    if revoked.active:
+        return False
+    expected_id = "semantic_ingestion:structured-grant:" + sha256(
+        (revoked.grant_kind + "\0" + revoked.grant.grant_id).encode("utf-8")
+    ).hexdigest()
+    if replacement.memory_id != expected_id:
+        return False
+    previous = next((record for record in current if record.memory_id == expected_id), None)
+    if previous is None:
+        # A tombstone remains the canonical answer when revocation arrives
+        # before the factory has provisioned the corresponding grant.
+        return True
+    if (
+        previous.source_kind != replacement.source_kind
+        or previous.domain != replacement.domain
+        or previous.visibility != replacement.visibility
+        or previous.status != replacement.status
+    ):
+        return False
+    try:
+        active = StructuredGrantState.model_validate(previous.content["state"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    return active.active and active.model_copy(update={"active": False}) == revoked
+
+
+def _is_activated_agent_local_catalog_visibility_grant_write(
+    records: list[CanonicalMemoryRecord],
+    current: tuple[CanonicalMemoryRecord, ...],
+) -> bool:
+    """Allow one selected agent catalog to add its owner-bound read grant."""
+    from memorii.core.semantic_ingestion.catalog_authority import (
+        AgentLocalCatalogAuthorityScope,
+        CatalogOwnerVisibilityGrant,
+        FactScopeGrant,
+        SourceScopeGrant,
+        StructuredGrantState,
+    )
+
+    if len(records) != 1:
+        return False
+    record = records[0]
+    if (
+        record.source_kind != "semantic_ingestion_structured_grant_state"
+        or record.domain != MemoryDomain.EXECUTION
+        or record.visibility != MemoryRecordVisibility.INTERNAL_CONTROL
+        or record.status != CommitStatus.COMMITTED
+    ):
+        return False
+    try:
+        added = StructuredGrantState.model_validate(record.content["state"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    if (
+        not added.active
+        or added.grant_kind != "catalog_visibility"
+        or not isinstance(added.grant, CatalogOwnerVisibilityGrant)
+        or not isinstance(added.grant.catalog_scope, AgentLocalCatalogAuthorityScope)
+    ):
+        return False
+    expected_id = "semantic_ingestion:structured-grant:" + sha256(
+        (added.grant_kind + "\0" + added.grant.grant_id).encode("utf-8")
+    ).hexdigest()
+    if record.memory_id != expected_id or any(item.memory_id == expected_id for item in current):
+        return False
+    owner = added.grant.authenticated
+    required_kinds = {"source", "fact"}
+    matched: set[str] = set()
+    for prior in current:
+        if prior.source_kind != "semantic_ingestion_structured_grant_state":
+            continue
+        try:
+            state = StructuredGrantState.model_validate(prior.content["state"])
+        except (KeyError, TypeError, ValueError):
+            return False
+        if state.grant_kind not in required_kinds or not state.active:
+            continue
+        if not isinstance(state.grant, (SourceScopeGrant, FactScopeGrant)):
+            return False
+        if state.grant.authenticated == owner:
+            matched.add(state.grant_kind)
+    return (
+        matched == required_kinds
+        and added.grant.catalog_scope.principal_id == owner.principal_id
+        and added.grant.catalog_scope.agent_id == owner.agent_id
+    )
+
+
 def _is_atomic_admission_only_write(
     records: list[CanonicalMemoryRecord],
     binding: SemanticWriterCommitBinding,
@@ -3312,6 +3895,488 @@ def _is_atomic_admission_only_write(
     except (KeyError, TypeError, ValueError, SemanticWriterAdmissionError):
         return False
     return True
+
+
+def _is_hermes_captured_turn_atomic_write(
+    records: list[CanonicalMemoryRecord],
+    binding: SemanticWriterCommitBinding,
+) -> bool:
+    """Permit the closed source-only Hermes capture quartet."""
+    prepared_records = [
+        record for record in records
+        if record.source_kind == "semantic_ingestion_prepared_source"
+    ]
+    ledgers = [
+        record for record in records
+        if record.source_kind == "semantic_ingestion_hermes_captured_turn"
+    ]
+    coordinations = [
+        record for record in records
+        if record.source_kind == "semantic_ingestion_hermes_capture_coordination"
+    ]
+    if len(prepared_records) != 1 or len(ledgers) != 1 or len(coordinations) != 1:
+        return False
+    base = [
+        record for record in records
+        if record is not prepared_records[0] and record is not ledgers[0] and record is not coordinations[0]
+    ]
+    if not _is_atomic_admission_only_write(base, binding):
+        return False
+    prepared = prepared_records[0]
+    ledger_record = ledgers[0]
+    content = prepared.content
+    source_id = content.get("source_id")
+    source_digest = content.get("source_digest")
+    fingerprint = content.get("preparation_fingerprint")
+    if (
+        not isinstance(source_id, str)
+        or not isinstance(source_digest, str)
+        or not isinstance(fingerprint, str)
+        or not isinstance(content.get("prepared_source_wire"), str)
+        or prepared.memory_id
+        != "semantic_ingestion:prepared_source:" + sha256(source_id.encode("utf-8")).hexdigest()
+    ):
+        return False
+    try:
+        from memorii.core.semantic_ingestion.hermes_captured_turn import (
+            HermesCapturedTurnCoordination,
+            HermesCapturedTurnLedger,
+        )
+
+        ledger = HermesCapturedTurnLedger.model_validate(ledger_record.content)
+        coordination = HermesCapturedTurnCoordination.model_validate(coordinations[0].content["coordination"])
+    except (ImportError, ValueError, TypeError):
+        return False
+    return (
+        ledger_record.memory_id
+        == "semantic_ingestion:hermes_captured_turn:"
+        + sha256(ledger.capture_id.encode("utf-8")).hexdigest()
+        and ledger_record.domain == MemoryDomain.TRANSCRIPT
+        and ledger_record.visibility == MemoryRecordVisibility.INTERNAL_CONTROL
+        and ledger_record.status == CommitStatus.COMMITTED
+        and ledger_record.timestamp == ledger.captured_at
+        and ledger.source_id == source_id
+        and ledger.source_digest == source_digest
+        and ledger.preparation_fingerprint == fingerprint
+        and coordination == HermesCapturedTurnCoordination.captured(ledger)
+        and coordinations[0].memory_id == coordination.memory_id
+        and coordinations[0].domain == MemoryDomain.EXECUTION
+        and coordinations[0].visibility == MemoryRecordVisibility.INTERNAL_CONTROL
+        and coordinations[0].status == CommitStatus.COMMITTED
+    )
+
+
+def _is_catalog_captured_turn_pin_write(
+    records: list[CanonicalMemoryRecord], current: tuple[CanonicalMemoryRecord, ...],
+    binding: SemanticWriterCommitBinding, catalog_bundle_locator: object,
+) -> bool:
+    """Allow one closed pin only while its captured turn remains eligible."""
+    if len(records) != 1:
+        return False
+    record = records[0]
+    if (
+        record.source_kind != "semantic_ingestion_catalog_capture_pin"
+        or record.domain is not MemoryDomain.EXECUTION
+        or record.visibility is not MemoryRecordVisibility.INTERNAL_CONTROL
+        or record.status is not CommitStatus.COMMITTED
+        or record.text != ""
+    ):
+        return False
+    try:
+        from memorii.core.semantic_ingestion.catalog_authority import (
+            AgentLocalCatalogAuthorityScope,
+            AuthenticatedPrincipalAgent,
+            CatalogChildVersionV2,
+            CatalogSelectionPointer,
+            CatalogVersion,
+            StructuredGrantState,
+            catalog_selection_pointer_memory_id,
+            catalog_version_memory_id,
+        )
+        from memorii.core.semantic_ingestion.catalog_capture_pin import (
+            CatalogCapturedTurnPin,
+            PackageIndexedCatalogBundleLocator,
+        )
+        from memorii.core.semantic_ingestion.hermes_captured_turn import (
+            HermesCapturedTurnCoordination,
+            HermesCapturedTurnLedger,
+        )
+        from memorii.core.semantic_ingestion.learned_relation import (
+            CatalogPointer,
+            OntologyCatalogVersion,
+        )
+        pin = CatalogCapturedTurnPin.model_validate(record.content["catalog_capture_pin"])
+        if not isinstance(catalog_bundle_locator, PackageIndexedCatalogBundleLocator):
+            return False
+        # Paired evaluation deliberately has no selected-catalog pointer.  Its
+        # inert candidate bundle is instead revalidated by the atomic owner
+        # against the internal evaluation authority before this policy runs.
+        # Treat it as a separate, non-selecting write shape so an activated
+        # writer can persist the capture pin without admitting a production
+        # catalog selection.
+        if pin.paired_evaluation_authority_digest is not None:
+            return _is_paired_evaluation_catalog_captured_turn_pin_write(
+                record=record, pin=pin, current=current,
+            )
+        bundle, selected_pointer = catalog_bundle_locator.locate_selected(
+            current,
+            scope=pin.catalog_scope,
+            authenticated=(
+                AuthenticatedPrincipalAgent(
+                    principal_id=pin.catalog_scope.principal_id,
+                    agent_id=pin.catalog_scope.agent_id,
+                )
+                if isinstance(pin.catalog_scope, AgentLocalCatalogAuthorityScope)
+                else None
+            ),
+        )
+    except (ImportError, KeyError, TypeError, ValueError):
+        return False
+    if record.memory_id != pin.memory_id:
+        return False
+    if pin.capture_id.startswith("retained-source:"):
+        from memorii.core.semantic_ingestion.learned_relation import CatalogPointer
+
+        if not isinstance(
+            selected_pointer, (CatalogSelectionPointer, CatalogPointer)
+        ):
+            return False
+        return _is_retained_source_catalog_pin_write(
+            pin=pin,
+            current=current,
+            bundle=bundle,
+            selected_pointer=selected_pointer,
+        )
+    by_id = {item.memory_id: item for item in current}
+    ledger_record = by_id.get(
+        "semantic_ingestion:hermes_captured_turn:" + sha256(pin.capture_id.encode()).hexdigest()
+    )
+    prepared_record = by_id.get(
+        "semantic_ingestion:prepared_source:" + sha256(pin.source_id.encode()).hexdigest()
+    )
+    coordination_record = by_id.get(HermesCapturedTurnCoordination.memory_id_for_source(pin.source_id))
+    source_record = by_id.get(pin.source_id)
+    if isinstance(pin.catalog_scope, AgentLocalCatalogAuthorityScope):
+        from memorii.core.semantic_ingestion.learned_relation import (
+            learned_catalog_pointer_memory_id,
+            learned_catalog_version_memory_id,
+        )
+        if not isinstance(bundle.version, OntologyCatalogVersion) or not isinstance(
+            selected_pointer, CatalogPointer
+        ):
+            return False
+
+        pointer_record = by_id.get(learned_catalog_pointer_memory_id(pin.catalog_scope))
+        version_record = by_id.get(learned_catalog_version_memory_id(bundle.version))
+    else:
+        if isinstance(bundle.version, OntologyCatalogVersion):
+            return False
+        pointer_record = by_id.get(catalog_selection_pointer_memory_id(pin.catalog_scope))
+        version_record = by_id.get(catalog_version_memory_id(bundle.version))
+    if any(
+        item is None
+        for item in (
+            ledger_record,
+            coordination_record,
+            pointer_record,
+            version_record,
+        )
+    ):
+        return False
+    assert ledger_record is not None
+    assert coordination_record is not None
+    assert pointer_record is not None
+    assert version_record is not None
+    try:
+        ledger = HermesCapturedTurnLedger.model_validate(ledger_record.content)
+        coordination = HermesCapturedTurnCoordination.model_validate(coordination_record.content["coordination"])
+        pointer = (
+            CatalogPointer.model_validate(pointer_record.content["pointer"])
+            if isinstance(selected_pointer, CatalogPointer)
+            else CatalogSelectionPointer.model_validate(pointer_record.content["catalog_selection_pointer"])
+        )
+        if isinstance(bundle.version, OntologyCatalogVersion):
+            version = OntologyCatalogVersion.model_validate(version_record.content["version"])
+        elif isinstance(bundle.version, CatalogVersion):
+            version = CatalogVersion.model_validate(version_record.content["catalog_version"])
+        else:
+            version = CatalogChildVersionV2.model_validate(version_record.content["catalog_version"])
+    except (AttributeError, KeyError, TypeError, ValueError):
+        return False
+    if (
+        ledger.capture_id != pin.capture_id or ledger.source_id != pin.source_id
+        or ledger.source_digest != pin.source_digest
+        or coordination != HermesCapturedTurnCoordination.captured(ledger)
+        or source_record is None or prepared_record is None
+        or pointer != selected_pointer
+        or version != bundle.version
+        or pin.catalog_scope != bundle.catalog.catalog_scope
+        or pin.catalog_digest != bundle.catalog.catalog_digest
+        or pin.selected_version_id != bundle.version.version_id
+        or pin.selected_version_digest != bundle.version.version_digest
+        or pin.runtime_bundle_digest != bundle.runtime_bundle_digest
+        or pin.selection_pointer_digest != pointer.pointer_digest
+        or (
+            isinstance(pin.catalog_scope, AgentLocalCatalogAuthorityScope)
+            and (
+                ledger.principal_id != pin.catalog_scope.principal_id
+                or ledger.agent_id != pin.catalog_scope.agent_id
+            )
+        )
+    ):
+        return False
+    # A pin never makes an inactive or substituted grant usable.  The atomic
+    # owner has the same checks and CAS preconditions; policy repeats them
+    # against the write snapshot.
+    grants = [item for item in current if item.source_kind == "semantic_ingestion_structured_grant_state"]
+    try:
+        states = tuple(StructuredGrantState.model_validate(item.content["state"]) for item in grants)
+    except (KeyError, TypeError, ValueError):
+        return False
+    matching = tuple(
+        state for state in states
+        if state.active
+        and state.grant.authenticated.principal_id == ledger.principal_id
+        and state.grant.authenticated.agent_id == ledger.agent_id
+    )
+    return {state.grant_kind for state in matching} == {
+        "source", "fact", "catalog_visibility",
+    }
+
+
+def _is_retained_source_catalog_pin_write(
+    *, pin: object, current: tuple[CanonicalMemoryRecord, ...],
+    bundle: VerifiedCatalogBundle,
+    selected_pointer: CatalogSelectionPointer | CatalogPointer,
+) -> bool:
+    """Recognize a generic retained-source pin without a Hermes ledger."""
+    try:
+        from memorii.core.memory_evolution.admission import (
+            source_admission_source_digest,
+        )
+        from memorii.core.semantic_ingestion.catalog_authority import (
+            AgentLocalCatalogAuthorityScope,
+            CatalogOwnerVisibilityGrant,
+            StructuredGrantState,
+        )
+        from memorii.core.semantic_ingestion.catalog_capture_pin import CatalogCapturedTurnPin
+        from memorii.core.semantic_ingestion.learned_relation import (
+            CatalogPointer,
+            OntologyCatalogVersion,
+            learned_catalog_pointer_memory_id,
+            learned_catalog_version_memory_id,
+        )
+    except ImportError:
+        return False
+    if not isinstance(pin, CatalogCapturedTurnPin) or (
+        not isinstance(pin.catalog_scope, AgentLocalCatalogAuthorityScope)
+        or pin.paired_evaluation_authority_digest is not None
+    ) or not isinstance(bundle.version, OntologyCatalogVersion) or not isinstance(
+        selected_pointer, CatalogPointer
+    ):
+        return False
+    try:
+        expected = CatalogCapturedTurnPin.from_retained_source(
+            source_id=pin.source_id,
+            source_digest=pin.source_digest,
+            bundle=bundle,
+            selection_pointer_digest=selected_pointer.pointer_digest,
+        )
+    except (AttributeError, TypeError, ValueError):
+        return False
+    if pin != expected:
+        return False
+    by_id = {item.memory_id: item for item in current}
+    source = by_id.get(pin.source_id)
+    prepared = by_id.get(
+        "semantic_ingestion:prepared_source:" + sha256(pin.source_id.encode()).hexdigest()
+    )
+    pointer_record = by_id.get(learned_catalog_pointer_memory_id(pin.catalog_scope))
+    version_record = by_id.get(learned_catalog_version_memory_id(bundle.version))
+    if any(item is None for item in (source, prepared, pointer_record, version_record)):
+        return False
+    assert source is not None and prepared is not None
+    assert pointer_record is not None and version_record is not None
+    try:
+        pointer = CatalogPointer.model_validate(pointer_record.content["pointer"])
+        version = OntologyCatalogVersion.model_validate(version_record.content["version"])
+        states = tuple(
+            StructuredGrantState.model_validate(item.content["state"])
+            for item in current
+            if item.source_kind == "semantic_ingestion_structured_grant_state"
+        )
+        source_digest = source_admission_source_digest(source)
+    except (AttributeError, KeyError, TypeError, ValueError):
+        return False
+    if (
+        source.source_kind != "semantic_ingestion_source"
+        or source_digest != pin.source_digest
+        or prepared.source_kind != "semantic_ingestion_prepared_source"
+        or prepared.content.get("source_id") != pin.source_id
+        or prepared.content.get("source_digest") != pin.source_digest
+        or pointer != selected_pointer
+        or version != bundle.version
+    ):
+        return False
+    matching = tuple(
+        state
+        for state in states
+        if state.active
+        and state.grant.authenticated.principal_id == pin.catalog_scope.principal_id
+        and state.grant.authenticated.agent_id == pin.catalog_scope.agent_id
+        and (
+            state.grant_kind != "catalog_visibility"
+            or (
+                isinstance(state.grant, CatalogOwnerVisibilityGrant)
+                and state.grant.catalog_scope == pin.catalog_scope
+            )
+        )
+    )
+    return {state.grant_kind for state in matching} == {
+        "source", "fact", "catalog_visibility",
+    }
+
+
+def _is_paired_evaluation_catalog_captured_turn_pin_write(
+    *, record: CanonicalMemoryRecord, pin: object,
+    current: tuple[CanonicalMemoryRecord, ...],
+) -> bool:
+    """Recognize the inert evaluation pin without consulting selection state."""
+    try:
+        from memorii.core.semantic_ingestion.catalog_authority import (
+            AgentLocalCatalogAuthorityScope,
+            StructuredGrantState,
+        )
+        from memorii.core.semantic_ingestion.catalog_capture_pin import CatalogCapturedTurnPin
+        from memorii.core.semantic_ingestion.hermes_captured_turn import (
+            HermesCapturedTurnCoordination,
+            HermesCapturedTurnLedger,
+        )
+    except ImportError:
+        return False
+    if not isinstance(pin, CatalogCapturedTurnPin) or (
+        not isinstance(pin.catalog_scope, AgentLocalCatalogAuthorityScope)
+        or pin.paired_evaluation_authority_digest is None
+        or pin.selection_pointer_digest != pin.paired_evaluation_authority_digest
+        or record.memory_id != pin.memory_id
+    ):
+        return False
+    by_id = {item.memory_id: item for item in current}
+    ledger_record = by_id.get(
+        "semantic_ingestion:hermes_captured_turn:" + sha256(pin.capture_id.encode()).hexdigest()
+    )
+    prepared_record = by_id.get(
+        "semantic_ingestion:prepared_source:" + sha256(pin.source_id.encode()).hexdigest()
+    )
+    coordination_record = by_id.get(
+        HermesCapturedTurnCoordination.memory_id_for_source(pin.source_id)
+    )
+    source_record = by_id.get(pin.source_id)
+    if any(item is None for item in (
+        ledger_record, prepared_record, coordination_record, source_record,
+    )):
+        return False
+    assert ledger_record is not None and coordination_record is not None
+    try:
+        ledger = HermesCapturedTurnLedger.model_validate(ledger_record.content)
+        coordination = HermesCapturedTurnCoordination.model_validate(
+            coordination_record.content["coordination"]
+        )
+        states = tuple(
+            StructuredGrantState.model_validate(item.content["state"])
+            for item in current
+            if item.source_kind == "semantic_ingestion_structured_grant_state"
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
+    if (
+        ledger.capture_id != pin.capture_id
+        or ledger.source_id != pin.source_id
+        or ledger.source_digest != pin.source_digest
+        or coordination != HermesCapturedTurnCoordination.captured(ledger)
+        or ledger.principal_id != pin.catalog_scope.principal_id
+        or ledger.agent_id != pin.catalog_scope.agent_id
+    ):
+        return False
+    matching = tuple(
+        state for state in states
+        if state.active
+        and state.grant.authenticated.principal_id == ledger.principal_id
+        and state.grant.authenticated.agent_id == ledger.agent_id
+    )
+    return {state.grant_kind for state in matching} == {
+        "source", "fact", "catalog_visibility",
+    }
+
+
+def _is_hermes_captured_turn_completion_write(
+    records: list[CanonicalMemoryRecord], binding: SemanticWriterCommitBinding,
+    current: tuple[CanonicalMemoryRecord, ...],
+) -> bool:
+    """Permit the closed one-CAS assistant admission and capture completion."""
+    coordinations = [r for r in records if r.source_kind == "semantic_ingestion_hermes_capture_coordination"]
+    ordinary_links = [r for r in records if r.source_kind == "semantic_ingestion_captured_turn_ordinary_operation"]
+    operation_links = [r for r in records if r.source_kind == "semantic_ingestion_retained_source_operation"]
+    controls = [r for r in records if r.content.get("semantic_ingestion_kind") == "preplanning_operation_control"]
+    if len(coordinations) != 1 or len(ordinary_links) > 1 or len(operation_links) > 1 or len(controls) > 1:
+        return False
+    special_ids = {r.memory_id for r in coordinations + ordinary_links + operation_links + controls}
+    artifacts = [r for r in records if r.source_kind == "semantic_ingestion_preplanning_artifact"]
+    special_ids.update(r.memory_id for r in artifacts)
+    assistant_records = [r for r in records if r.memory_id not in special_ids]
+    try:
+        from memorii.core.semantic_ingestion.hermes_captured_turn import HermesCapturedTurnCoordination
+        coordination = HermesCapturedTurnCoordination.model_validate(coordinations[0].content["coordination"])
+        prior_record = next(r for r in current if r.memory_id == coordinations[0].memory_id)
+        prior = HermesCapturedTurnCoordination.model_validate(prior_record.content["coordination"])
+    except (ImportError, KeyError, StopIteration, TypeError, ValueError):
+        return False
+    if (
+        coordinations[0].memory_id != coordination.memory_id
+        or coordinations[0].domain != MemoryDomain.EXECUTION
+        or coordinations[0].visibility != MemoryRecordVisibility.INTERNAL_CONTROL
+        or coordination.state not in {"completed_ordinary", "completed_structured"}
+        or prior.state not in {"captured", "structured_pending"}
+        or not coordination.completion_digest
+        or not coordination.assistant_source_id
+        or not coordination.assistant_source_digest
+    ):
+        return False
+    if not _is_atomic_admission_only_write(assistant_records, binding):
+        return False
+    source = next((r for r in assistant_records if r.memory_id == coordination.assistant_source_id), None)
+    if source is None:
+        return False
+    if coordination.state == "completed_structured":
+        return (
+            prior.state == "structured_pending"
+            and not ordinary_links and not operation_links and not controls and not artifacts
+            and coordination.first_structured_operation_fence_id == prior.first_structured_operation_fence_id
+        )
+    if (
+        prior.state != "captured" or len(ordinary_links) != 1 or len(operation_links) != 1
+        or len(controls) != 1 or len(artifacts) != 3 or not coordination.ordinary_operation_fence_id
+    ):
+        return False
+    try:
+        fence = OperationFenceBinding.model_validate(controls[0].content["control"]["operation_fence"])
+        control_binding = SemanticWriterCommitBinding.model_validate(controls[0].content["control"]["writer_binding"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    if control_binding != binding or fence.operation_fence_id != coordination.ordinary_operation_fence_id:
+        return False
+    if not _is_retained_source_operation_link(operation_links, fence):
+        return False
+    link = ordinary_links[0]
+    return (
+        link.memory_id == "semantic_ingestion:captured-turn-ordinary-operation:" + fence.operation_fence_id
+        and link.domain == MemoryDomain.EXECUTION
+        and link.visibility == MemoryRecordVisibility.INTERNAL_CONTROL
+        and link.status == CommitStatus.COMMITTED
+        and link.content.get("capture_id") == coordination.capture_id
+        and link.content.get("completion_digest") == coordination.completion_digest
+        and link.content.get("operation_fence_binding") == fence.model_dump(mode="json")
+    )
 
 
 def _is_capability_monitor_demotion_write(
@@ -4070,6 +5135,7 @@ def _is_bootstrap_graph_v3_group_commit_write(
                 "semantic_replay_state",
                 "reference_integrity_ledger",
                 "transaction_group_commit_attestation",
+                "structured_claim_catalog_binding",
             }
             for kind in kinds
         )
@@ -4105,6 +5171,26 @@ def _is_bootstrap_graph_v3_group_commit_write(
             or reload.request_ctv_digest != request.request_ctv_digest
         ):
             return False
+
+        from memorii.core.semantic_ingestion.catalog_authority import (
+            StructuredClaimCatalogBinding,
+        )
+        for item in governed:
+            if item.content.get("semantic_ingestion_kind") != "structured_claim_catalog_binding":
+                continue
+            try:
+                binding = StructuredClaimCatalogBinding.model_validate(item.content["binding"])
+            except (KeyError, TypeError, ValueError):
+                return False
+            if (
+                item.memory_id
+                != "semantic_ingestion:structured-claim-catalog:" + binding.claim_assertion_id
+                or item.domain is not MemoryDomain.SEMANTIC
+                or item.status is not CommitStatus.COMMITTED
+                or item.visibility is not MemoryRecordVisibility.INTERNAL_CONTROL
+                or set(item.content) != {"semantic_ingestion_kind", "binding"}
+            ):
+                return False
 
         # The ingestion-time seal member appears exactly when the persisted
         # core binds its digest (schema 3 committed); a noncommitting or
@@ -4442,7 +5528,12 @@ def _is_bootstrap_graph_v3_terminal_write(
             if member.get("kind")
             == "bootstrap_graph_source_finalization_observation_delta"
         )
+        pre_group_noncommit_members = tuple(
+            member for member in members
+            if member.get("kind") == "bootstrap_graph_pre_group_noncommit"
+        )
         source_observation = reload.get("source_finalization_observation_delta")
+        pre_group_noncommit = reload.get("pre_group_noncommit")
         terminal_member_schema_version = reload.get(
             "terminal_member_schema_version", 1
         )
@@ -4473,9 +5564,9 @@ def _is_bootstrap_graph_v3_terminal_write(
             and recovery_index.get("reload") == locator.get("reload")
             and recovery_index.get("normalization_replay_digest")
             == identity.get("normalization_replay_digest")
-            and terminal_member_schema_version in {1, 2, 3}
+            and terminal_member_schema_version in {1, 2, 3, 4}
             and (
-                terminal_member_schema_version == 1
+                terminal_member_schema_version in {1, 4}
                 or (
                     len(source_observation_members) == 1
                     and isinstance(source_observation, dict)
@@ -4495,6 +5586,27 @@ def _is_bootstrap_graph_v3_terminal_write(
                 or (
                     isinstance(reload.get("ledger_entry_id"), str)
                     and isinstance(reload.get("ledger_entry_digest"), str)
+                )
+            )
+            and (
+                terminal_member_schema_version != 4
+                or (
+                    len(source_observation_members) == 0
+                    and source_observation is None
+                    and len(pre_group_noncommit_members) == 1
+                    and isinstance(pre_group_noncommit, dict)
+                    and pre_group_noncommit.get("reason")
+                    == "authorization_revoked_before_commit"
+                    and pre_group_noncommit.get("request_digest")
+                    == terminal.get("request_digest")
+                    and pre_group_noncommit.get("operation_fence_binding_digest")
+                    == terminal.get("operation_fence_binding_digest")
+                    and pre_group_noncommit.get("operation_lease_binding_digest")
+                    == terminal.get("completed_lease_binding_digest")
+                    and pre_group_noncommit.get("writer_commit_binding_digest")
+                    == terminal.get("writer_commit_binding_digest")
+                    and pre_group_noncommit.get("control_epoch_digest")
+                    == terminal.get("control_epoch_digest")
                 )
             )
         )
@@ -4540,6 +5652,47 @@ def _is_activated_observation_ledger_write(
     is_group = _is_bootstrap_graph_v3_group_commit_write(group_base, current)
     is_terminal = _is_bootstrap_graph_v3_terminal_write(base, current)
     if is_group == is_terminal:
+        return False
+    operation_records = group_base if is_group else base
+    try:
+        control_record = next(
+            record
+            for record in operation_records
+            if record.content.get("semantic_ingestion_kind")
+            == "preplanning_operation_control"
+        )
+        writer_record = next(
+            record
+            for record in current
+            if record.memory_id == writer_admission_memory_id()
+        )
+        admission, _ = writer_admission_from_record(writer_record)
+        binding = SemanticWriterCommitBinding.model_validate(
+            control_record.content["control"]["writer_binding"]
+        )
+        operation_fence = OperationFenceBinding.model_validate(
+            control_record.content["control"]["operation_fence"]
+        )
+    except (KeyError, StopIteration, TypeError, ValueError, SemanticWriterAdmissionError):
+        return False
+    if (
+        binding != SemanticWriterCommitBinding(
+            admission_id=admission.admission_id,
+            expected_writer_epoch=admission.writer_epoch,
+            admission_digest=admission.admission_digest,
+            writer_namespace=admission.writer_namespace,
+            runtime_mode=admission.active_runtime_mode,
+            writer_implementation_fingerprint=admission.active_writer_implementation_fingerprint,
+            graph_schema_fingerprint=admission.accepted_graph_schema_fingerprint,
+            activation_digest=admission.activation_digest,
+        )
+        or not _has_activated_operation_admission(
+            operation_fence=operation_fence,
+            binding=binding,
+            current=current,
+            governed=operation_records,
+        )
+    ):
         return False
     try:
         if (
@@ -4750,6 +5903,33 @@ def _is_activated_preterminal_write(
             ))
         except (StopIteration, SemanticWriterAdmissionError):
             return False
+        binding = admissions.commit_binding(current_admission)
+        if _is_retained_structured_submission_write(governed, binding):
+            try:
+                fence = OperationFenceBinding.model_validate(
+                    governed[0].content["operation_fence_binding"]
+                )
+                control = next(
+                    record for record in current
+                    if record.memory_id == "semantic_ingestion:operation:" + fence.operation_fence_id
+                )
+                retained_control = control.content["control"]
+                retained_fence = OperationFenceBinding.model_validate(
+                    retained_control["operation_fence"]
+                )
+                retained_binding = SemanticWriterCommitBinding.model_validate(
+                    retained_control["writer_binding"]
+                )
+            except (KeyError, StopIteration, TypeError, ValueError):
+                return False
+            return (
+                retained_fence == fence
+                and retained_binding == binding
+                and _has_activated_operation_admission(
+                    operation_fence=fence, binding=binding,
+                    current=current, governed=governed,
+                )
+            )
         return any((
             _is_atomic_admission_only_write(governed, admissions.commit_binding(current_admission)),
             _is_accepted_identity_operation_write(governed),
@@ -4771,16 +5951,13 @@ def _is_activated_preterminal_write(
         operation_fence = OperationFenceBinding.model_validate(
             controls[0].content["control"]["operation_fence"]
         )
-        visible = {record.memory_id: record for record in (*current, *governed)}
-        source_admissions = [
-            record for record in visible.values()
-            if record.source_kind == "semantic_ingestion_admission_index"
-            and record.content.get("operation_fence_binding") == operation_fence.model_dump(mode="json")
-        ]
-        if (
-            len(source_admissions) != 1
-            or source_admissions[0].content.get("admitted_writer_epoch") != binding.expected_writer_epoch
-            or source_admissions[0].content.get("writer_admission_digest") != binding.admission_digest
+        if _is_bootstrap_handoff_write(governed, controls[0], binding, current=current):
+            return True
+        if not _has_activated_operation_admission(
+            operation_fence=operation_fence,
+            binding=binding,
+            current=current,
+            governed=governed,
         ):
             return False
         if _is_bootstrap_handoff_write(governed, controls[0], binding, current=current):
@@ -4793,6 +5970,8 @@ def _is_activated_preterminal_write(
             _validate_initial_preplanning_generation(preplanning, controls[0], operation_fence, namespace)
             admission_records = [record for record in governed if record not in preplanning]
             if admission_records:
+                if _is_retained_source_operation_link(admission_records, operation_fence):
+                    return True
                 _validate_atomic_admission_records(admission_records, operation_fence, binding)
             return True
         generation = [

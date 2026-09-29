@@ -1,12 +1,15 @@
+import base64
 import json
 import re
+import socket
 import sys as _sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
-from threading import Barrier
+from threading import Barrier, Event, Lock
+from types import SimpleNamespace
 from typing import cast
 from unittest.mock import patch
 
@@ -18,13 +21,20 @@ if (support_dir := str(Path(__file__).parent)) not in _sys.path:
 
 import pytest
 from memorii.core.filesystem_storage.bundle import build_filesystem_provider
+from memorii.core.memory_evolution.admission import (
+    GovernedSourceAdmissionService,
+    RetainedSourceOperationRequest,
+    source_admission_source_digest,
+)
 from memorii.core.memory_evolution.atomic_store import (
     AtomicGenerationMember,
     BootstrapWriterHandoffMarkerV3,
+    PreplanningLease,
     PreplanningOperationControl,
     PreplanningStoreError,
     SemanticAuthorizationAuthorityRecord,
     SemanticIngestionAtomicStore,
+    StructuredSubmissionGrantRevokedError,
 )
 from memorii.core.memory_evolution.bootstrap_profile import (
     BootstrapProfileReleaseBuilder,
@@ -51,6 +61,7 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     AuthenticatedHostIngress,
     AuthenticatedIngressContext,
     AuthenticatedIngressResolutionError,
+    AuthenticatedOriginLineageEvidence,
     AuthenticatedSemanticEgressGovernance,
     AuthenticatedSemanticSourceAuthority,
     AuthenticatedSemanticSourceInterval,
@@ -104,12 +115,29 @@ from memorii.core.memory_evolution.writer_admission import (
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.memory_plane.store import (
+    InMemoryMemoryPlaneStore,
     JsonlMemoryPlaneStore,
     _PersistedBatch,
+    record_digest,
 )
 from memorii.core.provider.factory import build_provider_memory_service_from_env
+from memorii.core.provider.ingestion import (
+    ProviderIngestionCoordinator,
+    RetainedStructuredSubmission,
+    StructuredFactSubmissionRequest,
+    StructuredFactSubmissionStatusRequest,
+)
 from memorii.core.provider.models import ProviderOperation
 from memorii.core.provider.service import ProviderMemoryService
+from memorii.core.scoped_context.authority import (
+    InProcessScopedReadAuthority,
+    ScopedNamespaceGrantRow,
+)
+from memorii.core.scoped_context.contracts import (
+    ScopedContextBudget,
+    ScopedContextRequest,
+    ScopedContextStatus,
+)
 from memorii.core.semantic_ingestion.authorization import (
     SemanticAuthorizationAuthorityRepository,
     SemanticAuthorizationReadSet,
@@ -120,7 +148,22 @@ from memorii.core.semantic_ingestion.capability import (
     SemanticIngestionRuntimeAuthorization,
     build_authorized_local_semantic_runtime,
 )
+from memorii.core.semantic_ingestion.catalog_authority import (
+    AuthenticatedPrincipalAgent,
+    CatalogAuthorityScope,
+    CatalogOwnerVisibilityGrant,
+    FactScopeGrant,
+    ResolvedCatalogAuthority,
+    ResolvedStructuredSubmissionAuthority,
+    SourceScopeGrant,
+    StructuredFactReadAuthority,
+    StructuredGrantState,
+    StructuredSubmissionAuthorityRequest,
+    ThreePredicateSeedCatalogAuthorityRepository,
+)
 from memorii.core.semantic_ingestion.contracts import (
+    BootstrapGraphDurableRetryProgressV3,
+    BootstrapGraphGroupCommitRequestV3,
     BootstrapPredicateLanePayloadV3,
     BootstrapRecoveryKeyV3,
     BootstrapRecoveryProbeV3,
@@ -140,11 +183,29 @@ from memorii.core.semantic_ingestion.contracts import (
     TrustPolicySnapshot,
     contract_digest,
 )
+from memorii.core.semantic_ingestion.coverage_observation import (
+    CoverageObservationRepository,
+    CoverageSemanticOutcome,
+    CoverageSourceSpan,
+    DiscoveryProcessingState,
+    ObserverBindingIdentity,
+)
+from memorii.core.semantic_ingestion.coverage_observer import (
+    OntologyObservationResult,
+)
+from memorii.core.semantic_ingestion.coverage_recurrence import (
+    CoverageRecurrenceGroup,
+    CoverageRecurrenceRepository,
+    RelationGapSignature,
+)
 from memorii.core.semantic_ingestion.egress import (
     ProviderEgressDecision,
 )
 from memorii.core.semantic_ingestion.event_replay import (
     decode_semantic_memory_event_batch,
+)
+from memorii.core.semantic_ingestion.production_authority import (
+    build_verified_production_host_authority,
 )
 from memorii.core.semantic_ingestion.source_normalization_execution import (
     SourceNormalizationExecutionOwner,
@@ -157,6 +218,16 @@ from memorii.core.semantic_ingestion.source_preparation import (
     AtomicStorePreparedSourceRepository,
     InMemoryPreparedSourceRepository,
     TextPreparationService,
+)
+from memorii.domain.enums import (
+    CommitStatus,
+    MemoryDomain,
+    MemoryRecordVisibility,
+)
+from memorii.integrations.authenticated_source import (
+    AuthenticatedSourceAdapter,
+    AuthenticatedSourceRuntime,
+    AuthenticatedSourceSubmission,
 )
 from memorii.integrations.hermes_provider import HermesMemoryProvider
 from tests.fixtures.semantic_ingestion.clean_room_request_fixture import (
@@ -363,28 +434,31 @@ def _hex(value: str) -> str:
     return sha256(value.encode()).hexdigest()
 
 
-def _bundle(predicate_id: str = "works_for") -> SemanticArbitrationPolicyBundle:
+def _bundle(predicate_id: str | tuple[str, ...] = "works_for") -> SemanticArbitrationPolicyBundle:
+    predicate_ids = (predicate_id,) if isinstance(predicate_id, str) else predicate_id
     effective = TimeInterval(start=datetime(2026, 1, 1, tzinfo=UTC), end=datetime(2027, 1, 1, tzinfo=UTC))
     trust = TrustPolicySnapshot.create(
         policy_revision="trust-r1",
         system_effective_interval=effective,
-        rules=(
+        rules=tuple(
             PredicateTrustRule(
-                predicate_id=predicate_id,
+                predicate_id=current_predicate_id,
                 eligible_authority_classes=frozenset({"official"}),
                 authority_rank_by_class={"official": 10},
-            ),
+            )
+            for current_predicate_id in predicate_ids
         ),
     )
     temporal = TemporalPolicySnapshot.create(
         policy_revision="temporal-r1",
         system_effective_interval=effective,
-        rules=(
+        rules=tuple(
             PredicateTemporalRule(
-                predicate_id=predicate_id,
+                predicate_id=current_predicate_id,
                 valid_time_requirement="required",
                 allow_open_end=True,
-            ),
+            )
+            for current_predicate_id in predicate_ids
         ),
     )
     return SemanticArbitrationPolicyBundle.create(
@@ -448,6 +522,28 @@ class _Resolver:
         )
 
 
+class _AgentBoundResolver(_Resolver):
+    """Test host binding an agent identity through authenticated ingress."""
+
+    def resolve(self, host_ingress: AuthenticatedHostIngress, server_time: datetime):
+        return super().resolve(host_ingress, server_time).model_copy(
+            update={"authenticated_agent_id": "agent:alice"}
+        )
+
+
+class _SharedOriginLineageResolver(_Resolver):
+    def __init__(self) -> None:
+        self.evidence = AuthenticatedOriginLineageEvidence.create(
+            authority_digest=_hex("trusted-origin-authority"),
+            origin_receipt_digest=_hex("upstream-message-one"),
+        )
+
+    def resolve(self, host_ingress: AuthenticatedHostIngress, server_time: datetime):
+        return super().resolve(host_ingress, server_time).model_copy(
+            update={"origin_lineage_evidence": self.evidence}
+        )
+
+
 class _SwitchingIngressResolver:
     """Exercise accepted and rejected ingress through one service composition."""
 
@@ -459,6 +555,39 @@ class _SwitchingIngressResolver:
         if self.reject:
             raise AuthenticatedIngressResolutionError("rejected")
         return self._accepted.resolve(host_ingress, server_time)
+
+
+class _CoverageStatusResolver(_Resolver):
+    def resolve(self, host_ingress: AuthenticatedHostIngress, server_time: datetime):
+        if host_ingress.provider_identity == "invalid":
+            raise AuthenticatedIngressResolutionError("rejected")
+        ingress = super().resolve(host_ingress, server_time)
+        if host_ingress.provider_identity == "other-agent":
+            return ingress.model_copy(
+                update={"authenticated_agent_id": "agent:other"}
+            )
+        if host_ingress.provider_identity == "other-principal":
+            return ingress.model_copy(
+                update={
+                    "delivery_principal_binding": DeliveryPrincipalBinding.create(
+                        principal_subject_id="principal:bob",
+                        tenant_partition_id="tenant:one",
+                        provider_identity="provider:test",
+                    )
+                }
+            )
+        if host_ingress.provider_identity == "other-scope":
+            scopes = RequiredOutcomeScopeSet.create(
+                tenant_partition_id="tenant:one",
+                scopes={"task:task:other", "user:user:alice"},
+            )
+            return ingress.model_copy(
+                update={
+                    "required_outcome_scopes": scopes,
+                    "current_authorized_scopes": scopes,
+                }
+            )
+        return ingress
 
 
 class _AuthorizedCapability(_TestHostBootstrapCapability):
@@ -538,7 +667,7 @@ class _RecordingSourceNormalizationExecutionOwner:
 
 
 class _PolicyProvider:
-    def __init__(self, predicate_id: str = "works_for", *, outage: bool = False) -> None:
+    def __init__(self, predicate_id: str | tuple[str, ...] = "works_for", *, outage: bool = False) -> None:
         self.predicate_id = predicate_id
         self.outage = outage
 
@@ -777,21 +906,25 @@ class _SingleTextQuoteAuthority:
 def _v3_normalization_host_builder(
     *,
     proposal: ProviderSemanticProposal | None = None,
+    proposal_ref: list[ProviderSemanticProposal] | None = None,
 ) -> tuple[SourceNormalizationHostBundleBuilder, dict[str, int]]:
     """Build a complete V3-only host bundle for the ordinary provider root."""
     proposal_value = proposal or ProviderSemanticProposal(abstained=True)
     quotes = _UnusedNormalizationQuoteAuthority() if proposal is None else _SingleTextQuoteAuthority()
     calls = {"proposal": 0, "stanza": 0, "spacy": 0, "predicate": 0, "temporal": 0}
 
+    def selected_proposal() -> ProviderSemanticProposal:
+        return proposal_value if proposal_ref is None else proposal_ref[0]
+
     authority_provider = DynamicSourceNormalizationAuthorityProvider(
-        proposal_factory=lambda _source, _request: proposal_value,
+        proposal_factory=lambda _source, _request: selected_proposal(),
         retry_policy_fingerprint="a" * 64,
     )
     monotonic_ticks = iter(range(1, 10_000))
 
     def proposal(_request):
         calls["proposal"] += 1
-        value = proposal_value
+        value = selected_proposal()
         return value, encode_typed_value(value.model_dump(mode="python"))
 
     def linguistic(request, name: str) -> LinguisticAnalysis:
@@ -869,18 +1002,28 @@ def _v3_normalization_host_builder(
 
 
 def _built_in_local_capability(
-    *, verifier=None, normalization_builder=None, resolver=None, scenario_test=False,
+    *, verifier=None, normalization_builder=None, resolver=None,
+    structured_submission_authority_resolver=None, scenario_test=False,
+    predicate_id="owner_is",
 ):
     material = _TestHostBootstrapCapability(
         resolver=resolver or _Resolver(),
         trust_domain="scenario_test" if scenario_test else "production",
     ).load_verified_bootstrap_material()
     assert material is not None
+    if structured_submission_authority_resolver is not None:
+        material = replace(
+            material,
+            structured_submission_authority_resolver=structured_submission_authority_resolver,
+            structured_submission_authority_resolver_binding_digest=(
+                structured_submission_authority_resolver.resolver_binding_digest
+            ),
+        )
     return BuiltInLocalHostSemanticIngestionCapability(
         bootstrap_material_presentation=present_authenticated_host_bootstrap_material(material),
         authorization_bytes=b"signed-test-authorization",
         authorization_verifier=_AuthorizationVerifier(),
-        policy_provider=_PolicyProvider("owner_is"),
+        policy_provider=_PolicyProvider(predicate_id),
         current_bootstrap_release_verifier=(
             _CurrentBootstrapReleaseVerifier() if verifier is None else verifier
         ),
@@ -1265,6 +1408,11 @@ def test_direct_provider_root_publishes_and_reloads_bootstrap_v3_normalization()
         source_normalization_host_bundle_builder=builder,
         bootstrap_graph_host_bundle_builder=_deterministic_graph_bundle_builder(),
     )
+    selection_repository = service._provider_ingestion._catalog_selection_repository
+    assert selection_repository is not None
+    # Simulate a source retained by a pre-observation revision. Its exact retry
+    # must preserve the admission tuple and backfill the current observation.
+    service._provider_ingestion._catalog_selection_repository = None
     result = service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="Atlas owner is Bob.",
@@ -1305,8 +1453,21 @@ def test_direct_provider_root_publishes_and_reloads_bootstrap_v3_normalization()
     assert calls == {"proposal": 1, "stanza": 1, "spacy": 1, "predicate": 1, "temporal": 1}
     store = service._semantic_atomic_store
     assert store.bootstrap_v3_recovery_snapshot()
+    coverage_records = service._memory_plane.list_records(
+        source_kind="learned_ontology_coverage_observation_v1"
+    )
+    assert coverage_records == []
+    assert not [
+        record
+        for record in service._memory_plane.list_records()
+        if record.source_kind in {
+            "learned_ontology_change_proposal_v1",
+            "learned_ontology_gap_fact_v1",
+        }
+    ]
     # A lost acknowledgement retries the same public operation.  Found must
     # reload the V3 closure before authority or any of the five learned lanes.
+    service._provider_ingestion._catalog_selection_repository = selection_repository
     retry = service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="Atlas owner is Bob.",
@@ -1317,6 +1478,2007 @@ def test_direct_provider_root_publishes_and_reloads_bootstrap_v3_normalization()
     )
     assert retry.blocked_reasons.get("semantic_ingestion") != "source_alignment_authority_unavailable"
     assert calls == {"proposal": 1, "stanza": 1, "spacy": 1, "predicate": 1, "temporal": 1}
+    coverage_records = service._memory_plane.list_records(
+        source_kind="learned_ontology_coverage_observation_v1"
+    )
+    assert len(coverage_records) == 1
+    coverage = CoverageObservationRepository(service._memory_plane).load(
+        coverage_records[0].memory_id
+    )
+    assert coverage is not None
+    assert coverage.processing_state == DiscoveryProcessingState.PENDING_NO_CAPABILITY
+    assert coverage.semantic_outcome == CoverageSemanticOutcome.NOT_EVALUATED
+    status = service.list_ontology_coverage_statuses(
+        authenticated_host_ingress=_host_ingress()
+    )
+    assert status.status == "ok"
+    assert len(status.observations) == 1
+    assert (
+        status.observations[0].processing_state
+        == DiscoveryProcessingState.PENDING_NO_CAPABILITY
+    )
+    assert status.observations[0].semantic_outcome == CoverageSemanticOutcome.NOT_EVALUATED
+    assert "Atlas owner is Bob" not in status.model_dump_json()
+    assert coverage.source_id not in status.model_dump_json()
+
+    class _RotatedCatalog:
+        def resolve_selected_base(self):
+            selected = selection_repository.resolve_selected_base()
+            return selected.model_copy(update={"catalog_digest": "f" * 64})
+
+        def resolve_selected_bundle(self):
+            selected = self.resolve_selected_base()
+            return SimpleNamespace(
+                catalog=selected,
+                version=SimpleNamespace(version_digest="f" * 64),
+            )
+
+    service._provider_ingestion._catalog_selection_repository = _RotatedCatalog()
+    service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="provider-v3-normalization",
+        task_id="task:one",
+        user_id="user:alice",
+        authenticated_host_ingress=_host_ingress(),
+    )
+    rotated_records = service._memory_plane.list_records(
+        source_kind="learned_ontology_coverage_observation_v1"
+    )
+    assert len(rotated_records) == 2
+    assert coverage.observation_id in {record.memory_id for record in rotated_records}
+
+    # A crash after the first admission CAS cannot lose the initial pending
+    # member. The separate reobservation write is only a retry/backfill path.
+    service._provider_ingestion._catalog_selection_repository = selection_repository
+    with (
+        patch.object(
+            CoverageObservationRepository,
+            "create",
+            side_effect=OSError("injected post-admission failure"),
+        ),
+        pytest.raises(OSError, match="post-admission failure"),
+    ):
+        service.sync_event(
+            operation=ProviderOperation.CHAT_USER_TURN,
+            content="Atlas owner is Bob.",
+            operation_id="provider-v3-normalization-crash",
+            task_id="task:one",
+            user_id="user:alice",
+            authenticated_host_ingress=_host_ingress(),
+        )
+    assert len(
+        service._memory_plane.list_records(
+            source_kind="learned_ontology_coverage_observation_v1"
+        )
+    ) == 3
+
+
+def test_concurrent_first_admission_recovers_across_catalog_rotation() -> None:
+    builder, _ = _v3_normalization_host_builder(proposal=_bob_owner_proposal())
+    service = ProviderMemoryService._from_scenario_test_host(
+        memory_plane=MemoryPlaneService(),
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=_built_in_local_capability(scenario_test=True),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        source_normalization_host_bundle_builder=builder,
+        bootstrap_graph_host_bundle_builder=_deterministic_graph_bundle_builder(),
+    )
+    selection_repository = service._provider_ingestion._catalog_selection_repository
+    assert selection_repository is not None
+    selected = selection_repository.resolve_selected_base()
+    selected_bundle = selection_repository.resolve_selected_bundle()
+    catalog_digests = (selected_bundle.version.version_digest, "f" * 64)
+    selection_lock = Lock()
+    selection_count = 0
+
+    class _RotatingCatalog:
+        def resolve_selected_base(self):
+            return selected
+
+        def resolve_selected_bundle(self):
+            nonlocal selection_count
+            with selection_lock:
+                digest = catalog_digests[min(selection_count, 1)]
+                selection_count += 1
+            return selected_bundle.model_copy(
+                update={
+                    "version": selected_bundle.version.model_copy(
+                        update={"version_digest": digest}
+                    )
+                }
+            )
+
+    service._provider_ingestion._catalog_selection_repository = _RotatingCatalog()
+    replay_barrier = Barrier(2)
+    replay_lock = Lock()
+    replay_count = 0
+    original_replay = service._provider_ingestion._admission_service.replay_retained_source
+
+    def replay_together(*args, **kwargs):
+        nonlocal replay_count
+        retained = original_replay(*args, **kwargs)
+        with replay_lock:
+            replay_count += 1
+            ordinal = replay_count
+        if retained is None and ordinal <= 2:
+            replay_barrier.wait(timeout=10)
+        return retained
+
+    first_catalog_published = Event()
+    original_publish = service._semantic_atomic_store.publish_admitted_source
+
+    def publish_in_catalog_order(*, prepared, writer_binding):
+        coverage = next(
+            (
+                record
+                for record in prepared.records
+                if record.source_kind == "learned_ontology_coverage_observation_v1"
+            ),
+            None,
+        )
+        digest = (
+            None
+            if coverage is None
+            else coverage.content["observation"]["catalog_digest"]
+        )
+        if digest == catalog_digests[1]:
+            assert first_catalog_published.wait(timeout=30)
+        try:
+            return original_publish(prepared=prepared, writer_binding=writer_binding)
+        finally:
+            if digest == catalog_digests[0]:
+                first_catalog_published.set()
+
+    with (
+        patch.object(
+            service._provider_ingestion._admission_service,
+            "replay_retained_source",
+            side_effect=replay_together,
+        ),
+        patch.object(
+            service._semantic_atomic_store,
+            "publish_admitted_source",
+            side_effect=publish_in_catalog_order,
+        ),
+        ThreadPoolExecutor(max_workers=2) as executor,
+    ):
+        futures = tuple(
+            executor.submit(
+                service.sync_event,
+                operation=ProviderOperation.CHAT_USER_TURN,
+                content="Atlas owner is Bob.",
+                operation_id="provider-concurrent-catalog-rotation",
+                task_id="task:one",
+                user_id="user:alice",
+                authenticated_host_ingress=_host_ingress(),
+            )
+            for _ in range(2)
+        )
+        results = tuple(future.result(timeout=180) for future in futures)
+
+    assert all(result.transcript_ids for result in results)
+    observations = tuple(
+        CoverageObservationRepository(service._memory_plane).load(record.memory_id)
+        for record in service._memory_plane.list_records(
+            source_kind="learned_ontology_coverage_observation_v1"
+        )
+    )
+    assert len(observations) == 2
+    assert {observation.catalog_digest for observation in observations if observation} == set(
+        catalog_digests
+    )
+
+
+def test_authenticated_origin_coalesces_direct_and_forwarded_deliveries() -> None:
+    resolver = _SharedOriginLineageResolver()
+    builder, _ = _v3_normalization_host_builder(proposal=_bob_owner_proposal())
+    service = ProviderMemoryService._from_scenario_test_host(
+        memory_plane=MemoryPlaneService(),
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=_built_in_local_capability(
+            resolver=resolver, scenario_test=True
+        ),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        source_normalization_host_bundle_builder=builder,
+        bootstrap_graph_host_bundle_builder=_deterministic_graph_bundle_builder(),
+    )
+
+    for provider_identity, content, operation_id in (
+        ("adapter:direct", "Atlas owner is Bob.", "direct-origin-delivery"),
+        (
+            "adapter:forwarded",
+            "Bob is the owner of Atlas.",
+            "forwarded-origin-delivery",
+        ),
+    ):
+        service.sync_event(
+            operation=ProviderOperation.CHAT_USER_TURN,
+            content=content,
+            operation_id=operation_id,
+            task_id="task:one",
+            user_id="user:alice",
+            authenticated_host_ingress=AuthenticatedHostIngress(
+                provider_identity=provider_identity,
+                principal_handle=object(),
+                session_handle=object(),
+                received_at=TEST_NOW,
+            ),
+        )
+
+    observations = tuple(
+        observation
+        for record in service._memory_plane.list_records(
+            source_kind="learned_ontology_coverage_observation_v1"
+        )
+        if (
+            observation := CoverageObservationRepository(service._memory_plane).load(
+                record.memory_id
+            )
+        )
+        is not None
+    )
+    assert len(observations) == 2
+    assert len({observation.source_id for observation in observations}) == 2
+    assert {observation.origin_lineage_digest for observation in observations} == {
+        resolver.evidence.lineage_digest
+    }
+
+
+def test_configured_ontology_observer_runs_after_source_admission_and_retries_once() -> None:
+    binding = ObserverBindingIdentity(
+        binding_version="observer:v1",
+        provider="host",
+        model="fixture-model",
+        prompt_version="ontology-observe:v1",
+        transport="in_process",
+        egress_policy_digest="5" * 64,
+        output_schema_digest="6" * 64,
+    )
+    signature = RelationGapSignature.create(
+        normalized_relation_meaning="mentors",
+        subject_type_id="Person",
+        object_type_id="Person",
+        domain_id="organization",
+        evidence_rule_id="direct_assertion:v1",
+    )
+
+    class Observer:
+        calls = 0
+
+        @property
+        def binding(self):
+            return binding
+
+        def observe(self, _request):
+            self.calls += 1
+            return OntologyObservationResult.create(
+                semantic_outcome=CoverageSemanticOutcome.UNSUPPORTED_RELATION,
+                source_span=CoverageSourceSpan(start=0, end=17),
+                source_quote="Alice mentors Bob",
+                signature=signature,
+            )
+
+    observer = Observer()
+    builder, _ = _v3_normalization_host_builder(proposal=_bob_owner_proposal())
+    service = ProviderMemoryService._from_scenario_test_host(
+        memory_plane=MemoryPlaneService(),
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=_built_in_local_capability(scenario_test=True),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        source_normalization_host_bundle_builder=builder,
+        bootstrap_graph_host_bundle_builder=_deterministic_graph_bundle_builder(),
+        ontology_observer_capability=observer,
+        ontology_observer_authorizer=lambda _ingress, candidate: candidate == binding,
+    )
+
+    for _ in range(2):
+        service.sync_event(
+            operation=ProviderOperation.CHAT_USER_TURN,
+            content="Alice mentors Bob.",
+            operation_id="provider-ontology-observer",
+            task_id="task:one",
+            user_id="user:alice",
+            authenticated_host_ingress=_host_ingress(),
+        )
+
+    observation_record = service._memory_plane.list_records(
+        source_kind="learned_ontology_coverage_observation_v1"
+    )[0]
+    observation = CoverageObservationRepository(service._memory_plane).load(
+        observation_record.memory_id
+    )
+    assert observation is not None
+    assert observation.processing_state == DiscoveryProcessingState.CLASSIFIED
+    assert observation.semantic_outcome == CoverageSemanticOutcome.UNSUPPORTED_RELATION
+    recurrence_record = service._memory_plane.list_records(
+        source_kind="learned_ontology_coverage_recurrence_group_v1"
+    )[0]
+    recurrence = CoverageRecurrenceRepository(service._memory_plane).load(
+        recurrence_record.memory_id
+    )
+    assert isinstance(recurrence, CoverageRecurrenceGroup)
+    assert recurrence.independent_lineage_count == 1
+    assert recurrence.proposal_eligible is False
+    assert observer.calls == 1
+
+
+def test_observer_report_of_registered_relation_alias_becomes_uncertain() -> None:
+    binding = ObserverBindingIdentity(
+        binding_version="observer:v1",
+        provider="host",
+        model="fixture-model",
+        prompt_version="ontology-observe:v1",
+        transport="in_process",
+        egress_policy_digest="5" * 64,
+        output_schema_digest="6" * 64,
+    )
+    covered = RelationGapSignature.create(
+        normalized_relation_meaning="asset owner",
+        subject_type_id="Asset",
+        object_type_id="Person",
+        domain_id="organization",
+        evidence_rule_id="direct_assertion:v1",
+    )
+
+    class Observer:
+        @property
+        def binding(self):
+            return binding
+
+        def observe(self, _request):
+            return OntologyObservationResult.create(
+                semantic_outcome=CoverageSemanticOutcome.UNSUPPORTED_RELATION,
+                source_span=CoverageSourceSpan(start=0, end=18),
+                source_quote="Truck owner is Bob",
+                signature=covered,
+            )
+
+    builder, _ = _v3_normalization_host_builder(proposal=_bob_owner_proposal())
+    service = ProviderMemoryService._from_scenario_test_host(
+        memory_plane=MemoryPlaneService(),
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=_built_in_local_capability(scenario_test=True),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        source_normalization_host_bundle_builder=builder,
+        bootstrap_graph_host_bundle_builder=_deterministic_graph_bundle_builder(),
+        ontology_observer_capability=Observer(),
+        ontology_observer_authorizer=lambda _ingress, candidate: candidate == binding,
+    )
+    repository = service._provider_ingestion._catalog_selection_repository
+    assert repository is not None
+    repository.install_default_catalog_release()
+
+    service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Truck owner is Bob.",
+        operation_id="covered-ontology-alias",
+        task_id="task:one",
+        user_id="user:alice",
+        authenticated_host_ingress=_host_ingress(),
+    )
+
+    observation = CoverageObservationRepository(service._memory_plane).all()[0]
+    assert observation.processing_state == DiscoveryProcessingState.CLASSIFIED
+    assert observation.semantic_outcome == CoverageSemanticOutcome.UNCERTAIN
+    assert service._memory_plane.list_records(
+        source_kind="learned_ontology_verified_coverage_gap_v1"
+    ) == []
+    assert service._memory_plane.list_records(
+        source_kind="learned_ontology_coverage_recurrence_group_v1"
+    ) == []
+
+
+def test_observer_retry_after_catalog_rotation_uses_pinned_seed_version() -> None:
+    binding = ObserverBindingIdentity(
+        binding_version="observer:v1",
+        provider="host",
+        model="recovering-model",
+        prompt_version="ontology-observe:v1",
+        transport="in_process",
+        egress_policy_digest="5" * 64,
+        output_schema_digest="6" * 64,
+    )
+    reports_to = RelationGapSignature.create(
+        normalized_relation_meaning="reports to",
+        subject_type_id="Person",
+        object_type_id="Person",
+        domain_id="organization",
+        evidence_rule_id="direct_assertion:v1",
+    )
+
+    class Observer:
+        unavailable = True
+
+        @property
+        def binding(self):
+            return binding
+
+        def observe(self, _request):
+            if self.unavailable:
+                raise OSError("observer unavailable")
+            return OntologyObservationResult.create(
+                semantic_outcome=CoverageSemanticOutcome.UNSUPPORTED_RELATION,
+                source_span=CoverageSourceSpan(start=0, end=20),
+                source_quote="Alice reports to Bob",
+                signature=reports_to,
+            )
+
+    observer = Observer()
+    builder, _ = _v3_normalization_host_builder(proposal=_bob_owner_proposal())
+    service = ProviderMemoryService._from_scenario_test_host(
+        memory_plane=MemoryPlaneService(),
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=_built_in_local_capability(scenario_test=True),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        source_normalization_host_bundle_builder=builder,
+        bootstrap_graph_host_bundle_builder=_deterministic_graph_bundle_builder(),
+        ontology_observer_capability=observer,
+        ontology_observer_authorizer=lambda _ingress, candidate: candidate == binding,
+    )
+    ingress = _host_ingress()
+
+    service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Alice reports to Bob.",
+        operation_id="pinned-catalog-observation",
+        task_id="task:one",
+        user_id="user:alice",
+        authenticated_host_ingress=ingress,
+    )
+    unavailable = CoverageObservationRepository(service._memory_plane).all()[0]
+    assert unavailable.processing_state == DiscoveryProcessingState.UNAVAILABLE
+    repository = service._provider_ingestion._catalog_selection_repository
+    assert repository is not None
+    repository.install_default_catalog_release()
+    assert repository.resolve_selected_bundle().version.version_digest != (
+        unavailable.catalog_digest
+    )
+
+    observer.unavailable = False
+    reopened = ProviderMemoryService._from_scenario_test_host(
+        memory_plane=service._memory_plane,
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=_built_in_local_capability(scenario_test=True),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        source_normalization_host_bundle_builder=builder,
+        bootstrap_graph_host_bundle_builder=_deterministic_graph_bundle_builder(),
+        ontology_observer_capability=observer,
+        ontology_observer_authorizer=lambda _ingress, candidate: candidate == binding,
+    )
+
+    recovered = CoverageObservationRepository(reopened._memory_plane).load(
+        unavailable.observation_id
+    )
+    assert recovered is not None
+    assert recovered.semantic_outcome == CoverageSemanticOutcome.UNSUPPORTED_RELATION
+    assert len(reopened._memory_plane.list_records(
+        source_kind="learned_ontology_verified_coverage_gap_v1"
+    )) == 1
+
+
+def test_observer_outage_retries_live_and_during_service_jsonl_reopen(
+    tmp_path: Path,
+) -> None:
+    binding = ObserverBindingIdentity(
+        binding_version="observer:v1",
+        provider="host",
+        model="recovering-model",
+        prompt_version="ontology-observe:v1",
+        transport="in_process",
+        egress_policy_digest="5" * 64,
+        output_schema_digest="6" * 64,
+    )
+    signature = RelationGapSignature.create(
+        normalized_relation_meaning="mentors",
+        subject_type_id="Person",
+        object_type_id="Person",
+        domain_id="organization",
+        evidence_rule_id="direct_assertion:v1",
+    )
+
+    class Observer:
+        def __init__(self, *, unavailable: bool) -> None:
+            self.unavailable = unavailable
+            self.calls = 0
+
+        @property
+        def binding(self):
+            return binding
+
+        def observe(self, _request):
+            self.calls += 1
+            if self.unavailable:
+                raise OSError("observer transport unavailable")
+            return OntologyObservationResult.create(
+                semantic_outcome=CoverageSemanticOutcome.UNSUPPORTED_RELATION,
+                source_span=CoverageSourceSpan(start=0, end=17),
+                source_quote="Alice mentors Bob",
+                signature=signature,
+            )
+
+    storage_path = tmp_path / "memory-plane"
+    builder, _ = _v3_normalization_host_builder(proposal=_bob_owner_proposal())
+
+    def build_service(observer: Observer) -> ProviderMemoryService:
+        return ProviderMemoryService._from_scenario_test_host(
+            memory_plane=MemoryPlaneService(
+                record_store=JsonlMemoryPlaneStore(storage_path)
+            ),
+            now_provider=lambda: TEST_NOW,
+            host_bootstrap_capability=_built_in_local_capability(scenario_test=True),
+            host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+            source_normalization_host_bundle_builder=builder,
+            bootstrap_graph_host_bundle_builder=_deterministic_graph_bundle_builder(),
+            ontology_observer_capability=observer,
+            ontology_observer_authorizer=lambda _ingress, candidate: candidate == binding,
+        )
+
+    observer = Observer(unavailable=True)
+    service = build_service(observer)
+
+    def sync(operation_id: str) -> None:
+        service.sync_event(
+            operation=ProviderOperation.CHAT_USER_TURN,
+            content="Alice mentors Bob.",
+            operation_id=operation_id,
+            task_id="task:one",
+            user_id="user:alice",
+            authenticated_host_ingress=_host_ingress(),
+        )
+
+    sync("observer-live-retry")
+    first = CoverageObservationRepository(service._memory_plane).all()[0]
+    assert first.processing_state == DiscoveryProcessingState.UNAVAILABLE
+    assert first.attempt_count == 1
+
+    observer.unavailable = False
+    sync("observer-live-retry")
+    live_recovered = CoverageObservationRepository(service._memory_plane).load(
+        first.observation_id
+    )
+    assert live_recovered is not None
+    assert live_recovered.processing_state == DiscoveryProcessingState.CLASSIFIED
+    assert live_recovered.attempt_count == 2
+    assert observer.calls == 2
+
+    observer.unavailable = True
+    sync("observer-restart-retry")
+    before_reopen = CoverageObservationRepository(service._memory_plane).all()
+    unavailable = next(
+        item
+        for item in before_reopen
+        if item.processing_state == DiscoveryProcessingState.UNAVAILABLE
+    )
+    source_ids = {item.source_id for item in before_reopen}
+
+    reopened_observer = Observer(unavailable=False)
+    reopened = build_service(reopened_observer)
+    after_reopen = CoverageObservationRepository(reopened._memory_plane).all()
+    recovered = next(
+        item for item in after_reopen if item.observation_id == unavailable.observation_id
+    )
+    assert recovered.processing_state == DiscoveryProcessingState.CLASSIFIED
+    assert recovered.attempt_count == 2
+    assert reopened_observer.calls == 1
+    assert {item.source_id for item in after_reopen} == source_ids
+    assert len(after_reopen) == 2
+    assert len(
+        reopened._memory_plane.list_records(
+            source_kind="learned_ontology_verified_coverage_gap_v1"
+        )
+    ) == 2
+    assert len(
+        reopened._memory_plane.list_records(
+            source_kind="learned_ontology_coverage_recurrence_group_v1"
+        )
+    ) == 1
+
+
+def test_framework_neutral_and_hermes_adapters_share_coverage_contract() -> None:
+    builder, _ = _v3_normalization_host_builder(proposal=_bob_owner_proposal())
+    service = ProviderMemoryService._from_scenario_test_host(
+        memory_plane=MemoryPlaneService(),
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=_built_in_local_capability(scenario_test=True),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        source_normalization_host_bundle_builder=builder,
+        bootstrap_graph_host_bundle_builder=_deterministic_graph_bundle_builder(),
+    )
+    generic = AuthenticatedSourceRuntime(
+        adapter=AuthenticatedSourceAdapter(service),
+        issue_ingress=lambda _submission: _host_ingress(),
+    )
+    hermes = HermesMemoryProvider(service)
+    ingress = _host_ingress()
+
+    generic.submit(
+        AuthenticatedSourceSubmission(
+            operation=ProviderOperation.CHAT_USER_TURN,
+            content="Atlas owner is Bob.",
+            operation_id="generic-coverage-source",
+            task_id="task:one",
+            user_id="user:alice",
+        )
+    )
+    hermes.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="hermes-coverage-source",
+        task_id="task:one",
+        user_id="user:alice",
+        authenticated_host_ingress=ingress,
+    )
+
+    observations = CoverageObservationRepository(service._memory_plane).all()
+    assert len(observations) == 2
+    assert len({item.source_id for item in observations}) == 2
+    assert {
+        (
+            item.principal_id,
+            item.agent_id,
+            item.source_scope_digest,
+            item.catalog_scope,
+            item.catalog_digest,
+            item.processing_state,
+            item.semantic_outcome,
+        )
+        for item in observations
+    } == {
+        (
+            observations[0].principal_id,
+            observations[0].agent_id,
+            observations[0].source_scope_digest,
+            observations[0].catalog_scope,
+            observations[0].catalog_digest,
+            DiscoveryProcessingState.PENDING_NO_CAPABILITY,
+            CoverageSemanticOutcome.NOT_EVALUATED,
+        )
+    }
+
+
+def test_coverage_status_isolated_by_principal_agent_and_scope() -> None:
+    builder, _ = _v3_normalization_host_builder(proposal=_bob_owner_proposal())
+    service = ProviderMemoryService._from_scenario_test_host(
+        memory_plane=MemoryPlaneService(),
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=_built_in_local_capability(scenario_test=True),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        source_normalization_host_bundle_builder=builder,
+        bootstrap_graph_host_bundle_builder=_deterministic_graph_bundle_builder(),
+        authenticated_ingress_resolver=_CoverageStatusResolver(),
+    )
+
+    def host(kind: str) -> AuthenticatedHostIngress:
+        return AuthenticatedHostIngress(
+            provider_identity=kind,
+            principal_handle=object(),
+            session_handle=object(),
+            received_at=TEST_NOW,
+        )
+
+    owner = host("owner")
+    service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="coverage-status-owner",
+        task_id="task:one",
+        user_id="user:alice",
+        authenticated_host_ingress=owner,
+    )
+
+    owner_status = service.list_ontology_coverage_statuses(
+        authenticated_host_ingress=owner
+    )
+    assert owner_status.status == "ok"
+    assert len(owner_status.observations) == 1
+    assert "Atlas owner is Bob" not in owner_status.model_dump_json()
+    for kind in ("other-agent", "other-principal", "other-scope"):
+        status = service.list_ontology_coverage_statuses(
+            authenticated_host_ingress=host(kind)
+        )
+        assert status.status == "ok"
+        assert status.observations == ()
+    denied = service.list_ontology_coverage_statuses(
+        authenticated_host_ingress=host("invalid")
+    )
+    assert denied.status == "denied"
+    assert denied.observations == ()
+
+
+def test_ontology_observer_denied_egress_remains_pending_without_call() -> None:
+    binding = ObserverBindingIdentity(
+        binding_version="observer:v1",
+        provider="remote",
+        model="fixture-model",
+        prompt_version="ontology-observe:v1",
+        transport="https",
+        egress_policy_digest="5" * 64,
+        output_schema_digest="6" * 64,
+    )
+
+    class Observer:
+        calls = 0
+
+        @property
+        def binding(self):
+            return binding
+
+        def observe(self, _request):
+            self.calls += 1
+            raise AssertionError("denied source reached ontology observer")
+
+    observer = Observer()
+    builder, _ = _v3_normalization_host_builder(proposal=_bob_owner_proposal())
+    service = ProviderMemoryService._from_scenario_test_host(
+        memory_plane=MemoryPlaneService(),
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=_built_in_local_capability(scenario_test=True),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        source_normalization_host_bundle_builder=builder,
+        bootstrap_graph_host_bundle_builder=_deterministic_graph_bundle_builder(),
+        ontology_observer_capability=observer,
+        ontology_observer_authorizer=lambda _ingress, _binding: False,
+    )
+
+    service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="provider-ontology-observer-denied",
+        task_id="task:one",
+        user_id="user:alice",
+        authenticated_host_ingress=_host_ingress(),
+    )
+
+    record = service._memory_plane.list_records(
+        source_kind="learned_ontology_coverage_observation_v1"
+    )[0]
+    observation = CoverageObservationRepository(service._memory_plane).load(
+        record.memory_id
+    )
+    assert observation is not None
+    assert (
+        observation.processing_state
+        == DiscoveryProcessingState.PENDING_NO_CAPABILITY
+    )
+    assert observation.semantic_outcome == CoverageSemanticOutcome.NOT_EVALUATED
+    assert observer.calls == 0
+
+
+def _retained_structured_submission(
+    service: ProviderMemoryService,
+    *,
+    authority: ResolvedStructuredSubmissionAuthority | None = None,
+    activate_authority: bool = True,
+    source_id: str | None = None,
+    proposal: ProviderSemanticProposal | None = None,
+):
+    """Build a direct proposal only after the ordinary root retained its source."""
+    source = next(
+        record
+        for record in service._memory_plane.list_records(
+            source_kind="semantic_ingestion_source"
+        )
+        if record.text == "Atlas owner is Bob."
+        and (source_id is None or record.memory_id == source_id)
+    )
+    source_digest = source_admission_source_digest(source)
+    runtime = service._provider_ingestion._semantic_runtime
+    assert runtime is not None and runtime.prepared_source_repository is not None
+    prepared = runtime.prepared_source_repository.load(
+        source_id=source.memory_id, source_digest=source_digest
+    )
+    assert prepared is not None and prepared.sentence_spans
+    proposal = proposal or _bob_owner_proposal()
+    proposal_bytes = encode_typed_value(proposal.model_dump(mode="python"))
+    raw_artifact = b'{"structured":"Atlas owner is Bob."}'
+    submission = RetainedStructuredSubmission(
+        source_id=source.memory_id,
+        source_digest=source_digest,
+        authority=authority or ResolvedStructuredSubmissionAuthority(
+            authenticated=AuthenticatedPrincipalAgent(
+                principal_id="principal:alice", agent_id="agent:alice"
+            ),
+            source_grant=SourceScopeGrant(
+                grant_id="source-grant:fixture", grant_version=1,
+                source_scope="task:task:one",
+                authenticated=AuthenticatedPrincipalAgent(
+                    principal_id="principal:alice", agent_id="agent:alice"
+                ),
+            ),
+            fact_grant=FactScopeGrant(
+                grant_id="fact-grant:fixture", grant_version=1,
+                fact_scope="user:user:alice",
+                authenticated=AuthenticatedPrincipalAgent(
+                    principal_id="principal:alice", agent_id="agent:alice"
+                ),
+            ),
+            catalog_visibility_grant=CatalogOwnerVisibilityGrant(
+                grant_id="catalog-grant:fixture", grant_version=1,
+                catalog_scope=CatalogAuthorityScope(schema_version=1, kind="base"),
+                authenticated=AuthenticatedPrincipalAgent(
+                    principal_id="principal:alice", agent_id="agent:alice"
+                ),
+                purpose="visibility_status",
+            ),
+            catalog=ResolvedCatalogAuthority(
+                catalog_scope=CatalogAuthorityScope(schema_version=1, kind="base"),
+                catalog_digest=sha256(b"base-catalog").hexdigest(),
+                genesis_selection_digest=sha256(b"fixture-base-genesis").hexdigest(),
+            ),
+        ),
+        exact_source_spans=(prepared.sentence_spans[0],),
+        raw_proposal_artifact=raw_artifact,
+        raw_proposal_artifact_digest=sha256(raw_artifact).hexdigest(),
+        protocol_version="structured-fact-v1",
+        parser_version="fixture-parser-v1",
+        proposal=proposal,
+        proposal_bytes=proposal_bytes,
+    )
+    ingress = service._resolve_ingress(_host_ingress())
+    assert ingress is not None
+    writer_binding = service._provider_ingestion._current_writer_binding()
+    accepted = GovernedSourceAdmissionService(
+        service._memory_plane
+    ).allocate_retained_source_operation(
+        request=RetainedSourceOperationRequest(
+            source_id=submission.source_id,
+            source_digest=submission.source_digest,
+            canonical_envelope=submission.canonical_envelope(),
+        ),
+        authenticated_ingress=ingress,
+    )
+    if activate_authority:
+        service._activate_structured_submission_authority(
+            accepted=accepted, authority=submission.authority,
+            writer_binding=writer_binding,
+        )
+    return accepted, submission, ingress, writer_binding
+
+
+def _execute_retained_structured_submission(
+    service: ProviderMemoryService, *, accepted, submission, ingress, writer_binding,
+):
+    with service._new_canonical_evidence_arena() as arena:
+        return service._provider_ingestion.execute_retained_structured_proposal(
+            accepted=accepted,
+            submission=submission,
+            authenticated_ingress=ingress,
+            canonical_evidence_arena=arena,
+            writer_binding=writer_binding,
+        )
+
+
+class _StructuredSubmissionAuthorityResolver:
+    """Host fixture that issues only the core-selected base coordinate."""
+
+    resolver_binding_digest = sha256(b"structured-submission-resolver:fixture").hexdigest()
+
+    def resolve_submission_authority(self, *, authenticated_ingress, request):
+        if (
+            authenticated_ingress.delivery_principal_binding.principal_subject_id
+            != request.authenticated.principal_id
+        ):
+            return None
+        try:
+            catalog = ThreePredicateSeedCatalogAuthorityRepository().resolve_base(
+                expected_catalog_digest=request.expected_catalog_digest
+            )
+        except ValueError:
+            return None
+        return ResolvedStructuredSubmissionAuthority(
+            authenticated=request.authenticated,
+            source_grant=request.source_grant,
+            fact_grant=request.fact_grant,
+            catalog_visibility_grant=request.catalog_visibility_grant,
+            catalog=catalog,
+            provider_model_prompt_provenance_digest=(
+                request.provider_model_prompt_provenance_digest
+            ),
+        )
+
+
+class _FixedStructuredSubmissionAuthorityResolver(_StructuredSubmissionAuthorityResolver):
+    """Return the host's fixed authority rather than echoing request fields."""
+
+    expected: ResolvedStructuredSubmissionAuthority | None = None
+
+    def resolve_submission_authority(self, *, authenticated_ingress, request):
+        del authenticated_ingress, request
+        return self.expected
+
+
+def test_public_structured_fact_rejects_substituted_authority_and_source_without_side_effects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tests.integration.test_observation_ledger_activation import _signed_monitoring_authority
+
+    resolver = _FixedStructuredSubmissionAuthorityResolver()
+    normalization, calls = _v3_normalization_host_builder(proposal=_bob_owner_proposal())
+    capability = _built_in_local_capability(
+        resolver=_AgentBoundResolver(),
+        normalization_builder=normalization,
+        structured_submission_authority_resolver=resolver,
+    )
+    verified_authority = build_verified_production_host_authority(
+        host_bootstrap_capability=capability,
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        server_time=TEST_NOW,
+    )
+    assert verified_authority is not None
+    service = ProviderMemoryService(
+        memory_plane=MemoryPlaneService(),
+        now_provider=lambda: TEST_NOW,
+        verified_production_host_authority=verified_authority,
+        verified_capability_monitoring_authorities=(_signed_monitoring_authority(),),
+    )
+    service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="substituted-structured-source",
+        task_id="task:one",
+        user_id="user:alice",
+        authenticated_host_ingress=_host_ingress(),
+    )
+    _, submission, _, _ = _retained_structured_submission(service)
+    seed = ThreePredicateSeedCatalogAuthorityRepository().resolve_base()
+    resolver.expected = submission.authority.model_copy(update={"catalog": seed})
+    authority_request = StructuredSubmissionAuthorityRequest(
+        authenticated=resolver.expected.authenticated,
+        source_grant=resolver.expected.source_grant,
+        fact_grant=resolver.expected.fact_grant,
+        catalog_visibility_grant=resolver.expected.catalog_visibility_grant,
+        expected_catalog_digest=seed.catalog_digest,
+    )
+    request = StructuredFactSubmissionRequest(
+        source_id=submission.source_id,
+        source_digest=submission.source_digest,
+        authority_request=authority_request,
+        exact_source_spans=submission.exact_source_spans,
+        raw_proposal_artifact=submission.raw_proposal_artifact,
+        raw_proposal_artifact_digest=submission.raw_proposal_artifact_digest,
+        protocol_version=submission.protocol_version,
+        parser_version=submission.parser_version,
+        proposal=submission.proposal,
+        proposal_bytes=submission.proposal_bytes,
+    )
+
+    def network_forbidden(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        raise AssertionError("substituted structured request attempted network access")
+
+    monkeypatch.setattr(socket, "getaddrinfo", network_forbidden)
+    monkeypatch.setattr(socket, "create_connection", network_forbidden)
+    monkeypatch.setattr(socket.socket, "connect", network_forbidden)
+    monkeypatch.setattr(socket.socket, "connect_ex", network_forbidden)
+    baseline = tuple(service._memory_plane.list_records())
+    proposal_calls_before = calls["proposal"]
+    variants = (
+        authority_request.model_copy(update={"authenticated": authority_request.authenticated.model_copy(update={"principal_id": "principal:other"})}),
+        authority_request.model_copy(update={"authenticated": authority_request.authenticated.model_copy(update={"agent_id": "agent:other"})}),
+        authority_request.model_copy(update={"source_grant": authority_request.source_grant.model_copy(update={"grant_id": "source-grant:other"})}),
+        authority_request.model_copy(update={"fact_grant": authority_request.fact_grant.model_copy(update={"grant_id": "fact-grant:other"})}),
+        authority_request.model_copy(update={"catalog_visibility_grant": authority_request.catalog_visibility_grant.model_copy(update={"grant_id": "catalog-grant:other"})}),
+        authority_request.model_copy(update={"expected_catalog_digest": "0" * 64}),
+    )
+    for altered_authority in variants:
+        response = service.submit_structured_fact(
+            request.model_copy(update={"authority_request": altered_authority}),
+            authenticated_host_ingress=_host_ingress(),
+        )
+        assert response.status == "denied"
+        assert response.operation_id is None
+        assert tuple(service._memory_plane.list_records()) == baseline
+        assert calls["proposal"] == proposal_calls_before
+    for changed in (
+        {"source_id": "source:other"},
+        {"source_digest": "0" * 64},
+        {"exact_source_spans": ()},
+    ):
+        response = service.submit_structured_fact(
+            request.model_copy(update=changed),
+            authenticated_host_ingress=_host_ingress(),
+        )
+        assert response.status == "denied"
+        assert response.operation_id is None
+        assert tuple(service._memory_plane.list_records()) == baseline
+        assert calls["proposal"] == proposal_calls_before
+
+
+def test_verified_production_authority_seals_structured_submission_resolver() -> None:
+    resolver = _StructuredSubmissionAuthorityResolver()
+    capability = _built_in_local_capability()
+    presentation = capability.bootstrap_material_presentation
+    unbound_authority = build_verified_production_host_authority(
+        host_bootstrap_capability=capability,
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        server_time=TEST_NOW,
+    )
+    assert unbound_authority is not None
+    legacy_material_digest = sha256(
+        encode_typed_value(
+            {
+                "artifact_payloads": presentation.material.artifact_payloads.model_dump(
+                    mode="python"
+                ),
+                "release_evidence": presentation.material.release_evidence.model_dump(
+                    mode="python"
+                ),
+                "profile_enabled": presentation.material.profile_enabled,
+                "trust_domain": presentation.material.trust_domain,
+            }
+        )
+    ).hexdigest()
+    assert unbound_authority.receipt.verified_material_digest == legacy_material_digest
+    material = replace(
+        presentation.material,
+        structured_submission_authority_resolver=resolver,
+        structured_submission_authority_resolver_binding_digest=(
+            resolver.resolver_binding_digest
+        ),
+    )
+    capability = replace(
+        capability,
+        bootstrap_material_presentation=present_authenticated_host_bootstrap_material(
+            material
+        ),
+    )
+    authority = build_verified_production_host_authority(
+        host_bootstrap_capability=capability,
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        server_time=TEST_NOW,
+    )
+
+    assert authority is not None
+    service = ProviderMemoryService(
+        memory_plane=MemoryPlaneService(),
+        now_provider=lambda: TEST_NOW,
+        verified_production_host_authority=authority,
+    )
+    assert service._structured_submission_authority_resolver is resolver
+
+    substituted = replace(
+        material,
+        structured_submission_authority_resolver=_StructuredSubmissionAuthorityResolver(),
+        structured_submission_authority_resolver_binding_digest="0" * 64,
+    )
+    substituted_capability = replace(
+        capability,
+        bootstrap_material_presentation=replace(presentation, material=substituted),
+    )
+    assert build_verified_production_host_authority(
+        host_bootstrap_capability=substituted_capability,
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        server_time=TEST_NOW,
+    ) is None
+
+
+def test_public_structured_fact_submission_requires_current_grant_fence() -> None:
+    """The generic root returns only a persisted V3 terminal under current grants."""
+
+    normalization, calls = _v3_normalization_host_builder(proposal=_bob_owner_proposal())
+    service = ProviderMemoryService._from_scenario_test_host(
+        memory_plane=MemoryPlaneService(),
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=_built_in_local_capability(scenario_test=True),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        source_normalization_host_bundle_builder=normalization,
+        bootstrap_graph_host_bundle_builder=_deterministic_graph_bundle_builder(),
+        structured_submission_authority_resolver=_StructuredSubmissionAuthorityResolver(),
+    )
+    service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="public-structured-submission-source",
+        task_id="task:one",
+        user_id="user:alice",
+        authenticated_host_ingress=_host_ingress(),
+    )
+    _, submission, _, _ = _retained_structured_submission(service)
+    seed = ThreePredicateSeedCatalogAuthorityRepository().resolve_base()
+    authority_request = StructuredSubmissionAuthorityRequest(
+        authenticated=submission.authority.authenticated,
+        source_grant=submission.authority.source_grant,
+        fact_grant=submission.authority.fact_grant,
+        catalog_visibility_grant=submission.authority.catalog_visibility_grant,
+        expected_catalog_digest=seed.catalog_digest,
+    )
+    request = StructuredFactSubmissionRequest(
+        source_id=submission.source_id,
+        source_digest=submission.source_digest,
+        authority_request=authority_request,
+        exact_source_spans=submission.exact_source_spans,
+        raw_proposal_artifact=submission.raw_proposal_artifact,
+        raw_proposal_artifact_digest=submission.raw_proposal_artifact_digest,
+        protocol_version=submission.protocol_version,
+        parser_version=submission.parser_version,
+        proposal=submission.proposal,
+        proposal_bytes=submission.proposal_bytes,
+    )
+
+    result = service.submit_structured_fact(
+        request, authenticated_host_ingress=_host_ingress()
+    )
+    assert result.status == "abstained"
+    assert result.operation_id is not None
+    status = service.lookup_structured_fact_status(
+        StructuredFactSubmissionStatusRequest(
+            operation_id=result.operation_id, authority_request=authority_request,
+        ),
+        authenticated_host_ingress=_host_ingress(),
+    )
+    assert status.status == "abstained"
+    assert status.operation_id == result.operation_id
+    assert calls["proposal"] == 1
+    retry = service.submit_structured_fact(
+        request, authenticated_host_ingress=_host_ingress()
+    )
+    assert retry == result
+    assert calls["proposal"] == 1
+    service._semantic_atomic_store.revoke_structured_submission_grant(
+        grant_kind="fact",
+        grant_id=submission.authority.fact_grant.grant_id,
+        writer_binding=service._provider_ingestion._current_writer_binding(),
+    )
+    revoked_status = service.lookup_structured_fact_status(
+        StructuredFactSubmissionStatusRequest(
+            operation_id=result.operation_id, authority_request=authority_request,
+        ),
+        authenticated_host_ingress=_host_ingress(),
+    )
+    assert revoked_status.status == "denied"
+    assert revoked_status.denial_reason == "authorization_revoked"
+    assert tuple(
+        service._memory_plane.list_records(
+            source_kind="semantic_ingestion_retained_structured_submission"
+        )
+    )
+
+
+def test_public_structured_fact_submission_commits_before_protected_read_composition() -> None:
+    """The public no-key path persists an accepted claim for the read composition owner."""
+    from tests.integration.test_observation_ledger_activation import _signed_monitoring_authority
+
+    proposal_ref = [ProviderSemanticProposal(abstained=True)]
+    normalization, calls = _v3_normalization_host_builder(
+        proposal=_bob_owner_proposal(), proposal_ref=proposal_ref,
+    )
+    scoped_authority = InProcessScopedReadAuthority(now_provider=lambda: TEST_NOW)
+    resolver = _StructuredSubmissionAuthorityResolver()
+    capability = _built_in_local_capability(
+        resolver=_AgentBoundResolver(),
+        normalization_builder=normalization,
+        structured_submission_authority_resolver=resolver,
+    )
+    verified_authority = build_verified_production_host_authority(
+        host_bootstrap_capability=capability,
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        server_time=TEST_NOW,
+    )
+    assert verified_authority is not None
+    service = ProviderMemoryService(
+        memory_plane=MemoryPlaneService(), now_provider=lambda: TEST_NOW,
+        verified_production_host_authority=verified_authority,
+        verified_capability_monitoring_authorities=(_signed_monitoring_authority(),),
+        scoped_read_authority=scoped_authority,
+    )
+    service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN, content="Atlas owner is Bob.",
+        operation_id="public-structured-commit-source", task_id="task:one", user_id="user:alice",
+        authenticated_host_ingress=_host_ingress(),
+    )
+    proposal_ref[0] = _bob_owner_proposal()
+    authenticated = AuthenticatedPrincipalAgent(principal_id="principal:alice", agent_id="agent:alice")
+    seed = ThreePredicateSeedCatalogAuthorityRepository().resolve_base()
+    authority = ResolvedStructuredSubmissionAuthority(
+        authenticated=authenticated,
+        source_grant=SourceScopeGrant(grant_id="source-grant:public-commit", grant_version=1, source_scope="task:task:one", authenticated=authenticated),
+        fact_grant=FactScopeGrant(grant_id="fact-grant:public-commit", grant_version=1, fact_scope="user:user:alice", authenticated=authenticated),
+        catalog_visibility_grant=CatalogOwnerVisibilityGrant(grant_id="catalog-grant:public-commit", grant_version=1, catalog_scope=seed.catalog_scope, authenticated=authenticated, purpose="visibility_status"),
+        catalog=seed,
+    )
+    _, submission, _, _ = _retained_structured_submission(
+        service, authority=authority, activate_authority=False,
+    )
+    authority_request = StructuredSubmissionAuthorityRequest(
+        authenticated=authenticated, source_grant=authority.source_grant,
+        fact_grant=authority.fact_grant, catalog_visibility_grant=authority.catalog_visibility_grant,
+        expected_catalog_digest=seed.catalog_digest,
+    )
+    request = StructuredFactSubmissionRequest(
+        source_id=submission.source_id, source_digest=submission.source_digest,
+        authority_request=authority_request, exact_source_spans=submission.exact_source_spans,
+        raw_proposal_artifact=submission.raw_proposal_artifact,
+        raw_proposal_artifact_digest=submission.raw_proposal_artifact_digest,
+        protocol_version=submission.protocol_version, parser_version=submission.parser_version,
+        proposal=submission.proposal, proposal_bytes=submission.proposal_bytes,
+    )
+    result = service.submit_structured_fact(request, authenticated_host_ingress=_host_ingress())
+    assert result.status == "committed", result
+    assert result.operation_id is not None
+    assert calls["proposal"] == 1
+    # The generic public root, not the fixture resolver, selects and persists
+    # the catalog authority before it executes the structured proposal.
+    assert len(service._memory_plane.list_records(
+        source_kind="semantic_ingestion_catalog_version"
+    )) == 1
+    assert len(service._memory_plane.list_records(
+        source_kind="semantic_ingestion_catalog_selection_pointer"
+    )) == 1
+    projections = tuple(record for record in service._memory_plane.list_records()
+                        if record.content.get("runtime_context_projection_kind") == "bootstrap_v3_claim_assertion")
+    bindings = tuple(service._memory_plane.list_records(
+        source_kind="semantic_ingestion_structured_claim_catalog_binding"
+    ))
+    assert len(bindings) == 1
+    projection = next(record for record in projections if record.content["claim_assertion_id"] == bindings[0].content["binding"]["claim_assertion_id"])
+    handle = scoped_authority.provision(
+        host_task_id="task:one", host_state_id="state:one",
+        rows=(ScopedNamespaceGrantRow(domain=MemoryDomain.SEMANTIC, task_id="task:one", user_id="user:alice", agent_id="agent:alice"),),
+        expires_at=TEST_NOW + timedelta(minutes=1),
+        structured_fact_read_authorities=(StructuredFactReadAuthority(
+            authenticated=authenticated, fact_grant=authority.fact_grant,
+            catalog_visibility_grant=authority.catalog_visibility_grant,
+        ),),
+    )
+    response = service.retrieve_context(ScopedContextRequest(
+        host_task_id="task:one", host_state_id="state:one",
+        declared_complete_mandatory_set=True, mandatory_record_references=(), optional_query="Atlas owner",
+        optional_domains=(MemoryDomain.SEMANTIC,),
+        budget=ScopedContextBudget(max_mandatory_items=2, max_optional_items=2, max_optional_omission_ids=2, max_rendered_utf8_bytes=4096),
+        reference_time=datetime(2026, 1, 15, tzinfo=UTC),
+    ), opaque_host_ingress=handle)
+    assert tuple(item.record_id for item in response.optional_items) == (projection.memory_id,), response
+
+    retry = service.submit_structured_fact(request, authenticated_host_ingress=_host_ingress())
+    assert retry.status == "committed"
+    assert retry.operation_id == result.operation_id
+    assert calls["proposal"] == 1
+
+    pointer = service._memory_plane.list_records(
+        source_kind="semantic_ingestion_catalog_selection_pointer"
+    )[0]
+    corrupt_pointer = pointer.model_copy(update={"content": {
+        **pointer.content,
+        "catalog_selection_pointer": {
+            **pointer.content["catalog_selection_pointer"],
+            "pointer_digest": "0" * 64,
+        },
+    }})
+    # Model a damaged durable image below the normal governed write boundary.
+    # The generic public root must deny it before it can reuse the old seed.
+    backend = service._memory_plane._records
+    assert isinstance(backend, InMemoryMemoryPlaneStore)
+    backend._records[pointer.memory_id] = corrupt_pointer
+    unavailable = service.submit_structured_fact(
+        request, authenticated_host_ingress=_host_ingress()
+    )
+    assert unavailable.status == "denied"
+    assert unavailable.denial_reason == "base_catalog_unavailable"
+    assert calls["proposal"] == 1
+
+    # This test's source-only fixture is schema 1 and remains outside the
+    # projection-era reader.  The schema-2 compatibility fixture is covered
+    # through the normal production root.
+    service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="public-structured-pre-catalog-legacy",
+        task_id="task:one",
+        user_id="user:alice",
+        authenticated_host_ingress=_host_ingress(),
+    )
+    mixed = service.retrieve_context(
+        ScopedContextRequest(
+            host_task_id="task:one", host_state_id="state:one",
+            declared_complete_mandatory_set=True,
+            mandatory_record_references=(), optional_query="Atlas owner",
+            optional_domains=(MemoryDomain.SEMANTIC,),
+            budget=ScopedContextBudget(
+                max_mandatory_items=2, max_optional_items=2,
+                max_optional_omission_ids=2, max_rendered_utf8_bytes=4096,
+            ),
+            reference_time=datetime(2026, 1, 15, tzinfo=UTC),
+        ),
+        opaque_host_ingress=handle,
+    )
+    assert mixed.status is ScopedContextStatus.UNAVAILABLE
+
+
+def test_verified_production_public_structured_fact_jsonl_recovery_denies_revoked_retry_and_corruption_without_network(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A public terminal survives JSONL reopen and never needs a network provider."""
+    from tests.integration.test_observation_ledger_activation import _signed_monitoring_authority
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    def network_forbidden(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("structured public path attempted network access")
+
+    monkeypatch.setattr(socket, "getaddrinfo", network_forbidden)
+    monkeypatch.setattr(socket, "create_connection", network_forbidden)
+    monkeypatch.setattr(socket.socket, "connect", network_forbidden)
+    monkeypatch.setattr(socket.socket, "connect_ex", network_forbidden)
+
+    proposal_ref = [ProviderSemanticProposal(abstained=True)]
+    resolver = _StructuredSubmissionAuthorityResolver()
+    call_sets: list[dict[str, int]] = []
+
+    def build_service(
+        plane: MemoryPlaneService, *, with_monitoring_authority: bool = True,
+    ) -> ProviderMemoryService:
+        normalization, local_calls = _v3_normalization_host_builder(
+            proposal=_bob_owner_proposal(), proposal_ref=proposal_ref,
+        )
+        # A host builder is per-process composition state. Reusing the test
+        # fixture would itself deny the second construction before recovery.
+        call_sets.append(local_calls)
+        capability = _built_in_local_capability(
+            resolver=_AgentBoundResolver(),
+            normalization_builder=normalization,
+            structured_submission_authority_resolver=resolver,
+        )
+        verified_authority = build_verified_production_host_authority(
+            host_bootstrap_capability=capability,
+            host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+            server_time=TEST_NOW,
+        )
+        assert verified_authority is not None
+        return ProviderMemoryService(
+            memory_plane=plane,
+            now_provider=lambda: TEST_NOW,
+            verified_production_host_authority=verified_authority,
+            verified_capability_monitoring_authorities=(
+                (_signed_monitoring_authority(),)
+                if with_monitoring_authority
+                else ()
+            ),
+        )
+
+    path = tmp_path / "verified-production-structured-recovery"
+    service = build_service(MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path)))
+    service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="verified-production-structured-source",
+        task_id="task:one",
+        user_id="user:alice",
+        authenticated_host_ingress=_host_ingress(),
+    )
+    proposal_ref[0] = _bob_owner_proposal()
+    seed = ThreePredicateSeedCatalogAuthorityRepository().resolve_base()
+    authenticated = AuthenticatedPrincipalAgent(
+        principal_id="principal:alice", agent_id="agent:alice",
+    )
+    authority = ResolvedStructuredSubmissionAuthority(
+        authenticated=authenticated,
+        source_grant=SourceScopeGrant(
+            grant_id="source-grant:verified-production-recovery", grant_version=1,
+            source_scope="task:task:one", authenticated=authenticated,
+        ),
+        fact_grant=FactScopeGrant(
+            grant_id="fact-grant:verified-production-recovery", grant_version=1,
+            fact_scope="user:user:alice", authenticated=authenticated,
+        ),
+        catalog_visibility_grant=CatalogOwnerVisibilityGrant(
+            grant_id="catalog-grant:verified-production-recovery", grant_version=1,
+            catalog_scope=seed.catalog_scope, authenticated=authenticated,
+            purpose="visibility_status",
+        ),
+        catalog=seed,
+    )
+    _, submission, _, _ = _retained_structured_submission(
+        service, authority=authority, activate_authority=False,
+    )
+    authority_request = StructuredSubmissionAuthorityRequest(
+        authenticated=authenticated, source_grant=authority.source_grant,
+        fact_grant=authority.fact_grant,
+        catalog_visibility_grant=authority.catalog_visibility_grant,
+        expected_catalog_digest=seed.catalog_digest,
+    )
+    request = StructuredFactSubmissionRequest(
+        source_id=submission.source_id, source_digest=submission.source_digest,
+        authority_request=authority_request, exact_source_spans=submission.exact_source_spans,
+        raw_proposal_artifact=submission.raw_proposal_artifact,
+        raw_proposal_artifact_digest=submission.raw_proposal_artifact_digest,
+        protocol_version=submission.protocol_version, parser_version=submission.parser_version,
+        proposal=submission.proposal, proposal_bytes=submission.proposal_bytes,
+    )
+    event_batches_before = len(service._semantic_atomic_store.semantic_event_batches())
+
+    first = service.submit_structured_fact(request, authenticated_host_ingress=_host_ingress())
+    assert first.status == "committed"
+    assert first.operation_id is not None
+    first_status = service.lookup_structured_fact_status(
+        StructuredFactSubmissionStatusRequest(
+            operation_id=first.operation_id, authority_request=authority_request,
+        ), authenticated_host_ingress=_host_ingress(),
+    )
+    assert first_status.status == "committed"
+    assert first_status.operation_id == first.operation_id
+    assert len(service._semantic_atomic_store.semantic_event_batches()) == event_batches_before + 1
+    committed_record_digests = {
+        record.memory_id: record_digest(record)
+        for record in service._memory_plane.list_records()
+    }
+
+    reopened = build_service(MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path)))
+    runtime = reopened._provider_ingestion._semantic_runtime
+    assert runtime is not None and runtime.prepared_source_repository is not None, {
+        "writer_record": reopened._memory_plane.get_record(
+            writer_admission_memory_id()
+        ).content if reopened._memory_plane.get_record(writer_admission_memory_id()) else None,
+    }
+    base_loaded = runtime.prepared_source_repository.load(
+        source_id=request.source_id, source_digest=request.source_digest,
+    )
+    prepared_records = tuple(
+        (record.memory_id, record.content.get("source_id"), record.content.get("source_digest"))
+        for record in reopened._memory_plane.list_records(
+            source_kind="semantic_ingestion_prepared_source"
+        )
+    )
+    reopened_status = reopened.lookup_structured_fact_status(
+        StructuredFactSubmissionStatusRequest(
+            operation_id=first.operation_id, authority_request=authority_request,
+        ), authenticated_host_ingress=_host_ingress(),
+    )
+    assert reopened_status.status == "committed"
+    assert reopened_status.operation_id == first.operation_id
+    retry = reopened.submit_structured_fact(
+        request, authenticated_host_ingress=_host_ingress(),
+    )
+    assert retry == first, {
+        "prepared_records": prepared_records,
+        "source": (request.source_id, request.source_digest),
+        "repository_type": type(runtime.prepared_source_repository).__qualname__,
+        "base_load": None if base_loaded is None else (
+            base_loaded.source_id, base_loaded.source_digest,
+        ),
+    }
+    assert sum(item["proposal"] for item in call_sets) == 1
+    assert {
+        record.memory_id: record_digest(record)
+        for record in reopened._memory_plane.list_records()
+    } == committed_record_digests
+    assert len(reopened._semantic_atomic_store.semantic_event_batches()) == event_batches_before + 1
+    assert reopened._semantic_atomic_store.recover_retained_structured_terminal_by_operation(
+        operation_id=first.operation_id, authority=authority,
+    ) is not None
+    assert len(tuple(reopened._memory_plane.list_records(
+        source_kind="semantic_ingestion_structured_claim_catalog_binding"
+    ))) == 1
+    assert len(tuple(record for record in reopened._memory_plane.list_records()
+                     if record.content.get("runtime_context_projection_kind")
+                     == "bootstrap_v3_claim_assertion")) == 1
+
+    reopened._semantic_atomic_store.revoke_structured_submission_grant(
+        grant_kind="fact", grant_id=authority.fact_grant.grant_id,
+        writer_binding=reopened._provider_ingestion._current_writer_binding(),
+    )
+    denied_status = reopened.lookup_structured_fact_status(
+        StructuredFactSubmissionStatusRequest(
+            operation_id=first.operation_id, authority_request=authority_request,
+        ), authenticated_host_ingress=_host_ingress(),
+    )
+    denied_retry = reopened.submit_structured_fact(
+        request, authenticated_host_ingress=_host_ingress(),
+    )
+    assert denied_status.status == "denied"
+    assert denied_status.denial_reason == "authorization_revoked"
+    assert denied_retry.status == "denied"
+    assert denied_retry.denial_reason == "authorization_revoked"
+    assert sum(item["proposal"] for item in call_sets) == 1
+
+    # Corrupt the real JSONL log after a completed public submission.  The
+    # subsequent public submission must fail closed before catalog selection,
+    # operation allocation, writes, or proposal execution.
+    records_path = path / "memory_records.jsonl"
+    records_before = records_path.read_bytes()
+    records_path.write_bytes(records_before + b"{corrupt-jsonl-batch}\n")
+
+    # Recompose the verified public root after damage. Its first authenticated
+    # ingress reads writer admission before catalog selection, so this catches
+    # the cold-service recovery path rather than reusing warm state.
+    corrupted_service = build_service(
+        MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path)),
+        with_monitoring_authority=False,
+    )
+    corrupted = corrupted_service.submit_structured_fact(
+        request, authenticated_host_ingress=_host_ingress(),
+    )
+
+    assert corrupted.status == "denied"
+    assert corrupted.denial_reason == "base_catalog_unavailable"
+    assert records_path.read_bytes() == records_before + b"{corrupt-jsonl-batch}\n"
+    assert sum(item["proposal"] for item in call_sets) == 1
+
+
+def test_public_structured_fact_submission_denies_missing_authority_resolver() -> None:
+    service = ProviderMemoryService(memory_plane=MemoryPlaneService())
+    result = service.submit_structured_fact(
+        cast(StructuredFactSubmissionRequest, object()),
+        authenticated_host_ingress=_host_ingress(),
+    )
+    assert result.status == "denied"
+    assert result.denial_reason == "ingress_unavailable"
+
+
+def test_unverified_constructor_cannot_install_structured_submission_authority() -> None:
+    with pytest.raises(ValueError, match="restricted to a verified host authority"):
+        ProviderMemoryService(
+            memory_plane=MemoryPlaneService(),
+            structured_submission_authority_resolver=_StructuredSubmissionAuthorityResolver(),
+        )
+
+
+def test_retained_structured_proposal_retries_through_v3_terminal() -> None:
+    builder, calls = _v3_normalization_host_builder(proposal=_bob_owner_proposal())
+    service = ProviderMemoryService._from_scenario_test_host(
+        memory_plane=MemoryPlaneService(),
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=_built_in_local_capability(scenario_test=True),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        source_normalization_host_bundle_builder=builder,
+        bootstrap_graph_host_bundle_builder=_deterministic_graph_bundle_builder(),
+    )
+    service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="retained-structured-source",
+        task_id="task:one",
+        user_id="user:alice",
+        authenticated_host_ingress=_host_ingress(),
+    )
+    accepted, submission, ingress, writer_binding = _retained_structured_submission(service)
+
+    calls_before_direct = dict(calls)
+    first = _execute_retained_structured_submission(
+        service, accepted=accepted, submission=submission, ingress=ingress, writer_binding=writer_binding
+    )
+    calls_before_retry = dict(calls)
+    second = _execute_retained_structured_submission(
+        service, accepted=accepted, submission=submission, ingress=ingress, writer_binding=writer_binding
+    )
+
+    assert first is not None
+    assert second == first
+    assert "bootstrap_graph_terminal_persisted" in first.reason_codes
+    recovered = service._semantic_atomic_store.recover_retained_structured_terminal(
+        accepted=accepted, authority=submission.authority,
+    )
+    assert recovered is not None
+    assert recovered.canonical_source_result.canonical_source_result.final_status == "unresolved"
+    assert service._semantic_atomic_store.load_retained_structured_submission(
+        accepted=accepted
+    ) == (submission.canonical_envelope(), submission.proposal_bytes, submission.raw_proposal_artifact)
+    assert calls["proposal"] == calls_before_direct["proposal"]
+
+
+    assert calls == calls_before_retry
+
+    swapped_proposal = submission.model_copy(
+        update={
+            "proposal": ProviderSemanticProposal(abstained=True),
+            "proposal_bytes": encode_typed_value(
+                ProviderSemanticProposal(abstained=True).model_dump(mode="python")
+            ),
+        }
+    )
+    swapped_artifact = submission.model_copy(
+        update={
+            "raw_proposal_artifact": b'{"structured":"substituted"}',
+            "raw_proposal_artifact_digest": sha256(b'{"structured":"substituted"}').hexdigest(),
+        }
+    )
+    swapped_fence = GovernedSourceAdmissionService(
+        service._memory_plane
+    ).allocate_retained_source_operation(
+        request=RetainedSourceOperationRequest(
+            source_id=swapped_artifact.source_id,
+            source_digest=swapped_artifact.source_digest,
+            canonical_envelope=swapped_artifact.canonical_envelope(),
+        ),
+        authenticated_ingress=ingress,
+    )
+    assert _execute_retained_structured_submission(
+        service, accepted=accepted, submission=swapped_proposal, ingress=ingress, writer_binding=writer_binding
+    ) is None
+    assert _execute_retained_structured_submission(
+        service, accepted=accepted, submission=swapped_artifact, ingress=ingress, writer_binding=writer_binding
+    ) is None
+    assert _execute_retained_structured_submission(
+        service, accepted=swapped_fence, submission=submission, ingress=ingress, writer_binding=writer_binding
+    ) is None
+
+
+@pytest.mark.parametrize("revoked_kind", ("fact", "catalog_visibility"))
+def test_normal_root_structured_claim_is_readable_only_under_current_fact_and_catalog_grants(
+    revoked_kind: str,
+) -> None:
+    """A retained no-key proposal uses the normal V3 graph planner and read gate."""
+    from tests.integration.test_observation_ledger_activation import (
+        _signed_monitoring_authority,
+    )
+
+    proposal_ref = [ProviderSemanticProposal(abstained=True)]
+    normalization, calls = _v3_normalization_host_builder(
+        proposal=_bob_owner_proposal("employs"), proposal_ref=proposal_ref,
+    )
+    scoped_authority = InProcessScopedReadAuthority(now_provider=lambda: TEST_NOW)
+    service = ProviderMemoryService(
+        memory_plane=MemoryPlaneService(),
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=_built_in_local_capability(
+            resolver=_AgentBoundResolver(),
+            predicate_id="employs",
+        ),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        source_normalization_host_bundle_builder=normalization,
+        verified_capability_monitoring_authorities=(_signed_monitoring_authority(),),
+        scoped_read_authority=scoped_authority,
+    )
+    service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id=f"normal-root-structured-{revoked_kind}",
+        task_id="task:one",
+        user_id="user:alice",
+        authenticated_host_ingress=_host_ingress(),
+    )
+    proposal_ref[0] = _bob_owner_proposal("employs")
+    authenticated = AuthenticatedPrincipalAgent(
+        principal_id="principal:alice", agent_id="agent:alice",
+    )
+    seed = ThreePredicateSeedCatalogAuthorityRepository().resolve_base()
+    authority = ResolvedStructuredSubmissionAuthority(
+        authenticated=authenticated,
+        source_grant=SourceScopeGrant(
+            grant_id=f"source-grant:normal-root:{revoked_kind}",
+            grant_version=1,
+            source_scope="task:task:one",
+            authenticated=authenticated,
+        ),
+        fact_grant=FactScopeGrant(
+            grant_id=f"fact-grant:normal-root:{revoked_kind}",
+            grant_version=1,
+            fact_scope="user:user:alice",
+            authenticated=authenticated,
+        ),
+        catalog_visibility_grant=CatalogOwnerVisibilityGrant(
+            grant_id=f"catalog-grant:normal-root:{revoked_kind}",
+            grant_version=1,
+            catalog_scope=seed.catalog_scope,
+            authenticated=authenticated,
+            purpose="visibility_status",
+        ),
+        catalog=seed,
+    )
+    accepted, submission, ingress, writer_binding = _retained_structured_submission(
+        service, authority=authority, proposal=_bob_owner_proposal("employs"),
+    )
+    outcome = _execute_retained_structured_submission(
+        service, accepted=accepted, submission=submission, ingress=ingress, writer_binding=writer_binding,
+    )
+    assert outcome is not None
+    assert "bootstrap_graph_terminal_persisted" in outcome.reason_codes
+    assert calls["proposal"] == 1
+
+    projections = tuple(
+        record
+        for record in service._memory_plane.list_records()
+        if record.content.get("runtime_context_projection_kind")
+        == "bootstrap_v3_claim_assertion"
+    )
+    bindings = tuple(service._memory_plane.list_records(
+        source_kind="semantic_ingestion_structured_claim_catalog_binding"
+    ))
+    assert len(projections) == len(bindings) == 1
+    assert bindings[0].content["binding"]["claim_assertion_id"] == (
+        projections[0].content["claim_assertion_id"]
+    )
+    assert bindings[0].content["binding"]["claim_record_digest"] == (
+        projections[0].content["claim_assertion_record_digest"]
+    )
+
+    handle = scoped_authority.provision(
+        host_task_id="task:one",
+        host_state_id="state:one",
+        rows=(ScopedNamespaceGrantRow(
+            domain=MemoryDomain.SEMANTIC,
+            task_id="task:one",
+            user_id="user:alice",
+            agent_id="agent:alice",
+        ),),
+        expires_at=TEST_NOW + timedelta(minutes=1),
+        structured_fact_read_authorities=(StructuredFactReadAuthority(
+            authenticated=authenticated,
+            fact_grant=authority.fact_grant,
+            catalog_visibility_grant=authority.catalog_visibility_grant,
+        ),),
+    )
+    request = ScopedContextRequest(
+        host_task_id="task:one",
+        host_state_id="state:one",
+        declared_complete_mandatory_set=True,
+        mandatory_record_references=(),
+        optional_query="Atlas owner",
+        optional_domains=(MemoryDomain.SEMANTIC,),
+        budget=ScopedContextBudget(
+            max_mandatory_items=2,
+            max_optional_items=2,
+            max_optional_omission_ids=2,
+            max_rendered_utf8_bytes=4096,
+        ),
+        reference_time=datetime(2026, 1, 15, tzinfo=UTC),
+    )
+    readable = service.retrieve_context(request, opaque_host_ingress=handle)
+    assert tuple(item.record_id for item in readable.optional_items) == (
+        projections[0].memory_id,
+    )
+
+    grant = (
+        authority.fact_grant if revoked_kind == "fact"
+        else authority.catalog_visibility_grant
+    )
+    service._semantic_atomic_store.revoke_structured_submission_grant(
+        grant_kind=revoked_kind,
+        grant_id=grant.grant_id,
+        writer_binding=service._provider_ingestion._current_writer_binding(),
+    )
+    denied = service.retrieve_context(request, opaque_host_ingress=handle)
+    assert denied.status.value == "denied"
+    assert denied.optional_items == ()
+    assert denied.omissions == ()
+    assert denied.memory_snapshot_revision is None
+
+
+def test_retained_structured_proposal_revocation_between_pin_and_v3_cas_seals_source_only_terminal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The final V3 CAS must reject a grant revoked after planning begins."""
+    path = tmp_path / "revoked-before-v3-cas.jsonl"
+    service = _full_v3_service(
+        MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path))
+    )
+    service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="retained-structured-revoked-source",
+        task_id="task:one",
+        user_id="user:alice",
+        authenticated_host_ingress=_host_ingress(),
+    )
+    accepted, submission, ingress, writer_binding = _retained_structured_submission(service)
+    store = service._semantic_atomic_store
+    original = store.commit_or_reload_bootstrap_graph_group_v3
+    graph_before = store.semantic_replay_state().graph_revision
+    revoked = False
+
+    def revoke_before_cas(*args, **kwargs):
+        nonlocal revoked
+        if not revoked:
+            revoked = True
+            store.revoke_structured_submission_grant(
+                grant_kind="fact",
+                grant_id=submission.authority.fact_grant.grant_id,
+                writer_binding=service._provider_ingestion._current_writer_binding(),
+            )
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(store, "commit_or_reload_bootstrap_graph_group_v3", revoke_before_cas)
+    outcome = _execute_retained_structured_submission(
+        service, accepted=accepted, submission=submission, ingress=ingress, writer_binding=writer_binding
+    )
+
+    assert revoked is True
+    assert outcome is not None
+    assert outcome.reason_codes == (
+        "bootstrap_graph_terminal_persisted",
+        "failed",
+    )
+    assert store.semantic_replay_state().graph_revision == graph_before
+    assert not any(
+        record.source_kind == "semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+        and record.content.get("request", {}).get("operation_fence_binding", {}).get("operation_id")
+        == accepted.operation_fence_binding.operation_id
+        for record in service._memory_plane.list_records()
+    )
+    retry = _execute_retained_structured_submission(
+        service, accepted=accepted, submission=submission, ingress=ingress, writer_binding=writer_binding
+    )
+    assert retry == outcome
+    terminal = next(
+        record.content["reload"]
+        for record in service._memory_plane.list_records(
+            source_kind="semantic_ingestion_bootstrap_graph_v3_terminal_locator"
+        )
+        if record.content["reload"]["terminal_member_schema_version"] == 4
+    )
+    assert terminal["pre_group_noncommit"]["reason"] == (
+        "authorization_revoked_before_commit"
+    )
+    # Status recovery must re-read the current grant state before it even
+    # validates the cached native terminal.  The revoked caller therefore
+    # receives no terminal payload through the structured status owner.
+    with pytest.raises(StructuredSubmissionGrantRevokedError):
+        store.recover_retained_structured_terminal(
+            accepted=accepted, authority=submission.authority,
+        )
+
+    before_reopen_retry_values = {
+        record.memory_id: record.model_dump(mode="json")
+        for record in service._memory_plane.list_records()
+    }
+    before_reopen_retry = {
+        record_id: sha256(encode_typed_value(value)).hexdigest()
+        for record_id, value in before_reopen_retry_values.items()
+    }
+    reopened = _full_v3_service(
+        MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path))
+    )
+    reopened_retry = _execute_retained_structured_submission(
+        reopened, accepted=accepted, submission=submission, ingress=ingress, writer_binding=writer_binding
+    )
+    assert reopened_retry == outcome
+    with pytest.raises(StructuredSubmissionGrantRevokedError):
+        reopened._semantic_atomic_store.recover_retained_structured_terminal(
+            accepted=accepted, authority=submission.authority,
+        )
+    with pytest.raises(StructuredSubmissionGrantRevokedError):
+        reopened._semantic_atomic_store.recover_retained_structured_terminal_by_operation(
+            operation_id=accepted.operation_fence_binding.operation_id,
+            authority=submission.authority,
+        )
+    after_reopen_retry_values = {
+        record.memory_id: record.model_dump(mode="json")
+        for record in reopened._memory_plane.list_records()
+    }
+    after_reopen_retry = {
+        record_id: sha256(encode_typed_value(value)).hexdigest()
+        for record_id, value in after_reopen_retry_values.items()
+    }
+    assert len(after_reopen_retry) == len(before_reopen_retry)
+    assert set(after_reopen_retry) == set(before_reopen_retry)
+    changed_records = tuple(
+        (
+            record_id,
+            tuple(
+                field
+                for field in before_reopen_retry_values[record_id]
+                if before_reopen_retry_values[record_id][field]
+                != after_reopen_retry_values[record_id][field]
+            ),
+        )
+        for record_id in sorted(before_reopen_retry)
+        if after_reopen_retry[record_id] != before_reopen_retry[record_id]
+    )
+    assert not changed_records
+
+
+@pytest.mark.parametrize("revoked_kind", ("source", "fact", "catalog_visibility"))
+def test_structured_commit_fence_rejects_each_revoked_grant_before_returning_preconditions(
+    revoked_kind: str,
+) -> None:
+    """The native final-CAS fence fails as a unit for every authority grant."""
+    authenticated = AuthenticatedPrincipalAgent(
+        principal_id="principal:alice", agent_id="agent:alice"
+    )
+    authority = ResolvedStructuredSubmissionAuthority(
+        authenticated=authenticated,
+        source_grant=SourceScopeGrant(
+            grant_id="source-grant:fence", grant_version=1,
+            source_scope="task:task:one", authenticated=authenticated,
+        ),
+        fact_grant=FactScopeGrant(
+            grant_id="fact-grant:fence", grant_version=1,
+            fact_scope="user:user:alice", authenticated=authenticated,
+        ),
+        catalog_visibility_grant=CatalogOwnerVisibilityGrant(
+            grant_id="catalog-grant:fence", grant_version=1,
+            catalog_scope=CatalogAuthorityScope(schema_version=1, kind="base"),
+            authenticated=authenticated, purpose="visibility_status",
+        ),
+        catalog=ResolvedCatalogAuthority(
+            catalog_scope=CatalogAuthorityScope(schema_version=1, kind="base"),
+            catalog_digest=sha256(b"fence-catalog").hexdigest(),
+            genesis_selection_digest=sha256(b"fence-genesis").hexdigest(),
+        ),
+    )
+
+    class _Fence:
+        operation_fence_id = "fence:structured-grant"
+        source_id = "source:structured-grant"
+        source_digest = sha256(b"source:structured-grant").hexdigest()
+
+        def model_dump(self, *, mode: str) -> dict[str, str]:
+            assert mode == "json"
+            return {
+                "operation_fence_id": self.operation_fence_id,
+                "source_id": self.source_id,
+                "source_digest": self.source_digest,
+            }
+
+    fence = _Fence()
+    request = BootstrapGraphGroupCommitRequestV3.model_construct(
+        operation_fence_binding=fence
+    )
+    envelope = encode_typed_value({
+        "source_id": fence.source_id,
+        "source_digest": fence.source_digest,
+        "authority": authority.model_dump(mode="python"),
+    })
+    records: dict[str, object] = {
+        "semantic_ingestion:retained-structured-submission:" + fence.operation_fence_id:
+            SimpleNamespace(
+                source_kind="semantic_ingestion_retained_structured_submission",
+                content={
+                    "canonical_envelope": base64.b64encode(envelope).decode("ascii"),
+                    "operation_fence_binding": fence.model_dump(mode="json"),
+                },
+            ),
+    }
+    for kind, grant in (
+        ("source", authority.source_grant),
+        ("fact", authority.fact_grant),
+        ("catalog_visibility", authority.catalog_visibility_grant),
+    ):
+        state = StructuredGrantState(
+            schema_version=1, grant_kind=kind, grant=grant,
+            active=kind != revoked_kind,
+        )
+        record_id = SemanticIngestionAtomicStore._structured_grant_state_record_id(
+            kind, grant.grant_id
+        )
+        records[record_id] = CanonicalMemoryRecord(
+            memory_id=record_id,
+            domain=MemoryDomain.EXECUTION,
+            text="",
+            content={"state": state.model_dump(mode="json")},
+            status=CommitStatus.COMMITTED,
+            source_kind="semantic_ingestion_structured_grant_state",
+            timestamp=TEST_NOW,
+            visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+        )
+
+    store = object.__new__(SemanticIngestionAtomicStore)
+    store._memory_plane = SimpleNamespace(get_record=records.get)
+    with pytest.raises(StructuredSubmissionGrantRevokedError):
+        store._structured_submission_commit_fence_preconditions(request)
+
+
+def test_retained_structured_proposal_reopens_from_jsonl_terminal(tmp_path: Path) -> None:
+    path = tmp_path / "retained-structured-proposal.jsonl"
+    service = _full_v3_service(MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path)))
+    service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="retained-structured-restart-source",
+        task_id="task:one",
+        user_id="user:alice",
+        authenticated_host_ingress=_host_ingress(),
+    )
+    accepted, submission, ingress, writer_binding = _retained_structured_submission(service)
+    first = _execute_retained_structured_submission(
+        service, accepted=accepted, submission=submission, ingress=ingress, writer_binding=writer_binding
+    )
+    assert first is not None and "bootstrap_graph_terminal_persisted" in first.reason_codes
+
+    reopened = _full_v3_service(MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path)))
+    retried, reopened_submission, reopened_ingress, reopened_binding = _retained_structured_submission(reopened)
+    second = _execute_retained_structured_submission(
+        reopened,
+        accepted=retried,
+        submission=reopened_submission,
+        ingress=reopened_ingress,
+        writer_binding=reopened_binding,
+    )
+
+    assert retried == accepted
+    assert reopened_submission == submission
+    assert second == first
 
 
 def test_builtin_local_capability_missing_current_release_verifier_is_evidence_only() -> None:
@@ -2391,7 +4553,7 @@ def _bob_owner_proposal_bundle_builder():
     return builder
 
 
-def _bob_owner_proposal():
+def _bob_owner_proposal(predicate_id: str = "owner_is"):
     from memorii.core.semantic_ingestion.contracts import (
         ProviderEntityObject,
         ProviderFact,
@@ -2407,7 +4569,7 @@ def _bob_owner_proposal():
         facts=(
             ProviderFact(
                 local_id="owner",
-                predicate_id="owner_is",
+                predicate_id=predicate_id,
                 subject_entity_ref="atlas",
                 object=ProviderEntityObject(entity_ref="bob"),
                 assertion_quote="Atlas owner is Bob.",
@@ -2658,11 +4820,16 @@ def test_provider_preserves_verified_activation_target_and_revalidates_before_cu
     before = plane.read_write_snapshot()
     with pytest.raises(PreplanningStoreError, match="registered schemas are unavailable"):
         service.activate_observation_ledger()
-    assert plane.read_write_snapshot() == before
+    after = plane.read_write_snapshot()
+    assert after[0] == before[0] + 1
+    assert tuple(record for record in after[1] if record.source_kind != "semantic_ingestion_reference_integrity") == before[1]
+    assert [record.source_kind for record in after[1]].count(
+        "semantic_ingestion_reference_integrity"
+    ) == 1
     (target.deployment_configuration.installation_root / "memorii/empty.py").write_bytes(b"changed")
     with pytest.raises(ObservationActivationTargetConfigurationError):
         service.activate_observation_ledger()
-    assert plane.read_write_snapshot() == before
+    assert plane.read_write_snapshot() == after
 
 
 def test_invalid_activation_target_never_falls_back_to_legacy_provider(
@@ -2725,8 +4892,241 @@ def test_explicit_activation_checks_current_deployment_authorization_before_atom
         for mode in ("revoked", "expired", "mutated", "outage"):
             verifier.mode = mode
             for trigger in (service.activate_observation_ledger, runtime.activate_observation_ledger):
-                error = OSError if mode == "outage" else PreplanningStoreError
+                error = OSError if mode == "outage" else ValueError
                 with pytest.raises(error, match="authorization.*unavailable"):
                     trigger()
                 activate.assert_not_called()
                 assert plane.read_write_snapshot() == before
+
+
+def test_bootstrap_graph_execution_preserves_live_lease_identity() -> None:
+    now = TEST_NOW
+    fence = SimpleNamespace(operation_fence_id="fence", operation_id="operation")
+    writer = SimpleNamespace(binding_digest="writer")
+    near_expiry = PreplanningLease(
+        owner_id="bootstrap-v3-recovery",
+        execution_token="original-execution",
+        ownership_epoch=1,
+        acquired_at=now - timedelta(minutes=14),
+        expires_at=now + timedelta(minutes=1),
+        renewal_interval=timedelta(minutes=15),
+    )
+    control = SimpleNamespace(state="planned", lease=near_expiry, writer_binding=writer)
+    coordinator = object.__new__(ProviderIngestionCoordinator)
+    coordinator._atomic_store = object()
+    coordinator._now_provider = lambda: now
+    executed: list[object] = []
+
+    assert coordinator._execute_bootstrap_graph_with_expired_lease_retry(
+        operation_fence=fence,
+        initial_control=control,
+        replay=object(),
+        execute=lambda current: executed.append(current) or "terminal",
+    ) == "terminal"
+    assert executed == [control]
+
+    fresh = near_expiry.model_copy(update={"expires_at": now + timedelta(minutes=9)})
+    control.lease = fresh
+    executed.clear()
+    assert coordinator._execute_bootstrap_graph_with_expired_lease_retry(
+        operation_fence=fence,
+        initial_control=control,
+        replay=object(),
+        execute=lambda current: executed.append(current) or "terminal",
+    ) == "terminal"
+    assert executed == [control]
+
+    control.lease = near_expiry.model_copy(update={"owner_id": "foreign-owner"})
+    executed.clear()
+    assert coordinator._execute_bootstrap_graph_with_expired_lease_retry(
+        operation_fence=fence,
+        initial_control=control,
+        replay=object(),
+        execute=lambda current: executed.append(current) or "terminal",
+    ) is None
+    assert executed == []
+
+    control.lease = near_expiry.model_copy(update={"expires_at": now})
+    assert coordinator._execute_bootstrap_graph_with_expired_lease_retry(
+        operation_fence=fence,
+        initial_control=control,
+        replay=object(),
+        execute=lambda current: executed.append(current) or "terminal",
+    ) is None
+    assert executed == []
+
+
+def test_expired_bootstrap_graph_execution_error_reclaims_once() -> None:
+    now = TEST_NOW
+    fence = SimpleNamespace(operation_fence_id="fence", operation_id="operation")
+    writer = SimpleNamespace(binding_digest="writer")
+    fresh = PreplanningLease(
+        owner_id="bootstrap-v3-recovery", execution_token="first", ownership_epoch=1,
+        acquired_at=now - timedelta(minutes=6), expires_at=now + timedelta(minutes=9),
+        renewal_interval=timedelta(minutes=7, seconds=30),
+    )
+    expired = fresh.model_copy(update={"expires_at": now - timedelta(seconds=1)})
+    control = SimpleNamespace(state="planned", lease=fresh, writer_binding=writer)
+    reclaimed = SimpleNamespace(
+        state="planned",
+        lease=expired.model_copy(update={"execution_token": "reclaimed", "ownership_epoch": 2}),
+        writer_binding=writer,
+    )
+
+    class AtomicStore:
+        def __init__(self) -> None:
+            self.reclaims: list[dict[str, object]] = []
+
+        def renew_lease(self, **_kwargs: object) -> object:
+            return control
+
+        def get_operation(self, observed_fence: object) -> object:
+            assert observed_fence is fence
+            return control
+
+        def acquire_lease(self, **kwargs: object) -> object:
+            self.reclaims.append(kwargs)
+            return reclaimed
+
+    atomic = AtomicStore()
+    coordinator = object.__new__(ProviderIngestionCoordinator)
+    coordinator._atomic_store = atomic
+    coordinator._now_provider = lambda: now
+    executed: list[object] = []
+
+    def stale_then_succeed(current: object) -> object:
+        executed.append(current)
+        if current is control:
+            control.lease = expired
+            raise PreplanningStoreError("graph authority expired")
+        return "terminal"
+
+    assert coordinator._execute_bootstrap_graph_with_expired_lease_retry(
+        operation_fence=fence, initial_control=control, replay=object(), execute=stale_then_succeed,
+    ) == "terminal"
+    assert executed == [control, reclaimed]
+    assert atomic.reclaims == [{
+        "operation_fence": fence, "writer_binding": writer,
+        "execution_token": "bootstrap-v3-graph-retry:fence",
+        "owner_id": "bootstrap-v3-recovery", "duration": timedelta(minutes=15),
+    }]
+
+    control.lease = fresh
+    assert coordinator._reclaim_expired_bootstrap_graph_lease(operation_fence=fence) is None
+    assert len(atomic.reclaims) == 1
+    with pytest.raises(StructuredSubmissionGrantRevokedError):
+        coordinator._execute_bootstrap_graph_with_expired_lease_retry(
+            operation_fence=fence, initial_control=control, replay=object(),
+            execute=lambda _current: (_ for _ in ()).throw(
+                StructuredSubmissionGrantRevokedError("structured submission grant is revoked")
+            ),
+        )
+    assert len(atomic.reclaims) == 1
+
+
+def test_provider_root_uses_preflight_renewed_lease_for_native_graph_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The ordinary provider root constructs the native request from renewed control."""
+    from memorii.core.semantic_ingestion.bootstrap_graph_host import BootstrapGraphHostBundle
+
+    clock = [TEST_NOW]
+    service = ProviderMemoryService._from_scenario_test_host(
+        memory_plane=MemoryPlaneService(),
+        now_provider=lambda: clock[0],
+        host_bootstrap_capability=_built_in_local_capability(scenario_test=True),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        source_normalization_host_bundle_builder=_bob_owner_proposal_bundle_builder(),
+    )
+    atomic = service._semantic_atomic_store
+    original_reload = atomic.reload_bootstrap_recovery_replay_v3
+    observed_lease_bindings: list[object] = []
+    observed_controls: list[object] = []
+
+    def reload_then_near_expire(**kwargs):
+        replay = original_reload(**kwargs)
+        control = atomic.get_operation(kwargs["handoff_marker"].operation_fence_binding)
+        assert control.lease is not None
+        clock[0] = control.lease.expires_at - control.lease.renewal_interval
+        return replay
+
+    def observe_request(_bundle, *, request):
+        observed_lease_bindings.append(request.operation_lease_binding)
+        observed_controls.append(atomic.get_operation(request.operation_fence_binding))
+        return None
+
+    monkeypatch.setattr(atomic, "reload_bootstrap_recovery_replay_v3", reload_then_near_expire)
+    monkeypatch.setattr(BootstrapGraphHostBundle, "execute", observe_request)
+    service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="provider-preflight-lease-renewal",
+        task_id="task:one",
+        user_id="user:alice",
+        authenticated_host_ingress=_host_ingress(),
+    )
+    assert len(observed_lease_bindings) == 1
+    control = observed_controls[0]
+    assert control.lease is not None
+    assert observed_lease_bindings[0] == atomic.lease_binding(control)
+
+
+def test_provider_root_returns_durable_graph_retry_without_reclaim(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A persisted graph retry is terminal progress, not a second graph attempt."""
+    from memorii.core.semantic_ingestion.bootstrap_graph_host import BootstrapGraphHostBundle
+
+    service = ProviderMemoryService._from_scenario_test_host(
+        memory_plane=MemoryPlaneService(),
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=_built_in_local_capability(scenario_test=True),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        source_normalization_host_bundle_builder=_bob_owner_proposal_bundle_builder(),
+    )
+    atomic = service._semantic_atomic_store
+    retry = BootstrapGraphDurableRetryProgressV3.create(
+        kind="durable_retry", request_digest="0" * 64,
+        normalization_replay_digest="1" * 64, attempt_digest="2" * 64,
+        source_plan_lineage_digest="3" * 64, completed_group_result_digests=(),
+        retry_group_ids=(), reason="storage_retry", operation_fence_binding_digest="4" * 64,
+        writer_commit_binding_digest="5" * 64, control_epoch_digest="6" * 64,
+        progress_digest="7" * 64,
+    )
+    original_reload = atomic.reload_bootstrap_recovery_replay_v3
+    original_acquire = atomic.acquire_lease
+    acquires: list[object] = []
+    executions: list[object] = []
+    terminal_attempts: list[object] = []
+
+    def reload_then_reset(**kwargs):
+        replay = original_reload(**kwargs)
+        acquires.clear()
+        return replay
+
+    def observe_acquire(**kwargs):
+        acquires.append(kwargs)
+        return original_acquire(**kwargs)
+
+    def return_retry(_bundle, *, request):
+        executions.append(request)
+        return retry
+
+    def terminal_attempt(**kwargs):
+        terminal_attempts.append(kwargs)
+        raise AssertionError("durable retry must not attempt graph terminal persistence")
+
+    monkeypatch.setattr(atomic, "reload_bootstrap_recovery_replay_v3", reload_then_reset)
+    monkeypatch.setattr(atomic, "acquire_lease", observe_acquire)
+    monkeypatch.setattr(BootstrapGraphHostBundle, "execute", return_retry)
+    monkeypatch.setattr(atomic, "persist_bootstrap_graph_terminal_v3", terminal_attempt)
+    result = service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.", operation_id="provider-durable-graph-retry",
+        task_id="task:one", user_id="user:alice", authenticated_host_ingress=_host_ingress(),
+    )
+
+    assert len(executions) == 1
+    assert acquires == []
+    assert terminal_attempts == []
+    assert result.blocked_reasons["semantic_ingestion"] == "graph_transaction_authority_unavailable"

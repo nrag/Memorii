@@ -1,0 +1,1 @@
+{"capability_id":"default_catalog_tool_grammar","catalog_digest":"a0275e9fd7e3fa7426c3481703d09368f7953f9e8696a72d725bcb80e8fcb4bd","implementation":{"module":"memorii.core.semantic_ingestion.default_catalog_runtime","source_sha256":"804f905ca8299e5260fb94b63bb42debdecb904a2210d3694e99f146e86c5766","symbol":"default_catalog_runtime_rows"},"schema_version":1,"status":"available"}

@@ -200,6 +200,42 @@ def test_real_equal_rank_distinct_claim_values_replay_as_contested() -> None:
     assert encode_typed_value(replayed.model_dump(mode="python")) == encode_typed_value(state.model_dump(mode="python"))
 
 
+def test_retired_claim_is_retained_before_equal_rank_slot_arbitration() -> None:
+    ranks = {"official": 10}
+    old = _claim_terminal(coordinate="old", employer="Globex", authority_class="official", ranks=ranks)
+    replacement = _claim_terminal(coordinate="replacement", employer="Initech", authority_class="official", ranks=ranks)
+    _, _, state = _real_claim_replay((old, replacement))
+
+    old_id = old.accepted_carriers[0].claim_assertion_id
+    replacement_id = replacement.accepted_carriers[0].claim_assertion_id
+    temporal, trust, _, _, _ = projection_records_from_replay_state(
+        state, retired_claim_assertion_ids=frozenset({old_id}),
+    )
+
+    for records in (temporal, trust):
+        assert records[0].outcome == "pass"
+        assert records[0].selected_assertion_ids == (replacement_id,)
+        assert records[0].retained_assertion_ids == (old_id,)
+
+
+def test_retracted_claims_have_no_current_projection_winner() -> None:
+    ranks = {"official": 10}
+    claims = (
+        _claim_terminal(coordinate="retract-one", employer="Globex", authority_class="official", ranks=ranks),
+        _claim_terminal(coordinate="retract-two", employer="Initech", authority_class="official", ranks=ranks),
+    )
+    _, _, state = _real_claim_replay(claims)
+    retired = frozenset(item.accepted_carriers[0].claim_assertion_id for item in claims)
+    temporal, trust, _, _, _ = projection_records_from_replay_state(
+        state, retired_claim_assertion_ids=retired,
+    )
+
+    for records in (temporal, trust):
+        assert records[0].selected_assertion_ids == ()
+        assert records[0].contested_assertion_ids == ()
+        assert set(records[0].retained_assertion_ids) == retired
+
+
 def test_real_higher_authority_claim_supersedes_without_source_count_voting() -> None:
     ranks = {"community": 1, "official": 10}
     lower_terminals = (

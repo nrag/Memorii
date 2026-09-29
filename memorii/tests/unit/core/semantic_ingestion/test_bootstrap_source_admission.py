@@ -454,15 +454,18 @@ def test_trusted_provider_path_admits_evidence_before_profile_gate() -> None:
     # A custom capability supplies verified material but no semantic runtime
     # (no normalization/graph bundle), so the run fails closed at the handoff
     # with the admission evidence retained and no semantic effects.
-    kinds = [record.source_kind for record in memory_plane.list_records()]
-    assert kinds == [
+    kinds = {record.source_kind for record in memory_plane.list_records()}
+    assert kinds == {
         "semantic_ingestion_writer_admission",
+        "semantic_ingestion_catalog_version",
+        "semantic_ingestion_catalog_selection_pointer",
         "semantic_ingestion_source",
         "semantic_ingestion_admission_index",
         "semantic_ingestion_profile_selection",
         "semantic_ingestion_profile_verification",
         "semantic_ingestion_profile_outcome",
-    ]
+        "learned_ontology_coverage_observation_v1",
+    }
 
 
 def test_provider_sync_event_uses_host_required_scopes_not_public_event_metadata() -> None:
@@ -585,18 +588,22 @@ def test_hermes_trusted_ingress_uses_internal_composite_coordinates() -> None:
         ),
     )
     assert result.blocked_reasons["semantic_ingestion"] == "source_only"
-    # Two trusted turns on one composition: one writer-admission bootstrap,
-    # and the six-record governed-evidence admission per turn (no runtime,
-    # no generation effects).
+    # Two trusted turns on one composition retain one catalog selection and
+    # one coverage observation per distinct source alongside governed evidence.
     kinds = [record.source_kind for record in memory_plane.list_records()]
     assert sorted(kinds) == sorted(
         ["semantic_ingestion_writer_admission"]
+        + [
+            "semantic_ingestion_catalog_version",
+            "semantic_ingestion_catalog_selection_pointer",
+        ]
         + [
             "semantic_ingestion_source",
             "semantic_ingestion_admission_index",
             "semantic_ingestion_profile_selection",
             "semantic_ingestion_profile_verification",
             "semantic_ingestion_profile_outcome",
+            "learned_ontology_coverage_observation_v1",
         ]
         * 2
     )
@@ -777,6 +784,12 @@ def test_jsonl_reopen_and_lost_ack_retry_preserve_one_bootstrap_generation(tmp_p
         timestamp=retained_at,
         authenticated_host_ingress=host_ingress,
     )
+    initial_record_ids = tuple(
+        record.memory_id for record in first._memory_plane.list_records()
+    )
+    initial_snapshot_count = len(
+        (store_path / "memory_records.jsonl").read_text(encoding="utf-8").splitlines()
+    )
     reopened_plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(store_path))
     reopened = _service_with_capability(capability, memory_plane=reopened_plane)
     # The caller owns event-timestamp immutability: the exact redelivery
@@ -790,13 +803,12 @@ def test_jsonl_reopen_and_lost_ack_retry_preserve_one_bootstrap_generation(tmp_p
         timestamp=retained_at,
         authenticated_host_ingress=host_ingress,
     )
-    assert len(reopened_plane.list_records()) == 6
-    # The store file keeps one snapshot line per revision: the redelivery
-    # re-snapshots the identical record set (no new generation members).
-    assert (
-        len((store_path / "memory_records.jsonl").read_text(encoding="utf-8").splitlines())
-        == 2
-    )
+    assert tuple(record.memory_id for record in reopened_plane.list_records()) == initial_record_ids
+    # Exact redelivery leaves both logical identities and durable snapshots
+    # unchanged.
+    assert len(
+        (store_path / "memory_records.jsonl").read_text(encoding="utf-8").splitlines()
+    ) == initial_snapshot_count
 
 
 @pytest.mark.parametrize("persistent", [False, True], ids=["memory", "jsonl"])
@@ -879,6 +891,9 @@ def test_concurrent_exact_delivery_is_idempotent(
         "semantic_ingestion_profile_selection",
         "semantic_ingestion_profile_verification",
         "semantic_ingestion_profile_outcome",
+        "semantic_ingestion_catalog_version",
+        "semantic_ingestion_catalog_selection_pointer",
+        "learned_ontology_coverage_observation_v1",
     }
 
 
@@ -1065,6 +1080,9 @@ def test_jsonl_replace_failure_is_atomic_and_lost_ack_recovers(
         "semantic_ingestion_profile_verification",
         "semantic_ingestion_profile_outcome",
         "semantic_ingestion_writer_admission",
+        "semantic_ingestion_catalog_version",
+        "semantic_ingestion_catalog_selection_pointer",
+        "learned_ontology_coverage_observation_v1",
     }
 
 
