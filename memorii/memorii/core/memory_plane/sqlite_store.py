@@ -197,6 +197,46 @@ class SqliteMemoryPlaneStore:
             )
             return self._append_batch_unlocked(connection, records, data_revision=data_revision)
 
+    def apply_batch_in_transaction(
+        self,
+        connection: sqlite3.Connection,
+        records: tuple[CanonicalMemoryRecord, ...],
+        *,
+        expected_revision: int | None,
+        expected_write_revision: int | None = None,
+        preconditions: tuple[MemoryPlanePrecondition, ...] = (),
+        authorization: MemoryPlaneWriteAuthorization | None = None,
+        transaction_precondition: Callable[[], None] | None = None,
+    ) -> int:
+        """Apply one batch inside a coordinator-owned partition transaction.
+
+        The publication coordinator opens a manual partition transaction,
+        applies the batch through this method, signs the candidate tuple from
+        the transaction's own view, persists the control intent and only then
+        commits. Validation semantics are identical to ``apply_batch``.
+        """
+        _validate_expected_write_revision(expected_write_revision)
+        if transaction_precondition is not None:
+            transaction_precondition()
+        write_revision, data_revision, current_records = self._validated_state(connection)
+        if expected_revision is not None and expected_revision != data_revision:
+            raise MemoryPlaneRevisionConflictError(
+                f"memory-plane revision changed: expected {expected_revision}, actual {data_revision}"
+            )
+        if expected_write_revision is not None and expected_write_revision != write_revision:
+            raise MemoryPlaneRevisionConflictError(
+                "memory-plane write revision changed: "
+                f"expected {expected_write_revision}, actual {write_revision}"
+            )
+        _validate_preconditions(current_records, preconditions)
+        _validate_governed_write(
+            self._governed_write_policy,
+            records,
+            tuple(current_records.values()),
+            authorization,
+        )
+        return self._append_batch_unlocked(connection, records, data_revision=data_revision)
+
     def read_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]:
         with self._partition.transaction(write=False) as connection:
             _, data_revision, current_records = self._validated_state(connection)

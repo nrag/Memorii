@@ -157,3 +157,128 @@ def test_cross_process_compare_and_swap_serializes_writers(tmp_path: Path) -> No
     reopened = SqliteMemoryPlaneStore(partition_dir)
     assert reopened.get_record("mem:cas:stale") is None
     assert reopened.revision() == 3
+
+
+_STAGED_PUBLICATION_PROGRAM = '''
+import sys
+import uuid
+from datetime import UTC, datetime
+from pathlib import Path
+
+from memorii.core.memory_plane.models import CanonicalMemoryRecord
+from memorii.core.persistence.contracts import RuntimePublicationIntent
+from memorii.core.storage_administration.service import (
+    StorageAdministrationService,
+    _position_digest,
+    _position_sequence,
+)
+from memorii.domain.enums import CommitStatus, MemoryDomain
+
+root = Path(sys.argv[1])
+with StorageAdministrationService(root) as service:
+    service.initialize()
+    store = service.memory_plane_store()
+    service.publish_memory_plane_batch(
+        (
+            CanonicalMemoryRecord(
+                memory_id="mem:published:one",
+                domain=MemoryDomain.SEMANTIC,
+                text="published",
+                status=CommitStatus.COMMITTED,
+                source_kind="partition_recovery",
+                timestamp=datetime(2026, 1, 1, tzinfo=UTC),
+            ),
+        ),
+        store=store,
+    )
+    # Stage the next publication to the crash boundary: durable intent and a
+    # committed data generation, but no control finalization (process "dies").
+    state = service._require_operational()
+    finalized = service._control.read_publication_state(service._repository_id())
+    partition = service.partition()
+    with partition.manual_write_transaction() as handle:
+        connection = handle.connection
+        store.apply_batch_in_transaction(
+            connection,
+            (
+                CanonicalMemoryRecord(
+                    memory_id="mem:published:two",
+                    domain=MemoryDomain.SEMANTIC,
+                    text="staged",
+                    status=CommitStatus.COMMITTED,
+                    source_kind="partition_recovery",
+                    timestamp=datetime(2026, 1, 1, tzinfo=UTC),
+                ),
+            ),
+            expected_revision=None,
+        )
+        candidate = service._candidate_from_transaction(
+            connection,
+            generation_id=finalized.data_generation_id,
+            epoch=state.eligibility_epoch,
+        )
+        partition.write_publication_row(
+            connection,
+            ordinal=candidate.vector.partition_ordinal,
+            position_kind="batch",
+            position_sequence=_position_sequence(candidate),
+            position_digest=_position_digest(candidate),
+            tuple_digest=candidate.payload_digest(),
+            generation_id=finalized.data_generation_id,
+            vector_json=candidate.vector.model_dump_json(),
+            manifest_digest=candidate.manifest_digest,
+        )
+        service._control.write_intent(
+            RuntimePublicationIntent(
+                intent_id=uuid.uuid4().hex,
+                repository_id=service._repository_id(),
+                expected_old_discriminator=finalized.payload_digest(),
+                candidate_state=candidate,
+                operation_binding="memory_plane_batch",
+                authority_epoch=state.eligibility_epoch,
+                fence_token=finalized.vector.partition_ordinal + 1,
+            ),
+            service._journal_entry(
+                operation="publication_prepared",
+                before_digest=finalized.payload_digest(),
+                after_digest=candidate.payload_digest(),
+            ),
+        )
+        handle.commit()
+print("staged")
+'''
+
+_RECOVERY_PROGRAM = '''
+import sys
+from pathlib import Path
+
+from memorii.core.memory_plane.sqlite_store import SqliteMemoryPlaneStore
+from memorii.core.storage_administration.service import StorageAdministrationService
+
+with StorageAdministrationService(Path(sys.argv[1])) as service:
+    resolution = service.resolve_pending_publication()
+    snapshot = service.acquire_verified_snapshot()
+    store = SqliteMemoryPlaneStore(service.partition())
+    print(resolution.disposition, snapshot.ordinal, store.revision())
+'''
+
+
+def test_dead_process_publication_is_recovered_by_a_fresh_process(tmp_path: Path) -> None:
+    root = tmp_path / "installation"
+    staged = subprocess.run(
+        [sys.executable, "-c", _STAGED_PUBLICATION_PROGRAM, str(root)],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=Path(__file__).resolve().parents[2],
+    )
+    assert staged.stdout.strip() == "staged"
+
+    recovered = subprocess.run(
+        [sys.executable, "-c", _RECOVERY_PROGRAM, str(root)],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=Path(__file__).resolve().parents[2],
+    )
+    assert recovered.stdout.strip() == "finalized 2 2"

@@ -10,6 +10,7 @@ canonical domain owners.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import sqlite3
 import threading
 from collections.abc import Iterator, Sequence
@@ -19,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from memorii.core.memory_plane.file_lock import locked_file
+from memorii.core.persistence.contracts import MaterializationCatalogEntry
 
 PARTITION_SCHEMA_VERSION = 1
 _DEFAULT_BUSY_TIMEOUT_MS = 5_000
@@ -76,7 +78,56 @@ _SCHEMA_STATEMENTS = (
         data_revision INTEGER NOT NULL
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS partition_publication (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        ordinal INTEGER NOT NULL,
+        position_kind TEXT NOT NULL,
+        position_sequence INTEGER,
+        position_digest TEXT NOT NULL,
+        tuple_digest TEXT NOT NULL,
+        generation_id TEXT NOT NULL,
+        vector_json TEXT NOT NULL,
+        manifest_digest TEXT NOT NULL
+    )
+    """,
 )
+
+# Authoritative materialized catalogs covered by the signed manifest. The
+# fold is canonical: per-row digest over (primary key, payload), chained in
+# the catalog's primary-key order from a domain-separated per-catalog seed.
+# The revision-state and publication rows are derived or self-referential
+# and are excluded from the row root.
+_MATERIALIZATION_CATALOGS = (
+    ("memory_batches", "revision", "batch_json"),
+    ("memory_record_versions", "memory_id || ':' || batch_revision", "record_json"),
+    ("memory_current_records", "memory_id", "record_json"),
+)
+_CATALOG_SEED_DOMAIN = b"memorii.materialization-catalog.v1\x00"
+
+
+class PartitionWriteTransaction:
+    """One manual-commit partition transaction owned by its coordinator."""
+
+    def __init__(self, connection: sqlite3.Connection) -> None:
+        self._connection = connection
+        self.finished = False
+
+    @property
+    def connection(self) -> sqlite3.Connection:
+        return self._connection
+
+    def commit(self) -> None:
+        if self.finished:
+            raise sqlite3.ProgrammingError("partition transaction is already finished")
+        self._connection.execute("COMMIT")
+        self.finished = True
+
+    def _rollback(self) -> None:
+        if not self.finished:
+            with contextlib.suppress(sqlite3.Error):
+                self._connection.execute("ROLLBACK")
+            self.finished = True
 
 
 class PartitionDataRepository:
@@ -136,6 +187,97 @@ class PartitionDataRepository:
                 self._connection.execute("ROLLBACK")
                 raise
             self._connection.execute("COMMIT")
+
+    @contextmanager
+    def manual_write_transaction(self) -> Iterator[PartitionWriteTransaction]:
+        """Open a partition write transaction whose commit the caller owns.
+
+        The publication coordinator applies data rows, computes and signs the
+        candidate tuple from the transaction's own view, persists the control
+        intent, and only then commits — so recovery always sees either the
+        exact old or the exact new data state, never a mixture. Exiting the
+        context without an explicit commit rolls back.
+        """
+        with self._thread_lock, locked_file(self._lock_path, exclusive=True):
+            self._connection.execute("BEGIN IMMEDIATE")
+            handle = PartitionWriteTransaction(self._connection)
+            try:
+                yield handle
+            except BaseException:
+                handle._rollback()
+                raise
+            if not handle.finished:
+                handle._rollback()
+
+    def compute_materialization_manifest(
+        self, connection: sqlite3.Connection
+    ) -> tuple[MaterializationCatalogEntry, ...]:
+        entries: list[MaterializationCatalogEntry] = []
+        for catalog, key_expression, payload_column in _MATERIALIZATION_CATALOGS:
+            rows = connection.execute(
+                f"SELECT {key_expression} AS sort_key, {payload_column} AS payload"
+                f" FROM {catalog} ORDER BY {key_expression}"
+            ).fetchall()
+            chain = hashlib.sha256(_CATALOG_SEED_DOMAIN + catalog.encode("ascii")).digest()
+            for row in rows:
+                row_digest = hashlib.sha256(
+                    str(row["sort_key"]).encode("utf-8")
+                    + b"\x00"
+                    + row["payload"].encode("utf-8")
+                ).digest()
+                chain = hashlib.sha256(chain + b"\x00" + row_digest).digest()
+        entries.append(
+            MaterializationCatalogEntry(
+                catalog=catalog,
+                row_count=len(rows),
+                digest=chain.hex(),
+            )
+        )
+        return tuple(sorted(entries, key=lambda entry: entry.catalog))
+
+    def read_publication_row(self, connection: sqlite3.Connection) -> sqlite3.Row | None:
+        return connection.execute(
+            "SELECT ordinal, position_kind, position_sequence, position_digest,"
+            " tuple_digest, generation_id, vector_json, manifest_digest"
+            " FROM partition_publication WHERE id = 1"
+        ).fetchone()
+
+    def write_publication_row(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        ordinal: int,
+        position_kind: str,
+        position_sequence: int | None,
+        position_digest: str,
+        tuple_digest: str,
+        generation_id: str,
+        vector_json: str,
+        manifest_digest: str,
+    ) -> None:
+        connection.execute(
+            "INSERT INTO partition_publication (id, ordinal, position_kind, position_sequence,"
+            " position_digest, tuple_digest, generation_id, vector_json, manifest_digest)"
+            " VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT(id) DO UPDATE SET ordinal = excluded.ordinal,"
+            " position_kind = excluded.position_kind,"
+            " position_sequence = excluded.position_sequence,"
+            " position_digest = excluded.position_digest,"
+            " tuple_digest = excluded.tuple_digest,"
+            " generation_id = excluded.generation_id,"
+            " vector_json = excluded.vector_json,"
+            " manifest_digest = excluded.manifest_digest",
+            (
+                ordinal,
+                position_kind,
+                position_sequence,
+                position_digest,
+                tuple_digest,
+                generation_id,
+                vector_json,
+                manifest_digest,
+            ),
+        )
 
     def read_revision_state(self, connection: sqlite3.Connection) -> tuple[int, int]:
         row = connection.execute(
