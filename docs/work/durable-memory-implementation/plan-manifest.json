@@ -1,14 +1,14 @@
 {
   "kind": "planning_artifact_snapshot_not_product_evidence",
-  "design_sha256": "ef478a2e765360d4e607ea5c8d756e42c92c19633e8956df3edafa7615e55907",
+  "design_sha256": "9f73f06ff2153439ed970f953b3679bdc4e9b60448248d2d5f5e64f947624a2d",
   "files": {
     "authority-inventory.json": "4b8869f399e05dbbf482b4e32a84d017306de1472c1ca416d15dedb5d926f7e6",
     "baseline.json": "d8ed0d74da503a3ab453effb8a52ada22a5a0180d9a03d10546373f26984fe7a",
-    "coverage.md": "be2ab0f353929a9cb88233d0fd0334f1854c54936c80abc625019742e0ea9f5f",
-    "design-identity-inventory.md": "cf780502dc303d92f57e17062ecf28d891a98b6107313c05fc9707a1360549ba",
+    "coverage.md": "bbad191d24275879abb429e7eb4f9ed0d5bcb4c8d4a1933b4dee990069f4595f",
+    "design-identity-inventory.md": "2f2ba03c9b6bd5239c77b711641f10396c9e71bd998f4a6fddf5876b91c3764e",
     "gates.md": "59b3207a706cd74dcb6c22ba48ff2d8c912c03d9e5ec6a74631955c8a2a702dd",
     "identity-and-changes.md": "75e812bfa6a6bc918931179815cee4ad795ef8bf8372b387df0d93c54f162914",
-    "implementation.plan.md": "3058902c2b39edada9a00c4f7fcac46c2722680d78841d658012bf8cd6304256",
+    "implementation.plan.md": "a67d930129911f2337b276c643bbc8ea5f18852c9433b98e0e0f819cad7c67bd",
     "milestones/additional-harnesses.plan.md": "bb73b9c91114764e74082db97da5eb6a11c80200d3d43e124ab70ace40fae4db",
     "milestones/harness-state.plan.md": "669b96febc722ecdb686e712bdbf9816ea58affbc4b6fef603db325ef17531e7",
     "milestones/legacy-migration.plan.md": "803d650946c18c2253d38d751d10d5b6e7a7b29fa0ea4e253e8474039f0065c8",
@@ -19,8 +19,8 @@
     "milestones/storage-foundation.plan.md": "1c915865267afc7fe6af6e4c2a6d5b2c4b5a482bfa54997e036722497af3843c",
     "planning-review.md": "674e032ea1799fdaa6db68334b65cdcd7f010a2f9960efcbf8be6e4fefe1e9cd",
     "production_entrypoint_bindings.md": "950830be062ab98b399c6334d85931b25c721c65385ea5f55c19c003e3cbf006",
-    "resume.md": "c050b98d6f221753130bfc1291a149117c7f8f0e792744bd550a822034c7f727",
-    "validation.md": "bb07ab999e719abb321e5110385239ef5b824fa6476ec8d5413c01136ee8866c",
+    "resume.md": "7330d46660e5771f7aa46baf68443c599bbf2c43f9a5a2b48327cb8630a2fd6b",
+    "validation.md": "4f287088511a7fab680b3f3ef7d13c7a249a03ec9e0e2eedd03e643046ee0665",
     "workflow-inventory.json": "a83fbffe2a684a18822f183788a3c8093c171576ee4cac4b30e1c8eafeab8bc3"
   }
 }

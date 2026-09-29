@@ -3,10 +3,10 @@
 - Work ID: durable-memory-remediation
 - Work type: design
 - Delivery fidelity: Level 3 (bounded remediation of the reviewed Level 3 design; no scope expansion)
-- Status: active
+- Status: complete
 - Coordinator: main Codex thread (sole writer for the canonical design)
 - Created: 2026-09-29
-- Last updated: 2026-09-29
+- Last updated: 2026-09-29 (complete; final design SHA 9f73f06ff2153439ed970f953b3679bdc4e9b60448248d2d5f5e64f947624a2d)
 - Parent WorkPlan: [release design review](../durable-release-design-review/design-review.plan.md) (complete; owns the findings)
 - Related WorkPlans: [shared SQLite design](../shared-sqlite-design/design.plan.md) (complete), [durable memory implementation](../durable-memory-implementation/implementation.plan.md) (proposed; plan-side corrections included here)
 - Canonical inputs: [design under remediation](../../design/durable_execution_and_solver_runtime.md) at SHA-256 `22e29f90ab90fa9b67b489d8f293b4a9ecbe4e5bf1dad7c0d6d3f2a7697706ad`; [review report](../../reviews/durable-execution-and-solver-runtime/2026-09-29-final-approval.md); governing sources per AGENTS.md precedence
@@ -68,11 +68,16 @@ Remediation starting from design SHA `22e29f90` on branch `codex/durable-memory-
 ## Progress Log
 
 - 2026-09-29: WorkPlan created; baseline frozen (design `22e29f90`, branch head `7d94e660`). Next action: confirm code facts for DREV-002/003 edits.
-- 2026-09-29: Code facts confirmed (plane members `memory_records.jsonl`/`memory_records.lock`/`.protected/` at store.py:485-486/519; Consolidator triggers from_solver_resolution/from_validated_abstraction/from_user_finding; spec §23.1 twenty APIs, §12.2 outputs, §16.24 gates). Design edits applied for DREV-001..004 and DREV-007/009; attack matrix extended (task lifecycle, merge/consolidation, layout detection, verification tiers, sidecar transport); rollout order corrected; identity ledger row extended; label mapping enumerated. Plan edits applied: validation.md three new proof families (sidecar transport, consumer delivery, key lifecycle), coverage.md DUR-03/06/13 test mirrors and DUR-14 allocation clarification, additional-harnesses header aligned, four-category assumptions section added, design SHA repinned to `ef478a2e`, design-identity-inventory refreshed, plan-manifest re-verified (20/20 files, design_sha256 matches). Next action: commit and run delta review.
+- 2026-09-29: Code facts confirmed (plane members `memory_records.jsonl`/`memory_records.lock`/`.protected/` at store.py:485-486/519; Consolidator triggers from_solver_resolution/from_validated_abstraction/from_user_finding; spec §23.1 twenty APIs, §12.2 outputs, §16.24 gates). Design edits applied for DREV-001..004 and DREV-007/009; attack matrix extended (task lifecycle, merge/consolidation, layout detection, verification tiers, sidecar transport); rollout order corrected; identity ledger row extended; label mapping enumerated. Plan edits applied: validation.md three new proof families (sidecar transport, consumer delivery, key lifecycle), coverage.md DUR-03/06/13 test mirrors and DUR-14 allocation clarification, additional-harnesses header aligned, four-category assumptions section added, design SHA repinned to `ef478a2e`, design-identity-inventory refreshed, plan-manifest re-verified (20/20 files, design_sha256 matches remediated design). Committed as `2efb234e`; delta review launched.
+- 2026-09-29: Delta cohort returned (see Review Log): all DREV-001..009 closed; five reconciled observations (REM-001..005). One bounded revision batch applied per the reviewers' invariant-level resolutions: consolidation output set/neighborhood view/20.2 carrier table; four validation.md family rows + coverage mirrors; accumulator anchor rule; stale-read retry rule; plan index refreshed. Final design SHA `9f73f06ff2153439ed970f953b3679bdc4e9b60448248d2d5f5e64f947624a2d`; plan-manifest re-verified (20/20 files + design_sha256). WorkPlan complete per the completion contract: all findings closed or applied, delta review passed with no newly validated P1/P2 defect remaining (REM-001 corrected in the budgeted round), identity inventory extended, implementation plan repinned.
 
 ## Evidence Log
 
-- Review report (immutable) with all finding evidence; remediation-time evidence: store.py:485-486/519 (plane members), consolidator.py:13-108 (triggers), memorii_spec.md:1443-1473 (§23.1), 512-543 (§12), 1070-1078 (§16.24); new design SHA `ef478a2e765360d4e607ea5c8d756e42c92c19633e8956df3edafa7615e55907`; plan-manifest verification output (20 files, no mismatches).
+- Review report (immutable) with all finding evidence; remediation-time evidence: store.py:485-486/519 (plane members), consolidator.py:13-108 (triggers), memorii_spec.md:1443-1473 (§23.1), 512-543 (§12), 1070-1078 (§16.24); intermediate design SHA `ef478a2e…` (commit `2efb234e`); final design SHA `9f73f06f…`; plan-manifest verification outputs (20 files, no mismatches, both rounds); delta-cohort closure verdicts and REM reconciliations in the Review Log.
+
+## Outcome And Retrospective
+
+Final result: remediation complete. All six review required-changes plus companions closed and confirmed by a three-role delta review; the single validated P2 residual (REM-001) and four bounded observations corrected in one budgeted revision batch applying the reviewers' own resolutions. The design at `9f73f06f` is approval-ready from this operation's scope; the implementation plan pins it and its next action is storage-foundation readiness. Remaining limitations: design-level approval only — nothing implemented or measured; final whole-design review happens at implementation closure. Lesson: both review rounds' design defects clustered in closed-grammar completeness (enumerations that under-claimed or over-claimed their governing source) — future design edits in this repository should diff every enumerated closed set against its cited source before freezing.
 
 ## Decision Log
 
@@ -84,12 +89,19 @@ Remediation starting from design SHA `22e29f90` on branch `codex/durable-memory-
 
 ## Review Log
 
-- Delta review pending: candidate frozen at design SHA `ef478a2e765360d4e607ea5c8d756e42c92c19633e8956df3edafa7615e55907`.
+- 2026-09-29 delta cohort (spec_auditor, correctness_reviewer, test_reviewer; independent concurrent passes) on frozen candidate `ef478a2e` (commit `2efb234e`). Closure verdicts, unanimous across roles: DREV-001 closed; DREV-002 closed in substance; DREV-003 closed (verified against all five constructor sites and the store member set); DREV-004 closed (two-tier model verified sound: Tier A genuinely constant-time, accumulator correct under update/delete, budgets re-derived, honest boundary); DREV-005/006 closed (families with exact signals and correct levels); DREV-007/008/009 closed. No new architectural contradiction; identity governance clean (nine new values behavioral, ledgered in both inventories); no evidence inflation.
+- New observations, coordinator-reconciled and renumbered REM-001..005:
+  - REM-001 (from spec_auditor; confirmed P2 / changes_required / eligible_p1_p2): consolidation output enumeration mis-stated the closed set (dropped spec 12.2 archive packages and the user-memory candidate produced by the user-finding trigger the design itself names); `get_local_neighborhood` had no expressible carrier in RuntimeStateRequest; CANDIDATE_EDGE_ATTACHMENTS had no named carrier. Product impact: consolidation result schema at every completion/pause would be invented mid-build. Disposition: corrected in the budgeted revision batch — output set restated (six kinds incl. archive package reference; one delivery per output kind), neighborhood view added to RuntimeStateRequest (bounded node-ID tuple, depth 1|2, explicit truncation), and an explicit 20.2 carrier table naming all ten outputs including candidate edges in the solver view and paged retrieval.
+  - REM-002 (spec_auditor changes_required vs test_reviewer follow_up; reconciled to Not applicable / changes_required / evidence_action for consistency with the original DREV-006 disposition of the identical invariant): the four design attack-matrix rows added by the remediation (task lifecycle, merge/consolidation, layout detection, verification tiers) were not selectable proof families in validation.md. Disposition: corrected — four validation.md rows added with failure signals, coverage.md DUR-01/02/17/18 test columns mirrored.
+  - REM-003 (correctness P3 / follow_up / record_only; folded into the batch as a determinate one-sentence correction inside the DREV-004 boundary): incremental accumulator not anchored to the signed tuple; a persisted-accumulator-without-anchor implementation could launder accumulator-consistent tampering through a legitimate publication. Disposition: anchor rule added (pre-update root equals expected-old signed manifest digest in-transaction, or protected in-memory accumulator rebuilt at acquisition).
+  - REM-004 (correctness P3 / follow_up / record_only; folded in): Tier A "any mismatch quarantines" lacked a benign-race carve-out for a snapshot pinned just before a concurrent publication finalizes (spurious integrity_error). Disposition: stale-finalized-read retry rule added; quarantine reserved for incoherent tuple/component mismatch.
+  - REM-005 (spec_auditor + test_reviewer P3 / follow_up / record_only; fixed): implementation.plan.md verified-facts bullet and Next Action stale after the remediation commit. Disposition: corrected with a new progress entry and the storage-foundation next action.
+- Coordinator verification: each batch correction was checked against its finding's recommended invariant-level resolution (corrections apply the reviewers' recommendations; no new semantic choices). Re-running a third cohort on the corrected text would be non-discriminating under the convergence rule; final whole-design review remains the implementation plan's closure obligation.
 
 ## Blockers And Limits
 
-Budget: one consolidated edit batch + one delta review cohort + at most one bounded revision round. None blocked.
+None. Budget used: one consolidated edit batch + one delta cohort + one bounded revision round (within plan).
 
 ## Next Action
 
-Commit the frozen candidate, then run the concurrent three-role delta review (spec_auditor, correctness_reviewer, test_reviewer) on design SHA `ef478a2e` covering the complete affected boundaries: command/proposal grammar and lifecycle mapping; merge/consolidation contract; migration detection; verification tiers/budgets; attempt state machine; HostBinding; and the plan-matrix additions.
+None (WorkPlan complete). The implementation plan owns the next action: storage-foundation readiness against design SHA `9f73f06f`.

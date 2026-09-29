@@ -1,6 +1,6 @@
 # Frozen Design Identity Inventory
 
-Source SHA256: ef478a2e765360d4e607ea5c8d756e42c92c19633e8956df3edafa7615e55907 (remediated design closing review findings DREV-001..004/007/009; prior reviewed SHA 22e29f90ab90fa9b67b489d8f293b4a9ecbe4e5bf1dad7c0d6d3f2a7697706ad). Snapshot for plan readability; canonical design remains authority.
+Source SHA256: 9f73f06ff2153439ed970f953b3679bdc4e9b60448248d2d5f5e64f947624a2d (remediated design closing review findings DREV-001..004/007/009; prior reviewed SHA 22e29f90ab90fa9b67b489d8f293b4a9ecbe4e5bf1dad7c0d6d3f2a7697706ad). Snapshot for plan readability; canonical design remains authority.
 
 ### Complete proposed identity inventory
 
