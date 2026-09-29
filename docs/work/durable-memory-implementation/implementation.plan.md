@@ -96,4 +96,4 @@ Planning: default read-only mapper reused because prior Spark code-mapper attemp
 
 ## Next Action
 
-Storage-foundation closure: land the CI integration-tier home for tests/integration/test_partition_storage_recovery.py, run the per-shard CI-parity unit commands, then run the targeted three-role delta review on commit d867eca8; after it passes with no newly validated P1/P2, record the packet's closure evidence (remaining_validated_p1_p2: [] at that revision) and begin the semantic-ontology packet.
+Semantic-ontology sub-slice 2: implement MemoryPlaneQuery/MemoryPlanePage as closed typed reader contracts over the verified partition snapshot with authority-bound cursors, route the provider read paths (read_structured_facts, current_semantic_entity_matches, retrieve_context candidate selection, observe_graph detached cohorts) through them, and land tests/unit/core/test_memory_plane_query_parity.py proving indexed results equal authorized scans. Storage-foundation closure items remain queued in its packet (CI integration-tier home, per-shard CI-parity runs, delta review).

@@ -3,11 +3,11 @@
 - Parent WorkPlan: [implementation index](../implementation.plan.md)
 - Work type: implementation milestone packet
 - Delivery fidelity: Level 3, bounded slice only
-- Status: proposed
+- Status: active (sub-slice 1: managed selection + provider/Hermes/inspection ingress; indexed MemoryPlaneQuery reads, capture cells and wrapper branches remain)
 - Requirements: DUR-05,07,15,16,17
 - Dependencies: storage-foundation
 - Baseline revision: bad9eeefb43f7f42fb95d583b11859e2f2ca9eb8 (planning snapshot)
-- Implementation base/head: unset; record before edits and at closure
+- Implementation base: a8b8ed50; sub-slice head recorded per commit
 
 ## Observable Acceptance
 
@@ -51,6 +51,6 @@ No ontology grammar/model changes or reinterpretation of legacy catalog-less rec
 
 ## Progress, Review And Closure
 
-Not started. No production/test edits, validation execution or implementation review exists for this packet. No implementation base/head or approval is claimed. The index owns the single global next action.
+Sub-slice 1 — managed selection and ingress (2026-09-29, base a8b8ed50): memorii/core/persistence/factory.py gains select_persistent_memory_plane — managed roots (initialized control) serve the verified published partition; legacy roots (a recognized pre-cutover plane, no control) serve their legacy JSONL plane until governed migration; managed+legacy coexistence, orphan partitions and empty roots are refused (allow_legacy_bootstrap=False default enforces no ephemeral store; True preserves the pre-cutover bootstrap behavior of legacy composition roots only). Wired: core/filesystem_storage/bundle.py::build_filesystem_provider selects managed from_managed_root vs legacy from_root; integrations/hermes_factory.py main memory-plane construction and the delegated authority_is_current recheck use the selection (the recheck now reads the current selected partition); integrations/hermes_local_authority.py::inspect_local_memory resolves the selected backend read-only (managed installations verified through open_managed_partition; missing state never initializes). Tests: tests/integration/test_shared_sqlite_provider_paths.py (packet-named): managed provider journey with verification and no JSONL, legacy provider unchanged, empty-root refusal, coexistence refusal, managed inspection with restart-safety and never-initialize, and a fresh-process provider composition round-trip. Evidence: 6 integration journeys green; 236 neighboring regression anchors green (scoped-context production binding, semantic provider composition, bundle, factory); ruff/pyright/identity gates green. Remaining in this packet: indexed MemoryPlaneQuery/Page with parity (test_memory_plane_query_parity.py), provider read-path routing (read_structured_facts/current_semantic_entity_matches/retrieve_context/observe_graph cohorts), capture cells (production_capture persistent roots), the authenticated-source and HermesMemoryProvider wrapper branches, codec/projector inventory generation, then the milestone review cohort. Packet not closed; no review has run.
 
 Additional concrete wrapper owners: integrations/authenticated_source.py::build_authenticated_source_runtime and integrations/hermes_provider.py::HermesMemoryProvider. Cover service-injection, memory-plane and storage-root branches with verified managed selection, outer callbacks, restart receipts and missing/wrong selector/control denial. Explicit diagnostic injections remain nonmanaged; no implicit fallback.

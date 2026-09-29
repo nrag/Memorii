@@ -21,6 +21,7 @@ from memorii.core.memory_plane.sqlite_store import SqliteMemoryPlaneStore
 from memorii.core.memory_plane.store import (
     CheckpointSignatureAuthority,
     GovernedWritePolicy,
+    JsonlMemoryPlaneStore,
     MemoryPlanePrecondition,
     MemoryPlaneTimedWriteSnapshot,
     MemoryPlaneWriteAuthorization,
@@ -188,6 +189,90 @@ def detect_legacy_memory_plane_layouts(root: str | Path) -> tuple[str, ...]:
     return tuple(layouts)
 
 
+def legacy_layout_directory(layout: str) -> Path:
+    """Directory name of a recognized legacy layout (``.`` for direct roots)."""
+    if layout == "direct-memory-plane-directory":
+        return Path(".")
+    for layout_name, directory in _LEGACY_LAYOUTS:
+        if layout_name == layout:
+            return Path(directory)
+    raise ManagedPartitionError(
+        "unsupported_configuration", f"unknown legacy layout: {layout}"
+    )
+
+
+class PersistentMemorySelection:
+    """Selected persistent memory plane with its owning administration."""
+
+    def __init__(
+        self,
+        administration: StorageAdministrationService | None,
+        memory_plane: MemoryPlaneService,
+    ) -> None:
+        self.administration = administration
+        self.memory_plane = memory_plane
+
+    @property
+    def managed(self) -> bool:
+        return self.administration is not None
+
+
+def select_persistent_memory_plane(
+    storage_root: str | Path,
+    *,
+    allow_legacy_bootstrap: bool = False,
+) -> PersistentMemorySelection:
+    """Select the persistent memory plane for a storage root.
+
+    Managed roots (an initialized control authority) serve the verified
+    published partition. Legacy roots (a recognized pre-cutover JSONL plane
+    and no control authority) serve their legacy plane until governed
+    migration. Roots holding both, an orphan partition, or neither are
+    refused — a persistent path never guesses and never creates an ephemeral
+    store. ``allow_legacy_bootstrap`` preserves the pre-cutover behavior of
+    composition roots that historically created a fresh legacy plane on an
+    empty root; managed selection is unaffected by it.
+    """
+    root = Path(storage_root)
+    managed = (root / _CONTROL_DATABASE).exists()
+    layouts = detect_legacy_memory_plane_layouts(root)
+    if managed and layouts:
+        raise ManagedPartitionError(
+            "unsupported_configuration",
+            "managed control authority and legacy memory-plane layouts coexist:"
+            + ", ".join(layouts),
+        )
+    if managed:
+        administration, memory_plane = open_managed_partition(root)
+        return PersistentMemorySelection(administration, memory_plane)
+    if layouts:
+        if len(layouts) > 1:
+            raise ManagedPartitionError(
+                "unsupported_configuration",
+                "multiple legacy memory-plane layouts present: " + ", ".join(layouts),
+            )
+        plane_root = root / legacy_layout_directory(layouts[0])
+        return PersistentMemorySelection(
+            None,
+            MemoryPlaneService(record_store=JsonlMemoryPlaneStore(plane_root)),
+        )
+    if (root / _PARTITION_DATABASE).exists():
+        raise ManagedPartitionError(
+            "integrity",
+            "partition data exists without control authority",
+        )
+    if allow_legacy_bootstrap:
+        return PersistentMemorySelection(
+            None,
+            MemoryPlaneService(record_store=JsonlMemoryPlaneStore(root / "memory-plane")),
+        )
+    raise ManagedPartitionError(
+        "uninitialized",
+        "no initialized control authority or legacy memory plane;"
+        " refusing to create an ephemeral store",
+    )
+
+
 def open_managed_partition(
     installation_root: str | Path,
 ) -> tuple[StorageAdministrationService, MemoryPlaneService]:
@@ -234,7 +319,10 @@ def open_managed_partition(
 
 __all__ = [
     "ManagedPartitionError",
+    "PersistentMemorySelection",
     "PublishedMemoryPlaneStore",
     "detect_legacy_memory_plane_layouts",
+    "legacy_layout_directory",
     "open_managed_partition",
+    "select_persistent_memory_plane",
 ]

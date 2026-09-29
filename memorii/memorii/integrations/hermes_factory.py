@@ -35,7 +35,7 @@ from memorii.core.memory_evolution.ingestion_contracts import (
 )
 from memorii.core.memory_evolution.models import EntityType
 from memorii.core.memory_plane import MemoryPlaneService
-from memorii.core.memory_plane.store import JsonlMemoryPlaneStore
+from memorii.core.persistence.factory import select_persistent_memory_plane
 from memorii.core.provider.factory import build_provider_memory_service_from_env
 from memorii.core.provider.learned_replay import LearnedRetainedSourceReplayService
 from memorii.core.scoped_context.authority import InProcessScopedReadAuthority
@@ -548,16 +548,16 @@ def _build_local_level2_runtime_binding(
             )
             if not current or context_kind != "delegated":
                 return current
-            current_plane = MemoryPlaneService(
-                record_store=JsonlMemoryPlaneStore(storage_root / "memory-plane")
-            )
+            current_plane = select_persistent_memory_plane(
+                storage_root, allow_legacy_bootstrap=True
+            ).memory_plane
             return PreferenceDelegationRepository(current_plane).active(operator_id, agent_id)
         except (OSError, TypeError, ValueError):
             return False
 
-    memory_plane = MemoryPlaneService(
-        record_store=JsonlMemoryPlaneStore(storage_root / "memory-plane")
-    )
+    memory_plane = select_persistent_memory_plane(
+        storage_root, allow_legacy_bootstrap=True
+    ).memory_plane
 
     try:
         if context_kind != "primary":

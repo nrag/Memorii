@@ -33,7 +33,10 @@ from memorii.core.memory_evolution.conflict_integrity import (
 from memorii.core.memory_plane import JsonlMemoryPlaneStore, MemoryPlaneService
 from memorii.core.memory_plane.sqlite_store import SqliteMemoryPlaneStore
 from memorii.core.memory_plane.store import MemoryPlaneStore
-from memorii.core.persistence.factory import PublishedMemoryPlaneStore
+from memorii.core.persistence.factory import (
+    PublishedMemoryPlaneStore,
+    select_persistent_memory_plane,
+)
 from memorii.core.provider.factory import build_provider_memory_service_from_env
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.scoped_context.authority import ScopedHostReadAuthority
@@ -206,9 +209,17 @@ def build_filesystem_provider(
     ] = (),
     installed_capability_monitoring_configuration: object | None = None,
 ) -> ProviderMemoryService:
-    return FilesystemStorageBundle.from_root(
-        storage_root=storage_root, policy=policy
-    ).build_provider_memory_service(
+    selection = select_persistent_memory_plane(storage_root, allow_legacy_bootstrap=True)
+    if selection.managed:
+        assert selection.administration is not None
+        bundle = FilesystemStorageBundle.from_managed_root(
+            storage_root, selection.administration, policy
+        )
+    else:
+        bundle = FilesystemStorageBundle.from_root(
+            storage_root=storage_root, policy=policy
+        )
+    return bundle.build_provider_memory_service(
         memory_plane=memory_plane,
         semantic_integrity_lifecycle=semantic_integrity_lifecycle,
         host_bootstrap_capability=host_bootstrap_capability,
