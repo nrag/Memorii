@@ -48,13 +48,14 @@ Families and signals are owned by [validation](../durable-memory-implementation/
 
 ## Gate Change Log
 
-- None yet (first slice adds no workflow changes).
+- 2026-09-29 (storage-foundation candidate): no workflow files changed yet. OPEN GATE ACTION before packet closure: decide and land the CI home for tests/integration/test_partition_storage_recovery.py (six subprocess journeys incl. concurrent publishers and SIGKILL recovery, ~13 s) in the enforced integration tier; timing manifest refresh (tests/ci/unit-test-durations.json) for the three new unit files at the next shard-artifact regeneration. Unit files are collected by the existing six shards (test_shards verify green: 5032 collected, max shard estimate 826.5 s vs 4800 s target).
 
 ## Progress Log
 
 - 2026-09-29: testing WorkPlan activated before storage-foundation test creation; placement decisions recorded above. Next action: record measured timing after the slice's focused tests run.
 - 2026-09-29: sub-slice 1 measured. Parameterized contract suite: 16 → 20 collected (sqlite parameter added to the 4 store-factory tests), full contract file ~3.2 s locally (within unit-shard budget; shard/timing ownership re-verified at CI candidate). New focused files: tests/unit/core/test_sqlite_memory_plane_store.py (14 tests, ~1.2 s) in the unit tier; tests/integration/test_partition_storage_recovery.py (2 subprocess tests, ~5.3 s) in the integration tier outside fast shards. No existing test retired; jsonl/memory parameters retained. One transient [memory]-parameter flake observed in a pre-existing in-memory-store thread test (3/3 green on re-run) — tracked at candidate time.
+- 2026-09-29: sub-slices 2-3 measured. tests/unit/core/test_storage_administration_contract.py: 23 tests ~2.4 s. tests/unit/core/test_persistent_partition_factory.py: 8 nodes ~11 s wall (per-test < 0.1 s; import overhead). write-snapshot suite gained the sqlite parameter (11 tests × 3 = 33, ~1.7 s) closing the CAS-sibling parity action. Integration file grew to six journeys (~13 s): fresh-process reopen, cross-process CAS, dead-publisher recovery, semantic-owner conditional writes, concurrent publishers on the fence, SIGKILL mid-transaction. Remediation batch added init-crash-cut retries, third-state quarantine, tamper-refusals and per-catalog tamper cases. Full battery across seven files: 114 passed ~24 s. White-box protocol staging drives real production internals only; no test-only production hooks (verified by test_reviewer).
 
 ## Next Action
 
-Re-measure shard timing when the storage-foundation candidate freezes and record the gate-allocation decision (no new workflow expected before the init/publication sub-slice).
+Land the CI integration-tier home for tests/integration/test_partition_storage_recovery.py (gate change recorded above) before storage-foundation packet closure.
