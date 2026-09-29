@@ -31,6 +31,8 @@ from memorii.core.memory_evolution.conflict_integrity import (
     PrivilegedSemanticIntegrityLifecycle,
 )
 from memorii.core.memory_plane import JsonlMemoryPlaneStore, MemoryPlaneService
+from memorii.core.memory_plane.sqlite_store import SqliteMemoryPlaneStore
+from memorii.core.memory_plane.store import MemoryPlaneStore
 from memorii.core.provider.factory import build_provider_memory_service_from_env
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.scoped_context.authority import ScopedHostReadAuthority
@@ -39,6 +41,7 @@ from memorii.core.semantic_ingestion.production_authority import (
     VerifiedProductionHostAuthority,
 )
 from memorii.core.semantic_ingestion.source_normalization_host import SourceNormalizationHostBundleBuilder
+from memorii.core.storage_administration.service import StorageAdministrationService
 from memorii.core.work_state import JsonlWorkStateStore, WorkStateService
 
 
@@ -48,7 +51,7 @@ class FilesystemStorageBundle:
     policy: FilesystemStoragePolicy
     work_state_store: JsonlWorkStateStore
     decision_state_store: JsonlDecisionStateStore
-    memory_plane_store: JsonlMemoryPlaneStore
+    memory_plane_store: MemoryPlaneStore
     llm_trace_store: JsonlLLMDecisionTraceStore
     eval_snapshot_store: JsonlEvalSnapshotStore
     golden_candidate_store: JsonlGoldenCandidateStore
@@ -69,6 +72,37 @@ class FilesystemStorageBundle:
             work_state_store=JsonlWorkStateStore(resolved_root / "work_state"),
             decision_state_store=JsonlDecisionStateStore(resolved_root / "decision_state"),
             memory_plane_store=JsonlMemoryPlaneStore(resolved_root / "memory_plane"),
+            llm_trace_store=JsonlLLMDecisionTraceStore(resolved_root / "llm_decision" / "traces.jsonl"),
+            eval_snapshot_store=JsonlEvalSnapshotStore(resolved_root / "llm_decision" / "eval_snapshots.jsonl"),
+            golden_candidate_store=JsonlGoldenCandidateStore(
+                resolved_root / "llm_decision" / "golden_candidates.jsonl"
+            ),
+        )
+        ensure_within_soft_limits(root=bundle.storage_root, policy=bundle.policy)
+        return bundle
+
+    @classmethod
+    def from_managed_root(
+        cls,
+        storage_root: str | Path,
+        administration: StorageAdministrationService,
+        policy: FilesystemStoragePolicy | None = None,
+    ) -> FilesystemStorageBundle:
+        """Build the bundle over a verified managed SQLite partition.
+
+        The memory plane is the shared partition's durable store; auxiliary
+        owners keep their separately registered roots. There is no JSONL or
+        in-memory fallback: the caller supplies the verified installation
+        administration, never a bare directory string.
+        """
+        resolved_root = Path(storage_root)
+        resolved_policy = policy or FilesystemStoragePolicy()
+        bundle = cls(
+            storage_root=resolved_root,
+            policy=resolved_policy,
+            work_state_store=JsonlWorkStateStore(resolved_root / "work_state"),
+            decision_state_store=JsonlDecisionStateStore(resolved_root / "decision_state"),
+            memory_plane_store=SqliteMemoryPlaneStore(administration.partition()),
             llm_trace_store=JsonlLLMDecisionTraceStore(resolved_root / "llm_decision" / "traces.jsonl"),
             eval_snapshot_store=JsonlEvalSnapshotStore(resolved_root / "llm_decision" / "eval_snapshots.jsonl"),
             golden_candidate_store=JsonlGoldenCandidateStore(

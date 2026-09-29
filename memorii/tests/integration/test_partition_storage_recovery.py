@@ -282,3 +282,81 @@ def test_dead_process_publication_is_recovered_by_a_fresh_process(tmp_path: Path
         cwd=Path(__file__).resolve().parents[2],
     )
     assert recovered.stdout.strip() == "finalized 2 2"
+
+
+_SEMANTIC_OWNER_PROGRAM = '''
+import sys
+from datetime import UTC, datetime
+from pathlib import Path
+
+from memorii.core.memory_plane.models import CanonicalMemoryRecord
+from memorii.core.memory_plane.service import MemoryPlaneService
+from memorii.core.persistence.factory import open_managed_partition
+from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
+
+
+def control_record(memory_id: str) -> CanonicalMemoryRecord:
+    return CanonicalMemoryRecord(
+        memory_id=memory_id,
+        domain=MemoryDomain.SEMANTIC,
+        text=f"owner-write:{memory_id}",
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_owner_journey",
+        timestamp=datetime(2026, 1, 1, tzinfo=UTC),
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+
+
+administration, memory_plane = open_managed_partition(Path(sys.argv[1]))
+try:
+    revision = memory_plane.conditionally_write_records(
+        (control_record("mem:owner:bootstrap"),),
+        preconditions=(),
+    )
+    revision = memory_plane.conditionally_write_records(
+        (control_record("mem:owner:second"),),
+        preconditions=(),
+    )
+    store = memory_plane._records
+    print(store.revision(), store.read_write_snapshot()[0])
+finally:
+    administration.close()
+'''
+
+
+def test_semantic_owner_control_writes_persist_on_the_managed_partition(
+    tmp_path: Path,
+) -> None:
+    """The domain-owner conditional-write path drives the selected backend."""
+    from memorii.core.memory_plane.sqlite_store import SqliteMemoryPlaneStore
+    from memorii.core.persistence.factory import open_managed_partition
+    from memorii.core.storage_administration.service import (
+        StorageAdministrationService,
+    )
+
+    root = tmp_path / "installation"
+    with StorageAdministrationService(root) as service:
+        service.initialize()
+
+    writer = subprocess.run(
+        [sys.executable, "-c", _SEMANTIC_OWNER_PROGRAM, str(root)],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=Path(__file__).resolve().parents[2],
+    )
+    # Internal-control batches do not advance the data revision; both batches
+    # advance the write revision.
+    assert writer.stdout.strip() == "0 2"
+
+    administration, memory_plane = open_managed_partition(root)
+    try:
+        store = SqliteMemoryPlaneStore(administration.partition())
+        records = {record.memory_id for record in store.list_records()}
+        assert {"mem:owner:bootstrap", "mem:owner:second"} <= records
+        snapshot = administration.acquire_verified_snapshot()
+        assert snapshot.vector.memory_write_revision == 2
+        assert snapshot.vector.memory_data_revision == 0
+    finally:
+        administration.close()
+    del memory_plane
