@@ -8,11 +8,14 @@ process reopen, and leaves the verification tiers green.
 
 from __future__ import annotations
 
+import hashlib
+import sqlite3
 import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
 from memorii.core.memory_evolution.admission import GovernedSourceAdmissionService
 from memorii.core.memory_evolution.atomic_store import SemanticIngestionAtomicStore
 from memorii.core.memory_evolution.ingestion_contracts import (
@@ -159,3 +162,104 @@ def test_semantic_owner_state_survives_fresh_process(tmp_path: Path) -> None:
         cwd=Path(__file__).resolve().parents[2],
     )
     assert reopened.stdout.strip() == "3 1 True"
+
+
+def _sample_projection():
+    from memorii.core.memory_evolution.semantic_index import (
+        SemanticClaimIndexRow,
+        SemanticEntityIndexRow,
+        SemanticEvidenceLinkIndexRow,
+        SemanticIndexProjection,
+    )
+
+    def digest(text: str) -> str:
+        return hashlib.sha256(text.encode()).hexdigest()
+    return SemanticIndexProjection(
+        graph_revision="graph:generation:1",
+        snapshot_digest=digest("snapshot"),
+        entities=(
+            SemanticEntityIndexRow(
+                logical_entity_id="entity:atlas",
+                entity_revision_id="entity-revision:atlas:1",
+                lifecycle="active",
+                record_id="record:atlas",
+                record_digest=digest("record:atlas"),
+                codec_fingerprint=digest("codec"),
+            ),
+            SemanticEntityIndexRow(
+                logical_entity_id="entity:bob",
+                entity_revision_id="entity-revision:bob:1",
+                lifecycle="active",
+                record_id="record:bob",
+                record_digest=digest("record:bob"),
+                codec_fingerprint=digest("codec"),
+            ),
+        ),
+        claims=(
+            SemanticClaimIndexRow(
+                claim_assertion_id="claim:owner:1",
+                subject_entity_id="entity:atlas",
+                object_entity_id="entity:bob",
+                predicate_id="owner_is",
+                record_id="record:claim:1",
+                record_digest=digest("record:claim:1"),
+                valid_from="2026-01-01T00:00:00+00:00",
+                valid_to=None,
+            ),
+        ),
+        evidence_links=(
+            SemanticEvidenceLinkIndexRow(
+                claim_assertion_id="claim:owner:1",
+                source_id="source:one",
+                source_digest=digest("source"),
+                evidence_digest=digest("evidence"),
+            ),
+        ),
+    )
+
+
+def test_derived_semantic_index_publishes_and_queries(tmp_path: Path) -> None:
+    root = tmp_path / "installation"
+    with StorageAdministrationService(root) as service:
+        service.initialize()
+        projection = _sample_projection()
+        outcome = service.publish_memory_plane_batch(
+            (), store=service.memory_plane_store(), derived_semantic_index=projection
+        )
+        assert outcome.ordinal == 1
+        partition = service.partition()
+        with partition.transaction(write=False) as connection:
+            state = partition.read_semantic_index_state(connection)
+            assert state is not None
+            assert str(state["graph_revision"]) == "graph:generation:1"
+            assert int(state["write_revision"]) == 1
+            assert int(state["data_revision"]) == 0
+            neighborhood = partition.query_entity_neighborhood(
+                connection, logical_entity_id="entity:atlas", depth=2
+            )
+            evidence = partition.query_claim_evidence(
+                connection, claim_assertion_id="claim:owner:1"
+            )
+        assert [str(row["claim_assertion_id"]) for row in neighborhood] == ["claim:owner:1"]
+        assert [str(row["source_id"]) for row in evidence] == ["source:one"]
+        # The signed manifest covers the derived tables: verification is
+        # green with them, and tampering an index row is detected.
+        snapshot = service.acquire_verified_snapshot()
+        assert snapshot.ordinal == 1
+
+    connection = sqlite3.connect(root / "partition" / "partition.sqlite3")
+    try:
+        connection.execute(
+            "UPDATE semantic_claims SET predicate_id = 'tampered'"
+            " WHERE claim_assertion_id = 'claim:owner:1'"
+        )
+        connection.commit()
+    finally:
+        connection.close()
+    with StorageAdministrationService(root) as fresh_service:
+        from memorii.core.storage_administration.service import (
+            InstallationIntegrityError,
+        )
+
+        with pytest.raises(InstallationIntegrityError):
+            fresh_service.acquire_verified_snapshot()

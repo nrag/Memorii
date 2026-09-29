@@ -17,10 +17,14 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from memorii.core.memory_plane.file_lock import locked_file
-from memorii.core.persistence.contracts import MaterializationCatalogEntry
+if TYPE_CHECKING:
+    # Imported lazily at runtime: the storage layer must not trigger the
+    # eager memorii.core package initializer at import time (it pulls the
+    # memory plane, which imports this module back).
+    from memorii.core.memory_evolution.semantic_index import SemanticIndexProjection
+    from memorii.core.persistence.contracts import MaterializationCatalogEntry
 
 PARTITION_SCHEMA_VERSION = 1
 _DEFAULT_BUSY_TIMEOUT_MS = 5_000
@@ -91,17 +95,77 @@ _SCHEMA_STATEMENTS = (
         manifest_digest TEXT NOT NULL
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS semantic_entities (
+        logical_entity_id TEXT NOT NULL,
+        entity_revision_id TEXT NOT NULL,
+        lifecycle TEXT NOT NULL,
+        record_id TEXT NOT NULL,
+        record_digest TEXT NOT NULL,
+        codec_fingerprint TEXT NOT NULL,
+        PRIMARY KEY (logical_entity_id, entity_revision_id)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS semantic_claims (
+        claim_assertion_id TEXT PRIMARY KEY,
+        subject_entity_id TEXT NOT NULL,
+        object_entity_id TEXT,
+        predicate_id TEXT,
+        record_id TEXT NOT NULL,
+        record_digest TEXT NOT NULL,
+        valid_from TEXT,
+        valid_to TEXT
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS semantic_evidence_links (
+        claim_assertion_id TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        source_digest TEXT NOT NULL,
+        evidence_digest TEXT NOT NULL,
+        PRIMARY KEY (claim_assertion_id, source_id)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS semantic_index_state (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        graph_revision TEXT NOT NULL,
+        snapshot_digest TEXT NOT NULL,
+        write_revision INTEGER NOT NULL,
+        data_revision INTEGER NOT NULL
+    )
+    """,
 )
 
 # Authoritative materialized catalogs covered by the signed manifest. The
 # fold is canonical: per-row digest over (primary key, payload), chained in
 # the catalog's primary-key order from a domain-separated per-catalog seed.
-# The revision-state and publication rows are derived or self-referential
-# and are excluded from the row root.
+# The revision-state, publication and semantic-index-state rows are derived
+# or self-referential and are excluded from the row root; the derived
+# semantic tables ARE authoritative materialized state (rebuildable from
+# canonical records, never independent facts) and are covered.
 _MATERIALIZATION_CATALOGS = (
     ("memory_batches", "revision", "batch_json"),
     ("memory_record_versions", "memory_id || ':' || batch_revision", "record_json"),
     ("memory_current_records", "memory_id", "record_json"),
+    (
+        "semantic_entities",
+        "logical_entity_id || ':' || entity_revision_id",
+        "lifecycle || ':' || record_id || ':' || record_digest || ':' || codec_fingerprint",
+    ),
+    (
+        "semantic_claims",
+        "claim_assertion_id",
+        "subject_entity_id || ':' || COALESCE(object_entity_id, '') || ':'"
+        " || COALESCE(predicate_id, '') || ':' || record_id || ':' || record_digest"
+        " || ':' || COALESCE(valid_from, '') || ':' || COALESCE(valid_to, '')",
+    ),
+    (
+        "semantic_evidence_links",
+        "claim_assertion_id || ':' || source_id",
+        "source_digest || ':' || evidence_digest",
+    ),
 )
 _CATALOG_SEED_DOMAIN = b"memorii.materialization-catalog.v1\x00"
 
@@ -183,6 +247,8 @@ class PartitionDataRepository:
         readers take a shared lock plus a deferred snapshot so a linearized
         read stays ordered with cross-process writers through release.
         """
+        from memorii.core.memory_plane.file_lock import locked_file
+
         with self._thread_lock, locked_file(self._lock_path, exclusive=write):
             self._connection.execute("BEGIN IMMEDIATE" if write else "BEGIN DEFERRED")
             try:
@@ -202,6 +268,8 @@ class PartitionDataRepository:
         exact old or the exact new data state, never a mixture. Exiting the
         context without an explicit commit rolls back.
         """
+        from memorii.core.memory_plane.file_lock import locked_file
+
         with self._thread_lock, locked_file(self._lock_path, exclusive=True):
             self._connection.execute("BEGIN IMMEDIATE")
             handle = PartitionWriteTransaction(self._connection)
@@ -216,6 +284,8 @@ class PartitionDataRepository:
     def compute_materialization_manifest(
         self, connection: sqlite3.Connection
     ) -> tuple[MaterializationCatalogEntry, ...]:
+        from memorii.core.persistence.contracts import MaterializationCatalogEntry
+
         entries: list[MaterializationCatalogEntry] = []
         for catalog, key_expression, payload_column in _MATERIALIZATION_CATALOGS:
             rows = connection.execute(
@@ -290,6 +360,131 @@ class PartitionDataRepository:
                 manifest_digest,
             ),
         )
+
+    def replace_derived_semantic_index(
+        self,
+        connection: sqlite3.Connection,
+        projection: SemanticIndexProjection,
+        *,
+        write_revision: int,
+        data_revision: int,
+    ) -> None:
+        """Replace the derived semantic index generation atomically.
+
+        Rows are derived state: each generation is a full replace bound to
+        the snapshot authority and revision counters recorded alongside it.
+        """
+        connection.execute("DELETE FROM semantic_entities")
+        connection.execute("DELETE FROM semantic_claims")
+        connection.execute("DELETE FROM semantic_evidence_links")
+        for entity in projection.entities:
+            connection.execute(
+                "INSERT INTO semantic_entities (logical_entity_id, entity_revision_id,"
+                " lifecycle, record_id, record_digest, codec_fingerprint)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    entity.logical_entity_id,
+                    entity.entity_revision_id,
+                    entity.lifecycle,
+                    entity.record_id,
+                    entity.record_digest,
+                    entity.codec_fingerprint,
+                ),
+            )
+        for claim in projection.claims:
+            connection.execute(
+                "INSERT INTO semantic_claims (claim_assertion_id, subject_entity_id,"
+                " object_entity_id, predicate_id, record_id, record_digest,"
+                " valid_from, valid_to) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    claim.claim_assertion_id,
+                    claim.subject_entity_id,
+                    claim.object_entity_id,
+                    claim.predicate_id,
+                    claim.record_id,
+                    claim.record_digest,
+                    claim.valid_from,
+                    claim.valid_to,
+                ),
+            )
+        for link in projection.evidence_links:
+            connection.execute(
+                "INSERT INTO semantic_evidence_links (claim_assertion_id, source_id,"
+                " source_digest, evidence_digest) VALUES (?, ?, ?, ?)",
+                (
+                    link.claim_assertion_id,
+                    link.source_id,
+                    link.source_digest,
+                    link.evidence_digest,
+                ),
+            )
+        connection.execute(
+            "INSERT INTO semantic_index_state (id, graph_revision, snapshot_digest,"
+            " write_revision, data_revision) VALUES (1, ?, ?, ?, ?)"
+            " ON CONFLICT(id) DO UPDATE SET graph_revision = excluded.graph_revision,"
+            " snapshot_digest = excluded.snapshot_digest,"
+            " write_revision = excluded.write_revision,"
+            " data_revision = excluded.data_revision",
+            (
+                projection.graph_revision,
+                projection.snapshot_digest,
+                write_revision,
+                data_revision,
+            ),
+        )
+
+    def read_semantic_index_state(
+        self, connection: sqlite3.Connection
+    ) -> sqlite3.Row | None:
+        return connection.execute(
+            "SELECT graph_revision, snapshot_digest, write_revision, data_revision"
+            " FROM semantic_index_state WHERE id = 1"
+        ).fetchone()
+
+    def query_entity_neighborhood(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        logical_entity_id: str,
+        depth: int,
+    ) -> Sequence[sqlite3.Row]:
+        """Claims touching the entity, expanded through claim endpoints."""
+        if depth not in (1, 2):
+            raise ValueError("neighborhood depth must be 1 or 2")
+        frontier = {logical_entity_id}
+        for _ in range(depth):
+            placeholders = ", ".join("?" for _ in frontier)
+            rows = connection.execute(
+                "SELECT DISTINCT claim_assertion_id, subject_entity_id, object_entity_id"
+                f" FROM semantic_claims WHERE subject_entity_id IN ({placeholders})"
+                f" OR object_entity_id IN ({placeholders})",
+                (*frontier, *frontier),
+            ).fetchall()
+            next_frontier = set(frontier)
+            for row in rows:
+                next_frontier.add(str(row["subject_entity_id"]))
+                if row["object_entity_id"] is not None:
+                    next_frontier.add(str(row["object_entity_id"]))
+            frontier = next_frontier
+        placeholders = ", ".join("?" for _ in frontier)
+        return connection.execute(
+            "SELECT claim_assertion_id, subject_entity_id, object_entity_id,"
+            " predicate_id, record_id, record_digest, valid_from, valid_to"
+            f" FROM semantic_claims WHERE subject_entity_id IN ({placeholders})"
+            f" OR object_entity_id IN ({placeholders})"
+            " ORDER BY claim_assertion_id",
+            (*frontier, *frontier),
+        ).fetchall()
+
+    def query_claim_evidence(
+        self, connection: sqlite3.Connection, *, claim_assertion_id: str
+    ) -> Sequence[sqlite3.Row]:
+        return connection.execute(
+            "SELECT claim_assertion_id, source_id, source_digest, evidence_digest"
+            " FROM semantic_evidence_links WHERE claim_assertion_id = ?"
+            " ORDER BY source_id",
+            (claim_assertion_id,),
+        ).fetchall()
 
     def read_revision_state(self, connection: sqlite3.Connection) -> tuple[int, int]:
         row = connection.execute(
