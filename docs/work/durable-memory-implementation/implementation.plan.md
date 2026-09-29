@@ -3,10 +3,10 @@
 - Work ID: durable-memory-implementation
 - Work type: implementation
 - Delivery fidelity: Level 3 - first production rollout
-- Status: proposed
+- Status: active
 - Coordinator: main Codex task; one implementation writer per overlapping slice
 - Created: 2026-09-29
-- Last updated: 2026-09-29
+- Last updated: 2026-09-29 (implementation started; storage-foundation packet active; implementation base fe9e1913)
 - Parent WorkPlan: [shared SQLite design](../shared-sqlite-design/design.plan.md), complete
 - Related WorkPlans: [original runtime design](../durable-runtime-design/design.plan.md), [learned ontology](../learned-ontology/implementation.plan.md)
 - Canonical inputs: [approved design](../../design/durable_execution_and_solver_runtime.md), AGENTS.md, .agents/PLANS.md, implement-design skill and governing sources pinned in [baseline](baseline.json)
@@ -22,7 +22,7 @@ This request creates the implementation WorkPlan only. Planning is delivered; im
 
 Remediated design SHA-256: `9f73f06ff2153439ed970f953b3679bdc4e9b60448248d2d5f5e64f947624a2d` (closes review findings DREV-001..004 and companions DREV-007/009 via the [remediation WorkPlan](../durable-memory-remediation/design.plan.md); the reviewed baseline was `22e29f90ab90fa9b67b489d8f293b4a9ecbe4e5bf1dad7c0d6d3f2a7697706ad`, and the 2026-09-29 final-approval review report is [here](../../reviews/durable-execution-and-solver-runtime/2026-09-29-final-approval.md)). Design-cohort approval of the original scope is recorded in [design reviews](../shared-sqlite-design/reviews.md); plan-matrix findings DREV-005/006/008 are applied in this plan's validation/coverage/editorial packets. Delta review of the remediated design is recorded in the remediation WorkPlan; implementation starts only after it passes with no newly validated P1/P2 defect. No approved deviations. Pin this checksum before the first edit and reopen design if a material semantic choice differs.
 
-Implementation branch: `codex/durable-memory-release`, created from main `e6880a46` (merge PR #123, which contains planning HEAD `bad9eeefb43f7f42fb95d583b11859e2f2ca9eb8`); the release-prep artifacts are committed at `ca845fc1`. The former `codex/learned-ontology-implementation` branch is merged and deleted; no pre-existing diff remains unattributed on this branch.
+Implementation branch: `codex/durable-memory-release`, created from main `e6880a46` (merge PR #123, which contains planning HEAD `bad9eeefb43f7f42fb95d583b11859e2f2ca9eb8`); the release-prep artifacts are committed at `ca845fc1`. The former `codex/learned-ontology-implementation` branch is merged and deleted; no pre-existing diff remains unattributed on this branch. Implementation base for the storage-foundation slice: `fe9e1913` (tree clean except the preserved user edit to `docs/design/hermes_conversation_memory_trial.md`).
 
 Source precedence follows AGENTS.md. Core spec/storage/event model and implementation rules govern the additive design. Learned ontology, scoped context, semantic ingestion and event registries retain their original authority; no migration may silently reinterpret them. Input and workflow hashes are recorded separately; installable schemas/registry/package member inventories are enumerated at storage readiness before changing them.
 

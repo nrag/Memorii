@@ -3,11 +3,11 @@
 - Parent WorkPlan: [implementation index](../implementation.plan.md)
 - Work type: implementation milestone packet
 - Delivery fidelity: Level 3, bounded slice only
-- Status: proposed
+- Status: active (sub-slice 1: shared partition + SqliteMemoryPlaneStore parity; publication/init and factory wiring remain)
 - Requirements: DUR-02,03,05,13,15,16
 - Dependencies: Readiness, approved design and matrix review
 - Baseline revision: bad9eeefb43f7f42fb95d583b11859e2f2ca9eb8 (planning snapshot)
-- Implementation base/head: unset; record before edits and at closure
+- Implementation base: fe9e1913; current sub-slice head recorded per commit
 
 ## Observable Acceptance
 
@@ -53,4 +53,4 @@ No indexed retrieval replacement, legacy import, durable runtime graph or remote
 
 ## Progress, Review And Closure
 
-Not started. No production/test edits, validation execution or implementation review exists for this packet. No implementation base/head or approval is claimed. The index owns the single global next action.
+Sub-slice 1 (2026-09-29, base fe9e1913): shared SQLite partition + memory-plane parity implemented. Added memorii/stores/sqlite/partition.py (PartitionDataRepository: WAL, synchronous=FULL, foreign keys, busy timeout, advisory file lock around short BEGIN IMMEDIATE/DEFERRED transactions; closed schema v1: memory_batches, memory_record_versions, memory_current_records with first-insertion order, memory_revision_state), memorii/core/memory_plane/sqlite_store.py (SqliteMemoryPlaneStore: full MemoryPlaneStore contract over the partition — canonical batch checksum codec reused unchanged, dual write/data revisions with the runtime-context visibility rule, precondition CAS, governed-policy gate, detached snapshots in first-insertion order, linearized reads, protected secrets 0o600, checkpoint signature authority claim, batch-chain validation cached per revision state with fail-closed tamper/desync rejection, append-only batches), stores/sqlite/__init__.py, and the sqlite parameter in the parameterized store-contract suite. New focused tests: tests/unit/core/test_sqlite_memory_plane_store.py (14 tests: fresh-handle reopen, both revisions, record versions retained, cross-handle visibility, first-insertion order across updates, filter parity vs in-memory reference, precondition atomicity, tampered batch/checksum/revision-state fail-closed on read and write, unknown future schema rejection, owner-only secret permissions, append-without-rewrite, two store views on one partition) and tests/integration/test_partition_storage_recovery.py (2 fresh-process subprocess journeys incl. cross-process CAS denial). Codec note: canonical record/batch serialization reuses the existing _PersistedBatch codec unchanged; the full semantic/ontology codec/projector inventory stays gated before the semantic-ontology packet per design sequencing. Evidence: ruff clean, pyright 0 errors, identity hygiene pass, 57 affected tests pass (contract suite 16→20 collected, ~3 s); commands run from memorii/ with .venv python 3.14 (CI-parity runs at candidate time). Known observation: one transient [memory]-parameter concurrency-test flake in the pre-existing in-memory store (passed 3/3 on re-run; not touched by this slice; watch at candidate). Production caller count for new paths remains 0 — factory wiring (build path from FilesystemStorageBundle/provider factory) is the next sub-slice with init/signed publication; this packet is not closed and no milestone review has run.
