@@ -20,7 +20,9 @@ This request creates the implementation WorkPlan only. Planning is delivered; im
 
 ## Design Baseline And Sources Of Truth
 
-Approved design SHA-256: `22e29f90ab90fa9b67b489d8f293b4a9ecbe4e5bf1dad7c0d6d3f2a7697706ad`. Full spec/correctness/test approval is in [design reviews](../shared-sqlite-design/reviews.md). No approved deviations. Pin this checksum before the first edit and reopen design if a material semantic choice differs. Current repository HEAD is `bad9eeefb43f7f42fb95d583b11859e2f2ca9eb8` on `codex/learned-ontology-implementation`; current main merge base is `5716ba1143a124f98df4c9701f1420a4ee71b0f2`. This existing branch contains earlier work: later implementation must choose and record its actual branch/base without misattributing pre-existing diffs. No branch is created by planning.
+Approved design SHA-256: `22e29f90ab90fa9b67b489d8f293b4a9ecbe4e5bf1dad7c0d6d3f2a7697706ad`. Design-cohort approval is recorded in [design reviews](../shared-sqlite-design/reviews.md); the 2026-09-29 final-approval review of this design plus this plan returned **Changes required** ([report](../../reviews/durable-execution-and-solver-runtime/2026-09-29-final-approval.md)): design findings DREV-001..004 (task-lifecycle command kinds; merge/consolidate/proposal-union grammar; legacy layout inventory; snapshot-verification cost model) and plan-matrix findings DREV-005/006 (sidecar transport-security family; consumer and key-lifecycle families), plus P3 follow-ups DREV-007..009. Remediate before implementation starts. No approved deviations. Pin this checksum before the first edit and reopen design if a material semantic choice differs.
+
+Implementation branch: `codex/durable-memory-release`, created from main `e6880a46` (merge PR #123, which contains planning HEAD `bad9eeefb43f7f42fb95d583b11859e2f2ca9eb8`); the release-prep artifacts are committed at `ca845fc1`. The former `codex/learned-ontology-implementation` branch is merged and deleted; no pre-existing diff remains unattributed on this branch.
 
 Source precedence follows AGENTS.md. Core spec/storage/event model and implementation rules govern the additive design. Learned ontology, scoped context, semantic ingestion and event registries retain their original authority; no migration may silently reinterpret them. Input and workflow hashes are recorded separately; installable schemas/registry/package member inventories are enumerated at storage readiness before changing them.
 
@@ -61,7 +63,7 @@ New installs initialize owner-pinned control/genesis. Existing roots enter owner
 
 ## Dirty Tree, Change Impact And Authority Chain
 
-Preserve `docs/design/hermes_conversation_memory_trial.md` (user change), current untracked approved design and prior assessment/design packets. This planning operation owns only this work directory; no production code/data or existing workflow changed. Before implementation, record a fresh status/diff/base, capture approved design in revision history, and reconcile unrelated branch work. [Identity/change ledger](identity-and-changes.md) owns planned files, authority descendants, gate impact and future live-diff updates.
+Preserve `docs/design/hermes_conversation_memory_trial.md` (uncommitted user change; do not commit or revert it). The design, this WorkPlan, the prior design/assessment packets and the release review are tracked on this branch at `ca845fc1`. Before implementation, record a fresh status/diff and reconcile any unrelated changes. [Identity/change ledger](identity-and-changes.md) owns planned files, authority descendants, gate impact and future live-diff updates.
 
 ## Validation, Toolchain And Known Gaps
 
@@ -77,6 +79,8 @@ Planning: default read-only mapper reused because prior Spark code-mapper attemp
 
 2026-09-29: planning requested; approved design checksum verified, repository/dirty-tree/toolchain baseline captured, live workflows inventoried, milestone and validation packets drafted. Mapper preflight completed; test-matrix consultation approved after two bounded planning corrections (public wrapper coverage and TypeScript gates), recorded in planning-review.md. Links, all18 requirements, eight milestone packets, baseline design SHA and live-workflow snapshot identities checked. Implementation remains proposed and unstarted.
 
+2026-09-29: ontology branch merged to main (PR #123) and deleted; this WorkPlan, the design and review artifacts moved to `codex/durable-memory-release` from main `e6880a46` (commit `ca845fc1`). Final-approval design review returned Changes required (DREV-001..006); remediation now precedes implementation. Design SHA unchanged.
+
 ## Next Action
 
-Begin storage-foundation readiness: establish the implementation revision/base and linked test-architecture work, then refresh the frozen root/authority inventory before the sole writer starts.
+Run the linked `$build-design` remediation for review findings DREV-001..004 (folding in DREV-007/009 companion edits) and apply the DREV-005/006 validation-matrix additions plus the DREV-008 editorial pass to this plan, then request a delta review of the new frozen design baseline before storage-foundation readiness.

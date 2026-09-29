@@ -48,6 +48,7 @@ Baseline frozen 2026-09-29. Coordinator evidence gathering complete: (1) indepen
 
 - 2026-09-29: Skill loaded; targets read; baseline frozen (design `22e29f90…`, plan `d30c0d58…`, HEAD `bad9eeef`, dirty tree = user's hermes trial edit + untracked design/work packets). Requirement reconstruction and repository-reality verification completed via read-only delegates; results recorded under Current State. Reviewers dispatched. Next action: reconcile reviewer findings.
 - 2026-09-29: Three independent passes returned; coordinator validated every load-bearing claim directly; report written, validated, outcome recorded (Changes required). Review complete per the completion contract: frozen baseline, independent requirement reconstruction, repository reality check, three passes, reconciled classifications, validated immutable report, recorded outcome. Hand-off to build-design remediation is Phase 10 disposition, recorded under Next Action.
+- 2026-09-29: Post-review relocation: the ontology branch was merged to main (PR #123) and deleted; the reviewed artifacts (design SHA `22e29f90`, plan, report) moved unchanged to branch `codex/durable-memory-release` from main `e6880a46` (commit `ca845fc1`). Historical baselines in this plan (design SHA, review-time HEAD `bad9eeef`) remain accurate as recorded; the report is immutable.
 
 ## Outcome And Retrospective
 

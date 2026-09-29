@@ -8,7 +8,7 @@
     "design-identity-inventory.md": "4447deb1f6cffb4bef21891129268021e3a2b2f998f83ee526cf2ff455c7e38e",
     "gates.md": "59b3207a706cd74dcb6c22ba48ff2d8c912c03d9e5ec6a74631955c8a2a702dd",
     "identity-and-changes.md": "75e812bfa6a6bc918931179815cee4ad795ef8bf8372b387df0d93c54f162914",
-    "implementation.plan.md": "d30c0d585fc3767d63f21f236fbad5ff8d2ee2e38c5f849c7c62fce01ef8d943",
+    "implementation.plan.md": "b2c30cbd893b2f47b579aca9dc020d981ea74cc1ab6a1fa9494458f779e27fdb",
     "milestones/additional-harnesses.plan.md": "5411ddaf0995095ff95c07f8d2eb76f5e57ce0c4bd88840a8ed09f5c947c71a4",
     "milestones/harness-state.plan.md": "669b96febc722ecdb686e712bdbf9816ea58affbc4b6fef603db325ef17531e7",
     "milestones/legacy-migration.plan.md": "803d650946c18c2253d38d751d10d5b6e7a7b29fa0ea4e253e8474039f0065c8",
@@ -19,7 +19,7 @@
     "milestones/storage-foundation.plan.md": "1c915865267afc7fe6af6e4c2a6d5b2c4b5a482bfa54997e036722497af3843c",
     "planning-review.md": "674e032ea1799fdaa6db68334b65cdcd7f010a2f9960efcbf8be6e4fefe1e9cd",
     "production_entrypoint_bindings.md": "950830be062ab98b399c6334d85931b25c721c65385ea5f55c19c003e3cbf006",
-    "resume.md": "18bb9d94e7f30a0a43c25f593c1a93c824fc99e93b2038bfe9888b852538ca83",
+    "resume.md": "6315331e04b55456b55accc24e93f77b3554c59974f4752edb8d9c1c4be3bb07",
     "validation.md": "85d1823a041e40c143040820f517eb8b925ffb8724ec26de81056663c2e21d9b",
     "workflow-inventory.json": "a83fbffe2a684a18822f183788a3c8093c171576ee4cac4b30e1c8eafeab8bc3"
   }
