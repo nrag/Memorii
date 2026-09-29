@@ -106,6 +106,10 @@ _MATERIALIZATION_CATALOGS = (
 _CATALOG_SEED_DOMAIN = b"memorii.materialization-catalog.v1\x00"
 
 
+def _placeholders(values: Sequence[str]) -> str:
+    return ", ".join("?" for _ in values)
+
+
 class PartitionWriteTransaction:
     """One manual-commit partition transaction owned by its coordinator."""
 
@@ -304,30 +308,36 @@ class PartitionDataRepository:
         self,
         connection: sqlite3.Connection,
         *,
-        status: str | None = None,
+        statuses: Sequence[str] | None = None,
         domains: Sequence[str] | None = None,
-        source_kind: str | None = None,
+        source_kinds: Sequence[str] | None = None,
+        limit: int | None = None,
+        offset: int = 0,
     ) -> Sequence[sqlite3.Row]:
         clauses: list[str] = []
         parameters: list[Any] = []
-        if status is not None:
-            clauses.append("status = ?")
-            parameters.append(status)
+        if statuses is not None:
+            if not statuses:
+                return ()
+            clauses.append(f"status IN ({_placeholders(statuses)})")
+            parameters.extend(sorted(statuses))
         if domains is not None:
             if not domains:
                 return ()
-            placeholders = ", ".join("?" for _ in domains)
-            clauses.append(f"domain IN ({placeholders})")
+            clauses.append(f"domain IN ({_placeholders(domains)})")
             parameters.extend(sorted(domains))
-        if source_kind is not None:
-            clauses.append("source_kind = ?")
-            parameters.append(source_kind)
+        if source_kinds is not None:
+            if not source_kinds:
+                return ()
+            clauses.append(f"source_kind IN ({_placeholders(source_kinds)})")
+            parameters.extend(sorted(source_kinds))
         where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        limit_clause = "" if limit is None else f" LIMIT {int(limit) + int(offset)}"
         return connection.execute(
             "SELECT memory_id, record_json FROM memory_current_records"
-            f"{where} ORDER BY insertion_order",
+            f"{where} ORDER BY insertion_order{limit_clause}",
             parameters,
-        ).fetchall()
+        ).fetchall()[offset:]
 
     def read_current_record_row(
         self,

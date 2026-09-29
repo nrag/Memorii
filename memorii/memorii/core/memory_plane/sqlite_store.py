@@ -14,12 +14,19 @@ import hashlib
 import os
 import sqlite3
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from secrets import token_bytes
 
 from memorii.core.memory_plane.file_lock import locked_file
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
+from memorii.core.memory_plane.query import (
+    DEFAULT_CURSOR_LIFETIME,
+    QUERY_CURSOR_PURPOSE,
+    MemoryPlanePage,
+    MemoryPlaneQuery,
+    QueryCursorCodec,
+)
 from memorii.core.memory_plane.store import (
     SEMANTIC_CHECKPOINT_SECRET_PURPOSE,
     CheckpointSignatureAuthority,
@@ -293,11 +300,81 @@ class SqliteMemoryPlaneStore:
             self._ensure_validated_chain(connection)
             rows = self._partition.read_current_record_rows(
                 connection,
-                status=None if status is None else status.value,
+                statuses=None if status is None else [status.value],
                 domains=domain_values,
-                source_kind=source_kind,
+                source_kinds=None if source_kind is None else [source_kind],
             )
             return [_clone_record(_decode_record(row["record_json"])) for row in rows]
+
+    def query_records(
+        self,
+        query: MemoryPlaneQuery,
+        *,
+        cursor: str | None = None,
+        now: Callable[[], datetime] | None = None,
+        cursor_lifetime: timedelta = DEFAULT_CURSOR_LIFETIME,
+    ) -> MemoryPlanePage:
+        """Serve one bounded typed query page with an authenticated cursor."""
+        clock = now or (lambda: datetime.now(UTC))
+        codec = QueryCursorCodec(
+            self.load_or_create_protected_secret(
+                purpose=QUERY_CURSOR_PURPOSE, length=32
+            )
+        )
+        with self._partition.transaction(write=False) as connection:
+            self._ensure_validated_chain(connection)
+            write_revision, data_revision = self._partition.read_revision_state(
+                connection
+            )
+            offset = 0
+            if cursor is not None:
+                offset = codec.decode(
+                    cursor,
+                    query_digest=query.digest(),
+                    write_revision=write_revision,
+                    data_revision=data_revision,
+                    now=clock(),
+                )
+            if query.kind == "record_lookup":
+                assert query.memory_id is not None
+                row = self._partition.read_current_record_row(
+                    connection, query.memory_id
+                )
+                record = None if row is None else _decode_record(row["record_json"])
+                if record is not None and not _matches_query(record, query):
+                    record = None
+                return MemoryPlanePage(
+                    records=() if record is None else (_clone_record(record),),
+                    next_cursor=None,
+                    truncated=False,
+                )
+            rows = self._partition.read_current_record_rows(
+                connection,
+                statuses=[status.value for status in query.statuses]
+                or None,
+                domains=[domain.value for domain in query.domains] or None,
+                source_kinds=list(query.source_kinds) or None,
+                limit=query.page_size + 1,
+                offset=offset,
+            )
+            truncated = len(rows) > query.page_size
+            records = tuple(
+                _clone_record(_decode_record(row["record_json"]))
+                for row in rows[: query.page_size]
+            )
+        next_cursor = None
+        if truncated:
+            expires_at = clock() + cursor_lifetime
+            next_cursor = codec.encode(
+                query_digest=query.digest(),
+                write_revision=write_revision,
+                data_revision=data_revision,
+                offset=offset + query.page_size,
+                expires_at=expires_at,
+            )
+        return MemoryPlanePage(
+            records=records, next_cursor=next_cursor, truncated=truncated
+        )
 
     def _validated_state(
         self, connection: sqlite3.Connection
@@ -385,6 +462,14 @@ class SqliteMemoryPlaneStore:
         )
         self._validated_chain_key = (batch.revision, batch.data_revision)
         return batch.data_revision
+
+
+def _matches_query(record: CanonicalMemoryRecord, query: MemoryPlaneQuery) -> bool:
+    if query.statuses and record.status not in query.statuses:
+        return False
+    if query.domains and record.domain not in query.domains:
+        return False
+    return not (query.source_kinds and record.source_kind not in query.source_kinds)
 
 
 def _decode_record(record_json: str) -> CanonicalMemoryRecord:
