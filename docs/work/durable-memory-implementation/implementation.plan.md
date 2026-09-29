@@ -92,4 +92,4 @@ Planning: default read-only mapper reused because prior Spark code-mapper attemp
 
 ## Next Action
 
-Begin storage-foundation readiness: activate the linked test-architecture WorkPlan via design-tests and refresh the frozen root/authority inventory, then the sole writer starts the first slice against the remediated design baseline.
+Storage-foundation sub-slice 2: implement the closed persistence contracts (publication position/tuple, intent, materialization manifest, partition revision vector, control-state records) and the owner-only control database with init/genesis and the signed publication protocol per the design's "Closed publication and control authority" section, with subprocess crash-cut tests at every intent/data/finalization boundary. Factory wiring (FilesystemStorageBundle/provider factory onto the selected partition, no-fallback managed roots) follows as sub-slice 3.
