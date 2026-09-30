@@ -3,11 +3,11 @@
 - Parent WorkPlan: [implementation index](../implementation.plan.md)
 - Work type: implementation milestone packet
 - Delivery fidelity: Level 3, bounded slice only
-- Status: active (sub-slices 1-4 landed: envelope/service, Hermes ports, spool consumer, loopback sidecar; Python client, consume CLI, TS SDK, six model tools, milestone review remain)
+- Status: active (sub-slices 1-5 + Python client landed, review round 1 remediated 56f6e37f; consume CLI, generated schemas, six model tools, TS SDK remain)
 - Requirements: DUR-05,06,07,13; regression DUR-01,04
 - Dependencies: runtime-recovery and legacy-migration
 - Baseline revision: bad9eeefb43f7f42fb95d583b11859e2f2ca9eb8 (planning snapshot)
-- Implementation base: 2c8d0bee; current head 2ce70b84
+- Implementation base: 2c8d0bee; current head 56f6e37f
 
 ## Observable Acceptance
 
@@ -62,3 +62,8 @@ Remaining in this packet: Python client over the sidecar; `memorii consume` CLI 
 Additional concrete wrapper owners: integrations/authenticated_source.py::build_authenticated_source_runtime and integrations/hermes_provider.py::HermesMemoryProvider. Cover service-injection, memory-plane and storage-root branches with verified managed selection, outer callbacks, restart receipts and missing/wrong selector/control denial. Explicit diagnostic injections remain nonmanaged; no implicit fallback.
 
 TypeScript SDK: proposed sdk/typescript package with pinned Node/npm/lockfile and generated-contract owner. Before code choose supported runtime/package manager and record it; execute every exact planned npm command in gates.md once manifest/scripts exist, including clean out-of-checkout installed-client smoke. Python-only success cannot close the client requirement.
+
+
+## Milestone review round 1 + remediation (2026-09-29)
+
+Combined cohort on candidate ff4678d3: foundations sound (denial-before-lookup, digest self-consistency, closed grammars, loopback posture, consumer intake durability all verified); no P1. Four P2s confirmed and remediated (216fd06c..56f6e37f): token budget + overflow degrade (render_bounded: 2000-token approx-char/4 budget, minimal bounded reconcile_required summary with paging marker — never falsely complete), omission recorded for every collection truncation, single-snapshot envelope assembly (one partition read transaction via connection-scoped helpers), durable dead-letter path (atomic fsync'd rewrite/append; internal reads no longer re-acquire held locks — a self-deadlock the tests caught), aware-UTC binding grants, URL-parsed client loopback guard with robust error mapping, history-view pass-through noted, tool summary distinguishing refusal from unbound. Recorded follow-ups (C5-C12): paging-cursor contract (must be P2 before packet closes), credential provisioning with owner-only files + grant-epoch machinery, typed pending-action records vs bare ids, recommendation assumption/expected-observation refs, suspended branches, Host-header hardening, subprocess consumer redelivery journey, concurrency family, sidecar body-size cap, credential-mode tests on both OSes (Level 3 gate), TS SDK external prerequisite.
