@@ -3,11 +3,11 @@
 - Parent WorkPlan: [implementation index](../implementation.plan.md)
 - Work type: implementation milestone packet
 - Delivery fidelity: Level 3, bounded slice only
-- Status: proposed
+- Status: active (sub-slice 1 landed: contracts + runtime tables + repository + published changes + fresh-process DUR-01 journey; event profile, attempt machine, outbox, checkpoints, resume API remain)
 - Requirements: DUR-01,02,03,04,05,07; regression DUR-15,16
 - Dependencies: storage-foundation; semantic-ontology parity baseline
 - Baseline revision: bad9eeefb43f7f42fb95d583b11859e2f2ca9eb8 (planning snapshot)
-- Implementation base/head: unset; record before edits and at closure
+- Implementation base: ffe26367; sub-slice head 8f040c2f
 
 ## Observable Acceptance
 
@@ -51,4 +51,6 @@ No host automatically executes a restored recommendation; no semantic promotion 
 
 ## Progress, Review And Closure
 
-Not started. No production/test edits, validation execution or implementation review exists for this packet. No implementation base/head or approval is claimed. The index owns the single global next action.
+Sub-slice 1 (2026-09-29, base ffe26367, commit 8f040c2f): memorii/core/persistence/runtime_contracts.py — closed records (TaskRecord/SolverRunRecord/SolverJustificationRecord/RuntimeOverlayVersion/ActionAttemptRecord/RuntimeCommandReceipt), the 16-kind solver node content union validated at the boundary, the complete 11-kind command union (task lifecycle with completion evidence; four-member proposal union incl. justification-bound belief update and gate-checked merge), all extra=forbid. Partition: eleven runtime catalogs + runtime revision state, manifest-covered with full-row folds; typed upsert/read APIs. RuntimeStateRepository view; publish_runtime_change (verified-state anchor, runtime-head batch position, memory heads unchanged, intent-before-commit, exact-old/new recovery, read_only gate). Tests: tests/unit/core/test_runtime_state_repository.py (6) and tests/integration/test_runtime_process_recovery.py (2) including the packet's observable acceptance: fresh-process restore of three hypotheses/observation/overlay/justification/dispatched action with verified state and no rerun. Evidence: 37-test battery green; ruff/pyright/identity gates pass.
+
+Remaining in this packet: RuntimeEventBatch profile + reducers/replay + independent reference reducer; RuntimeOperationAttempt machine + outbox; the persistent versioned API (RuntimeCommandRequest dispatch, receipts, resume_task envelope); checkpoints with Ed25519 authority; staleness/revalidation and action reconciliation (DUR-04); legacy bare-ID API restriction; then the milestone review cohort.
