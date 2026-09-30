@@ -104,7 +104,7 @@ New-surface unit suites (harness contract 12, credentials 3, consumer 5, operato
 
 ## Next Action (updated 2026-09-30)
 
-Owner guidance received 2026-09-30: the pinning approach for Node/npm is approved (exact versions still to be named — owner framed it as min/max supported-dependency guarantees); CI homes for the integration suites were requested and are now LANDED (d5eed90d: two enforced pr-gates jobs); the integration "deadlock" was investigated on request and reclassified as pre-existing codec cost (see testing.plan.md 2026-09-30 entry — fix path measured and recorded for the semantic-ingestion owner). Remaining sequence: owner names Node/npm versions -> TypeScript SDK; operator backup/forget/retention/doctor; per-packet closing reviews; final whole-branch review. OpenClaw/Pi host installs remain external prerequisites for certification journeys.
+Owner guidance 2026-09-30 (two rounds): (1) pinning approach approved with the policy CURRENT MINUS TWO supported majors — i.e. Node 24/22 with Node 26 current (local toolchain v26.7.0/npm 11.19.0), engines range >=22, out-of-support UX defined: install-time engines check with a plain-language actionable error (state the detected version, the supported range, and the fix), runtime unsupported_version error from the sidecar/SDK contract, never silent degradation; (2) runtime certification for LangGraph/AutoGen/OpenAI Agents REQUIRED — LANDED eea7147a (pinned real-framework journeys + enforced CI job; AG2 certifies the AutoGen contract). Remaining sequence: TypeScript SDK scaffold under the recorded range; operator backup/forget/retention/doctor; per-packet closing reviews; final whole-branch review. OpenClaw/Pi host installs remain external prerequisites.
 
 ## Superseded next action
 
