@@ -3,11 +3,11 @@
 - Parent WorkPlan: [implementation index](../implementation.plan.md)
 - Work type: implementation milestone packet
 - Delivery fidelity: Level 3, bounded slice only
-- Status: proposed
+- Status: active (sub-slice 1 landed: envelope + renderer + authorized read service; sidecar, spool consumer, SDK, Hermes binding remain)
 - Requirements: DUR-05,06,07,13; regression DUR-01,04
 - Dependencies: runtime-recovery and legacy-migration
 - Baseline revision: bad9eeefb43f7f42fb95d583b11859e2f2ca9eb8 (planning snapshot)
-- Implementation base/head: unset; record before edits and at closure
+- Implementation base: 2c8d0bee; sub-slice head 96dcb409
 
 ## Observable Acceptance
 
@@ -51,7 +51,9 @@ No OpenAI implementation; other required frameworks receive contract fixtures la
 
 ## Progress, Review And Closure
 
-Not started. No production/test edits, validation execution or implementation review exists for this packet. No implementation base/head or approval is claimed. The index owns the single global next action.
+Sub-slice 1 (2026-09-29, base 2c8d0bee, commit 96dcb409): memorii/core/harness_state/{__init__,envelope,service}.py — closed HarnessStateEnvelope (bounded budgets 32/16/64, exclusive candidate/committed labels, discriminated non-executable recommendations, explicit omissions, domain-separated digest via one shared build_envelope factory validated at parse), deterministic HarnessTextRenderer, HarnessStateService over the verified runtime partition with the finite revocable RuntimeReadGrant (denial before lookup — no task-existence disclosure; expired/out-of-scope deny; unsupported views fail closed; frontier truncation recorded as omission). Tests: tests/unit/core/test_harness_state_contract.py (6). Evidence: gates green.
+
+Remaining in this packet: Hermes runtime ports (envelope into prefetch/tools); loopback sidecar (transport posture: loopback bind, browser-origin rejection, bearer credential-to-grant mapping, remote refusal) + generated HTTP schemas; Python client; RuntimeEventConsumer + `memorii consume` local spool; TypeScript SDK (pin toolchain first); six memorii_* model tools; then the milestone review cohort.
 
 Additional concrete wrapper owners: integrations/authenticated_source.py::build_authenticated_source_runtime and integrations/hermes_provider.py::HermesMemoryProvider. Cover service-injection, memory-plane and storage-root branches with verified managed selection, outer callbacks, restart receipts and missing/wrong selector/control denial. Explicit diagnostic injections remain nonmanaged; no implicit fallback.
 
