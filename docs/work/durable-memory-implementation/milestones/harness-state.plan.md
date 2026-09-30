@@ -3,11 +3,11 @@
 - Parent WorkPlan: [implementation index](../implementation.plan.md)
 - Work type: implementation milestone packet
 - Delivery fidelity: Level 3, bounded slice only
-- Status: active (sub-slices 1-5 + Python client landed, review round 1 remediated 56f6e37f; consume CLI, generated schemas, six model tools, TS SDK remain)
+- Status: active (sub-slices 1-6 landed incl. six model tools 4feb684c; consume CLI, generated schemas, paging cursor, credential provisioning, TS SDK remain)
 - Requirements: DUR-05,06,07,13; regression DUR-01,04
 - Dependencies: runtime-recovery and legacy-migration
 - Baseline revision: bad9eeefb43f7f42fb95d583b11859e2f2ca9eb8 (planning snapshot)
-- Implementation base: 2c8d0bee; current head 56f6e37f
+- Implementation base: 2c8d0bee; current head 4feb684c
 
 ## Observable Acceptance
 
@@ -57,7 +57,9 @@ Sub-slice 2 (2026-09-29, commit 1321714d): memorii/core/harness_state/binding.py
 
 Sub-slice 4 (2026-09-29, commit 2ce70b84): memorii/core/harness_state/sidecar.py — RuntimeSidecar (loopback-only bind via serve_loopback daemon thread; browser-origin rejection before any task-derived data; installation-issued bearer credentials mapped server-side to finite read grants; content-free unauthenticated responses; closed error envelope with design error codes; content-free logging) + tests/integration/test_runtime_sidecar.py (6 journeys incl. real loopback HTTP round trip).
 
-Remaining in this packet: Python client over the sidecar; `memorii consume` CLI wiring the spool to the command service; generated HTTP/OpenAPI schemas; TypeScript SDK (pin toolchain first — external prerequisite); six memorii_* model tools as thin wrappers; then the milestone review cohort.
+Sub-slices 5-6 (2026-09-29, commits 500339f3, 4feb684c): RuntimeStateClient (typed Python client over the sidecar with URL-parsed loopback guard, closed error mapping, credential-free URLs/logs) and RuntimeModelTools (closed six-tool registry; read tools serve durable views; unimplemented effect kinds state unavailable; denials carry no data; unknown names fail closed).
+
+Remaining in this packet: `memorii consume` CLI wiring the spool to the command service; generated HTTP/OpenAPI schemas; paging-cursor contract (P2 before closure); credential provisioning with owner-only files + grant epochs; TS SDK (external toolchain prerequisite); then the closing review round.
 
 Additional concrete wrapper owners: integrations/authenticated_source.py::build_authenticated_source_runtime and integrations/hermes_provider.py::HermesMemoryProvider. Cover service-injection, memory-plane and storage-root branches with verified managed selection, outer callbacks, restart receipts and missing/wrong selector/control denial. Explicit diagnostic injections remain nonmanaged; no implicit fallback.
 
