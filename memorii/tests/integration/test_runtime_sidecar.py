@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import urllib.request
+
+import pytest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -154,6 +156,28 @@ def test_loopback_http_serves_the_same_protocol(tmp_path: Path) -> None:
             assert response.status == 200
             envelope = json.loads(response.read())
             assert envelope["task_id"] == task_id
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_python_client_speaks_the_same_protocol(tmp_path: Path) -> None:
+    from memorii.core.harness_state.client import (
+        RuntimeClientError,
+        RuntimeStateClient,
+    )
+
+    sidecar, task_id = _sidecar(tmp_path)
+    url, server = serve_loopback(sidecar)
+    try:
+        client = RuntimeStateClient(url, credential="credential:one")
+        envelope = client.get_state(task_id)
+        assert envelope.task_id == task_id
+        denied_client = RuntimeStateClient(url, credential="credential:wrong")
+        with pytest.raises(RuntimeClientError, match="401 unauthenticated"):
+            denied_client.get_state(task_id)
+        with pytest.raises(ValueError, match="loopback"):
+            RuntimeStateClient("http://0.0.0.1:8080", credential="x")
     finally:
         server.shutdown()
         server.server_close()
