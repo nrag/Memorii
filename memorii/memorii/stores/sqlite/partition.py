@@ -173,6 +173,86 @@ _SCHEMA_STATEMENTS = (
         record_digest TEXT NOT NULL
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS runtime_revision_state (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        runtime_revision INTEGER NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS runtime_tasks (
+        task_id TEXT PRIMARY KEY,
+        record_json TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS runtime_execution_nodes (
+        task_id TEXT NOT NULL,
+        node_id TEXT NOT NULL,
+        record_json TEXT NOT NULL,
+        PRIMARY KEY (task_id, node_id)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS runtime_execution_edges (
+        task_id TEXT NOT NULL,
+        edge_id TEXT NOT NULL,
+        record_json TEXT NOT NULL,
+        PRIMARY KEY (task_id, edge_id)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS runtime_solver_runs (
+        solver_id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL,
+        record_json TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS runtime_solver_nodes (
+        solver_id TEXT NOT NULL,
+        node_id TEXT NOT NULL,
+        record_json TEXT NOT NULL,
+        PRIMARY KEY (solver_id, node_id)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS runtime_solver_edges (
+        solver_id TEXT NOT NULL,
+        edge_id TEXT NOT NULL,
+        record_json TEXT NOT NULL,
+        PRIMARY KEY (solver_id, edge_id)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS runtime_overlay_versions (
+        version_id TEXT PRIMARY KEY,
+        solver_id TEXT NOT NULL,
+        record_json TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS runtime_justifications (
+        justification_id TEXT PRIMARY KEY,
+        solver_id TEXT NOT NULL,
+        record_json TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS runtime_action_attempts (
+        action_id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL,
+        record_json TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS runtime_command_receipts (
+        client_namespace TEXT NOT NULL,
+        operation_id TEXT NOT NULL,
+        record_json TEXT NOT NULL,
+        PRIMARY KEY (client_namespace, operation_id)
+    )
+    """,
 )
 
 # Authoritative materialized catalogs covered by the signed manifest. The
@@ -213,12 +293,46 @@ _MATERIALIZATION_CATALOGS = (
     ),
     ("ontology_activation_attempts", "attempt_id", "status || ':' || record_digest"),
     ("ontology_replay_receipts", "operation_id", "record_digest"),
+    ("runtime_tasks", "task_id", "record_json"),
+    (
+        "runtime_execution_nodes",
+        "task_id || ':' || node_id",
+        "record_json",
+    ),
+    ("runtime_execution_edges", "task_id || ':' || edge_id", "record_json"),
+    ("runtime_solver_runs", "solver_id", "record_json"),
+    ("runtime_solver_nodes", "solver_id || ':' || node_id", "record_json"),
+    ("runtime_solver_edges", "solver_id || ':' || edge_id", "record_json"),
+    ("runtime_overlay_versions", "version_id", "record_json"),
+    ("runtime_justifications", "justification_id", "record_json"),
+    ("runtime_action_attempts", "action_id", "record_json"),
+    (
+        "runtime_command_receipts",
+        "client_namespace || ':' || operation_id",
+        "record_json",
+    ),
 )
 _CATALOG_SEED_DOMAIN = b"memorii.materialization-catalog.v1\x00"
 
 
 def _placeholders(values: Sequence[str]) -> str:
     return ", ".join("?" for _ in values)
+
+
+_RUNTIME_UPSERT_TABLES = frozenset(
+    {
+        "runtime_tasks",
+        "runtime_execution_nodes",
+        "runtime_execution_edges",
+        "runtime_solver_runs",
+        "runtime_solver_nodes",
+        "runtime_solver_edges",
+        "runtime_overlay_versions",
+        "runtime_justifications",
+        "runtime_action_attempts",
+        "runtime_command_receipts",
+    }
+)
 
 
 class PartitionWriteTransaction:
@@ -612,6 +726,80 @@ class PartitionDataRepository:
             raise sqlite3.DatabaseError("memory revision state is missing")
         return int(row["write_revision"]), int(row["data_revision"])
 
+    def read_runtime_revision(self, connection: sqlite3.Connection) -> int:
+        row = connection.execute(
+            "SELECT runtime_revision FROM runtime_revision_state WHERE id = 1"
+        ).fetchone()
+        if row is None:
+            raise sqlite3.DatabaseError("runtime revision state is missing")
+        return int(row["runtime_revision"])
+
+    def bump_runtime_revision(self, connection: sqlite3.Connection) -> int:
+        current = self.read_runtime_revision(connection)
+        connection.execute(
+            "UPDATE runtime_revision_state SET runtime_revision = ? WHERE id = 1",
+            (current + 1,),
+        )
+        return current + 1
+
+    def upsert_runtime_row(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        table: str,
+        keys: tuple[str, ...],
+        values: tuple[object, ...],
+        record_json: str,
+        index_columns: tuple[str, ...] = (),
+        index_values: tuple[object, ...] = (),
+    ) -> None:
+        """Upsert one typed runtime row.
+
+        ``keys``/``values`` name the conflict-target identity; the optional
+        index columns participate in the INSERT (filtering support) but are
+        never updated on conflict — the record JSON stays authoritative.
+        """
+        if table not in _RUNTIME_UPSERT_TABLES:
+            raise sqlite3.DatabaseError(f"unknown runtime catalog: {table}")
+        columns = ", ".join([*keys, *index_columns, "record_json"])
+        placeholders = ", ".join(
+            "?" for _ in (*keys, *index_columns, "record_json")
+        )
+        connection.execute(
+            f"INSERT INTO {table} ({columns}) VALUES ({placeholders})"
+            f" ON CONFLICT({', '.join(keys)}) DO UPDATE SET"
+            " record_json = excluded.record_json",
+            (*values, *index_values, record_json),
+        )
+
+    def read_runtime_rows(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        table: str,
+        match: tuple[str, object, ...] = (),
+    ) -> Sequence[sqlite3.Row]:
+        if table not in _RUNTIME_UPSERT_TABLES:
+            raise sqlite3.DatabaseError(f"unknown runtime catalog: {table}")
+        clauses = ""
+        parameters: list[object] = []
+        if match:
+            clauses = " WHERE " + " AND ".join(f"{key} = ?" for key, _ in match)
+            parameters = [value for _, value in match]
+        return connection.execute(
+            f"SELECT record_json FROM {table}{clauses}", parameters
+        ).fetchall()
+
+    def read_runtime_row(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        table: str,
+        match: tuple[str, object, ...],
+    ) -> sqlite3.Row | None:
+        rows = self.read_runtime_rows(connection, table=table, match=match)
+        return rows[0] if rows else None
+
     def read_batch_rows(self, connection: sqlite3.Connection) -> Sequence[sqlite3.Row]:
         return connection.execute(
             "SELECT revision, data_revision, checksum, batch_json FROM memory_batches ORDER BY revision"
@@ -732,6 +920,10 @@ class PartitionDataRepository:
             connection.execute(
                 "INSERT INTO memory_revision_state (id, write_revision, data_revision)"
                 " VALUES (1, 0, 0)"
+            )
+            connection.execute(
+                "INSERT INTO runtime_revision_state (id, runtime_revision)"
+                " VALUES (1, 0)"
             )
             connection.execute(
                 "INSERT INTO partition_schema (key, value) VALUES ('schema_version', ?)",
