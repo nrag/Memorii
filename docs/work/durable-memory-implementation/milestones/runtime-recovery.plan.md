@@ -3,11 +3,11 @@
 - Parent WorkPlan: [implementation index](../implementation.plan.md)
 - Work type: implementation milestone packet
 - Delivery fidelity: Level 3, bounded slice only
-- Status: under-review (sub-slices 1-4 landed; milestone review cohort running)
+- Status: active (sub-slices 1-4 landed + review round 1 remediated ff45a6c0; recorded follow-ups below)
 - Requirements: DUR-01,02,03,04,05,07; regression DUR-15,16
 - Dependencies: storage-foundation; semantic-ontology parity baseline
 - Baseline revision: bad9eeefb43f7f42fb95d583b11859e2f2ca9eb8 (planning snapshot)
-- Implementation base: ffe26367; current head e6a51e7f
+- Implementation base: ffe26367; current head ff45a6c0
 
 ## Observable Acceptance
 
@@ -60,3 +60,8 @@ Sub-slice 3 (2026-09-29, commit c59ffddd): memorii/core/persistence/runtime_api.
 Sub-slice 4 (2026-09-29, commit e6a51e7f): memorii/core/persistence/runtime_checkpoint.py — RuntimeCheckpoint (revision-bound canonical manifest with counts + member digest, domain-separated signature purpose memorii.runtime-checkpoint.v1 via an injected signer; counts validated at parse; creation requires a committed revision) and build_resume_envelope (one consistent view; dispatched/outcome-unknown actions pend under reconcile_required without rerun; future-revision checkpoints refuse; missing tasks not_found). Tests: tests/integration/test_runtime_resume_checkpoint.py (6) incl. cross-process pause/resume.
 
 Remaining in this packet: staleness revalidation of time-dependent assumption content inside checkpoint members (DUR-04 — the envelope plumbing is in place, the temporal walk is a recorded follow-up as assumption content lands in checkpoint members); runtime event-batch publication integration; legacy bare-ID API restriction; the milestone review cohort (in flight).
+
+
+## Milestone review round 1 + remediation (2026-09-29)
+
+Combined cohort on candidate b2eca501: foundations approved (publication crash-cut protocol traced cut-by-cut and sound; closed grammars verified against the design's tables cell-for-cell; reference reducer genuinely independent; journeys real). One P1 and five P2s confirmed and remediated in ff45a6c0: unimplemented command kinds committing false-success receipts now fail closed (P1); receipt revisions pin the runtime head; dispatch idempotency and the dispatch reservation moved inside the publication fence with a unique reservation index; attempt stages gained terminal values with fenced takeover landing in needs_reconciliation and the attempt catalog keyed on (receipt_id, ordinal). Recorded follow-ups (unchanged blocking posture, owned by later sub-slices/packets): command payload carriers (host_binding, source-admission receipt, action identity/evidence fields, start acceptance evidence) before the effects for observation/proposal/dispatch/result land; read views (RuntimeStateRequest) and merge duplication gates + consolidation triggers + pre-pause checkpoint; checkpoint manifest binding of full member digests, repository identity, schema/policy digests and trust-lifecycle verification; single-transaction snapshot assembly for checkpoint/resume; replay binding persistence for stale-skipped events; event-label/EventType schema metadata when batches publish; attempt/outbox/action transition matrix tests and a crash cut through publish_runtime_change; publication-flow deduplication onto one shared candidate owner. DUR-01 (state restore journey), DUR-02 (atomic publication), DUR-03 (idempotent dispatch, fenced attempts, reservations) are slice-evidenced; DUR-04 temporal revalidation and DUR-05 scoped runtime authority remain staged.
