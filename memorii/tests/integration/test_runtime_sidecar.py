@@ -180,3 +180,56 @@ def test_python_client_speaks_the_same_protocol(tmp_path: Path) -> None:
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_credential_store_backed_sidecar_serves_and_denies(tmp_path: Path) -> None:
+    from memorii.core.harness_state.credentials import SidecarCredentialStore
+
+    administration = StorageAdministrationService(tmp_path / "installation")
+    administration.initialize()
+    repository = RuntimeStateRepository(administration.partition())
+    store = SidecarCredentialStore(tmp_path / "installation" / "control" / "credentials")
+    record, secret = store.issue("principal:a")
+    task_id = "task:cred"
+
+    def seed(connection, repo) -> None:
+        repo.apply_task(
+            connection,
+            TaskRecord(
+                task_id=task_id,
+                principal=record.principal,
+                goal="Credential journey",
+                created_at=_NOW,
+                root_execution_node_id="exec:root",
+            ),
+        )
+
+    publish_runtime_change(administration, seed, operation_binding="cred_seed")
+
+    def grant_for(principal: str) -> RuntimeReadGrant:
+        return RuntimeReadGrant(
+            grant_id=f"sidecar:{principal}",
+            principal=principal,
+            allowed_task_ids=(task_id,),
+            epoch=1,
+            expires_at=datetime.now(UTC) + timedelta(minutes=5),
+        )
+
+    sidecar = RuntimeSidecar(
+        repository, credentials=store, grant_factory=grant_for
+    )
+    status, payload = sidecar.handle_state_request(
+        bearer_token=secret,
+        origin=None,
+        body=_body(task_id),
+        host="127.0.0.1",
+    )
+    assert status == 200 and json.loads(payload)["task_id"] == task_id
+    status, _payload = sidecar.handle_state_request(
+        bearer_token="mri_forged",
+        origin=None,
+        body=_body(task_id),
+        host="127.0.0.1",
+    )
+    assert status == 401
+    store.verify_permissions()

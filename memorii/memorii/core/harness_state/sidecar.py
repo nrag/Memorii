@@ -16,6 +16,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from memorii.core.harness_state.credentials import SidecarCredentialStore
 from memorii.core.harness_state.service import (
     HarnessStateError,
     HarnessStateService,
@@ -67,13 +68,18 @@ class RuntimeSidecar:
         self,
         repository: RuntimeStateRepository,
         *,
-        credentials: dict[str, str],
+        credentials: dict[str, str] | SidecarCredentialStore,
         grant_factory: Callable[[str], RuntimeReadGrant],
     ) -> None:
         self._repository = repository
         self._credentials = credentials
         self._grant_factory = grant_factory
         self._service = HarnessStateService(repository)
+
+    def _principal_for(self, secret: str) -> str | None:
+        if isinstance(self._credentials, SidecarCredentialStore):
+            return self._credentials.principal_for(secret)
+        return self._credentials.get(secret)
 
     def handle_state_request(
         self,
@@ -88,7 +94,7 @@ class RuntimeSidecar:
             return _error(403, "denied", "remote binding is disabled")
         if origin is not None:
             return _error(403, "denied", "browser-origin requests are rejected")
-        principal = self._credentials.get(bearer_token or "")
+        principal = self._principal_for(bearer_token or "")
         if principal is None:
             return _error(
                 401, "unauthenticated", None
