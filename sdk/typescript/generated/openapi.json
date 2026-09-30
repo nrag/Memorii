@@ -1,0 +1,516 @@
+{
+  "components": {
+    "schemas": {
+      "HarnessStateEnvelope": {
+        "$defs": {
+          "HarnessOutputBlock": {
+            "additionalProperties": false,
+            "description": "One bounded work item, frontier entry or evidence reference.",
+            "properties": {
+              "candidate": {
+                "default": false,
+                "title": "Candidate",
+                "type": "boolean"
+              },
+              "committed": {
+                "default": false,
+                "title": "Committed",
+                "type": "boolean"
+              },
+              "detail": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Detail"
+              },
+              "kind": {
+                "default": "work",
+                "enum": [
+                  "work",
+                  "frontier",
+                  "evidence",
+                  "blocker"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "label": {
+                "minLength": 1,
+                "title": "Label",
+                "type": "string"
+              }
+            },
+            "required": [
+              "label"
+            ],
+            "title": "HarnessOutputBlock",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Bounded host view; errors use a separate closed envelope.",
+        "properties": {
+          "blocked_work": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/HarnessOutputBlock"
+            },
+            "title": "Blocked Work",
+            "type": "array"
+          },
+          "candidate_hypotheses": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/HarnessOutputBlock"
+            },
+            "title": "Candidate Hypotheses",
+            "type": "array"
+          },
+          "checkpoint_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Checkpoint Ref"
+          },
+          "committed_hypotheses": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/HarnessOutputBlock"
+            },
+            "title": "Committed Hypotheses",
+            "type": "array"
+          },
+          "constraints": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Constraints",
+            "type": "array"
+          },
+          "continuation_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Continuation Cursor"
+          },
+          "current_execution_node": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Current Execution Node"
+          },
+          "execution_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Execution Status"
+          },
+          "freshness_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Freshness Note"
+          },
+          "frontier": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/HarnessOutputBlock"
+            },
+            "title": "Frontier",
+            "type": "array"
+          },
+          "goal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Goal"
+          },
+          "omissions": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Omissions",
+            "type": "array"
+          },
+          "pending_actions": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Pending Actions",
+            "type": "array"
+          },
+          "protocol_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Protocol Version",
+            "type": "integer"
+          },
+          "ready_work": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/HarnessOutputBlock"
+            },
+            "title": "Ready Work",
+            "type": "array"
+          },
+          "recommendation_evidence": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Recommendation Evidence",
+            "type": "array"
+          },
+          "recommendation_kind": {
+            "default": "none",
+            "enum": [
+              "test",
+              "inspect",
+              "ask",
+              "revalidate",
+              "reconcile",
+              "wait",
+              "none"
+            ],
+            "title": "Recommendation Kind",
+            "type": "string"
+          },
+          "recommendation_revision": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Recommendation Revision"
+          },
+          "recommendation_target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Recommendation Target"
+          },
+          "remaining_acceptance": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Remaining Acceptance",
+            "type": "array"
+          },
+          "reopenable_branches": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/HarnessOutputBlock"
+            },
+            "title": "Reopenable Branches",
+            "type": "array"
+          },
+          "revision": {
+            "minimum": 0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "selected_overlay_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Selected Overlay Id"
+          },
+          "solver_category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Solver Category"
+          },
+          "solver_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Solver Id"
+          },
+          "source_refs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Source Refs",
+            "type": "array"
+          },
+          "state_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "State Digest",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ready",
+              "revalidation_required",
+              "reconcile_required",
+              "pending",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "task_id": {
+            "minLength": 1,
+            "title": "Task Id",
+            "type": "string"
+          },
+          "unexplained_evidence": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/HarnessOutputBlock"
+            },
+            "title": "Unexplained Evidence",
+            "type": "array"
+          },
+          "unresolved_questions": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Unresolved Questions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "task_id",
+          "revision",
+          "status",
+          "state_digest"
+        ],
+        "title": "HarnessStateEnvelope",
+        "type": "object"
+      },
+      "SidecarError": {
+        "additionalProperties": false,
+        "description": "Closed error envelope; no task-derived data.",
+        "properties": {
+          "code": {
+            "enum": [
+              "unauthenticated",
+              "denied",
+              "not_found",
+              "unsupported_version",
+              "unsupported_configuration",
+              "invalid_request",
+              "conflict",
+              "stale_cursor",
+              "resource_exhausted",
+              "unavailable",
+              "integrity_error",
+              "needs_reconciliation"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Detail"
+          },
+          "retryable": {
+            "title": "Retryable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "code",
+          "retryable"
+        ],
+        "title": "SidecarError",
+        "type": "object"
+      },
+      "SidecarRequest": {
+        "additionalProperties": false,
+        "description": "Closed v1 state request body.",
+        "properties": {
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cursor"
+          },
+          "protocol_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Protocol Version",
+            "type": "integer"
+          },
+          "task_id": {
+            "minLength": 1,
+            "title": "Task Id",
+            "type": "string"
+          },
+          "view": {
+            "default": "summary",
+            "enum": [
+              "execution",
+              "solver",
+              "summary",
+              "history",
+              "neighborhood"
+            ],
+            "title": "View",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "title": "SidecarRequest",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "Loopback runtime sidecar: closed v1 state requests over the verified partition. Transport posture: loopback bind, browser-origin rejection, installation-issued bearer credentials.",
+    "title": "Memorii Runtime Sidecar",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/v1/runtime/state": {
+      "post": {
+        "operationId": "readRuntimeState",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SidecarRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HarnessStateEnvelope"
+                }
+              }
+            },
+            "description": "Authorized bounded envelope"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SidecarError"
+                }
+              }
+            },
+            "description": "Closed error envelope (no task-derived data)"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    }
+  },
+  "servers": [
+    {
+      "description": "loopback only",
+      "url": "http://127.0.0.1"
+    }
+  ]
+}

@@ -39,7 +39,20 @@ class SidecarRequest(BaseModel):
 class SidecarError(BaseModel):
     """Closed error envelope; no task-derived data."""
 
-    code: str
+    code: Literal[
+        "unauthenticated",
+        "denied",
+        "not_found",
+        "unsupported_version",
+        "unsupported_configuration",
+        "invalid_request",
+        "conflict",
+        "stale_cursor",
+        "resource_exhausted",
+        "unavailable",
+        "integrity_error",
+        "needs_reconciliation",
+    ]
     retryable: bool
     detail: str | None = None
 
