@@ -186,3 +186,100 @@ def test_provider_composition_survives_process_restart(tmp_path: Path) -> None:
         assert snapshot.vector.memory_write_revision == 2
         store = SqliteMemoryPlaneStore(verifier.partition())
         assert store.get_record("mem:fresh:process") is not None
+
+
+def test_hermes_provider_wrapper_selects_managed_partition(tmp_path: Path) -> None:
+    """The outer wrapper's storage-root branch lands on the published plane."""
+    from memorii.integrations.hermes_provider import HermesMemoryProvider
+
+    root = _initialized_root(tmp_path)
+    provider = HermesMemoryProvider(storage_root=str(root))
+    plane = provider._service._memory_plane
+    plane.conditionally_write_records(
+        (_record("mem:wrapper:hermes"),), preconditions=()
+    )
+    with StorageAdministrationService(root) as verifier:
+        snapshot = verifier.acquire_verified_snapshot()
+        assert snapshot.vector.memory_write_revision == 1
+        store = SqliteMemoryPlaneStore(verifier.partition())
+        assert store.get_record("mem:wrapper:hermes") is not None
+
+
+def test_authenticated_source_wrapper_uses_injected_selected_plane(tmp_path: Path) -> None:
+    """The authenticated-source wrapper writes through the published view."""
+    from dataclasses import replace as _replace
+    from datetime import UTC as _UTC
+
+    from memorii.core.memory_evolution import BootstrapProfileReleaseVerifier
+    from memorii.core.semantic_ingestion.capability import (
+        BuiltInLocalHostSemanticIngestionCapability,
+    )
+    from memorii.core.semantic_ingestion.production_authority import (
+        build_verified_production_host_authority,
+    )
+    from memorii.integrations.authenticated_source import (
+        build_authenticated_source_runtime,
+    )
+    from tests.fixtures.semantic_ingestion.host_bootstrap_authority import (
+        build_test_host_verified_bootstrap_release_evidence,
+        present_authenticated_host_bootstrap_material,
+    )
+    from tests.fixtures.semantic_ingestion.scenario_fixture_authority import (
+        build_scenario_test_host_capability,
+    )
+    from tests.unit.core.semantic_ingestion.test_semantic_provider_composition import (
+        DeterministicTestHostBootstrapMaterialVerifier,
+    )
+
+    root = _initialized_root(tmp_path)
+    selection = select_persistent_memory_plane(root)
+    assert selection.administration is not None
+    scenario = build_scenario_test_host_capability()
+    material = scenario.bootstrap_material_presentation.material
+    profile = BootstrapProfileReleaseVerifier.verify(
+        payloads=material.artifact_payloads, enabled=material.profile_enabled
+    )
+    production_material = _replace(
+        material,
+        release_evidence=build_test_host_verified_bootstrap_release_evidence(
+            profile=profile,
+            external_root_digest=material.release_evidence.external_root_digest,
+            active_lifecycle_snapshot_digest=(
+                material.release_evidence.active_lifecycle_snapshot_digest
+            ),
+            verified_at=material.release_evidence.verified_at,
+            trust_domain="production",
+        ),
+        trust_domain="production",
+    )
+    capability = BuiltInLocalHostSemanticIngestionCapability(
+        bootstrap_material_presentation=present_authenticated_host_bootstrap_material(
+            production_material
+        ),
+        authorization_bytes=scenario.authorization_bytes,
+        authorization_verifier=scenario.authorization_verifier,
+        policy_provider=scenario.policy_provider,
+        current_bootstrap_release_verifier=(
+            scenario.current_bootstrap_release_verifier
+        ),
+    )
+    authority = build_verified_production_host_authority(
+        host_bootstrap_capability=capability,
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        server_time=datetime(2026, 1, 1, tzinfo=_UTC),
+    )
+    assert authority is not None
+    try:
+        runtime = build_authenticated_source_runtime(
+            issue_ingress=lambda _submission: None,
+            verified_production_host_authority=authority,
+            memory_plane=selection.memory_plane,
+        )
+        plane = runtime._adapter._service._memory_plane
+        plane.conditionally_write_records(
+            (_record("mem:wrapper:source"),), preconditions=()
+        )
+        snapshot = selection.administration.acquire_verified_snapshot()
+        assert snapshot.vector.memory_write_revision == 1
+    finally:
+        selection.administration.close()

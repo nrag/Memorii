@@ -1916,7 +1916,15 @@ class ProviderMemoryService:
             }
         ]
         expected_type_key = asserted_type.replace("_", "").casefold()
-        records = tuple(self._memory_plane.list_records())
+        # Bounded candidate selection: only retained structured submissions can
+        # match; the store-level filter keeps the scan bounded on the shared
+        # partition while the source/digest eligibility checks below are
+        # unchanged.
+        records = tuple(
+            self._memory_plane.list_records(
+                source_kind="semantic_ingestion_retained_structured_submission"
+            )
+        )
         for claim in claims:
             identity = claim.claim_identity
             source_authority = claim.source_authority_evidence
