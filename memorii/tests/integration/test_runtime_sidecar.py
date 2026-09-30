@@ -233,3 +233,80 @@ def test_credential_store_backed_sidecar_serves_and_denies(tmp_path: Path) -> No
     )
     assert status == 401
     store.verify_permissions()
+
+
+def test_consume_cli_admits_dispatches_and_refuses_untrusted(tmp_path: Path) -> None:
+    from memorii.tools.runtime_consume import main as consume_main
+
+    root = tmp_path / "installation"
+    administration = StorageAdministrationService(root)
+    administration.initialize()
+    administration.close()
+
+    delivery = {
+        "transport_message_id": "msg:one",
+        "command": {
+            "kind": "start_task",
+            "operation_id": "op:consume-one",
+            "goal": "Consumed durably",
+        },
+    }
+    delivery_path = tmp_path / "delivery.json"
+    delivery_path.write_text(json.dumps(delivery), encoding="utf-8")
+
+    assert (
+        consume_main(
+            [
+                "--installation-root",
+                str(root),
+                "--producer",
+                "producer:trusted",
+                "--delivery",
+                str(delivery_path),
+            ]
+        )
+        == 0
+    )
+    # Repeat delivery is idempotent: the same receipt, one task.
+    assert (
+        consume_main(
+            [
+                "--installation-root",
+                str(root),
+                "--producer",
+                "producer:trusted",
+                "--delivery",
+                str(delivery_path),
+            ]
+        )
+        == 0
+    )
+    administration = StorageAdministrationService(root)
+    try:
+        repository = RuntimeStateRepository(administration.partition())
+        assert len(repository.list_tasks()) == 1
+    finally:
+        administration.close()
+
+    forged = dict(delivery) | {
+        "command": {
+            "kind": "start_task",
+            "operation_id": "op:consume-one",
+            "goal": "Divergent intent",
+        }
+    }
+    forged_path = tmp_path / "forged.json"
+    forged_path.write_text(json.dumps(forged), encoding="utf-8")
+    assert (
+        consume_main(
+            [
+                "--installation-root",
+                str(root),
+                "--producer",
+                "producer:untrusted",
+                "--delivery",
+                str(forged_path),
+            ]
+        )
+        == 3
+    )
