@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.TimeInterval.v1","implementation_source_digest":"b7bc805737869bd60bce6f9efc77a86b33c5c47a86e7c791b7be6da6da033545","role":"decoder","schema_id":"TimeInterval","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.TimeInterval.v1","implementation_source_digest":"bd618b85d756c4236512f680dae8eb0b516a2ad9d52197fedf2f6edfdfb42205","role":"decoder","schema_id":"TimeInterval","schema_version":"1","typed_root_kind":"model"}

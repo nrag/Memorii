@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.SemanticMemoryEventBatch.v1","implementation_source_digest":"880a05680eeedf7fea451d766c8975fa35af14781823a3a3cf5b49f1f30ec925","role":"decoder","schema_id":"SemanticMemoryEventBatch","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.SemanticMemoryEventBatch.v1","implementation_source_digest":"1ddd09d5d015b2443b2954d50b3d256dca6d694da2fc33a14c06955771336525","role":"decoder","schema_id":"SemanticMemoryEventBatch","schema_version":"1","typed_root_kind":"model"}

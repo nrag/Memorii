@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.SegmentGovernanceCarrierSet.v1","implementation_source_digest":"e54add72d457f3b66d8ae78f419933cbc1c16c66839f1cce26fcc2c0eea9f593","role":"decoder","schema_id":"SegmentGovernanceCarrierSet","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.SegmentGovernanceCarrierSet.v1","implementation_source_digest":"2a7b3c81563abb8e342fa23aa78c3c584674af9a222574c560c6e8134fa7d2b1","role":"decoder","schema_id":"SegmentGovernanceCarrierSet","schema_version":"1","typed_root_kind":"model"}
