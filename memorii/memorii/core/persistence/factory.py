@@ -236,7 +236,11 @@ def select_persistent_memory_plane(
     root = Path(storage_root)
     managed = (root / _CONTROL_DATABASE).exists()
     layouts = detect_legacy_memory_plane_layouts(root)
-    if managed and layouts:
+    # A completed migration owns the root and preserves the legacy input
+    # untouched; serving continues from the verified partition. Control
+    # without a finalized migrated generation alongside a legacy plane is
+    # ambiguous and refused until adoption completes.
+    if managed and layouts and not _managed_generation_is_finalized(root):
         raise ManagedPartitionError(
             "unsupported_configuration",
             "managed control authority and legacy memory-plane layouts coexist:"
@@ -326,3 +330,37 @@ __all__ = [
     "open_managed_partition",
     "select_persistent_memory_plane",
 ]
+
+def _managed_generation_is_finalized(root: Path) -> bool:
+    """True when a completed migration adopted the legacy plane present.
+
+    The finalized generation alone is not enough: the adoption fingerprint in
+    control state must match one of the preserved legacy inputs, so a plane
+    dropped next to an unrelated installation still refuses.
+    """
+    import hashlib
+
+    from memorii.core.storage_administration.service import (
+        StorageAdministrationService,
+    )
+
+    service = StorageAdministrationService(root)
+    try:
+        state = service._control.read_control_state()
+        if state is None or state.quarantined_reason is not None:
+            return False
+        finalized = service._control.read_publication_state(
+            f"{state.installation_id}:default-partition"
+        )
+        if finalized is None or state.adopted_legacy_records_digest is None:
+            return False
+        for _layout_name, directory in _LEGACY_LAYOUTS:
+            records = root / directory / _LEGACY_PLANE_MARKER
+            if records.is_file() and (
+                hashlib.sha256(records.read_bytes()).hexdigest()
+                == state.adopted_legacy_records_digest
+            ):
+                return True
+        return False
+    finally:
+        service.close()

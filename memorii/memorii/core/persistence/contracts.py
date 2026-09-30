@@ -184,6 +184,14 @@ class InstallationControlState(BaseModel):
     eligibility_epoch: int = Field(ge=1)
     mode: Literal["active", "read_only", "bypass"] = "active"
     initialization_receipt_digest: str | None = Field(default=None, pattern=_HEX_64)
+    adopted_legacy_records_digest: str | None = Field(
+        default=None,
+        pattern=_HEX_64,
+        description=(
+            "Fingerprint of the legacy plane this installation was migrated"
+            " from; binds the preserved legacy input to its adoption."
+        ),
+    )
     quarantined_reason: str | None = None
 
     model_config = ConfigDict(extra="forbid", frozen=True)
