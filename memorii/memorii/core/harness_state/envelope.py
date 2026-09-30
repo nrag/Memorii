@@ -160,10 +160,10 @@ class HarnessTextRenderer:
             "status": "reconcile_required",
             "goal": envelope.goal,
             "pending_actions": tuple(envelope.pending_actions),
-            "omissions": [
+            "omissions": (
                 "state exceeded the prompt token budget"
-                f" ({self.tokenizer_identity}); full state requires paging"
-            ],
+                f" ({self.tokenizer_identity}); full state requires paging",
+            ),
             "continuation_cursor": envelope.continuation_cursor,
         }
         degraded = build_envelope(**degraded_fields)
