@@ -235,3 +235,48 @@ def test_frontier_budget_truncation_records_omission(tmp_path: Path) -> None:
     envelope = service.read_state(task_id=task_id, grant=_grant(task_id))
     assert len(envelope.frontier) == 16
     assert any("frontier truncated" in omission for omission in envelope.omissions)
+
+
+def _bound_ports(tmp_path: Path):
+    from memorii.core.harness_state.binding import (
+        HermesRuntimeStatePorts,
+        RuntimeTaskBinding,
+    )
+    from memorii.core.storage_administration.service import (
+        StorageAdministrationService,
+    )
+
+    service, task_id, _repository = _seeded_service(tmp_path)
+    ports = HermesRuntimeStatePorts(
+        StorageAdministrationService(tmp_path / "installation")
+    )
+    ports.bind_task(
+        RuntimeTaskBinding(
+            installation_task_id=task_id,
+            host_session_id="session:one",
+            granted_to_principal="principal:a",
+        )
+    )
+    return ports, task_id
+
+
+def test_bound_prefetch_renders_envelope_and_unbound_denies(tmp_path: Path) -> None:
+    ports, task_id = _bound_ports(tmp_path)
+    text = ports.runtime_prefetch_text(principal="principal:a")
+    assert text is not None
+    assert f"task={task_id}" in text
+    assert ports.runtime_prefetch_text(principal="principal:other") is None
+    from memorii.core.harness_state.service import HarnessStateError
+
+    with pytest.raises(HarnessStateError, match="no runtime task binding"):
+        ports.read_bound_state(principal="principal:other")
+
+
+def test_tool_summary_is_plain_about_nondurable_source(tmp_path: Path) -> None:
+    ports, _task_id = _bound_ports(tmp_path)
+    durable = ports.tool_state_summary(principal="principal:a")
+    assert durable["durable_runtime_view"] is True
+    assert durable["status"] == "reconcile_required"
+    nondurable = ports.tool_state_summary(principal="principal:other")
+    assert nondurable["durable_runtime_view"] is False
+    assert nondurable["source"] == "provider-work-state-summary"
