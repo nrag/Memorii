@@ -301,3 +301,46 @@ def test_token_budget_overflow_degrades_to_reconcile_summary() -> None:
     # The full render would exceed the budget (the degrade was necessary).
     full_text = renderer.render(envelope)
     assert len(full_text) > 2000 * 4
+
+
+def test_model_tools_serve_bound_views_and_state_plain_unavailable() -> None:
+    from memorii.core.harness_state.tools import (
+        RUNTIME_MODEL_TOOLS,
+        RuntimeModelTools,
+        ToolCall,
+    )
+
+    ports, task_id = _bound_ports(tmp_path := None or _tmp_factory())  # noqa: F841
+    tools = RuntimeModelTools(ports)
+    execution = tools.dispatch(
+        ToolCall(
+            name="memorii_get_execution_state", principal="principal:a"
+        )
+    )
+    assert execution.status == "ok"
+    assert execution.payload["task_id"] == task_id
+    solver = tools.dispatch(
+        ToolCall(name="memorii_get_solver_state", principal="principal:a")
+    )
+    assert solver.status == "ok" and solver.payload["overlay"] == "overlay:harness"
+    observation = tools.dispatch(
+        ToolCall(name="memorii_record_observation", principal="principal:a")
+    )
+    assert observation.status == "unavailable"
+    denied = tools.dispatch(
+        ToolCall(name="memorii_get_execution_state", principal="principal:other")
+    )
+    assert denied.status == "denied" and denied.payload == {}
+    with pytest.raises(Exception, match="unknown model tool"):
+        tools.dispatch(
+            ToolCall(name="memorii_admin_wipe", principal="principal:a")
+        )
+    assert len(RUNTIME_MODEL_TOOLS) == 6
+    del tmp_path
+
+
+def _tmp_factory():
+    import tempfile
+    from pathlib import Path
+
+    return Path(tempfile.mkdtemp())
