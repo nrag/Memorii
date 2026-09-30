@@ -153,17 +153,25 @@ class HarnessTextRenderer:
         text, char_budget = self._render_lines(envelope)
         if len(text) <= char_budget:
             return text, envelope
+        pending = tuple(envelope.pending_actions)
+        overflow_omissions = [
+            "state exceeded the prompt token budget"
+            f" ({self.tokenizer_identity}); full state requires paging",
+        ]
+        if len(pending) > DEFAULT_FRONTIER_ITEMS:
+            overflow_omissions.append(
+                f"{len(pending)} actions require reconciliation;"
+                f" first {DEFAULT_FRONTIER_ITEMS} listed"
+            )
+            pending = pending[:DEFAULT_FRONTIER_ITEMS]
         degraded_fields = {
             "protocol_version": 1,
             "task_id": envelope.task_id,
             "revision": envelope.revision,
             "status": "reconcile_required",
             "goal": envelope.goal,
-            "pending_actions": tuple(envelope.pending_actions),
-            "omissions": (
-                "state exceeded the prompt token budget"
-                f" ({self.tokenizer_identity}); full state requires paging",
-            ),
+            "pending_actions": pending,
+            "omissions": tuple(overflow_omissions),
             "continuation_cursor": envelope.continuation_cursor,
         }
         degraded = build_envelope(**degraded_fields)
