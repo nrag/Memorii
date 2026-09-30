@@ -3,11 +3,11 @@
 - Parent WorkPlan: [implementation index](../implementation.plan.md)
 - Work type: implementation milestone packet
 - Delivery fidelity: Level 3, bounded slice only
-- Status: proposed
+- Status: active (sub-slice 1 landed: operator surface with fenced modes, status, scoped export 9fe1a6c6; backup/restore, forget/erasure, retention, doctor remain)
 - Requirements: DUR-08,09,10,11,12,13; regression DUR-03,05,07,18
 - Dependencies: all supported data/host roots enrolled; foundational control primitives already implemented
 - Baseline revision: bad9eeefb43f7f42fb95d583b11859e2f2ca9eb8 (planning snapshot)
-- Implementation base/head: unset; record before edits and at closure
+- Implementation base: ab9af959; sub-slice head 9fe1a6c6
 
 ## Observable Acceptance
 
@@ -51,4 +51,4 @@ No selective physical row surgery, guaranteed media overwrite or remote hosting.
 
 ## Progress, Review And Closure
 
-Not started. No production/test edits, validation execution or implementation review exists for this packet. No implementation base/head or approval is claimed. The index owns the single global next action.
+Sub-slice 1 (2026-09-30, base ab9af959, commit 9fe1a6c6): memorii/core/storage_administration/operator.py — StorageAdministrationOperator (content-free status with revision heads from the last verified snapshot; acknowledged mode transitions active/read_only/bypass atomic in control state with journal entries — read_only fences data publication through the service gate, bypass returns to active only, stale control revision conflicts, quarantined refuses; scoped deterministic export under an OwnerCapability binding installation identity + owner principal with constant-time compare; destructive operations deliberately not one-call). Tests: tests/unit/core/test_storage_administration_operator.py (6). Remaining in this packet: backup/restore over participant snapshots; forget/erasure plans with epoch increments; retention plan/apply; doctor diagnostics; all-writer enrollment barrier; milestone review.

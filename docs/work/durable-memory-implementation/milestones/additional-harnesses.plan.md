@@ -3,11 +3,11 @@
 - Parent WorkPlan: [implementation index](../implementation.plan.md)
 - Work type: implementation milestone packet
 - Delivery fidelity: Level 3, bounded slice only
-- Status: proposed
+- Status: active (sub-slice 1 landed: OpenClaw/Pi contract adapters with pinned host contracts ab9af959; real-host certification is the external prerequisite this packet records; LangGraph/AutoGen/OpenAI protocol fixtures remain)
 - Requirements: DUR-06,13 (DUR-14 host/platform evidence contributed to release-conformance, the allocation owner in [coverage](../coverage.md))
 - Dependencies: harness-state
 - Baseline revision: bad9eeefb43f7f42fb95d583b11859e2f2ca9eb8 (planning snapshot)
-- Implementation base/head: unset; record before edits and at closure
+- Implementation base: 6be15eb3; sub-slice head ab9af959
 
 ## Observable Acceptance
 
@@ -51,4 +51,4 @@ No new harness-specific core semantics or claim of installed support for contrac
 
 ## Progress, Review And Closure
 
-Not started. No production/test edits, validation execution or implementation review exists for this packet. No implementation base/head or approval is claimed. The index owns the single global next action.
+Sub-slice 1 (2026-09-30, base 6be15eb3, commit ab9af959): memorii/integrations/{openclaw,pi}/adapter.py — contract-faithful adapters per the design's concrete host bindings, explicitly NOT certified installed support (the design's own rule: actual framework-version certification required before advertising installed adapters). OpenClaw: closed plugin manifest pinning openclaw-memory-plugin/v1 with supported major versions and permitted hooks (unknown hooks reject); channel account/sender identity; input classification where system/forwarded inputs never become source authority (mutation denied), unbound senders yield explicit unavailable, authorized senders get the bounded runtime block in their explicit memory slot. Pi: closed extension manifest pinning pi-coding-agent-extension/v1; session/branch coordinates never user authority; fork denies without explicit continue-same-task authorization or create-new-task; pre-compaction maps to checkpoint; final-settle maps to settle; abandoned branches never committed source evidence. Tests: tests/unit/integrations/test_host_adapters.py (8). Remaining in this packet: LangGraph/AutoGen/OpenAI compatibility protocol fixtures (contract-only per design); real-host certification journeys (external prerequisite — actual OpenClaw/Pi installs); milestone review.
