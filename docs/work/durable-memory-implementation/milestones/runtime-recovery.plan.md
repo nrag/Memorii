@@ -3,11 +3,11 @@
 - Parent WorkPlan: [implementation index](../implementation.plan.md)
 - Work type: implementation milestone packet
 - Delivery fidelity: Level 3, bounded slice only
-- Status: active (sub-slice 1 landed: contracts + runtime tables + repository + published changes + fresh-process DUR-01 journey; event profile, attempt machine, outbox, checkpoints, resume API remain)
+- Status: active (sub-slices 1-2 landed: contracts/tables/repository/publication + DUR-01 journey; event profile with replay + independent reference reducer; attempt machine, outbox, persistent API, checkpoints, resume remain)
 - Requirements: DUR-01,02,03,04,05,07; regression DUR-15,16
 - Dependencies: storage-foundation; semantic-ontology parity baseline
 - Baseline revision: bad9eeefb43f7f42fb95d583b11859e2f2ca9eb8 (planning snapshot)
-- Implementation base: ffe26367; sub-slice head 8f040c2f
+- Implementation base: ffe26367; current head 80cfa918
 
 ## Observable Acceptance
 
@@ -53,4 +53,6 @@ No host automatically executes a restored recommendation; no semantic promotion 
 
 Sub-slice 1 (2026-09-29, base ffe26367, commit 8f040c2f): memorii/core/persistence/runtime_contracts.py — closed records (TaskRecord/SolverRunRecord/SolverJustificationRecord/RuntimeOverlayVersion/ActionAttemptRecord/RuntimeCommandReceipt), the 16-kind solver node content union validated at the boundary, the complete 11-kind command union (task lifecycle with completion evidence; four-member proposal union incl. justification-bound belief update and gate-checked merge), all extra=forbid. Partition: eleven runtime catalogs + runtime revision state, manifest-covered with full-row folds; typed upsert/read APIs. RuntimeStateRepository view; publish_runtime_change (verified-state anchor, runtime-head batch position, memory heads unchanged, intent-before-commit, exact-old/new recovery, read_only gate). Tests: tests/unit/core/test_runtime_state_repository.py (6) and tests/integration/test_runtime_process_recovery.py (2) including the packet's observable acceptance: fresh-process restore of three hypotheses/observation/overlay/justification/dispatched action with verified state and no rerun. Evidence: 37-test battery green; ruff/pyright/identity gates pass.
 
-Remaining in this packet: RuntimeEventBatch profile + reducers/replay + independent reference reducer; RuntimeOperationAttempt machine + outbox; the persistent versioned API (RuntimeCommandRequest dispatch, receipts, resume_task envelope); checkpoints with Ed25519 authority; staleness/revalidation and action reconciliation (DUR-04); legacy bare-ID API restriction; then the milestone review cohort.
+Sub-slice 2 (2026-09-29, commit 80cfa918): memorii/core/persistence/runtime_events.py — closed event grammar (legal combination matrix; entity-id aliasing, ID-only payloads, candidate+committed rejected; domain-separated envelope/batch digests with a canonical factory), replay (batch-position ordering; byte-identical redelivery idempotent; event-id reuse with different envelope fails closed — a real gap the tests exposed; divergent dedupe reuse and equal-version non-identical fail closed; stale versions ignored; delete = logical retirement with full state; complete-batch atomicity), and the eighteen-label business inventory. Independent reference reducer (naive arrival-order consumer, no production imports) agrees on the frozen corpus. Tests: tests/unit/core/test_runtime_event_replay.py (10).
+
+Remaining in this packet: RuntimeOperationAttempt machine + outbox; the persistent versioned API (RuntimeCommandRequest dispatch, receipts, resume_task envelope); checkpoints with Ed25519 authority; staleness/revalidation and action reconciliation (DUR-04); legacy bare-ID API restriction; then the milestone review cohort.
