@@ -3,11 +3,11 @@
 - Parent WorkPlan: [implementation index](../implementation.plan.md)
 - Work type: implementation milestone packet
 - Delivery fidelity: Level 3, bounded slice only
-- Status: proposed
+- Status: active (sub-slice 2 of the generated chain landed: deterministic OpenAPI schema 99e334e2; package matrix, timing manifests, exact-release gates and CI homes remain)
 - Requirements: DUR-01 through DUR-18 (complete aggregate)
 - Dependencies: all earlier packets
 - Baseline revision: bad9eeefb43f7f42fb95d583b11859e2f2ca9eb8 (planning snapshot)
-- Implementation base/head: unset; record before edits and at closure
+- Implementation base: 6f5e38b2; sub-slice head 99e334e2
 
 ## Observable Acceptance
 
@@ -50,5 +50,9 @@ At candidate freeze update live diff, identities, generated authority descendant
 No weakening policies/thresholds/coverage to pass. Fake-oracle is plumbing only. Existing component live certification stays separately required under governing policy; comparative agent-benefit/publication planning remains deferred.
 
 ## Progress, Review And Closure
+
+Sub-slice 1 (2026-09-30, commit 6f5e38b2): compatibility protocol fixtures closed in the additional-harnesses packet (spec 22.2 obligation). Sub-slice 2 (2026-09-30, commit 99e334e2): memorii-runtime-schema — the deterministic OpenAPI 3.1 document for the runtime sidecar derived from the owning typed models (SidecarRequest/HarnessStateEnvelope/SidecarError), closed schemas, loopback-only server, bearer security, byte-stable sorted output for digest pinning; registered entry point; tests green.
+
+Remaining in this packet: TypeScript SDK (external prerequisite: Node/npm pin from the owner); CI homes for the integration suites and new gates (linked testing WorkPlan owns the workflow edits); shard timing-manifest refresh; installed-package matrix (wheel outside checkout, both OSes); Linux/macOS platform evidence; exact-release gate aggregation and revision-bound approval evidence; final whole-branch review.
 
 Not started. No production/test edits, validation execution or implementation review exists for this packet. No implementation base/head or approval is claimed. The index owns the single global next action.
