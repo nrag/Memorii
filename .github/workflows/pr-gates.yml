@@ -315,7 +315,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     if: always()
-    needs: [semantic-ingestion-history-reconciliation, equal-version-replay-decision, static-analysis, package-smoke, provider-compatibility, scoped-context-integration, durable-storage-integration, durable-runtime-integration, observation-ledger-activation, unit-test-shards, unit-timing-inventory, semantic-terminal-persistence, semantic-terminal-persistence-timing-inventory]
+    needs: [semantic-ingestion-history-reconciliation, equal-version-replay-decision, static-analysis, package-smoke, provider-compatibility, scoped-context-integration, durable-storage-integration, durable-runtime-integration, host-compatibility-certification, observation-ledger-activation, unit-test-shards, unit-timing-inventory, semantic-terminal-persistence, semantic-terminal-persistence-timing-inventory]
 
     steps:
       - name: Require every unit-test dependency
@@ -328,6 +328,7 @@ jobs:
           SCOPED_CONTEXT_RESULT: ${{ needs.scoped-context-integration.result }}
           DURABLE_STORAGE_RESULT: ${{ needs.durable-storage-integration.result }}
           DURABLE_RUNTIME_RESULT: ${{ needs.durable-runtime-integration.result }}
+          HOST_COMPATIBILITY_RESULT: ${{ needs.host-compatibility-certification.result }}
           OBSERVATION_ACTIVATION_RESULT: ${{ needs.observation-ledger-activation.result }}
           SHARD_RESULT: ${{ needs.unit-test-shards.result }}
           TIMING_RESULT: ${{ needs.unit-timing-inventory.result }}
@@ -342,6 +343,7 @@ jobs:
           && test "$SCOPED_CONTEXT_RESULT" = success
           && test "$DURABLE_STORAGE_RESULT" = success
           && test "$DURABLE_RUNTIME_RESULT" = success
+          && test "$HOST_COMPATIBILITY_RESULT" = success
           && test "$OBSERVATION_ACTIVATION_RESULT" = success
           && test "$SHARD_RESULT" = success
           && test "$TIMING_RESULT" = success
@@ -430,6 +432,38 @@ jobs:
           tests/integration/test_shared_sqlite_semantic_owners.py
           tests/integration/test_memory_plane_migration_recovery.py
           -p no:cacheprovider
+
+  host-compatibility-certification:
+    name: Host Compatibility Certification
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: memorii/pyproject.toml
+
+      - name: Install package, test dependencies and pinned host frameworks
+        working-directory: memorii
+        run: |
+          pip install -e '.[local,dev]'
+          pip install -r tests/integration/hostcompat/requirements.txt
+
+      - name: Run runtime certification against pinned frameworks
+        working-directory: memorii
+        env:
+          MEMORII_HOSTCERT: '1'
+        run: >-
+          pytest -W error
+          tests/integration/hostcompat/test_framework_certification.py
+          -p no:cacheprovider
+          -ra
 
   durable-runtime-integration:
     name: Durable Runtime Integration
