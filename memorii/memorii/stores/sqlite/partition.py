@@ -253,6 +253,19 @@ _SCHEMA_STATEMENTS = (
         PRIMARY KEY (client_namespace, operation_id)
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS runtime_operation_attempts (
+        receipt_id TEXT PRIMARY KEY,
+        attempt_ordinal INTEGER NOT NULL,
+        record_json TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS runtime_outbox_deliveries (
+        delivery_id TEXT PRIMARY KEY,
+        record_json TEXT NOT NULL
+    )
+    """,
 )
 
 # Authoritative materialized catalogs covered by the signed manifest. The
@@ -311,6 +324,12 @@ _MATERIALIZATION_CATALOGS = (
         "client_namespace || ':' || operation_id",
         "record_json",
     ),
+    (
+        "runtime_operation_attempts",
+        "receipt_id || ':' || attempt_ordinal",
+        "record_json",
+    ),
+    ("runtime_outbox_deliveries", "delivery_id", "record_json"),
 )
 _CATALOG_SEED_DOMAIN = b"memorii.materialization-catalog.v1\x00"
 
@@ -331,6 +350,8 @@ _RUNTIME_UPSERT_TABLES = frozenset(
         "runtime_justifications",
         "runtime_action_attempts",
         "runtime_command_receipts",
+        "runtime_operation_attempts",
+        "runtime_outbox_deliveries",
     }
 )
 

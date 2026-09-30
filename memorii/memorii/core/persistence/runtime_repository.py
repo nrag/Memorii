@@ -171,6 +171,27 @@ class RuntimeStateRepository:
         payload = json.loads(row["record_json"])
         return _content_adapter.validate_python(payload["content"])
 
+    def get_task_in(self, connection: sqlite3.Connection, task_id: str) -> TaskRecord | None:
+        row = self._partition.read_runtime_row(
+            connection, table="runtime_tasks", match=(("task_id", task_id),)
+        )
+        return None if row is None else TaskRecord.model_validate_json(row["record_json"])
+
+    def list_action_attempts_in(
+        self, connection: sqlite3.Connection, task_id: str
+    ) -> tuple[ActionAttemptRecord, ...]:
+        rows = self._partition.read_runtime_rows(
+            connection,
+            table="runtime_action_attempts",
+            match=(("task_id", task_id),),
+        )
+        return tuple(
+            ActionAttemptRecord.model_validate_json(row["record_json"]) for row in rows
+        )
+
+    def read_runtime_revision_in(self, connection: sqlite3.Connection) -> int:
+        return self._partition.read_runtime_revision(connection)
+
     # --- writes (inside a coordinator-owned publication transaction) ----
 
     def apply_task(
