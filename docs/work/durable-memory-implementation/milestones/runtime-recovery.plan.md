@@ -3,11 +3,11 @@
 - Parent WorkPlan: [implementation index](../implementation.plan.md)
 - Work type: implementation milestone packet
 - Delivery fidelity: Level 3, bounded slice only
-- Status: active (sub-slices 1-2 landed: contracts/tables/repository/publication + DUR-01 journey; event profile with replay + independent reference reducer; attempt machine, outbox, persistent API, checkpoints, resume remain)
+- Status: active (sub-slices 1-3 landed; checkpoints, resume envelope, staleness reconciliation and the milestone review cohort remain)
 - Requirements: DUR-01,02,03,04,05,07; regression DUR-15,16
 - Dependencies: storage-foundation; semantic-ontology parity baseline
 - Baseline revision: bad9eeefb43f7f42fb95d583b11859e2f2ca9eb8 (planning snapshot)
-- Implementation base: ffe26367; current head 80cfa918
+- Implementation base: ffe26367; current head c59ffddd
 
 ## Observable Acceptance
 
@@ -55,4 +55,6 @@ Sub-slice 1 (2026-09-29, base ffe26367, commit 8f040c2f): memorii/core/persisten
 
 Sub-slice 2 (2026-09-29, commit 80cfa918): memorii/core/persistence/runtime_events.py — closed event grammar (legal combination matrix; entity-id aliasing, ID-only payloads, candidate+committed rejected; domain-separated envelope/batch digests with a canonical factory), replay (batch-position ordering; byte-identical redelivery idempotent; event-id reuse with different envelope fails closed — a real gap the tests exposed; divergent dedupe reuse and equal-version non-identical fail closed; stale versions ignored; delete = logical retirement with full state; complete-batch atomicity), and the eighteen-label business inventory. Independent reference reducer (naive arrival-order consumer, no production imports) agrees on the frozen corpus. Tests: tests/unit/core/test_runtime_event_replay.py (10).
 
-Remaining in this packet: RuntimeOperationAttempt machine + outbox; the persistent versioned API (RuntimeCommandRequest dispatch, receipts, resume_task envelope); checkpoints with Ed25519 authority; staleness/revalidation and action reconciliation (DUR-04); legacy bare-ID API restriction; then the milestone review cohort.
+Sub-slice 3 (2026-09-29, commit c59ffddd): memorii/core/persistence/runtime_api.py — RuntimeCommandService (idempotent durable dispatch of the closed command union with divergent-reuse conflict, deterministic task allocation, lifecycle gating incl. unresolved-action completion block and terminal closure, stale-revision conflict), RuntimeOperationAttempt + RuntimeOutboxDelivery contracts and the runtime_operation_attempts/outbox catalogs (manifest-covered), fenced-takeover terminal cause, dispatch reservation per (task, recommendation, revision). Tests: tests/unit/core/test_runtime_command_dispatch.py (9). A flock self-deadlock was caught and fixed with connection-scoped reads.
+
+Remaining in this packet: checkpoints with Ed25519 authority + resume envelope; staleness/revalidation and action reconciliation (DUR-04); legacy bare-ID API restriction; runtime event publication integration (batches into the signed publication); then the milestone review cohort.
