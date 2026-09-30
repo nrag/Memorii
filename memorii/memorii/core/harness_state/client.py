@@ -55,7 +55,8 @@ class RuntimeStateClient:
             with urllib.request.urlopen(http_request, timeout=self._timeout) as response:
                 payload = response.read()
         except urllib.error.HTTPError as exc:
-            body = exc.read()
+            with exc:
+                body = exc.read()
             try:
                 error = json.loads(body)
                 raise RuntimeClientError(

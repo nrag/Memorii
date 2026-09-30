@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import json
 import urllib.request
-
-import pytest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
 from memorii.core.harness_state.service import RuntimeReadGrant
 from memorii.core.harness_state.sidecar import (
     RuntimeSidecar,
