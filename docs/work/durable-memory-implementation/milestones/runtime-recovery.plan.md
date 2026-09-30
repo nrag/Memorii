@@ -3,11 +3,11 @@
 - Parent WorkPlan: [implementation index](../implementation.plan.md)
 - Work type: implementation milestone packet
 - Delivery fidelity: Level 3, bounded slice only
-- Status: active (sub-slices 1-3 landed; checkpoints, resume envelope, staleness reconciliation and the milestone review cohort remain)
+- Status: under-review (sub-slices 1-4 landed; milestone review cohort running)
 - Requirements: DUR-01,02,03,04,05,07; regression DUR-15,16
 - Dependencies: storage-foundation; semantic-ontology parity baseline
 - Baseline revision: bad9eeefb43f7f42fb95d583b11859e2f2ca9eb8 (planning snapshot)
-- Implementation base: ffe26367; current head c59ffddd
+- Implementation base: ffe26367; current head e6a51e7f
 
 ## Observable Acceptance
 
@@ -57,4 +57,6 @@ Sub-slice 2 (2026-09-29, commit 80cfa918): memorii/core/persistence/runtime_even
 
 Sub-slice 3 (2026-09-29, commit c59ffddd): memorii/core/persistence/runtime_api.py — RuntimeCommandService (idempotent durable dispatch of the closed command union with divergent-reuse conflict, deterministic task allocation, lifecycle gating incl. unresolved-action completion block and terminal closure, stale-revision conflict), RuntimeOperationAttempt + RuntimeOutboxDelivery contracts and the runtime_operation_attempts/outbox catalogs (manifest-covered), fenced-takeover terminal cause, dispatch reservation per (task, recommendation, revision). Tests: tests/unit/core/test_runtime_command_dispatch.py (9). A flock self-deadlock was caught and fixed with connection-scoped reads.
 
-Remaining in this packet: checkpoints with Ed25519 authority + resume envelope; staleness/revalidation and action reconciliation (DUR-04); legacy bare-ID API restriction; runtime event publication integration (batches into the signed publication); then the milestone review cohort.
+Sub-slice 4 (2026-09-29, commit e6a51e7f): memorii/core/persistence/runtime_checkpoint.py — RuntimeCheckpoint (revision-bound canonical manifest with counts + member digest, domain-separated signature purpose memorii.runtime-checkpoint.v1 via an injected signer; counts validated at parse; creation requires a committed revision) and build_resume_envelope (one consistent view; dispatched/outcome-unknown actions pend under reconcile_required without rerun; future-revision checkpoints refuse; missing tasks not_found). Tests: tests/integration/test_runtime_resume_checkpoint.py (6) incl. cross-process pause/resume.
+
+Remaining in this packet: staleness revalidation of time-dependent assumption content inside checkpoint members (DUR-04 — the envelope plumbing is in place, the temporal walk is a recorded follow-up as assumption content lands in checkpoint members); runtime event-batch publication integration; legacy bare-ID API restriction; the milestone review cohort (in flight).
