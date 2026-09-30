@@ -3,11 +3,11 @@
 - Parent WorkPlan: [implementation index](../implementation.plan.md)
 - Work type: implementation milestone packet
 - Delivery fidelity: Level 3, bounded slice only
-- Status: proposed
+- Status: active (sub-slices 1-2 landed: plan/adoption/import/cutover; crash-cut matrix, migration-only gating and CLI surface remain)
 - Requirements: DUR-10,12,13,18; regression DUR-15,16,17
 - Dependencies: semantic-ontology
 - Baseline revision: bad9eeefb43f7f42fb95d583b11859e2f2ca9eb8 (planning snapshot)
-- Implementation base/head: unset; record before edits and at closure
+- Implementation base: c906e849; sub-slice head fc565bbb
 
 ## Observable Acceptance
 
@@ -51,4 +51,6 @@ No loss-tolerant salvage, inferred catalog IDs, reextraction/model calls, cross-
 
 ## Progress, Review And Closure
 
-Not started. No production/test edits, validation execution or implementation review exists for this packet. No implementation base/head or approval is claimed. The index owns the single global next action.
+Sub-slices 1-2 (2026-09-29, base c906e849, commit fc565bbb): memorii/core/storage_administration/migration.py — build_migration_plan (closed read-only MemoryPlaneMigrationPlan: byte fingerprint/size, both revisions, validated chain, batch/record counts, participant inventory, free-space requirement, self-verifying digest; unknown plane members refuse; never writes); typed LegacyStorageSelector binding the exact legacy input into one expected-old discriminator; migrate_legacy_installation performing owner-authorized adoption (first atomic control transaction: selector + plan digest + migration-only read-only lifecycle), import (validated copy of every batch with original bytes/revisions/checksums into the fresh SQLite generation) and cutover (generation-change intent with the legacy selector digest as expected-old; finalize activates operational mode). InstallationControlState gained adopted_legacy_records_digest (closed optional field, pre-release format) so post-cutover roots serve managed traffic with legacy files preserved while unrelated coexistence still refuses. Tests: tests/unit/core/test_memory_plane_migration_contract.py (6: read-only + digest-bound plan, participant inventory, unknown-member and missing-plane refusal, corrupt-chain fail-closed, selector digest stability) and tests/integration/test_memory_plane_migration_recovery.py (4: byte-preserving migration with revision/record/order parity + managed selection after, changed-input refusal, fresh-process restart, idempotent repeat). Evidence: 36 affected tests green across migration/provider/administration suites; ruff/pyright/identity gates green.
+
+Remaining in this packet: adoption crash-cut matrix (intent-only, imported-without-cutover, third-state) with migration_only gating of ordinary data APIs; explicit pre-new-write rollback through the owner plan and post-write stale-rollback denial; migration-only denies normal backup/data APIs; CLI surface (migrate plan/apply) and external key/catalog/legacy-reader authority verification; then the milestone review cohort.
