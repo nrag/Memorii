@@ -48,7 +48,7 @@ Families and signals are owned by [validation](../durable-memory-implementation/
 
 ## Gate Change Log
 
-- 2026-09-29 (storage-foundation candidate): no workflow files changed yet. OPEN GATE ACTION before packet closure: decide and land the CI home for tests/integration/test_partition_storage_recovery.py (six subprocess journeys incl. concurrent publishers and SIGKILL recovery, ~13 s) in the enforced integration tier; timing manifest refresh (tests/ci/unit-test-durations.json) for the three new unit files at the next shard-artifact regeneration. Unit files are collected by the existing six shards (test_shards verify green: 5032 collected, max shard estimate 826.5 s vs 4800 s target).
+- 2026-09-29 (storage-foundation candidate): no workflow files changed yet. OPEN GATE ACTION before packet closure: decide and land the CI home for THREE integration files — tests/integration/test_partition_storage_recovery.py (~13 s), tests/integration/test_shared_sqlite_provider_paths.py (~30 s), tests/integration/test_shared_sqlite_semantic_owners.py (~35 s; added by semantic-ontology slice) — in the enforced integration tier; timing manifest refresh (tests/ci/unit-test-durations.json) for the new unit files (test_memory_plane_query_parity.py, test_storage_administration_contract.py additions, test_persistent_partition_factory.py) at the next shard-artifact regeneration. Unit files are collected by the existing six shards (test_shards verify green).
 
 ## Progress Log
 
@@ -59,3 +59,5 @@ Families and signals are owned by [validation](../durable-memory-implementation/
 ## Next Action
 
 Land the CI integration-tier home for tests/integration/test_partition_storage_recovery.py (gate change recorded above) before storage-foundation packet closure.
+
+- 2026-09-29 (semantic-ontology candidate): measured the slice's suites (13 parity ~1.4 s; 9 provider-path ~30 s; 6 semantic-owner ~8 s; coordinator file 638.8 s with the parity-bearing [completed] node at 87.3 s — heavyweight, stays in its existing shard placement). Environment record correction: local interpreter is Python 3.14.7 (the gates.md note saying 3.12.14 is stale); CI-pinned 3.11/3.12 re-runs remain a queued closure item for both packets.

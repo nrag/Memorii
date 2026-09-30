@@ -561,11 +561,16 @@ class PartitionDataRepository:
         logical_entity_id: str,
         depth: int,
     ) -> Sequence[sqlite3.Row]:
-        """Claims touching the entity, expanded through claim endpoints."""
+        """Claims within ``depth`` hops of the entity.
+
+        Depth d means claims whose traversal distance from the seed entity is
+        at most d: the entity frontier expands d-1 times through claim
+        endpoints, then all claims touching the closed frontier are returned.
+        """
         if depth not in (1, 2):
             raise ValueError("neighborhood depth must be 1 or 2")
         frontier = {logical_entity_id}
-        for _ in range(depth):
+        for _ in range(depth - 1):
             placeholders = ", ".join("?" for _ in frontier)
             rows = connection.execute(
                 "SELECT DISTINCT claim_assertion_id, subject_entity_id, object_entity_id"

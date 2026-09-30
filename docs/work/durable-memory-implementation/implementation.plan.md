@@ -96,4 +96,4 @@ Planning: default read-only mapper reused because prior Spark code-mapper attemp
 
 ## Next Action
 
-Semantic-ontology sub-slice 2: implement MemoryPlaneQuery/MemoryPlanePage as closed typed reader contracts over the verified partition snapshot with authority-bound cursors, route the provider read paths (read_structured_facts, current_semantic_entity_matches, retrieve_context candidate selection, observe_graph detached cohorts) through them, and land tests/unit/core/test_memory_plane_query_parity.py proving indexed results equal authorized scans. Storage-foundation closure items remain queued in its packet (CI integration-tier home, per-shard CI-parity runs, delta review).
+Begin the legacy-migration milestone packet (milestone 3): MemoryPlaneMigrationPlan generation over the closed layout inventory, owner-pinned legacy adoption, offline import with parity, and exact-selector cutover. Storage-foundation closure items remain queued in its packet (CI integration-tier home, per-shard CI-parity runs, delta review).

@@ -283,3 +283,14 @@ def test_authenticated_source_wrapper_uses_injected_selected_plane(tmp_path: Pat
         assert snapshot.vector.memory_write_revision == 1
     finally:
         selection.administration.close()
+
+
+def test_control_without_partition_fails_closed(tmp_path: Path) -> None:
+    """Both half-present orientations are named refusals."""
+    root = _initialized_root(tmp_path)
+    import shutil as _shutil
+
+    _shutil.rmtree(root / "partition")
+    with pytest.raises(ManagedPartitionError, match="integrity"):
+        # Tier A refuses: the finalized control tuple has no data counterpart.
+        select_persistent_memory_plane(root)

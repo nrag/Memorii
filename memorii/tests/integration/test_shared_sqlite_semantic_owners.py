@@ -319,3 +319,93 @@ def test_ontology_activation_projects_into_derived_index(tmp_path: Path) -> None
             assert snapshot.ordinal == outcome.ordinal
         finally:
             selection.administration.close()
+
+
+def test_neighborhood_depths_discriminate_and_reject_out_of_range(tmp_path: Path) -> None:
+    from memorii.core.memory_evolution.semantic_index import (
+        SemanticClaimIndexRow,
+        SemanticIndexProjection,
+    )
+
+    def _digest(text: str) -> str:
+        return hashlib.sha256(text.encode()).hexdigest()
+
+    def claim(claim_id: str, subject: str, obj: str) -> SemanticClaimIndexRow:
+        return SemanticClaimIndexRow(
+            claim_assertion_id=claim_id,
+            subject_entity_id=subject,
+            object_entity_id=obj,
+            predicate_id="owner_is",
+            record_id="record:" + claim_id,
+            record_digest=_digest("record:" + claim_id),
+        )
+
+    projection = SemanticIndexProjection(
+        graph_revision="graph:chain",
+        snapshot_digest=_digest("chain"),
+        claims=(
+            claim("claim:a-to-b", "entity:a", "entity:b"),
+            claim("claim:b-to-c", "entity:b", "entity:c"),
+            claim("claim:c-to-d", "entity:c", "entity:d"),
+        ),
+    )
+    root = tmp_path / "installation"
+    with StorageAdministrationService(root) as service:
+        service.initialize()
+        service.publish_memory_plane_batch(
+            (),
+            store=service.memory_plane_store(),
+            derived_semantic_index=projection,
+        )
+        partition = service.partition()
+        with partition.transaction(write=False) as connection:
+            depth_one = partition.query_entity_neighborhood(
+                connection, logical_entity_id="entity:a", depth=1
+            )
+            depth_two = partition.query_entity_neighborhood(
+                connection, logical_entity_id="entity:a", depth=2
+            )
+            with pytest.raises(ValueError, match="depth"):
+                partition.query_entity_neighborhood(
+                    connection, logical_entity_id="entity:a", depth=3
+                )
+    assert [str(row["claim_assertion_id"]) for row in depth_one] == ["claim:a-to-b"]
+    assert [str(row["claim_assertion_id"]) for row in depth_two] == [
+        "claim:a-to-b",
+        "claim:b-to-c",
+    ]
+
+
+def test_second_projection_of_unchanged_records_is_equal(tmp_path: Path) -> None:
+    """Rebuild equality: republished generation equals the first, no stale rows."""
+    root = tmp_path / "installation"
+    with StorageAdministrationService(root) as service:
+        service.initialize()
+        projection = _sample_projection()
+        first = service.publish_memory_plane_batch(
+            (), store=service.memory_plane_store(), derived_semantic_index=projection
+        )
+        partition = service.partition()
+        with partition.transaction(write=False) as connection:
+            first_claims = partition.query_claim_evidence(
+                connection, claim_assertion_id="claim:owner:1"
+            )
+        second = service.publish_memory_plane_batch(
+            (),
+            store=service.memory_plane_store(),
+            derived_semantic_index=projection.model_copy(
+                update={"entities": projection.entities[:1]}
+            ),
+        )
+        with partition.transaction(write=False) as connection:
+            entity_rows = connection.execute(
+                "SELECT COUNT(*) FROM semantic_entities"
+            ).fetchone()[0]
+            second_claims = partition.query_claim_evidence(
+                connection, claim_assertion_id="claim:owner:1"
+            )
+            state = partition.read_semantic_index_state(connection)
+        assert first.ordinal == 1 and second.ordinal == 2
+        assert entity_rows == 1  # full replace: no stale rows from generation one
+        assert [tuple(row) for row in first_claims] == [tuple(row) for row in second_claims]
+        assert int(state["write_revision"]) == 2
