@@ -6,7 +6,7 @@
 - Status: active
 - Coordinator: main Codex task; one implementation writer per overlapping slice
 - Created: 2026-09-29
-- Last updated: 2026-09-29 (implementation started; storage-foundation packet active; implementation base fe9e1913)
+- Last updated: 2026-09-29 (milestones 1-4 landed with review rounds; harness-state sub-slices 1-6 landed incl. review round 1; head 91e4d7b1)
 - Parent WorkPlan: [shared SQLite design](../shared-sqlite-design/design.plan.md), complete
 - Related WorkPlans: [original runtime design](../durable-runtime-design/design.plan.md), [learned ontology](../learned-ontology/implementation.plan.md)
 - Canonical inputs: [approved design](../../design/durable_execution_and_solver_runtime.md), AGENTS.md, .agents/PLANS.md, implement-design skill and governing sources pinned in [baseline](baseline.json)
@@ -82,6 +82,10 @@ Large new test suites and CI changes require a linked testing WorkPlan via desig
 
 Planning: default read-only mapper reused because prior Spark code-mapper attempts were unavailable for this account; bounded root preflight in bindings. Coordinator owns all plan files. Terra-class test_reviewer consults validation/readiness before coding. Implementation: exactly one Terra worker per coherent slice; Spark read-only mapping/triage when available, otherwise documented bounded fallback. At each Level3 coherent milestone freeze candidate + updated bindings/live diff/gates, then concurrent spec/correctness/test review. Reconcile findings once; targeted deltas for bounded fixes, full review only after material contract change or final closure. Two consolidated remediation rounds per milestone; unresolved semantic decisions reopen design, unavailable environments/credentials become explicit evidence blockers rather than fabricated success. No repetitive broad runs after documentation-only edits.
 
+## Cross-Milestone Verification Snapshot (2026-09-29, head 91e4d7b1)
+
+Local unit battery across all landed milestones: 108 passed (harness 10, consumer 5, runtime repository/event/dispatch 25, query parity 13, migration contract 6, sqlite store 14, storage administration 23, partition factory 12). Local integration battery: 46 passed (sidecar 7, runtime recovery 2 + resume 6, partition recovery 6, provider paths 9, semantic owners 6, migration recovery 10). Gates: ruff, pyright, identity hygiene green locally on Python 3.14 venv (CI-pinned 3.11/3.12 parity runs remain queued closure items).
+
 ## Progress And Planning Outcome
 
 2026-09-29: planning requested; approved design checksum verified, repository/dirty-tree/toolchain baseline captured, live workflows inventoried, milestone and validation packets drafted. Mapper preflight completed; test-matrix consultation approved after two bounded planning corrections (public wrapper coverage and TypeScript gates), recorded in planning-review.md. Links, all18 requirements, eight milestone packets, baseline design SHA and live-workflow snapshot identities checked. Implementation remains proposed and unstarted.
@@ -96,4 +100,4 @@ Planning: default read-only mapper reused because prior Spark code-mapper attemp
 
 ## Next Action
 
-Begin the legacy-migration milestone packet (milestone 3): MemoryPlaneMigrationPlan generation over the closed layout inventory, owner-pinned legacy adoption, offline import with parity, and exact-selector cutover. Storage-foundation closure items remain queued in its packet (CI integration-tier home, per-shard CI-parity runs, delta review).
+Harness-state closure continues: the paging-cursor contract (P2 before packet closure — bind repository/task, principal grant identity/epoch, revision, query digest, offset and expiry with the installation authenticator, minting/validating continuation cursors and stale_cursor), then the `memorii consume` CLI and generated HTTP schemas; credential provisioning with owner-only files is the remaining security posture item. TypeScript SDK remains behind its external toolchain prerequisite (pin Node/npm versions first). Milestones 6-8 (additional harnesses, operator controls, release conformance) follow. Storage-foundation closure items remain queued in its packet.
