@@ -240,3 +240,175 @@ def test_post_migration_new_writes_deny_stale_legacy_rollback(tmp_path: Path) ->
     finally:
         service.close()
     del partition
+
+
+def test_crash_after_adoption_resumes_and_completes(tmp_path: Path) -> None:
+    """Staged crash cut: adoption recorded, import/cutover not yet run."""
+    from memorii.core.storage_administration import migration as migration_module
+
+    root = tmp_path / "installation"
+    root.mkdir(parents=True)
+    plane = _seed_legacy_installation(root)
+    plan = build_migration_plan(root, plane_directory=plane)
+    selector = migration_module.LegacyStorageSelector(
+        installation_root=str(root),
+        plane_directory=str(plane),
+        records_digest=plan.records_digest,
+        records_size=plan.records_size,
+        write_revision=plan.write_revision,
+        data_revision=plan.data_revision,
+        plan_digest=plan.plan_digest,
+    )
+    from memorii.core.storage_administration.service import (
+        StorageAdministrationService,
+    )
+
+    crashed = StorageAdministrationService(root)
+    crashed.close()
+    migration_module._adopt(crashed, selector) if False else None
+    # Drive adoption on a fresh handle, then "crash" (close without more).
+    service = StorageAdministrationService(root)
+    migration_module._adopt(service, selector)
+    service.close()
+
+    resumed = migrate_legacy_installation(root, plane_directory=plane, approved_plan=plan)
+    try:
+        snapshot = resumed.acquire_verified_snapshot()
+        assert snapshot.vector.memory_write_revision == 3
+        store = SqliteMemoryPlaneStore(resumed.partition())
+        assert len(store.list_records()) == 3
+    finally:
+        resumed.close()
+
+
+def test_crash_mid_import_resumes_without_duplicates(tmp_path: Path) -> None:
+    """Staged crash cut: partially imported batches, cutover not yet run."""
+    from memorii.core.storage_administration import migration as migration_module
+
+    root = tmp_path / "installation"
+    root.mkdir(parents=True)
+    plane = _seed_legacy_installation(root, batches=3)
+    plan = build_migration_plan(root, plane_directory=plane)
+    selector = migration_module.LegacyStorageSelector(
+        installation_root=str(root),
+        plane_directory=str(plane),
+        records_digest=plan.records_digest,
+        records_size=plan.records_size,
+        write_revision=plan.write_revision,
+        data_revision=plan.data_revision,
+        plan_digest=plan.plan_digest,
+    )
+    from memorii.core.storage_administration.service import (
+        StorageAdministrationService,
+    )
+
+    service = StorageAdministrationService(root)
+    migration_module._adopt(service, selector)
+    # Import only the first batch, then "crash".
+    store = JsonlMemoryPlaneStore(plane)
+    batches = store._read_batches_unlocked()  # noqa: SLF001
+    partition = service.partition()
+    with partition.manual_write_transaction() as handle:
+        connection = handle.connection
+        partition.append_memory_batch(
+            connection,
+            revision=batches[0].revision,
+            data_revision=batches[0].data_revision,
+            checksum=batches[0].checksum,
+            batch_json=batches[0].model_dump_json(),
+            records_json=[
+                (
+                    record.memory_id,
+                    record.model_dump_json(),
+                    record.status.value,
+                    record.domain.value,
+                    record.source_kind,
+                )
+                for record in batches[0].records
+            ],
+        )
+        handle.commit()
+    service.close()
+
+    resumed = migrate_legacy_installation(root, plane_directory=plane, approved_plan=plan)
+    try:
+        snapshot = resumed.acquire_verified_snapshot()
+        assert snapshot.vector.memory_write_revision == 3
+        resumed_store = SqliteMemoryPlaneStore(resumed.partition())
+        assert len(resumed_store.list_records()) == 3
+        with resumed.partition().transaction(write=False) as connection:
+            count = connection.execute(
+                "SELECT COUNT(*) FROM memory_batches"
+            ).fetchone()[0]
+        assert count == 3  # full generation rebuild: no duplicate batches
+    finally:
+        resumed.close()
+
+
+def test_conflicting_adoption_refuses(tmp_path: Path) -> None:
+    root = tmp_path / "installation"
+    root.mkdir(parents=True)
+    plane_a = _seed_legacy_installation(root)
+    plan_a = build_migration_plan(root, plane_directory=plane_a)
+    service = migrate_legacy_installation(root, plane_directory=plane_a, approved_plan=plan_a)
+    service.close()
+    # A second, different legacy plane appears under the same root.
+    plane_b = root / "memory-plane"
+    other = JsonlMemoryPlaneStore(plane_b)
+    other.write_records(
+        (
+            CanonicalMemoryRecord(
+                memory_id="mem:other",
+                domain=MemoryDomain.SEMANTIC,
+                text="other",
+                status=CommitStatus.COMMITTED,
+                source_kind="legacy_source",
+                timestamp=datetime(2026, 1, 1, tzinfo=UTC),
+            ),
+        )
+    )
+    plan_b = build_migration_plan(root, plane_directory=plane_b)
+    with pytest.raises(LegacyMigrationError, match="already adopted a different"):
+        migrate_legacy_installation(root, plane_directory=plane_b, approved_plan=plan_b)
+
+
+def test_read_only_window_denies_data_publication(tmp_path: Path) -> None:
+    """Between adoption and cutover, ordinary data writes are denied."""
+    from memorii.core.storage_administration import migration as migration_module
+    from memorii.core.storage_administration.service import (
+        InstallationQuarantinedError,
+        StorageAdministrationService,
+    )
+
+    root = tmp_path / "installation"
+    root.mkdir(parents=True)
+    plane = _seed_legacy_installation(root)
+    plan = build_migration_plan(root, plane_directory=plane)
+    selector = migration_module.LegacyStorageSelector(
+        installation_root=str(root),
+        plane_directory=str(plane),
+        records_digest=plan.records_digest,
+        records_size=plan.records_size,
+        write_revision=plan.write_revision,
+        data_revision=plan.data_revision,
+        plan_digest=plan.plan_digest,
+    )
+    service = StorageAdministrationService(root)
+    migration_module._adopt(service, selector)
+    try:
+        with pytest.raises(InstallationQuarantinedError, match="read_only"):
+            service.publish_memory_plane_batch(
+                (
+                    CanonicalMemoryRecord(
+                        memory_id="mem:during:window",
+                        domain=MemoryDomain.SEMANTIC,
+                        text="denied",
+                        status=CommitStatus.COMMITTED,
+                        source_kind="legacy_source",
+                        timestamp=datetime(2026, 1, 1, tzinfo=UTC),
+                    ),
+                ),
+                store=service.memory_plane_store(),
+            )
+    finally:
+        service.close()

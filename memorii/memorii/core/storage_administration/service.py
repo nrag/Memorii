@@ -481,6 +481,10 @@ class StorageAdministrationService:
         and the derived rows together.
         """
         state = self._require_operational()
+        if state.mode == "read_only" and operation_binding != "migrate":
+            raise InstallationQuarantinedError(
+                "installation is read_only; data publication is denied"
+            )
         memory_store = store if store is not None else self.memory_plane_store()
         with self._publication_fence():
             resolution = self.resolve_pending_publication()
@@ -587,6 +591,14 @@ class StorageAdministrationService:
             row = partition.read_publication_row(connection)
         data_digest = None if row is None else str(row["tuple_digest"])
         candidate_digest = intent.candidate_state.payload_digest()
+        if intent.operation_binding == "migrate" and data_digest is None:
+            # Exact legacy state: adoption recorded, no tuple published.
+            # Abort the marker intent and retain migration-only control so
+            # the owner plan can resume; never quarantine this cut.
+            self._abort_intent(intent)
+            return Resolution(
+                disposition="aborted_initialization", tuple_digest=None
+            )
         if intent.expected_old_discriminator == _UNINITIALIZED:
             if data_digest is None:
                 self._abort_intent(intent)
