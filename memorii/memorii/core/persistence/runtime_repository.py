@@ -177,6 +177,26 @@ class RuntimeStateRepository:
         )
         return None if row is None else TaskRecord.model_validate_json(row["record_json"])
 
+    def get_command_receipt_in(
+        self,
+        connection: sqlite3.Connection,
+        client_namespace: str,
+        operation_id: str,
+    ) -> RuntimeCommandReceipt | None:
+        row = self._partition.read_runtime_row(
+            connection,
+            table="runtime_command_receipts",
+            match=(
+                ("client_namespace", client_namespace),
+                ("operation_id", operation_id),
+            ),
+        )
+        return (
+            None
+            if row is None
+            else RuntimeCommandReceipt.model_validate_json(row["record_json"])
+        )
+
     def list_action_attempts_in(
         self, connection: sqlite3.Connection, task_id: str
     ) -> tuple[ActionAttemptRecord, ...]:
@@ -309,8 +329,12 @@ class RuntimeStateRepository:
             keys=("action_id",),
             values=(attempt.action_id,),
             record_json=attempt.model_dump_json(),
-            index_columns=("task_id",),
-            index_values=(attempt.task_id,),
+            index_columns=("task_id", "recommendation_id", "recommendation_revision"),
+            index_values=(
+                attempt.task_id,
+                attempt.recommendation_id,
+                attempt.recommendation_revision,
+            ),
         )
 
     def apply_command_receipt(

@@ -261,3 +261,130 @@ def test_request_digest_excludes_expected_revision_only() -> None:
     different_reason = base.model_copy(update={"pause_reason": "other"})
     assert command_request_digest(base) == command_request_digest(same_different_revision)
     assert command_request_digest(base) != command_request_digest(different_reason)
+
+
+def test_unimplemented_command_kinds_fail_closed(tmp_path: Path) -> None:
+    """No kind commits a success receipt without a durable effect."""
+    service = _service(tmp_path)
+    try:
+        task_id = _seeded_task_id(service)
+        from memorii.core.persistence.runtime_contracts import (
+            BeliefUpdateProposal,
+        )
+        cases = (
+            ("record_observation", {}),
+            (
+                "propose_state_change",
+                {
+                    "proposal": BeliefUpdateProposal(
+                        solver_id="solver:one",
+                        node_id="node:h1",
+                        justification_id="j:1",
+                        epistemic_status="committed",
+                        strength=0.7,
+                    )
+                },
+            ),
+            ("resume_task", {}),
+            ("checkpoint_task", {}),
+            ("replan_task", {}),
+        )
+        for kind, extra in cases:
+            with pytest.raises(RuntimeCommandError, match="no implemented durable effect"):
+                service.dispatch(
+                    RuntimeCommandRequest(
+                        kind=kind,
+                        operation_id=f"op:{kind}",
+                        task_id=task_id,
+                        expected_revision=1,
+                        **extra,
+                    )
+                )
+        # Nothing was committed: no receipts, no revision change for these.
+        assert service.repository.runtime_revision() == 1
+    finally:
+        service._administration.close()
+
+
+def test_receipt_revisions_pin_the_runtime_head(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    try:
+        first = _start(service)
+        assert (first.base_revision, first.current_revision) == (0, 1)
+        task_id = service.repository.list_tasks()[0].task_id
+        second = service.dispatch(
+            RuntimeCommandRequest(
+                kind="pause_task",
+                operation_id="op:pause",
+                task_id=task_id,
+                expected_revision=1,
+                pause_reason="lunch",
+            )
+        )
+        assert (second.base_revision, second.current_revision) == (1, 2)
+    finally:
+        service._administration.close()
+
+
+def test_duplicate_dispatch_from_second_client_reapplies_nothing(tmp_path: Path) -> None:
+    """Two command services over one root: the fence-level re-check holds."""
+    task_id_holder: dict[str, str] = {}
+    administration = StorageAdministrationService(tmp_path / "shared")
+    administration.initialize()
+    administration.close()
+    service_a = RuntimeCommandService(
+        StorageAdministrationService(tmp_path / "shared"), client_namespace="client-a"
+    )
+    try:
+        first = service_a.dispatch(
+            RuntimeCommandRequest(
+                kind="start_task", operation_id="op:start", goal="Shared root"
+            )
+        )
+        assert first.status == "committed"
+        task_id_holder["task"] = service_a.repository.list_tasks()[0].task_id
+    finally:
+        service_a._administration.close()
+    service_b = RuntimeCommandService(
+        StorageAdministrationService(tmp_path / "shared"), client_namespace="client-a"
+    )
+    try:
+        repeat = service_b.dispatch(
+            RuntimeCommandRequest(
+                kind="start_task", operation_id="op:start", goal="Shared root"
+            )
+        )
+        assert repeat == first
+        assert len(service_b.repository.list_tasks()) == 1
+        assert service_b.repository.runtime_revision() == 1
+    finally:
+        service_b._administration.close()
+
+
+def test_terminal_task_still_permits_checkpoint_and_resume(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    try:
+        task_id = _seeded_task_id(service)
+        service.dispatch(
+            RuntimeCommandRequest(
+                kind="complete_task",
+                operation_id="op:complete",
+                task_id=task_id,
+                expected_revision=1,
+                completion_evidence=TaskCompletionEvidence(
+                    unresolved_blocker_acknowledged=True
+                ),
+            )
+        )
+        for kind in ("checkpoint_task", "resume_task"):
+            with pytest.raises(RuntimeCommandError, match="no implemented durable effect"):
+                service.dispatch(
+                    RuntimeCommandRequest(
+                        kind=kind,
+                        operation_id=f"op:{kind}",
+                        task_id=task_id,
+                        expected_revision=2,
+                    )
+                )
+    finally:
+        service._administration.close()

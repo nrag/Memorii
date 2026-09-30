@@ -242,8 +242,14 @@ _SCHEMA_STATEMENTS = (
     CREATE TABLE IF NOT EXISTS runtime_action_attempts (
         action_id TEXT PRIMARY KEY,
         task_id TEXT NOT NULL,
+        recommendation_id TEXT NOT NULL,
+        recommendation_revision INTEGER NOT NULL,
         record_json TEXT NOT NULL
     )
+    """,
+    """
+    CREATE UNIQUE INDEX IF NOT EXISTS runtime_action_attempts_reservation
+        ON runtime_action_attempts (task_id, recommendation_id, recommendation_revision)
     """,
     """
     CREATE TABLE IF NOT EXISTS runtime_command_receipts (
@@ -255,9 +261,10 @@ _SCHEMA_STATEMENTS = (
     """,
     """
     CREATE TABLE IF NOT EXISTS runtime_operation_attempts (
-        receipt_id TEXT PRIMARY KEY,
+        receipt_id TEXT NOT NULL,
         attempt_ordinal INTEGER NOT NULL,
-        record_json TEXT NOT NULL
+        record_json TEXT NOT NULL,
+        PRIMARY KEY (receipt_id, attempt_ordinal)
     )
     """,
     """

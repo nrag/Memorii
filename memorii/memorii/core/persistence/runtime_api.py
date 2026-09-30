@@ -36,7 +36,13 @@ from memorii.core.storage_administration.service import (
 
 _HEX_64 = r"^[0-9a-f]{64}$"
 AttemptStage = Literal[
-    "prepared", "awaiting_model", "candidate_persisted", "validated", "committed"
+    "prepared",
+    "awaiting_model",
+    "candidate_persisted",
+    "validated",
+    "committed",
+    "rejected",
+    "needs_reconciliation",
 ]
 OutboxStatus = Literal[
     "pending", "delivering", "delivered", "rejected", "needs_reconciliation"
@@ -139,23 +145,18 @@ class RuntimeCommandService:
                     "conflict: operation id reused with a divergent request"
                 )
             return existing
-        runtime_revision = publish_runtime_change(
+        publish_runtime_change(
             self._administration,
             lambda connection, repository: self._apply_command(
                 connection, repository, request, digest
             ),
             operation_binding=f"runtime_command:{request.kind}",
         )
-        return self._repository.get_command_receipt(
+        receipt = self._repository.get_command_receipt(
             self._client_namespace, request.operation_id
-        ) or RuntimeCommandReceipt(
-            operation_id=request.operation_id,
-            client_namespace=self._client_namespace,
-            request_digest=digest,
-            status="committed",
-            base_revision=runtime_revision - 1,
-            current_revision=runtime_revision,
         )
+        assert receipt is not None
+        return receipt
 
     def _apply_command(
         self,
@@ -167,45 +168,53 @@ class RuntimeCommandService:
         import sqlite3 as _sqlite3
 
         assert isinstance(connection, _sqlite3.Connection)
-        base = repository.read_runtime_revision_in(connection)
+        # Idempotency re-check under the publication fence: a racing duplicate
+        # dispatch must not re-apply the effect.
+        existing = repository.get_command_receipt_in(
+            connection, self._client_namespace, request.operation_id
+        )
+        if existing is not None:
+            if existing.request_digest != digest:
+                raise RuntimeCommandError(
+                    "conflict: operation id reused with a divergent request"
+                )
+            return
+        revision = repository.read_runtime_revision_in(connection)
         receipt = RuntimeCommandReceipt(
             operation_id=request.operation_id,
             client_namespace=self._client_namespace,
             request_digest=digest,
             status="committed",
-            base_revision=base,
-            current_revision=base + 1,
+            base_revision=revision - 1,
+            current_revision=revision,
         )
         repository.apply_command_receipt(connection, receipt)
         attempt = RuntimeOperationAttempt(
             receipt_id=request.operation_id,
             attempt_ordinal=1,
             request_digest=digest,
-            base_task_revision=base,
+            base_task_revision=revision,
             model_binding="no-model",
             policy_digest=hashlib.sha256(b"runtime-command-default-policy").hexdigest(),
             stage="committed",
             lease_owner=self._client_namespace,
-            fence_token=base + 1,
+            fence_token=revision,
             lease_expires_at=datetime.now(UTC) + timedelta(minutes=5),
         )
         self._administration.partition().upsert_runtime_row(
             connection,
             table="runtime_operation_attempts",
-            keys=("receipt_id",),
-            values=(attempt.receipt_id,),
+            keys=("receipt_id", "attempt_ordinal"),
+            values=(attempt.receipt_id, attempt.attempt_ordinal),
             record_json=attempt.model_dump_json(),
-            index_columns=("attempt_ordinal",),
-            index_values=(attempt.attempt_ordinal,),
         )
-        self._apply_command_effect(connection, repository, request, base)
+        self._apply_command_effect(connection, repository, request)
 
     def _apply_command_effect(
         self,
         connection: object,
         repository: RuntimeStateRepository,
         request: RuntimeCommandRequest,
-        base: int,
     ) -> None:
         import sqlite3 as _sqlite3
 
@@ -232,15 +241,20 @@ class RuntimeCommandService:
             raise RuntimeCommandError(
                 f"not_found: task {request.task_id} does not exist"
             )
-        if request.expected_revision is not None and task.version > int(
-            request.expected_revision
+        if task.lifecycle in ("completed", "aborted") and request.kind not in (
+            "resume_task",
+            "checkpoint_task",
+        ):
+            raise RuntimeCommandError(
+                f"conflict: task is {task.lifecycle}; mutation commands are closed"
+            )
+        if (
+            request.kind in ("complete_task", "pause_task", "abort_task")
+            and request.expected_revision is not None
+            and task.version > int(request.expected_revision)
         ):
             raise RuntimeCommandError(
                 "conflict: task state moved past the expected revision"
-            )
-        if task.lifecycle in ("completed", "aborted"):
-            raise RuntimeCommandError(
-                f"conflict: task is {task.lifecycle}; mutation commands are closed"
             )
         if request.kind == "complete_task":
             assert request.completion_evidence is not None
@@ -272,7 +286,14 @@ class RuntimeCommandService:
                     update={"lifecycle": "aborted", "version": task.version + 1}
                 ),
             )
-        del base
+        else:
+            # Fail closed: kinds whose durable effects are not implemented at
+            # this slice never commit a receipt claiming success.
+            raise RuntimeCommandError(
+                f"unsupported_configuration: command kind {request.kind} has no"
+                " implemented durable effect at this slice"
+            )
+
 
 def fence_takeover(
     displaced: RuntimeOperationAttempt, replacement_ordinal: int
@@ -284,7 +305,7 @@ def fence_takeover(
         )
     return displaced.model_copy(
         update={
-            "stage": "validated",  # displaced attempts end in needs_reconciliation
+            "stage": "needs_reconciliation",
             "terminal_cause": "superseded_by_fence",
             "terminal_error": "displaced by fenced takeover",
             "lease_owner": None,
@@ -304,33 +325,48 @@ def reserve_dispatch(
     """Validate-and-record one dispatch reservation for a recommendation.
 
     Two hosts using different action ids cannot double-execute one
-    recommendation: the unique reservation is the
-    (task, recommendation, revision) tuple.
+    recommendation: the check runs inside the publication transaction under
+    the fence, and the unique reservation is the (task, recommendation,
+    revision) tuple.
     """
-    for attempt in repository.list_action_attempts(task_id):
-        if (
-            attempt.recommendation_id == recommendation_id
-            and attempt.recommendation_revision == recommendation_revision
-        ):
-            if attempt.executor_binding != executor_binding:
-                raise RuntimeCommandError(
-                    "conflict: recommendation dispatch already reserved"
-                )
-            return attempt
-    action = ActionAttemptRecord(
-        action_id="action:" + uuid.uuid4().hex[:16],
-        task_id=task_id,
-        recommendation_id=recommendation_id,
-        recommendation_revision=recommendation_revision,
-        executor_binding=executor_binding,
-        status="dispatched",
+    from memorii.core.persistence.runtime_repository import (
+        publish_runtime_change as _publish,
     )
-    publish_runtime_change(
+
+    resolved: dict[str, ActionAttemptRecord] = {}
+
+    def apply(connection: object, repo: RuntimeStateRepository) -> None:
+        import sqlite3 as _sqlite3
+
+        assert isinstance(connection, _sqlite3.Connection)
+        for attempt in repo.list_action_attempts_in(connection, task_id):
+            if (
+                attempt.recommendation_id == recommendation_id
+                and attempt.recommendation_revision == recommendation_revision
+            ):
+                if attempt.executor_binding != executor_binding:
+                    raise RuntimeCommandError(
+                        "conflict: recommendation dispatch already reserved"
+                    )
+                resolved["action"] = attempt
+                return
+        action = ActionAttemptRecord(
+            action_id="action:" + uuid.uuid4().hex[:16],
+            task_id=task_id,
+            recommendation_id=recommendation_id,
+            recommendation_revision=recommendation_revision,
+            executor_binding=executor_binding,
+            status="dispatched",
+        )
+        repo.apply_action_attempt(connection, action)
+        resolved["action"] = action
+
+    _publish(
         administration,
-        lambda connection, repo: repo.apply_action_attempt(connection, action),
+        apply,
         operation_binding="runtime_command:record_action_dispatch",
     )
-    return action
+    return resolved["action"]
 
 
 __all__ = [
