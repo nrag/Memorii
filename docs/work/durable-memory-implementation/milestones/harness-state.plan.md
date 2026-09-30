@@ -3,11 +3,11 @@
 - Parent WorkPlan: [implementation index](../implementation.plan.md)
 - Work type: implementation milestone packet
 - Delivery fidelity: Level 3, bounded slice only
-- Status: active (sub-slices 1-6 landed incl. six model tools 4feb684c; consume CLI, generated schemas, paging cursor, credential provisioning, TS SDK remain)
+- Status: active (sub-slices 1-9 landed incl. paging cursors e0759024, credential store 1c9e4e2b, consume CLI dfaff8df; generated schemas + TS SDK remain behind external prereq; closing review round pending)
 - Requirements: DUR-05,06,07,13; regression DUR-01,04
 - Dependencies: runtime-recovery and legacy-migration
 - Baseline revision: bad9eeefb43f7f42fb95d583b11859e2f2ca9eb8 (planning snapshot)
-- Implementation base: 2c8d0bee; current head 4feb684c
+- Implementation base: 2c8d0bee; current head dfaff8df
 
 ## Observable Acceptance
 
@@ -69,3 +69,9 @@ TypeScript SDK: proposed sdk/typescript package with pinned Node/npm/lockfile an
 ## Milestone review round 1 + remediation (2026-09-29)
 
 Combined cohort on candidate ff4678d3: foundations sound (denial-before-lookup, digest self-consistency, closed grammars, loopback posture, consumer intake durability all verified); no P1. Four P2s confirmed and remediated (216fd06c..56f6e37f): token budget + overflow degrade (render_bounded: 2000-token approx-char/4 budget, minimal bounded reconcile_required summary with paging marker — never falsely complete), omission recorded for every collection truncation, single-snapshot envelope assembly (one partition read transaction via connection-scoped helpers), durable dead-letter path (atomic fsync'd rewrite/append; internal reads no longer re-acquire held locks — a self-deadlock the tests caught), aware-UTC binding grants, URL-parsed client loopback guard with robust error mapping, history-view pass-through noted, tool summary distinguishing refusal from unbound. Recorded follow-ups (C5-C12): paging-cursor contract (must be P2 before packet closes), credential provisioning with owner-only files + grant-epoch machinery, typed pending-action records vs bare ids, recommendation assumption/expected-observation refs, suspended branches, Host-header hardening, subprocess consumer redelivery journey, concurrency family, sidecar body-size cap, credential-mode tests on both OSes (Level 3 gate), TS SDK external prerequisite.
+
+## Sub-slices 7-9 (2026-09-30)
+
+Sub-slice 7 (e0759024): authenticated continuation cursors - HarnessPageCodec (HMAC, purpose harness-continuation-cursor, five-minute expiry) binding task/principal/grant id+epoch/runtime revision/view/offset; the service pages the frontier 16-per-page, validates every page (forged/other-query/other-principal reject; revision change -> stale_cursor; expiry -> re-read); the sidecar maps stale_cursor to closed 409. Closes review follow-up C5, the packet's declared P2-before-closure item. Sub-slice 8 (1c9e4e2b): SidecarCredentialStore - issue-once secrets with SHA-256 digests stored (constant-time lookup), fsync'd atomic index writes, 0700/0600 enforced with fail-closed verify_permissions; the sidecar composes the store. Closes the issuance half of C6. Sub-slice 9 (dfaff8df): memorii-consume CLI (registered entry point) admitting typed deliveries through the spool with the producer binding as allowlist and dispatching durably; idempotent repeats; malformed -> invalid_request exit 2; untrusted/divergent -> denied exit 3 without execution.
+
+Remaining in this packet: generated HTTP/OpenAPI schemas (design's generator chain - belongs with the release-conformance generated-artifact work); TS SDK (external toolchain prerequisite: Node/npm version pin needed from the owner); grant-epoch revocation registry (epoch field now bound in cursors; a registry flipping epochs is the remaining half of C6); the closing review round.
