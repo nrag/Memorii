@@ -120,6 +120,23 @@ class LocalDurableSpool:
         return record
 
     def records(self) -> tuple[SpoolRecord, ...]:
+        from memorii.core.memory_plane.file_lock import locked_file
+
+        with locked_file(self._lock_path, exclusive=False):
+            if not self._records_path.exists():
+                return ()
+            lines = self._records_path.read_text(encoding="utf-8").splitlines()
+        return tuple(
+            SpoolRecord.model_validate_json(line) for line in lines if line.strip()
+        )
+
+    def _find(self, operation_id: str) -> SpoolRecord | None:
+        for record in self._records_unlocked():
+            if record.operation_id == operation_id:
+                return record
+        return None
+
+    def _records_unlocked(self) -> tuple[SpoolRecord, ...]:
         if not self._records_path.exists():
             return ()
         lines = self._records_path.read_text(encoding="utf-8").splitlines()
@@ -127,24 +144,48 @@ class LocalDurableSpool:
             SpoolRecord.model_validate_json(line) for line in lines if line.strip()
         )
 
-    def _find(self, operation_id: str) -> SpoolRecord | None:
-        for record in self.records():
-            if record.operation_id == operation_id:
-                return record
-        return None
-
     def _rewrite_except(self, operation_id: str) -> None:
+        """Atomically rewrite the intake log without one operation's rows."""
+        import os
+        import tempfile
+
         kept = [
             record.model_dump_json()
-            for record in self.records()
+            for record in self._records_unlocked()
             if record.operation_id != operation_id
         ]
-        self._records_path.write_text("\n".join(kept) + ("\n" if kept else ""), encoding="utf-8")
+        descriptor, temporary = tempfile.mkstemp(
+            dir=self._directory, prefix=".intake.", suffix=".tmp"
+        )
+        try:
+            payload = ("\n".join(kept) + ("\n" if kept else "")).encode("utf-8")
+            os.write(descriptor, payload)
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, self._records_path)
+        import os as _os
+
+        directory_fd = _os.open(self._directory, _os.O_RDONLY)
+        try:
+            _os.fsync(directory_fd)
+        finally:
+            _os.close(directory_fd)
 
     def _append(self, record: SpoolRecord) -> None:
-        with self._records_path.open("a", encoding="utf-8") as handle:
-            handle.write(record.model_dump_json())
-            handle.write("\n")
+        import os
+
+        descriptor = os.open(
+            self._records_path,
+            os.O_WRONLY | os.O_CREAT | os.O_APPEND,
+            0o600,
+        )
+        try:
+            os.write(descriptor, (record.model_dump_json() + "\n").encode("utf-8"))
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
 
 
 __all__ = [

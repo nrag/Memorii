@@ -11,7 +11,7 @@ runtime view.
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -79,7 +79,7 @@ class HermesRuntimeStatePorts:
         binding = self._bindings.get(principal)
         if binding is None:
             raise HarnessStateError("denied: no runtime task binding for principal")
-        moment = (now or datetime.now)()
+        moment = (now or (lambda: datetime.now(UTC)))()
         grant = RuntimeReadGrant(
             grant_id=f"harness:{binding.installation_task_id}",
             principal=principal,
@@ -93,13 +93,19 @@ class HermesRuntimeStatePorts:
 
     def tool_state_summary(self, *, principal: str) -> dict[str, object]:
         """Model-tool state view: durable when bound, plainly otherwise."""
-        try:
-            envelope = self.read_bound_state(principal=principal)
-        except HarnessStateError:
+        if principal not in self._bindings:
             return {
                 "source": "provider-work-state-summary",
                 "durable_runtime_view": False,
                 "note": "no durable runtime task binding; provider work-state only",
+            }
+        try:
+            envelope = self.read_bound_state(principal=principal)
+        except HarnessStateError as exc:
+            return {
+                "source": "provider-work-state-summary",
+                "durable_runtime_view": False,
+                "note": f"durable runtime view refused: {exc}",
             }
         return {
             "source": "durable-runtime-state",

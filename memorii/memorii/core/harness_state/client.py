@@ -31,7 +31,10 @@ class RuntimeStateClient:
     """Thin typed client for one loopback sidecar installation."""
 
     def __init__(self, base_url: str, *, credential: str, timeout: float = 10.0) -> None:
-        if not base_url.startswith("http://127.0.0.1"):
+        from urllib.parse import urlparse
+
+        parsed = urlparse(base_url)
+        if parsed.scheme != "http" or parsed.hostname not in ("127.0.0.1", "localhost", "::1"):
             # Remote binding is disabled by the sidecar; refuse client-side.
             raise ValueError("runtime client only binds loopback sidecar URLs")
         self._base_url = base_url.rstrip("/")
@@ -59,13 +62,15 @@ class RuntimeStateClient:
                 body = exc.read()
             try:
                 error = json.loads(body)
-                raise RuntimeClientError(
-                    error.get("code", "unavailable"),
-                    exc.code,
-                    error.get("detail"),
-                ) from exc
             except json.JSONDecodeError:
+                error = None
+            if not isinstance(error, dict):
                 raise RuntimeClientError("unavailable", exc.code, None) from exc
+            raise RuntimeClientError(
+                error.get("code", "unavailable"),
+                exc.code,
+                error.get("detail"),
+            ) from exc
         except urllib.error.URLError as exc:
             raise RuntimeClientError("unavailable", 0, str(exc.reason)) from exc
         return HarnessStateEnvelope.model_validate_json(payload)

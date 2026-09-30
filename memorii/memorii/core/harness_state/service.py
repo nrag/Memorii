@@ -68,21 +68,34 @@ class HarnessStateService:
         if not grant.authorizes(task_id, now=now):
             # Denial before lookup: no task-existence disclosure.
             raise HarnessStateError("denied: read grant does not authorize this task")
-        task = self._repository.get_task(task_id)
-        if task is None:
-            raise HarnessStateError("not_found: task does not exist")
+        # One consistent snapshot: every read runs in a single partition
+        # read transaction so no field mixes revisions.
+        partition = self._repository.partition
+        with partition.transaction(write=False) as connection:
+            task = self._repository.get_task_in(connection, task_id)
+            if task is None:
+                raise HarnessStateError("not_found: task does not exist")
+            attempts = self._repository.list_action_attempts_in(connection, task_id)
+            solver_runs = tuple(
+                run
+                for run in self._repository.list_solver_runs_in(connection, task_id)
+            )
+            overlays = ()
+            justifications = ()
+            if solver_runs:
+                primary = solver_runs[0]
+                overlays = self._repository.list_overlays_in(
+                    connection, primary.solver_id
+                )
+                justifications = self._repository.list_justifications_in(
+                    connection, primary.solver_id
+                )
+            revision = partition.read_runtime_revision(connection)
         pending_actions = tuple(
             attempt.action_id
-            for attempt in self._repository.list_action_attempts(task_id)
+            for attempt in attempts
             if attempt.status in ("dispatched", "outcome_unknown")
         )
-        overlays = ()
-        justifications = ()
-        solver_runs = self._repository.list_solver_runs(task_id)
-        if solver_runs:
-            primary = solver_runs[0]
-            overlays = self._repository.list_overlays(primary.solver_id)
-            justifications = self._repository.list_justifications(primary.solver_id)
         candidate_hypotheses = tuple(
             HarnessOutputBlock(kind="work", label=item.justification_id, candidate=True)
             for item in justifications
@@ -117,12 +130,21 @@ class HarnessStateService:
             status = "reconcile_required"
         elif unexplained:
             status = "revalidation_required"
-        if len(frontier) == 16:
-            omissions.append("frontier truncated at 16 items; page for more")
+        for name, items in (
+            ("frontier", frontier),
+            ("candidate_hypotheses", candidate_hypotheses),
+            ("committed_hypotheses", committed_hypotheses),
+            ("unexplained_evidence", unexplained),
+            ("reopenable_branches", reopenable),
+        ):
+            if len(items) == 16:
+                omissions.append(
+                    f"{name} truncated at 16 items; page for more"
+                )
         return build_envelope(
             protocol_version=1,
             task_id=task_id,
-            revision=self._repository.runtime_revision(),
+            revision=revision,
             status=status,
             goal=task.goal,
             current_execution_node=task.root_execution_node_id,

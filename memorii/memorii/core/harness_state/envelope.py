@@ -138,6 +138,41 @@ class HarnessTextRenderer:
         self.tokenizer_identity = tokenizer_identity
 
     def render(self, envelope: HarnessStateEnvelope) -> str:
+        return self._render_lines(envelope)[0]
+
+    def render_bounded(
+        self, envelope: HarnessStateEnvelope
+    ) -> tuple[str, HarnessStateEnvelope]:
+        """Render under the token budget; degrade on mandatory overflow.
+
+        Returns the text and the (possibly degraded) envelope. When the
+        full render exceeds the declared token budget, the mandatory safety
+        summary is returned instead: status reconcile_required, an explicit
+        omission, and a paging marker — never a falsely complete summary.
+        """
+        text, char_budget = self._render_lines(envelope)
+        if len(text) <= char_budget:
+            return text, envelope
+        degraded_fields = {
+            "protocol_version": 1,
+            "task_id": envelope.task_id,
+            "revision": envelope.revision,
+            "status": "reconcile_required",
+            "goal": envelope.goal,
+            "pending_actions": tuple(envelope.pending_actions),
+            "omissions": [
+                "state exceeded the prompt token budget"
+                f" ({self.tokenizer_identity}); full state requires paging"
+            ],
+            "continuation_cursor": envelope.continuation_cursor,
+        }
+        degraded = build_envelope(**degraded_fields)
+        return self._render_lines(degraded)[0], degraded
+
+    def _render_lines(self, envelope: HarnessStateEnvelope) -> tuple[str, int]:
+        # approx-char/4: one token ~ four characters, matching the declared
+        # tokenizer identity. char_budget derives from DEFAULT_TOKEN_BUDGET.
+        char_budget = DEFAULT_TOKEN_BUDGET * 4
         lines: list[str] = [
             f"[memorii v{envelope.protocol_version}]"
             f" task={envelope.task_id} rev={envelope.revision}"
@@ -190,7 +225,7 @@ class HarnessTextRenderer:
         if envelope.continuation_cursor:
             lines.append(f"more: cursor {envelope.continuation_cursor}")
         lines.append(f"state-digest: {envelope.state_digest}")
-        return "\n".join(lines)
+        return "\n".join(lines), char_budget
 
 
 def _commitment_marker(block: HarnessOutputBlock) -> str:

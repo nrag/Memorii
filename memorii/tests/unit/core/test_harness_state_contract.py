@@ -280,3 +280,24 @@ def test_tool_summary_is_plain_about_nondurable_source(tmp_path: Path) -> None:
     nondurable = ports.tool_state_summary(principal="principal:other")
     assert nondurable["durable_runtime_view"] is False
     assert nondurable["source"] == "provider-work-state-summary"
+
+
+def test_token_budget_overflow_degrades_to_reconcile_summary() -> None:
+    from memorii.core.harness_state.envelope import HarnessTextRenderer
+
+    renderer = HarnessTextRenderer()
+    envelope = build_envelope(
+        protocol_version=1,
+        task_id="task:overflow",
+        revision=3,
+        status="ready",
+        goal="Overflow journey",
+        pending_actions=tuple(f"action:{index}" for index in range(900)),
+    )
+    text, degraded = renderer.render_bounded(envelope)
+    assert degraded.status == "reconcile_required"
+    assert any("token budget" in omission for omission in degraded.omissions)
+    assert len(text) <= 2000 * 4
+    # The full render would exceed the budget (the degrade was necessary).
+    full_text = renderer.render(envelope)
+    assert len(full_text) > 2000 * 4

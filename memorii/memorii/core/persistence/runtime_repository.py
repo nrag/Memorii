@@ -197,6 +197,39 @@ class RuntimeStateRepository:
             else RuntimeCommandReceipt.model_validate_json(row["record_json"])
         )
 
+    def list_solver_runs_in(
+        self, connection: sqlite3.Connection, task_id: str
+    ) -> tuple[SolverRunRecord, ...]:
+        rows = self._partition.read_runtime_rows(
+            connection, table="runtime_solver_runs", match=(("task_id", task_id),)
+        )
+        return tuple(
+            SolverRunRecord.model_validate_json(row["record_json"]) for row in rows
+        )
+
+    def list_overlays_in(
+        self, connection: sqlite3.Connection, solver_id: str
+    ) -> tuple[RuntimeOverlayVersion, ...]:
+        rows = self._partition.read_runtime_rows(
+            connection, table="runtime_overlay_versions", match=(("solver_id", solver_id),)
+        )
+        return tuple(
+            RuntimeOverlayVersion.model_validate_json(row["record_json"]) for row in rows
+        )
+
+    def list_justifications_in(
+        self, connection: sqlite3.Connection, solver_id: str
+    ) -> tuple[SolverJustificationRecord, ...]:
+        rows = self._partition.read_runtime_rows(
+            connection,
+            table="runtime_justifications",
+            match=(("solver_id", solver_id),),
+        )
+        return tuple(
+            SolverJustificationRecord.model_validate_json(row["record_json"])
+            for row in rows
+        )
+
     def list_action_attempts_in(
         self, connection: sqlite3.Connection, task_id: str
     ) -> tuple[ActionAttemptRecord, ...]:

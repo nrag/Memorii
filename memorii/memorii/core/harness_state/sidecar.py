@@ -102,7 +102,10 @@ class RuntimeSidecar:
             envelope = self._service.read_state(
                 task_id=request.task_id,
                 grant=grant,
-                view=request.view if request.view != "history" else "summary",
+                view=request.view,
+                # history/neighborhood page through the summary view until
+                # their paged carriers exist; the request still fails closed
+                # on unsupported forms through the service's view gate.
             )
         except HarnessStateError as exc:
             code = _harness_error_code(str(exc))
