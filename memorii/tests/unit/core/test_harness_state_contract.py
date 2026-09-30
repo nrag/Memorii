@@ -344,3 +344,144 @@ def _tmp_factory():
     from pathlib import Path
 
     return Path(tempfile.mkdtemp())
+
+
+def test_paging_cursor_walks_frontier_and_rejects_staleness(tmp_path: Path) -> None:
+    from datetime import UTC as _UTC
+    from datetime import timedelta as _timedelta
+
+    from memorii.core.harness_state.paging import HarnessCursorError
+    from memorii.core.persistence.runtime_contracts import OverlayJustificationBinding
+    from memorii.core.persistence.runtime_repository import (
+        RuntimeStateRepository,
+        publish_runtime_change,
+    )
+    from memorii.core.storage_administration.service import (
+        StorageAdministrationService,
+    )
+
+    administration = StorageAdministrationService(tmp_path / "installation")
+    administration.initialize()
+    repository = RuntimeStateRepository(administration.partition())
+    task_id = "task:paged"
+
+    def seed(connection, repo) -> None:
+        repo.apply_task(
+            connection,
+            TaskRecord(
+                task_id=task_id,
+                principal="principal:a",
+                goal="Paged frontier",
+                created_at=_NOW,
+                root_execution_node_id="exec:root",
+            ),
+        )
+        repo.apply_solver_run(
+            connection,
+            SolverRunRecord(
+                solver_id="solver:paged",
+                task_id=task_id,
+                parent_execution_node_id="exec:root",
+                category="diagnostic",
+                created_by="test",
+            ),
+        )
+        repo.apply_overlay(
+            connection,
+            RuntimeOverlayVersion(
+                version_id="overlay:paged",
+                solver_id="solver:paged",
+                node_bindings=tuple(
+                    OverlayJustificationBinding(node_id=f"node:{i}", frontier=True)
+                    for i in range(36)
+                ),
+                created_at=_NOW,
+                committed=True,
+            ),
+        )
+
+    publish_runtime_change(administration, seed, operation_binding="paging_seed")
+    service = HarnessStateService(repository)
+    grant = _grant(task_id)
+
+    first = service.read_state(task_id=task_id, grant=grant)
+    assert len(first.frontier) == 16
+    assert first.continuation_cursor is not None
+
+    second = service.read_state(
+        task_id=task_id, grant=grant, cursor=first.continuation_cursor
+    )
+    assert [block.label for block in second.frontier] == [
+        f"node:{index}" for index in range(16, 32)
+    ]
+    assert second.continuation_cursor is not None
+
+    third = service.read_state(
+        task_id=task_id, grant=grant, cursor=second.continuation_cursor
+    )
+    assert [block.label for block in third.frontier] == [
+        f"node:{index}" for index in range(32, 36)
+    ]
+    assert third.continuation_cursor is None
+
+    # A new publication moves the runtime revision: the old cursor is stale.
+    publish_runtime_change(
+        administration,
+        lambda connection, repo: repo.apply_task(
+            connection,
+            TaskRecord(
+                task_id="task:other",
+                principal="principal:a",
+                goal="Unrelated write",
+                created_at=_NOW,
+                root_execution_node_id="exec:root",
+            ),
+        ),
+        operation_binding="paging_bump",
+    )
+    with pytest.raises(HarnessCursorError, match="stale_cursor"):
+        service.read_state(
+            task_id=task_id, grant=grant, cursor=first.continuation_cursor
+        )
+
+    # Forged cursors and other principals' cursors reject outright.
+    with pytest.raises(HarnessCursorError, match="signature"):
+        service.read_state(
+            task_id=task_id, grant=grant, cursor=first.continuation_cursor[:-4] + "beef"
+        )
+    other_grant = RuntimeReadGrant(
+        grant_id="grant:other",
+        principal="principal:other",
+        allowed_task_ids=(task_id,),
+        epoch=1,
+        expires_at=datetime.now(_UTC) + _timedelta(minutes=5),
+    )
+    fresh = service.read_state(task_id=task_id, grant=grant)
+    with pytest.raises(HarnessCursorError, match="another principal"):
+        service.read_state(
+            task_id=task_id, grant=other_grant, cursor=fresh.continuation_cursor
+        )
+
+
+def test_expired_cursor_requires_reread(tmp_path: Path) -> None:
+    from memorii.core.harness_state.paging import HarnessCursorError
+
+    service, task_id, _repository = _seeded_service(tmp_path)
+    grant = _grant(task_id)
+    fresh = service.read_state(task_id=task_id, grant=grant)
+    codec = service._ensure_codec()
+    from datetime import UTC as _UTC
+    from datetime import timedelta as _timedelta
+
+    expired_cursor = codec.encode(
+        task_id=task_id,
+        principal=grant.principal,
+        grant_id=grant.grant_id,
+        grant_epoch=grant.epoch,
+        runtime_revision=fresh.revision,
+        view="summary",
+        offset=0,
+        expires_at=datetime.now(_UTC) - _timedelta(minutes=1),
+    )
+    with pytest.raises(HarnessCursorError, match="expired"):
+        service.read_state(task_id=task_id, grant=grant, cursor=expired_cursor)

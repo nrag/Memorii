@@ -103,6 +103,7 @@ class RuntimeSidecar:
                 task_id=request.task_id,
                 grant=grant,
                 view=request.view,
+                cursor=request.cursor,
                 # history/neighborhood page through the summary view until
                 # their paged carriers exist; the request still fails closed
                 # on unsupported forms through the service's view gate.

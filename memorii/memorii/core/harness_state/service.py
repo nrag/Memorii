@@ -19,6 +19,10 @@ from memorii.core.harness_state.envelope import (
     HarnessStateEnvelope,
     build_envelope,
 )
+from memorii.core.harness_state.paging import (
+    DEFAULT_CURSOR_LIFETIME,
+    HarnessPageCodec,
+)
 from memorii.core.persistence.runtime_repository import RuntimeStateRepository
 
 _HEX_64 = r"^[0-9a-f]{64}$"
@@ -49,8 +53,21 @@ class RuntimeReadGrant(BaseModel):
 class HarnessStateService:
     """Serve bounded envelope views from the verified runtime partition."""
 
-    def __init__(self, repository: RuntimeStateRepository) -> None:
+    def __init__(
+        self,
+        repository: RuntimeStateRepository,
+        *,
+        codec: HarnessPageCodec | None = None,
+    ) -> None:
         self._repository = repository
+        self._codec = codec
+
+    def _ensure_codec(self) -> HarnessPageCodec:
+        if self._codec is None:
+            from memorii.core.harness_state.paging import cursor_codec_for
+
+            self._codec = cursor_codec_for(self._repository.partition)
+        return self._codec
 
     def read_state(
         self,
@@ -59,13 +76,15 @@ class HarnessStateService:
         grant: RuntimeReadGrant,
         view: str = "summary",
         now: datetime | None = None,
+        cursor: str | None = None,
     ) -> HarnessStateEnvelope:
         if view not in ("execution", "solver", "summary", "history", "neighborhood"):
             raise HarnessStateError(
                 "invalid_request: unsupported view; use execution|solver|summary"
                 "|history|neighborhood"
             )
-        if not grant.authorizes(task_id, now=now):
+        moment = now or datetime.now(UTC)
+        if not grant.authorizes(task_id, now=moment):
             # Denial before lookup: no task-existence disclosure.
             raise HarnessStateError("denied: read grant does not authorize this task")
         # One consistent snapshot: every read runs in a single partition
@@ -91,6 +110,19 @@ class HarnessStateService:
                     connection, primary.solver_id
                 )
             revision = partition.read_runtime_revision(connection)
+        offset = 0
+        continuation: str | None = None
+        if cursor is not None:
+            offset = self._ensure_codec().decode(
+                cursor,
+                task_id=task_id,
+                principal=grant.principal,
+                grant_id=grant.grant_id,
+                grant_epoch=grant.epoch,
+                runtime_revision=revision,
+                view=view,
+                now=moment,
+            )
         pending_actions = tuple(
             attempt.action_id
             for attempt in attempts
@@ -106,12 +138,24 @@ class HarnessStateService:
             for item in justifications
             if not item.active
         )[:16]
-        frontier = tuple(
+        frontier_all = tuple(
             HarnessOutputBlock(kind="frontier", label=binding.node_id, detail=None)
             for overlay in overlays
             for binding in overlay.node_bindings
             if binding.frontier
-        )[:16]
+        )
+        frontier = frontier_all[offset : offset + 16]
+        if offset + 16 < len(frontier_all):
+            continuation = self._ensure_codec().encode(
+                task_id=task_id,
+                principal=grant.principal,
+                grant_id=grant.grant_id,
+                grant_epoch=grant.epoch,
+                runtime_revision=revision,
+                view=view,
+                offset=offset + 16,
+                expires_at=moment + DEFAULT_CURSOR_LIFETIME,
+            )
         unexplained = tuple(
             HarnessOutputBlock(kind="evidence", label=binding.node_id)
             for overlay in overlays
@@ -131,13 +175,18 @@ class HarnessStateService:
         elif unexplained:
             status = "revalidation_required"
         for name, items in (
-            ("frontier", frontier),
+            ("frontier", frontier_all[offset:]),
             ("candidate_hypotheses", candidate_hypotheses),
             ("committed_hypotheses", committed_hypotheses),
             ("unexplained_evidence", unexplained),
             ("reopenable_branches", reopenable),
         ):
-            if len(items) == 16:
+            if name == "frontier":
+                if len(items) > 16:
+                    omissions.append(
+                        "frontier truncated at 16 items; page for more"
+                    )
+            elif len(items) == 16:
                 omissions.append(
                     f"{name} truncated at 16 items; page for more"
                 )
@@ -162,4 +211,5 @@ class HarnessStateService:
             recommendation_target=pending_actions[0] if pending_actions else None,
             pending_actions=pending_actions,
             omissions=tuple(omissions),
+            continuation_cursor=continuation,
         )
