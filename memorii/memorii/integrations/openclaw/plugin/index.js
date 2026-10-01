@@ -1,17 +1,18 @@
 /**
- * Memorii memory plugin for OpenClaw.
+ * Memorii memory plugin for OpenClaw (native plugin shape).
  *
  * Host contract: openclaw-memory-plugin/v1 (major pinned; the plugin fails
  * closed when the host surface does not match). Only user messages become
- * source evidence — system events and forwarded inputs are classified and
- * never submitted as observations. Channel account/sender identity travels
- * in the command flow, never as authority: the bearer credential decides
- * the producer binding server-side. Session switches resume the same
- * authorized task; the credential is read from an owner-only file and never
+ * source evidence — forwarded and system inputs are classified out. Channel
+ * account/sender identity travels in the event flow, never as authority:
+ * the bearer credential decides the producer binding server-side. Hosts
+ * never mint tasks: the session hook resumes the operator-provisioned task
+ * or fails closed. The credential is read from an owner-only file and never
  * appears in argv or logs.
  */
 
 import { readFileSync } from "node:fs";
+import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 
 export const HOST_CONTRACT = "openclaw-memory-plugin/v1";
 const SIDECAR_URL = process.env.MEMORII_SIDECAR_URL ?? "http://127.0.0.1:8762";
@@ -28,7 +29,7 @@ function bearerToken() {
   return raw;
 }
 
-async function taskExists() {
+async function readState() {
   const response = await fetch(`${SIDECAR_URL}/v1/runtime/state`, {
     method: "POST",
     headers: {
@@ -38,24 +39,8 @@ async function taskExists() {
     body: JSON.stringify({ protocol_version: 1, task_id: TASK_ID, view: "summary" }),
   });
   if (response.status === 404) {
-    return false;
+    return null;
   }
-  if (!response.ok) {
-    throw new Error(`memorii state read failed: ${response.status}`);
-  }
-  await response.json();
-  return true;
-}
-
-async function currentRevision() {
-  const response = await fetch(`${SIDECAR_URL}/v1/runtime/state`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${bearerToken()}`,
-    },
-    body: JSON.stringify({ protocol_version: 1, task_id: TASK_ID, view: "summary" }),
-  });
   if (!response.ok) {
     throw new Error(`memorii state read failed: ${response.status}`);
   }
@@ -94,58 +79,101 @@ export function classifyInput(input) {
   return { eligible: kind === "user_message", kind, sender };
 }
 
-export function register(host) {
-  if (typeof host?.on !== "function" || typeof host?.memorySlot !== "function") {
-    throw new Error(`unsupported OpenClaw host surface for ${HOST_CONTRACT}`);
-  }
-
-  host.on("session_start", async () => {
-    // Hosts continue operator-provisioned tasks; a session without its
-    // provisioned task fails closed instead of fabricating one.
-    if (!(await taskExists())) {
-      throw new Error(`no provisioned task ${TASK_ID} for this host session`);
-    }
-    const revision = await currentRevision();
-    await submitCommand({
-      kind: "resume_task",
-      operation_id: nextOperationId("resume"),
-      task_id: TASK_ID,
-      expected_revision: revision,
-    });
-  });
-
-  host.on("session_switch", async () => {
-    const revision = await currentRevision();
-    await submitCommand({
-      kind: "resume_task",
-      operation_id: nextOperationId("resume"),
-      task_id: TASK_ID,
-      expected_revision: revision,
-    });
-  });
-
-  host.on("prompt_inject", async (input) => {
-    const classification = classifyInput(input);
-    if (!classification.eligible) {
-      return null; // forwarded/system inputs never become source evidence
-    }
-    const revision = await currentRevision();
-    await submitCommand({
-      kind: "record_observation",
-      operation_id: nextOperationId("observe"),
-      task_id: TASK_ID,
-      expected_revision: revision,
-    });
-    return null;
-  });
-
-  host.on("tool_call", async () => {
-    const revision = await currentRevision();
-    await submitCommand({
-      kind: "record_action_dispatch",
-      operation_id: nextOperationId("dispatch"),
-      task_id: TASK_ID,
-      expected_revision: revision,
-    });
-  });
+/** Derive the pinned classification from a native message context. */
+function classifyNativeMessage(context) {
+  const forwarded = context?.metadata?.forwarded === true;
+  return {
+    eligible: !forwarded,
+    kind: forwarded ? "forwarded" : "user_message",
+    sender: {
+      channel_id: context?.channelId ?? "channel:unknown",
+      account_id: context?.accountId ?? "account:unknown",
+      sender_id: context?.from ?? "sender:unknown",
+    },
+  };
 }
+
+async function onSessionStart() {
+  const revision = await readState();
+  if (revision === null) {
+    throw new Error(`no provisioned task ${TASK_ID} for this host session`);
+  }
+  await submitCommand({
+    kind: "resume_task",
+    operation_id: nextOperationId("resume"),
+    task_id: TASK_ID,
+    expected_revision: revision,
+  });
+  return undefined;
+}
+
+let resumedThisProcess = false;
+
+async function ensureResumedOnce() {
+  // Gateway sessions fire session_start; embedded agent turns may not, so
+  // the first prompt build of a process resumes the provisioned task too.
+  if (resumedThisProcess) {
+    return;
+  }
+  resumedThisProcess = true;
+  await onSessionStart();
+}
+
+async function onMessageReceived(context) {
+  const classification = classifyNativeMessage(context);
+  if (!classification.eligible) {
+    return undefined; // forwarded/system inputs never become evidence
+  }
+  await ensureResumedOnce();
+  const revision = (await readState()) ?? 0;
+  await submitCommand({
+    kind: "record_observation",
+    operation_id: nextOperationId("observe"),
+    task_id: TASK_ID,
+    expected_revision: revision,
+  });
+  return undefined;
+}
+
+async function onBeforeToolCall() {
+  const revision = (await readState()) ?? 0;
+  await submitCommand({
+    kind: "record_action_dispatch",
+    operation_id: nextOperationId("dispatch"),
+    task_id: TASK_ID,
+    expected_revision: revision,
+  });
+  return undefined;
+}
+
+async function onAfterToolCall() {
+  const revision = (await readState()) ?? 0;
+  await submitCommand({
+    kind: "record_action_result",
+    operation_id: nextOperationId("result"),
+    task_id: TASK_ID,
+    expected_revision: revision,
+  });
+  return undefined;
+}
+
+export default definePluginEntry({
+  id: "memorii",
+  name: "Memorii",
+  description: "Memorii durable runtime state for OpenClaw sessions.",
+  version: "1.0.0",
+  register(api) {
+    if (typeof api?.on !== "function") {
+      throw new Error(`unsupported OpenClaw host surface for ${HOST_CONTRACT}`);
+    }
+    // The typed hook runner dispatches these events; api.on is the
+    // supported registration surface for them.
+    api.on("session_start", onSessionStart);
+    api.on("message_received", onMessageReceived);
+    // The embedded agent path builds prompts per turn without gateway
+    // session lifecycle; prompt build is the prompt_inject analog there.
+    api.on("before_prompt_build", onMessageReceived);
+    api.on("before_tool_call", onBeforeToolCall);
+    api.on("after_tool_call", onAfterToolCall);
+  },
+});

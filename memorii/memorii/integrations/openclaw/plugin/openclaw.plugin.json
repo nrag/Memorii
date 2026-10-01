@@ -1,0 +1,14 @@
+{
+  "id": "memorii",
+  "name": "Memorii",
+  "description": "Memorii durable runtime state for OpenClaw sessions.",
+  "version": "1.0.0",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  },
+  "activation": {
+    "onStartup": true
+  }
+}
