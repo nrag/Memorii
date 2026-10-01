@@ -26,14 +26,15 @@ def seeded_chat_turn(
     message: str,
     *,
     marker: str = "acknowledged and recorded.",
-    settle: "callable[[], bool] | None" = None,
+    count_fn: "callable[[], int] | None" = None,
     timeout: float = 300.0,
 ) -> tuple[bool, str]:
     """Run one seeded chat turn; returns (marker seen, transcript text).
 
-    ``settle``, when given, delays the clean /exit until it returns true
-    (bounded): the completed-turn memory pipeline flushes AFTER the reply
-    renders, so exiting on the marker alone can race the durable write.
+    ``count_fn``, when given, delays the clean /exit until the durable
+    count it returns GROWS past its value at marker time (bounded): Hermes
+    syncs the completed turn on a background worker AFTER the reply
+    renders, so exiting on the marker alone races the memory write.
     """
     pid, descriptor = pty.fork()
     if pid == 0:
@@ -63,15 +64,19 @@ def seeded_chat_turn(
                 if marker in text:
                     answered = True
                     if not exited:
-                        if settle is None:
+                        if count_fn is None:
                             time.sleep(1.0)
                             os.write(descriptor, b"/exit\r")
                             exited = True
                         else:
-                            settle_deadline = time.monotonic() + 45.0
+                            base = count_fn()
+                            settle_deadline = time.monotonic() + 150.0
                             while time.monotonic() < settle_deadline:
-                                if settle():
-                                    break
+                                try:
+                                    if count_fn() > base:
+                                        break
+                                except OSError:
+                                    pass
                                 time.sleep(1.0)
                             os.write(descriptor, b"/exit\r")
                             exited = True
