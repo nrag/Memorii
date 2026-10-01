@@ -11,7 +11,12 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 _MODEL_ID = "stub-model"
-_REPLY = "stub reply: acknowledged and recorded."
+_REPLY_COUNTER = {"n": 0}
+
+
+def _next_reply() -> str:
+    _REPLY_COUNTER["n"] += 1
+    return f"stub reply {chr(ord('a') + _REPLY_COUNTER['n'] - 1)}: acknowledged and recorded."
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -32,9 +37,10 @@ class _Handler(BaseHTTPRequestHandler):
             return
         length = int(self.headers.get("Content-Length") or 0)
         request = json.loads(self.rfile.read(length) or b"{}")
+        reply = _next_reply()
         message = {
             "role": "assistant",
-            "content": _REPLY,
+            "content": reply,
         }
         if request.get("stream"):
             self.send_response(200)
@@ -43,7 +49,7 @@ class _Handler(BaseHTTPRequestHandler):
             chunk = {
                 "id": "stub",
                 "object": "chat.completion.chunk",
-                "choices": [{"index": 0, "delta": {"role": "assistant", "content": _REPLY}}],
+                "choices": [{"index": 0, "delta": {"role": "assistant", "content": reply}}],
             }
             self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
             self.wfile.write(b"data: [DONE]\n\n")
