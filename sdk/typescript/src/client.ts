@@ -88,6 +88,40 @@ export interface HarnessStateEnvelope {
   continuation_cursor?: string | null;
 }
 
+/** Closed v1 runtime command union, validated server-side. */
+export type RuntimeCommandKind =
+  | "start_task"
+  | "resume_task"
+  | "record_observation"
+  | "propose_state_change"
+  | "record_action_dispatch"
+  | "record_action_result"
+  | "checkpoint_task"
+  | "replan_task"
+  | "complete_task"
+  | "pause_task"
+  | "abort_task";
+
+export interface RuntimeCommand {
+  protocol_version?: 1;
+  kind: RuntimeCommandKind;
+  operation_id: string;
+  task_id?: string | null;
+  expected_revision?: number | null;
+  goal?: string | null;
+  completion_evidence?: unknown | null;
+  pause_reason?: string | null;
+  abort_reason?: string | null;
+  proposal?: unknown | null;
+}
+
+export interface SpoolRecord {
+  operation_id: string;
+  producer_binding: string;
+  request_digest: string;
+  state: "pending" | "committed" | "dead_letter";
+}
+
 export class RuntimeClientError extends Error {
   readonly code: RuntimeErrorCode;
   readonly httpStatus: number;
@@ -175,5 +209,59 @@ export class RuntimeStateClient {
       throw new RuntimeClientError(code, response.status, detail);
     }
     return (await response.json()) as HarnessStateEnvelope;
+  }
+
+  /**
+   * Submit one closed runtime command through the durable intake route.
+   * Producer authority is server-derived from the credential; the same
+   * operation id redelivers idempotently, a divergent duplicate
+   * dead-letters as a conflict.
+   */
+  async submitEvent(
+    command: RuntimeCommand,
+    options: { transportMessageId?: string } = {},
+  ): Promise<SpoolRecord> {
+    const body = JSON.stringify({
+      protocol_version: 1,
+      command,
+      ...(options.transportMessageId !== undefined
+        ? { transport_message_id: options.transportMessageId }
+        : {}),
+    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    let response: Response;
+    try {
+      response = await fetch(`${this.baseUrl}/v1/runtime/intake`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${this.credential}`,
+        },
+        body,
+        signal: controller.signal,
+      });
+    } catch (cause) {
+      throw new RuntimeClientError("unavailable", 0, String(cause));
+    } finally {
+      clearTimeout(timer);
+    }
+    if (!response.ok) {
+      let code: RuntimeErrorCode = "unavailable";
+      let detail: string | null = null;
+      try {
+        const parsed = (await response.json()) as Record<string, unknown>;
+        if (typeof parsed["code"] === "string") {
+          code = parsed["code"] as RuntimeErrorCode;
+        }
+        if (typeof parsed["detail"] === "string") {
+          detail = parsed["detail"];
+        }
+      } catch {
+        // non-JSON or non-object error body maps to unavailable
+      }
+      throw new RuntimeClientError(code, response.status, detail);
+    }
+    return (await response.json()) as SpoolRecord;
   }
 }

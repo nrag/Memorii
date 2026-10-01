@@ -6,23 +6,37 @@ requires an installation-issued bearer credential mapped server-side to
 a finite read grant, and refuses remote binding. Request strings never
 choose principal authority. No task-derived data appears in
 unauthenticated or denied responses.
+
+The intake route extends the same posture to writes: a bearer
+credential maps server-side to one producer binding over one durable
+spool, the closed runtime-command union validates server-side, and
+admission is durable before acknowledgement.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from memorii.core.harness_state.consumer import (
+    ConsumerDeliveryError,
+    HostEventDelivery,
+    LocalDurableSpool,
+)
 from memorii.core.harness_state.credentials import SidecarCredentialStore
 from memorii.core.harness_state.service import (
     HarnessStateError,
     HarnessStateService,
     RuntimeReadGrant,
 )
+from memorii.core.persistence.runtime_contracts import RuntimeCommandRequest
 from memorii.core.persistence.runtime_repository import RuntimeStateRepository
+
+_MAXIMUM_INTAKE_BYTES = 1 << 20
 
 
 class SidecarRequest(BaseModel):
@@ -34,6 +48,25 @@ class SidecarRequest(BaseModel):
     cursor: str | None = None
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class SidecarIntakeRequest(BaseModel):
+    """Closed v1 intake body: one runtime command, authority stays server-side."""
+
+    protocol_version: Literal[1] = 1
+    command: RuntimeCommandRequest
+    transport_message_id: str | None = Field(default=None, min_length=1, max_length=256)
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+@dataclass(frozen=True)
+class HostIntakeBinding:
+    """Server-derived write authority for one authenticated principal."""
+
+    spool: LocalDurableSpool
+    producer_binding: str
+    allowlisted_producers: tuple[str, ...]
 
 
 class SidecarError(BaseModel):
@@ -83,10 +116,12 @@ class RuntimeSidecar:
         *,
         credentials: dict[str, str] | SidecarCredentialStore,
         grant_factory: Callable[[str], RuntimeReadGrant],
+        intake_factory: Callable[[str], HostIntakeBinding] | None = None,
     ) -> None:
         self._repository = repository
         self._credentials = credentials
         self._grant_factory = grant_factory
+        self._intake_factory = intake_factory
         self._service = HarnessStateService(repository)
 
     def _principal_for(self, secret: str) -> str | None:
@@ -132,6 +167,53 @@ class RuntimeSidecar:
             return _error(_ERROR_STATUS.get(code, 400), code, None)
         return 200, envelope.model_dump_json().encode("utf-8")
 
+    def handle_intake_request(
+        self,
+        *,
+        bearer_token: str | None,
+        origin: str | None,
+        body: bytes,
+        host: str | None = None,
+    ) -> tuple[int, bytes]:
+        """Admit one runtime command durably; authority is server-derived."""
+        if host is not None and host not in ("127.0.0.1", "localhost", "::1"):
+            return _error(403, "denied", "remote binding is disabled")
+        if origin is not None:
+            return _error(403, "denied", "browser-origin requests are rejected")
+        principal = self._principal_for(bearer_token or "")
+        if principal is None:
+            return _error(401, "unauthenticated", None)
+        if self._intake_factory is None:
+            return _error(503, "unavailable", None)
+        binding = self._intake_factory(principal)
+        if binding.producer_binding not in binding.allowlisted_producers:
+            # Configuration inconsistency, never a client-supplied escape.
+            return _error(503, "unavailable", None)
+        if len(body) > _MAXIMUM_INTAKE_BYTES:
+            return _error(400, "invalid_request", "intake body exceeds the closed limit")
+        try:
+            request = SidecarIntakeRequest.model_validate_json(body)
+        except ValueError:
+            return _error(400, "invalid_request", "body is not a closed v1 intake request")
+        delivery = HostEventDelivery(
+            transport_message_id=request.transport_message_id
+            or f"sidecar:{request.command.operation_id}",
+            producer_binding=binding.producer_binding,
+            command=request.command,
+        )
+        try:
+            record = binding.spool.admit(
+                delivery, allowlisted_producers=binding.allowlisted_producers
+            )
+        except ConsumerDeliveryError as exc:
+            message = str(exc)
+            if message.startswith("conflict:"):
+                return _error(409, "conflict", None)
+            if message.startswith("denied:"):
+                return _error(403, "denied", None)
+            return _error(503, "unavailable", None)
+        return 200, record.model_dump_json().encode("utf-8")
+
 
 def _error(status: int, code: str, detail: str | None) -> tuple[int, bytes]:
     payload = SidecarError(code=code, retryable=code in ("unavailable", "resource_exhausted"), detail=detail)
@@ -150,6 +232,20 @@ def build_sidecar_handler(sidecar: RuntimeSidecar) -> type[BaseHTTPRequestHandle
 
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self) -> None:  # noqa: N802 - http.server API
+            if self.path == "/v1/runtime/intake":
+                length = int(self.headers.get("Content-Length") or 0)
+                body = self.rfile.read(length) if length else b""
+                status, payload = sidecar.handle_intake_request(
+                    bearer_token=self.headers.get("Authorization", "").removeprefix(
+                        "Bearer "
+                    )
+                    or None,
+                    origin=self.headers.get("Origin"),
+                    body=body,
+                    host=self.headers.get("Host", "").split(":")[0] or None,
+                )
+                self._respond(status, payload)
+                return
             if self.path != "/v1/runtime/state":
                 self._respond(*_error(404, "not_found", None))
                 return
@@ -192,8 +288,10 @@ def serve_loopback(
 
 
 __all__ = [
+    "HostIntakeBinding",
     "RuntimeSidecar",
     "SidecarError",
+    "SidecarIntakeRequest",
     "SidecarRequest",
     "build_sidecar_handler",
     "serve_loopback",

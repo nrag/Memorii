@@ -15,8 +15,13 @@ import sys
 
 
 def build_openapi_document() -> dict[str, object]:
+    from memorii.core.harness_state.consumer import SpoolRecord
     from memorii.core.harness_state.envelope import HarnessStateEnvelope
-    from memorii.core.harness_state.sidecar import SidecarError, SidecarRequest
+    from memorii.core.harness_state.sidecar import (
+        SidecarError,
+        SidecarIntakeRequest,
+        SidecarRequest,
+    )
 
     def schema(model: type) -> dict[str, object]:
         return json.loads(
@@ -32,7 +37,8 @@ def build_openapi_document() -> dict[str, object]:
                 "Loopback runtime sidecar: closed v1 state requests over the"
                 " verified partition. Transport posture: loopback bind,"
                 " browser-origin rejection, installation-issued bearer"
-                " credentials."
+                " credentials. The intake route admits closed runtime"
+                " commands durably with server-derived producer authority."
             ),
         },
         "servers": [{"url": "http://127.0.0.1", "description": "loopback only"}],
@@ -70,7 +76,43 @@ def build_openapi_document() -> dict[str, object]:
                         },
                     },
                 }
-            }
+            },
+            "/v1/runtime/intake": {
+                "post": {
+                    "operationId": "submitRuntimeCommand",
+                    "security": [{"bearerAuth": []}],
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SidecarIntakeRequest"
+                                }
+                            }
+                        },
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "Durable idempotent intake record",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "$ref": "#/components/schemas/SpoolRecord"
+                                    }
+                                }
+                            },
+                        },
+                        "default": {
+                            "description": "Closed error envelope (no task-derived data)",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/SidecarError"}
+                                }
+                            },
+                        },
+                    },
+                }
+            },
         },
         "components": {
             "securitySchemes": {
@@ -78,6 +120,8 @@ def build_openapi_document() -> dict[str, object]:
             },
             "schemas": {
                 "SidecarRequest": schema(SidecarRequest),
+                "SidecarIntakeRequest": schema(SidecarIntakeRequest),
+                "SpoolRecord": schema(SpoolRecord),
                 "HarnessStateEnvelope": schema(HarnessStateEnvelope),
                 "SidecarError": schema(SidecarError),
             },

@@ -310,3 +310,134 @@ def test_consume_cli_admits_dispatches_and_refuses_untrusted(tmp_path: Path) -> 
         )
         == 3
     )
+
+
+def _intake_sidecar(tmp_path: Path) -> tuple[RuntimeSidecar, str, Path]:
+    from memorii.core.harness_state.consumer import LocalDurableSpool
+    from memorii.core.harness_state.sidecar import HostIntakeBinding
+
+    sidecar, task_id = _sidecar(tmp_path)
+    spool_directory = tmp_path / "spool"
+    sidecar._intake_factory = lambda principal: HostIntakeBinding(
+        spool=LocalDurableSpool(spool_directory),
+        producer_binding=f"host:{principal}",
+        allowlisted_producers=(f"host:{principal}",),
+    )
+    return sidecar, task_id, spool_directory
+
+
+def _intake_body(
+    operation_id: str, task_id: str, *, kind: str = "record_observation", revision: int = 0
+) -> bytes:
+    from memorii.core.persistence.runtime_contracts import RuntimeCommandRequest
+
+    command = RuntimeCommandRequest(
+        kind=kind,  # type: ignore[arg-type]
+        operation_id=operation_id,
+        task_id=task_id,
+        expected_revision=revision,
+    )
+    import json
+
+    return json.dumps(
+        {"protocol_version": 1, "command": command.model_dump(mode="json")}
+    ).encode()
+
+
+def test_intake_admits_durably_and_idempotently(tmp_path: Path) -> None:
+    sidecar, task_id, spool_directory = _intake_sidecar(tmp_path)
+    first = sidecar.handle_intake_request(
+        bearer_token="credential:one", origin=None, body=_intake_body("op:1", task_id)
+    )
+    assert first[0] == 200
+    record = json.loads(first[1])
+    assert record["operation_id"] == "op:1"
+    assert record["state"] == "pending"
+    assert (spool_directory / "intake.jsonl").exists()
+    lines = (spool_directory / "intake.jsonl").read_text().splitlines()
+    assert len(lines) == 1
+
+    second = sidecar.handle_intake_request(
+        bearer_token="credential:one", origin=None, body=_intake_body("op:1", task_id)
+    )
+    assert second[0] == 200
+    assert json.loads(second[1])["operation_id"] == "op:1"
+    assert len((spool_directory / "intake.jsonl").read_text().splitlines()) == 1
+
+
+def test_intake_divergent_duplicate_dead_letters_as_conflict(tmp_path: Path) -> None:
+    sidecar, task_id, _ = _intake_sidecar(tmp_path)
+    assert sidecar.handle_intake_request(
+        bearer_token="credential:one", origin=None, body=_intake_body("op:1", task_id)
+    )[0] == 200
+    divergent = _intake_body("op:1", task_id, revision=1)
+    status, payload = sidecar.handle_intake_request(
+        bearer_token="credential:one", origin=None, body=divergent
+    )
+    assert status == 409
+    assert json.loads(payload)["code"] == "conflict"
+
+
+def test_intake_rejects_unknown_kind_and_mismatched_payload(tmp_path: Path) -> None:
+    sidecar, task_id, _ = _intake_sidecar(tmp_path)
+    unknown = _intake_body("op:2", task_id).replace(
+        b'"record_observation"', b'"fabricate_truth"'
+    )
+    status, payload = sidecar.handle_intake_request(
+        bearer_token="credential:one", origin=None, body=unknown
+    )
+    assert status == 400
+    assert json.loads(payload)["code"] == "invalid_request"
+
+    start_without_goal = b'{"protocol_version":1,"command":{"kind":"start_task","operation_id":"op:3"}}'
+    status, payload = sidecar.handle_intake_request(
+        bearer_token="credential:one", origin=None, body=start_without_goal
+    )
+    assert status == 400
+    assert json.loads(payload)["code"] == "invalid_request"
+
+
+def test_intake_posture_matches_the_read_route(tmp_path: Path) -> None:
+    sidecar, task_id, _ = _intake_sidecar(tmp_path)
+    body = _intake_body("op:4", task_id)
+    assert sidecar.handle_intake_request(
+        bearer_token=None, origin=None, body=body
+    )[0] == 401
+    status, payload = sidecar.handle_intake_request(
+        bearer_token="credential:one", origin="http://127.0.0.1:4000", body=body
+    )
+    assert status == 403
+    assert "task" not in payload.decode().lower()
+    assert sidecar.handle_intake_request(
+        bearer_token="credential:one", origin=None, body=body, host="10.0.0.9"
+    )[0] == 403
+    assert sidecar.handle_intake_request(
+        bearer_token="credential:one", origin=None, body=b"x" * (2 << 20)
+    )[0] == 400
+
+
+def test_intake_without_configured_binding_is_unavailable(tmp_path: Path) -> None:
+    sidecar, task_id = _sidecar(tmp_path)
+    status, payload = sidecar.handle_intake_request(
+        bearer_token="credential:one", origin=None, body=_intake_body("op:5", task_id)
+    )
+    assert status == 503
+    assert json.loads(payload)["code"] == "unavailable"
+
+
+def test_loopback_http_serves_intake(tmp_path: Path) -> None:
+    sidecar, task_id, _ = _intake_sidecar(tmp_path)
+    url, server = serve_loopback(sidecar)
+    try:
+        request = urllib.request.Request(
+            f"{url}/v1/runtime/intake",
+            data=_intake_body("op:http", task_id),
+            headers={"Authorization": "Bearer credential:one"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request) as response:
+            assert response.status == 200
+            assert json.loads(response.read())["operation_id"] == "op:http"
+    finally:
+        server.shutdown()
+        server.server_close()

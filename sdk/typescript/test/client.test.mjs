@@ -93,6 +93,56 @@ test("authorized state parses into the envelope shape", async () => {
   assert.deepEqual(state.pending_actions, ["action:pending"]);
 });
 
+test("submitEvent posts the closed command and parses the intake record", async () => {
+  const seen = [];
+  const server = createServer((request, response) => {
+    const chunks = [];
+    request.on("data", (chunk) => chunks.push(chunk));
+    request.on("end", () => {
+      seen.push({ url: request.url, auth: request.headers.authorization, body: JSON.parse(Buffer.concat(chunks).toString()) });
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({
+        operation_id: "op:1",
+        producer_binding: "host:principal:a",
+        request_digest: "a".repeat(64),
+        state: "pending",
+      }));
+    });
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  server.unref();
+  const client = new RuntimeStateClient({
+    baseUrl: `http://127.0.0.1:${server.address().port}`,
+    credential: "credential:one",
+  });
+  const record = await client.submitEvent(
+    { kind: "record_observation", operation_id: "op:1", task_id: "task:one", expected_revision: 0 },
+    { transportMessageId: "msg:7" },
+  );
+  assert.equal(record.operation_id, "op:1");
+  assert.equal(record.state, "pending");
+  assert.equal(seen[0].url, "/v1/runtime/intake");
+  assert.equal(seen[0].auth, "Bearer credential:one");
+  assert.equal(seen[0].body.protocol_version, 1);
+  assert.equal(seen[0].body.command.kind, "record_observation");
+  assert.equal(seen[0].body.transport_message_id, "msg:7");
+});
+
+test("submitEvent maps conflict to its closed code", async () => {
+  const client = new RuntimeStateClient({
+    baseUrl: await serve(409, { code: "conflict", retryable: false, detail: null }),
+    credential: "right",
+  });
+  await assert.rejects(
+    client.submitEvent({ kind: "checkpoint_task", operation_id: "op:2", task_id: "task:one", expected_revision: 3 }),
+    (error) => {
+      assert.equal(error.code, "conflict");
+      assert.equal(error.httpStatus, 409);
+      return true;
+    },
+  );
+});
+
 /** Minimal one-shot HTTP server serving a fixed response; loopback only. */
 async function serve(status, body, contentType = "application/json") {
   const server = createServer((request, response) => {
