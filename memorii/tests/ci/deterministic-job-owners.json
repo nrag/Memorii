@@ -30,6 +30,18 @@
       "timeout_minutes": 5,
       "timing_exemption_reason": "Hermetic Python 3.12 tamper partition with separately installed dependencies."
     },
+    "durable-runtime-integration": {
+      "runtime_budget_seconds": 420,
+      "timeout_headroom_seconds": 240,
+      "timeout_minutes": 15,
+      "timing_exemption_reason": "Dedicated durable runtime, sidecar and consumer integration journeys with their own timeout budget."
+    },
+    "durable-storage-integration": {
+      "runtime_budget_seconds": 600,
+      "timeout_headroom_seconds": 300,
+      "timeout_minutes": 20,
+      "timing_exemption_reason": "Dedicated shared-SQLite storage, migration-recovery and partition provider-path journeys with their own timeout budget."
+    },
     "equal-version-replay-decision": {
       "runtime_budget_seconds": 60,
       "timeout_headroom_seconds": 240,
@@ -47,6 +59,12 @@
       "timeout_headroom_seconds": 600,
       "timeout_minutes": 60,
       "timing_exemption_reason": "Production-shaped Hermes composition, persistent reopen, replay, revocation, and recovery run as one dedicated Level 2 product gate."
+    },
+    "host-compatibility-certification": {
+      "runtime_budget_seconds": 600,
+      "timeout_headroom_seconds": 300,
+      "timeout_minutes": 20,
+      "timing_exemption_reason": "Real pinned host-framework certification journeys in an isolated environment with their own bounded timeout."
     },
     "observation-ledger-activation": {
       "runtime_budget_seconds": 12600,

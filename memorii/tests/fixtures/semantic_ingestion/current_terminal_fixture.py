@@ -8,7 +8,7 @@ from pathlib import Path
 
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
-from memorii.core.memory_plane.store import JsonlMemoryPlaneStore, _PersistedBatch
+from memorii.core.memory_plane.store import JsonlMemoryPlaneStore, PersistedBatch
 
 _FIXTURE_ROOT = Path(__file__).with_name("current_terminal")
 
@@ -24,6 +24,6 @@ def rehydrated_current_terminal_plane(tmp_path: Path) -> MemoryPlaneService:
     )
     backend = JsonlMemoryPlaneStore(tmp_path / "current-terminal")
     backend._replace_batches([
-        _PersistedBatch.create(revision=1, data_revision=0, records=records),
+        PersistedBatch.create(revision=1, data_revision=0, records=records),
     ])
     return MemoryPlaneService(record_store=backend)

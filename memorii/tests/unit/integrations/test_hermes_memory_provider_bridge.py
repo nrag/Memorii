@@ -731,7 +731,7 @@ def test_factory_issues_stable_exact_local_structured_grants() -> None:
 def _append_external_control_record(*, storage_root: Path, record: CanonicalMemoryRecord) -> None:
     """Model a persisted control-plane corruption from a second process."""
     from memorii.core.memory_plane import JsonlMemoryPlaneStore
-    from memorii.core.memory_plane.store import _PersistedBatch
+    from memorii.core.memory_plane.store import PersistedBatch
 
     store = JsonlMemoryPlaneStore(storage_root / "memory-plane")
     with store._locked(exclusive=True):
@@ -740,7 +740,7 @@ def _append_external_control_record(*, storage_root: Path, record: CanonicalMemo
         data_revision = batches[-1].data_revision if batches else 0
         store._replace_batches([
             *batches,
-            _PersistedBatch.create(
+            PersistedBatch.create(
                 revision=write_revision + 1,
                 data_revision=data_revision,
                 records=(record,),
@@ -2514,7 +2514,7 @@ def _persist_installed_protected_claim(
 
     from memorii.core.memory_plane import JsonlMemoryPlaneStore
     from memorii.core.memory_plane.models import CanonicalMemoryRecord
-    from memorii.core.memory_plane.store import _PersistedBatch
+    from memorii.core.memory_plane.store import PersistedBatch
     from memorii.core.semantic_ingestion.catalog_authority import (
         StructuredClaimCatalogBinding,
         ThreePredicateSeedCatalogAuthorityRepository,
@@ -2571,7 +2571,7 @@ def _persist_installed_protected_claim(
         data_revision = batches[-1].data_revision if batches else 0
         external_store._replace_batches([
             *batches,
-            _PersistedBatch.create(
+            PersistedBatch.create(
                 revision=write_revision + 1,
                 data_revision=data_revision + 1,
                 records=(projection, binding_record),

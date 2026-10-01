@@ -10,7 +10,7 @@ import pytest
 from memorii.core.memory_evolution.ingestion_contracts import AuthenticatedHostIngress
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
-from memorii.core.memory_plane.store import JsonlMemoryPlaneStore, _PersistedBatch
+from memorii.core.memory_plane.store import JsonlMemoryPlaneStore, PersistedBatch
 from memorii.core.provider.ingestion import StructuredFactSubmissionStatusRequest
 from memorii.core.provider.models import ProviderOperation
 from memorii.core.scoped_context.authority import InProcessScopedReadAuthority
@@ -232,7 +232,7 @@ def test_captured_reports_to_child_reaches_native_claim_and_catalog_binding(
         batches, _ = backend._current_records_unlocked()
         backend._replace_batches([
             *batches,
-            _PersistedBatch.create(
+            PersistedBatch.create(
                 revision=batches[-1].revision + 1,
                 data_revision=batches[-1].data_revision + 1,
                 records=(

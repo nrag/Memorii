@@ -117,7 +117,7 @@ from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.memory_plane.store import (
     InMemoryMemoryPlaneStore,
     JsonlMemoryPlaneStore,
-    _PersistedBatch,
+    PersistedBatch,
     record_digest,
 )
 from memorii.core.provider.factory import build_provider_memory_service_from_env
@@ -3820,7 +3820,7 @@ def _rewrite_jsonl_snapshot(
     data_revision = int(any(record.visibility.value == "runtime_context" for record in records.values()))
     backend._replace_batches(
         [
-            _PersistedBatch.create(
+            PersistedBatch.create(
                 revision=1,
                 data_revision=data_revision,
                 records=tuple(records.values()),

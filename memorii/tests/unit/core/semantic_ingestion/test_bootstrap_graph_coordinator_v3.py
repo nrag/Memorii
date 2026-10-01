@@ -15,7 +15,7 @@ from memorii.core.memory_evolution.atomic_store import (
 )
 from memorii.core.memory_evolution.writer_admission import SemanticWriterAdmissionError
 from memorii.core.memory_plane.service import MemoryPlaneService
-from memorii.core.memory_plane.store import JsonlMemoryPlaneStore, _PersistedBatch
+from memorii.core.memory_plane.store import JsonlMemoryPlaneStore, PersistedBatch
 from memorii.core.provider.models import ProviderOperation
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.semantic_ingestion.bootstrap_graph_coordinator import (
@@ -808,7 +808,7 @@ def test_terminal_request_reload_rejects_corrupt_jsonl_closure_after_reopen(tmp_
             f"{sha256(member['member_id'].encode('utf-8')).hexdigest()}"
         )
         batches = [
-            _PersistedBatch.model_validate_json(line)
+            PersistedBatch.model_validate_json(line)
             for line in (storage / "memory_records.jsonl").read_text(encoding="utf-8").splitlines()
         ]
         rewritten = []
@@ -824,7 +824,7 @@ def test_terminal_request_reload_rejects_corrupt_jsonl_closure_after_reopen(tmp_
                     substitute_member=substitute,
                 )) is not None
             )
-            rewritten.append(_PersistedBatch.create(
+            rewritten.append(PersistedBatch.create(
                 revision=batch.revision,
                 data_revision=batch.data_revision,
                 records=records,

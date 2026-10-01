@@ -47,7 +47,7 @@ from memorii.stores.sqlite.control import ControlDatabase, ControlJournalChainEr
 from memorii.stores.sqlite.partition import PartitionDataRepository
 
 _CONTROL_FORMAT_VERSION = 1
-_DEFAULT_SIGNER_KEY_ID = "installation-control"
+DEFAULT_SIGNER_KEY_ID = "installation-control"
 _UNINITIALIZED = "uninitialized"
 _KNOWN_LAYOUT = frozenset(
     {"control", "partition", ".init.lock", ".publication.lock"}
@@ -109,7 +109,7 @@ class StorageAdministrationService:
         self,
         installation_root: str | Path,
         *,
-        signer_key_id: str = _DEFAULT_SIGNER_KEY_ID,
+        signer_key_id: str = DEFAULT_SIGNER_KEY_ID,
     ) -> None:
         self._root = Path(installation_root)
         self._signer_key_id = signer_key_id

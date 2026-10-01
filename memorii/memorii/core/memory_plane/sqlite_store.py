@@ -29,6 +29,7 @@ from memorii.core.memory_plane.query import (
 )
 from memorii.core.memory_plane.store import (
     SEMANTIC_CHECKPOINT_SECRET_PURPOSE,
+    BackendCheckpointSignatureAuthority,
     CheckpointSignatureAuthority,
     GovernedWritePolicy,
     MemoryPlaneCorruptionError,
@@ -36,13 +37,12 @@ from memorii.core.memory_plane.store import (
     MemoryPlaneRevisionConflictError,
     MemoryPlaneTimedWriteSnapshot,
     MemoryPlaneWriteAuthorization,
-    _BackendCheckpointSignatureAuthority,
-    _clone_record,
-    _contains_runtime_context,
-    _PersistedBatch,
-    _validate_expected_write_revision,
-    _validate_governed_write,
-    _validate_preconditions,
+    PersistedBatch,
+    clone_record,
+    contains_runtime_context,
+    validate_expected_write_revision,
+    validate_governed_write,
+    validate_preconditions,
 )
 from memorii.domain.enums import CommitStatus, MemoryDomain
 from memorii.stores.sqlite.partition import PartitionDataRepository
@@ -62,7 +62,7 @@ class SqliteMemoryPlaneStore:
             self._partition = PartitionDataRepository(database_path)
         self._governed_write_policy: GovernedWritePolicy | None = None
         self._checkpoint_signature_owner: object | None = None
-        self._checkpoint_signature_authority: _BackendCheckpointSignatureAuthority | None = None
+        self._checkpoint_signature_authority: BackendCheckpointSignatureAuthority | None = None
         self._validated_chain_key: tuple[int, int] | None = None
 
     @property
@@ -128,7 +128,7 @@ class SqliteMemoryPlaneStore:
                 purpose=SEMANTIC_CHECKPOINT_SECRET_PURPOSE,
                 length=32,
             )
-            self._checkpoint_signature_authority = _BackendCheckpointSignatureAuthority(secret)
+            self._checkpoint_signature_authority = BackendCheckpointSignatureAuthority(secret)
         return self._checkpoint_signature_authority
 
     def install_governed_write_policy(self, policy: GovernedWritePolicy) -> None:
@@ -158,7 +158,7 @@ class SqliteMemoryPlaneStore:
     ) -> int:
         with self._partition.transaction(write=True) as connection:
             _, data_revision, current_records = self._validated_state(connection)
-            _validate_governed_write(
+            validate_governed_write(
                 self._governed_write_policy,
                 records,
                 tuple(current_records.values()),
@@ -182,7 +182,7 @@ class SqliteMemoryPlaneStore:
         transaction_precondition: Callable[[], None] | None = None,
     ) -> int:
         with self._partition.transaction(write=True) as connection:
-            _validate_expected_write_revision(expected_write_revision)
+            validate_expected_write_revision(expected_write_revision)
             if transaction_precondition is not None:
                 transaction_precondition()
             write_revision, data_revision, current_records = self._validated_state(connection)
@@ -195,8 +195,8 @@ class SqliteMemoryPlaneStore:
                     "memory-plane write revision changed: "
                     f"expected {expected_write_revision}, actual {write_revision}"
                 )
-            _validate_preconditions(current_records, preconditions)
-            _validate_governed_write(
+            validate_preconditions(current_records, preconditions)
+            validate_governed_write(
                 self._governed_write_policy,
                 records,
                 tuple(current_records.values()),
@@ -222,7 +222,7 @@ class SqliteMemoryPlaneStore:
         the transaction's own view, persists the control intent and only then
         commits. Validation semantics are identical to ``apply_batch``.
         """
-        _validate_expected_write_revision(expected_write_revision)
+        validate_expected_write_revision(expected_write_revision)
         if transaction_precondition is not None:
             transaction_precondition()
         write_revision, data_revision, current_records = self._validated_state(connection)
@@ -235,8 +235,8 @@ class SqliteMemoryPlaneStore:
                 "memory-plane write revision changed: "
                 f"expected {expected_write_revision}, actual {write_revision}"
             )
-        _validate_preconditions(current_records, preconditions)
-        _validate_governed_write(
+        validate_preconditions(current_records, preconditions)
+        validate_governed_write(
             self._governed_write_policy,
             records,
             tuple(current_records.values()),
@@ -248,7 +248,7 @@ class SqliteMemoryPlaneStore:
         with self._partition.transaction(write=False) as connection:
             _, data_revision, current_records = self._validated_state(connection)
             return data_revision, tuple(
-                _clone_record(record) for record in current_records.values()
+                clone_record(record) for record in current_records.values()
             )
 
     def read_snapshot_linearized(
@@ -260,14 +260,14 @@ class SqliteMemoryPlaneStore:
             _, data_revision, current_records = self._validated_state(connection)
             return callback(
                 data_revision,
-                tuple(_clone_record(record) for record in current_records.values()),
+                tuple(clone_record(record) for record in current_records.values()),
             )
 
     def read_write_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]:
         with self._partition.transaction(write=False) as connection:
             write_revision, _, current_records = self._validated_state(connection)
             return write_revision, tuple(
-                _clone_record(record) for record in current_records.values()
+                clone_record(record) for record in current_records.values()
             )
 
     def read_timed_write_snapshot(
@@ -275,7 +275,7 @@ class SqliteMemoryPlaneStore:
     ) -> MemoryPlaneTimedWriteSnapshot:
         with self._partition.transaction(write=False) as connection:
             write_revision, _, current_records = self._validated_state(connection)
-            records = tuple(_clone_record(record) for record in current_records.values())
+            records = tuple(clone_record(record) for record in current_records.values())
             return MemoryPlaneTimedWriteSnapshot(write_revision, records, now())
 
     def get_record(self, memory_id: str) -> CanonicalMemoryRecord | None:
@@ -284,7 +284,7 @@ class SqliteMemoryPlaneStore:
             row = self._partition.read_current_record_row(connection, memory_id)
             if row is None:
                 return None
-            return _clone_record(_decode_record(row["record_json"]))
+            return clone_record(_decode_record(row["record_json"]))
 
     def list_records(
         self,
@@ -304,7 +304,7 @@ class SqliteMemoryPlaneStore:
                 domains=domain_values,
                 source_kinds=None if source_kind is None else [source_kind],
             )
-            return [_clone_record(_decode_record(row["record_json"])) for row in rows]
+            return [clone_record(_decode_record(row["record_json"])) for row in rows]
 
     def query_records(
         self,
@@ -344,7 +344,7 @@ class SqliteMemoryPlaneStore:
                 if record is not None and not _matches_query(record, query):
                     record = None
                 return MemoryPlanePage(
-                    records=() if record is None else (_clone_record(record),),
+                    records=() if record is None else (clone_record(record),),
                     next_cursor=None,
                     truncated=False,
                 )
@@ -359,7 +359,7 @@ class SqliteMemoryPlaneStore:
             )
             truncated = len(rows) > query.page_size
             records = tuple(
-                _clone_record(_decode_record(row["record_json"]))
+                clone_record(_decode_record(row["record_json"]))
                 for row in rows[: query.page_size]
             )
         next_cursor = None
@@ -400,7 +400,7 @@ class SqliteMemoryPlaneStore:
         previous_data_revision = 0
         for row in self._partition.read_batch_rows(connection):
             try:
-                batch = _PersistedBatch.model_validate_json(row["batch_json"])
+                batch = PersistedBatch.model_validate_json(row["batch_json"])
             except ValueError as exc:
                 raise MemoryPlaneCorruptionError(
                     f"invalid memory-plane batch at revision {row['revision']}: {exc}"
@@ -413,7 +413,7 @@ class SqliteMemoryPlaneStore:
             if batch.checksum != row["checksum"]:
                 raise MemoryPlaneCorruptionError("memory-plane batch checksum mismatch")
             expected_data_revision = previous_data_revision + int(
-                _contains_runtime_context(batch.records)
+                contains_runtime_context(batch.records)
             )
             if batch.data_revision != expected_data_revision or (
                 row["data_revision"] != expected_data_revision
@@ -438,9 +438,9 @@ class SqliteMemoryPlaneStore:
         data_revision: int,
     ) -> int:
         write_revision, _ = self._partition.read_revision_state(connection)
-        batch = _PersistedBatch.create(
+        batch = PersistedBatch.create(
             revision=write_revision + 1,
-            data_revision=data_revision + int(_contains_runtime_context(records)),
+            data_revision=data_revision + int(contains_runtime_context(records)),
             records=records,
         )
         self._partition.append_memory_batch(

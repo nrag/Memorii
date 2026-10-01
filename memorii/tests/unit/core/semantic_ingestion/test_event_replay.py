@@ -53,7 +53,7 @@ from memorii.core.memory_evolution.writer_admission import (
 )
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
-from memorii.core.memory_plane.store import JsonlMemoryPlaneStore, _PersistedBatch
+from memorii.core.memory_plane.store import JsonlMemoryPlaneStore, PersistedBatch
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.semantic_ingestion.contracts import (
     SemanticGraphDelta,
@@ -977,7 +977,7 @@ def test_atomic_reader_uses_source_decoder_and_durably_freezes_corrupt_tail(
             (2, second_raw, second_source),
         )
     )
-    backend._replace_batches([_PersistedBatch.create(revision=1, data_revision=0, records=seeded_records)])
+    backend._replace_batches([PersistedBatch.create(revision=1, data_revision=0, records=seeded_records)])
     plane = MemoryPlaneService(record_store=backend)
     writers = SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest(), now_provider=lambda: NOW)
     writers.create_initial_evidence_only(

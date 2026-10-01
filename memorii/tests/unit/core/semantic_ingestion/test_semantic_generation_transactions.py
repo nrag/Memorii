@@ -38,7 +38,7 @@ from memorii.core.memory_evolution.writer_admission import (
 )
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
-from memorii.core.memory_plane.store import JsonlMemoryPlaneStore, MemoryPlaneStore, _PersistedBatch
+from memorii.core.memory_plane.store import JsonlMemoryPlaneStore, MemoryPlaneStore, PersistedBatch
 from memorii.core.semantic_ingestion.contracts import (
     SemanticArtifactClosure,
     SemanticEffectGroupResult,
@@ -291,7 +291,7 @@ def _rewrite_operation_family_to_legacy_raw_ids(
                 content["control"] = control_body
             records.append(record.model_copy(update={"memory_id": replacement, "content": content}))
         rewritten_batches.append(
-            _PersistedBatch.create(
+            PersistedBatch.create(
                 revision=batch.revision, data_revision=batch.data_revision, records=tuple(records)
             )
         )

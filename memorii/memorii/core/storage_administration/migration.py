@@ -26,7 +26,7 @@ from memorii.core.memory_plane.file_lock import locked_file
 from memorii.core.memory_plane.store import JsonlMemoryPlaneStore
 from memorii.core.persistence.contracts import canonical_json_digest
 from memorii.core.storage_administration.service import (
-    _DEFAULT_SIGNER_KEY_ID,
+    DEFAULT_SIGNER_KEY_ID,
     StorageAdministrationService,
 )
 
@@ -148,7 +148,7 @@ def migrate_legacy_installation(
     *,
     plane_directory: str | Path,
     approved_plan: MemoryPlaneMigrationPlan,
-    signer_key_id: str = _DEFAULT_SIGNER_KEY_ID,
+    signer_key_id: str = DEFAULT_SIGNER_KEY_ID,
 ) -> StorageAdministrationService:
     """Owner-authorized adoption, import and cutover of a legacy root.
 

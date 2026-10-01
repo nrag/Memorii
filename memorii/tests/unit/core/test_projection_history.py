@@ -49,8 +49,8 @@ from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.memory_plane.store import (
     JsonlMemoryPlaneStore,
+    PersistedBatch,
     ReadOnlyMemoryPlaneSnapshotStore,
-    _PersistedBatch,
 )
 from memorii.core.semantic_ingestion.contracts import TimeInterval
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
@@ -450,7 +450,7 @@ class _ProjectionHarness:
         records.update({record.memory_id: record for record in replacements})
         self.backend._replace_batches(
             [
-                _PersistedBatch.create(
+                PersistedBatch.create(
                     revision=1,
                     data_revision=0,
                     records=tuple(records.values()),
@@ -469,7 +469,7 @@ class _ProjectionHarness:
             records.update({record.memory_id: record for record in prepared.records})
             self.backend._replace_batches(
                 [
-                    _PersistedBatch.create(
+                    PersistedBatch.create(
                         revision=1,
                         data_revision=0,
                         records=tuple(records.values()),

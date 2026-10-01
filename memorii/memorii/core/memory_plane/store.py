@@ -46,7 +46,7 @@ class CheckpointSignatureAuthority(Protocol):
     ) -> bool: ...
 
 
-class _BackendCheckpointSignatureAuthority:
+class BackendCheckpointSignatureAuthority:
     __slots__ = ("_secret",)
 
     def __init__(self, secret: bytes) -> None:
@@ -148,7 +148,7 @@ MemoryPlanePrecondition = Annotated[
 ]
 
 
-class _PersistedBatch(BaseModel):
+class PersistedBatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     revision: int
@@ -163,7 +163,7 @@ class _PersistedBatch(BaseModel):
         revision: int,
         data_revision: int,
         records: tuple[CanonicalMemoryRecord, ...],
-    ) -> _PersistedBatch:
+    ) -> PersistedBatch:
         return cls(
             revision=revision,
             data_revision=data_revision,
@@ -172,7 +172,7 @@ class _PersistedBatch(BaseModel):
         )
 
     @model_validator(mode="after")
-    def validate_checksum(self) -> _PersistedBatch:
+    def validate_checksum(self) -> PersistedBatch:
         if self.checksum != _batch_checksum(self.revision, self.data_revision, self.records):
             raise ValueError("memory-plane batch checksum mismatch")
         return self
@@ -250,7 +250,7 @@ class InMemoryMemoryPlaneStore:
         self._governed_write_policy: GovernedWritePolicy | None = None
         self._protected_secrets: dict[str, bytes] = {}
         self._checkpoint_signature_owner: object | None = None
-        self._checkpoint_signature_authority: _BackendCheckpointSignatureAuthority | None = None
+        self._checkpoint_signature_authority: BackendCheckpointSignatureAuthority | None = None
 
     @property
     def durable(self) -> bool:
@@ -296,7 +296,7 @@ class InMemoryMemoryPlaneStore:
                     purpose=SEMANTIC_CHECKPOINT_SECRET_PURPOSE,
                     length=32,
                 )
-                self._checkpoint_signature_authority = _BackendCheckpointSignatureAuthority(secret)
+                self._checkpoint_signature_authority = BackendCheckpointSignatureAuthority(secret)
             return self._checkpoint_signature_authority
 
     def install_governed_write_policy(self, policy: GovernedWritePolicy) -> None:
@@ -339,7 +339,7 @@ class InMemoryMemoryPlaneStore:
         transaction_precondition: Callable[[], None] | None = None,
     ) -> int:
         with self._lock:
-            _validate_expected_write_revision(expected_write_revision)
+            validate_expected_write_revision(expected_write_revision)
             if transaction_precondition is not None:
                 transaction_precondition()
             if expected_revision is not None and expected_revision != self._revision:
@@ -360,8 +360,8 @@ class InMemoryMemoryPlaneStore:
         preconditions: tuple[MemoryPlanePrecondition, ...],
         authorization: MemoryPlaneWriteAuthorization | None,
     ) -> int:
-        _validate_preconditions(self._records, preconditions)
-        _validate_governed_write(
+        validate_preconditions(self._records, preconditions)
+        validate_governed_write(
             self._governed_write_policy,
             records,
             tuple(self._records.values()),
@@ -369,16 +369,16 @@ class InMemoryMemoryPlaneStore:
         )
         updated = dict(self._records)
         for record in records:
-            updated[record.memory_id] = _clone_record(record)
+            updated[record.memory_id] = clone_record(record)
         self._records = updated
-        if _contains_runtime_context(records):
+        if contains_runtime_context(records):
             self._revision += 1
         self._write_revision += 1
         return self._revision
 
     def read_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]:
         with self._lock:
-            return self._revision, tuple(_clone_record(record) for record in self._records.values())
+            return self._revision, tuple(clone_record(record) for record in self._records.values())
 
     def read_snapshot_linearized(
         self,
@@ -388,22 +388,22 @@ class InMemoryMemoryPlaneStore:
         with self._lock:
             return callback(
                 self._revision,
-                tuple(_clone_record(record) for record in self._records.values()),
+                tuple(clone_record(record) for record in self._records.values()),
             )
 
     def read_write_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]:
         with self._lock:
-            return self._write_revision, tuple(_clone_record(record) for record in self._records.values())
+            return self._write_revision, tuple(clone_record(record) for record in self._records.values())
 
     def read_timed_write_snapshot(self, *, now: Callable[[], datetime]) -> MemoryPlaneTimedWriteSnapshot:
         with self._lock:
-            records = tuple(_clone_record(record) for record in self._records.values())
+            records = tuple(clone_record(record) for record in self._records.values())
             return MemoryPlaneTimedWriteSnapshot(self._write_revision, records, now())
 
     def get_record(self, memory_id: str) -> CanonicalMemoryRecord | None:
         with self._lock:
             record = self._records.get(memory_id)
-            return _clone_record(record) if record is not None else None
+            return clone_record(record) if record is not None else None
 
     def list_records(
         self,
@@ -415,7 +415,7 @@ class InMemoryMemoryPlaneStore:
         domain_set = set(domains) if domains is not None else None
         with self._lock:
             return [
-                _clone_record(item)
+                clone_record(item)
                 for item in self._records.values()
                 if (status is None or item.status == status)
                 and (domain_set is None or item.domain in domain_set)
@@ -432,7 +432,7 @@ class ReadOnlyMemoryPlaneSnapshotStore(InMemoryMemoryPlaneStore):
         if len({record.memory_id for record in records}) != len(records):
             raise MemoryPlaneCorruptionError("snapshot contains duplicate record identities")
         super().__init__()
-        self._records = {record.memory_id: _clone_record(record) for record in records}
+        self._records = {record.memory_id: clone_record(record) for record in records}
         self._write_revision = write_revision
 
     def revision(self) -> int:
@@ -447,7 +447,7 @@ class ReadOnlyMemoryPlaneSnapshotStore(InMemoryMemoryPlaneStore):
     ) -> object:
         return callback(
             self._revision,
-            tuple(_clone_record(record) for record in self._records.values()),
+            tuple(clone_record(record) for record in self._records.values()),
         )
 
     def read_timed_write_snapshot(self, *, now: Callable[[], datetime]) -> MemoryPlaneTimedWriteSnapshot:
@@ -487,11 +487,11 @@ class JsonlMemoryPlaneStore:
         self._base_path.mkdir(parents=True, exist_ok=True)
         self._governed_write_policy: GovernedWritePolicy | None = None
         self._checkpoint_signature_owner: object | None = None
-        self._checkpoint_signature_authority: _BackendCheckpointSignatureAuthority | None = None
+        self._checkpoint_signature_authority: BackendCheckpointSignatureAuthority | None = None
         # Repeated control-plane reads happen under the existing file lock.
         # Cache only a fully validated snapshot and key it to identity metadata
         # so a second store handle's replace is observed immediately.
-        self._validated_batches: list[_PersistedBatch] | None = None
+        self._validated_batches: list[PersistedBatch] | None = None
         self._validated_batches_identity: tuple[int, int, int, int] | None = None
         self._materialized_records: dict[str, CanonicalMemoryRecord] | None = None
         self._materialized_records_identity: tuple[int, int, int, int] | None = None
@@ -560,7 +560,7 @@ class JsonlMemoryPlaneStore:
                 purpose=SEMANTIC_CHECKPOINT_SECRET_PURPOSE,
                 length=32,
             )
-            self._checkpoint_signature_authority = _BackendCheckpointSignatureAuthority(secret)
+            self._checkpoint_signature_authority = BackendCheckpointSignatureAuthority(secret)
         return self._checkpoint_signature_authority
 
     def install_governed_write_policy(self, policy: GovernedWritePolicy) -> None:
@@ -587,7 +587,7 @@ class JsonlMemoryPlaneStore:
     ) -> int:
         with self._locked(exclusive=True):
             batches, current_records = self._current_records_unlocked()
-            _validate_governed_write(
+            validate_governed_write(
                 self._governed_write_policy,
                 records,
                 tuple(current_records.values()),
@@ -595,11 +595,11 @@ class JsonlMemoryPlaneStore:
             )
             next_revision = batches[-1].revision + 1 if batches else 1
             current_data_revision = batches[-1].data_revision if batches else 0
-            next_data_revision = current_data_revision + int(_contains_runtime_context(records))
+            next_data_revision = current_data_revision + int(contains_runtime_context(records))
             self._replace_batches(
                 [
                     *batches,
-                    _PersistedBatch.create(
+                    PersistedBatch.create(
                         revision=next_revision,
                         data_revision=next_data_revision,
                         records=records,
@@ -624,7 +624,7 @@ class JsonlMemoryPlaneStore:
         transaction_precondition: Callable[[], None] | None = None,
     ) -> int:
         with self._locked(exclusive=True):
-            _validate_expected_write_revision(expected_write_revision)
+            validate_expected_write_revision(expected_write_revision)
             if transaction_precondition is not None:
                 transaction_precondition()
             batches, current_records = self._current_records_unlocked()
@@ -639,19 +639,19 @@ class JsonlMemoryPlaneStore:
                     "memory-plane write revision changed: "
                     f"expected {expected_write_revision}, actual {actual_revision}"
                 )
-            _validate_preconditions(current_records, preconditions)
-            _validate_governed_write(
+            validate_preconditions(current_records, preconditions)
+            validate_governed_write(
                 self._governed_write_policy,
                 records,
                 tuple(current_records.values()),
                 authorization,
             )
             next_revision = actual_revision + 1
-            next_data_revision = actual_data_revision + int(_contains_runtime_context(records))
+            next_data_revision = actual_data_revision + int(contains_runtime_context(records))
             self._replace_batches(
                 [
                     *batches,
-                    _PersistedBatch.create(
+                    PersistedBatch.create(
                         revision=next_revision,
                         data_revision=next_data_revision,
                         records=records,
@@ -664,7 +664,7 @@ class JsonlMemoryPlaneStore:
         with self._locked(exclusive=False):
             batches, latest_by_id = self._current_records_unlocked()
             revision = batches[-1].data_revision if batches else 0
-            return revision, tuple(_clone_record(record) for record in latest_by_id.values())
+            return revision, tuple(clone_record(record) for record in latest_by_id.values())
 
     def read_snapshot_linearized(
         self,
@@ -676,27 +676,27 @@ class JsonlMemoryPlaneStore:
             revision = batches[-1].data_revision if batches else 0
             return callback(
                 revision,
-                tuple(_clone_record(record) for record in latest_by_id.values()),
+                tuple(clone_record(record) for record in latest_by_id.values()),
             )
 
     def read_write_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]:
         with self._locked(exclusive=False):
             batches, latest_by_id = self._current_records_unlocked()
             revision = batches[-1].revision if batches else 0
-            return revision, tuple(_clone_record(record) for record in latest_by_id.values())
+            return revision, tuple(clone_record(record) for record in latest_by_id.values())
 
     def read_timed_write_snapshot(self, *, now: Callable[[], datetime]) -> MemoryPlaneTimedWriteSnapshot:
         with self._locked(exclusive=False):
             batches, latest_by_id = self._current_records_unlocked()
             revision = batches[-1].revision if batches else 0
-            records = tuple(_clone_record(record) for record in latest_by_id.values())
+            records = tuple(clone_record(record) for record in latest_by_id.values())
             return MemoryPlaneTimedWriteSnapshot(revision, records, now())
 
     def get_record(self, memory_id: str) -> CanonicalMemoryRecord | None:
         with self._locked(exclusive=False):
             _, latest_by_id = self._current_records_unlocked()
             record = latest_by_id.get(memory_id)
-            return _clone_record(record) if record is not None else None
+            return clone_record(record) if record is not None else None
 
     def list_records(
         self,
@@ -709,14 +709,14 @@ class JsonlMemoryPlaneStore:
         with self._locked(exclusive=False):
             _, latest_by_id = self._current_records_unlocked()
             return [
-                _clone_record(item)
+                clone_record(item)
                 for item in latest_by_id.values()
                 if (status is None or item.status == status)
                 and (domain_set is None or item.domain in domain_set)
                 and (source_kind is None or item.source_kind == source_kind)
             ]
 
-    def _current_records_unlocked(self) -> tuple[list[_PersistedBatch], dict[str, CanonicalMemoryRecord]]:
+    def _current_records_unlocked(self) -> tuple[list[PersistedBatch], dict[str, CanonicalMemoryRecord]]:
         try:
             batches = self._read_batches_unlocked()
             identity = self._validated_batches_identity
@@ -733,18 +733,18 @@ class JsonlMemoryPlaneStore:
         self._materialized_records_identity = identity
         return batches, latest_by_id
 
-    def _read_batches_unlocked(self) -> list[_PersistedBatch]:
+    def _read_batches_unlocked(self) -> list[PersistedBatch]:
         identity = self._records_identity_unlocked()
         if (
             self._validated_batches is not None
             and self._validated_batches_identity == identity
         ):
             return self._validated_batches
-        batches: list[_PersistedBatch] = []
+        batches: list[PersistedBatch] = []
         expected_revision = 1
         for line_number, line in enumerate(self._iter_jsonl_lines_unlocked(), start=1):
             try:
-                batch = _PersistedBatch.model_validate_json(line)
+                batch = PersistedBatch.model_validate_json(line)
             except ValueError as exc:
                 raise MemoryPlaneCorruptionError(f"invalid memory-plane batch at line {line_number}: {exc}") from exc
             if batch.revision != expected_revision:
@@ -752,7 +752,7 @@ class JsonlMemoryPlaneStore:
                     f"non-contiguous memory-plane revision: expected {expected_revision}, got {batch.revision}"
                 )
             previous_data_revision = batches[-1].data_revision if batches else 0
-            expected_data_revision = previous_data_revision + int(_contains_runtime_context(batch.records))
+            expected_data_revision = previous_data_revision + int(contains_runtime_context(batch.records))
             if batch.data_revision != expected_data_revision:
                 raise MemoryPlaneCorruptionError(
                     f"invalid memory-plane data revision: expected {expected_data_revision}, got {batch.data_revision}"
@@ -785,7 +785,7 @@ class JsonlMemoryPlaneStore:
             raise MemoryPlaneCorruptionError("memory-plane log ends with an incomplete batch")
         return [line for line in content.splitlines() if line.strip()]
 
-    def _replace_batches(self, batches: list[_PersistedBatch]) -> None:
+    def _replace_batches(self, batches: list[PersistedBatch]) -> None:
         detached_batches = [batch.model_copy(deep=True) for batch in batches]
         materialized_records = _records_from_batches(detached_batches)
         descriptor, temporary_name = tempfile.mkstemp(
@@ -823,11 +823,11 @@ class JsonlMemoryPlaneStore:
         return locked_file(self._lock_path, exclusive=exclusive)
 
 
-def _clone_record(record: CanonicalMemoryRecord) -> CanonicalMemoryRecord:
+def clone_record(record: CanonicalMemoryRecord) -> CanonicalMemoryRecord:
     return record.model_copy(deep=True)
 
 
-def _validate_governed_write(
+def validate_governed_write(
     policy: GovernedWritePolicy | None,
     records: tuple[CanonicalMemoryRecord, ...],
     current: tuple[CanonicalMemoryRecord, ...],
@@ -874,11 +874,11 @@ def _batch_checksum(
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def _contains_runtime_context(records: tuple[CanonicalMemoryRecord, ...]) -> bool:
+def contains_runtime_context(records: tuple[CanonicalMemoryRecord, ...]) -> bool:
     return any(record.visibility == MemoryRecordVisibility.RUNTIME_CONTEXT for record in records)
 
 
-def _validate_expected_write_revision(expected_write_revision: int | None) -> None:
+def validate_expected_write_revision(expected_write_revision: int | None) -> None:
     if expected_write_revision is None:
         return
     if type(expected_write_revision) is not int:
@@ -887,7 +887,7 @@ def _validate_expected_write_revision(expected_write_revision: int | None) -> No
         raise ValueError("expected write revision must be a nonnegative integer")
 
 
-def _records_from_batches(batches: list[_PersistedBatch]) -> dict[str, CanonicalMemoryRecord]:
+def _records_from_batches(batches: list[PersistedBatch]) -> dict[str, CanonicalMemoryRecord]:
     latest_by_id: dict[str, CanonicalMemoryRecord] = {}
     for batch in batches:
         for record in batch.records:
@@ -895,7 +895,7 @@ def _records_from_batches(batches: list[_PersistedBatch]) -> dict[str, Canonical
     return latest_by_id
 
 
-def _validate_preconditions(
+def validate_preconditions(
     records: dict[str, CanonicalMemoryRecord],
     preconditions: tuple[MemoryPlanePrecondition, ...],
 ) -> None:
