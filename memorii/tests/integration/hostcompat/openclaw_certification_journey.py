@@ -1,18 +1,22 @@
-"""In-container OpenClaw certification journey: the real CLI end to end.
+"""In-container OpenClaw certification journey: the real gateway end to end.
 
-Runs inside memorii-openclaw-validation:pr with the plugin installed in the
-extensions home. Boots the stub provider and the loopback sidecar with an
-intake binding, seeds the provisioned task, configures the stub model
-provider, then drives `openclaw agent --local` through two turns (the
-second continuing the same session), drains the spool through
-memorii-consume --drain, and asserts committed runtime state.
+Runs inside memorii-openclaw-validation:pr from clean image state. Installs
+the Memorii plugin into the extensions home (OpenClaw's ownership and
+allowlist gates satisfied in-container as root), configures the stub model
+provider and gateway token auth, boots the stub provider and the loopback
+sidecar with an intake binding, seeds the provisioned task, drives real
+gateway agent turns (fresh session, then same-session continuation), drains
+the spool through memorii-consume --drain, and asserts committed runtime
+state.
 """
 from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
+import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -36,6 +40,7 @@ from memorii.core.persistence.runtime_repository import (
 from memorii.core.storage_administration.service import StorageAdministrationService
 
 PRODUCER = "host:principal:a"
+GATEWAY_TOKEN = "cert-token-1"
 root = Path("/tmp/memorii-journey")
 administration = StorageAdministrationService(root / "installation")
 administration.initialize()
@@ -83,46 +88,84 @@ os.chmod(credential_path.parent, 0o700)
 credential_path.write_text("credential:one")
 os.chmod(credential_path, 0o600)
 
+# Plugin into the extensions home: root-owned (OpenClaw blocks foreign-uid
+# plugin files), with openclaw resolvable for the plugin-sdk import.
+extensions_home = Path("/root/.openclaw/extensions/memorii")
+if extensions_home.exists():
+    shutil.rmtree(extensions_home)
+extensions_home.mkdir(parents=True)
+for name in ("index.js", "openclaw.plugin.json", "package.json"):
+    shutil.copy(f"/opt/memorii-openclaw/plugin/{name}", extensions_home / name)
+subprocess.run(
+    ["npm", "install", "--no-save", "--ignore-scripts", "openclaw@2026.9.7"],
+    cwd=extensions_home, capture_output=True, text=True, timeout=900, check=False,
+)
+
 stub_url, stub_server = serve_stub_provider()
 sidecar_url, sidecar_server = serve_loopback(sidecar, port=8762)
 print("stub:", stub_url, "sidecar:", sidecar_url, flush=True)
 
-provider_config = json.dumps({
+def config_set(path: str, value: str) -> None:
+    result = subprocess.run(
+        ["openclaw", "config", "set", path, value],
+        capture_output=True, text=True, timeout=120, check=False,
+    )
+    if result.returncode != 0:
+        print(f"config set {path} failed: {result.stdout} {result.stderr}")
+
+config_set("models.providers.stub", json.dumps({
     "baseUrl": f"{stub_url}/v1",
     "apiKey": "stub-key",
     "api": "openai-completions",
     "authHeader": True,
     "models": [{"id": "stub-model", "name": "Stub Model", "api": "openai-completions"}],
-})
-subprocess.run(
-    ["openclaw", "config", "set", "models.providers.stub", provider_config],
-    capture_output=True, text=True, timeout=120, check=False,
+}))
+config_set("plugins.entries.memorii", json.dumps({"enabled": True, "config": {}}))
+config_set("plugins.allow", json.dumps(["memorii"]))
+config_set("gateway.auth.mode", "token")
+config_set("gateway.auth.token", GATEWAY_TOKEN)
+
+subprocess.run(["pkill", "-f", "openclaw-gateway"], capture_output=True, check=False)
+time.sleep(3)
+gateway_log = open("/tmp/gateway-journey.log", "w")
+gateway = subprocess.Popen(
+    ["openclaw", "gateway", "--bind", "loopback"],
+    stdout=gateway_log, stderr=subprocess.STDOUT,
+    start_new_session=True,
 )
-subprocess.run(
-    ["openclaw", "plugins", "enable", "memorii"],
-    capture_output=True, text=True, timeout=120, check=False,
-)
+import socket
+
+def wait_for_loopback_port(port: int, timeout_seconds: int = 180) -> bool:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=2):
+                return True
+        except OSError:
+            if gateway.poll() is not None:
+                return False
+            time.sleep(2)
+    return False
+
+gateway_up = wait_for_loopback_port(18789)
+print("gateway listening:", gateway_up, flush=True)
+if not gateway_up:
+    gateway_log.flush()
+    print(Path("/tmp/gateway-journey.log").read_text()[-600:])
 
 base_env = dict(
     os.environ,
     MEMORII_SIDECAR_URL=sidecar_url,
     MEMORII_CREDENTIAL_PATH=str(credential_path),
     MEMORII_TASK_ID=task_id,
+    OPENCLAW_GATEWAY_TOKEN=GATEWAY_TOKEN,
 )
 
 def run_agent(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["openclaw", "agent", "--local", "--json", "--model", "stub/stub-model", *args],
-        capture_output=True,
-        text=True,
-        env=base_env,
-        timeout=240,
+        ["openclaw", "agent", "--json", "--model", "stub/stub-model", *args],
+        capture_output=True, text=True, env=base_env, timeout=240,
     )
-
-failures: list[str] = []
-
-first = run_agent("--session-id", "cert-session", "-m", "record this certification turn")
-print("turn1 rc:", first.returncode, (first.stdout or first.stderr)[:220].replace("\n", " "))
 
 def drain() -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -133,24 +176,44 @@ def drain() -> subprocess.CompletedProcess[str]:
             "--drain",
             "--allowlisted-producers", PRODUCER,
         ],
-        capture_output=True,
-        text=True,
-        timeout=300,
+        capture_output=True, text=True, timeout=300,
     )
 
-drain1 = drain()
-print("drain1 rc:", drain1.returncode, drain1.stdout.strip().replace("\n", " | ")[:400])
+failures: list[str] = []
+try:
+    first = run_agent("--session-id", "cert-session", "-m", "record this certification turn")
+    print("turn1 rc:", first.returncode, (first.stdout or first.stderr)[:200].replace("\n", " "))
+    drain1 = drain()
+    print("drain1 rc:", drain1.returncode, drain1.stdout.strip().replace("\n", " | ")[:400])
 
-second = run_agent("--session-id", "cert-session", "-m", "continue after restart")
-print("turn2 rc:", second.returncode, (second.stdout or second.stderr)[:220].replace("\n", " "))
+    # Restart the gateway between turns: the new process adopts the SAME
+    # session, proving continuation survives a host restart.
+    gateway.terminate()
+    try:
+        gateway.wait(timeout=30)
+    except subprocess.TimeoutExpired:
+        gateway.kill()
+    gateway = subprocess.Popen(
+        ["openclaw", "gateway", "--bind", "loopback"],
+        stdout=gateway_log, stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+    print("gateway restarted:", wait_for_loopback_port(18789), flush=True)
 
-stub_server.shutdown()
-stub_server.server_close()
-sidecar_server.shutdown()
-sidecar_server.server_close()
-
-drain2 = drain()
-print("drain2 rc:", drain2.returncode, drain2.stdout.strip().replace("\n", " | ")[:400])
+    second = run_agent("--session-id", "cert-session", "-m", "continue the same session")
+    print("turn2 rc:", second.returncode, (second.stdout or second.stderr)[:200].replace("\n", " "))
+    drain2 = drain()
+    print("drain2 rc:", drain2.returncode, drain2.stdout.strip().replace("\n", " | ")[:400])
+finally:
+    gateway.terminate()
+    try:
+        gateway.wait(timeout=30)
+    except subprocess.TimeoutExpired:
+        gateway.kill()
+    stub_server.shutdown()
+    stub_server.server_close()
+    sidecar_server.shutdown()
+    sidecar_server.server_close()
 
 records = [json.loads(line) for line in (spool_directory / "intake.jsonl").read_text().splitlines()]
 kinds = [record["operation_id"].split(":")[1] for record in records]

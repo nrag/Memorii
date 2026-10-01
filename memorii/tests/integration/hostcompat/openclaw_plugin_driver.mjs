@@ -1,23 +1,23 @@
-// In-container driver: registers the Memorii OpenClaw plugin with a mock
-// host and fires the permitted hooks in order, including one forwarded
-// input that must be classified out (never submitted as evidence).
-import { register } from "/opt/memorii-openclaw/plugin/index.js";
+// In-container driver: loads the Memorii OpenClaw plugin with a mock host
+// and fires its registered hooks in order — a resume on session start, an
+// assistant transcript write (classified out), a user transcript write
+// (captured), and a tool dispatch.
+import plugin from "/root/.openclaw/extensions/memorii/index.js";
 
-const fired = [];
-const host = {
-  memorySlot: () => "memorii",
-  on: (name, handler) => fired.push([name, handler]),
-};
-register(host);
+const handlers = [];
+const api = { on: (name, handler) => handlers.push([name, handler]) };
+plugin.register(api);
 
-const sender = { channel_id: "channel:1", account_id: "account:1", sender_id: "sender:1" };
-for (const [name, handler] of fired) {
-  if (name === "prompt_inject") {
-    // First a forwarded input (must be ignored), then an eligible message.
-    await handler({ input_kind: "forwarded", sender });
-    await handler({ input_kind: "user_message", sender });
+for (const [name, handler] of handlers) {
+  if (name === "before_message_write") {
+    await handler({ message: { role: "assistant", content: "derived" } });
+    await handler({ message: { role: "user", content: "authentic" } });
+  } else if (name === "session_start") {
+    await handler({});
+  } else if (name === "before_tool_call") {
+    await handler({});
   } else {
     await handler({});
   }
 }
-console.log("plugin hooks fired:", fired.map(([name]) => name).join(","));
+console.log("plugin hooks fired:", handlers.map(([name]) => name).join(","));

@@ -93,7 +93,13 @@ function classifyNativeMessage(context) {
   };
 }
 
+let resumedThisProcess = false;
+
 async function onSessionStart() {
+  if (resumedThisProcess) {
+    return undefined;
+  }
+  resumedThisProcess = true;
   const revision = await readState();
   if (revision === null) {
     throw new Error(`no provisioned task ${TASK_ID} for this host session`);
@@ -107,24 +113,19 @@ async function onSessionStart() {
   return undefined;
 }
 
-let resumedThisProcess = false;
-
-async function ensureResumedOnce() {
-  // Gateway sessions fire session_start; embedded agent turns may not, so
-  // the first prompt build of a process resumes the provisioned task too.
-  if (resumedThisProcess) {
-    return;
+async function onTranscriptWrite(context) {
+  // before_message_write is the single authoritative transcript seam: it
+  // fires once per message persisted to the session with
+  // {message: {role, content}}. Only user messages are authentic source
+  // evidence; assistant writes are derived, never source. The first user
+  // write of a process resumes the provisioned task — gateway turns do not
+  // dispatch session_start to plugins, so session adoption lands here.
+  if (context?.message?.role !== "user") {
+    return undefined;
   }
-  resumedThisProcess = true;
-  await onSessionStart();
-}
-
-async function onMessageReceived(context) {
-  const classification = classifyNativeMessage(context);
-  if (!classification.eligible) {
-    return undefined; // forwarded/system inputs never become evidence
+  if (!resumedThisProcess) {
+    await onSessionStart();
   }
-  await ensureResumedOnce();
   const revision = (await readState()) ?? 0;
   await submitCommand({
     kind: "record_observation",
@@ -169,10 +170,7 @@ export default definePluginEntry({
     // The typed hook runner dispatches these events; api.on is the
     // supported registration surface for them.
     api.on("session_start", onSessionStart);
-    api.on("message_received", onMessageReceived);
-    // The embedded agent path builds prompts per turn without gateway
-    // session lifecycle; prompt build is the prompt_inject analog there.
-    api.on("before_prompt_build", onMessageReceived);
+    api.on("before_message_write", onTranscriptWrite);
     api.on("before_tool_call", onBeforeToolCall);
     api.on("after_tool_call", onAfterToolCall);
   },
