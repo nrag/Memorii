@@ -168,3 +168,126 @@ def test_emission_rejects_a_publication_outside_protected_history(tmp_path):
     other_publication = _publication(other, schemas=("ObservationLedgerHead",)).publications[0]
     with pytest.raises(ObservationActivationRuntimeError):
         emit_registered_observation_artifact(_activation(), schema_id="ObservationLedgerActivation", history=history, publication=other_publication)
+
+
+def _counting_verifier(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    """Wrap the uncached verifier; the counter proves cache hits and misses."""
+    import memorii.core.memory_evolution.observation_activation_runtime as runtime_module
+
+    calls: list[int] = []
+    real = runtime_module.verify_protected_typed_value_artifact_integrity
+
+    def counting(*args: object, **kwargs: object) -> object:
+        calls.append(1)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(runtime_module, "verify_protected_typed_value_artifact_integrity", counting)
+    return calls
+
+
+@pytest.fixture(autouse=True)
+def _clear_proof_cache():
+    from memorii.core.memory_evolution.observation_activation_runtime import _PROOF_CACHE
+
+    _PROOF_CACHE.clear()
+    yield
+    _PROOF_CACHE.clear()
+
+
+def test_repeated_validation_serves_one_verified_proof(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from memorii.core.memory_evolution.observation_activation_runtime import validate_registered_artifact
+
+    calls = _counting_verifier(monkeypatch)
+    history = _publication(tmp_path, schemas=("ObservationLedgerActivation",))
+    emitted = emit_registered_observation_artifact(
+        _activation(), schema_id="ObservationLedgerActivation", history=history,
+        publication=history.publications[0],
+    )
+    first = validate_registered_artifact(
+        emitted.raw, schema_id="ObservationLedgerActivation", history=history,
+    )
+    second = validate_registered_artifact(
+        emitted.raw, schema_id="ObservationLedgerActivation", history=history,
+    )
+    third = validate_registered_artifact(
+        emitted.raw, schema_id="ObservationLedgerActivation", history=history,
+    )
+    # Exactly one full verification (emission's); the three validations share it.
+    assert sum(calls) == 1
+    assert first == second == third
+
+
+def test_cached_path_still_rejects_mutated_bytes_and_wrong_schema(
+    tmp_path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from memorii.core.memory_evolution.observation_activation_runtime import validate_registered_artifact
+
+    history = _publication(tmp_path, schemas=("ObservationLedgerActivation",))
+    emitted = emit_registered_observation_artifact(
+        _activation(), schema_id="ObservationLedgerActivation", history=history,
+        publication=history.publications[0],
+    )
+    assert validate_registered_artifact(
+        emitted.raw, schema_id="ObservationLedgerActivation", history=history,
+    ) is not None
+    calls = _counting_verifier(monkeypatch)
+    tampered = emitted.raw[:-1] + bytes([emitted.raw[-1] ^ 1])
+    with pytest.raises(Exception) as cached_reject:
+        validate_registered_artifact(tampered, schema_id="ObservationLedgerActivation", history=history)
+    with pytest.raises(ObservationActivationRuntimeError):
+        validate_registered_artifact(
+            emitted.raw, schema_id="ObservationLedgerHead", history=history,
+        )
+    assert sum(calls) >= 1
+    assert cached_reject.value is not None
+
+
+def test_history_change_misses_the_cache_and_reverifies(
+    tmp_path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from memorii.core.memory_evolution.observation_activation_runtime import validate_registered_artifact
+
+    calls = _counting_verifier(monkeypatch)
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    first_history = _publication(tmp_path / "a", schemas=("ObservationLedgerActivation",))
+    other_history = _publication(
+        tmp_path / "b", schemas=("ObservationLedgerActivation", "ObservationLedgerHead"),
+    )
+    emitted = emit_registered_observation_artifact(
+        _activation(), schema_id="ObservationLedgerActivation", history=first_history,
+        publication=first_history.publications[0],
+    )
+    in_first = validate_registered_artifact(
+        emitted.raw, schema_id="ObservationLedgerActivation", history=first_history,
+    )
+    in_other = validate_registered_artifact(
+        emitted.raw, schema_id="ObservationLedgerActivation", history=other_history,
+    )
+    again_first = validate_registered_artifact(
+        emitted.raw, schema_id="ObservationLedgerActivation", history=first_history,
+    )
+    # One verification for emission, one fresh verification for the different
+    # publication chain (a miss by design); the repeat under the first chain
+    # shares the emission proof. The compatible chain yields the same value.
+    assert sum(calls) == 2
+    assert in_first == in_other == again_first
+
+
+def test_proof_cache_is_bounded(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from memorii.core.memory_evolution import observation_activation_runtime as runtime
+
+    history = _publication(tmp_path, schemas=("ObservationLedgerActivation",))
+    proofs = [object() for _ in range(2)]
+    monkeypatch.setattr(
+        runtime, "verify_protected_typed_value_artifact_integrity",
+        lambda *args, **kwargs: proofs[0],
+    )
+    for index in range(runtime._PROOF_CACHE_ENTRIES + 25):
+        runtime._verify_registered_artifact_proofed(
+            f"raw-{index}".encode(), history=history, limits=runtime._LIMITS,
+            verification_key=None,
+        )
+    assert len(runtime._PROOF_CACHE) == runtime._PROOF_CACHE_ENTRIES
+    assert not any(key[0] == b"raw-0" for key in runtime._PROOF_CACHE)
+    assert any(key[0] == f"raw-{runtime._PROOF_CACHE_ENTRIES + 24}".encode() for key in runtime._PROOF_CACHE)
