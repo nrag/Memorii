@@ -36,8 +36,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--producer",
-        required=True,
-        help="authenticated producer binding (must be allowlisted)",
+        default=None,
+        help="authenticated producer binding (required without --drain)",
     )
     parser.add_argument(
         "--delivery",
@@ -50,8 +50,85 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="durable spool directory (default: <root>/spool)",
     )
+    parser.add_argument(
+        "--drain",
+        action="store_true",
+        help="drain every allowlisted pending delivery: dispatch each through"
+        " the runtime command service and mark it committed",
+    )
+    parser.add_argument(
+        "--allowlisted-producers",
+        default="",
+        help="comma-separated producer bindings allowed to drain (required with --drain)",
+    )
     arguments = parser.parse_args(argv)
 
+    spool_directory = arguments.spool_directory or (
+        Path(arguments.installation_root) / "spool"
+    )
+
+    if arguments.drain:
+        allowlisted = tuple(
+            producer.strip()
+            for producer in arguments.allowlisted_producers.split(",")
+            if producer.strip()
+        )
+        if not allowlisted:
+            print("invalid_request: --drain requires --allowlisted-producers", file=sys.stderr)
+            return 2
+        from memorii.core.storage_administration.service import (
+            StorageAdministrationService,
+        )
+
+        spool = LocalDurableSpool(spool_directory)
+        administration = StorageAdministrationService(arguments.installation_root)
+        refused = 0
+        try:
+            pending = spool.pending_deliveries(allowlisted_producers=allowlisted)
+            for record, delivery in pending:
+                # One refused delivery never aborts the queue: it stays
+                # pending for operator handling and its reason is reported.
+                service = RuntimeCommandService(
+                    administration, client_namespace=record.producer_binding
+                )
+                try:
+                    receipt = service.dispatch(delivery.command)
+                except RuntimeError as exc:
+                    refused += 1
+                    print(
+                        json.dumps(
+                            {
+                                "operation_id": record.operation_id,
+                                "status": "refused",
+                                "reason": str(exc).split(":", 1)[-1].strip(),
+                                "intake_state": "pending",
+                            },
+                            sort_keys=True,
+                        )
+                    )
+                    continue
+                committed = receipt.status in ("committed", "duplicate")
+                if committed:
+                    spool.mark_committed(record.operation_id)
+                print(
+                    json.dumps(
+                        {
+                            "operation_id": receipt.operation_id,
+                            "status": receipt.status,
+                            "base_revision": receipt.base_revision,
+                            "current_revision": receipt.current_revision,
+                            "intake_state": "committed" if committed else "pending",
+                        },
+                        sort_keys=True,
+                    )
+                )
+        finally:
+            administration.close()
+        return 1 if refused else 0
+
+    if not arguments.producer:
+        print("invalid_request: --producer is required without --drain", file=sys.stderr)
+        return 2
     raw = (
         arguments.delivery.read_text(encoding="utf-8")
         if arguments.delivery is not None
@@ -67,9 +144,6 @@ def main(argv: list[str] | None = None) -> int:
         transport_message_id=str(payload.get("transport_message_id", "stdin")),
         producer_binding=arguments.producer,
         command=command,
-    )
-    spool_directory = arguments.spool_directory or (
-        Path(arguments.installation_root) / "spool"
     )
     spool = LocalDurableSpool(spool_directory)
     try:

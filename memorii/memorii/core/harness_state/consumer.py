@@ -117,6 +117,23 @@ class LocalDurableSpool:
                 os.fsync(descriptor)
             finally:
                 os.close(descriptor)
+            # Retain the full delivery beside its digest-only record so a
+            # consumer can drain committed intent without the producer.
+            # The filename is the operation id's digest, never client text,
+            # so a hostile operation id cannot traverse the directory.
+            deliveries = self._directory / "deliveries"
+            deliveries.mkdir(mode=0o700, exist_ok=True)
+            content_path = deliveries / f"{digest}.json"
+            descriptor = os.open(
+                content_path,
+                os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+                0o600,
+            )
+            try:
+                os.write(descriptor, delivery.model_dump_json().encode("utf-8"))
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
         return record
 
     def records(self) -> tuple[SpoolRecord, ...]:
@@ -129,6 +146,52 @@ class LocalDurableSpool:
         return tuple(
             SpoolRecord.model_validate_json(line) for line in lines if line.strip()
         )
+
+    def pending_deliveries(
+        self, *, allowlisted_producers: tuple[str, ...]
+    ) -> tuple[tuple[SpoolRecord, HostEventDelivery], ...]:
+        """Drainable (record, delivery) pairs for allowlisted pending rows.
+
+        A pending record without retained content, or content whose digest
+        no longer matches the record, is never returned: it stays for
+        explicit operator handling instead of being guessed into effect.
+        """
+        result: list[tuple[SpoolRecord, HostEventDelivery]] = []
+        deliveries = self._directory / "deliveries"
+        for record in self.records():
+            if record.state != "pending":
+                continue
+            if record.producer_binding not in allowlisted_producers:
+                continue
+            content_path = deliveries / f"{record.request_digest}.json"
+            if not content_path.exists():
+                continue
+            delivery = HostEventDelivery.model_validate_json(
+                content_path.read_text(encoding="utf-8")
+            )
+            if command_digest(delivery.command) != record.request_digest:
+                continue
+            result.append((record, delivery))
+        return tuple(result)
+
+    def mark_committed(self, operation_id: str) -> SpoolRecord:
+        """Advance one pending record to committed under the intake lock."""
+        from memorii.core.memory_plane.file_lock import locked_file
+
+        with locked_file(self._lock_path, exclusive=True):
+            existing = self._find(operation_id)
+            if existing is None:
+                raise ConsumerDeliveryError(f"unknown operation {operation_id}")
+            if existing.state == "committed":
+                return existing
+            if existing.state == "dead_letter":
+                raise ConsumerDeliveryError(
+                    "conflict: dead-lettered operation cannot commit"
+                )
+            record = existing.model_copy(update={"state": "committed"})
+            self._rewrite_except(operation_id)
+            self._append(record)
+            return record
 
     def _find(self, operation_id: str) -> SpoolRecord | None:
         for record in self._records_unlocked():

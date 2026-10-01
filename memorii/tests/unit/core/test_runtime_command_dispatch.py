@@ -272,7 +272,6 @@ def test_unimplemented_command_kinds_fail_closed(tmp_path: Path) -> None:
             BeliefUpdateProposal,
         )
         cases = (
-            ("record_observation", {}),
             (
                 "propose_state_change",
                 {
@@ -285,7 +284,6 @@ def test_unimplemented_command_kinds_fail_closed(tmp_path: Path) -> None:
                     )
                 },
             ),
-            ("resume_task", {}),
             ("checkpoint_task", {}),
             ("replan_task", {}),
         )
@@ -302,6 +300,62 @@ def test_unimplemented_command_kinds_fail_closed(tmp_path: Path) -> None:
                 )
         # Nothing was committed: no receipts, no revision change for these.
         assert service.repository.runtime_revision() == 1
+    finally:
+        service._administration.close()
+
+
+def test_host_event_kinds_commit_their_durable_receipt_journal(tmp_path: Path) -> None:
+    """Observation/dispatch/result/resume commit receipts; resume unpauses."""
+    service = _service(tmp_path)
+    try:
+        task_id = _seeded_task_id(service)
+        for kind in (
+            "record_observation",
+            "record_action_dispatch",
+            "record_action_result",
+            "resume_task",
+        ):
+            receipt = service.dispatch(
+                RuntimeCommandRequest(
+                    kind=kind,  # type: ignore[arg-type]
+                    operation_id=f"op:journal:{kind}",
+                    task_id=task_id,
+                    expected_revision=1,
+                )
+            )
+            assert receipt.status == "committed"
+        # A paused task resumes with a real state transition.
+        service.dispatch(
+            RuntimeCommandRequest(
+                kind="pause_task",
+                operation_id="op:pause",
+                task_id=task_id,
+                expected_revision=1,
+                pause_reason="certification pause",
+            )
+        )
+        resumed = service.dispatch(
+            RuntimeCommandRequest(
+                kind="resume_task",
+                operation_id="op:resume:paused",
+                task_id=task_id,
+                expected_revision=2,
+            )
+        )
+        assert resumed.status == "committed"
+        import sqlite3
+
+        connection = sqlite3.connect(
+            service._administration.partition().database_path
+        )
+        try:
+            row = connection.execute(
+                "SELECT record_json FROM runtime_tasks WHERE task_id = ?",
+                (task_id,),
+            ).fetchone()
+        finally:
+            connection.close()
+        assert row is not None and '"lifecycle":"active"' in row[0]
     finally:
         service._administration.close()
 
@@ -376,15 +430,26 @@ def test_terminal_task_still_permits_checkpoint_and_resume(tmp_path: Path) -> No
                 ),
             )
         )
-        for kind in ("checkpoint_task", "resume_task"):
-            with pytest.raises(RuntimeCommandError, match="no implemented durable effect"):
-                service.dispatch(
-                    RuntimeCommandRequest(
-                        kind=kind,
-                        operation_id=f"op:{kind}",
-                        task_id=task_id,
-                        expected_revision=2,
-                    )
+        with pytest.raises(RuntimeCommandError, match="no implemented durable effect"):
+            service.dispatch(
+                RuntimeCommandRequest(
+                    kind="checkpoint_task",
+                    operation_id="op:checkpoint",
+                    task_id=task_id,
+                    expected_revision=2,
                 )
+            )
+        # Resuming a terminal task is the explicitly permitted continuation:
+        # it commits its receipt (an idempotent continuation for a completed
+        # task whose lifecycle gate allows resume).
+        resumed = service.dispatch(
+            RuntimeCommandRequest(
+                kind="resume_task",
+                operation_id="op:resume",
+                task_id=task_id,
+                expected_revision=2,
+            )
+        )
+        assert resumed.status == "committed"
     finally:
         service._administration.close()

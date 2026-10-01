@@ -28,6 +28,25 @@ function bearerToken() {
   return raw;
 }
 
+async function taskExists() {
+  const response = await fetch(`${SIDECAR_URL}/v1/runtime/state`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${bearerToken()}`,
+    },
+    body: JSON.stringify({ protocol_version: 1, task_id: TASK_ID, view: "summary" }),
+  });
+  if (response.status === 404) {
+    return false;
+  }
+  if (!response.ok) {
+    throw new Error(`memorii state read failed: ${response.status}`);
+  }
+  await response.json();
+  return true;
+}
+
 async function currentRevision() {
   const response = await fetch(`${SIDECAR_URL}/v1/runtime/state`, {
     method: "POST",
@@ -81,10 +100,17 @@ export function register(host) {
   }
 
   host.on("session_start", async () => {
+    // Hosts continue operator-provisioned tasks; a session without its
+    // provisioned task fails closed instead of fabricating one.
+    if (!(await taskExists())) {
+      throw new Error(`no provisioned task ${TASK_ID} for this host session`);
+    }
+    const revision = await currentRevision();
     await submitCommand({
-      kind: "start_task",
-      operation_id: nextOperationId("start"),
-      goal: "OpenClaw channel session",
+      kind: "resume_task",
+      operation_id: nextOperationId("resume"),
+      task_id: TASK_ID,
+      expected_revision: revision,
     });
   });
 

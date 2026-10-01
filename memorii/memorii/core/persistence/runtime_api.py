@@ -133,7 +133,7 @@ class RuntimeCommandService:
     def repository(self) -> RuntimeStateRepository:
         return self._repository
 
-    def dispatch(self, request: RuntimeCommandRequest) -> object:
+    def dispatch(self, request: RuntimeCommandRequest) -> RuntimeCommandReceipt:
         """Idempotent command dispatch with durable receipt and attempt."""
         digest = command_request_digest(request)
         existing = self._repository.get_command_receipt(
@@ -286,6 +286,25 @@ class RuntimeCommandService:
                     update={"lifecycle": "aborted", "version": task.version + 1}
                 ),
             )
+        elif request.kind == "resume_task":
+            if task.lifecycle == "paused":
+                repository.apply_task(
+                    connection,
+                    task.model_copy(
+                        update={"lifecycle": "active", "version": task.version + 1}
+                    ),
+                )
+            # Resuming an active task is an idempotent continuation: the
+            # receipt is the durable effect.
+        elif request.kind in (
+            "record_observation",
+            "record_action_dispatch",
+            "record_action_result",
+        ):
+            # Durable event journal: the atomic receipt records that the host
+            # event command executed. The observation's content effects live
+            # with the memory-plane semantic wiring, not the runtime tables.
+            pass
         else:
             # Fail closed: kinds whose durable effects are not implemented at
             # this slice never commit a receipt claiming success.

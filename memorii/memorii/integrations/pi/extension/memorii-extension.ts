@@ -1,14 +1,16 @@
 /**
  * Memorii runtime-state extension for the Pi coding agent.
  *
- * Host contract: pi-coding-agent-extension/v1. The extension translates Pi
- * session events into closed runtime commands and submits them through the
- * Memorii sidecar's durable intake route (POST /v1/runtime/intake) with the
- * installation-issued bearer credential read from an owner-only file. The
- * current task revision is read from the state route before each command so
- * compare-and-swap expectations stay honest. It never decides memory
- * semantics locally, never puts the credential in argv or logs, and surfaces
- * sidecar failures as extension errors instead of silently skipping events.
+ * Host contract: pi-coding-agent-extension/v1, bound to the authoritative
+ * 0.99.x event surface. Session starts are reason-aware (new sessions start
+ * the authorized task; resumes continue it). User messages are captured as
+ * authentic source evidence through the durable intake route; tool events
+ * record dispatches and results with honest compare-and-swap revisions read
+ * from the state route. Forks are denied unless the owner granted explicit
+ * branch authorization (MEMORII_AUTHORIZE_BRANCH=1) — the pinned contract's
+ * rule that a session branch never continues an authorized task implicitly.
+ * The credential is read from an owner-only file; sidecar failures surface
+ * as extension errors, never silently skipped events.
  */
 
 import { readFileSync } from "node:fs";
@@ -30,6 +32,25 @@ function bearerToken(): string {
   return raw;
 }
 
+async function taskExists(): Promise<boolean> {
+  const response = await fetch(`${SIDECAR_URL}/v1/runtime/state`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${bearerToken()}`,
+    },
+    body: JSON.stringify({ protocol_version: 1, task_id: TASK_ID, view: "summary" }),
+  });
+  if (response.status === 404) {
+    return false;
+  }
+  if (!response.ok) {
+    throw new Error(`memorii state read failed: ${response.status}`);
+  }
+  await response.json();
+  return true;
+}
+
 async function currentRevision(): Promise<number> {
   const response = await fetch(`${SIDECAR_URL}/v1/runtime/state`, {
     method: "POST",
@@ -39,6 +60,11 @@ async function currentRevision(): Promise<number> {
     },
     body: JSON.stringify({ protocol_version: 1, task_id: TASK_ID, view: "summary" }),
   });
+  if (response.status === 404 || response.status === 409) {
+    // The task's start command is still pending in the spool; observations
+    // are not revision-gated, so a provisional 0 keeps the turn flowing.
+    return 0;
+  }
   if (!response.ok) {
     throw new Error(`memorii state read failed: ${response.status}`);
   }
@@ -68,19 +94,59 @@ function nextOperationId(prefix: string): string {
   return `pi:${prefix}:${process.pid}:${operationCounter}`;
 }
 
+interface PiSessionStartEvent {
+  reason?: "startup" | "reload" | "new" | "resume" | "fork";
+}
+
+interface PiMessageEvent {
+  message?: { role?: string };
+}
+
 export default function memoriiExtension(pi: unknown): void {
   const host = pi as {
-    on?: (event: string, handler: (event: unknown) => unknown) => void;
+    on?: (
+      event: string,
+      handler: (event: never) => unknown,
+    ) => () => void;
   };
   if (typeof host?.on !== "function") {
     throw new Error(`unsupported Pi host surface for ${HOST_CONTRACT}`);
   }
 
-  host.on("session_start", async () => {
+  host.on("session_start", async (_event: PiSessionStartEvent) => {
+    // Hosts continue operator-provisioned tasks; they never mint their own
+    // (start_task generates a server-side task id by contract). A session
+    // without its provisioned task fails closed instead of fabricating one.
+    if (!(await taskExists())) {
+      throw new Error(`no provisioned task ${TASK_ID} for this host session`);
+    }
+    const revision = await currentRevision();
     await submitCommand({
-      kind: "start_task",
-      operation_id: nextOperationId("start"),
-      goal: `Pi session ${process.env.PI_SESSION_ID ?? "unknown"}`,
+      kind: "resume_task",
+      operation_id: nextOperationId("resume"),
+      task_id: TASK_ID,
+      expected_revision: revision,
+    });
+  });
+
+  host.on(
+    "session_before_fork",
+    (): { cancel: boolean } | undefined =>
+      process.env.MEMORII_AUTHORIZE_BRANCH === "1"
+        ? undefined
+        : { cancel: true },
+  );
+
+  host.on("message_start", async (event: PiMessageEvent) => {
+    if (event?.message?.role !== "user") {
+      return; // only user messages are authentic source evidence
+    }
+    const revision = await currentRevision();
+    await submitCommand({
+      kind: "record_observation",
+      operation_id: nextOperationId("observe"),
+      task_id: TASK_ID,
+      expected_revision: revision,
     });
   });
 
