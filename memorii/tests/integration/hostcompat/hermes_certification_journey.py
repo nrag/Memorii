@@ -1,12 +1,13 @@
-"""In-container Hermes certification journey: the real CLI end to end.
+"""In-container Hermes certification journey: the real ACP agent end to end.
 
-Runs inside the pinned Hermes memorii image (bash entrypoint). Boots the
-stub provider, writes a minimal current-form Hermes config (custom
-OpenAI-compatible provider + the Memorii memory provider), drives two real
-``hermes -z`` one-shot turns (the second continuing the same session), and
-asserts the in-process write path: the Memorii plane under the profile's
-memorii root captures authentic transcript records and the continuation
-turn reopens the same root without a second installation.
+Runs inside the pinned Hermes memorii image. Boots the stub provider, writes
+a minimal current-form Hermes config (custom OpenAI-compatible provider +
+the Memorii memory provider), then drives the REAL ``hermes-acp`` stdio
+server through the Agent Client Protocol: initialize, session/new, a first
+turn, a server RESTART, session/load of the same session, and a second
+turn. Asserts the in-process write path: the Memorii plane under the
+profile's memorii root captures authentic transcript records and the
+continuation turn reopens the same root.
 """
 from __future__ import annotations
 
@@ -19,6 +20,7 @@ from pathlib import Path
 sys.path.insert(0, "/opt/memorii-src/memorii")
 sys.path.insert(0, "/opt/memorii-src/memorii/tests/integration/hostcompat")
 
+from hermes_acp_client import AcpClient
 from stub_openai_provider import serve_stub_provider
 
 HERMES_HOME = Path("/root/.hermes")
@@ -46,45 +48,55 @@ stub_url, stub_server = serve_stub_provider(port=9911)
 print("stub:", stub_url, flush=True)
 
 # The image bakes HERMES_HOME=/opt/data; the journey's profile overrides it
-# so the written config is the one the CLI reads.
+# so the written config is the one the agent reads.
 environment = dict(os.environ, HOME="/root", HERMES_HOME=str(HERMES_HOME))
+ACP_COMMAND = ["/opt/hermes/.venv/bin/hermes-acp"]
+WORKDIR = "/tmp/hermes-journey-work"
+os.makedirs(WORKDIR, exist_ok=True)
 
-def run_hermes(*args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["/opt/hermes/.venv/bin/hermes", "-z", *args],
-        capture_output=True, text=True, env=environment, timeout=300,
-    )
+def plane_record_count() -> int:
+    if not MEMORII_ROOT.exists():
+        return 0
+    total = 0
+    for path in MEMORII_ROOT.rglob("memory_records.jsonl"):
+        total += len([line for line in path.read_text().splitlines() if line.strip()])
+    return total
 
 failures: list[str] = []
-# NOTE (open): -z one-shot turns reach the stub (model replies observed)
-# but exit 2 after the replies and do not yet drive the memory provider;
-# the activation path (memory.provider: memorii, entry-point load verified
-# manually) and the turn shape that syncs memory remain to be pinned —
-# candidates: interactive `hermes chat` under a pty, or the ACP adapter.
-first = run_hermes("remember this certification turn")
-print("turn1 rc:", first.returncode, (first.stdout or first.stderr)[:240].replace("\n", " "))
 
-second = run_hermes("--continue", "continue the same session")
-print("turn2 rc:", second.returncode, (second.stdout or second.stderr)[:240].replace("\n", " "))
+client = AcpClient(ACP_COMMAND, environment)
+hello = client.initialize()
+print("initialized:", hello.get("agentInfo", {}).get("name"), flush=True)
+session_id = client.new_session(WORKDIR)
+print("session:", session_id, flush=True)
+turn1 = client.prompt(session_id, "remember this certification turn")
+print("turn1 stop:", turn1.get("stopReason"), flush=True)
+records_after_turn1 = plane_record_count()
+print("plane records after turn1:", records_after_turn1, flush=True)
+
+# Server restart: a brand-new agent process must continue the same session.
+client.stop()
+client = AcpClient(ACP_COMMAND, environment)
+client.initialize()
+loaded = client.load_session(session_id, WORKDIR)
+print("loaded session:", loaded.get("sessionId") == session_id, flush=True)
+turn2 = client.prompt(session_id, "continue the same session")
+print("turn2 stop:", turn2.get("stopReason"), flush=True)
+client.stop()
 
 stub_server.shutdown()
 stub_server.server_close()
 
-print("memorii root exists:", MEMORII_ROOT.exists())
-for path in sorted(MEMORII_ROOT.rglob("*"))[:12]:
-    if path.is_file():
-        print("  ", path.relative_to(MEMORII_ROOT))
-
-records_files = [p for p in MEMORII_ROOT.rglob("memory_records.jsonl")]
-plane_records = 0
-for path in records_files:
-    plane_records += len([line for line in path.read_text().splitlines() if line.strip()])
-print("plane records:", plane_records, "across", len(records_files), "file(s)")
+records_after_turn2 = plane_record_count()
+print("plane records after turn2:", records_after_turn2)
+plane_files = list(MEMORII_ROOT.rglob("memory_records.jsonl")) if MEMORII_ROOT.exists() else []
+print("plane files:", [str(p.relative_to(MEMORII_ROOT)) for p in plane_files][:4])
 
 checks = {
-    "both turns ran": first.returncode == 0 and second.returncode == 0,
-    "memorii plane captured records": plane_records > 0,
-    "single plane root (continuation reopened)": len(records_files) == 1,
+    "turn1 completed": turn1.get("stopReason") == "end_turn",
+    "memorii plane captured records": records_after_turn1 > 0,
+    "restart continuation reopened the same root": records_after_turn2 > records_after_turn1
+    and len(plane_files) == 1,
 }
 for name, ok in checks.items():
     print(("PASS " if ok else "FAIL ") + name)
