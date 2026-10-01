@@ -3,7 +3,7 @@
 - Parent WorkPlan: [implementation index](../implementation.plan.md)
 - Work type: implementation milestone packet
 - Delivery fidelity: Level 3, bounded slice only
-- Status: active (sub-slice 1: shared partition + SqliteMemoryPlaneStore parity; publication/init and factory wiring remain)
+- Status: implemented and reviewed — sub-slices 1-3 landed, three-role milestone review completed, all five confirmed P2s remediated (d867eca8), 114 affected tests green. Open closure item: one targeted delta review on d867eca8. The earlier per-shard CI-parity and integration-tier-home obligations are satisfied (durable-storage-integration CI job + green PR #124 gates). Recorded deferrals: incremental manifest accumulator (DUR-11 gate), schema/policy-registry digest fields, per-read Tier A (serving slices).
 - Requirements: DUR-02,03,05,13,15,16
 - Dependencies: Readiness, approved design and matrix review
 - Baseline revision: bad9eeefb43f7f42fb95d583b11859e2f2ca9eb8 (planning snapshot)

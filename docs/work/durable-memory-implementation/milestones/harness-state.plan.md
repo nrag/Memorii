@@ -3,7 +3,7 @@
 - Parent WorkPlan: [implementation index](../implementation.plan.md)
 - Work type: implementation milestone packet
 - Delivery fidelity: Level 3, bounded slice only
-- Status: active (sub-slices 1-10 landed: TS SDK scaffold delivered under the corrected Node 24-26 policy with all gates.md commands green; grant-epoch registry + closing review remain)
+- Status: implemented, review round 1 remediated — sub-slices 1-10 landed incl. paging cursors (e0759024), credential store (1c9e4e2b), consume CLI (dfaff8df) and the TypeScript SDK (bf549f12) with every gates.md command green and CI Node 24/26 jobs green. Open closure items: grant-epoch revocation registry, closing review round.
 - Requirements: DUR-05,06,07,13; regression DUR-01,04
 - Dependencies: runtime-recovery and legacy-migration
 - Baseline revision: bad9eeefb43f7f42fb95d583b11859e2f2ca9eb8 (planning snapshot)

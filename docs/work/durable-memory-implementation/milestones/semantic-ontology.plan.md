@@ -3,7 +3,7 @@
 - Parent WorkPlan: [implementation index](../implementation.plan.md)
 - Work type: implementation milestone packet
 - Delivery fidelity: Level 3, bounded slice only
-- Status: under-review→active (sub-slices 1-7 landed; milestone review round 1 reconciled with zero P1/P2; conformance batch applied; remaining deferrals recorded below)
+- Status: implemented and reviewed — sub-slices 1-7 landed, milestone review round closed with ZERO confirmed P1/P2; conformance batch c906e849 applied. Non-blocking follow-ups recorded below (owned by later wiring sub-slices).
 - Requirements: DUR-05,07,15,16,17
 - Dependencies: storage-foundation
 - Baseline revision: bad9eeefb43f7f42fb95d583b11859e2f2ca9eb8 (planning snapshot)

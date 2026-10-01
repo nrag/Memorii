@@ -3,7 +3,7 @@
 - Parent WorkPlan: [implementation index](../implementation.plan.md)
 - Work type: implementation milestone packet
 - Delivery fidelity: Level 3, bounded slice only
-- Status: active (sub-slices 1-4 landed + review round 1 remediated ff45a6c0; recorded follow-ups below)
+- Status: implemented and reviewed — sub-slices 1-4 landed, review round 1 completed with the false-success P1 and five P2s remediated (ff45a6c0). Non-blocking follow-ups recorded below.
 - Requirements: DUR-01,02,03,04,05,07; regression DUR-15,16
 - Dependencies: storage-foundation; semantic-ontology parity baseline
 - Baseline revision: bad9eeefb43f7f42fb95d583b11859e2f2ca9eb8 (planning snapshot)

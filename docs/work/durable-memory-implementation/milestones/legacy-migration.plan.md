@@ -3,7 +3,7 @@
 - Parent WorkPlan: [implementation index](../implementation.plan.md)
 - Work type: implementation milestone packet
 - Delivery fidelity: Level 3, bounded slice only
-- Status: active (sub-slices 1-3 landed incl. review remediation 183e47a5; CLI surface, external key/catalog authority verification and pre-cutover rollback plan remain)
+- Status: implemented and reviewed — sub-slices 1-3 landed, review round completed with all four confirmed P2s remediated (183e47a5). Open follow-ups: CLI staging surface, external key/catalog authority verification, pre-cutover rollback plan.
 - Requirements: DUR-10,12,13,18; regression DUR-15,16,17
 - Dependencies: semantic-ontology
 - Baseline revision: bad9eeefb43f7f42fb95d583b11859e2f2ca9eb8 (planning snapshot)

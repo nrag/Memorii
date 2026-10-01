@@ -3,7 +3,7 @@
 - Parent WorkPlan: [implementation index](../implementation.plan.md)
 - Work type: implementation milestone packet
 - Delivery fidelity: Level 3, bounded slice only
-- Status: active (sub-slices 1-3 landed; RUNTIME CERTIFICATION for LangGraph/AutoGen(AG2)/OpenAI Agents landed with pinned real-framework journeys; real OpenClaw/Pi host installs remain the external prerequisite)
+- Status: active, externally blocked for full closure — sub-slices 1-3 landed incl. pinned host-contract adapters (ab9af959) and real-framework runtime certification (eea7147a). Open: real OpenClaw/Pi host installs (owner external prerequisite).
 - Requirements: DUR-06,13 (DUR-14 host/platform evidence contributed to release-conformance, the allocation owner in [coverage](../coverage.md))
 - Dependencies: harness-state
 - Baseline revision: bad9eeefb43f7f42fb95d583b11859e2f2ca9eb8 (planning snapshot)
