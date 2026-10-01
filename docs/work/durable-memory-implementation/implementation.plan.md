@@ -42,20 +42,22 @@ Every requirement has implementation, appropriate tests, actual nonzero producti
 
 | Order / packet | Usable outcome | Depends on | Status |
 | --- | --- | --- | --- |
-| 1. [Storage foundation](milestones/storage-foundation.plan.md) | Owner initializes partition; canonical memory persists and reopens with verified publication | readiness + test-matrix review | proposed |
-| 2. [Semantic and ontology parity](milestones/semantic-ontology.plan.md) | Real provider/Hermes semantic and ontology paths use SQLite and indexed protected reads | storage foundation | proposed |
-| 3. [Legacy migration](milestones/legacy-migration.plan.md) | Existing JSONL installation adopts control authority and safely cuts over | semantic and ontology parity | proposed |
-| 4. [Runtime recovery](milestones/runtime-recovery.plan.md) | Complete task/solver/action state survives independent-process restart | storage foundation; parity regression baseline | proposed |
-| 5. [Harness state exchange](milestones/harness-state.plan.md) | Hermes consumes bounded durable state through real API/sidecar/SDK/spool roots | runtime recovery + legacy migration | proposed |
-| 6. [Additional harnesses](milestones/additional-harnesses.plan.md) | Pinned OpenClaw and Pi integrations complete the same task journey | harness state exchange | proposed |
-| 7. [Operator controls](milestones/operator-controls.plan.md) | All registered owners honor pause, backup/restore, forget/retention and diagnostics | prior data/host roots enrolled | proposed |
-| 8. [Release conformance](milestones/release-conformance.plan.md) | Exact installed artifacts, supported platforms, migration/rollback and release evidence pass | every bounded milestone | proposed |
+| 1. [Storage foundation](milestones/storage-foundation.plan.md) | Owner initializes partition; canonical memory persists and reopens with verified publication | readiness + test-matrix review | **implemented + reviewed** (5 P2s remediated d867eca8); open: delta review on d867eca8 |
+| 2. [Semantic and ontology parity](milestones/semantic-ontology.plan.md) | Real provider/Hermes semantic and ontology paths use SQLite and indexed protected reads | storage foundation | **implemented + reviewed** (round closed, zero P1/P2; follow-ups recorded) |
+| 3. [Legacy migration](milestones/legacy-migration.plan.md) | Existing JSONL installation adopts control authority and safely cuts over | semantic and ontology parity | **implemented + reviewed** (4 P2s remediated 183e47a5); follow-ups: CLI staging, external authority, rollback plan |
+| 4. [Runtime recovery](milestones/runtime-recovery.plan.md) | Complete task/solver/action state survives independent-process restart | storage foundation; parity regression baseline | **implemented + reviewed** (1 P1 + 5 P2s remediated ff45a6c0; follow-ups recorded) |
+| 5. [Harness state exchange](milestones/harness-state.plan.md) | Hermes consumes bounded durable state through real API/sidecar/SDK/spool roots | runtime recovery + legacy migration | implemented + review round 1 remediated (sub-slices 1-10 incl. TS SDK bf549f12); open: grant-epoch registry, closing review |
+| 6. [Additional harnesses](milestones/additional-harnesses.plan.md) | Pinned OpenClaw and Pi integrations complete the same task journey | harness state exchange | active — adapters + real-framework certification landed (eea7147a); blocked on real OpenClaw/Pi host installs (Docker profiles planned) |
+| 7. [Operator controls](milestones/operator-controls.plan.md) | All registered owners honor pause, backup/restore, forget/retention and diagnostics | prior data/host roots enrolled | active — sub-slice 1 of ~5 (fenced modes/status/export 9fe1a6c6); backup/restore, forget/erasure, retention, doctor remain |
+| 8. [Release conformance](milestones/release-conformance.plan.md) | Exact installed artifacts, supported platforms, migration/rollback and release evidence pass | every bounded milestone | active — OpenAPI generator landed (99e334e2); package matrix, timing manifests, exact-release gates, final review remain |
+
+Maintainer rule (owner directive 2026-10-01): this table is updated at every milestone/sub-slice boundary, in the same commit as the packet progress entry — statuses must never drift from packet evidence again.
 
 Order prioritizes usable journeys, common-failure safety, then exhaustive release hardening. Foundational grants, fencing, crash consistency and integrity are mandatory in the first relevant slice; they are not deferred to release conformance. Read-only mapping/test preparation can run alongside the sole writer. Runtime work may be mapped during migration, but overlapping storage/schema edits stay serial.
 
 ## Requirement Allocation And Evidence Maturity
 
-[Coverage ledger](coverage.md) reconstructs obligations from narrative contracts, not just requirement labels. Every requirement is currently **not started**; design is specified, with only the bounded design probes locally verified. No production implementation/independent reproduction/CI/operational claim is made. A milestone closure marks parent requirements partial until all allocated milestones and final gates are complete.
+[Coverage ledger](coverage.md) reconstructs obligations from narrative contracts, not just requirement labels, and carries the per-requirement status synced with packet evidence. Through the codec slice and CI-repair line: DUR-01/02/04/05/07/15/16/17/18 implemented and reviewed; DUR-03/06/08-14 in progress with their remaining scopes named in the ledger. Design is specified beyond that; no requirement is claimed beyond its recorded evidence. A milestone closure marks parent requirements partial until all allocated milestones and final gates are complete.
 
 ## Migration, Rollout, Rollback And Observability
 
