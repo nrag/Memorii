@@ -1,0 +1,12 @@
+{
+  "name": "@memorii/pi-extension",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Memorii runtime-state extension for the Pi coding agent (pinned host contract pi-coding-agent-extension/v1).",
+  "type": "module",
+  "main": "memorii-extension.ts",
+  "engines": { "node": ">=24.0.0 <27.0.0" },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.99.2"
+  }
+}
