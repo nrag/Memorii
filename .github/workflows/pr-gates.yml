@@ -572,10 +572,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install ICU build prerequisites (PyICU has no macOS wheels)
+      - name: Pre-build PyICU against Homebrew ICU (no macOS wheels)
         run: |
           brew install --quiet pkg-config icu4c
-          echo "PKG_CONFIG_PATH=$(brew --prefix icu4c)/lib/pkgconfig" >> "$GITHUB_ENV"
+          PKG_CONFIG_PATH="$(brew --prefix icu4c)/lib/pkgconfig" \
+            pip install "PyICU>=2.13,<3"
 
       - name: Set up Python
         uses: actions/setup-python@v5
