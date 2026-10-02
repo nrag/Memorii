@@ -620,13 +620,14 @@ def test_doctor_flags_permission_drift(tmp_path: Path) -> None:
 def test_cli_status_doctor_and_capability_refusal(tmp_path: Path) -> None:
     import json as _json
     import subprocess as _subprocess
+    import sys as _sys
 
     service = StorageAdministrationService(tmp_path / "installation")
     service.initialize()
     service.close()
 
     cli = [
-        "./.venv/bin/python",
+        _sys.executable,
         "-m",
         "memorii.tools.runtime_operator",
         "--installation-root",
