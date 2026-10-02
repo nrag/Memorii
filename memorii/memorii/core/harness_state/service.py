@@ -19,6 +19,10 @@ from memorii.core.harness_state.envelope import (
     HarnessStateEnvelope,
     build_envelope,
 )
+from memorii.core.harness_state.grant_registry import (
+    GrantEpochRegistry,
+    GrantRegistryError,
+)
 from memorii.core.harness_state.paging import (
     DEFAULT_CURSOR_LIFETIME,
     HarnessPageCodec,
@@ -58,9 +62,11 @@ class HarnessStateService:
         repository: RuntimeStateRepository,
         *,
         codec: HarnessPageCodec | None = None,
+        grant_registry: GrantEpochRegistry | None = None,
     ) -> None:
         self._repository = repository
         self._codec = codec
+        self._grant_registry = grant_registry
 
     def _ensure_codec(self) -> HarnessPageCodec:
         if self._codec is None:
@@ -78,6 +84,11 @@ class HarnessStateService:
         now: datetime | None = None,
         cursor: str | None = None,
     ) -> HarnessStateEnvelope:
+        if self._grant_registry is not None:
+            try:
+                self._grant_registry.require_current(grant.grant_id, grant.epoch)
+            except GrantRegistryError as exc:
+                raise HarnessStateError(f"denied: {exc}") from exc
         if view not in ("execution", "solver", "summary", "history", "neighborhood"):
             raise HarnessStateError(
                 "invalid_request: unsupported view; use execution|solver|summary"

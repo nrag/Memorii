@@ -40,3 +40,34 @@ def test_malformed_store_fails_closed(tmp_path: Path) -> None:
     (tmp_path / "credentials" / "credentials.json").write_text("not-json", encoding="utf-8")
     with pytest.raises(CredentialError, match="malformed|un_readable".replace("_", "")):
         store.principal_for("mri_anything")
+
+
+def test_grant_epoch_registry_revoke_fails_closed_and_never_lowers(tmp_path: Path) -> None:
+    from memorii.core.harness_state.grant_registry import (
+        GrantEpochRegistry,
+        GrantRegistryError,
+    )
+
+    registry = GrantEpochRegistry(tmp_path / "grants")
+    assert registry.current_epoch("grant:one") == 1
+    registry.require_current("grant:one", 1)
+
+    record = registry.revoke("grant:one", reason="rotation")
+    assert record.epoch == 2
+    with pytest.raises(GrantRegistryError, match="stale_grant"):
+        registry.require_current("grant:one", 1)
+    registry.require_current("grant:one", 2)
+    assert registry.revocations() == (record,)
+
+    # Revocation is append-only and monotone: re-revoke raises further.
+    second = registry.revoke("grant:one", reason="again")
+    assert second.epoch == 3
+    assert registry.current_epoch("grant:one") == 3
+
+    with pytest.raises(GrantRegistryError, match="reason must be nonempty"):
+        registry.revoke("grant:two", reason="  ")
+
+    # Fresh registry over the same directory keeps state (durability).
+    reopened = GrantEpochRegistry(tmp_path / "grants")
+    assert reopened.current_epoch("grant:one") == 3
+    reopened.verify_permissions()
