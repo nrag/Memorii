@@ -133,6 +133,9 @@ class StorageAdministrationService:
     def installation_root(self) -> Path:
         return self._root
 
+    def control_path(self) -> Path:
+        return self._root / "control" / "control.sqlite3"
+
     def partition_path(self) -> Path:
         return self._root / "partition" / "partition.sqlite3"
 

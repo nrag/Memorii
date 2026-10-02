@@ -189,3 +189,214 @@ def test_export_is_scoped_deterministic_and_authorized(tmp_path: Path) -> None:
             operator.read_export(capability=forged)
     finally:
         service.close()
+
+
+# --- Backup / restore / forget / erasure / retention / doctor ---------------
+
+
+def _fenced_operator(
+    tmp_path: Path,
+) -> tuple[StorageAdministrationOperator, StorageAdministrationService, OwnerCapability]:
+    from memorii.core.storage_administration.operator import ModeChangeRequest
+
+    operator, service = _operator(tmp_path)
+    capability = _capability(service)
+    status = operator.status()
+    operator.change_mode(
+        ModeChangeRequest(
+            target_mode="read_only",
+            expected_control_revision=status.control_revision,
+            reason="backup journey",
+        ),
+        capability=capability,
+    )
+    return operator, service, capability
+
+
+def test_backup_requires_the_exclusive_barrier(tmp_path: Path) -> None:
+    from memorii.core.storage_administration.operator_backup import BackupRestoreOperator
+
+    operator, service = _operator(tmp_path)
+    try:
+        backups = BackupRestoreOperator(operator)
+        with pytest.raises(OperatorError, match="exclusive barrier"):
+            backups.create_backup(
+                capability=_capability(service),
+                archive_root=tmp_path / "backup",
+                reason="barrier test",
+            )
+    finally:
+        service.close()
+
+
+def test_backup_create_verify_and_restore_round_trip(tmp_path: Path) -> None:
+    from memorii.core.storage_administration.operator_backup import (
+        BackupRestoreOperator,
+    )
+
+    operator, service, capability = _fenced_operator(tmp_path)
+    try:
+        backups = BackupRestoreOperator(operator)
+        manifest = backups.create_backup(
+            capability=capability,
+            archive_root=tmp_path / "backup",
+            reason="round trip",
+        )
+        assert {p.participant_id for p in manifest.participants} == {
+            "control",
+            "partition",
+        }
+        verified = backups.verify_backup(archive_root=tmp_path / "backup")
+        assert verified.manifest_digest == manifest.manifest_digest
+
+        # Tamper with one participant snapshot: verify refuses.
+        (tmp_path / "backup" / "partition.sqlite3").write_bytes(b"tampered")
+        with pytest.raises(OperatorError, match="size mismatch|digest mismatch"):
+            backups.verify_backup(archive_root=tmp_path / "backup")
+
+        # Recreate a clean backup; restore to staging.
+        manifest = backups.create_backup(
+            capability=capability,
+            archive_root=tmp_path / "backup2",
+            reason="second",
+        )
+        del manifest
+        plan = backups.plan_restore(
+            capability=capability,
+            archive_root=tmp_path / "backup2",
+            data_loss_acknowledged=False,
+        )
+        assert plan.participant_count == 2
+        staging = backups.apply_restore(
+            capability=capability, plan=plan, staging_root=tmp_path / "staged"
+        )
+        assert (staging / "control.sqlite3").is_file()
+        assert (staging / "partition.sqlite3").is_file()
+    finally:
+        service.close()
+
+
+def test_backup_foreign_installation_and_missing_marker_refuse(tmp_path: Path) -> None:
+    from memorii.core.storage_administration.operator_backup import (
+        BackupRestoreOperator,
+    )
+
+    operator, service, capability = _fenced_operator(tmp_path)
+    try:
+        backups = BackupRestoreOperator(operator)
+        with pytest.raises(OperatorError, match="no complete marker"):
+            backups.verify_backup(archive_root=tmp_path / "empty")
+        backups.create_backup(
+            capability=capability,
+            archive_root=tmp_path / "backup",
+            reason="marker",
+        )
+        (tmp_path / "backup" / "backup-complete.json").unlink()
+        with pytest.raises(OperatorError, match="no complete marker"):
+            backups.verify_backup(archive_root=tmp_path / "backup")
+    finally:
+        service.close()
+
+
+def test_forget_plan_apply_and_retention_cycle(tmp_path: Path) -> None:
+    from memorii.core.storage_administration.operator import ModeChangeRequest
+    from memorii.core.storage_administration.operator_governance import (
+        GovernanceOperator,
+    )
+
+    operator, service = _operator(tmp_path)
+    capability = _capability(service)
+    try:
+        governance = GovernanceOperator(operator)
+        with pytest.raises(OperatorError, match="matched no records"):
+            governance.plan_forget(capability=capability, scope_note="empty")
+
+        from memorii.core.persistence.runtime_contracts import TaskRecord
+        from memorii.core.persistence.runtime_repository import publish_runtime_change
+
+        def seed(connection, repo) -> None:
+            repo.apply_task(
+                connection,
+                TaskRecord(
+                    task_id="task:forget",
+                    principal="principal:a",
+                    goal="Forget journey",
+                    created_at=_NOW,
+                    root_execution_node_id="exec:root",
+                ),
+            )
+
+        publish_runtime_change(service, seed, operation_binding="forget_seed")
+        plan = governance.plan_forget(capability=capability, scope_note="scope")
+        assert plan.matched_record_ids == ("task:forget",)
+        assert plan.retention_disclosed is True
+        receipt = governance.apply_forget(capability=capability, plan=plan)
+        assert receipt.suppressed_count == 1
+        assert receipt.historical_bytes_retained is True
+
+        # Retention sees the fresh journal as ineligible; nothing prunes.
+        retention = governance.plan_retention(
+            capability=capability, older_than_days=30
+        )
+        assert retention.eligible_suppression_journals == ()
+        assert (
+            governance.apply_retention(capability=capability, plan=retention) == 0
+        )
+
+        operator.change_mode(
+            ModeChangeRequest(
+                target_mode="read_only",
+                expected_control_revision=operator.status().control_revision,
+                reason="doctor read",
+            ),
+            capability=capability,
+        )
+    finally:
+        service.close()
+
+
+def test_erasure_requires_acknowledgement_and_reports_incomplete(tmp_path: Path) -> None:
+    from memorii.core.storage_administration.operator_governance import (
+        GovernanceOperator,
+    )
+
+    operator, service = _operator(tmp_path)
+    capability = _capability(service)
+    try:
+        governance = GovernanceOperator(operator)
+        plan = governance.plan_erasure(capability=capability)
+        assert plan.installation_id == service._control_state().installation_id
+        with pytest.raises(OperatorError, match="acknowledged plan"):
+            governance.apply_erasure(capability=capability, plan=plan)
+        dry = governance.apply_erasure(
+            capability=capability,
+            plan=plan.model_copy(update={"acknowledged": True}),
+        )
+        assert dry.incomplete is True  # offline copies unaccounted
+        receipts = list(
+            (service.installation_root / "control" / "erasure-receipts").glob(
+                "erasure-*.json"
+            )
+        )
+        assert receipts, "content-free erasure receipt recorded"
+    finally:
+        service.close()
+
+
+def test_doctor_reports_and_never_repairs(tmp_path: Path) -> None:
+    from memorii.core.storage_administration.operator_governance import (
+        GovernanceOperator,
+    )
+
+    operator, service = _operator(tmp_path)
+    try:
+        governance = GovernanceOperator(operator)
+        findings = governance.doctor()
+        checks = {finding.check: finding.status for finding in findings}
+        assert checks["control_state"] == "ok"
+        assert checks["partition_verification"] == "ok"
+        # Doctor ran read-only: the partition and control files remain.
+        assert service.control_path().exists()
+        assert service.partition_path().exists()
+    finally:
+        service.close()
