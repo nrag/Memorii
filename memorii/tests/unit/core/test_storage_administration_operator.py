@@ -400,3 +400,31 @@ def test_doctor_reports_and_never_repairs(tmp_path: Path) -> None:
         assert service.partition_path().exists()
     finally:
         service.close()
+
+
+def test_writer_enrollment_barriers_unknown_writers(tmp_path: Path) -> None:
+    from memorii.core.storage_administration.writer_enrollment import (
+        WriterEnrollmentError,
+        WriterEnrollmentRegistry,
+    )
+
+    registry = WriterEnrollmentRegistry(tmp_path / "control" / "writers")
+    with pytest.raises(WriterEnrollmentError, match="not enrolled"):
+        registry.require_enrolled("writer:unknown")
+
+    record = registry.enroll("writer:runtime", kind="runtime-sqlite")
+    assert registry.require_enrolled("writer:runtime") == record
+    # Idempotent re-enrollment; kind drift refuses.
+    assert registry.enroll("writer:runtime", kind="runtime-sqlite") == record
+    with pytest.raises(WriterEnrollmentError, match="kind drift"):
+        registry.enroll("writer:runtime", kind="memory-plane")
+
+    registry.enroll("writer:memory-plane", kind="memory-plane-sqlite")
+    assert len(registry.writers()) == 2
+
+    # Durable across restart; owner-only permissions held.
+    reopened = WriterEnrollmentRegistry(tmp_path / "control" / "writers")
+    assert {w.writer_id for w in reopened.writers()} == {
+        "writer:runtime",
+        "writer:memory-plane",
+    }
