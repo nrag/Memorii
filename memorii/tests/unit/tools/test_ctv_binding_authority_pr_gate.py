@@ -300,6 +300,7 @@ def test_pr_workflow_structurally_runs_complete_matrix_and_exact_pinned_checker(
         "sdk-typescript",
         "host-compatibility-certification",
         "host-container-certification",
+        "macos-platform-conformance",
         "observation-ledger-activation",
         "unit-test-shards",
         "unit-timing-inventory",

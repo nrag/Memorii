@@ -315,7 +315,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     if: always()
-    needs: [semantic-ingestion-history-reconciliation, equal-version-replay-decision, static-analysis, package-smoke, provider-compatibility, scoped-context-integration, durable-storage-integration, durable-runtime-integration, sdk-typescript, host-compatibility-certification, host-container-certification, observation-ledger-activation, unit-test-shards, unit-timing-inventory, semantic-terminal-persistence, semantic-terminal-persistence-timing-inventory]
+    needs: [semantic-ingestion-history-reconciliation, equal-version-replay-decision, static-analysis, package-smoke, provider-compatibility, scoped-context-integration, durable-storage-integration, durable-runtime-integration, sdk-typescript, host-compatibility-certification, host-container-certification, macos-platform-conformance, observation-ledger-activation, unit-test-shards, unit-timing-inventory, semantic-terminal-persistence, semantic-terminal-persistence-timing-inventory]
 
     steps:
       - name: Require every unit-test dependency
@@ -330,6 +330,7 @@ jobs:
           DURABLE_RUNTIME_RESULT: ${{ needs.durable-runtime-integration.result }}
           HOST_COMPATIBILITY_RESULT: ${{ needs.host-compatibility-certification.result }}
           HOST_CONTAINER_RESULT: ${{ needs.host-container-certification.result }}
+          MACOS_PLATFORM_RESULT: ${{ needs.macos-platform-conformance.result }}
           SDK_TYPESCRIPT_RESULT: ${{ needs.sdk-typescript.result }}
           OBSERVATION_ACTIVATION_RESULT: ${{ needs.observation-ledger-activation.result }}
           SHARD_RESULT: ${{ needs.unit-test-shards.result }}
@@ -347,6 +348,7 @@ jobs:
           && test "$DURABLE_RUNTIME_RESULT" = success
           && test "$HOST_COMPATIBILITY_RESULT" = success
           && test "$HOST_CONTAINER_RESULT" = success
+          test "$MACOS_PLATFORM_RESULT" = success
           && test "$SDK_TYPESCRIPT_RESULT" = success
           && test "$OBSERVATION_ACTIVATION_RESULT" = success
           && test "$SHARD_RESULT" = success
@@ -559,6 +561,35 @@ jobs:
         run: >-
           python -W error -m pytest
           tests/integration/hostcompat/test_container_certification_journeys.py
+          -p no:cacheprovider -v
+
+  macos-platform-conformance:
+    name: macOS Platform Conformance
+    runs-on: macos-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: memorii/pyproject.toml
+
+      - name: Install package + test dependencies
+        working-directory: memorii
+        run: pip install -e '.[local,dev]'
+
+      - name: Run platform-divergent suites (credentials, permissions, capacity)
+        working-directory: memorii
+        run: >-
+          python -W error -m pytest
+          tests/unit/core/test_sidecar_credentials.py
+          tests/unit/core/test_storage_administration_operator.py
+          tests/integration/test_measured_capacity_envelope.py
           -p no:cacheprovider -v
 
   durable-runtime-integration:

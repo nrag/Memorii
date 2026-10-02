@@ -238,6 +238,7 @@ def test_pr_unit_gate_is_complete_duration_balanced_and_timeout_bounded() -> Non
         "sdk-typescript",
         "host-compatibility-certification",
         "host-container-certification",
+        "macos-platform-conformance",
         "observation-ledger-activation",
         "unit-test-shards",
         "unit-timing-inventory",
