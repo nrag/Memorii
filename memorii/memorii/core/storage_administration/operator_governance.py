@@ -403,6 +403,89 @@ class GovernanceOperator:
                 detail=str(keys),
             )
         )
+        # Checkpoint reachability: the latest signed checkpoint for any task
+        # must decode from the durable catalog.
+        try:
+            import sqlite3 as _sqlite3
+
+            connection = _sqlite3.connect(
+                f"file:{service.partition_path()}?mode=ro", uri=True
+            )
+            try:
+                checkpoint_rows = connection.execute(
+                    "SELECT COUNT(*) FROM runtime_checkpoints"
+                ).fetchone()[0]
+            finally:
+                connection.close()
+            findings.append(
+                DoctorFinding(
+                    check="checkpoint_catalog",
+                    status="ok",
+                    detail=f"rows={checkpoint_rows}",
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 - doctor reports, never raises
+            findings.append(
+                DoctorFinding(
+                    check="checkpoint_catalog",
+                    status="warning",
+                    detail=str(exc)[:200],
+                )
+            )
+        # Outbox health: pending deliveries are surfaced for the operator;
+        # stuck entries are operational signal, never auto-pruned.
+        try:
+            from memorii.core.persistence.runtime_api import (
+                pending_outbox_deliveries as _pending,
+            )
+            from memorii.core.persistence.runtime_repository import (
+                RuntimeStateRepository as _Repo,
+            )
+
+            _repository = _Repo(service.partition())
+            with service.partition().transaction(write=False) as connection:
+                pending = len(_pending(_repository, connection))
+            findings.append(
+                DoctorFinding(
+                    check="outbox_pending",
+                    status="ok" if pending == 0 else "warning",
+                    detail=f"pending={pending}",
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 - doctor reports, never raises
+            findings.append(
+                DoctorFinding(
+                    check="outbox_pending",
+                    status="warning",
+                    detail=str(exc)[:200],
+                )
+            )
+        # Grant registry health: the revocation journal loads and its files
+        # are owner-only.
+        try:
+            from memorii.core.harness_state.grant_registry import (
+                GrantEpochRegistry as _Registry,
+            )
+
+            registry = _Registry(
+                service.installation_root / "control" / "grants"
+            )
+            registry.verify_permissions()
+            findings.append(
+                DoctorFinding(
+                    check="grant_registry",
+                    status="ok",
+                    detail=f"revocations={len(registry.revocations())}",
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 - doctor reports, never raises
+            findings.append(
+                DoctorFinding(
+                    check="grant_registry",
+                    status="warning",
+                    detail=str(exc)[:200],
+                )
+            )
         return tuple(findings)
 
 

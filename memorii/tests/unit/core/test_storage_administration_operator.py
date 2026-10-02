@@ -647,3 +647,70 @@ def test_cli_status_doctor_and_capability_refusal(tmp_path: Path) -> None:
     )
     assert refusal.returncode == 2
     assert "--owner-principal" in refusal.stderr
+
+
+def test_fresh_host_boot_from_verified_restore(tmp_path: Path) -> None:
+    from memorii.core.storage_administration.operator_backup import (
+        BackupRestoreOperator,
+        boot_restored_installation,
+    )
+
+    operator, service, capability = _fenced_operator(tmp_path)
+    try:
+        backups = BackupRestoreOperator(operator)
+        recovery_key = b"k" * 32
+        backups.create_backup(
+            capability=capability,
+            archive_root=tmp_path / "archive",
+            reason="fresh host",
+            recovery_key=recovery_key,
+        )
+        import json as _json
+
+        anchor = _json.loads(
+            (tmp_path / "archive" / "recovery-anchor.json").read_text()
+        )
+        plan = backups.plan_restore(
+            capability=capability,
+            archive_root=tmp_path / "archive",
+            data_loss_acknowledged=False,
+        )
+        staging = backups.apply_restore(
+            capability=capability,
+            plan=plan,
+            staging_root=tmp_path / "staged",
+            recovery_key=recovery_key,
+        )
+        fresh_root = tmp_path / "fresh-host"
+        identity = boot_restored_installation(
+            capability=capability,
+            staging_root=staging,
+            anchor=anchor,
+            installation_root=fresh_root,
+            signing_keys_directory=tmp_path / "installation" / "control" / "keys",
+        )
+        assert identity == anchor["installation_id"]
+        assert (fresh_root / "control" / "control.sqlite3").is_file()
+        assert (fresh_root / "partition" / "partition.sqlite3").is_file()
+        # A non-empty root refuses; a mismatched anchor refuses.
+        with pytest.raises(OperatorError, match="empty installation root"):
+            boot_restored_installation(
+                capability=capability,
+                staging_root=staging,
+                anchor=anchor,
+                installation_root=fresh_root,
+                signing_keys_directory=tmp_path / "installation" / "control" / "keys",
+            )
+        empty_root = tmp_path / "fresh-two"
+        empty_root.mkdir()
+        bad_anchor = {**anchor, "installation_id": "ffffffff" * 8}
+        with pytest.raises(OperatorError, match="does not match the anchor"):
+            boot_restored_installation(
+                capability=capability,
+                staging_root=staging,
+                anchor=bad_anchor,
+                installation_root=empty_root,
+                signing_keys_directory=tmp_path / "installation" / "control" / "keys",
+            )
+    finally:
+        service.close()

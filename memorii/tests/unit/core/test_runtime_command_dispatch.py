@@ -271,35 +271,71 @@ def test_unimplemented_command_kinds_fail_closed(tmp_path: Path) -> None:
         from memorii.core.persistence.runtime_contracts import (
             BeliefUpdateProposal,
         )
-        cases = (
-            (
-                "propose_state_change",
-                {
-                    "proposal": BeliefUpdateProposal(
-                        solver_id="solver:one",
-                        node_id="node:h1",
-                        justification_id="j:1",
-                        epistemic_status="committed",
-                        strength=0.7,
-                    )
-                },
+        # The former fail-closed family graduated: every closed kind now
+        # commits its typed durable effect, so the fail-closed contract is
+        # asserted per-kind against fabricated payloads instead.
+        proposal = RuntimeCommandRequest(
+            kind="propose_state_change",
+            operation_id="op:propose",
+            task_id=task_id,
+            expected_revision=1,
+            proposal=BeliefUpdateProposal(
+                solver_id="solver:one",
+                node_id="node:h1",
+                justification_id="j:1",
+                epistemic_status="committed",
+                strength=0.7,
             ),
-            ("checkpoint_task", {}),
-            ("replan_task", {}),
         )
-        for kind, extra in cases:
-            with pytest.raises(RuntimeCommandError, match="no implemented durable effect"):
-                service.dispatch(
-                    RuntimeCommandRequest(
-                        kind=kind,
-                        operation_id=f"op:{kind}",
-                        task_id=task_id,
-                        expected_revision=1,
-                        **extra,
-                    )
-                )
-        # Nothing was committed: no receipts, no revision change for these.
-        assert service.repository.runtime_revision() == 1
+        assert service.dispatch(proposal).status == "committed"
+        checkpoint = service.dispatch(
+            RuntimeCommandRequest(
+                kind="checkpoint_task",
+                operation_id="op:checkpoint",
+                task_id=task_id,
+                expected_revision=1,
+            )
+        )
+        assert checkpoint.status == "committed"
+        replan = service.dispatch(
+            RuntimeCommandRequest(
+                kind="replan_task",
+                operation_id="op:replan",
+                task_id=task_id,
+                expected_revision=1,
+            )
+        )
+        assert replan.status == "committed"
+        # The proposal landed an uncommitted overlay + justification; the
+        # replan created its solver run; the checkpoint its receipt row.
+
+        import sqlite3 as _sqlite3
+
+        connection = _sqlite3.connect(
+            service._administration.partition().database_path
+        )
+        try:
+            overlays = connection.execute(
+                "SELECT record_json FROM runtime_overlay_versions"
+            ).fetchall()
+            runs = connection.execute(
+                "SELECT record_json FROM runtime_solver_runs WHERE task_id = ?",
+                (task_id,),
+            ).fetchall()
+            checkpoints = connection.execute(
+                "SELECT record_json FROM runtime_checkpoints WHERE task_id = ?",
+                (task_id,),
+            ).fetchall()
+        finally:
+            connection.close()
+        assert any(
+            '"committed":false' in str(row[0]) for row in overlays
+        ), "proposal overlay stays candidate"
+        assert any("j:1" in str(row[0]) for row in overlays)
+        assert any(
+            '"category":"replan"' in str(row[0]) for row in runs
+        ), "replan run created"
+        assert checkpoints, "checkpoint receipt row recorded"
     finally:
         service._administration.close()
 
@@ -457,18 +493,18 @@ def test_terminal_task_still_permits_checkpoint_and_resume(tmp_path: Path) -> No
                 ),
             )
         )
-        with pytest.raises(RuntimeCommandError, match="no implemented durable effect"):
-            service.dispatch(
-                RuntimeCommandRequest(
-                    kind="checkpoint_task",
-                    operation_id="op:checkpoint",
-                    task_id=task_id,
-                    expected_revision=2,
-                )
+        # Terminal tasks permit checkpoint and resume: the checkpoint now
+        # commits its signed snapshot receipt, and resume is the explicitly
+        # permitted idempotent continuation.
+        checkpointed = service.dispatch(
+            RuntimeCommandRequest(
+                kind="checkpoint_task",
+                operation_id="op:checkpoint",
+                task_id=task_id,
+                expected_revision=2,
             )
-        # Resuming a terminal task is the explicitly permitted continuation:
-        # it commits its receipt (an idempotent continuation for a completed
-        # task whose lifecycle gate allows resume).
+        )
+        assert checkpointed.status == "committed"
         resumed = service.dispatch(
             RuntimeCommandRequest(
                 kind="resume_task",
@@ -478,5 +514,110 @@ def test_terminal_task_still_permits_checkpoint_and_resume(tmp_path: Path) -> No
             )
         )
         assert resumed.status == "committed"
+    finally:
+        service._administration.close()
+
+
+def test_outbox_carries_dispatch_and_delivers_on_result(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    try:
+        task_id = _seeded_task_id(service)
+        import sqlite3 as _sqlite3
+
+        dispatch = service.dispatch(
+            RuntimeCommandRequest(
+                kind="record_action_dispatch",
+                operation_id="op:outbox:dispatch",
+                task_id=task_id,
+                expected_revision=1,
+            )
+        )
+        assert dispatch.status == "committed"
+        connection = _sqlite3.connect(
+            service._administration.partition().database_path
+        )
+        try:
+            rows = connection.execute(
+                "SELECT record_json FROM runtime_outbox_deliveries"
+            ).fetchall()
+        finally:
+            connection.close()
+        assert len(rows) == 1
+        import json as _json
+
+        entry = _json.loads(str(rows[0][0]))
+        assert entry["status"] == "pending"
+        assert entry["origin_operation_id"] == "op:outbox:dispatch"
+        assert entry["target_protocol"] == "memorii.runtime-intake/v1"
+
+        # The outbox worker delivers the entry with a target receipt.
+        from memorii.core.persistence.runtime_api import deliver_outbox
+
+        delivered = deliver_outbox(
+            service.repository, lambda entry: "receipt:" + entry.delivery_id
+        )
+        assert len(delivered) == 1
+        assert delivered[0].status == "delivered"
+        assert delivered[0].target_result == "receipt:outbox:op:outbox:dispatch"
+        assert delivered[0].attempt_count == 1
+    finally:
+        service._administration.close()
+
+
+def test_deliver_outbox_drains_pending_fail_closed(tmp_path: Path) -> None:
+    from memorii.core.persistence.runtime_api import (
+        deliver_outbox,
+    )
+
+    service = _service(tmp_path)
+    try:
+        task_id = _seeded_task_id(service)
+        service.dispatch(
+            RuntimeCommandRequest(
+                kind="record_action_dispatch",
+                operation_id="op:drain:one",
+                task_id=task_id,
+                expected_revision=1,
+            )
+        )
+        receipts: list[str] = []
+        delivered = deliver_outbox(
+            service.repository,
+            lambda entry: receipts.append(entry.delivery_id) or "receipt:one",
+        )
+        assert len(delivered) == 1
+        assert delivered[0].status == "delivered"
+        assert receipts == ["outbox:op:drain:one"]
+        # Second drain finds nothing pending (idempotent by row state).
+        assert deliver_outbox(service.repository, lambda entry: "x") == ()
+
+        # A raising transport delivers nothing: entries stay pending.
+        service.dispatch(
+            RuntimeCommandRequest(
+                kind="record_action_dispatch",
+                operation_id="op:drain:two",
+                task_id=task_id,
+                expected_revision=1,
+            )
+        )
+
+        def exploding(entry: RuntimeOutboxDelivery) -> str:
+            raise RuntimeError("transport down")
+
+        with pytest.raises(RuntimeError, match="transport down"):
+            deliver_outbox(service.repository, exploding)
+        import sqlite3 as _sqlite3
+
+        connection = _sqlite3.connect(
+            service._administration.partition().database_path
+        )
+        try:
+            pending = connection.execute(
+                "SELECT record_json FROM runtime_outbox_deliveries"
+                " WHERE record_json LIKE '%\"pending\"%'"
+            ).fetchall()
+        finally:
+            connection.close()
+        assert pending, "failed delivery stays pending for retry"
     finally:
         service._administration.close()

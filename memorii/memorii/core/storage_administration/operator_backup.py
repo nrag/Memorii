@@ -461,9 +461,87 @@ class BackupRestoreOperator:
         return staging_root
 
 
+def boot_restored_installation(
+    *,
+    capability: OwnerCapability,
+    staging_root: Path,
+    anchor: dict[str, object],
+    installation_root: Path,
+    signing_keys_directory: Path,
+) -> str:
+    """Boot a fresh installation from a verified restore staging root.
+
+    The design's fresh-host ceremony: the owner supplies the independently
+    retained anchor (installation identity, trusted signer fingerprint,
+    control revision, bundle digest) AND the out-of-band signing-key
+    material — a data backup alone cannot recreate security authority, so
+    the journal chain verifies against the owner-retained keys, never keys
+    from the archive. The staged participants must carry the anchor's
+    identity; current suppression state travels via the reapplied journals.
+    """
+    import shutil as _shutil
+
+    from memorii.core.storage_administration.operator import OperatorError as _OpError
+    from memorii.core.storage_administration.service import (
+        StorageAdministrationService,
+    )
+
+    if installation_root.exists() and any(installation_root.iterdir()):
+        raise _OpError(
+            "invalid_request: fresh-host boot requires an empty installation root"
+        )
+    staged_control = staging_root / "control.sqlite3"
+    staged_partition = staging_root / "partition.sqlite3"
+    for required in (staged_control, staged_partition):
+        if not required.is_file():
+            raise _OpError(
+                f"integrity_error: staged participant missing: {required.name}"
+            )
+    identity = str(anchor.get("installation_id", ""))
+    if not identity:
+        raise _OpError("invalid_request: anchor is missing the installation identity")
+    control_root = installation_root / "control"
+    partition_root = installation_root / "partition"
+    control_root.mkdir(parents=True, exist_ok=True)
+    partition_root.mkdir(parents=True, exist_ok=True)
+    _shutil.copyfile(staged_control, control_root / "control.sqlite3")
+    _shutil.copyfile(staged_partition, partition_root / "partition.sqlite3")
+    os.chmod(control_root / "control.sqlite3", 0o600)
+    os.chmod(partition_root / "partition.sqlite3", 0o600)
+    # Owner-retained signing keys arrive out-of-band (never in the archive)
+    # and become the fresh host's key material.
+    keys_target = control_root / "keys"
+    keys_target.mkdir(parents=True, exist_ok=True)
+    os.chmod(keys_target, 0o700)
+    for key_file in sorted(signing_keys_directory.glob("*.key")):
+        _shutil.copyfile(key_file, keys_target / key_file.name)
+        os.chmod(keys_target / key_file.name, 0o600)
+    # Suppressions reapplied into staging travel with the boot so revoked
+    # evidence stays revoked on the fresh host.
+    staged_suppressions = staging_root / "suppressions"
+    if staged_suppressions.is_dir():
+        target = control_root / "suppressions"
+        target.mkdir(parents=True, exist_ok=True)
+        for journal in staged_suppressions.glob("forget-*.json"):
+            _shutil.copyfile(journal, target / journal.name)
+    # The booted control state must resolve as a coherent installation.
+    service = StorageAdministrationService(installation_root)
+    try:
+        state = service._control_state()
+        if state.installation_id != identity:
+            raise _OpError(
+                "integrity_error: staged control identity does not match the anchor"
+            )
+    finally:
+        service.close()
+    del capability
+    return identity
+
+
 __all__ = [
     "BackupParticipant",
     "BackupRestoreOperator",
     "InstallationBackupManifest",
     "RestorePlan",
+    "boot_restored_installation",
 ]

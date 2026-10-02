@@ -15,6 +15,7 @@ never repeats a tool.
 
 from __future__ import annotations
 
+import sqlite3
 from datetime import UTC, datetime
 from typing import Literal
 
@@ -129,20 +130,53 @@ def create_runtime_checkpoint(
     sign: object,
     checkpoint_id: str | None = None,
     now: datetime | None = None,
+    connection: sqlite3.Connection | None = None,
 ) -> RuntimeCheckpoint:
-    """Snapshot one consistent verified view and sign its manifest."""
+    """Snapshot one consistent verified view and sign its manifest.
+
+    When ``connection`` is supplied the snapshot reads run inside that
+    already-open transaction (the publication path); otherwise the
+    repository opens its own read transaction as before.
+    """
     import hashlib
     import uuid
 
-    tasks = repository.list_tasks()
-    solver_runs: list[SolverRunRecord] = []
-    overlays: list[RuntimeOverlayVersion] = []
-    justifications: list[SolverJustificationRecord] = []
-    for task in tasks:
-        for run in repository.list_solver_runs(task.task_id):
-            solver_runs.append(run)
-            overlays.extend(repository.list_overlays(run.solver_id))
-            justifications.extend(repository.list_justifications(run.solver_id))
+    if connection is not None:
+        import sqlite3 as _sqlite3
+
+        rows = connection.execute(
+            "SELECT record_json FROM runtime_tasks"
+        ).fetchall()
+        tasks = tuple(
+            TaskRecord.model_validate_json(str(row[0])) for row in rows
+        )
+        solver_runs: list[SolverRunRecord] = []
+        overlays: list[RuntimeOverlayVersion] = []
+        justifications: list[SolverJustificationRecord] = []
+        for task in tasks:
+            for run in repository.list_solver_runs_in(connection, task.task_id):
+                solver_runs.append(run)
+                overlays.extend(repository.list_overlays_in(connection, run.solver_id))
+                justifications.extend(
+                    repository.list_justifications_in(connection, run.solver_id)
+                )
+        member_source = (tasks, solver_runs, overlays, justifications)
+        revision = repository.read_runtime_revision_in(connection)
+        del _sqlite3
+    else:
+        tasks = repository.list_tasks()
+        solver_runs = []
+        overlays = []
+        justifications = []
+        for task in tasks:
+            for run in repository.list_solver_runs(task.task_id):
+                solver_runs.append(run)
+                overlays.extend(repository.list_overlays(run.solver_id))
+                justifications.extend(repository.list_justifications(run.solver_id))
+        member_source = None
+        revision = repository.runtime_revision()
+    if member_source is not None:
+        tasks, solver_runs, overlays, justifications = member_source
     member_digest = hashlib.sha256(
         (
             "|".join(sorted(task.task_id for task in tasks))
@@ -154,7 +188,6 @@ def create_runtime_checkpoint(
             + "|".join(sorted(j.justification_id for j in justifications))
         ).encode("utf-8")
     ).hexdigest()
-    revision = repository.runtime_revision()
     if revision < 1:
         raise RuntimeCheckpointError(
             "a checkpoint requires at least one committed runtime revision"
@@ -222,9 +255,27 @@ def build_resume_envelope(
         for attempt in repository.list_action_attempts(task_id)
         if attempt.status in ("dispatched", "outcome_unknown")
     ]
+    # Temporal revalidation: an ASSUMPTION node whose valid_to has passed
+    # (or whose valid_from has not yet arrived) relative to the resume
+    # moment lists its node for revalidation; dependent recommendations
+    # surface as revalidation_required instead of ready.
     revalidation: list[str] = []
-    del moment  # reserved for temporal validity checks when assumption
-    # content is carried in checkpoint members (recorded follow-up)
+    for run in runs:
+        with repository._partition.transaction(write=False) as connection:
+            nodes = repository.list_solver_nodes_in(connection, run.solver_id)
+        for _solver_id, node_id, content in nodes:
+            kind = getattr(content, "kind", None)
+            if kind != "ASSUMPTION":
+                continue
+            valid_from = getattr(content, "valid_from", None)
+            valid_to = getattr(content, "valid_to", None)
+            expired = valid_to is not None and valid_to < moment
+            premature = valid_from is not None and valid_from > moment
+            if expired or premature:
+                revalidation.append(
+                    f"{node_id}:{'expired' if expired else 'not_yet_valid'}"
+                )
+    del moment  # consumed by the temporal walk above
     if (
         checkpoint is not None
         and checkpoint.manifest.runtime_revision > repository.runtime_revision()

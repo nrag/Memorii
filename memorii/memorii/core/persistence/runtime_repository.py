@@ -9,6 +9,12 @@ dictionaries are rejected.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from memorii.core.persistence.runtime_api import RuntimeOutboxDelivery
+
+import json as re
 import sqlite3
 from collections.abc import Callable
 from typing import TypeVar
@@ -156,6 +162,29 @@ class RuntimeStateRepository:
             if row is None
             else RuntimeCommandReceipt.model_validate_json(row["record_json"])
         )
+
+    def list_solver_nodes_in(
+        self, connection: sqlite3.Connection, solver_id: str
+    ) -> tuple[tuple[str, str, object], ...]:
+        """(solver_id, node_id, validated content) for one solver run."""
+        import json as _json
+
+        rows = connection.execute(
+            "SELECT solver_id, node_id, record_json FROM runtime_solver_nodes"
+            " WHERE solver_id = ?",
+            (solver_id,),
+        ).fetchall()
+        result = []
+        for row in rows:
+            payload = _json.loads(row[2])
+            result.append(
+                (
+                    str(row[0]),
+                    str(row[1]),
+                    _content_adapter.validate_python(payload["content"]),
+                )
+            )
+        return tuple(result)
 
     def read_solver_node_content(self, solver_id: str, node_id: str) -> object | None:
         with self._partition.transaction(write=False) as connection:
@@ -369,6 +398,72 @@ class RuntimeStateRepository:
                 attempt.recommendation_revision,
             ),
         )
+
+    def apply_checkpoint_receipt(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        task_id: str,
+        checkpoint_id: str,
+        checkpoint_digest: str,
+    ) -> None:
+        self._partition.upsert_runtime_row(
+            connection,
+            table="runtime_checkpoints",
+            keys=("checkpoint_id",),
+            values=(checkpoint_id,),
+            record_json=re.dumps(
+                {
+                    "checkpoint_id": checkpoint_id,
+                    "task_id": task_id,
+                    "checkpoint_digest": checkpoint_digest,
+                },
+                sort_keys=True,
+            ),
+            index_columns=("task_id",),
+            index_values=(task_id,),
+        )
+
+    def apply_outbox_row(
+        self,
+        connection: sqlite3.Connection,
+        delivery: RuntimeOutboxDelivery,
+    ) -> None:
+        self._partition.upsert_runtime_row(
+            connection,
+            table="runtime_outbox_deliveries",
+            keys=("delivery_id",),
+            values=(delivery.delivery_id,),
+            record_json=delivery.model_dump_json(),
+        )
+
+    def get_outbox_delivery(
+        self, connection: sqlite3.Connection, delivery_id: str
+    ) -> RuntimeOutboxDelivery | None:
+        from memorii.core.persistence.runtime_api import RuntimeOutboxDelivery
+
+        rows = self._partition.read_runtime_rows(
+            connection, table="runtime_outbox_deliveries",
+            match=(("delivery_id", delivery_id),),
+        )
+        if not rows:
+            return None
+        return RuntimeOutboxDelivery.model_validate_json(str(rows[0]["record_json"]))
+
+    def list_outbox_deliveries(
+        self, connection: sqlite3.Connection
+    ) -> tuple[RuntimeOutboxDelivery, ...]:
+        from memorii.core.persistence.runtime_api import RuntimeOutboxDelivery
+
+        rows = self._partition.read_runtime_rows(
+            connection, table="runtime_outbox_deliveries"
+        )
+        entries = tuple(
+            RuntimeOutboxDelivery.model_validate_json(str(row["record_json"]))
+            for row in rows
+        )
+        # Drainable surface: only pending rows, in primary-key order.
+        return tuple(entry for entry in entries if entry.status == "pending")
 
     def apply_command_receipt(
         self, connection: sqlite3.Connection, receipt: RuntimeCommandReceipt

@@ -273,6 +273,13 @@ _SCHEMA_STATEMENTS = (
         record_json TEXT NOT NULL
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS runtime_checkpoints (
+        checkpoint_id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL,
+        record_json TEXT NOT NULL
+    )
+    """,
 )
 
 # Authoritative materialized catalogs covered by the signed manifest. The
@@ -337,6 +344,7 @@ _MATERIALIZATION_CATALOGS = (
         "record_json",
     ),
     ("runtime_outbox_deliveries", "delivery_id", "record_json"),
+    ("runtime_checkpoints", "checkpoint_id", "record_json"),
 )
 _CATALOG_SEED_DOMAIN = b"memorii.materialization-catalog.v1\x00"
 
@@ -359,6 +367,7 @@ _RUNTIME_UPSERT_TABLES = frozenset(
         "runtime_command_receipts",
         "runtime_operation_attempts",
         "runtime_outbox_deliveries",
+        "runtime_checkpoints",
     }
 )
 

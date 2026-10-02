@@ -14,7 +14,9 @@ delivered and never reinterprets an unknown target result.
 from __future__ import annotations
 
 import hashlib
+import sqlite3
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
@@ -22,8 +24,13 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from memorii.core.persistence.runtime_contracts import (
     ActionAttemptRecord,
+    BeliefUpdateProposal,
+    NodeMergeProposal,
+    NodeReopenProposal,
     RuntimeCommandReceipt,
     RuntimeCommandRequest,
+    SolverRunRecord,
+    StatusUpdateProposal,
     TaskRecord,
 )
 from memorii.core.persistence.runtime_repository import (
@@ -165,9 +172,7 @@ class RuntimeCommandService:
         request: RuntimeCommandRequest,
         digest: str,
     ) -> None:
-        import sqlite3 as _sqlite3
-
-        assert isinstance(connection, _sqlite3.Connection)
+        assert isinstance(connection, sqlite3.Connection)
         # Idempotency re-check under the publication fence: a racing duplicate
         # dispatch must not re-apply the effect.
         existing = repository.get_command_receipt_in(
@@ -296,15 +301,70 @@ class RuntimeCommandService:
                 )
             # Resuming an active task is an idempotent continuation: the
             # receipt is the durable effect.
-        elif request.kind in (
-            "record_observation",
-            "record_action_dispatch",
-            "record_action_result",
-        ):
+        elif request.kind == "record_action_dispatch":
+            # Durable event journal + the outbox carrier: every dispatch
+            # creates a pending delivery bound to its operation, so the
+            # target transport can consume it with retry and idempotency.
+            digest = command_request_digest(request)
+            repository.apply_outbox_row(
+                connection,
+                RuntimeOutboxDelivery(
+                    delivery_id="outbox:" + request.operation_id,
+                    origin_operation_id=request.operation_id,
+                    kind="work_projection",
+                    target_protocol="memorii.runtime-intake/v1",
+                    payload_digest=digest,
+                    fence_token=1,
+                ),
+            )
+        elif request.kind == "record_action_result":
+            # Durable event journal: the result's receipt is its effect.
+            # Target delivery is the outbox worker's concern (the classic
+            # transactional-outbox relay), never an inline side effect.
+            pass
+        elif request.kind == "record_observation":
             # Durable event journal: the atomic receipt records that the host
             # event command executed. The observation's content effects live
             # with the memory-plane semantic wiring, not the runtime tables.
             pass
+        elif request.kind == "propose_state_change":
+            assert request.proposal is not None
+            _apply_proposal(repository, connection, request.proposal)
+        elif request.kind == "checkpoint_task":
+            from datetime import UTC as _UTC
+            from datetime import datetime as _datetime
+
+            from memorii.core.persistence.runtime_checkpoint import (
+                create_runtime_checkpoint as _checkpoint,
+            )
+
+            checkpoint = _checkpoint(
+                repository,
+                signer_key_id=self._administration._signer_key_id,
+                sign=lambda purpose, message: self._administration._signing.sign(
+                    self._administration._signer_key_id, purpose, message
+                ),
+                now=_datetime.now(_UTC),
+                connection=connection,
+            )
+            repository.apply_checkpoint_receipt(
+                connection,
+                task_id=task.task_id,
+                checkpoint_id=checkpoint.checkpoint_id,
+                checkpoint_digest=checkpoint.signature,
+            )
+        elif request.kind == "replan_task":
+            import uuid as _uuid
+
+            replan_run = SolverRunRecord(
+                solver_id="solver:replan:" + _uuid.uuid4().hex[:12],
+                task_id=task.task_id,
+                parent_execution_node_id=task.root_execution_node_id,
+                category="replan",
+                lifecycle="active",
+                created_by=self._client_namespace,
+            )
+            repository.apply_solver_run(connection, replan_run)
         else:
             # Fail closed: kinds whose durable effects are not implemented at
             # this slice never commit a receipt claiming success.
@@ -312,6 +372,148 @@ class RuntimeCommandService:
                 f"unsupported_configuration: command kind {request.kind} has no"
                 " implemented durable effect at this slice"
             )
+
+
+
+def _apply_proposal(
+    repository: RuntimeStateRepository,
+    connection: sqlite3.Connection,
+    proposal: BeliefUpdateProposal
+    | StatusUpdateProposal
+    | NodeReopenProposal
+    | NodeMergeProposal,
+) -> None:
+    """Apply one typed solver proposal as durable overlay state.
+
+    Every member lands the same closed shape: a justification recording the
+    change (bound to its evidence or reason), and a new overlay version
+    whose bindings express the state transition. Candidate state stays
+    distinct from committed state: the overlay is written uncommitted;
+    commitment is a separate owner action.
+    """
+    import hashlib as _hashlib
+    import uuid as _uuid
+    from datetime import UTC as _UTC
+    from datetime import datetime as _datetime
+
+    from memorii.core.persistence.runtime_contracts import (
+        OverlayJustificationBinding,
+        RuntimeOverlayVersion,
+        SolverJustificationRecord,
+    )
+
+    kind = proposal.kind
+    solver_id = proposal.solver_id
+    moment = _datetime.now(_UTC)
+    stamp = _uuid.uuid4().hex[:12]
+
+    if isinstance(proposal, BeliefUpdateProposal):
+        node_id = proposal.node_id
+        justification = SolverJustificationRecord(
+            justification_id=proposal.justification_id,
+            solver_id=solver_id,
+            conclusion=f"belief_update:{proposal.epistemic_status}",
+            strength=proposal.strength,
+            active=True,
+        )
+        binding = OverlayJustificationBinding(
+            node_id=node_id, active_justification_ids=(proposal.justification_id,)
+        )
+    elif isinstance(proposal, StatusUpdateProposal):
+        node_id = proposal.node_id
+        justification = SolverJustificationRecord(
+            justification_id=f"justification:status:{stamp}",
+            solver_id=solver_id,
+            conclusion=f"status_update:{proposal.status}:{proposal.reason}",
+            source_refs=proposal.evidence,
+            strength=1.0,
+        )
+        binding = OverlayJustificationBinding(node_id=node_id, frontier=False)
+    elif isinstance(proposal, NodeReopenProposal):
+        node_id = proposal.node_id
+        justification = SolverJustificationRecord(
+            justification_id=f"justification:reopen:{stamp}",
+            solver_id=solver_id,
+            conclusion="node_reopen",
+            strength=1.0,
+        )
+        binding = OverlayJustificationBinding(node_id=node_id, reopenable=True)
+    elif isinstance(proposal, NodeMergeProposal):
+        node_id = proposal.target_node_id
+        justification = SolverJustificationRecord(
+            justification_id=f"justification:merge:{stamp}",
+            solver_id=solver_id,
+            conclusion=f"node_merge:{proposal.source_node_id}->{proposal.target_node_id}",
+            strength=1.0,
+        )
+        binding = OverlayJustificationBinding(node_id=node_id, frontier=True)
+    else:
+        raise RuntimeCommandError(
+            f"unsupported_configuration: unknown proposal kind {kind}"
+        )
+
+    repository.apply_justification(connection, justification)
+    version_id = "overlay:" + _hashlib.sha256(
+        f"{solver_id}:{kind}:{stamp}".encode()
+    ).hexdigest()[:16]
+    repository.apply_overlay(
+        connection,
+        RuntimeOverlayVersion(
+            version_id=version_id,
+            solver_id=solver_id,
+            node_bindings=(binding,),
+            created_at=moment,
+            committed=False,
+        ),
+    )
+
+
+def apply_outbox_delivery(
+    connection: sqlite3.Connection,
+    repository: RuntimeStateRepository,
+    delivery: RuntimeOutboxDelivery,
+) -> None:
+    """Persist one outbox delivery row (the manifest-covered catalog)."""
+    repository.apply_outbox_row(connection, delivery)
+
+
+def pending_outbox_deliveries(
+    repository: RuntimeStateRepository,
+    connection: sqlite3.Connection,
+) -> tuple[RuntimeOutboxDelivery, ...]:
+    """Drainable pending deliveries in primary-key order."""
+    return repository.list_outbox_deliveries(connection)
+
+
+def deliver_outbox(
+    repository: RuntimeStateRepository,
+    deliver: Callable[[RuntimeOutboxDelivery], str],
+) -> tuple[RuntimeOutboxDelivery, ...]:
+    """Deliver every pending outbox entry through the caller's transport.
+
+    ``deliver`` returns the target receipt reference; a raise aborts the
+    batch with nothing marked delivered (fail-closed, retry-safe — the
+    entries stay pending). Delivery is at-least-once per entry and
+    idempotent by delivery_id at the row level.
+    """
+    delivered: list[RuntimeOutboxDelivery] = []
+    with repository._partition.manual_write_transaction() as handle:
+        connection = handle.connection
+        for entry in repository.list_outbox_deliveries(connection):
+            receipt = deliver(entry)
+            updated = entry.model_copy(
+                update={
+                    "status": "delivered",
+                    "target_result": receipt,
+                    "attempt_count": entry.attempt_count + 1,
+                }
+            )
+            repository.apply_outbox_row(connection, updated)
+            delivered.append(updated)
+        # A raising transport exits the block without this commit: the
+        # transaction rolls back and every entry stays pending.
+        handle.commit()
+    return tuple(delivered)
 
 
 def fence_takeover(

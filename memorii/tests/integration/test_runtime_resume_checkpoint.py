@@ -235,3 +235,77 @@ def test_resume_across_processes_restores_paused_state(tmp_path: Path) -> None:
         cwd=Path(__file__).resolve().parents[2],
     )
     assert reader.stdout.strip() == "ready paused True"
+
+
+def test_expired_assumption_forces_revalidation_on_resume(tmp_path: Path) -> None:
+    from datetime import UTC as _UTC
+    from datetime import datetime as _datetime
+    from datetime import timedelta as _timedelta
+
+    from memorii.core.persistence.runtime_checkpoint import build_resume_envelope
+    from memorii.core.persistence.runtime_contracts import AssumptionContent
+
+    service, task_id = _seeded_service_with_task(tmp_path)
+    try:
+        repository = service.repository
+        solver_id = "solver:assumption"
+        from memorii.core.persistence.runtime_contracts import SolverRunRecord
+
+        with repository._partition.manual_write_transaction() as handle:
+            repository.apply_solver_run(
+                handle.connection,
+                SolverRunRecord(
+                    solver_id=solver_id,
+                    task_id=task_id,
+                    parent_execution_node_id="exec:root",
+                    category="diagnostic",
+                    created_by="test",
+                ),
+            )
+            repository.apply_solver_node(
+                handle.connection,
+                solver_id=solver_id,
+                node_id="node:expired",
+                content=AssumptionContent(
+                    statement="The deploy window is open",
+                    valid_to=_datetime.now(_UTC) - _timedelta(days=1),
+                ),
+                metadata_json="{}",
+            )
+            repository.apply_solver_node(
+                handle.connection,
+                solver_id=solver_id,
+                node_id="node:fresh",
+                content=AssumptionContent(
+                    statement="The cache is warm",
+                    valid_to=_datetime.now(_UTC) + _timedelta(days=1),
+                ),
+                metadata_json="{}",
+            )
+            handle.commit()
+
+        envelope = build_resume_envelope(repository, task_id=task_id)
+        assert envelope.status == "revalidation_required"
+        assert any("node:expired:expired" in reason for reason in envelope.revalidation_reasons)
+        assert not any("node:fresh" in reason for reason in envelope.revalidation_reasons)
+
+        # A not-yet-valid assumption also revalidates.
+        with repository._partition.manual_write_transaction() as handle:
+            repository.apply_solver_node(
+                handle.connection,
+                solver_id=solver_id,
+                node_id="node:future",
+                content=AssumptionContent(
+                    statement="The freeze has lifted",
+                    valid_from=_datetime.now(_UTC) + _timedelta(days=2),
+                ),
+                metadata_json="{}",
+            )
+            handle.commit()
+        envelope = build_resume_envelope(repository, task_id=task_id)
+        assert any(
+            "node:future:not_yet_valid" in reason
+            for reason in envelope.revalidation_reasons
+        )
+    finally:
+        service._administration.close()
