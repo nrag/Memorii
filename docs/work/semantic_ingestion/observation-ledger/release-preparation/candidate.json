@@ -1902,7 +1902,7 @@
     "memorii/memorii/tools/test_shards.py": "0fb4c5530163ad359faefdf4ee86c49dcd09dedc4751d11bbaff8e3f0ff84b9c",
     "memorii/memorii/tools/validate_benchmark_artifacts.py": "b70b02871461ba063bff739fe06a75e3b5c17a12d1f557c5b2f33bf7c7ec0ab8",
     "memorii/memorii/tools/validate_live_benchmark_gate.py": "00bd96f7b639b69e7ea33cdd745bc33c8ea80e0a192bacc23b4f9d21ee4f894a",
-    "memorii/pyproject.toml": "7242ffb0b72d396f81b05510f5ec073d151d869ef9a85aa1d89ad8aaf33868c1",
+    "memorii/pyproject.toml": "584b0c4a0ff8a64387b73ccbc73cd77de1df3eec032f79749bf1be26f3539b5d",
     "memorii/tests/integration/test_observation_activation_bootstrap.py": "725e3d73a64eac6cc70cfb25d3301e53d4a04ba5f02fede0f79eab3b308186c5",
     "memorii/tests/integration/test_observation_activation_release_tools.py": "f7f2f540bf130cea2b147c454644409548fad6638aff338fbb2c19bd2ae4cd20",
     "memorii/tests/unit/core/memory_evolution/test_observation_activation_preparation.py": "eca902bc244fac7008acf68b54df3a05590c7549377391f9ecf766cacccd28e4",
