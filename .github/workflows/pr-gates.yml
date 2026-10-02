@@ -575,8 +575,12 @@ jobs:
       - name: Pre-build PyICU against Homebrew ICU (no macOS wheels)
         run: |
           brew install --quiet pkg-config icu4c
-          PKG_CONFIG_PATH="$(brew --prefix icu4c)/lib/pkgconfig" \
-            pip install "PyICU>=2.13,<3"
+          ICU_PREFIX="$(brew --prefix icu4c)"
+          export PKG_CONFIG_PATH="${ICU_PREFIX}/lib/pkgconfig"
+          ICU_VERSION="$(pkg-config --modversion icu-i18n)"
+          export ICU_VERSION
+          echo "resolved ICU ${ICU_VERSION} at ${ICU_PREFIX}"
+          pip install --no-build-isolation "PyICU>=2.13,<3"
 
       - name: Set up Python
         uses: actions/setup-python@v5
