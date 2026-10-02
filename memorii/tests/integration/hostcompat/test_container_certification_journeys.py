@@ -32,6 +32,8 @@ JOURNEYS = {
             "memorii/tools/runtime_consume.py",
             "memorii/core/persistence/runtime_api.py",
             "memorii/core/persistence/runtime_contracts.py",
+            "memorii/core/storage_administration/service.py",
+            "memorii/core/storage_administration/writer_enrollment.py",
         ),
     },
     "openclaw": {
@@ -45,6 +47,8 @@ JOURNEYS = {
             "memorii/tools/runtime_consume.py",
             "memorii/core/persistence/runtime_api.py",
             "memorii/core/persistence/runtime_contracts.py",
+            "memorii/core/storage_administration/service.py",
+            "memorii/core/storage_administration/writer_enrollment.py",
         ),
     },
     "hermes": {
@@ -134,7 +138,7 @@ def _run_journey(host: str) -> None:
             capture_output=True, text=True, timeout=2400,
         )
         output = result.stdout + result.stderr
-        print(output[-2000:])
+        print(output[-6000:])
         assert result.returncode == 0, f"{host} journey failed"
         assert "JOURNEY: PASS" in output, f"{host} journey did not pass"
     finally:

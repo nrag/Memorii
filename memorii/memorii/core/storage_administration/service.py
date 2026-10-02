@@ -180,6 +180,34 @@ class StorageAdministrationService:
 
     # --- initialization ------------------------------------------------
 
+    _CANONICAL_WRITERS = (
+        "memory_plane_batch",
+        "runtime_change",
+        "migrate",
+        *(f"runtime_command:{kind}" for kind in (
+            "start_task", "resume_task", "record_observation",
+            "propose_state_change", "record_action_dispatch",
+            "record_action_result", "checkpoint_task", "replan_task",
+            "complete_task", "pause_task", "abort_task",
+        )),
+    )
+
+    def _enroll_canonical_writers(self) -> None:
+        """Enroll the installation's own production writers at genesis.
+
+        The runtime command service and the memory-plane publication path
+        are the composition roots this installation ships; registering them
+        here keeps the all-writer barrier honest without self-authorizing
+        foreign bindings (those still fail closed until enrolled).
+        """
+        from memorii.core.storage_administration.writer_enrollment import (
+            WriterEnrollmentRegistry,
+        )
+
+        registry = WriterEnrollmentRegistry(self._root / "control" / "writers")
+        for writer_id in self._CANONICAL_WRITERS:
+            registry.enroll(writer_id, kind="builtin")
+
     def initialize(self) -> InitializationReceipt:
         """Owner-authorized fresh installation on an absent or safe root."""
         if self._root.exists():
@@ -411,6 +439,7 @@ class StorageAdministrationService:
                 after_digest=candidate.payload_digest(),
             ),
         )
+        self._enroll_canonical_writers()
         return self._record_initialization_receipt(candidate)
 
     def _record_initialization_receipt(
