@@ -428,6 +428,8 @@ def publish_runtime_change(
         state = administration._require_operational()
     except StorageAdministrationError as exc:
         raise RuntimeStateError(str(exc)) from exc
+    if administration._writer_enrollment is not None:
+        administration._writer_enrollment.require_enrolled(operation_binding)
     if state.mode == "read_only" and operation_binding != "migrate":
         raise InstallationQuarantinedError(
             "installation is read_only; runtime publication is denied"

@@ -48,6 +48,13 @@ async function readState() {
   return typeof envelope.revision === "number" ? envelope.revision : 0;
 }
 
+async function sha256Hex(text) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 async function submitCommand(command) {
   const response = await fetch(`${SIDECAR_URL}/v1/runtime/intake`, {
     method: "POST",
@@ -77,20 +84,6 @@ export function classifyInput(input) {
     throw new Error("input does not carry the pinned sender identity");
   }
   return { eligible: kind === "user_message", kind, sender };
-}
-
-/** Derive the pinned classification from a native message context. */
-function classifyNativeMessage(context) {
-  const forwarded = context?.metadata?.forwarded === true;
-  return {
-    eligible: !forwarded,
-    kind: forwarded ? "forwarded" : "user_message",
-    sender: {
-      channel_id: context?.channelId ?? "channel:unknown",
-      account_id: context?.accountId ?? "account:unknown",
-      sender_id: context?.from ?? "sender:unknown",
-    },
-  };
 }
 
 let resumedThisProcess = false;
@@ -126,12 +119,14 @@ async function onTranscriptWrite(context) {
   if (!resumedThisProcess) {
     await onSessionStart();
   }
+  const text = typeof context?.message?.content === "string" ? context.message.content : "";
   const revision = (await readState()) ?? 0;
   await submitCommand({
     kind: "record_observation",
     operation_id: nextOperationId("observe"),
     task_id: TASK_ID,
     expected_revision: revision,
+    source_digest: await sha256Hex(text),
   });
   return undefined;
 }

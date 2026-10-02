@@ -72,6 +72,13 @@ async function currentRevision(): Promise<number> {
   return typeof envelope.revision === "number" ? envelope.revision : 0;
 }
 
+async function sha256Hex(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 async function submitCommand(command: Record<string, unknown>): Promise<void> {
   const response = await fetch(`${SIDECAR_URL}/v1/runtime/intake`, {
     method: "POST",
@@ -141,12 +148,14 @@ export default function memoriiExtension(pi: unknown): void {
     if (event?.message?.role !== "user") {
       return; // only user messages are authentic source evidence
     }
+    const text = typeof event?.message?.content === "string" ? event.message.content : "";
     const revision = await currentRevision();
     await submitCommand({
       kind: "record_observation",
       operation_id: nextOperationId("observe"),
       task_id: TASK_ID,
       expected_revision: revision,
+      source_digest: await sha256Hex(text),
     });
   });
 

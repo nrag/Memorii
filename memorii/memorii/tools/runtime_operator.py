@@ -35,11 +35,17 @@ def main(argv: list[str] | None = None) -> int:
     create = backup_sub.add_parser("create", help="Create a backup archive")
     create.add_argument("--archive-root", type=Path, required=True)
     create.add_argument("--reason", required=True)
+    create.add_argument(
+        "--recovery-key-hex",
+        required=True,
+        help="64 hex chars; the 32-byte operator recovery key wrapping the archive content key",
+    )
     verify = backup_sub.add_parser("verify", help="Verify an archive")
     verify.add_argument("--archive-root", type=Path, required=True)
     restore = backup_sub.add_parser("restore-plan", help="Plan a restore")
     restore.add_argument("--archive-root", type=Path, required=True)
     restore.add_argument("--data-loss-acknowledged", action="store_true")
+    restore.add_argument("--recovery-key-hex", required=True)
 
     forget = commands.add_parser("forget", help="Logical forget planning")
     forget.add_argument("--scope-note", required=True)
@@ -120,6 +126,7 @@ def main(argv: list[str] | None = None) -> int:
                     capability=require_capability(),
                     archive_root=arguments.archive_root,
                     reason=arguments.reason,
+                    recovery_key=bytes.fromhex(arguments.recovery_key_hex),
                 )
                 print(manifest.model_dump_json())
                 return 0
@@ -127,6 +134,7 @@ def main(argv: list[str] | None = None) -> int:
                 manifest = backups.verify_backup(archive_root=arguments.archive_root)
                 print(manifest.model_dump_json())
                 return 0
+            bytes.fromhex(arguments.recovery_key_hex)  # shape-validated now
             plan = backups.plan_restore(
                 capability=require_capability(),
                 archive_root=arguments.archive_root,

@@ -94,7 +94,7 @@ class StorageAdministrationOperator:
         capability: OwnerCapability,
     ) -> InstallationStatus:
         service = self._administration
-        _require_owner_capability(service, capability)
+        require_owner_capability(service, capability)
         state = service._control_state()
         if state.quarantined_reason is not None:
             raise OperatorError(
@@ -113,66 +113,140 @@ class StorageAdministrationOperator:
             raise OperatorError(
                 "invalid_request: bypass returns to active only"
             )
-        service._control.write_control_state(
-            state.model_copy(
-                update={
-                    "control_revision": state.control_revision + 1,
-                    "mode": request.target_mode,
-                }
-            ),
-            service._journal_entry(
-                operation="mode_changed",
-                before_digest=canonical_json_digest(
-                    {"mode": state.mode, "reason": request.reason}
+        # The transition takes the publication fence so an in-flight
+        # publisher cannot commit across the mode change boundary.
+        with service._publication_fence():
+            service._control.write_control_state(
+                state.model_copy(
+                    update={
+                        "control_revision": state.control_revision + 1,
+                        "mode": request.target_mode,
+                    }
                 ),
-                after_digest=canonical_json_digest(
-                    {"mode": request.target_mode, "reason": request.reason}
+                service._journal_entry(
+                    operation="mode_changed",
+                    before_digest=canonical_json_digest(
+                        {"mode": state.mode, "reason": request.reason}
+                    ),
+                    after_digest=canonical_json_digest(
+                        {"mode": request.target_mode, "reason": request.reason}
+                    ),
                 ),
-            ),
-        )
+            )
         return self.status()
 
     def read_export(self, *, capability: OwnerCapability) -> dict[str, object]:
         """Scoped deterministic export of current durable state."""
         service = self._administration
-        _require_owner_capability(service, capability)
+        require_owner_capability(service, capability)
         snapshot = service.acquire_verified_snapshot()
         repository = service.partition()
+        suppressed = _suppressed_record_ids(service)
         with repository.transaction(write=False) as connection:
             tasks = [
                 row["record_json"]
                 for row in repository.read_runtime_rows(
                     connection, table="runtime_tasks"
                 )
+                if _record_id(row["record_json"]) not in suppressed
             ]
+            runtime_revision = repository.read_runtime_revision(connection)
         import json as _json
 
         return {
             "publication_ordinal": snapshot.ordinal,
-            "runtime_revision": snapshot.vector.runtime_position.sequence
-            if hasattr(snapshot.vector.runtime_position, "sequence")
-            else 0,
+            "runtime_revision": runtime_revision,
             "memory_data_revision": snapshot.vector.memory_data_revision,
             "tasks": [_json.loads(task) for task in sorted(tasks)],
         }
 
 
-def _require_owner_capability(
+def _suppressed_record_ids(service: StorageAdministrationService) -> frozenset[str]:
+    """Ids logically forgotten; exports and reads must never serve them."""
+    import json as _json
+
+    suppressed: set[str] = set()
+    root = service.installation_root / "control" / "suppressions"
+    if root.is_dir():
+        for journal in sorted(root.glob("forget-*.json")):
+            try:
+                entry = _json.loads(journal.read_text())
+            except ValueError:
+                continue
+            suppressed.update(str(item) for item in entry.get("suppressed", ()))
+    return frozenset(suppressed)
+
+
+def _record_id(record_json: object) -> str:
+    import json as _json
+
+    try:
+        return str(_json.loads(str(record_json)).get("task_id", ""))
+    except ValueError:
+        return ""
+
+
+def _owner_capability_secret(administration: StorageAdministrationService) -> bytes:
+    """The installation's owner-only capability secret.
+
+    Created lazily under the owner-only key directory; never printed,
+    logged, or included in any export. Holder of this secret can mint
+    capabilities; the directory permissions are the trust boundary.
+    """
+    import secrets as _secrets
+
+    secret_path = administration.installation_root / "control" / "keys" / "owner-capability.secret"
+    secret_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    try:
+        return secret_path.read_bytes().strip()
+    except FileNotFoundError:
+        material = _secrets.token_hex(32).encode("ascii")
+        temporary = secret_path.with_suffix(".tmp")
+        temporary.write_bytes(material + b"\n")
+        import os as _os
+
+        _os.chmod(temporary, 0o600)
+        _os.replace(temporary, secret_path)
+        return material
+
+
+def mint_owner_capability(
+    administration: StorageAdministrationService,
+    owner_principal: str,
+) -> OwnerCapability:
+    """Mint one capability for the installation's owner principal.
+
+    Requires reading the owner-only secret: callers with filesystem
+    access to the installation are the owners by construction; remote or
+    model-origin callers can never reach this function.
+    """
+    import hmac as _hmac
+
+    message = canonical_json_digest(
+        {
+            "installation_id": administration._control_state().installation_id,
+            "owner_principal": owner_principal,
+        }
+    )
+    secret = _owner_capability_secret(administration)
+    digest = _hmac.new(secret, message.encode("utf-8"), "sha256").hexdigest()
+    return OwnerCapability(owner_principal=owner_principal, capability_digest=digest)
+
+
+def require_owner_capability(
     administration: StorageAdministrationService,
     capability: OwnerCapability,
 ) -> None:
-    """The capability must bind this installation's current owner identity.
+    """The capability must be an HMAC over the installation's owner secret.
 
-    The digest binds the installation id and a server-side nonce issued
-    at initialization; a stale or foreign capability refuses before any
-    state read beyond the installation identity itself.
+    The digest binds the installation id and principal under a secret
+    held only in the owner-only key directory, so knowledge of public
+    identifiers can never mint a capability; a foreign capability
+    refuses before any state read beyond the installation identity.
     """
-    expected = canonical_json_digest(
-        {
-            "installation_id": administration._control_state().installation_id,
-            "owner_principal": capability.owner_principal,
-        }
-    )
+    expected = mint_owner_capability(
+        administration, capability.owner_principal
+    ).capability_digest
     import hmac as _hmac
 
     if not _hmac.compare_digest(expected, capability.capability_digest):
@@ -186,4 +260,6 @@ __all__ = [
     "OperatorError",
     "OwnerCapability",
     "StorageAdministrationOperator",
+    "mint_owner_capability",
+    "require_owner_capability",
 ]

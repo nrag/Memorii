@@ -208,6 +208,8 @@ class InstallationControlJournalEntry(BaseModel):
         "publication_quarantined",
         "mode_changed",
         "trust_changed",
+        "logical_forget_applied",
+        "partition_erasure_applied",
     ]
     before_digest: str | None = Field(default=None, pattern=_HEX_64)
     after_digest: str | None = Field(default=None, pattern=_HEX_64)

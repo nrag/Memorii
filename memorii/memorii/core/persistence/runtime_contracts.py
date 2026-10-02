@@ -370,6 +370,7 @@ class RuntimeCommandRequest(BaseModel):
     pause_reason: str | None = None
     abort_reason: str | None = None
     proposal: SolverProposal | None = None
+    source_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -393,6 +394,11 @@ class RuntimeCommandRequest(BaseModel):
                 raise ValueError("abort_task requires a reason")
         if self.kind != "propose_state_change" and self.proposal is not None:
             raise ValueError("proposal is only valid with propose_state_change")
+        if self.kind == "record_observation":
+            if self.source_digest is None:
+                raise ValueError("record_observation requires a source digest")
+        elif self.source_digest is not None:
+            raise ValueError("source_digest is only valid with record_observation")
         return self
 
 

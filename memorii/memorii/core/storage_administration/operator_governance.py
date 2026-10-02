@@ -13,6 +13,7 @@ deleting.
 from __future__ import annotations
 
 import json
+import os
 import time
 from typing import Literal
 
@@ -22,7 +23,7 @@ from memorii.core.storage_administration.operator import (
     OperatorError,
     OwnerCapability,
     StorageAdministrationOperator,
-    _require_owner_capability,
+    require_owner_capability,
 )
 
 
@@ -71,7 +72,7 @@ class ErasureReceipt(BaseModel):
 
 
 class RetentionPlan(BaseModel):
-    """Age-based retention outside the active recovery set."""
+    """Age-based retention tiering; revocation bytes are never deleted."""
 
     plan_version: Literal[1] = 1
     older_than_days: int = Field(ge=1)
@@ -100,7 +101,7 @@ class GovernanceOperator:
         self, *, capability: OwnerCapability, scope_note: str
     ) -> ForgetPlan:
         service = self._operator._administration
-        _require_owner_capability(service, capability)
+        require_owner_capability(service, capability)
         repository = service.partition()
         import json as _json
 
@@ -128,9 +129,11 @@ class GovernanceOperator:
         plan: ForgetPlan,
     ) -> ForgetReceipt:
         service = self._operator._administration
-        _require_owner_capability(service, capability)
+        require_owner_capability(service, capability)
         repository = service.partition()
         import json as _json
+
+        from memorii.core.persistence.contracts import canonical_json_digest
 
         known: set[str] = set()
         with repository.transaction(write=False) as connection:
@@ -142,17 +145,53 @@ class GovernanceOperator:
                 "conflict: plan references records that no longer exist"
                 f" ({len(unknown)} drifted)"
             )
+        status = self._operator.status()
+        if status.mode != "read_only":
+            raise OperatorError(
+                "conflict: forget apply requires the acknowledged exclusive"
+                " barrier (change mode to read_only first)"
+            )
         control_root = service.installation_root / "control"
         suppression = control_root / "suppressions"
         suppression.mkdir(parents=True, exist_ok=True)
+        os.chmod(suppression, 0o700)
         entry = {
             "applied_at_unix": int(time.time()),
             "scope_note": plan.scope_note,
             "suppressed": list(plan.matched_record_ids),
         }
-        (suppression / f"forget-{int(time.time() * 1000)}.json").write_text(
-            json.dumps(entry, sort_keys=True) + "\n"
+        payload = (json.dumps(entry, sort_keys=True) + "\n").encode()
+        journal_path = suppression / (
+            f"forget-{int(time.time() * 1000)}-{len(plan.matched_record_ids)}.json"
         )
+        temporary = journal_path.with_name(f".{journal_path.name}.tmp")
+        with temporary.open("wb") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, journal_path)
+        # Epoch and control revision advance under the publication fence so
+        # every cached/paged view keyed to the old epoch is invalidated.
+        state = service._control_state()
+        with service._publication_fence():
+            service._control.write_control_state(
+                state.model_copy(
+                    update={"control_revision": state.control_revision + 1}
+                ),
+                service._journal_entry(
+                    operation="logical_forget_applied",
+                    before_digest=canonical_json_digest(
+                        {"revision": state.control_revision}
+                    ),
+                    after_digest=canonical_json_digest(
+                        {
+                            "revision": state.control_revision + 1,
+                            "suppressed": len(plan.matched_record_ids),
+                        }
+                    ),
+                ),
+            )
         return ForgetReceipt(
             suppressed_count=len(plan.matched_record_ids),
             applied_at_unix=int(time.time()),
@@ -165,7 +204,7 @@ class GovernanceOperator:
         offline_copies_accounted: tuple[str, ...] = (),
     ) -> ErasurePlan:
         service = self._operator._administration
-        _require_owner_capability(service, capability)
+        require_owner_capability(service, capability)
         return ErasurePlan(
             installation_id=service._control_state().installation_id,
             offline_copies_accounted=offline_copies_accounted,
@@ -186,7 +225,7 @@ class GovernanceOperator:
         when offline copies exist but were not accounted for.
         """
         service = self._operator._administration
-        _require_owner_capability(service, capability)
+        require_owner_capability(service, capability)
         if service._control_state().installation_id != plan.installation_id:
             raise OperatorError("denied: erasure plan targets another installation")
         if not plan.acknowledged:
@@ -195,12 +234,47 @@ class GovernanceOperator:
             )
         incomplete = not plan.offline_copies_accounted
         if erase:
-            for name in ("memory-plane", "runtime"):
+            import shutil
+
+            # The isolated partition and the signing keys are destroyed; the
+            # control database survives as the independent authority that
+            # retains the content-free receipt and the journal.
+            for name in ("partition", os.path.join("control", "keys")):
                 target = service.installation_root / name
                 if target.exists():
-                    import shutil
-
                     shutil.rmtree(target)
+            partition_database = service.partition_path()
+            if partition_database.exists():
+                partition_database.unlink()
+        from memorii.core.persistence.contracts import canonical_json_digest
+
+        if erase:
+            # Only actual destruction advances control state; the dry plan is
+            # inert. The epoch rides with the destruction because every
+            # subsequent verified read of the erased installation is refused
+            # by the missing partition anyway.
+            state = service._control_state()
+            with service._publication_fence():
+                service._control.write_control_state(
+                    state.model_copy(
+                        update={
+                            "control_revision": state.control_revision + 1,
+                            "eligibility_epoch": state.eligibility_epoch + 1,
+                        }
+                    ),
+                    service._journal_entry(
+                        operation="partition_erasure_applied",
+                        before_digest=canonical_json_digest(
+                            {"epoch": state.eligibility_epoch}
+                        ),
+                        after_digest=canonical_json_digest(
+                            {
+                                "epoch": state.eligibility_epoch + 1,
+                                "incomplete": incomplete,
+                            }
+                        ),
+                    ),
+                )
         receipt = ErasureReceipt(
             installation_id=plan.installation_id,
             incomplete=incomplete,
@@ -208,16 +282,24 @@ class GovernanceOperator:
         )
         receipts = service.installation_root / "control" / "erasure-receipts"
         receipts.mkdir(parents=True, exist_ok=True)
-        (receipts / f"erasure-{int(time.time() * 1000)}.json").write_text(
-            receipt.model_dump_json() + "\n"
+        os.chmod(receipts, 0o700)
+        receipt_path = receipts / (
+            f"erasure-{int(time.time() * 1000)}-{len(plan.offline_copies_accounted)}.json"
         )
+        temporary = receipt_path.with_name(f".{receipt_path.name}.tmp")
+        with temporary.open("wb") as handle:
+            handle.write((receipt.model_dump_json() + "\n").encode())
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, receipt_path)
         return receipt
 
     def plan_retention(
         self, *, capability: OwnerCapability, older_than_days: int
     ) -> RetentionPlan:
         service = self._operator._administration
-        _require_owner_capability(service, capability)
+        require_owner_capability(service, capability)
         suppression = service.installation_root / "control" / "suppressions"
         cutoff = time.time() - older_than_days * 86400
         eligible: list[str] = []
@@ -236,12 +318,22 @@ class GovernanceOperator:
         capability: OwnerCapability,
         plan: RetentionPlan,
     ) -> int:
-        """Prune aged suppression journals; active recovery is never touched."""
+        """Tier aged suppression journals into the archive tier.
+
+        Design rule: age alone never removes revocation state and physical
+        removal uses the erasure protocol, so retention MOVES aged
+        journals to control/suppressions-archive (bytes retained, still
+        durable) instead of deleting them; the recheck refuses journals
+        that became recent since planning.
+        """
         service = self._operator._administration
-        _require_owner_capability(service, capability)
+        require_owner_capability(service, capability)
         suppression = service.installation_root / "control" / "suppressions"
+        archive = (
+            service.installation_root / "control" / "suppressions-archive"
+        )
         cutoff = time.time() - plan.older_than_days * 86400
-        removed = 0
+        archived = 0
         for name in plan.eligible_suppression_journals:
             path = suppression / name
             if not path.is_file():
@@ -250,9 +342,10 @@ class GovernanceOperator:
                 raise OperatorError(
                     "conflict: journal became eligible-recent; replan"
                 )
-            path.unlink()
-            removed += 1
-        return removed
+            archive.mkdir(parents=True, exist_ok=True)
+            os.replace(path, archive / name)
+            archived += 1
+        return archived
 
     def doctor(self) -> tuple[DoctorFinding, ...]:
         """Read-only health checks; never repairs by deleting."""

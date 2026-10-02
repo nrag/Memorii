@@ -329,6 +329,7 @@ jobs:
           DURABLE_STORAGE_RESULT: ${{ needs.durable-storage-integration.result }}
           DURABLE_RUNTIME_RESULT: ${{ needs.durable-runtime-integration.result }}
           HOST_COMPATIBILITY_RESULT: ${{ needs.host-compatibility-certification.result }}
+          HOST_CONTAINER_RESULT: ${{ needs.host-container-certification.result }}
           SDK_TYPESCRIPT_RESULT: ${{ needs.sdk-typescript.result }}
           OBSERVATION_ACTIVATION_RESULT: ${{ needs.observation-ledger-activation.result }}
           SHARD_RESULT: ${{ needs.unit-test-shards.result }}
@@ -345,6 +346,7 @@ jobs:
           && test "$DURABLE_STORAGE_RESULT" = success
           && test "$DURABLE_RUNTIME_RESULT" = success
           && test "$HOST_COMPATIBILITY_RESULT" = success
+          test "$HOST_CONTAINER_RESULT" = success
           && test "$SDK_TYPESCRIPT_RESULT" = success
           && test "$OBSERVATION_ACTIVATION_RESULT" = success
           && test "$SHARD_RESULT" = success

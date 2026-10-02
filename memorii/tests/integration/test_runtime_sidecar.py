@@ -327,7 +327,11 @@ def _intake_sidecar(tmp_path: Path) -> tuple[RuntimeSidecar, str, Path]:
 
 
 def _intake_body(
-    operation_id: str, task_id: str, *, kind: str = "record_observation", revision: int = 0
+    operation_id: str,
+    task_id: str,
+    *,
+    kind: str = "record_observation",
+    revision: int = 0,
 ) -> bytes:
     from memorii.core.persistence.runtime_contracts import RuntimeCommandRequest
 
@@ -336,6 +340,7 @@ def _intake_body(
         operation_id=operation_id,
         task_id=task_id,
         expected_revision=revision,
+        source_digest="a" * 64 if kind == "record_observation" else None,
     )
     import json
 
@@ -370,7 +375,7 @@ def test_intake_divergent_duplicate_dead_letters_as_conflict(tmp_path: Path) -> 
     assert sidecar.handle_intake_request(
         bearer_token="credential:one", origin=None, body=_intake_body("op:1", task_id)
     )[0] == 200
-    divergent = _intake_body("op:1", task_id, revision=1)
+    divergent = _intake_body("op:1", task_id, kind="record_action_dispatch")
     status, payload = sidecar.handle_intake_request(
         bearer_token="credential:one", origin=None, body=divergent
     )

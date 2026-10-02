@@ -215,6 +215,19 @@ class RuntimeSidecar:
         return 200, record.model_dump_json().encode("utf-8")
 
 
+def _safe_content_length(raw: str | None, maximum: int) -> int | None:
+    """Parse Content-Length before any read: non-integer, negative, and
+    oversized values are refused pre-authentication so the handler never
+    buffers unbounded input or blocks on a malformed request."""
+    try:
+        length = int(raw) if raw not in (None, "") else 0
+    except ValueError:
+        return None
+    if length < 0 or length > maximum:
+        return None
+    return length
+
+
 def _error(status: int, code: str, detail: str | None) -> tuple[int, bytes]:
     payload = SidecarError(code=code, retryable=code in ("unavailable", "resource_exhausted"), detail=detail)
     return status, payload.model_dump_json().encode("utf-8")
@@ -233,7 +246,10 @@ def build_sidecar_handler(sidecar: RuntimeSidecar) -> type[BaseHTTPRequestHandle
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self) -> None:  # noqa: N802 - http.server API
             if self.path == "/v1/runtime/intake":
-                length = int(self.headers.get("Content-Length") or 0)
+                length = _safe_content_length(self.headers.get("Content-Length"), _MAXIMUM_INTAKE_BYTES)
+                if length is None:
+                    self._respond(*_error(400, "invalid_request", "content length is invalid or oversized"))
+                    return
                 body = self.rfile.read(length) if length else b""
                 status, payload = sidecar.handle_intake_request(
                     bearer_token=self.headers.get("Authorization", "").removeprefix(
@@ -249,7 +265,10 @@ def build_sidecar_handler(sidecar: RuntimeSidecar) -> type[BaseHTTPRequestHandle
             if self.path != "/v1/runtime/state":
                 self._respond(*_error(404, "not_found", None))
                 return
-            length = int(self.headers.get("Content-Length") or 0)
+            length = _safe_content_length(self.headers.get("Content-Length"), _MAXIMUM_INTAKE_BYTES)
+            if length is None:
+                self._respond(*_error(400, "invalid_request", "content length is invalid or oversized"))
+                return
             body = self.rfile.read(length) if length else b"{}"
             status, payload = sidecar.handle_state_request(
                 bearer_token=self.headers.get("Authorization", "").removeprefix(

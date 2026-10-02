@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -30,6 +31,7 @@ JOURNEYS = {
             "memorii/core/harness_state/consumer.py",
             "memorii/tools/runtime_consume.py",
             "memorii/core/persistence/runtime_api.py",
+            "memorii/core/persistence/runtime_contracts.py",
         ),
     },
     "openclaw": {
@@ -42,6 +44,7 @@ JOURNEYS = {
             "memorii/core/harness_state/consumer.py",
             "memorii/tools/runtime_consume.py",
             "memorii/core/persistence/runtime_api.py",
+            "memorii/core/persistence/runtime_contracts.py",
         ),
     },
     "hermes": {
@@ -65,10 +68,25 @@ def _docker_available() -> bool:
 
 
 def _build(image: str, dockerfile: str) -> None:
+    # Absolute Dockerfile path: CI runs pytest from memorii/, so a bare
+    # relative name cannot resolve. Build logs stream to the console so a
+    # failed build is diagnosable instead of a bare CalledProcessError.
+    tag = f"{image}:ci-{_commit()}"
     subprocess.run(
-        ["docker", "build", "-f", dockerfile, "-t", f"{image}:ci", REPO_ROOT],
-        capture_output=True, text=True, timeout=3600, check=True,
+        ["docker", "build", "-f", str(Path(REPO_ROOT) / dockerfile), "-t", tag, REPO_ROOT],
+        timeout=3600, check=True,
     )
+    subprocess.run(
+        ["docker", "tag", tag, f"{image}:ci"], check=True, timeout=120
+    )
+
+
+def _commit() -> str:
+    result = subprocess.run(
+        ["git", "-C", REPO_ROOT, "rev-parse", "--short", "HEAD"],
+        capture_output=True, text=True, timeout=30,
+    )
+    return result.stdout.strip() or "unknown"
 
 
 def _run_journey(host: str) -> None:
@@ -127,10 +145,8 @@ def _run_journey(host: str) -> None:
 @pytest.mark.parametrize("host", sorted(JOURNEYS))
 def test_container_certification_journey(host: str) -> None:
     spec = JOURNEYS[host]
-    image = f"{spec['image']}:ci"
-    probe = subprocess.run(
-        ["docker", "image", "inspect", image], capture_output=True, timeout=60,
+    subprocess.run(
+        ["docker", "image", "rm", "-f", f"{spec['image']}:ci"], capture_output=True
     )
-    if probe.returncode != 0:
-        _build(spec["image"], spec["dockerfile"])
+    _build(spec["image"], spec["dockerfile"])
     _run_journey(host)

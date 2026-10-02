@@ -140,9 +140,12 @@ class LocalDurableSpool:
         from memorii.core.memory_plane.file_lock import locked_file
 
         with locked_file(self._lock_path, exclusive=False):
-            if not self._records_path.exists():
-                return ()
-            lines = self._records_path.read_text(encoding="utf-8").splitlines()
+            return self._records_unlocked_read()
+
+    def _records_unlocked_read(self) -> tuple[SpoolRecord, ...]:
+        if not self._records_path.exists():
+            return ()
+        lines = self._records_path.read_text(encoding="utf-8").splitlines()
         return tuple(
             SpoolRecord.model_validate_json(line) for line in lines if line.strip()
         )
@@ -158,20 +161,26 @@ class LocalDurableSpool:
         """
         result: list[tuple[SpoolRecord, HostEventDelivery]] = []
         deliveries = self._directory / "deliveries"
-        for record in self.records():
-            if record.state != "pending":
-                continue
-            if record.producer_binding not in allowlisted_producers:
-                continue
-            content_path = deliveries / f"{record.request_digest}.json"
-            if not content_path.exists():
-                continue
-            delivery = HostEventDelivery.model_validate_json(
-                content_path.read_text(encoding="utf-8")
-            )
-            if command_digest(delivery.command) != record.request_digest:
-                continue
-            result.append((record, delivery))
+        from memorii.core.memory_plane.file_lock import locked_file
+
+        # Content files are read under the same shared lock the records use:
+        # a concurrent admit rewrites content via O_TRUNC under the exclusive
+        # lock, and an unlocked read could observe an empty or partial file.
+        with locked_file(self._lock_path, exclusive=False):
+            for record in self._records_unlocked_read():
+                if record.state != "pending":
+                    continue
+                if record.producer_binding not in allowlisted_producers:
+                    continue
+                content_path = deliveries / f"{record.request_digest}.json"
+                if not content_path.exists():
+                    continue
+                delivery = HostEventDelivery.model_validate_json(
+                    content_path.read_text(encoding="utf-8")
+                )
+                if command_digest(delivery.command) != record.request_digest:
+                    continue
+                result.append((record, delivery))
         return tuple(result)
 
     def mark_committed(self, operation_id: str) -> SpoolRecord:

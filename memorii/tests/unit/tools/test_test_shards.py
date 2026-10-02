@@ -54,10 +54,10 @@ def test_current_hermes_runtime_nodes_have_loaded_durations() -> None:
 
     assert durations[
         "tests/unit/core/semantic_ingestion/test_hermes_completed_turn_runtime.py::test_close_stops_worker_and_rejects_post_close_enqueue"
-    ] == 0.003
+    ] == 0.000878
     assert durations[
         "tests/unit/integrations/test_hermes_memory_provider_bridge.py::test_bridge_separates_equal_text_positions_and_redelivery_reuses_the_second_operation"
-    ] == 826.52
+    ] == 83.177949
 
 def test_shard_command_executes_exact_nodes_without_file_expansion(tmp_path: Path) -> None:
     nodeids = (

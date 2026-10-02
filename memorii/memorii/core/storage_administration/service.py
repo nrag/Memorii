@@ -110,9 +110,11 @@ class StorageAdministrationService:
         installation_root: str | Path,
         *,
         signer_key_id: str = DEFAULT_SIGNER_KEY_ID,
+        writer_enrollment=None,
     ) -> None:
         self._root = Path(installation_root)
         self._signer_key_id = signer_key_id
+        self._writer_enrollment = writer_enrollment
         self._signing = LocalSigningKeyOwner(self._root / "control" / "keys")
         self._control = ControlDatabase(
             self._root / "control" / "control.sqlite3",
@@ -488,8 +490,20 @@ class StorageAdministrationService:
             raise InstallationQuarantinedError(
                 "installation is read_only; data publication is denied"
             )
+        if self._writer_enrollment is not None:
+            # All-writer barrier: an unregistered writer fails closed before
+            # any active service, never as best-effort consistency.
+            self._writer_enrollment.require_enrolled(operation_binding)
         memory_store = store if store is not None else self.memory_plane_store()
         with self._publication_fence():
+            # Mode re-checked under the fence: a writer that passed the
+            # entry check before an owner flipped read_only cannot commit
+            # across the barrier.
+            fenced_state = self._require_operational()
+            if fenced_state.mode == "read_only" and operation_binding != "migrate":
+                raise InstallationQuarantinedError(
+                    "installation is read_only; data publication is denied"
+                )
             resolution = self.resolve_pending_publication()
             if resolution.disposition == "quarantined":
                 raise InstallationQuarantinedError("pending publication quarantined")

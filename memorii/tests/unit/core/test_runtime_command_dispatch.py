@@ -309,11 +309,11 @@ def test_host_event_kinds_commit_their_durable_receipt_journal(tmp_path: Path) -
     service = _service(tmp_path)
     try:
         task_id = _seeded_task_id(service)
-        for kind in (
-            "record_observation",
-            "record_action_dispatch",
-            "record_action_result",
-            "resume_task",
+        for kind, digest in (
+            ("record_observation", "b" * 64),
+            ("record_action_dispatch", None),
+            ("record_action_result", None),
+            ("resume_task", None),
         ):
             receipt = service.dispatch(
                 RuntimeCommandRequest(
@@ -321,9 +321,18 @@ def test_host_event_kinds_commit_their_durable_receipt_journal(tmp_path: Path) -
                     operation_id=f"op:journal:{kind}",
                     task_id=task_id,
                     expected_revision=1,
+                    source_digest=digest,
                 )
             )
             assert receipt.status == "committed"
+        # A source-free observation is rejected at the closed union.
+        with pytest.raises(ValueError, match="source digest"):
+            RuntimeCommandRequest(
+                kind="record_observation",
+                operation_id="op:journal:sourceless",
+                task_id=task_id,
+                expected_revision=1,
+            )
         # A paused task resumes with a real state transition.
         service.dispatch(
             RuntimeCommandRequest(

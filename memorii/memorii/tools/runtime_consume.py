@@ -109,7 +109,25 @@ def main(argv: list[str] | None = None) -> int:
                     continue
                 committed = receipt.status in ("committed", "duplicate")
                 if committed:
-                    spool.mark_committed(record.operation_id)
+                    try:
+                        spool.mark_committed(record.operation_id)
+                    except RuntimeError as mark_error:
+                        # State transition races (dead-letter, unknown id)
+                        # report and continue: the queue keeps draining, the
+                        # record stays for operator handling.
+                        refused += 1
+                        print(
+                            json.dumps(
+                                {
+                                    "operation_id": record.operation_id,
+                                    "status": "mark_failed",
+                                    "reason": str(mark_error).split(":", 1)[-1].strip(),
+                                    "intake_state": "pending",
+                                },
+                                sort_keys=True,
+                            )
+                        )
+                        continue
                 print(
                     json.dumps(
                         {
