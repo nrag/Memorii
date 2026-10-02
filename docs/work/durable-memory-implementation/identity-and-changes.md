@@ -66,3 +66,22 @@ Run `python -m memorii.tools.identity_hygiene --root .. --allowlist ../.agents/i
 Per milestone keep a live table of added/modified/deleted paths, owner, requirement, intended behavior, dependencies, required commands, result artifacts and reviewed revision. Start from actual git diff/status; identify unrelated changes rather than reverting. No known failure exclusions at planning time. A real failure requires causal classification and clean-base reproduction before any baseline claim. Final closure compares actual full base-to-head and working-tree diff against this ledger, including generated and workflow files.
 
 Planning readiness additions: integrations/authenticated_source.py and integrations/hermes_provider.py are explicit retained behavioral wrapper owners. New sdk/typescript/package.json, package-lock.json, compiler config, generated client, behavioral scripts check:generated/typecheck/test/build/test:installed and SDK package/gate identities are proposed behavioral/toolchain artifacts. Pin real Node/npm/compiler versions before creating them; no plan coordinate in package names, scripts or generated exports. Dependency lock, generated parity, installed package and workflow aggregate are one affected authority chain.
+
+
+## Final-review closure additions (2026-10-02, whole-branch review)
+
+| New symbol / artifact | Owner | Notes |
+| --- | --- | --- |
+| `memorii.core.harness_state.grant_registry.GrantEpochRegistry` (+ `RevocationRecord`, `GrantRegistryError`) | harness-state | File-backed monotone grant-epoch revocations; composed by default into the sidecar's state service |
+| `memorii.core.storage_administration.writer_enrollment.WriterEnrollmentRegistry` (+ `WriterRecord`) | operator-controls | All-writer barrier wired into both publication paths and the operator CLI |
+| `memorii.core.storage_administration.operator_backup.BackupRestoreOperator` (+ `BackupParticipant`, `InstallationBackupManifest`, `RestorePlan`) | operator-controls | AEAD-encrypted Ed25519-signed archives; recovery bundle + anchor artifacts |
+| `memorii.core.storage_administration.operator_governance.GovernanceOperator` (+ `ForgetPlan/Receipt`, `ErasurePlan/Receipt`, `RetentionPlan`, `DoctorFinding`) | operator-controls | Barrier-gated forget/erasure/retention/doctor |
+| `memorii.tools.runtime_operator` (entry point `memorii-operator`) | operator-controls | Owner CLI; capability + recovery-key gated |
+| `memorii.core.persistence.key_owner.INSTALLATION_BACKUP_MANIFEST_SIGNATURE_PURPOSE` | operator-controls | Closed signing purpose for backup manifests |
+| journal operations `logical_forget_applied`, `partition_erasure_applied` | persistence | Closed Literal extension in `InstallationControlJournalEntry.operation` |
+| `RuntimeCommandRequest.source_digest` | persistence | Closed union field: required for record_observation, rejected otherwise |
+| `memorii/integrations/openclaw/plugin/*` (shipped host package: index.js, package.json, openclaw.plugin.json) | additional-harnesses | Native OpenClaw plugin; transcript-write capture with source digests |
+| `memorii/integrations/pi/extension/*` (memorii-extension.ts, package.json) | additional-harnesses | Pi extension; fork denial, source digests |
+| `memorii/tests/integration/hostcompat/*` (journeys, stub provider, ACP client, pty driver, pytest wrapper) | additional-harnesses | Container-driven certification substrate |
+| `Dockerfile.pi`, `Dockerfile.openclaw` | additional-harnesses | Digest-pinned host validation profiles |
+| `memorii.tests.integration.test_installation_backup_restore` row update | operator-controls | Superseded by the operator suite (test_storage_administration_operator.py) — row 17's "proposed" marker retired |

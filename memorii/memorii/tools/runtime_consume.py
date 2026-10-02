@@ -81,7 +81,16 @@ def main(argv: list[str] | None = None) -> int:
         )
 
         spool = LocalDurableSpool(spool_directory)
-        administration = StorageAdministrationService(arguments.installation_root)
+        from memorii.core.storage_administration.writer_enrollment import (
+            WriterEnrollmentRegistry,
+        )
+
+        administration = StorageAdministrationService(
+            arguments.installation_root,
+            writer_enrollment=WriterEnrollmentRegistry(
+                Path(arguments.installation_root) / "control" / "writers"
+            ),
+        )
         refused = 0
         try:
             pending = spool.pending_deliveries(allowlisted_producers=allowlisted)

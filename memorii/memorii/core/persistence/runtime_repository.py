@@ -436,6 +436,14 @@ def publish_runtime_change(
         )
     repository = RuntimeStateRepository(administration.partition())
     with administration._publication_fence():
+        # Mode re-checked under the fence: a writer that passed the entry
+        # check before an owner flipped read_only cannot commit across the
+        # barrier (mirrors publish_memory_plane_batch).
+        fenced_state = administration._require_operational()
+        if fenced_state.mode == "read_only" and operation_binding != "migrate":
+            raise InstallationQuarantinedError(
+                "installation is read_only; data publication is denied"
+            )
         resolution = administration.resolve_pending_publication()
         if resolution.disposition == "quarantined":
             raise InstallationQuarantinedError("pending publication quarantined")

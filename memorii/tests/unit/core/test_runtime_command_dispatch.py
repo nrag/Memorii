@@ -333,6 +333,24 @@ def test_host_event_kinds_commit_their_durable_receipt_journal(tmp_path: Path) -
                 task_id=task_id,
                 expected_revision=1,
             )
+        # source_digest is rejected on every non-observation kind and must
+        # be well-formed hex-64 when present.
+        with pytest.raises(ValueError, match="only valid with record_observation"):
+            RuntimeCommandRequest(
+                kind="resume_task",
+                operation_id="op:journal:misplaced",
+                task_id=task_id,
+                expected_revision=1,
+                source_digest="c" * 64,
+            )
+        with pytest.raises(ValueError):
+            RuntimeCommandRequest(
+                kind="record_observation",
+                operation_id="op:journal:malformed",
+                task_id=task_id,
+                expected_revision=1,
+                source_digest="zz" * 32,
+            )
         # A paused task resumes with a real state transition.
         service.dispatch(
             RuntimeCommandRequest(

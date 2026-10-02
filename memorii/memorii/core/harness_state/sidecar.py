@@ -28,6 +28,7 @@ from memorii.core.harness_state.consumer import (
     LocalDurableSpool,
 )
 from memorii.core.harness_state.credentials import SidecarCredentialStore
+from memorii.core.harness_state.grant_registry import GrantEpochRegistry
 from memorii.core.harness_state.service import (
     HarnessStateError,
     HarnessStateService,
@@ -117,12 +118,27 @@ class RuntimeSidecar:
         credentials: dict[str, str] | SidecarCredentialStore,
         grant_factory: Callable[[str], RuntimeReadGrant],
         intake_factory: Callable[[str], HostIntakeBinding] | None = None,
+        grant_registry: GrantEpochRegistry | None = None,
     ) -> None:
         self._repository = repository
         self._credentials = credentials
         self._grant_factory = grant_factory
         self._intake_factory = intake_factory
-        self._service = HarnessStateService(repository)
+        # The revocation registry composes by default from the installation
+        # control state so a revoked grant fails closed on every served path.
+        if grant_registry is None:
+            from pathlib import Path as _Path
+
+            registry_root = (
+                _Path(repository._partition.database_path).parent.parent
+                / "control"
+                / "grants"
+            )
+            try:
+                grant_registry = GrantEpochRegistry(registry_root)
+            except OSError:
+                grant_registry = None
+        self._service = HarnessStateService(repository, grant_registry=grant_registry)
 
     def _principal_for(self, secret: str) -> str | None:
         if isinstance(self._credentials, SidecarCredentialStore):
@@ -174,8 +190,20 @@ class RuntimeSidecar:
         origin: str | None,
         body: bytes,
         host: str | None = None,
+        _content_length_header: str | None = None,
     ) -> tuple[int, bytes]:
-        """Admit one runtime command durably; authority is server-derived."""
+        """Admit one runtime command durably; authority is server-derived.
+
+        ``_content_length_header`` is a test hook replaying a raw header
+        value through the pre-read validation the HTTP layer performs.
+        """
+        if (
+            _content_length_header is not None
+            and _safe_content_length(_content_length_header, _MAXIMUM_INTAKE_BYTES) is None
+        ):
+            return _error(
+                400, "invalid_request", "content length is invalid or oversized"
+            )
         if host is not None and host not in ("127.0.0.1", "localhost", "::1"):
             return _error(403, "denied", "remote binding is disabled")
         if origin is not None:

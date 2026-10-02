@@ -113,6 +113,8 @@ export interface RuntimeCommand {
   pause_reason?: string | null;
   abort_reason?: string | null;
   proposal?: unknown | null;
+  /** Required for record_observation (64 hex chars); rejected elsewhere. */
+  source_digest?: string;
 }
 
 export interface SpoolRecord {

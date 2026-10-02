@@ -446,3 +446,24 @@ def test_loopback_http_serves_intake(tmp_path: Path) -> None:
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_intake_refuses_malformed_content_length_before_reading(tmp_path: Path) -> None:
+    sidecar, task_id, _ = _intake_sidecar(tmp_path)
+    body = _intake_body("op:cl", task_id)
+    for header in ("not-a-number", "-5", str(2 << 20)):
+        status, payload = sidecar.handle_intake_request(
+            bearer_token="credential:one",
+            origin=None,
+            body=body,
+            host="127.0.0.1",
+            _content_length_header=header,
+        )
+        assert status == 400, header
+        assert json.loads(payload)["code"] == "invalid_request"
+    # A valid header still parses (route reaches auth/parse normally).
+    status, _ = sidecar.handle_intake_request(
+        bearer_token=None, origin=None, body=body, host="127.0.0.1",
+        _content_length_header=str(len(body)),
+    )
+    assert status == 401

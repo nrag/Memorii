@@ -71,8 +71,16 @@ def main(argv: list[str] | None = None) -> int:
     from memorii.core.storage_administration.service import (
         StorageAdministrationService,
     )
+    from memorii.core.storage_administration.writer_enrollment import (
+        WriterEnrollmentRegistry,
+    )
 
-    administration = StorageAdministrationService(arguments.installation_root)
+    administration = StorageAdministrationService(
+        arguments.installation_root,
+        writer_enrollment=WriterEnrollmentRegistry(
+            arguments.installation_root / "control" / "writers"
+        ),
+    )
     operator = StorageAdministrationOperator(administration)
     capability = (
         OwnerCapability(

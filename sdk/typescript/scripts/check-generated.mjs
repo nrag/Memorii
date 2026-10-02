@@ -28,9 +28,6 @@ const candidateCommands = [
 ].filter(Boolean);
 
 for (const python of candidateCommands) {
-  if (process.env["MEMORII_SCHEMA_CMD"] === undefined && !python.includes(".venv")) {
-    // custom command; run as-is
-  }
   try {
     const { execFileSync } = await import("node:child_process");
     const regenerated = execFileSync(python, ["-m", "memorii.tools.runtime_schema_export"], {

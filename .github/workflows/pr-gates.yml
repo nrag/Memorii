@@ -468,6 +468,12 @@ jobs:
         working-directory: memorii
         run: pip install -e '.[local]'
 
+      - name: Check generated schema parity
+        working-directory: sdk/typescript
+        env:
+          MEMORII_SCHEMA_CMD: python3
+        run: npm run check:generated
+
       - name: Clean install from lockfile
         working-directory: sdk/typescript
         run: npm ci

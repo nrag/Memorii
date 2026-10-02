@@ -53,25 +53,33 @@ class GrantEpochRegistry:
         return int(self._read_epochs().get(grant_id, 1))
 
     def revoke(self, grant_id: str, *, reason: str) -> RevocationRecord:
-        """Advance the grant's epoch and record the revocation durably."""
+        """Advance the grant's epoch and record the revocation durably.
+
+        The whole operation holds the registry's exclusive lock so two
+        concurrent revocations of different grants cannot lose one epoch
+        advance through a last-writer-wins epochs map.
+        """
+        from memorii.core.memory_plane.file_lock import locked_file
+
         if not grant_id:
             raise GrantRegistryError("grant id must be nonempty")
         if not reason.strip():
             raise GrantRegistryError("revocation reason must be nonempty")
-        epochs = self._read_epochs()
-        next_epoch = int(epochs.get(grant_id, 1)) + 1
-        epochs[grant_id] = next_epoch
-        self._write_epochs(epochs)
-        record = RevocationRecord(
-            grant_id=grant_id,
-            epoch=next_epoch,
-            revoked_at_unix=int(time.time()),
-            reason=reason,
-        )
-        with self._revocations_path.open("a", encoding="utf-8") as handle:
-            handle.write(record.model_dump_json() + "\n")
-            handle.flush()
-            os.fsync(handle.fileno())
+        with locked_file(self._directory / "registry.lock", exclusive=True):
+            epochs = self._read_epochs()
+            next_epoch = int(epochs.get(grant_id, 1)) + 1
+            epochs[grant_id] = next_epoch
+            self._write_epochs(epochs)
+            record = RevocationRecord(
+                grant_id=grant_id,
+                epoch=next_epoch,
+                revoked_at_unix=int(time.time()),
+                reason=reason,
+            )
+            with self._revocations_path.open("a", encoding="utf-8") as handle:
+                handle.write(record.model_dump_json() + "\n")
+                handle.flush()
+                os.fsync(handle.fileno())
         return record
 
     def revocations(self) -> tuple[RevocationRecord, ...]:
@@ -108,10 +116,18 @@ class GrantEpochRegistry:
         return {str(key): int(item) for key, item in value.items()}
 
     def _write_epochs(self, epochs: dict[str, int]) -> None:
-        temporary = self._directory / ".grant-epochs.tmp"
-        temporary.write_text(json.dumps(epochs, sort_keys=True))
+        temporary = self._directory / f".grant-epochs.{os.getpid()}.tmp"
+        with temporary.open("w", encoding="utf-8") as handle:
+            handle.write(json.dumps(epochs, sort_keys=True))
+            handle.flush()
+            os.fsync(handle.fileno())
         os.chmod(temporary, 0o600)
         os.replace(temporary, self._epochs_path)
+        directory = os.open(self._directory, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
 
 
 __all__ = ["GrantEpochRegistry", "GrantRegistryError", "RevocationRecord"]

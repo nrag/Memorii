@@ -3,7 +3,7 @@
 - Parent WorkPlan: [implementation index](../implementation.plan.md)
 - Work type: implementation milestone packet
 - Delivery fidelity: Level 3, bounded slice only
-- Status: active (sub-slice 1 landed: operator surface with fenced modes, status, scoped export 9fe1a6c6; backup/restore, forget/erasure, retention, doctor remain)
+- Status: implemented + closing review round 1 remediated (modes/export, backup/restore, forget/erasure, retention, doctor, enrollment barrier, CLI all landed; open items named in the index table)
 - Requirements: DUR-08,09,10,11,12,13; regression DUR-03,05,07,18
 - Dependencies: all supported data/host roots enrolled; foundational control primitives already implemented
 - Baseline revision: bad9eeefb43f7f42fb95d583b11859e2f2ca9eb8 (planning snapshot)
