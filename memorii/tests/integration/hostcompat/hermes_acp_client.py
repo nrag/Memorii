@@ -68,9 +68,11 @@ class AcpClient:
         while time.monotonic() < deadline:
             try:
                 message = self._responses.get(timeout=min(5, deadline - time.monotonic()))
-            except Empty:
+            except Empty as empty:
                 if self._process.poll() is not None:
-                    raise RuntimeError(f"acp server exited ({self._process.returncode}) during {method}")
+                    raise RuntimeError(
+                        f"acp server exited ({self._process.returncode}) during {method}"
+                    ) from empty
                 continue
             if message.get("id") == request_id:
                 if "error" in message:

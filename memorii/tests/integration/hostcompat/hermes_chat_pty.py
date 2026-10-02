@@ -10,6 +10,7 @@ machinery runs, including the MemoryManager and the Memorii provider.
 """
 from __future__ import annotations
 
+import contextlib
 import fcntl
 import os
 import pty
@@ -26,7 +27,7 @@ def seeded_chat_turn(
     message: str,
     *,
     marker: str = "acknowledged and recorded.",
-    count_fn: "callable[[], int] | None" = None,
+    count_fn: callable[[], int] | None = None,
     timeout: float = 300.0,
 ) -> tuple[bool, str]:
     """Run one seeded chat turn; returns (marker seen, transcript text).
@@ -85,17 +86,11 @@ def seeded_chat_turn(
                 exit_code = os.waitstatus_to_exitcode(status)
                 break
     finally:
-        try:
+        with contextlib.suppress(OSError):
             os.close(descriptor)
-        except OSError:
-            pass
     if exit_code is None:
-        try:
+        with contextlib.suppress(ProcessLookupError):
             os.kill(pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        try:
+        with contextlib.suppress(ChildProcessError):
             os.waitpid(pid, 0)
-        except ChildProcessError:
-            pass
     return answered, b"".join(output).decode("utf-8", "replace")

@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -22,8 +23,6 @@ from pathlib import Path
 
 sys.path.insert(0, "/opt/memorii-src/memorii")
 sys.path.insert(0, "/opt/memorii-src/memorii/tests/integration/hostcompat")
-
-from stub_openai_provider import serve_stub_provider
 
 from memorii.core.harness_state.consumer import LocalDurableSpool
 from memorii.core.harness_state.service import RuntimeReadGrant
@@ -38,6 +37,7 @@ from memorii.core.persistence.runtime_repository import (
     publish_runtime_change,
 )
 from memorii.core.storage_administration.service import StorageAdministrationService
+from stub_openai_provider import serve_stub_provider
 
 PRODUCER = "host:principal:a"
 GATEWAY_TOKEN = "cert-token-1"
@@ -122,18 +122,19 @@ config_set("models.providers.stub", json.dumps({
 }))
 config_set("plugins.entries.memorii", json.dumps({"enabled": True, "config": {}}))
 config_set("plugins.allow", json.dumps(["memorii"]))
+config_set("gateway.mode", "local")
 config_set("gateway.auth.mode", "token")
 config_set("gateway.auth.token", GATEWAY_TOKEN)
 
 subprocess.run(["pkill", "-f", "openclaw-gateway"], capture_output=True, check=False)
 time.sleep(3)
-gateway_log = open("/tmp/gateway-journey.log", "w")
+gateway_log = open("/tmp/gateway-journey.log", "w")  # noqa: SIM115 - inherited by the gateway child
 gateway = subprocess.Popen(
     ["openclaw", "gateway", "--bind", "loopback"],
     stdout=gateway_log, stderr=subprocess.STDOUT,
     start_new_session=True,
 )
-import socket
+
 
 def wait_for_loopback_port(port: int, timeout_seconds: int = 180) -> bool:
     deadline = time.monotonic() + timeout_seconds

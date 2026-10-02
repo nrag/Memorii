@@ -315,7 +315,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     if: always()
-    needs: [semantic-ingestion-history-reconciliation, equal-version-replay-decision, static-analysis, package-smoke, provider-compatibility, scoped-context-integration, durable-storage-integration, durable-runtime-integration, sdk-typescript, host-compatibility-certification, observation-ledger-activation, unit-test-shards, unit-timing-inventory, semantic-terminal-persistence, semantic-terminal-persistence-timing-inventory]
+    needs: [semantic-ingestion-history-reconciliation, equal-version-replay-decision, static-analysis, package-smoke, provider-compatibility, scoped-context-integration, durable-storage-integration, durable-runtime-integration, sdk-typescript, host-compatibility-certification, host-container-certification, observation-ledger-activation, unit-test-shards, unit-timing-inventory, semantic-terminal-persistence, semantic-terminal-persistence-timing-inventory]
 
     steps:
       - name: Require every unit-test dependency
@@ -525,6 +525,33 @@ jobs:
           tests/integration/hostcompat/test_framework_certification.py
           -p no:cacheprovider
           -ra
+
+  host-container-certification:
+    name: Host Container Certification
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: memorii/pyproject.toml
+
+      - name: Install package + test dependencies
+        working-directory: memorii
+        run: pip install -e '.[local,dev]'
+
+      - name: Run the container-driven certification journeys
+        working-directory: memorii
+        run: >-
+          python -W error -m pytest
+          tests/integration/hostcompat/test_container_certification_journeys.py
+          -p no:cacheprovider -v
 
   durable-runtime-integration:
     name: Durable Runtime Integration

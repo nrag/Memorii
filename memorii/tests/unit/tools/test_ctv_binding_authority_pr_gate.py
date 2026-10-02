@@ -299,6 +299,7 @@ def test_pr_workflow_structurally_runs_complete_matrix_and_exact_pinned_checker(
         "durable-runtime-integration",
         "sdk-typescript",
         "host-compatibility-certification",
+        "host-container-certification",
         "observation-ledger-activation",
         "unit-test-shards",
         "unit-timing-inventory",
