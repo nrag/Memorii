@@ -52,6 +52,13 @@ from memorii.core.memory_evolution.temporal_contracts import (
     TemporalEntityCandidate,
 )
 
+# Entity links are served only in these lifecycles: an allowlist, never a
+# denylist, so a tombstoned (revoked) link can never slip through a
+# forgotten member the way an unknown value would under `!= "invalidated"`.
+_ELIGIBLE_LINK_LIFECYCLES = frozenset(
+    {"active", "merged", "split", "relinked"}
+)
+
 
 class MemoryEvolutionRetrievalRuntime:
     """Read-only retrieval runtime composed around an evolution store."""
@@ -82,7 +89,8 @@ class MemoryEvolutionRetrievalRuntime:
         readable_links = [
             link
             for link in self._entity_link_reader()
-            if link.lifecycle_state.value != "invalidated" and request_scope.can_read(link.scope)
+            if link.lifecycle_state.value in _ELIGIBLE_LINK_LIFECYCLES
+            and request_scope.can_read(link.scope)
         ]
         most_specific_scope_by_identity: dict[tuple[str, str], int] = {}
         for link in readable_links:

@@ -607,7 +607,11 @@ def _query_states(
             predicate_id=request.predicate_id,
             subject_entity_id=request.subject_entity_id,
         )
+        # A revoked claim is a content-free tombstone: excluded from every
+        # view, including all-versions history reads. This branch cannot
+        # rely on its candidate-only exclusion.
         if state.lifecycle_state is not ClaimLifecycleState.CANDIDATE
+        and state.lifecycle_state is not ClaimLifecycleState.REVOKED
     ]
 
 

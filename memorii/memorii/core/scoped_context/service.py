@@ -1029,7 +1029,11 @@ def _current_eligible(record: CanonicalMemoryRecord, reference_time: datetime) -
     if record.content.get("memory_evolution_kind") == "entity_link":
         repository = EvolutionStateRepository.from_snapshot((record,))
         links = repository.list_entity_links()
-        if not links or links[0].lifecycle_state.value in {"invalidated", "expired"}:
+        # Allowlist: a tombstoned (revoked) or otherwise unknown lifecycle
+        # is never current evidence; only explicitly eligible members serve.
+        if not links or links[0].lifecycle_state.value not in {
+            "active", "merged", "split", "relinked",
+        }:
             return False
         link = links[0]
         return not (

@@ -158,7 +158,23 @@ organizational only and must not appear in outputs.
 
 ## Decision Log
 
-(none yet)
+- 2026-10-03: Milestone execution order adjusted by dependency analysis:
+  record-kind grammar landed first (f9de4478); the governance publication
+  entry (originally M2) is the hardest orchestration (full projection/
+  checkpoint/aggregate/policy cascade — traced at atomic_store
+  `_prepare_native_projection_publication`, `advance_semantic_replay_authority`,
+  clarification/native precedents) and CONSUMES the other milestones'
+  outputs (tombstone builders from M3, pending-epoch ride from M4, view
+  refresh from M5). Execution order: reader ledger/tombstones → control
+  plane → view + serving matrix → governance entry → registry v2 →
+  parity/regen/repin. Requirement allocation is unchanged; only sequencing.
+- 2026-10-03: The governance entry publishes through the store's standard
+  conditional-write primitive (binding inherited from the composed
+  memory-plane writer); the governance operation identity lives in the
+  operation id/fence coordinates and the control-journal linkage, with no
+  new writer-registry kind (the store itself is the enrolled writer).
+  Recorded as a bounded reading of design §6.10 item 1 — enrollment,
+  owner-gating, and validation are all preserved.
 
 ## Review Log
 
