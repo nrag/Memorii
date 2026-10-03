@@ -155,6 +155,31 @@ organizational only and must not appear in outputs.
 
 - 2026-10-03: Operation opened at 4780db61. Next action: code-mapper
   preflight, then open the record-kind-schema-chain packet.
+- 2026-10-03: CORE DESIGN IMPLEMENTED END TO END across five pushed
+  commits: (1) f9de4478 grammar — `revocation_directive` record kind,
+  target union, per-kind tables, codec/reference manifests, all-kinds
+  fold fixture; (2) cc580edb reader ledger — revoked lifecycle enum
+  members, retrieval allowlist gates, projection map, structured-fact
+  all-versions + scoped-context link gates, content-free tombstone
+  builders; (3) 652387c1 control plane — typed selector plans with
+  content-free closure, journal v2 (stable suppression identity,
+  v1-legacy reader, unknown fail-closed), journal-first barrier-gated
+  apply, pending_epoch_increments + one-transaction finalize +
+  boot completion (DUR-09 closed), drain on barrier-release/boot,
+  doctor/status/CLI; (4) c06de831 serving gates — RevokedIdentityView
+  (protocol-typed) injected at retrieval/scoped-context/structured-facts/
+  entity-match/factory/sidecar; harness + resume justification marking;
+  (5) 11b4ad8b governance entry — store method appending the directive
+  delta through the full canonical commit (batch/replay state/reference
+  ledger genesis-bootstrap/projection/checkpoint/aggregate) with
+  tombstones + directive index record under one admission-governed CAS;
+  end-to-end journey test green (directive materializes in replay,
+  tombstones content-free, drain quiescent, epoch consumed atomically,
+  Tier A green). Per-milestone packets under milestones/. Remaining:
+  registry v2 mint (M1b), parity/crash families + CI registration (M6),
+  forensic lineage surface + prefetch canonical filter, publication
+  regeneration + candidate repin, broad gates + milestone review.
+  Next action: M1b registry v2 mint with the compat cascade.
 
 ## Decision Log
 
