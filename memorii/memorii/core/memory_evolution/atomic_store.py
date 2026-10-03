@@ -11669,6 +11669,15 @@ class SemanticIngestionAtomicStore:
             raise PreplanningStoreError("semantic replay state differs from genesis reconstruction")
         return persisted
 
+    @staticmethod
+    def _graph_codec_entry(codec_by_kind: dict, record_kind: str):
+        entry = codec_by_kind.get(record_kind)
+        if entry is None:
+            raise PreplanningStoreError(
+                "semantic graph codec manifest is not total over the record-kind union"
+            )
+        return entry
+
     def graph_state_snapshot(self):
         """Project the complete typed graph snapshot from canonical event authority."""
 
@@ -11703,9 +11712,9 @@ class SemanticIngestionAtomicStore:
                 record_id=item.record_id,
                 record_version=item.record_version,
                 payload=item.record,
-                codec_fingerprint=codec_by_kind[item.record_kind].codec_fingerprint,
+                codec_fingerprint=self._graph_codec_entry(codec_by_kind, item.record_kind).codec_fingerprint,
                 persistence_schema_fingerprint=(
-                    codec_by_kind[item.record_kind].payload_schema_fingerprint
+                    self._graph_codec_entry(codec_by_kind, item.record_kind).payload_schema_fingerprint
                 ),
                 record_digest=item.record_digest,
             )

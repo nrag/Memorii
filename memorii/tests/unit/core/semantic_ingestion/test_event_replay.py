@@ -2003,7 +2003,7 @@ def test_next_canonical_graph_record_versions_preserves_typed_nested_contracts()
         graph_revision_before="revision-all-kinds",
     )
 
-    assert len(records) == len(advanced) == 12
+    assert len(records) == len(advanced) == 13
     for original, current in zip(records, advanced, strict=True):
         assert type(current) is type(original)
         assert _nested_model_types(current) == _nested_model_types(original)
@@ -2190,7 +2190,7 @@ def test_all_graph_record_kinds_survive_signed_checkpoint_tail_and_genesis_repla
     assert encode_typed_value(from_checkpoint.model_dump(mode="python")) == (
         encode_typed_value(from_genesis.model_dump(mode="python"))
     )
-    assert len(from_checkpoint.materialized_records) == 13
+    assert len(from_checkpoint.materialized_records) == 14
     assert {item.record_kind for item in from_checkpoint.materialized_records} == {
         item.record_kind for item in records
     }

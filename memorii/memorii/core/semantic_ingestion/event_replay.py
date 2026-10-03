@@ -25,10 +25,12 @@ from memorii.core.memory_evolution.graph_records import (
     CitationRecord,
     ClaimProjection,
     EntityRevision,
+    GraphRecordKind,
     NonOwningGraphRecord,
     ProvenanceRecord,
     ReferenceDispositionRecord,
     RelationRevision,
+    RevocationDirectiveRecord,
     TypeEvidence,
     graph_record_id,
 )
@@ -90,11 +92,6 @@ _REPLAY_AUTHORITY_AGGREGATE_V2_DOMAIN = b"memorii.semantic-replay-authority-aggr
 _REPLAY_MEMBER_PROJECTION_DOMAIN = b"memorii.semantic-replay-member-projection.v1\0"
 _RECONSTRUCTED_REPLAY_AUTHORITY_DOMAIN = b"memorii.semantic-reconstructed-replay-authority.v1\0"
 
-GraphRecordKind = Literal[
-    "entity_revision", "alias_revision", "type_evidence", "claim_assertion",
-    "claim_projection", "relation_revision", "action_revision", "citation",
-    "provenance", "temporal_transition", "identity_lineage", "reference_disposition",
-]
 MutationKind = Literal["create", "update"]
 CommittedRecord = Annotated[
     ClaimAssertion | ActionRevision | IdentityLineageRecord | TemporalTransitionRecord
@@ -116,6 +113,7 @@ _CARRIER_UNION_MEMBER_TYPES = (
     ReferenceDispositionRecord,
     RelationRevision,
     TypeEvidence,
+    RevocationDirectiveRecord,
 )
 
 
