@@ -47,8 +47,28 @@ def main(argv: list[str] | None = None) -> int:
     restore.add_argument("--data-loss-acknowledged", action="store_true")
     restore.add_argument("--recovery-key-hex", required=True)
 
-    forget = commands.add_parser("forget", help="Logical forget planning")
-    forget.add_argument("--scope-note", required=True)
+    forget = commands.add_parser("forget", help="Logical forget planning and apply")
+    forget_sub = forget.add_subparsers(dest="forget_command", required=True)
+    forget_plan = forget_sub.add_parser("plan", help="Resolve typed selectors into a closure")
+    forget_plan.add_argument("--scope-note", required=True)
+    forget_plan.add_argument(
+        "--entity", action="append", default=[],
+        help="opaque logical entity id (repeatable)",
+    )
+    forget_plan.add_argument(
+        "--claim", action="append", default=[],
+        help="opaque claim assertion id (repeatable)",
+    )
+    forget_plan.add_argument(
+        "--source", action="append", default=[],
+        help="opaque source id (repeatable)",
+    )
+    forget_plan.add_argument(
+        "--record", action="append", default=[],
+        help="opaque record coordinate kind=id (repeatable)",
+    )
+    forget_apply = forget_sub.add_parser("apply", help="Apply a reviewed plan")
+    forget_apply.add_argument("--plan-json", required=True)
 
     erasure = commands.add_parser("erasure", help="Whole-partition erasure planning")
     erasure.add_argument("--offline-copies", default="")
@@ -152,13 +172,42 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if arguments.command == "forget":
             from memorii.core.storage_administration.operator_governance import (
+                ForgetPlan,
+                ForgetTargetSelector,
                 GovernanceOperator,
             )
 
-            plan = GovernanceOperator(operator).plan_forget(
-                capability=require_capability(), scope_note=arguments.scope_note
+            governance = GovernanceOperator(operator)
+            if arguments.forget_command == "plan":
+                selectors: list[ForgetTargetSelector] = [
+                    *(ForgetTargetSelector(selector_kind="entity", selector_id=item)
+                      for item in arguments.entity),
+                    *(ForgetTargetSelector(selector_kind="claim", selector_id=item)
+                      for item in arguments.claim),
+                    *(ForgetTargetSelector(selector_kind="source", selector_id=item)
+                      for item in arguments.source),
+                    *(
+                        ForgetTargetSelector(
+                            selector_kind="record",
+                            selector_id=item.split("=", 1)[1],
+                            record_kind=item.split("=", 1)[0] or None,
+                        )
+                        for item in arguments.record
+                        if "=" in item
+                    ),
+                ]
+                plan = governance.plan_forget(
+                    capability=require_capability(),
+                    selectors=tuple(selectors),
+                    scope_note=arguments.scope_note,
+                )
+                print(plan.model_dump_json())
+                return 0
+            plan = ForgetPlan.model_validate(json.loads(arguments.plan_json))
+            receipt = governance.apply_forget(
+                capability=require_capability(), plan=plan
             )
-            print(plan.model_dump_json())
+            print(receipt.model_dump_json())
             return 0
         if arguments.command == "erasure":
             from memorii.core.storage_administration.operator_governance import (

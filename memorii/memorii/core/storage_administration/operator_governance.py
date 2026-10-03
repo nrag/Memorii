@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import os
 import time
-from typing import Literal
+from typing import Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -27,12 +27,30 @@ from memorii.core.storage_administration.operator import (
 )
 
 
-class ForgetPlan(BaseModel):
-    """Owner-reviewed logical-forget plan over one installation."""
+class ForgetTargetSelector(BaseModel):
+    """One closed, typed scope selector; free text is never a matcher."""
 
-    plan_version: Literal[1] = 1
+    selector_kind: Literal["entity", "claim", "source", "record"]
+    selector_id: str = Field(min_length=1)
+    record_kind: str | None = None
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class ForgetPlan(BaseModel):
+    """Owner-reviewed logical-forget plan over one installation.
+
+    Every field is a content-free coordinate, digest, or count: the plan
+    never carries statement text, aliases as written, or evidence spans.
+    """
+
+    plan_version: Literal[2] = 2
     scope_note: str = Field(min_length=1)
-    matched_record_ids: tuple[str, ...] = Field(min_length=1)
+    selectors: tuple[ForgetTargetSelector, ...] = Field(min_length=1)
+    closure: tuple[str, ...] = Field(min_length=1)
+    counts_by_class: tuple[tuple[str, int], ...]
+    plan_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    closure_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     retention_disclosed: Literal[True] = True
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -42,8 +60,11 @@ class ForgetReceipt(BaseModel):
     """Closed receipt; no source text or raw identifiers."""
 
     operation: Literal["logical_forget"] = "logical_forget"
-    suppressed_count: int = Field(ge=1)
+    suppression_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    newly_revoked_count: int = Field(ge=0)
+    already_revoked_count: int = Field(ge=0)
     historical_bytes_retained: Literal[True] = True
+    enforcement_publication_pending: bool
     applied_at_unix: int = Field(ge=0)
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -91,6 +112,31 @@ class DoctorFinding(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+def _split_coordinate(coordinate: str) -> tuple[str, str, str | None]:
+    parts = coordinate.split("|", 2)
+    if len(parts) == 2:
+        return parts[0], parts[1], None
+    return parts[0], parts[1], parts[2]
+
+
+def _content_references(content: dict, identifiers: set[str]) -> bool:
+    """Exact opaque-id membership over content values; never text search."""
+
+    if not identifiers:
+        return False
+
+    def _walk(value: object) -> bool:
+        if isinstance(value, str):
+            return value in identifiers
+        if isinstance(value, dict):
+            return any(_walk(item) for item in value.values())
+        if isinstance(value, list):
+            return any(_walk(item) for item in value)
+        return False
+
+    return _walk(content)
+
+
 class GovernanceOperator:
     """Forget, erasure, retention, and doctor over one installation."""
 
@@ -98,29 +144,32 @@ class GovernanceOperator:
         self._operator = operator
 
     def plan_forget(
-        self, *, capability: OwnerCapability, scope_note: str
+        self,
+        *,
+        capability: OwnerCapability,
+        selectors: tuple[ForgetTargetSelector, ...],
+        scope_note: str,
     ) -> ForgetPlan:
+        """Resolve typed selectors into a content-free dependency closure."""
+
         service = self._operator._administration
         require_owner_capability(service, capability)
-        repository = service.partition()
-        import json as _json
-
-        with repository.transaction(write=False) as connection:
-            rows = repository.read_runtime_rows(connection, table="runtime_tasks")
-        matched = tuple(
-            sorted(
-                _json.loads(str(row[0]))["task_id"] for row in rows
+        if not selectors:
+            raise OperatorError(
+                "invalid_request: forget plan requires at least one typed selector"
             )
-        )
-        if not matched:
+        closure, counts, unresolved = self._forget_closure(selectors)
+        if unresolved:
+            raise OperatorError(
+                "invalid_request: forget selector matched no records"
+                f" ({'; '.join(unresolved)})"
+            )
+        if not closure:
             raise OperatorError(
                 "invalid_request: forget plan matched no records;"
                 " a plan must enumerate at least one"
             )
-        return ForgetPlan(
-            scope_note=scope_note,
-            matched_record_ids=matched,
-        )
+        return self._build_plan(selectors, scope_note, closure, counts)
 
     def apply_forget(
         self,
@@ -128,22 +177,47 @@ class GovernanceOperator:
         capability: OwnerCapability,
         plan: ForgetPlan,
     ) -> ForgetReceipt:
+        from memorii.core.persistence.contracts import canonical_json_digest
+        from memorii.core.storage_administration.suppression_journal import (
+            SuppressionCoordinate,
+            SuppressionRecord,
+            find_record_by_plan_digest,
+            suppressed_coordinates,
+            suppression_identifier,
+            write_suppression_record,
+        )
+
         service = self._operator._administration
         require_owner_capability(service, capability)
-        repository = service.partition()
-        import json as _json
 
-        from memorii.core.persistence.contracts import canonical_json_digest
+        control_root = service.installation_root / "control"
 
-        known: set[str] = set()
-        with repository.transaction(write=False) as connection:
-            rows = repository.read_runtime_rows(connection, table="runtime_tasks")
-        known = {_json.loads(str(row[0]))["task_id"] for row in rows}
-        unknown = set(plan.matched_record_ids) - known
-        if unknown:
+        # Retry of the same plan reuses the existing suppression identity and
+        # performs no second journal or epoch write.
+        existing = find_record_by_plan_digest(control_root, plan.plan_digest)
+        if existing is not None:
+            return ForgetReceipt(
+                suppression_id=existing.suppression_id,
+                newly_revoked_count=0,
+                already_revoked_count=len(existing.suppressed),
+                historical_bytes_retained=True,
+                enforcement_publication_pending=True,
+                applied_at_unix=existing.applied_at_unix,
+            )
+
+        # Drift fence: every enumerated coordinate must still resolve, or
+        # already be revoked by an earlier suppression.
+        current_closure, _, _ = self._forget_closure(plan.selectors)
+        already_revoked = {
+            f"{coordinate.coordinate_kind}|{coordinate.coordinate_id}"
+            + (f"|{coordinate.record_kind}" if coordinate.record_kind else "")
+            for coordinate in suppressed_coordinates(control_root)
+        }
+        drifted = set(plan.closure) - set(current_closure) - already_revoked
+        if drifted:
             raise OperatorError(
                 "conflict: plan references records that no longer exist"
-                f" ({len(unknown)} drifted)"
+                f" ({len(drifted)} drifted)"
             )
         status = self._operator.status()
         if status.mode != "read_only":
@@ -151,51 +225,325 @@ class GovernanceOperator:
                 "conflict: forget apply requires the acknowledged exclusive"
                 " barrier (change mode to read_only first)"
             )
-        control_root = service.installation_root / "control"
-        suppression = control_root / "suppressions"
-        suppression.mkdir(parents=True, exist_ok=True)
-        os.chmod(suppression, 0o700)
-        entry = {
-            "applied_at_unix": int(time.time()),
-            "scope_note": plan.scope_note,
-            "suppressed": list(plan.matched_record_ids),
-        }
-        payload = (json.dumps(entry, sort_keys=True) + "\n").encode()
-        journal_path = suppression / (
-            f"forget-{int(time.time() * 1000)}-{len(plan.matched_record_ids)}.json"
-        )
-        temporary = journal_path.with_name(f".{journal_path.name}.tmp")
-        with temporary.open("wb") as handle:
-            handle.write(payload)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.chmod(temporary, 0o600)
-        os.replace(temporary, journal_path)
-        # Epoch and control revision advance under the publication fence so
-        # every cached/paged view keyed to the old epoch is invalidated.
         state = service._control_state()
+        suppression_id = suppression_identifier(
+            installation_id=state.installation_id,
+            plan_digest=plan.plan_digest,
+            closure_digest=plan.closure_digest,
+        )
+        newly = tuple(
+            coordinate
+            for coordinate in plan.closure
+            if coordinate not in already_revoked
+        )
+        if not newly:
+            raise OperatorError(
+                "conflict: every plan target is already revoked; nothing to apply"
+            )
+        applied_at_unix = int(time.time())
+        # Journal first: forget is durably complete here. The enforcement
+        # publication (semantic revocation directive + tombstones) follows
+        # barrier release; serving gates consult the journal view meanwhile.
+        write_suppression_record(
+            control_root,
+            SuppressionRecord(
+                suppression_id=suppression_id,
+                plan_digest=plan.plan_digest,
+                closure_digest=plan.closure_digest,
+                scope_note=plan.scope_note,
+                suppressed=tuple(
+                    SuppressionCoordinate(
+                        coordinate_kind=cast(
+                            Literal[
+                                "entity", "claim", "source", "record", "task",
+                                "justification",
+                            ],
+                            kind,
+                        ),
+                        coordinate_id=identifier,
+                        record_kind=record_kind or None,
+                    )
+                    for kind, identifier, record_kind in (
+                        _split_coordinate(coordinate) for coordinate in newly
+                    )
+                ),
+                applied_at_unix=applied_at_unix,
+            ),
+        )
+        # Control revision and a PENDING epoch increment advance under the
+        # fence; eligibility_epoch itself is untouched so Tier A keeps
+        # passing. The increment becomes the signed tuple's epoch with the
+        # enforcement (or next) publication.
         with service._publication_fence():
             service._control.write_control_state(
                 state.model_copy(
-                    update={"control_revision": state.control_revision + 1}
+                    update={
+                        "control_revision": state.control_revision + 1,
+                        "pending_epoch_increments": (
+                            state.pending_epoch_increments + 1
+                        ),
+                    }
                 ),
                 service._journal_entry(
                     operation="logical_forget_applied",
                     before_digest=canonical_json_digest(
-                        {"revision": state.control_revision}
+                        {
+                            "revision": state.control_revision,
+                            "epoch": state.eligibility_epoch,
+                            "pending": state.pending_epoch_increments,
+                        }
                     ),
                     after_digest=canonical_json_digest(
                         {
                             "revision": state.control_revision + 1,
-                            "suppressed": len(plan.matched_record_ids),
+                            "suppressed": len(newly),
+                            "pending": state.pending_epoch_increments + 1,
                         }
                     ),
                 ),
             )
         return ForgetReceipt(
-            suppressed_count=len(plan.matched_record_ids),
-            applied_at_unix=int(time.time()),
+            suppression_id=suppression_id,
+            newly_revoked_count=len(newly),
+            already_revoked_count=len(plan.closure) - len(newly),
+            historical_bytes_retained=True,
+            enforcement_publication_pending=True,
+            applied_at_unix=applied_at_unix,
         )
+
+    # --- forget closure ------------------------------------------------
+
+    def _forget_closure(
+        self, selectors: tuple[ForgetTargetSelector, ...]
+    ) -> tuple[tuple[str, ...], tuple[tuple[str, int], ...], tuple[str, ...]]:
+        """Enumerate the content-free dependency closure under one snapshot.
+
+        Coordinates are ``kind:id[:record_kind]`` strings. Classes follow
+        the design: direct selectors, claims and entities reachable through
+        entity links, evidence sources of revoked claims (and claims of
+        revoked sources), the evolution records to tombstone, solver
+        justifications citing revoked evidence, runtime tasks of affected
+        solvers, and learned-ontology evidence from revoked sources.
+        Unresolvable selectors are reported so the plan can refuse them.
+        """
+
+        service = self._operator._administration
+        partition = service.partition()
+        with partition.transaction(write=False) as connection:
+            record_rows = partition.read_current_record_rows(
+                connection, statuses=["committed"], domains=None, source_kinds=None
+            )
+            justification_rows = partition.read_runtime_rows(
+                connection, table="runtime_justifications"
+            )
+            solver_run_rows = partition.read_runtime_rows(
+                connection, table="runtime_solver_runs"
+            )
+
+        claim_payloads: list[tuple[str, dict]] = []
+        link_payloads: list[tuple[str, dict]] = []
+        ontology_payloads: list[tuple[str, dict]] = []
+        for row in record_rows:
+            try:
+                record = json.loads(str(row["record_json"]))
+                content = record["content"]
+            except (KeyError, TypeError, ValueError):
+                continue
+            if not isinstance(content, dict):
+                continue
+            kind = content.get("memory_evolution_kind")
+            if kind == "claim_state":
+                claim_payloads.append((row["memory_id"], content))
+            elif kind == "entity_link":
+                link_payloads.append((row["memory_id"], content))
+            elif str(record.get("source_kind", "")).startswith("learned_ontology"):
+                ontology_payloads.append((row["memory_id"], content))
+
+        claim_states = [
+            (memory_id, payload.get("claim_state") or {})
+            for memory_id, payload in claim_payloads
+        ]
+        link_states = [
+            (memory_id, payload.get("entity_link") or {})
+            for memory_id, payload in link_payloads
+        ]
+        entity_by_link = {
+            str(link.get("link_id")): str(link.get("canonical_entity_id"))
+            for link in (payload for _, payload in link_states)
+            if link.get("link_id") and link.get("canonical_entity_id")
+        }
+        claim_sources = {
+            str(state.get("claim_id")): {
+                str(span.get("source_id"))
+                for span in state.get("evidence_spans") or []
+                if span.get("source_id")
+            }
+            for _, state in claim_states
+            if state.get("claim_id")
+        }
+
+        entities: set[str] = set()
+        claims: set[str] = set()
+        sources: set[str] = set()
+        records: set[str] = set()
+        known_entity_ids = set(entity_by_link.values())
+        known_claim_ids = {
+            str(state.get("claim_id"))
+            for _, state in claim_states
+            if state.get("claim_id")
+        }
+        known_source_ids = {
+            source_id
+            for source_ids in claim_sources.values()
+            for source_id in source_ids
+        }
+        known_record_ids = {memory_id for memory_id, _ in claim_states}
+        known_record_ids.update(memory_id for memory_id, _ in link_states)
+        unresolved: list[str] = []
+        for selector in selectors:
+            if selector.selector_kind == "entity":
+                entities.add(selector.selector_id)
+                if selector.selector_id not in known_entity_ids:
+                    unresolved.append(f"entity {selector.selector_id}")
+            elif selector.selector_kind == "claim":
+                claims.add(selector.selector_id)
+                if selector.selector_id not in known_claim_ids:
+                    unresolved.append(f"claim {selector.selector_id}")
+            elif selector.selector_kind == "source":
+                sources.add(selector.selector_id)
+                if selector.selector_id not in known_source_ids:
+                    unresolved.append(f"source {selector.selector_id}")
+            elif selector.selector_kind == "record":
+                records.add(
+                    f"record|{selector.selector_id}"
+                    + (f"|{selector.record_kind}" if selector.record_kind else "")
+                )
+                if selector.selector_id not in known_record_ids:
+                    unresolved.append(f"record {selector.selector_id}")
+
+        # Fixed-point propagation between revoked claims, their entities,
+        # and their evidence sources.
+        changed = True
+        while changed:
+            changed = False
+            for _, state in claim_states:
+                claim_id = str(state.get("claim_id") or "")
+                if not claim_id:
+                    continue
+                claim_entities = {
+                    entity_by_link[link_id]
+                    for link_id in (
+                        state.get("subject_link_id"),
+                        state.get("object_link_id"),
+                    )
+                    if link_id and link_id in entity_by_link
+                }
+                claim_source_ids = claim_sources.get(claim_id, set())
+                if claim_id in claims or claim_source_ids & sources:
+                    if claim_id not in claims:
+                        claims.add(claim_id)
+                        changed = True
+                    if not claim_entities <= entities:
+                        entities |= claim_entities
+                        changed = True
+                    if not claim_source_ids <= sources:
+                        sources |= claim_source_ids
+                        changed = True
+                elif claim_entities & entities:
+                    if claim_id not in claims:
+                        claims.add(claim_id)
+                        changed = True
+                    if not claim_source_ids <= sources:
+                        sources |= claim_source_ids
+                        changed = True
+
+        coordinates: set[str] = set()
+        coordinates |= {f"entity|{value}" for value in entities}
+        coordinates |= {f"claim|{value}" for value in claims}
+        coordinates |= {f"source|{value}" for value in sources}
+        coordinates |= records
+        for memory_id, state in claim_states:
+            if str(state.get("claim_id") or "") in claims:
+                coordinates.add(f"record|{memory_id}|claim_state")
+        for memory_id, link in link_states:
+            if str(link.get("canonical_entity_id") or "") in entities:
+                coordinates.add(f"record|{memory_id}|entity_link")
+
+        # Solver justifications citing revoked evidence (exact id equality).
+        affected_solvers: set[str] = set()
+        for row in justification_rows:
+            try:
+                justification = json.loads(str(row["record_json"]))
+            except (TypeError, ValueError):
+                continue
+            referenced = {
+                str(ref.get("source_id"))
+                for ref in justification.get("source_refs") or []
+                if isinstance(ref, dict) and ref.get("source_id")
+            }
+            if referenced & (sources | claims | entities):
+                coordinates.add(
+                    f"justification|{justification.get('justification_id')}"
+                )
+                if justification.get("solver_id"):
+                    affected_solvers.add(str(justification["solver_id"]))
+
+        solver_task = {
+            str(run.get("solver_id")): str(run.get("task_id"))
+            for run in (
+                json.loads(str(row["record_json"]))
+                for row in solver_run_rows
+            )
+            if run.get("solver_id") and run.get("task_id")
+        }
+        for solver_id in affected_solvers:
+            task_id = solver_task.get(solver_id)
+            if task_id is not None:
+                coordinates.add(f"task|{task_id}")
+
+        # Learned-ontology evidence referencing revoked sources.
+        for memory_id, content in ontology_payloads:
+            if _content_references(content, sources):
+                coordinates.add(f"record|{memory_id}|learned_ontology")
+
+        ordered = tuple(sorted(coordinates))
+        counts = tuple(
+            (prefix, sum(1 for item in ordered if item.startswith(f"{prefix}|")))
+            for prefix in (
+                "entity", "claim", "source", "record", "justification", "task",
+            )
+            if any(item.startswith(f"{prefix}|") for item in ordered)
+        )
+        return ordered, counts, tuple(sorted(unresolved))
+
+    def _build_plan(
+        self,
+        selectors: tuple[ForgetTargetSelector, ...],
+        scope_note: str,
+        closure: tuple[str, ...],
+        counts: tuple[tuple[str, int], ...],
+    ) -> ForgetPlan:
+        from hashlib import sha256
+
+        selector_body = {
+            "selectors": [selector.model_dump(mode="json") for selector in selectors]
+        }
+        plan_digest = sha256(
+            b"memorii.forget-plan.v2\0"
+            + json.dumps(selector_body, sort_keys=True).encode()
+        ).hexdigest()
+        closure_digest = sha256(
+            b"memorii.forget-closure.v2\0" + "\n".join(closure).encode()
+        ).hexdigest()
+        return ForgetPlan(
+            scope_note=scope_note,
+            selectors=selectors,
+            closure=closure,
+            counts_by_class=counts,
+            plan_digest=plan_digest,
+            closure_digest=closure_digest,
+        )
+
 
     def plan_erasure(
         self,
@@ -359,6 +707,46 @@ class GovernanceOperator:
                 detail=state.quarantined_reason,
             )
         )
+        if state.pending_epoch_increments:
+            findings.append(
+                DoctorFinding(
+                    check="pending_epoch_increments",
+                    status="warning",
+                    detail=(
+                        f"pending={state.pending_epoch_increments};"
+                        " the increment rides the next publication tuple"
+                    ),
+                )
+            )
+        try:
+            from memorii.core.storage_administration.suppression_journal import (
+                read_suppression_records,
+            )
+
+            journal_records = read_suppression_records(
+                service.installation_root / "control"
+            )
+            pending_enforcement = service.pending_forget_enforcements()
+            findings.append(
+                DoctorFinding(
+                    check="suppression_journal",
+                    status=(
+                        "warning" if len(pending_enforcement) else "ok"
+                    ),
+                    detail=(
+                        f"entries={len(journal_records)}"
+                        f" pending_enforcement={len(pending_enforcement)}"
+                    ),
+                )
+            )
+        except ValueError as exc:
+            findings.append(
+                DoctorFinding(
+                    check="suppression_journal",
+                    status="error",
+                    detail=str(exc)[:200],
+                )
+            )
         try:
             snapshot = service.acquire_verified_snapshot()
             findings.append(

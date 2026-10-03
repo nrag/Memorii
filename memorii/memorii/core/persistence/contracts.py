@@ -182,6 +182,13 @@ class InstallationControlState(BaseModel):
     format_version: int = Field(ge=1)
     control_revision: int = Field(ge=1)
     eligibility_epoch: int = Field(ge=1)
+    # Epoch increments recorded by barrier-gated revocation operations that
+    # have not yet ridden a publication tuple. The signed tuple carries
+    # eligibility_epoch + pending_epoch_increments at prepare; finalize
+    # advances the base epoch by exactly the consumed increments in the
+    # same control transaction that writes the tuple, so Tier A equality
+    # between the finalized tuple and control state never breaks.
+    pending_epoch_increments: int = Field(default=0, ge=0)
     mode: Literal["active", "read_only", "bypass"] = "active"
     initialization_receipt_digest: str | None = Field(default=None, pattern=_HEX_64)
     adopted_legacy_records_digest: str | None = Field(

@@ -53,6 +53,7 @@ class InstallationStatus(BaseModel):
     mode: InstallationMode
     control_revision: int = Field(ge=1)
     eligibility_epoch: int = Field(ge=1)
+    pending_epoch_increments: int = Field(default=0, ge=0)
     quarantined: bool
     runtime_revision: int = Field(ge=0)
     memory_write_revision: int = Field(ge=0)
@@ -81,6 +82,7 @@ class StorageAdministrationOperator:
             mode=state.mode,
             control_revision=state.control_revision,
             eligibility_epoch=state.eligibility_epoch,
+            pending_epoch_increments=state.pending_epoch_increments,
             quarantined=state.quarantined_reason is not None,
             runtime_revision=runtime_revision,
             memory_write_revision=memory_write,
@@ -133,6 +135,11 @@ class StorageAdministrationOperator:
                     ),
                 ),
             )
+        if state.mode == "read_only" and request.target_mode != "read_only":
+            # Leaving the barrier is the live-process trigger for forget
+            # enforcement: pending reconciliations drain before the owner
+            # sees the resumed status.
+            service.drain_pending_forget_enforcement()
         return self.status()
 
     def read_export(self, *, capability: OwnerCapability) -> dict[str, object]:
@@ -162,19 +169,24 @@ class StorageAdministrationOperator:
 
 
 def _suppressed_record_ids(service: StorageAdministrationService) -> frozenset[str]:
-    """Ids logically forgotten; exports and reads must never serve them."""
-    import json as _json
+    """Task ids logically forgotten; exports and reads must never serve them.
 
-    suppressed: set[str] = set()
-    root = service.installation_root / "control" / "suppressions"
-    if root.is_dir():
-        for journal in sorted(root.glob("forget-*.json")):
-            try:
-                entry = _json.loads(journal.read_text())
-            except ValueError:
-                continue
-            suppressed.update(str(item) for item in entry.get("suppressed", ()))
-    return frozenset(suppressed)
+    A tampered or unsupported journal entry raises: the export refuses
+    rather than silently un-suppressing.
+    """
+
+    from memorii.core.storage_administration.suppression_journal import (
+        read_suppression_records,
+    )
+
+    control_root = service.installation_root / "control"
+    records = read_suppression_records(control_root)
+    return frozenset(
+        coordinate.coordinate_id
+        for record in records
+        for coordinate in record.suppressed
+        if coordinate.coordinate_kind == "task"
+    )
 
 
 def _record_id(record_json: object) -> str:

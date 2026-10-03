@@ -583,7 +583,9 @@ def publish_runtime_change(
                 ),
                 manifest_digest=manifest.digest(),
                 trust_registry_digest=finalized.trust_registry_digest,
-                eligibility_epoch=state.eligibility_epoch,
+                eligibility_epoch=(
+                    state.eligibility_epoch + state.pending_epoch_increments
+                ),
                 vector=vector,
                 signature="0" * 64,
             )
@@ -605,7 +607,9 @@ def publish_runtime_change(
                 expected_old_discriminator=finalized.payload_digest(),
                 candidate_state=candidate,
                 operation_binding=operation_binding,
-                authority_epoch=state.eligibility_epoch,
+                authority_epoch=(
+                    state.eligibility_epoch + state.pending_epoch_increments
+                ),
                 fence_token=prior_ordinal + 1,
             )
             administration._control.write_intent(

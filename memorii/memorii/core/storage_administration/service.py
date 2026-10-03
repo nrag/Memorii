@@ -128,8 +128,62 @@ class StorageAdministrationService:
             ) from exc
         self._partition: PartitionDataRepository | None = None
         self._verified_tuples: dict[str, bool] = {}
+        # Wired by the governance enforcement entry: re-emits one journal
+        # entry's revocation directive. Until wired, pending enforcements
+        # are reported (never silently dropped) by the drain.
+        self._forget_enforcement_emitter = None
 
     # --- layout --------------------------------------------------------
+
+    def pending_forget_enforcements(self) -> tuple[object, ...]:
+        """Journal entries whose enforcement publication has not landed."""
+
+        from memorii.core.storage_administration.suppression_journal import (
+            read_suppression_records,
+        )
+
+        records = read_suppression_records(self._root / "control")
+        if not records:
+            return ()
+        present: list[object] = []
+        pending: list[object] = []
+        for record in records:
+            (
+                present if self._forget_enforcement_present(record.suppression_id)
+                else pending
+            ).append(record)
+        return tuple(pending)
+
+    def _forget_enforcement_present(self, suppression_id: str) -> bool:
+        """The directive index record the governance publication writes."""
+
+        with self.partition().transaction(write=False) as connection:
+            row = connection.execute(
+                "SELECT 1 FROM memory_current_records WHERE memory_id = ?",
+                (f"semantic_ingestion:revocation:{suppression_id}",),
+            ).fetchone()
+        return row is not None
+
+    def drain_pending_forget_enforcement(self) -> int:
+        """Drain pending forget enforcements; returns the still-pending count.
+
+        Leaving the read-only barrier and boot call this; the emitter (the
+        governance enforcement entry) is retried per entry until quiescent.
+        """
+
+        pending = self.pending_forget_enforcements()
+        if not pending:
+            return 0
+        emitter = self._forget_enforcement_emitter
+        if emitter is None:
+            return len(pending)
+        remaining = 0
+        for record in pending:
+            try:
+                emitter(record)
+            except Exception:
+                remaining += 1
+        return remaining
 
     @property
     def installation_root(self) -> Path:
@@ -233,6 +287,53 @@ class StorageAdministrationService:
             self._stage_initial_data()
             return self.finalize_installation()
 
+    @staticmethod
+    def _effective_epoch(state: InstallationControlState) -> int:
+        """The epoch a new tuple signs: base plus unconsumed pending increments."""
+
+        return state.eligibility_epoch + state.pending_epoch_increments
+
+    def _complete_pending_epoch_advance(self) -> bool:
+        """Boot completion rule for a crash between tuple and control writes.
+
+        If the finalized tuple already carries base+pending while control
+        state still holds the pending counter (a legacy or interrupted
+        cut), advance idempotently and journal it. Returns whether an
+        advance happened. Callers hold the publication fence: this method
+        never takes it (same-descriptor flock would self-deadlock).
+        """
+
+        state = self._control_state()
+        if state.pending_epoch_increments <= 0:
+            return False
+        finalized = self._control.read_publication_state(self._repository_id())
+        if finalized is None:
+            return False
+        consumed = finalized.eligibility_epoch - state.eligibility_epoch
+        if consumed <= 0 or consumed > state.pending_epoch_increments:
+            return False
+        self._control.write_control_state(
+            state.model_copy(
+                update={
+                    "control_revision": state.control_revision + 1,
+                    "eligibility_epoch": finalized.eligibility_epoch,
+                    "pending_epoch_increments": (
+                        state.pending_epoch_increments - consumed
+                    ),
+                }
+            ),
+            self._journal_entry(
+                operation="publication_finalized",
+                after_digest=canonical_json_digest(
+                    {
+                        "epoch": finalized.eligibility_epoch,
+                        "pending": state.pending_epoch_increments - consumed,
+                    }
+                ),
+            ),
+        )
+        return True
+
     def _resume_or_conflict(
         self, state: InstallationControlState
     ) -> InitializationReceipt:
@@ -254,6 +355,11 @@ class StorageAdministrationService:
                 # Crash between finalize and the receipt write: complete it.
                 self._record_initialization_receipt(finalized)
                 state = self._control_state()
+            self._complete_pending_epoch_advance()
+            state = self._control_state()
+        # Outside the fence: the enforcement emitter publishes under its own
+        # fence, and in read_only it reports instead of force-publishing.
+        self.drain_pending_forget_enforcement()
         if finalized is None:
             raise StorageAdministrationError(
                 "initialization is incomplete and could not be resumed"
@@ -578,7 +684,7 @@ class StorageAdministrationService:
                 candidate = self._candidate_from_transaction(
                     connection,
                     generation_id=finalized.data_generation_id,
-                    epoch=state.eligibility_epoch,
+                    epoch=self._effective_epoch(state),
                 )
                 partition.write_publication_row(
                     connection,
@@ -597,7 +703,7 @@ class StorageAdministrationService:
                     expected_old_discriminator=finalized.payload_digest(),
                     candidate_state=candidate,
                     operation_binding=operation_binding,
-                    authority_epoch=state.eligibility_epoch,
+                    authority_epoch=self._effective_epoch(state),
                     fence_token=finalized.vector.partition_ordinal + 1,
                 )
                 self._control.write_intent(
@@ -788,6 +894,36 @@ class StorageAdministrationService:
         return self._sign_state(unsigned)
 
     def _finalize_publication(self, candidate: RuntimePublicationState) -> None:
+        state = self._control_state()
+        consumed = candidate.eligibility_epoch - state.eligibility_epoch
+        if consumed > 0:
+            # The tuple rode pending epoch increments (a barrier-gated
+            # revocation): advance the base epoch and decrement the pending
+            # counter in the SAME control transaction that writes the tuple,
+            # so Tier A equality between tuple and control state never
+            # diverges — including across a crash at this exact cut.
+            if consumed > state.pending_epoch_increments:
+                raise InstallationIntegrityError(
+                    "finalized tuple epoch exceeds the recorded pending increments"
+                )
+            self._control.write_finalized_publication(
+                self._repository_id(),
+                candidate,
+                state.model_copy(
+                    update={
+                        "control_revision": state.control_revision + 1,
+                        "eligibility_epoch": candidate.eligibility_epoch,
+                        "pending_epoch_increments": (
+                            state.pending_epoch_increments - consumed
+                        ),
+                    }
+                ),
+                self._journal_entry(
+                    operation="publication_finalized",
+                    after_digest=candidate.payload_digest(),
+                ),
+            )
+            return
         self._control.write_publication_state(
             self._repository_id(),
             candidate,

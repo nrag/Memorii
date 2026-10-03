@@ -355,6 +355,7 @@ def test_backup_foreign_installation_and_missing_marker_refuse(tmp_path: Path) -
 def test_forget_plan_apply_and_retention_cycle(tmp_path: Path) -> None:
     from memorii.core.storage_administration.operator import ModeChangeRequest
     from memorii.core.storage_administration.operator_governance import (
+        ForgetTargetSelector,
         GovernanceOperator,
     )
 
@@ -362,11 +363,88 @@ def test_forget_plan_apply_and_retention_cycle(tmp_path: Path) -> None:
     capability = _capability(service)
     try:
         governance = GovernanceOperator(operator)
+        empty_selector = (ForgetTargetSelector(selector_kind="entity", selector_id="entity:nobody"),)
         with pytest.raises(OperatorError, match="matched no records"):
-            governance.plan_forget(capability=capability, scope_note="empty")
+            governance.plan_forget(
+                capability=capability, selectors=empty_selector, scope_note="empty"
+            )
 
-        from memorii.core.persistence.runtime_contracts import TaskRecord
+        from memorii.core.memory_plane.models import CanonicalMemoryRecord
+        from memorii.core.persistence.runtime_contracts import (
+            NodeEvidenceReference,
+            SolverJustificationRecord,
+            SolverRunRecord,
+            TaskRecord,
+        )
         from memorii.core.persistence.runtime_repository import publish_runtime_change
+        from memorii.domain.enums import CommitStatus, MemoryDomain
+
+        claim_payload = {
+            "claim_id": "claim:ada-owns",
+            "claim_key": {
+                "subject_entity_id": "entity:ada",
+                "predicate_id": "owns",
+                "scope": {},
+                "qualifier_key": "default",
+                "assertion_mode": "world_assertion",
+                "epistemic_status": "asserted",
+                "polarity": "positive",
+                "modality": "assertion",
+                "belief_holder_entity_id": None,
+            },
+            "object_value": "revocation fixture",
+            "lifecycle_state": "active",
+            "source_claim_id": "source:ada",
+            "confidence": {
+                "extraction": 0.9, "evidence": 0.8, "source_trust": 0.7,
+                "agreement": 0.0, "contradiction": 0.0, "calibrated": 0.9,
+            },
+            "semantic_context": {
+                "assertion_mode": "world_assertion",
+                "epistemic_status": "asserted",
+                "polarity": "positive",
+                "modality": "assertion",
+                "attribution_source_id": "source:ada",
+            },
+            "validation_results": [],
+            "evidence_spans": [
+                {"source_id": "source:ada", "start": 0, "end": 8,
+                 "evidence_digest": "1" * 64}
+            ],
+            "subject_link_id": "link:ada",
+            "object_link_id": None,
+        }
+        link_payload = {
+            "link_id": "link:ada",
+            "mention_text": "fixture entity",
+            "canonical_entity_id": "entity:ada",
+            "normalized_name": "fixture entity",
+            "entity_type": "unknown",
+            "aliases": [],
+            "observed_names": [],
+            "evidence_spans": [],
+            "confidence": 0.9,
+            "scope": {},
+            "lifecycle_state": "active",
+        }
+        semantic_records = (
+            CanonicalMemoryRecord(
+                memory_id="mem:evolution:claim:claim:ada-owns",
+                domain=MemoryDomain.SEMANTIC,
+                text="revocation fixture",
+                content={"memory_evolution_kind": "claim_state", "claim_state": claim_payload},
+                status=CommitStatus.COMMITTED,
+                source_kind="memory_evolution",
+            ),
+            CanonicalMemoryRecord(
+                memory_id="mem:evolution:link:link:ada",
+                domain=MemoryDomain.SEMANTIC,
+                text="fixture entity",
+                content={"memory_evolution_kind": "entity_link", "entity_link": link_payload},
+                status=CommitStatus.COMMITTED,
+                source_kind="memory_evolution",
+            ),
+        )
 
         def seed(connection, repo) -> None:
             repo.apply_task(
@@ -379,11 +457,49 @@ def test_forget_plan_apply_and_retention_cycle(tmp_path: Path) -> None:
                     root_execution_node_id="exec:root",
                 ),
             )
+            repo.apply_solver_run(
+                connection,
+                SolverRunRecord(
+                    solver_id="solver:forget",
+                    task_id="task:forget",
+                    parent_execution_node_id="exec:root",
+                    category="reasoning",
+                    created_by="principal:a",
+                ),
+            )
+            repo.apply_justification(
+                connection,
+                SolverJustificationRecord(
+                    justification_id="justification:forget",
+                    solver_id="solver:forget",
+                    conclusion="fixture conclusion",
+                    supporting_ids=(),
+                    contradicting_ids=(),
+                    assumption_ids=(),
+                    strength=0.9,
+                    active=True,
+                    source_refs=(NodeEvidenceReference(source_id="source:ada"),),
+                ),
+            )
 
+        service.publish_memory_plane_batch(
+            semantic_records, operation_binding="forget_seed"
+        )
         publish_runtime_change(service, seed, operation_binding="forget_seed")
-        plan = governance.plan_forget(capability=capability, scope_note="scope")
-        assert plan.matched_record_ids == ("task:forget",)
+
+        selectors = (ForgetTargetSelector(selector_kind="entity", selector_id="entity:ada"),)
+        plan = governance.plan_forget(
+            capability=capability, selectors=selectors, scope_note="scope"
+        )
+        assert "entity|entity:ada" in plan.closure
+        assert "claim|claim:ada-owns" in plan.closure
+        assert "source|source:ada" in plan.closure
+        assert "record|mem:evolution:claim:claim:ada-owns|claim_state" in plan.closure
+        assert "record|mem:evolution:link:link:ada|entity_link" in plan.closure
+        assert "justification|justification:forget" in plan.closure
+        assert "task|task:forget" in plan.closure
         assert plan.retention_disclosed is True
+        assert len(plan.plan_digest) == 64 and len(plan.closure_digest) == 64
 
         # Forget apply requires the barrier and is refused without it.
         with pytest.raises(OperatorError, match="exclusive"):
@@ -398,14 +514,25 @@ def test_forget_plan_apply_and_retention_cycle(tmp_path: Path) -> None:
         )
         before = operator.status()
         receipt = governance.apply_forget(capability=capability, plan=plan)
-        assert receipt.suppressed_count == 1
+        assert receipt.newly_revoked_count == len(plan.closure)
         assert receipt.historical_bytes_retained is True
+        assert receipt.enforcement_publication_pending is True
         after = operator.status()
-        # The control revision advanced (journalled) and the export no
-        # longer serves the suppressed record.
+        # The control revision advanced (journalled) and a PENDING epoch
+        # increment was recorded; the base epoch is untouched so verified
+        # reads keep passing.
         assert after.control_revision == before.control_revision + 1
+        assert after.pending_epoch_increments == 1
+        assert after.eligibility_epoch == before.eligibility_epoch
         export = operator.read_export(capability=capability)
         assert export["tasks"] == []
+
+        # Retrying the same plan is idempotent: no second journal entry,
+        # no second pending increment.
+        retried = governance.apply_forget(capability=capability, plan=plan)
+        assert retried.newly_revoked_count == 0
+        assert retried.suppression_id == receipt.suppression_id
+        assert operator.status().pending_epoch_increments == 1
 
         # Retention sees the fresh journal as ineligible; nothing archives.
         retention = governance.plan_retention(
@@ -712,5 +839,86 @@ def test_fresh_host_boot_from_verified_restore(tmp_path: Path) -> None:
                 installation_root=empty_root,
                 signing_keys_directory=tmp_path / "installation" / "control" / "keys",
             )
+    finally:
+        service.close()
+
+
+def test_forget_pending_epoch_rides_the_next_publication(tmp_path: Path) -> None:
+    from memorii.core.memory_plane.models import CanonicalMemoryRecord
+    from memorii.core.storage_administration.operator import ModeChangeRequest
+    from memorii.core.storage_administration.operator_governance import (
+        ForgetTargetSelector,
+        GovernanceOperator,
+    )
+    from memorii.domain.enums import CommitStatus, MemoryDomain
+
+    operator, service = _operator(tmp_path)
+    capability = _capability(service)
+    try:
+        governance = GovernanceOperator(operator)
+        link_payload = {
+            "link_id": "link:epoch",
+            "mention_text": "fixture",
+            "canonical_entity_id": "entity:epoch",
+            "normalized_name": "fixture",
+            "entity_type": "unknown",
+            "aliases": [],
+            "observed_names": [],
+            "evidence_spans": [],
+            "confidence": 0.9,
+            "scope": {},
+            "lifecycle_state": "active",
+        }
+        seed_record = CanonicalMemoryRecord(
+            memory_id="mem:evolution:link:link:epoch",
+            domain=MemoryDomain.SEMANTIC,
+            text="fixture",
+            content={"memory_evolution_kind": "entity_link", "entity_link": link_payload},
+            status=CommitStatus.COMMITTED,
+            source_kind="memory_evolution",
+        )
+        service.publish_memory_plane_batch(
+            (seed_record,), operation_binding="epoch_seed"
+        )
+        plan = governance.plan_forget(
+            capability=capability,
+            selectors=(ForgetTargetSelector(selector_kind="entity", selector_id="entity:epoch"),),
+            scope_note="epoch ride",
+        )
+        operator.change_mode(
+            ModeChangeRequest(
+                target_mode="read_only",
+                expected_control_revision=operator.status().control_revision,
+                reason="forget barrier",
+            ),
+            capability=capability,
+        )
+        base_epoch = operator.status().eligibility_epoch
+        governance.apply_forget(capability=capability, plan=plan)
+
+        # In the window: Tier A still passes (verified reads succeed), the
+        # base epoch is untouched, and one increment is pending.
+        window = operator.status()
+        assert window.eligibility_epoch == base_epoch
+        assert window.pending_epoch_increments == 1
+        assert operator.read_export(capability=capability)["tasks"] == []
+
+        operator.change_mode(
+            ModeChangeRequest(
+                target_mode="active",
+                expected_control_revision=window.control_revision,
+                reason="resume",
+            ),
+            capability=capability,
+        )
+
+        # The next publication embeds the effective epoch and finalize
+        # advances the base epoch atomically with the tuple.
+        follow_up = seed_record.model_copy(update={"text": "follow-up"})
+        service.publish_memory_plane_batch((follow_up,), operation_binding="epoch_follow_up")
+        after = operator.status()
+        assert after.eligibility_epoch == base_epoch + 1
+        assert after.pending_epoch_increments == 0
+        assert operator.read_export(capability=capability)["publication_ordinal"] > 0
     finally:
         service.close()

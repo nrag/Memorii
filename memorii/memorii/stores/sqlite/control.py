@@ -297,6 +297,56 @@ class ControlDatabase:
                 (repository_id, state.model_dump_json()),
             )
 
+    def write_finalized_publication(
+        self,
+        repository_id: str,
+        state: RuntimePublicationState,
+        next_control: InstallationControlState,
+        journal_entry: InstallationControlJournalEntry,
+    ) -> None:
+        """Finalize a tuple and advance control state in one transaction.
+
+        Used when the finalized tuple carried pending eligibility-epoch
+        increments: the base epoch advance and the pending decrement commit
+        atomically with the tuple, so the Tier A equality between the
+        finalized tuple and control state can never diverge at rest.
+        """
+        with self.transaction(write=True) as connection:
+            current = _read_control_state_unlocked(connection)
+            if current is None:
+                raise ControlStateError("installation control state is absent")
+            if next_control.installation_id != current.installation_id:
+                raise ControlStateError("installation identity cannot change")
+            if next_control.control_revision != current.control_revision + 1:
+                raise ControlStateError(
+                    "control revision must increase by exactly one: "
+                    f"current {current.control_revision}, proposed {next_control.control_revision}"
+                )
+            consumed = state.eligibility_epoch - current.eligibility_epoch
+            if consumed < 0 or consumed > current.pending_epoch_increments:
+                raise ControlStateError(
+                    "finalized tuple epoch does not ride the pending increments"
+                )
+            if (
+                next_control.eligibility_epoch != state.eligibility_epoch
+                or next_control.pending_epoch_increments
+                != current.pending_epoch_increments - consumed
+            ):
+                raise ControlStateError(
+                    "finalized tuple epoch advance is inconsistent with control state"
+                )
+            _append_journal_unlocked(connection, journal_entry)
+            connection.execute(
+                "INSERT INTO publication_states (repository_id, state_json) VALUES (?, ?)"
+                " ON CONFLICT(repository_id) DO UPDATE SET state_json = excluded.state_json",
+                (repository_id, state.model_dump_json()),
+            )
+            connection.execute(
+                "INSERT INTO installation_control (id, state_json) VALUES (1, ?)"
+                " ON CONFLICT(id) DO UPDATE SET state_json = excluded.state_json",
+                (next_control.model_dump_json(),),
+            )
+
     def write_intent(
         self,
         intent: RuntimePublicationIntent,
