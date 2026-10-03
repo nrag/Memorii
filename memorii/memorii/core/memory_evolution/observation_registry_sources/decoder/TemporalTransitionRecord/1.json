@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.TemporalTransitionRecord.v1","implementation_source_digest":"5f3baed4bfc522821c97f25c44e958d20b9d7396795da6be7e43fd8acb9120d4","role":"decoder","schema_id":"TemporalTransitionRecord","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.TemporalTransitionRecord.v1","implementation_source_digest":"c4a7c72e9f9a5886a4a7f64ec2ed5d55bc8d1a1ce2a8c6e0efc7fac6798afeb7","role":"decoder","schema_id":"TemporalTransitionRecord","schema_version":"1","typed_root_kind":"model"}

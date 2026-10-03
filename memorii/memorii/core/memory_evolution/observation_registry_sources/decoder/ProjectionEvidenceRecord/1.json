@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.ProjectionEvidenceRecord.v1","implementation_source_digest":"2e3445b22050f87ce9bc705f085ccef1fddc97457417c4acbf234669a6e7e7cc","role":"decoder","schema_id":"ProjectionEvidenceRecord","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.ProjectionEvidenceRecord.v1","implementation_source_digest":"eb288c07d98b2f100aa88c9b00855ccf0100451d0d085a18abf659821daf4df2","role":"decoder","schema_id":"ProjectionEvidenceRecord","schema_version":"1","typed_root_kind":"model"}

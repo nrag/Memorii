@@ -179,10 +179,28 @@ organizational only and must not appear in outputs.
   registry v2 mint (M1b), parity/crash families + CI registration (M6),
   forensic lineage surface + prefetch canonical filter, publication
   regeneration + candidate repin, broad gates + milestone review.
-  Next action: M1b registry v2 mint with the compat cascade.
+  Next action: migrate the five stale golden `.ctv` fixtures under the
+  grammar change (see Known Failures), then broad gates + review; M1b
+  is the recorded deviation pending the review round's decision.
 
 ## Decision Log
 
+- 2026-10-03 (flagged deviation for milestone review — design §6.10 item
+  5): the event-envelope schema version remains
+  `memorii.semantic-memory-event.v1` instead of minting v2. The grammar
+  extension is an additive superset: the closed `GraphRecordKind` union
+  gained one member, every pinned artifact regenerated through the
+  authoring script, old batches replay unchanged, and an older binary
+  rejects the new record kind at strict decode (the fail-closed
+  compatibility rule the design itself specifies — covered by the
+  strict-decode rejection tests). Minting v2 additionally requires the
+  persisted-history compat cascade (byte-identical registry-1 history
+  prefix, upcast-decision consultation of the current registry, and
+  prefix-tolerant equality at atomic_store :7100/:8825) whose risk was
+  judged disproportionate to the naming benefit at Level 2. The review
+  round must either accept this recorded deviation (amending the design
+  sentence) or schedule the v2 mint as a follow-up; it is not silently
+  dropped.
 - 2026-10-03: Milestone execution order adjusted by dependency analysis:
   record-kind grammar landed first (f9de4478); the governance publication
   entry (originally M2) is the hardest orchestration (full projection/
@@ -205,9 +223,16 @@ organizational only and must not appear in outputs.
 
 (none yet)
 
+## Known Failures (milestone-close blocking, exact disposition)
+
+| Command | Signature | Authority chain | Disposition |
+| --- | --- | --- | --- |
+| `pytest tests/integration/test_observation_ledger_activation.py tests/integration/test_observation_terminal_intent.py` (local, package cwd) | 5 failures: `graph_state_snapshot_counts_invalid` + `planning_state_manifest_mismatch` decoding the golden `.ctv` captures in `tests/fixtures/semantic_ingestion/current_terminal/` (captured at revision a9b9813f per their manifest) | the `revocation_directive` grammar change alters `canonical_graph_codec_manifest().manifest_fingerprint` (13 entries) and every snapshot counts tuple; the captured payloads embed the 12-kind values | IN SCOPE, deterministic: stale golden fixtures under an approved grammar change — production paths pass everywhere else (155/160 in the same run; enforcement + parity + event-replay suites green). Fix = migrate or re-capture the fixtures (insert `("revocation_directive", 0)` counts, refresh codec fingerprints, recompute the nested digest fields via the owning models' create paths); a blind recursive patcher was deliberately not attempted. This blocks CI green for the milestone and is the next action. |
+
 ## Blockers And Limits
 
-None. Budget: three review rounds per milestone before blocking.
+None beyond the known failure above. Budget: three review rounds per
+milestone before blocking.
 
 ## Next Action
 

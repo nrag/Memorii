@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.GroundedMentionRef.v1","implementation_source_digest":"4ea55ba14bdcb5cb0367d9067d8a594ac97d161664cb6f1b30661a74605c1a0e","role":"decoder","schema_id":"GroundedMentionRef","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.GroundedMentionRef.v1","implementation_source_digest":"01cc02c7b575f74252e0711de19b7e721afb17aeb4aadf9099bb5c1eb6c4e9ed","role":"decoder","schema_id":"GroundedMentionRef","schema_version":"1","typed_root_kind":"model"}

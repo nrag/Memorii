@@ -437,6 +437,8 @@ jobs:
           tests/integration/test_shared_sqlite_provider_paths.py
           tests/integration/test_shared_sqlite_semantic_owners.py
           tests/integration/test_memory_plane_migration_recovery.py
+          tests/integration/test_forget_enforcement_publication.py
+          tests/integration/test_forget_serving_parity.py
           -p no:cacheprovider
 
   sdk-typescript:
@@ -622,6 +624,8 @@ jobs:
           tests/integration/test_runtime_process_recovery.py
           tests/integration/test_runtime_resume_checkpoint.py
           tests/integration/test_runtime_sidecar.py
+          tests/integration/test_forget_enforcement_publication.py
+          tests/integration/test_forget_serving_parity.py
           -p no:cacheprovider
 
   semantic-terminal-persistence:

@@ -1,1 +1,1 @@
-{"decoder_id":"memorii.semantic_ingestion.observation.RequiredOutcomeScopeSet.v1","implementation_source_digest":"8e5f88b0083ca5fb0ae3b0512fac7f8499b5e4417a47d3acfc18438bca81883c","role":"decoder","schema_id":"RequiredOutcomeScopeSet","schema_version":"1","typed_root_kind":"model"}
+{"decoder_id":"memorii.semantic_ingestion.observation.RequiredOutcomeScopeSet.v1","implementation_source_digest":"44c8728e201ef13b8cffd9fd9bdd2a791fc02fbeb1af4d16d0361e7ead628464","role":"decoder","schema_id":"RequiredOutcomeScopeSet","schema_version":"1","typed_root_kind":"model"}
